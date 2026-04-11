@@ -21,8 +21,9 @@
 
 html,
 body {
+  height: 100%;
   margin: 0;
-  min-height: 100vh;
+  overflow: hidden;
 }
 
 body {
@@ -101,8 +102,10 @@ h3 {
 
 .cockpit-shell {
   display: grid;
-  grid-template-columns: 68px minmax(0, 1fr);
-  min-height: 100vh;
+  grid-template-columns: 76px minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tool-rail {
@@ -110,51 +113,32 @@ h3 {
   border-right: 1px solid #252a30;
   display: grid;
   grid-template-rows: auto 1fr auto;
-  min-height: 100vh;
-  position: sticky;
-  top: 0;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .rail-brand {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.16rem;
+  height: 76px;
   justify-items: center;
-  padding: 0.55rem 0.25rem;
+  padding: 0;
   text-align: center;
 }
 
-.rail-brand strong {
-  font-size: 0.7rem;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.rail-brand small {
-  color: var(--quiet);
-  font-size: 0.58rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  width: 58px;
-  white-space: nowrap;
-}
-
-.rail-mark {
-  align-items: center;
-  background: linear-gradient(135deg, var(--accent), #f2c94c);
-  border-radius: 0;
-  color: #111;
-  display: inline-flex;
-  font-size: 1rem;
-  height: 24px;
-  justify-content: center;
-  width: 28px;
+.rail-logo {
+  display: block;
+  height: 62px;
+  object-fit: contain;
+  width: 62px;
 }
 
 .tool-nav {
   display: grid;
-  grid-auto-rows: minmax(46px, auto);
+  grid-template-rows: repeat(9, minmax(0, 1fr));
+  min-height: 0;
 }
 
 .tool-item {
@@ -166,7 +150,8 @@ h3 {
   color: var(--muted);
   display: grid;
   justify-items: center;
-  padding: 0.38rem 0.18rem;
+  min-height: 0;
+  padding: 0 0.24rem;
 }
 
 .tool-item.active {
@@ -174,48 +159,28 @@ h3 {
   color: #101112;
 }
 
-.tool-item span {
-  font-size: 0.9rem;
-}
-
 .tool-item b {
-  font-size: 0.58rem;
-  font-weight: 600;
+  font-size: 0.68rem;
+  font-weight: 850;
+  line-height: 1;
 }
 
 .rail-action {
   border: 0;
   border-radius: 0;
   border-top: 1px solid var(--line);
+  min-height: 34px;
 }
 
 .cockpit {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: 38px auto 54px minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
-.topbar {
-  align-items: center;
-  background: rgba(18, 20, 23, 0.98);
-  border-bottom: 1px solid var(--line);
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-  min-height: 52px;
-  padding: 0.45rem 0.65rem;
-  position: sticky;
-  top: 0;
-  z-index: 5;
-}
-
-.project-heading {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.project-heading span,
 .hint,
 .details,
 small,
@@ -229,6 +194,26 @@ small,
   font-weight: 950;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.command-strip {
+  align-items: center;
+  background: rgba(18, 20, 23, 0.98);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  min-height: 0;
+  padding: 0 0.55rem;
+}
+
+.command-status {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .top-actions {
@@ -264,8 +249,8 @@ small,
   border-bottom: 1px solid var(--line);
   display: grid;
   justify-content: start;
-  min-height: 54px;
-  padding: 0.55rem 0.65rem;
+  min-height: 30px;
+  padding: 0 0.65rem;
 }
 
 .empty-start.hidden {
@@ -283,8 +268,8 @@ small,
   border-right: 1px solid var(--line);
   display: grid;
   gap: 0.05rem;
-  min-height: 62px;
-  padding: 0.45rem 0.55rem;
+  min-height: 54px;
+  padding: 0.34rem 0.55rem;
 }
 
 .metrics-strip span {
@@ -295,14 +280,16 @@ small,
 }
 
 .metrics-strip strong {
-  font-size: clamp(1.3rem, 2.2vw, 2rem);
+  font-size: clamp(1.2rem, 1.9vw, 1.75rem);
   line-height: 1;
 }
 
 .review-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 24vw);
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .review-stack,
@@ -314,7 +301,10 @@ small,
 .review-stack {
   border-right: 1px solid var(--line);
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, auto);
+  grid-template-rows: 34px minmax(180px, 1fr) 28px 138px 132px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .video-toolbar,
@@ -324,13 +314,14 @@ small,
   display: flex;
   gap: 0.65rem;
   justify-content: space-between;
-  padding: 0.42rem 0.65rem;
+  min-height: 0;
+  padding: 0.35rem 0.65rem;
 }
 
 .video-stage {
   background: #000;
   border-bottom: 1px solid #252a30;
-  min-height: 38vh;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -338,8 +329,8 @@ small,
 .video-stage video {
   background: #000;
   display: block;
-  height: min(58vh, 560px);
-  min-height: 300px;
+  height: 100%;
+  min-height: 0;
   object-fit: contain;
   width: 100%;
 }
@@ -446,7 +437,7 @@ small,
 .timeline-strip {
   background: var(--blue-video);
   border-bottom: 1px solid var(--line);
-  min-height: 34px;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -466,13 +457,23 @@ small,
   background: var(--green);
 }
 
+.waveform-panel {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.waveform-panel .section-header,
+.split-section .section-header {
+  min-height: 30px;
+}
+
 .waveform-panel canvas {
   background: #102033;
   border: 0;
   border-bottom: 1px solid #2c4059;
   cursor: crosshair;
   display: block;
-  height: 160px;
+  height: 108px;
   width: 100%;
 }
 
@@ -493,12 +494,16 @@ small,
 }
 
 .split-section {
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .split-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  max-height: 102px;
+  overflow-y: auto;
 }
 
 .split-card {
@@ -508,8 +513,8 @@ small,
   border-right: 1px solid #343a42;
   cursor: pointer;
   display: grid;
-  gap: 0.12rem;
-  padding: 0.45rem 0.5rem;
+  gap: 0.08rem;
+  padding: 0.36rem 0.45rem;
   text-align: left;
 }
 
@@ -524,14 +529,15 @@ small,
 }
 
 .split-card strong {
-  font-size: 1rem;
+  font-size: 0.94rem;
   line-height: 1;
 }
 
 .inspector {
   display: grid;
   grid-auto-rows: max-content;
-  max-height: calc(100vh - 115px);
+  height: 100%;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -539,8 +545,8 @@ small,
 .tool-pane {
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.5rem;
-  padding: 0.55rem;
+  gap: 0.42rem;
+  padding: 0.48rem;
 }
 
 .tool-pane {
@@ -635,12 +641,12 @@ small,
 
 @media (max-width: 1180px) {
   .cockpit-shell {
-    grid-template-columns: 62px minmax(0, 1fr);
+    grid-template-columns: 70px minmax(0, 1fr);
   }
 
-  .rail-brand strong,
-  .rail-brand small {
-    display: none;
+  .rail-logo {
+    height: 54px;
+    width: 54px;
   }
 
   .review-grid {
@@ -660,18 +666,27 @@ small,
 }
 
 @media (max-width: 720px) {
+  html,
+  body {
+    height: auto;
+    overflow: auto;
+  }
+
   .cockpit-shell {
     display: block;
+    height: auto;
+    min-height: 100vh;
   }
 
   .tool-rail {
+    height: auto;
     min-height: auto;
-    position: static;
   }
 
   .tool-nav {
     grid-auto-flow: column;
-    grid-auto-rows: auto;
+    grid-auto-columns: minmax(74px, 1fr);
+    grid-template-rows: none;
     overflow-x: auto;
   }
 
@@ -679,10 +694,17 @@ small,
     min-width: 80px;
   }
 
-  .topbar {
+  .cockpit {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .command-strip {
     align-items: stretch;
-    flex-direction: column;
-    position: static;
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 68px;
+    padding: 0.35rem;
   }
 
   .button-grid,
