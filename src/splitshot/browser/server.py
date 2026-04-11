@@ -15,6 +15,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 from uuid import uuid4
 
+from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.state import browser_state
 from splitshot.domain.models import (
     AspectRatio,
@@ -49,14 +50,17 @@ class BrowserControlServer:
         controller: ProjectController | None = None,
         host: str = "127.0.0.1",
         port: int = 8765,
+        log_dir: str | Path | None = None,
     ) -> None:
         self.controller = controller or ProjectController()
         self.host = host
         self.port = port
+        self.activity = ActivityLogger(log_dir)
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
+        self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
     @property
     def url(self) -> str:
@@ -67,6 +71,7 @@ class BrowserControlServer:
 
     def serve_forever(self, open_browser: bool = True) -> None:
         self._httpd = self._build_httpd()
+        self.activity.log("server.serve_forever", url=self.url, open_browser=open_browser)
         if open_browser:
             webbrowser.open(self.url)
         try:
@@ -74,6 +79,7 @@ class BrowserControlServer:
         except KeyboardInterrupt:
             print("\nSplitShot browser control stopped.")
         finally:
+            self.activity.log("server.stopping", url=self.url)
             self._httpd.server_close()
             self._session_dir.cleanup()
 
@@ -81,10 +87,12 @@ class BrowserControlServer:
         self._httpd = self._build_httpd()
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
+        self.activity.log("server.start_background", url=self.url, open_browser=open_browser)
         if open_browser:
             webbrowser.open(self.url)
 
     def shutdown(self) -> None:
+        self.activity.log("server.shutdown", url=self.url)
         if self._httpd is not None:
             self._httpd.shutdown()
             self._httpd.server_close()
@@ -98,6 +106,7 @@ class BrowserControlServer:
     def _handler(self) -> type[BaseHTTPRequestHandler]:
         controller = self.controller
         session_path = self._session_path
+        activity = self.activity
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "SplitShotBrowser/1.0"
@@ -107,6 +116,7 @@ class BrowserControlServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 request_path = urlparse(self.path).path
+                activity.log("http.get", path=request_path, client=self.client_address[0])
                 if request_path in {"/", "/index.html"}:
                     self._send_static("index.html", "text/html; charset=utf-8")
                     return
@@ -128,6 +138,10 @@ class BrowserControlServer:
                 self.send_error(HTTPStatus.NOT_FOUND)
 
             def do_POST(self) -> None:  # noqa: N802
+                activity.log("http.post", path=self.path, client=self.client_address[0])
+                if self.path == "/api/activity":
+                    self._record_browser_activity()
+                    return
                 if self.path == "/api/files/primary":
                     self._import_primary_file()
                     return
@@ -164,9 +178,12 @@ class BrowserControlServer:
                     return
                 try:
                     payload = self._read_json()
+                    activity.log("api.start", path=self.path, payload=payload)
                     route(payload)
+                    activity.log("api.success", path=self.path, status=controller.status_message)
                     self._send_json(browser_state(controller.project, controller.status_message))
                 except Exception as exc:  # noqa: BLE001
+                    activity.log("api.error", path=self.path, error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _read_json(self) -> dict[str, Any]:
@@ -192,6 +209,7 @@ class BrowserControlServer:
                 package_root = resources.files("splitshot.browser.static")
                 target = package_root / safe_name
                 if not target.is_file():
+                    activity.log("static.missing", name=safe_name)
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 data = target.read_bytes()
@@ -201,9 +219,11 @@ class BrowserControlServer:
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+                activity.log("static.sent", name=safe_name, bytes=len(data))
 
             def _send_media(self, path: Path) -> None:
                 if not path.exists() or not path.is_file():
+                    activity.log("media.missing", path=str(path))
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 size = path.stat().st_size
@@ -221,6 +241,7 @@ class BrowserControlServer:
                         end = min(end, size - 1)
                         status = HTTPStatus.PARTIAL_CONTENT
                 if start > end:
+                    activity.log("media.range_invalid", path=str(path), start=start, end=end)
                     self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                     return
                 content_length = end - start + 1
@@ -231,6 +252,14 @@ class BrowserControlServer:
                 if status == HTTPStatus.PARTIAL_CONTENT:
                     self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                 self.end_headers()
+                activity.log(
+                    "media.start",
+                    path=str(path),
+                    status=int(status),
+                    start=start,
+                    end=end,
+                    bytes=content_length,
+                )
                 with path.open("rb") as media_file:
                     media_file.seek(start)
                     remaining = content_length
@@ -241,8 +270,22 @@ class BrowserControlServer:
                         try:
                             self.wfile.write(chunk)
                         except EXPECTED_DISCONNECT_ERRORS:
+                            activity.log("media.client_disconnect", path=str(path), remaining=remaining)
                             return
                         remaining -= len(chunk)
+                activity.log("media.complete", path=str(path), bytes=content_length)
+
+            def _record_browser_activity(self) -> None:
+                try:
+                    payload = self._read_json()
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("browser.activity.error", error=str(exc))
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    return
+                event = str(payload.get("event", "browser.event"))
+                detail = payload.get("detail", {})
+                activity.log("browser.activity", browser_event=event, detail=detail)
+                self._send_json({"ok": True})
 
             def _save_uploaded_file(self) -> Path:
                 content_type = self.headers.get("Content-Type", "")
@@ -289,17 +332,32 @@ class BrowserControlServer:
             def _import_primary_file(self) -> None:
                 try:
                     path = self._save_uploaded_file()
+                    activity.log("api.files.primary.saved", path=str(path))
                     controller.ingest_primary_video(str(path))
+                    activity.log(
+                        "api.files.primary.ingested",
+                        path=str(path),
+                        shots=len(controller.project.analysis.shots),
+                        status=controller.status_message,
+                    )
                     self._send_json(browser_state(controller.project, controller.status_message))
                 except Exception as exc:  # noqa: BLE001
+                    activity.log("api.files.primary.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _import_secondary_file(self) -> None:
                 try:
                     path = self._save_uploaded_file()
+                    activity.log("api.files.secondary.saved", path=str(path))
                     controller.ingest_secondary_video(str(path))
+                    activity.log(
+                        "api.files.secondary.ingested",
+                        path=str(path),
+                        status=controller.status_message,
+                    )
                     self._send_json(browser_state(controller.project, controller.status_message))
                 except Exception as exc:  # noqa: BLE001
+                    activity.log("api.files.secondary.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _new_project(self, payload: dict[str, Any]) -> None:

@@ -51,6 +51,7 @@ def run_browser(
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port)
     print(f"SplitShot browser control running at {server.url}")
+    print(f"SplitShot activity log: {server.activity.path}")
     server.serve_forever(open_browser=open_browser)
     return 0
 
