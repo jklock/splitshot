@@ -10,13 +10,19 @@ from splitshot.domain.models import (
     VideoAsset,
 )
 from splitshot.merge.layouts import calculate_merge_canvas
-from splitshot.scoring.logic import calculate_hit_factor, current_shot_index
+from splitshot.scoring.logic import (
+    apply_scoring_preset,
+    calculate_hit_factor,
+    calculate_scoring_summary,
+    current_shot_index,
+)
 
 
 def test_hit_factor_uses_shot_scores_and_penalties() -> None:
     project = Project()
     project.scoring.enabled = True
     project.scoring.penalties = 5
+    project.analysis.beep_time_ms_primary = 100
     project.analysis.shots = [
         ShotEvent(time_ms=800, score=ScoreMark(letter=ScoreLetter.A)),
         ShotEvent(time_ms=1100, score=ScoreMark(letter=ScoreLetter.C)),
@@ -25,7 +31,7 @@ def test_hit_factor_uses_shot_scores_and_penalties() -> None:
 
     hit_factor = calculate_hit_factor(project)
     assert hit_factor is not None
-    assert round(hit_factor, 2) == round((5 + 3 + 1 - 5) / 1.45, 2)
+    assert round(hit_factor, 2) == round((5 + 3 + 1 - 5) / 1.35, 2)
 
 
 def test_current_shot_tracks_playback_position() -> None:
@@ -39,6 +45,31 @@ def test_current_shot_tracks_playback_position() -> None:
     assert current_shot_index(project, 799) is None
     assert current_shot_index(project, 1101) == 1
     assert current_shot_index(project, 1600) == 2
+
+
+def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 500
+    project.analysis.shots = [
+        ShotEvent(time_ms=1000, score=ScoreMark(letter=ScoreLetter.A)),
+        ShotEvent(time_ms=1500, score=ScoreMark(letter=ScoreLetter.C)),
+        ShotEvent(time_ms=2000, score=ScoreMark(letter=ScoreLetter.M)),
+    ]
+
+    apply_scoring_preset(project, "uspsa_major")
+    project.scoring.penalties = 0
+    summary = calculate_scoring_summary(project)
+    assert summary["ruleset"] == "uspsa_major"
+    assert summary["mode"] == "hit_factor"
+    assert summary["hit_factor"] == (5 + 4 + 0) / 1.5
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.penalties = 3
+    summary = calculate_scoring_summary(project)
+    assert summary["ruleset"] == "idpa_time_plus"
+    assert summary["mode"] == "time_plus"
+    assert summary["final_time"] == 1.5 + 0 + 1 + 5 + 3
 
 
 def test_merge_canvas_covers_layouts() -> None:

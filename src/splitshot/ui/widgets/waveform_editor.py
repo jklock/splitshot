@@ -72,17 +72,17 @@ class WaveformEditor(QWidget):
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor("#0F172A"))
+        painter.fillRect(self.rect(), QColor("#18243B"))
         painter.setRenderHint(QPainter.Antialiasing, True)
 
         waveform = self.state.waveform or []
         if waveform:
-            self._paint_waveform(painter, waveform, QColor("#38BDF8"), 0.5, 0.42)
+            self._paint_waveform(painter, waveform, QColor("#3B82F6"), 0.5, 0.42)
         if self.state.secondary_waveform:
             self._paint_waveform(
                 painter,
                 self.state.secondary_waveform,
-                QColor("#A78BFA"),
+                QColor("#60A5FA"),
                 0.76,
                 0.18,
             )
@@ -117,31 +117,33 @@ class WaveformEditor(QWidget):
 
     def _paint_markers(self, painter: QPainter) -> None:
         shots = self.state.shots or []
-        for shot in shots:
+        for index, shot in enumerate(shots, start=1):
             x = self._time_to_x(shot.time_ms)
-            color = QColor("#F97316" if shot.id != self.state.selected_shot_id else "#FACC15")
+            color = QColor("#22C55E" if shot.id != self.state.selected_shot_id else "#A3E635")
             pen = QPen(color)
             pen.setWidth(2)
             painter.setPen(pen)
             painter.drawLine(QPointF(x, 0), QPointF(x, self.height()))
+            painter.drawText(int(x + 4), 18, str(index))
 
         if self.state.beep_time_ms is not None:
             x = self._time_to_x(self.state.beep_time_ms)
-            pen = QPen(QColor("#22C55E"))
+            pen = QPen(QColor("#F97316"))
             pen.setWidth(2)
             painter.setPen(pen)
             painter.drawLine(QPointF(x, 0), QPointF(x, self.height()))
+            painter.drawText(int(x + 6), 18, "BEEP")
 
         if self.state.secondary_beep_time_ms is not None:
             x = self._time_to_x(self.state.secondary_beep_time_ms)
-            pen = QPen(QColor("#8B5CF6"))
+            pen = QPen(QColor("#FB923C"))
             pen.setWidth(2)
             painter.setPen(pen)
             painter.drawLine(QPointF(x, self.height() * 0.58), QPointF(x, self.height()))
 
     def _paint_playhead(self, painter: QPainter) -> None:
         x = self._time_to_x(self.state.playhead_ms)
-        pen = QPen(QColor("#E2E8F0"))
+        pen = QPen(QColor("#EF4444"))
         pen.setWidth(2)
         painter.setPen(pen)
         painter.drawLine(QPointF(x, 0), QPointF(x, self.height()))

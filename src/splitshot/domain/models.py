@@ -127,6 +127,7 @@ class AnalysisState:
 @dataclass(slots=True)
 class ScoringState:
     enabled: bool = False
+    ruleset: str = "uspsa_minor"
     penalties: int = 0
     point_map: dict[str, int] = field(
         default_factory=lambda: {
@@ -317,6 +318,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         ),
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", False)),
+            ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),
             penalties=int(scoring_data.get("penalties", 0)),
             point_map={
                 str(key): int(value)

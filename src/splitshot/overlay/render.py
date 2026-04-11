@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project
-from splitshot.scoring.logic import current_shot_index
+from splitshot.scoring.logic import calculate_scoring_summary, current_shot_index
 from splitshot.timeline.model import draw_time_ms
 from splitshot.utils.time import format_time_ms
 
@@ -53,8 +53,15 @@ class OverlayRenderer:
                 )
                 badges.append(Badge(f"Shot {index + 1} {split_text}", style))
 
-        if project.scoring.enabled and project.scoring.hit_factor is not None:
-            badges.append(Badge(f"HF {project.scoring.hit_factor:.2f}", project.overlay.hit_factor_badge))
+        if project.scoring.enabled:
+            summary = calculate_scoring_summary(project)
+            if summary["display_value"] != "--":
+                badges.append(
+                    Badge(
+                        f"{summary['display_label']} {summary['display_value']}",
+                        project.overlay.hit_factor_badge,
+                    )
+                )
 
         score_marks: list[tuple[str, float, float, float]] = []
         if project.scoring.enabled:
