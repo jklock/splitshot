@@ -6,6 +6,7 @@ let overlayFrame = null;
 let waveformMode = "select";
 let draggingShotId = null;
 let pendingDragTimeMs = null;
+let busyCount = 0;
 
 const $ = (id) => document.getElementById(id);
 
@@ -103,7 +104,35 @@ function rgba(hex, opacity) {
 
 function setStatus(message) {
   $("status").textContent = message;
+  const processingMessage = $("processing-message");
+  if (processingMessage) processingMessage.textContent = message;
   activity("ui.status", { message });
+}
+
+function beginProcessing(message, detail = "Working locally") {
+  busyCount += 1;
+  const bar = $("processing-bar");
+  $("processing-message").textContent = message;
+  $("processing-detail").textContent = detail;
+  bar.hidden = false;
+  activity("ui.processing.start", { message, detail, busy_count: busyCount });
+  return (finalMessage = "Ready.") => {
+    busyCount = Math.max(0, busyCount - 1);
+    activity("ui.processing.finish", { message: finalMessage, busy_count: busyCount });
+    if (busyCount === 0) {
+      $("processing-message").textContent = finalMessage;
+      $("processing-detail").textContent = "Ready";
+      bar.hidden = true;
+    }
+  };
+}
+
+function debounce(fn, delayMs = 250) {
+  let timer = null;
+  return (...args) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => fn(...args), delayMs);
+  };
 }
 
 function setActiveTool(tool) {
@@ -111,6 +140,7 @@ function setActiveTool(tool) {
   const changed = activeTool !== tool;
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
+  $("cockpit-root").classList.toggle("scoring-active", tool === "scoring");
   const inspector = document.querySelector(".inspector");
   if (inspector) inspector.dataset.activeTool = tool;
   document.querySelectorAll(".tool-item").forEach((item) => {
@@ -125,6 +155,7 @@ function setActiveTool(tool) {
 
 async function api(path, payload = null) {
   activity("api.request", { path, payload });
+  const finishProcessing = payload === null ? null : beginProcessing("Saving changes...", "Local update");
   const options = payload === null
     ? {}
     : {
@@ -138,6 +169,7 @@ async function api(path, payload = null) {
   state = data;
   render();
   activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
+  if (finishProcessing) finishProcessing(data.status || "Ready.");
   return data;
 }
 
@@ -145,6 +177,10 @@ async function callApi(path, payload = null) {
   try {
     return await api(path, payload);
   } catch (error) {
+    if (!$("processing-bar").hidden) {
+      busyCount = 0;
+      $("processing-bar").hidden = true;
+    }
     setStatus(error.message);
     activity("api.error", { path, error: error.message });
     return null;
@@ -155,7 +191,8 @@ async function postFile(path, file) {
   if (!file) return null;
   const form = new FormData();
   form.append("file", file, file.name);
-  setStatus(`Opening ${file.name} locally...`);
+  const finishProcessing = beginProcessing(`Analyzing ${file.name}...`, "Detecting beep and shots");
+  setStatus(`Analyzing ${file.name} locally...`);
   activity("file.selected", { path, name: file.name, size: file.size });
   try {
     const response = await fetch(path, { method: "POST", body: form });
@@ -164,11 +201,41 @@ async function postFile(path, file) {
     state = data;
     render();
     activity("file.ingested", { path, name: file.name, shots: data.metrics?.total_shots });
+    finishProcessing(data.status || "Analysis complete.");
     return data;
   } catch (error) {
+    finishProcessing(error.message);
     setStatus(error.message);
     activity("file.error", { path, name: file.name, error: error.message });
     return null;
+  }
+}
+
+async function pickPath(kind, targetId) {
+  const target = $(targetId);
+  const finishProcessing = beginProcessing("Opening file browser...", "Waiting for local path");
+  activity("dialog.path.request", { kind, target: targetId, current: target.value });
+  try {
+    const response = await fetch("/api/dialog/path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, current: target.value }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+    if (data.path) {
+      target.value = data.path;
+      activity("dialog.path.selected", { kind, target: targetId, path: data.path });
+    } else {
+      activity("dialog.path.cancelled", { kind, target: targetId });
+    }
+    finishProcessing("Ready.");
+    return data.path || "";
+  } catch (error) {
+    finishProcessing(error.message);
+    setStatus(error.message);
+    activity("dialog.path.error", { kind, target: targetId, error: error.message });
+    return "";
   }
 }
 
@@ -214,9 +281,6 @@ function renderStats() {
   $("shot-count").textContent = state.metrics.total_shots;
   $("avg-split").textContent = seconds(state.metrics.average_split_ms);
   const raw = seconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms);
-  $("review-summary").textContent = state.media.primary_available
-    ? `${state.metrics.total_shots} shots | raw ${raw}s`
-    : "No video open.";
   $("timing-summary").textContent = state.metrics.raw_time_ms
     ? `Raw ${raw}s from beep to final shot.`
     : "No timing data.";
@@ -405,10 +469,15 @@ function renderTimingTables() {
 function renderSelection() {
   selectedShotId = state.project.ui_state.selected_shot_id || selectedShotId;
   const segment = (state.timing_segments || []).find((item) => item.shot_id === selectedShotId);
+  const selectedLabel = segment ? segment.label : "No shot selected";
   $("selected-shot-copy").textContent = segment
     ? `${segment.label}: ${segment.segment_s}s split, ${segment.cumulative_s}s from beep.`
     : "No shot selected.";
-  $("selected-score-shot").textContent = segment ? segment.label : "No shot selected";
+  $("selected-timing-shot").textContent = selectedLabel;
+  $("selected-score-shot").textContent = selectedLabel;
+  if (segment?.score_letter) $("score-letter").value = segment.score_letter;
+  $("place-score").disabled = !segment;
+  $("place-score").textContent = segment ? `Place ${$("score-letter").value} for ${segment.label}` : "Select Shot";
 }
 
 function renderScoringPresetOptions() {
@@ -752,6 +821,64 @@ function readOverlayPayload() {
   };
 }
 
+function readMergePayload() {
+  return {
+    enabled: $("merge-enabled").checked,
+    layout: $("merge-layout").value,
+    pip_size: $("pip-size").value,
+  };
+}
+
+function readLayoutPayload() {
+  return {
+    quality: $("quality").value,
+    aspect_ratio: $("aspect-ratio").value,
+    crop_center_x: Number($("crop-center-x").value),
+    crop_center_y: Number($("crop-center-y").value),
+  };
+}
+
+async function applyScoringSettings() {
+  await callApi("/api/scoring/profile", { ruleset: $("scoring-preset").value });
+  await callApi("/api/scoring", {
+    enabled: $("scoring-enabled").checked,
+    penalties: Number($("penalties").value || 0),
+  });
+}
+
+function assignSelectedScore() {
+  if (!selectedShotId) {
+    activity("score.assign.skipped", { reason: "no_selected_shot" });
+    return;
+  }
+  callApi("/api/scoring/score", { shot_id: selectedShotId, letter: $("score-letter").value });
+}
+
+const autoApplyThreshold = debounce(() => {
+  activity("auto_apply.threshold", { threshold: Number($("threshold").value) });
+  callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+}, 450);
+
+const autoApplyOverlay = debounce(() => {
+  activity("auto_apply.overlay", {});
+  callApi("/api/overlay", readOverlayPayload());
+}, 300);
+
+const autoApplyMerge = debounce(() => {
+  activity("auto_apply.merge", {});
+  callApi("/api/merge", readMergePayload());
+}, 300);
+
+const autoApplyLayout = debounce(() => {
+  activity("auto_apply.layout", {});
+  callApi("/api/layout", readLayoutPayload());
+}, 300);
+
+const autoApplyScoring = debounce(() => {
+  activity("auto_apply.scoring", {});
+  applyScoringSettings();
+}, 300);
+
 function wireEvents() {
   document.querySelectorAll("[data-tool]").forEach((item) => {
     item.addEventListener("click", () => {
@@ -762,6 +889,8 @@ function wireEvents() {
   $("new-project").addEventListener("click", () => callApi("/api/project/new", {}));
   $("choose-primary").addEventListener("click", () => $("primary-file-input").click());
   $("choose-secondary").addEventListener("click", () => $("secondary-file-input").click());
+  $("browse-project-path").addEventListener("click", () => pickPath("project", "project-path"));
+  $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path"));
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => $("primary-file-input").click());
   });
@@ -812,26 +941,25 @@ function wireEvents() {
       }
     });
   });
-  $("apply-threshold").addEventListener("click", () => callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) }));
-  $("apply-merge").addEventListener("click", () => callApi("/api/merge", {
-    enabled: $("merge-enabled").checked,
-    layout: $("merge-layout").value,
-    pip_size: $("pip-size").value,
-  }));
+  $("threshold").addEventListener("input", autoApplyThreshold);
+  ["merge-enabled", "merge-layout", "pip-size"].forEach((id) => {
+    $(id).addEventListener("change", autoApplyMerge);
+  });
   document.querySelectorAll("[data-sync]").forEach((button) => {
     button.addEventListener("click", () => callApi("/api/sync", { delta_ms: Number(button.dataset.sync) }));
   });
   $("swap-videos").addEventListener("click", () => callApi("/api/swap", {}));
-  $("apply-overlay").addEventListener("click", () => callApi("/api/overlay", readOverlayPayload()));
-  $("apply-scoring").addEventListener("click", async () => {
-    await callApi("/api/scoring/profile", { ruleset: $("scoring-preset").value });
-    await callApi("/api/scoring", {
-      enabled: $("scoring-enabled").checked,
-      penalties: Number($("penalties").value || 0),
-    });
+  ["overlay-position", "badge-size"].forEach((id) => {
+    $(id).addEventListener("change", autoApplyOverlay);
   });
-  $("assign-score").addEventListener("click", () => {
-    if (selectedShotId) callApi("/api/scoring/score", { shot_id: selectedShotId, letter: $("score-letter").value });
+  $("badge-style-grid").addEventListener("input", autoApplyOverlay);
+  $("score-color-grid").addEventListener("input", autoApplyOverlay);
+  ["scoring-enabled", "scoring-preset"].forEach((id) => {
+    $(id).addEventListener("change", autoApplyScoring);
+  });
+  $("penalties").addEventListener("input", autoApplyScoring);
+  $("score-letter").addEventListener("change", () => {
+    assignSelectedScore();
   });
   $("place-score").addEventListener("click", (event) => {
     event.stopPropagation();
@@ -849,12 +977,12 @@ function wireEvents() {
     activity("score.place.commit", { shot_id: selectedShotId, x_norm, y_norm });
     callApi("/api/scoring/position", { shot_id: selectedShotId, x_norm, y_norm });
   });
-  $("apply-layout").addEventListener("click", () => callApi("/api/layout", {
-    quality: $("quality").value,
-    aspect_ratio: $("aspect-ratio").value,
-    crop_center_x: Number($("crop-center-x").value),
-    crop_center_y: Number($("crop-center-y").value),
-  }));
+  ["quality", "aspect-ratio"].forEach((id) => {
+    $(id).addEventListener("change", autoApplyLayout);
+  });
+  ["crop-center-x", "crop-center-y"].forEach((id) => {
+    $(id).addEventListener("input", autoApplyLayout);
+  });
   $("export-video").addEventListener("click", () => callApi("/api/export", { path: requireValue("export-path", "Output MP4 path") }));
 }
 

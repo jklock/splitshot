@@ -220,6 +220,32 @@ def test_browser_file_picker_endpoint_preserves_secondary_display_name(synthetic
         server.shutdown()
 
 
+def test_browser_path_dialog_endpoint_uses_local_path_chooser(tmp_path) -> None:
+    selected = tmp_path / "review.mp4"
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        calls.append((kind, current))
+        return str(selected)
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, path_chooser=fake_path_chooser)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(
+            f"{server.url}api/dialog/path",
+            {"kind": "export", "current": "/tmp/current.mp4"},
+        )
+
+        assert payload == {"path": str(selected)}
+        assert calls == [("export", "/tmp/current.mp4")]
+        log_text = server.activity.path.read_text(encoding="utf-8")
+        assert "api.dialog.path.start" in log_text
+        assert "api.dialog.path.success" in log_text
+    finally:
+        server.shutdown()
+
+
 def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import subprocess
 import sys
 import threading
 import webbrowser
@@ -31,10 +32,83 @@ from splitshot.ui.controller import ProjectController
 
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+PathChooser = Callable[[str, str | None], str | None]
 
 
 def is_expected_disconnect_error(exc: BaseException | None) -> bool:
     return isinstance(exc, EXPECTED_DISCONNECT_ERRORS)
+
+
+def choose_local_path(kind: str, current: str | None = None) -> str | None:
+    if sys.platform == "darwin":
+        return choose_local_path_macos(kind, current)
+
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError("Native file browser is not available in this Python environment.") from exc
+
+    initial_dir = str(Path(current).expanduser().parent) if current else str(Path.home())
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        try:
+            root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        if kind == "project":
+            return filedialog.asksaveasfilename(
+                title="Choose SplitShot project",
+                initialdir=initial_dir,
+                defaultextension=".ssproj",
+                filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
+            )
+        if kind == "export":
+            return filedialog.asksaveasfilename(
+                title="Choose MP4 export path",
+                initialdir=initial_dir,
+                defaultextension=".mp4",
+                filetypes=[("MP4 video", "*.mp4"), ("All files", "*.*")],
+            )
+        raise ValueError(f"Unsupported path chooser kind: {kind}")
+    finally:
+        root.destroy()
+
+
+def choose_local_path_macos(kind: str, current: str | None = None) -> str | None:
+    current_path = Path(current).expanduser() if current else None
+    default_dir = (current_path.parent if current_path else Path.home()).resolve()
+    default_name = (
+        current_path.name
+        if current_path and current_path.name
+        else ("project.ssproj" if kind == "project" else "output.mp4")
+    )
+    if kind == "project":
+        prompt = "Choose SplitShot project path"
+    elif kind == "export":
+        prompt = "Choose MP4 export path"
+    else:
+        raise ValueError(f"Unsupported path chooser kind: {kind}")
+
+    script = "\n".join(
+        [
+            f"set chosenFile to choose file name with prompt {_applescript_string(prompt)} "
+            f"default name {_applescript_string(default_name)} "
+            f"default location POSIX file {_applescript_string(str(default_dir))}",
+            "POSIX path of chosenFile",
+        ]
+    )
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    if "User canceled" in result.stderr:
+        return None
+    raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
+
+
+def _applescript_string(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
@@ -51,11 +125,13 @@ class BrowserControlServer:
         host: str = "127.0.0.1",
         port: int = 8765,
         log_dir: str | Path | None = None,
+        path_chooser: PathChooser | None = None,
     ) -> None:
         self.controller = controller or ProjectController()
         self.host = host
         self.port = port
         self.activity = ActivityLogger(log_dir)
+        self.path_chooser = path_chooser or choose_local_path
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
@@ -109,6 +185,7 @@ class BrowserControlServer:
         session_path = self._session_path
         activity = self.activity
         display_names = self._display_names
+        path_chooser = self.path_chooser
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "SplitShotBrowser/1.0"
@@ -149,6 +226,9 @@ class BrowserControlServer:
                     return
                 if self.path == "/api/files/secondary":
                     self._import_secondary_file()
+                    return
+                if self.path == "/api/dialog/path":
+                    self._choose_dialog_path()
                     return
                 routes: dict[str, Callable[[dict[str, Any]], None]] = {
                     "/api/project/new": self._new_project,
@@ -202,6 +282,19 @@ class BrowserControlServer:
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _choose_dialog_path(self) -> None:
+                try:
+                    payload = self._read_json()
+                    kind = str(payload.get("kind", ""))
+                    current = None if payload.get("current") in {"", None} else str(payload["current"])
+                    activity.log("api.dialog.path.start", kind=kind, current=current)
+                    selected_path = path_chooser(kind, current) or ""
+                    activity.log("api.dialog.path.success", kind=kind, selected=selected_path)
+                    self._send_json({"path": selected_path})
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.dialog.path.error", error=str(exc))
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _browser_state(self) -> dict[str, Any]:
                 payload = browser_state(controller.project, controller.status_message)

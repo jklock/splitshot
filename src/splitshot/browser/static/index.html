@@ -14,15 +14,14 @@
           <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
+          <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
           <button class="tool-item active" data-tool="review" type="button"><b>Review</b></button>
           <button class="tool-item" data-tool="timing" type="button"><b>Timing</b></button>
-          <button class="tool-item" data-tool="edit" type="button"><b>Edit</b></button>
           <button class="tool-item" data-tool="scoring" type="button"><b>Score</b></button>
           <button class="tool-item" data-tool="overlay" type="button"><b>Overlay</b></button>
           <button class="tool-item" data-tool="merge" type="button"><b>Merge</b></button>
           <button class="tool-item" data-tool="layout" type="button"><b>Layout</b></button>
           <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
-          <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
         </nav>
       </aside>
 
@@ -39,6 +38,10 @@
           <span>Shots <b id="shot-count">0</b></span>
           <span>Avg <b id="avg-split">--.--</b></span>
         </section>
+        <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
+          <strong id="processing-message">Ready.</strong>
+          <span id="processing-detail">Local processing</span>
+        </section>
 
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
@@ -46,12 +49,11 @@
               <video id="primary-video" controls playsinline></video>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
-              <span id="review-summary" class="video-status">No video open.</span>
               <button id="place-score" class="score-target-button" type="button">Place Score</button>
             </div>
 
             <section class="waveform-panel">
-              <div class="timeline-strip" id="timeline-strip"></div>
+              <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
               <div class="section-header waveform-header">
                 <div class="legend-row">
                   <span><b class="beep-key"></b> Beep</span>
@@ -65,7 +67,7 @@
                   <button id="expand-waveform" type="button">Expand</button>
                 </div>
               </div>
-              <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
+              <div class="timeline-strip" id="timeline-strip"></div>
               <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
             </section>
 
@@ -79,21 +81,6 @@
           </section>
 
           <aside class="inspector" aria-label="Context inspector">
-            <section id="selected-shot-panel" class="inspector-section contextual-shot-controls">
-              <div class="section-header">
-                <h3>Selected Shot</h3>
-                <span id="selected-score-shot">No shot selected</span>
-              </div>
-              <p id="selected-shot-copy">No shot selected.</p>
-              <div class="button-grid">
-                <button data-nudge="-10" type="button">-10 ms</button>
-                <button data-nudge="-1" type="button">-1 ms</button>
-                <button data-nudge="1" type="button">+1 ms</button>
-                <button data-nudge="10" type="button">+10 ms</button>
-              </div>
-              <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
-            </section>
-
             <section class="tool-pane active" data-tool-pane="review">
               <div class="section-header">
                 <h3>Splits</h3>
@@ -103,7 +90,6 @@
               <label>Detection threshold
                 <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
               </label>
-              <button id="apply-threshold" type="button">Apply Threshold</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="timing">
@@ -111,15 +97,21 @@
                 <h3>Timing Table</h3>
                 <button id="expand-timing" type="button">Expand</button>
               </div>
+              <section id="selected-shot-panel" class="selected-shot-controls">
+                <div class="section-header">
+                  <h3>Selected Shot</h3>
+                  <span id="selected-timing-shot">No shot selected</span>
+                </div>
+                <p id="selected-shot-copy">No shot selected.</p>
+                <div class="button-grid">
+                  <button data-nudge="-10" type="button">-10 ms</button>
+                  <button data-nudge="-1" type="button">-1 ms</button>
+                  <button data-nudge="1" type="button">+1 ms</button>
+                  <button data-nudge="10" type="button">+10 ms</button>
+                </div>
+                <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
+              </section>
               <div id="timing-table" class="data-table"></div>
-            </section>
-
-            <section class="tool-pane" data-tool-pane="edit">
-              <div class="section-header">
-                <h3>Timeline Editing</h3>
-                <small>All edits apply live.</small>
-              </div>
-              <p class="hint">Use waveform Select, Add Shot, and Move Beep modes. Select a shot to nudge, drag, or delete it.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
@@ -127,6 +119,10 @@
                 <h3>Scoring</h3>
                 <strong id="scoring-result">--</strong>
               </div>
+              <dl class="details">
+                <dt>Selected</dt><dd id="selected-score-shot">No shot selected</dd>
+                <dt>Behavior</dt><dd>Score letter is saved to that shot</dd>
+              </dl>
               <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
               <label>Preset
                 <select id="scoring-preset"></select>
@@ -135,7 +131,7 @@
               <label id="penalties-label">Penalties
                 <input id="penalties" type="number" value="0" min="0" />
               </label>
-              <label>Selected shot score
+              <label>Score for selected shot
                 <select id="score-letter">
                   <option>A</option>
                   <option>C</option>
@@ -146,14 +142,12 @@
                   <option>M+NS</option>
                 </select>
               </label>
-              <button id="apply-scoring" type="button">Apply Scoring</button>
-              <button id="assign-score" class="primary-button" type="button">Assign To Selected Shot</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
               <div class="section-header">
                 <h3>Overlay</h3>
-                <button id="apply-overlay" class="primary-button" type="button">Apply</button>
+                <small>Auto-applies</small>
               </div>
               <div class="control-grid">
                 <label>Position
@@ -201,7 +195,6 @@
                   <option value="50%">50%</option>
                 </select>
               </label>
-              <button id="apply-merge" type="button">Apply Merge</button>
               <div class="button-grid">
                 <button data-sync="-10" type="button">-10 ms</button>
                 <button data-sync="-1" type="button">-1 ms</button>
@@ -214,7 +207,7 @@
             <section class="tool-pane" data-tool-pane="layout">
               <div class="section-header">
                 <h3>Layout</h3>
-                <button id="apply-layout" type="button">Apply</button>
+                <small>Auto-applies</small>
               </div>
               <label>Quality
                 <select id="quality">
@@ -246,7 +239,10 @@
                 <small>Local MP4</small>
               </div>
               <label>Output path
-                <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
+                <div class="path-row">
+                  <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
+                  <button id="browse-export-path" type="button">Browse</button>
+                </div>
               </label>
               <button id="export-video" class="primary-button" type="button">Export MP4</button>
             </section>
@@ -267,7 +263,10 @@
                 <dt>Project</dt><dd id="project-file">Active in memory</dd>
               </dl>
               <label>Project bundle path
-                <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
+                <div class="path-row">
+                  <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
+                  <button id="browse-project-path" type="button">Browse</button>
+                </div>
               </label>
               <div class="button-grid compact">
                 <button id="save-project" type="button">Save</button>
