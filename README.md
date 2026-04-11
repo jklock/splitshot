@@ -66,6 +66,18 @@ uv run pytest
 uv run splitshot --check
 ```
 
+## Export
+
+SplitShot exports with local FFmpeg. The app renders the selected video/merge, overlays, and scoring into frames, then encodes an MP4 with the selected export variables.
+
+Browser export controls expose:
+
+- Presets: Source MP4, Universal Vertical Master, Short-Form Vertical, YouTube Long-Form 1080p, YouTube Long-Form 4K, and Custom.
+- Video: aspect ratio, crop center, target width/height, source/30/60 fps, H.264 or HEVC, bitrate, FFmpeg preset, and optional two-pass encode.
+- Audio: AAC, sample rate, and bitrate.
+- Color: Rec.709 SDR.
+- Logs: the Export pane stores the FFmpeg command/log output for the last export so failures are visible.
+
 ## Packaging
 
 The source package is browser-first and runnable with one command through `uv run splitshot`. The repository includes `.python-version` with Python 3.12, so `uv` creates/uses the right virtual environment without requiring `--python 3.12` on every command. Native `.dmg` and `.exe` artifacts are intentionally not required for the current workflow.
