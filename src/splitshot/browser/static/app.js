@@ -3,6 +3,9 @@ let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "review";
 let scorePlacementArmed = false;
 let overlayFrame = null;
+let waveformMode = "select";
+let draggingShotId = null;
+let pendingDragTimeMs = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -12,6 +15,19 @@ const badgeControls = [
   ["current_shot_badge", "Current Shot Badge"],
   ["hit_factor_badge", "Score Badge"],
 ];
+
+function activity(event, detail = {}) {
+  const payload = { event, detail };
+  console.info("[splitshot]", event, detail);
+  fetch("/api/activity", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    keepalive: true,
+  }).catch((error) => {
+    console.warn("[splitshot] activity log failed", error);
+  });
+}
 
 function seconds(ms) {
   if (ms === null || ms === undefined || ms === "") return "--.--";
@@ -35,6 +51,12 @@ function shortPath(path) {
   return normalized.split("/").filter(Boolean).slice(-2).join("/");
 }
 
+function fileName(path) {
+  if (!path) return "No video selected";
+  const normalized = path.replaceAll("\\", "/");
+  return normalized.split("/").filter(Boolean).pop() || path;
+}
+
 function hexToRgb(hex) {
   const value = hex.replace("#", "");
   const full = value.length === 3
@@ -54,23 +76,28 @@ function rgba(hex, opacity) {
 
 function setStatus(message) {
   $("status").textContent = message;
+  activity("ui.status", { message });
 }
 
 function setActiveTool(tool) {
   if (!document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "review";
+  const changed = activeTool !== tool;
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
+  const inspector = document.querySelector(".inspector");
+  if (inspector) inspector.dataset.activeTool = tool;
   document.querySelectorAll(".tool-item").forEach((item) => {
     item.classList.toggle("active", item.dataset.tool === tool);
   });
   document.querySelectorAll(".tool-pane").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.toolPane === tool);
   });
-  $("selected-tool-title").textContent = tool.charAt(0).toUpperCase() + tool.slice(1);
+  if (changed) activity("ui.tool.active", { tool });
   renderLiveOverlay();
 }
 
 async function api(path, payload = null) {
+  activity("api.request", { path, payload });
   const options = payload === null
     ? {}
     : {
@@ -83,6 +110,7 @@ async function api(path, payload = null) {
   if (!response.ok || data.error) throw new Error(data.error || response.statusText);
   state = data;
   render();
+  activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
   return data;
 }
 
@@ -91,6 +119,7 @@ async function callApi(path, payload = null) {
     return await api(path, payload);
   } catch (error) {
     setStatus(error.message);
+    activity("api.error", { path, error: error.message });
     return null;
   }
 }
@@ -100,20 +129,24 @@ async function postFile(path, file) {
   const form = new FormData();
   form.append("file", file, file.name);
   setStatus(`Opening ${file.name} locally...`);
+  activity("file.selected", { path, name: file.name, size: file.size });
   try {
     const response = await fetch(path, { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     state = data;
     render();
+    activity("file.ingested", { path, name: file.name, shots: data.metrics?.total_shots });
     return data;
   } catch (error) {
     setStatus(error.message);
+    activity("file.error", { path, name: file.name, error: error.message });
     return null;
   }
 }
 
 async function refresh() {
+  activity("api.refresh", {});
   const response = await fetch("/api/state");
   state = await response.json();
   render();
@@ -137,6 +170,7 @@ function renderHeader() {
   $("project-title").textContent = projectName;
   $("rail-project").textContent = projectName;
   $("status").textContent = state.status;
+  $("current-file").textContent = fileName(state.project.primary_video.path);
   $("primary-file").textContent = state.project.primary_video.path || "None";
   $("secondary-file").textContent = state.project.secondary_video?.path || "None";
   $("project-file").textContent = state.project.path || "Active in memory";
@@ -185,6 +219,16 @@ function renderTimelineStrip() {
   });
 }
 
+function resizeCanvasToDisplay(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(rect.width || canvas.clientWidth || 1600));
+  const height = Math.max(1, Math.floor(rect.height || canvas.clientHeight || 260));
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+}
+
 function marker(kind, timeMs) {
   const node = document.createElement("span");
   node.className = `timeline-marker ${kind}`;
@@ -194,13 +238,16 @@ function marker(kind, timeMs) {
 
 function renderWaveform() {
   const canvas = $("waveform");
+  resizeCanvasToDisplay(canvas);
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
   const waveform = state.project.analysis.waveform_primary || [];
+  const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#102033";
   ctx.fillRect(0, 0, width, height);
+  drawSelectedRegion(ctx, height);
   ctx.strokeStyle = "#3aa0ff";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -217,8 +264,13 @@ function renderWaveform() {
   if (beep !== null && beep !== undefined) drawMarker(ctx, beep, "#ff7b22", "BEEP");
   state.project.analysis.shots.forEach((shot, index) => {
     const selected = shot.id === selectedShotId;
-    drawMarker(ctx, shot.time_ms, selected ? "#ffffff" : "#39d06f", String(index + 1));
+    const label = expanded ? `${index + 1} ${seconds(shot.time_ms)}` : String(index + 1);
+    const timeMs = shot.id === draggingShotId && pendingDragTimeMs !== null
+      ? pendingDragTimeMs
+      : shot.time_ms;
+    drawMarker(ctx, timeMs, selected ? "#ffffff" : "#39d06f", label);
   });
+  renderWaveformShotList();
 }
 
 function drawMarker(ctx, timeMs, color, label) {
@@ -230,12 +282,40 @@ function drawMarker(ctx, timeMs, color, label) {
   ctx.moveTo(x, 0);
   ctx.lineTo(x, ctx.canvas.height);
   ctx.stroke();
+  ctx.font = "800 12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
   ctx.fillText(label, x + 5, 22);
+}
+
+function drawSelectedRegion(ctx, height) {
+  const shot = selectedShot();
+  if (!shot) return;
+  const x = Math.max(0, Math.min(1, shot.time_ms / durationMs())) * ctx.canvas.width;
+  ctx.fillStyle = "rgba(255, 123, 34, 0.18)";
+  ctx.fillRect(Math.max(0, x - 44), 0, 88, height);
 }
 
 function selectShot(shotId) {
   selectedShotId = shotId;
+  activity("shot.select", { shot_id: shotId });
   callApi("/api/shots/select", { shot_id: shotId });
+}
+
+function selectedShot() {
+  return (state?.project?.analysis?.shots || []).find((shot) => shot.id === selectedShotId) || null;
+}
+
+function renderWaveformShotList() {
+  const list = $("waveform-shot-list");
+  if (!list) return;
+  list.innerHTML = "";
+  (state.timing_segments || []).forEach((segment) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = segment.shot_id === selectedShotId ? "selected" : "";
+    item.textContent = `${segment.label} ${segment.absolute_s}s`;
+    item.addEventListener("click", () => selectShot(segment.shot_id));
+    list.appendChild(item);
+  });
 }
 
 function renderSplitCards() {
@@ -256,8 +336,9 @@ function renderSplitCards() {
   });
 }
 
-function renderTimingTable() {
-  const table = $("timing-table");
+function renderTimingTable(tableId = "timing-table") {
+  const table = $(tableId);
+  if (!table) return;
   table.innerHTML = "";
   const headers = ["Shot", "Split", "Beep To Shot", "Absolute", "Score", "Confidence", "Source"];
   headers.forEach((header) => {
@@ -285,6 +366,11 @@ function renderTimingTable() {
       table.appendChild(cell);
     });
   });
+}
+
+function renderTimingTables() {
+  renderTimingTable("timing-table");
+  renderTimingTable("timing-workbench-table");
 }
 
 function renderSelection() {
@@ -443,6 +529,7 @@ function renderLiveOverlay() {
 
 function startOverlayLoop() {
   if (overlayFrame !== null) return;
+  activity("video.play", { current_time_s: $("primary-video").currentTime });
   const tick = () => {
     renderLiveOverlay();
     overlayFrame = requestAnimationFrame(tick);
@@ -452,6 +539,7 @@ function startOverlayLoop() {
 
 function stopOverlayLoop() {
   if (overlayFrame === null) return;
+  activity("video.pause", { current_time_s: $("primary-video").currentTime });
   cancelAnimationFrame(overlayFrame);
   overlayFrame = null;
   renderLiveOverlay();
@@ -465,7 +553,7 @@ function render() {
   renderTimelineStrip();
   renderWaveform();
   renderSplitCards();
-  renderTimingTable();
+  renderTimingTables();
   renderSelection();
   renderControls();
   renderLiveOverlay();
@@ -476,6 +564,141 @@ function waveformTime(event) {
   const rect = $("waveform").getBoundingClientRect();
   const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
   return Math.round(x * durationMs());
+}
+
+function shotPixelDistance(event, shot) {
+  const rect = $("waveform").getBoundingClientRect();
+  const shotX = (shot.time_ms / durationMs()) * rect.width;
+  return Math.abs((event.clientX - rect.left) - shotX);
+}
+
+function nearestShot(event) {
+  const shots = state?.project?.analysis?.shots || [];
+  let nearest = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  shots.forEach((shot) => {
+    const distance = shotPixelDistance(event, shot);
+    if (distance < nearestDistance) {
+      nearest = shot;
+      nearestDistance = distance;
+    }
+  });
+  return nearestDistance <= 28 ? nearest : null;
+}
+
+function setWaveformMode(mode) {
+  waveformMode = mode;
+  document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.waveformMode === mode);
+  });
+  const help = $("waveform-help");
+  if (mode === "add") {
+    help.textContent = "Add Shot mode: click the waveform to add a manual shot.";
+  } else if (mode === "beep") {
+    help.textContent = "Move Beep mode: click the waveform to place the timer beep.";
+  } else {
+    help.textContent = "Select mode: click a shot marker, drag to move, arrows nudge.";
+  }
+  activity("waveform.mode", { mode });
+}
+
+function setWaveformExpanded(expanded) {
+  const root = $("cockpit-root");
+  root.classList.toggle("waveform-expanded", expanded);
+  root.classList.remove("timing-expanded");
+  $("expand-waveform").textContent = expanded ? "Collapse" : "Expand";
+  activity("waveform.expand", { expanded });
+  renderWaveform();
+}
+
+function setTimingExpanded(expanded) {
+  const root = $("cockpit-root");
+  root.classList.toggle("timing-expanded", expanded);
+  root.classList.remove("waveform-expanded");
+  $("expand-waveform").textContent = "Expand";
+  activity("timing.expand", { expanded });
+  renderTimingTables();
+}
+
+function moveSelectedShot(deltaMs) {
+  const shot = selectedShot();
+  if (!shot) return;
+  activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
+  callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs });
+}
+
+function deleteSelectedShot() {
+  if (!selectedShotId) return;
+  activity("shot.delete_selected", { shot_id: selectedShotId });
+  callApi("/api/shots/delete", { shot_id: selectedShotId });
+}
+
+function handleWaveformPointerDown(event) {
+  $("waveform").focus();
+  const time_ms = waveformTime(event);
+  if (waveformMode === "add") {
+    activity("waveform.add_shot", { time_ms });
+    callApi("/api/shots/add", { time_ms });
+    return;
+  }
+  if (waveformMode === "beep") {
+    activity("waveform.move_beep", { time_ms });
+    callApi("/api/beep", { time_ms });
+    return;
+  }
+  const shot = nearestShot(event);
+  if (shot) {
+    selectedShotId = shot.id;
+    draggingShotId = shot.id;
+    pendingDragTimeMs = shot.time_ms;
+    $("waveform").setPointerCapture(event.pointerId);
+    activity("waveform.drag_start", { shot_id: shot.id, time_ms: shot.time_ms });
+    callApi("/api/shots/select", { shot_id: shot.id });
+    renderWaveform();
+    return;
+  }
+  const video = $("primary-video");
+  if (state?.media?.primary_available) {
+    video.currentTime = time_ms / 1000;
+    activity("waveform.seek", { time_ms });
+  }
+}
+
+function handleWaveformPointerMove(event) {
+  if (!draggingShotId) return;
+  pendingDragTimeMs = waveformTime(event);
+  renderWaveform();
+}
+
+function handleWaveformPointerUp(event) {
+  if (!draggingShotId) return;
+  const shotId = draggingShotId;
+  const timeMs = pendingDragTimeMs ?? waveformTime(event);
+  draggingShotId = null;
+  pendingDragTimeMs = null;
+  try {
+    $("waveform").releasePointerCapture(event.pointerId);
+  } catch {
+    // Pointer capture may already be released by the browser.
+  }
+  activity("waveform.drag_commit", { shot_id: shotId, time_ms: timeMs });
+  callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs });
+}
+
+function handleKeyboardEdit(event) {
+  const target = event.target;
+  if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+  if (!selectedShotId) return;
+  if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    moveSelectedShot(event.shiftKey ? -10 : -1);
+  } else if (event.key === "ArrowRight") {
+    event.preventDefault();
+    moveSelectedShot(event.shiftKey ? 10 : 1);
+  } else if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    deleteSelectedShot();
+  }
 }
 
 function readOverlayPayload() {
@@ -502,9 +725,11 @@ function readOverlayPayload() {
 
 function wireEvents() {
   document.querySelectorAll("[data-tool]").forEach((item) => {
-    item.addEventListener("click", () => setActiveTool(item.dataset.tool));
+    item.addEventListener("click", () => {
+      activity("ui.tool.click", { tool: item.dataset.tool });
+      setActiveTool(item.dataset.tool);
+    });
   });
-  $("refresh").addEventListener("click", refresh);
   $("new-project").addEventListener("click", () => callApi("/api/project/new", {}));
   $("choose-primary").addEventListener("click", () => $("primary-file-input").click());
   $("choose-secondary").addEventListener("click", () => $("secondary-file-input").click());
@@ -529,21 +754,33 @@ function wireEvents() {
   $("delete-project").addEventListener("click", () => callApi("/api/project/delete", {}));
   $("primary-video").addEventListener("play", startOverlayLoop);
   $("primary-video").addEventListener("pause", stopOverlayLoop);
-  $("primary-video").addEventListener("seeked", renderLiveOverlay);
+  $("primary-video").addEventListener("seeked", () => {
+    activity("video.seeked", { current_time_s: $("primary-video").currentTime });
+    renderLiveOverlay();
+  });
   $("primary-video").addEventListener("timeupdate", renderLiveOverlay);
-  $("waveform").addEventListener("click", (event) => {
-    const time_ms = waveformTime(event);
-    if (event.shiftKey) callApi("/api/beep", { time_ms });
-    else callApi("/api/shots/add", { time_ms });
+  document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
+    button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));
   });
-  $("delete-selected").addEventListener("click", () => {
-    if (selectedShotId) callApi("/api/shots/delete", { shot_id: selectedShotId });
+  $("expand-waveform").addEventListener("click", () => {
+    setWaveformExpanded(!$("cockpit-root").classList.contains("waveform-expanded"));
   });
+  $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
+  $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
+  $("waveform").addEventListener("pointerdown", handleWaveformPointerDown);
+  $("waveform").addEventListener("pointermove", handleWaveformPointerMove);
+  $("waveform").addEventListener("pointerup", handleWaveformPointerUp);
+  $("waveform").addEventListener("pointercancel", handleWaveformPointerUp);
+  document.addEventListener("keydown", handleKeyboardEdit);
+  $("delete-selected").addEventListener("click", deleteSelectedShot);
   document.querySelectorAll("[data-nudge]").forEach((button) => {
     button.addEventListener("click", () => {
       if (!selectedShotId) return;
       const shot = state.project.analysis.shots.find((item) => item.id === selectedShotId);
-      if (shot) callApi("/api/shots/move", { shot_id: selectedShotId, time_ms: shot.time_ms + Number(button.dataset.nudge) });
+      if (shot) {
+        activity("shot.button_nudge", { shot_id: selectedShotId, delta_ms: Number(button.dataset.nudge) });
+        callApi("/api/shots/move", { shot_id: selectedShotId, time_ms: shot.time_ms + Number(button.dataset.nudge) });
+      }
     });
   });
   $("apply-threshold").addEventListener("click", () => callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) }));
