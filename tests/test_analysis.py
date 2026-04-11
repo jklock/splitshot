@@ -3,7 +3,7 @@ from __future__ import annotations
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.media.probe import probe_video
-from splitshot.timeline.model import compute_split_rows, draw_time_ms
+from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, stage_time_ms
 from splitshot.ui.controller import ProjectController
 
 
@@ -28,6 +28,17 @@ def test_threshold_changes_shot_detection_sensitivity(synthetic_video_factory) -
     assert len(low.shots) >= len(high.shots)
 
 
+def test_model_backed_detection_emits_probability_confidence(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory()
+    result = analyze_video_audio(video_path, threshold=0.35)
+
+    confidences = [shot.confidence for shot in result.shots]
+    assert confidences
+    assert all(confidence is not None for confidence in confidences)
+    assert all(0.0 <= float(confidence) <= 1.0 for confidence in confidences)
+    assert max(float(confidence) for confidence in confidences) > 0.5
+
+
 def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None:
     controller = ProjectController()
     video_path = synthetic_video_factory()
@@ -37,8 +48,36 @@ def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None
     rows = compute_split_rows(controller.project)
     assert len(rows) == 3
     assert draw_time_ms(controller.project) is not None
+    assert stage_time_ms(controller.project) is not None
+    assert average_split_ms(controller.project) is not None
     assert rows[1].split_ms is not None
     assert abs(rows[1].split_ms - 300) <= 60
+
+
+def test_primary_ingest_runs_detection_automatically(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    video_path = synthetic_video_factory()
+
+    controller.ingest_primary_video(str(video_path))
+
+    assert controller.project.primary_video.path == str(video_path)
+    assert controller.project.analysis.beep_time_ms_primary is not None
+    assert len(controller.project.analysis.shots) == 3
+    assert controller.status_message.startswith("Primary analysis complete.")
+
+
+def test_secondary_ingest_runs_sync_automatically(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    primary = synthetic_video_factory(name="primary", beep_ms=400)
+    secondary = synthetic_video_factory(name="secondary", beep_ms=650)
+
+    controller.ingest_primary_video(str(primary))
+    controller.ingest_secondary_video(str(secondary))
+
+    assert controller.project.secondary_video is not None
+    assert controller.project.merge.enabled is True
+    assert controller.project.analysis.beep_time_ms_secondary is not None
+    assert abs(controller.project.analysis.sync_offset_ms - 250) <= 40
 
 
 def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:

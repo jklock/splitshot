@@ -14,9 +14,15 @@ dev = [
   "pytest>=8.3,<9",
   "pytest-qt>=4.4,<5",
 ]
+package = [
+  "pyinstaller>=6.11,<7",
+]
 
 [project.scripts]
-splitshot = "splitshot.__main__:main"
+splitshot = "splitshot.cli:main"
+splitshot-benchmark-csv = "splitshot.benchmarks.cli:main"
+splitshot-web = "splitshot.browser.cli:main"
+splitshot-desktop = "splitshot.cli:desktop_main"
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -24,6 +30,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/splitshot"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/splitshot/browser/static" = "splitshot/browser/static"
+"src/splitshot/resources" = "splitshot/resources"
 
 [tool.pytest.ini_options]
 minversion = "8.0"

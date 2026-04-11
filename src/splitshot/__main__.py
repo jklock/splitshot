@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from splitshot.app import run
+from splitshot.cli import main as cli_main
 
 
 def main() -> None:
-    raise SystemExit(run())
+    raise SystemExit(cli_main())
 
 
 if __name__ == "__main__":

@@ -45,6 +45,25 @@ def draw_time_ms(project: Project) -> int | None:
     return shots[0].time_ms - project.analysis.beep_time_ms_primary
 
 
+def stage_time_ms(project: Project) -> int | None:
+    shots = sort_shots(project.analysis.shots)
+    if not shots or project.analysis.beep_time_ms_primary is None:
+        return None
+    return shots[-1].time_ms - project.analysis.beep_time_ms_primary
+
+
+def raw_time_ms(project: Project) -> int | None:
+    return stage_time_ms(project)
+
+
+def average_split_ms(project: Project) -> int | None:
+    rows = compute_split_rows(project)
+    splits = [row.split_ms for row in rows if row.split_ms is not None]
+    if not splits:
+        return None
+    return int(round(sum(splits) / len(splits)))
+
+
 def total_time_ms(project: Project) -> int | None:
     shots = sort_shots(project.analysis.shots)
     if not shots:

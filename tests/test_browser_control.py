@@ -1,0 +1,178 @@
+from __future__ import annotations
+
+import json
+import urllib.request
+from pathlib import Path
+
+from splitshot.browser.server import BrowserControlServer
+from splitshot.browser.state import browser_state
+from splitshot.ui.controller import ProjectController
+
+
+def _post_json(url: str, payload: dict) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) -> dict:
+    boundary = "----splitshot-test-boundary"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="{field_name}"; filename="{filename}"\r\n'
+        "Content-Type: video/mp4\r\n\r\n"
+    ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _get_json(url: str) -> dict:
+    with urllib.request.urlopen(url, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    video_path = synthetic_video_factory()
+
+    controller.ingest_primary_video(str(video_path))
+    payload = browser_state(controller.project, controller.status_message)
+
+    assert payload["metrics"]["total_shots"] == 3
+    assert payload["metrics"]["draw_ms"] is not None
+    assert payload["metrics"]["raw_time_ms"] == payload["metrics"]["stage_time_ms"]
+    assert payload["media"]["primary_url"] == "/media/primary"
+    assert len(payload["split_rows"]) == 3
+    assert len(payload["timing_segments"]) == 3
+    assert payload["timing_segments"][0]["label"] == "Draw"
+    assert payload["timing_segments"][0]["segment_ms"] == payload["metrics"]["draw_ms"]
+    assert payload["timing_segments"][-1]["cumulative_ms"] == payload["metrics"]["raw_time_ms"]
+
+
+def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        assert state["metrics"]["total_shots"] == 3
+
+        first_shot_id = state["project"]["analysis"]["shots"][0]["id"]
+        state = _post_json(
+            f"{server.url}api/shots/move",
+            {"shot_id": first_shot_id, "time_ms": 830},
+        )
+        assert state["project"]["analysis"]["shots"][0]["time_ms"] == 830
+
+        state = _post_json(
+            f"{server.url}api/scoring/score",
+            {"shot_id": first_shot_id, "letter": "C"},
+        )
+        assert state["project"]["analysis"]["shots"][0]["score"]["letter"] == "C"
+
+        state = _get_json(f"{server.url}api/state")
+        assert state["metrics"]["total_shots"] == 3
+    finally:
+        server.shutdown()
+
+
+def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        state = _post_multipart(
+            f"{server.url}api/files/primary",
+            "file",
+            video_path.name,
+            video_path.read_bytes(),
+        )
+
+        assert state["metrics"]["total_shots"] == 3
+        assert state["media"]["primary_available"] is True
+        assert state["project"]["primary_video"]["path"] != str(video_path)
+        assert Path(state["project"]["primary_video"]["path"]).exists()
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        shot_id = state["project"]["analysis"]["shots"][0]["id"]
+
+        state = _post_json(
+            f"{server.url}api/overlay",
+            {
+                "position": "top",
+                "badge_size": "XL",
+                "styles": {
+                    "timer_badge": {
+                        "background_color": "#123456",
+                        "text_color": "#abcdef",
+                        "opacity": 0.55,
+                    }
+                },
+                "scoring_colors": {"A": "#00ff00"},
+            },
+        )
+
+        assert state["project"]["overlay"]["position"] == "top"
+        assert state["project"]["overlay"]["badge_size"] == "XL"
+        assert state["project"]["overlay"]["timer_badge"]["background_color"] == "#123456"
+        assert state["project"]["overlay"]["timer_badge"]["text_color"] == "#abcdef"
+        assert state["project"]["overlay"]["timer_badge"]["opacity"] == 0.55
+        assert state["project"]["overlay"]["scoring_colors"]["A"] == "#00ff00"
+
+        state = _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
+        assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
+        assert state["project"]["scoring"]["point_map"]["C"] == 4
+
+        state = _post_json(f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8})
+        assert state["project"]["analysis"]["shots"][0]["score"]["x_norm"] == 0.2
+        assert state["project"]["analysis"]["shots"][0]["score"]["y_norm"] == 0.8
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary = Path(synthetic_video_factory(name="primary", beep_ms=400))
+        secondary = Path(synthetic_video_factory(name="secondary", beep_ms=650))
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(primary)})
+        state = _post_json(f"{server.url}api/import/secondary", {"path": str(secondary)})
+
+        assert state["project"]["merge"]["enabled"] is True
+        assert state["project"]["analysis"]["beep_time_ms_secondary"] is not None
+
+        initial_offset = state["project"]["analysis"]["sync_offset_ms"]
+        state = _post_json(f"{server.url}api/sync", {"delta_ms": 10})
+        assert state["project"]["analysis"]["sync_offset_ms"] == initial_offset + 10
+
+        state = _post_json(f"{server.url}api/swap", {})
+
+        assert state["project"]["primary_video"]["path"] == str(secondary)
+        assert state["project"]["secondary_video"]["path"] == str(primary)
+    finally:
+        server.shutdown()
