@@ -4,6 +4,7 @@ from dataclasses import asdict
 from typing import Any
 
 from splitshot.domain.models import Project, project_to_dict
+from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import calculate_scoring_summary, scoring_presets_for_api
 from splitshot.timeline.model import compute_split_rows
@@ -20,6 +21,7 @@ def browser_state(project: Project, status_message: str) -> dict[str, Any]:
         "split_rows": [asdict(row) for row in rows],
         "scoring_summary": calculate_scoring_summary(project),
         "scoring_presets": scoring_presets_for_api(),
+        "export_presets": export_presets_for_api(),
         "media": {
             "primary_available": bool(project.primary_video.path),
             "secondary_available": bool(project.secondary_video and project.secondary_video.path),

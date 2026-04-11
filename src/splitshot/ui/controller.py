@@ -10,7 +10,13 @@ from splitshot.config import AppSettings, load_settings, save_settings
 from splitshot.domain.models import (
     BadgeSize,
     BadgeStyle,
+    AspectRatio,
+    ExportAudioCodec,
+    ExportColorSpace,
+    ExportFrameRate,
+    ExportPreset,
     ExportQuality,
+    ExportVideoCodec,
     MergeLayout,
     OverlayPosition,
     PipSize,
@@ -22,6 +28,7 @@ from splitshot.domain.models import (
     VideoAsset,
     project_to_dict,
 )
+from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import delete_project, load_project, save_project
 from splitshot.scoring.logic import apply_scoring_preset, calculate_hit_factor
@@ -216,6 +223,15 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
+    def set_penalty_counts(self, penalty_counts: dict[str, float]) -> None:
+        self.project.scoring.penalty_counts = {
+            str(key): max(0.0, float(value))
+            for key, value in penalty_counts.items()
+        }
+        self.update_hit_factor()
+        self.project.touch()
+        self.project_changed.emit()
+
     def set_scoring_enabled(self, enabled: bool) -> None:
         self.project.scoring.enabled = enabled
         self.update_hit_factor()
@@ -288,6 +304,59 @@ class ProjectController(QObject):
         self.settings.export_quality = quality
         save_settings(self.settings)
         self.settings_changed.emit()
+        self.project.touch()
+        self.project_changed.emit()
+
+    def apply_export_preset(self, preset: str) -> None:
+        if preset == ExportPreset.CUSTOM.value:
+            self.project.export.preset = ExportPreset.CUSTOM
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        apply_export_preset_settings(self.project, preset)
+        self.settings.export_quality = self.project.export.quality
+        save_settings(self.settings)
+        self.settings_changed.emit()
+        self.project_changed.emit()
+
+    def set_export_settings(self, payload: dict[str, object]) -> None:
+        export = self.project.export
+        if "quality" in payload:
+            export.quality = ExportQuality(str(payload["quality"]))
+            self.settings.export_quality = export.quality
+            save_settings(self.settings)
+            self.settings_changed.emit()
+        if "aspect_ratio" in payload:
+            export.aspect_ratio = AspectRatio(str(payload["aspect_ratio"]))
+        if "crop_center_x" in payload:
+            export.crop_center_x = float(payload["crop_center_x"])
+        if "crop_center_y" in payload:
+            export.crop_center_y = float(payload["crop_center_y"])
+        if "target_width" in payload:
+            value = payload["target_width"]
+            export.target_width = None if value in {"", None} else max(2, int(value))
+        if "target_height" in payload:
+            value = payload["target_height"]
+            export.target_height = None if value in {"", None} else max(2, int(value))
+        if "frame_rate" in payload:
+            export.frame_rate = ExportFrameRate(str(payload["frame_rate"]))
+        if "video_codec" in payload:
+            export.video_codec = ExportVideoCodec(str(payload["video_codec"]))
+        if "video_bitrate_mbps" in payload:
+            export.video_bitrate_mbps = max(0.1, float(payload["video_bitrate_mbps"]))
+        if "audio_codec" in payload:
+            export.audio_codec = ExportAudioCodec(str(payload["audio_codec"]))
+        if "audio_sample_rate" in payload:
+            export.audio_sample_rate = max(8000, int(payload["audio_sample_rate"]))
+        if "audio_bitrate_kbps" in payload:
+            export.audio_bitrate_kbps = max(32, int(payload["audio_bitrate_kbps"]))
+        if "color_space" in payload:
+            export.color_space = ExportColorSpace(str(payload["color_space"]))
+        if "two_pass" in payload:
+            export.two_pass = bool(payload["two_pass"])
+        if "ffmpeg_preset" in payload:
+            export.ffmpeg_preset = str(payload["ffmpeg_preset"])
+        export.preset = ExportPreset.CUSTOM
         self.project.touch()
         self.project_changed.emit()
 

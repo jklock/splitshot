@@ -1,15 +1,28 @@
 from __future__ import annotations
 
 import math
+import os
+import shlex
 import subprocess
+import threading
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Callable
 
 import numpy as np
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter
 
-from splitshot.domain.models import AspectRatio, ExportQuality, MergeLayout, Project
+from splitshot.domain.models import (
+    AspectRatio,
+    ExportFrameRate,
+    ExportQuality,
+    ExportVideoCodec,
+    MergeLayout,
+    Project,
+)
+from splitshot.media.ffmpeg import ffmpeg_command
 from splitshot.merge.layouts import calculate_merge_canvas
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import calculate_hit_factor
@@ -32,6 +45,22 @@ def _quality_crf(quality: ExportQuality) -> str:
     }[quality]
 
 
+def _codec_name(codec: ExportVideoCodec) -> str:
+    return {
+        ExportVideoCodec.H264: "libx264",
+        ExportVideoCodec.HEVC: "libx265",
+    }[codec]
+
+
+def _output_fps(project: Project) -> float:
+    source_fps = project.primary_video.fps or 30.0
+    if project.export.frame_rate == ExportFrameRate.FPS_30:
+        return 30.0
+    if project.export.frame_rate == ExportFrameRate.FPS_60:
+        return 60.0
+    return source_fps
+
+
 def _ratio_value(aspect_ratio: AspectRatio) -> tuple[int, int] | None:
     return {
         AspectRatio.ORIGINAL: None,
@@ -43,6 +72,7 @@ def _ratio_value(aspect_ratio: AspectRatio) -> tuple[int, int] | None:
 
 
 def _ensure_even(value: int) -> int:
+    value = max(2, int(value))
     return value if value % 2 == 0 else value - 1
 
 
@@ -88,11 +118,10 @@ def _merged_duration_ms(project: Project) -> int:
 
 
 def _build_single_video_plan(project: Project) -> BaseRenderPlan:
-    fps = project.primary_video.fps or 30.0
-    command = [
-        "ffmpeg",
+    fps = _output_fps(project)
+    command = ffmpeg_command([
         "-v",
-        "error",
+        "info",
         "-i",
         project.primary_video.path,
         "-an",
@@ -103,7 +132,7 @@ def _build_single_video_plan(project: Project) -> BaseRenderPlan:
         "-f",
         "rawvideo",
         "pipe:1",
-    ]
+    ])
     return BaseRenderPlan(
         command=command,
         width=project.primary_video.width,
@@ -121,13 +150,14 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         project.merge.layout,
         project.merge.pip_size,
     )
-    fps = project.primary_video.fps or 30.0
+    fps = _output_fps(project)
     offset_ms = project.analysis.sync_offset_ms
 
     input_args = [
-        "ffmpeg",
-        "-v",
-        "error",
+        *ffmpeg_command([
+            "-v",
+            "info",
+        ]),
         "-i",
         project.primary_video.path,
     ]
@@ -188,71 +218,141 @@ def build_base_render_plan(project: Project) -> BaseRenderPlan:
     return _build_single_video_plan(project)
 
 
-def export_project(
+def _target_dimensions(project: Project, width: int, height: int) -> tuple[int, int]:
+    target_width = project.export.target_width
+    target_height = project.export.target_height
+    if target_width is None or target_height is None:
+        return _ensure_even(width), _ensure_even(height)
+    return _ensure_even(target_width), _ensure_even(target_height)
+
+
+def _image_to_rgba_bytes(image: QImage) -> bytes:
+    rgba = image.convertToFormat(QImage.Format_RGBA8888)
+    return bytes(rgba.bits()[: rgba.sizeInBytes()])
+
+
+def _start_log_reader(
+    pipe,
+    prefix: str,
+    log_lines: list[str],
+    log_callback: Callable[[str], None] | None,
+) -> threading.Thread:
+    def drain() -> None:
+        if pipe is None:
+            return
+        for raw_line in iter(pipe.readline, b""):
+            text = raw_line.decode("utf-8", errors="replace").rstrip()
+            if not text:
+                continue
+            line = f"{prefix}: {text}"
+            log_lines.append(line)
+            if log_callback is not None:
+                log_callback(line)
+
+    thread = threading.Thread(target=drain, daemon=True)
+    thread.start()
+    return thread
+
+
+def _encoder_command(
     project: Project,
-    output_path: str | Path,
-    progress_callback: Callable[[float], None] | None = None,
-) -> Path:
-    if not project.primary_video.path:
-        raise ValueError("Primary video is required for export")
+    output_width: int,
+    output_height: int,
+    fps: float,
+    output_target: Path,
+    pass_number: int | None = None,
+    passlogfile: Path | None = None,
+    first_pass: bool = False,
+) -> list[str]:
+    video_bitrate = f"{project.export.video_bitrate_mbps:g}M"
+    audio_bitrate = f"{project.export.audio_bitrate_kbps}k"
+    input_args = [
+        "-v",
+        "info",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgba",
+        "-s",
+        f"{output_width}x{output_height}",
+        "-r",
+        f"{fps:.3f}",
+        "-i",
+        "pipe:0",
+    ]
+    audio_args = [] if first_pass else [
+        "-i",
+        project.primary_video.path,
+        "-map",
+        "0:v:0",
+        "-map",
+        "1:a:0?",
+    ]
+    encode_args = [
+        "-c:v",
+        _codec_name(project.export.video_codec),
+        "-preset",
+        project.export.ffmpeg_preset,
+        "-b:v",
+        video_bitrate,
+        "-pix_fmt",
+        "yuv420p",
+        "-colorspace",
+        "bt709",
+        "-color_primaries",
+        "bt709",
+        "-color_trc",
+        "bt709",
+    ]
+    if pass_number is None:
+        bitrate_index = encode_args.index("-b:v")
+        encode_args[bitrate_index:bitrate_index] = ["-crf", _quality_crf(project.export.quality)]
+    if pass_number is not None and passlogfile is not None:
+        encode_args.extend(["-pass", str(pass_number), "-passlogfile", str(passlogfile)])
+    audio_encode_args = ["-an"] if first_pass else [
+        "-c:a",
+        project.export.audio_codec.value,
+        "-ar",
+        str(project.export.audio_sample_rate),
+        "-b:a",
+        audio_bitrate,
+    ]
+    output_args = ["-f", "null", os.devnull] if first_pass else [
+        "-movflags",
+        "+faststart",
+        "-shortest",
+        str(output_target),
+    ]
+    command = ffmpeg_command([*input_args, *audio_args, *encode_args, *audio_encode_args, *output_args])
+    return command
 
-    project.scoring.hit_factor = calculate_hit_factor(project)
-    plan = build_base_render_plan(project)
-    crop_left, crop_top, output_width, output_height = compute_crop_box(
-        plan.width,
-        plan.height,
-        project.export.aspect_ratio,
-        project.export.crop_center_x,
-        project.export.crop_center_y,
-    )
 
-    output_target = Path(output_path)
-    output_target.parent.mkdir(parents=True, exist_ok=True)
-
+def _render_pass(
+    project: Project,
+    plan: BaseRenderPlan,
+    crop_box: tuple[int, int, int, int],
+    output_width: int,
+    output_height: int,
+    encoder_command: list[str],
+    log_lines: list[str],
+    log_callback: Callable[[str], None] | None,
+    progress_callback: Callable[[float], None] | None,
+    progress_start: float,
+    progress_span: float,
+) -> None:
+    crop_left, crop_top, crop_width, crop_height = crop_box
     decoder = subprocess.Popen(
         plan.command,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     encoder = subprocess.Popen(
-        [
-            "ffmpeg",
-            "-y",
-            "-v",
-            "error",
-            "-f",
-            "rawvideo",
-            "-pix_fmt",
-            "rgba",
-            "-s",
-            f"{output_width}x{output_height}",
-            "-r",
-            f"{plan.fps:.3f}",
-            "-i",
-            "pipe:0",
-            "-i",
-            project.primary_video.path,
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0?",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "medium",
-            "-crf",
-            _quality_crf(project.export.quality),
-            "-pix_fmt",
-            "yuv420p",
-            "-movflags",
-            "+faststart",
-            "-shortest",
-            str(output_target),
-        ],
+        encoder_command,
         stdin=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-
+    decoder_log_thread = _start_log_reader(decoder.stderr, "decoder", log_lines, log_callback)
+    encoder_log_thread = _start_log_reader(encoder.stderr, "encoder", log_lines, log_callback)
     renderer = OverlayRenderer()
     bytes_per_frame = plan.width * plan.height * 4
     total_frames = max(1, int(math.ceil((plan.duration_ms / 1000.0) * plan.fps)))
@@ -264,14 +364,21 @@ def export_project(
                 break
 
             frame = np.frombuffer(raw, dtype=np.uint8).reshape(plan.height, plan.width, 4).copy()
-            cropped = frame[crop_top : crop_top + output_height, crop_left : crop_left + output_width].copy()
+            cropped = frame[crop_top : crop_top + crop_height, crop_left : crop_left + crop_width].copy()
             image = QImage(
                 cropped.data,
-                output_width,
-                output_height,
+                cropped.shape[1],
+                cropped.shape[0],
                 cropped.strides[0],
                 QImage.Format_RGBA8888,
             )
+            if image.width() != output_width or image.height() != output_height:
+                image = image.scaled(
+                    output_width,
+                    output_height,
+                    Qt.AspectRatioMode.IgnoreAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
             painter = QPainter(image)
             renderer.paint(
                 painter,
@@ -282,23 +389,135 @@ def export_project(
             )
             painter.end()
 
-            encoder.stdin.write(cropped.tobytes())
+            encoder.stdin.write(_image_to_rgba_bytes(image))
             if progress_callback is not None:
-                progress_callback(min((frame_index + 1) / total_frames, 1.0))
+                frame_progress = min((frame_index + 1) / total_frames, 1.0)
+                progress_callback(min(progress_start + (frame_progress * progress_span), 1.0))
     finally:
         if decoder.stdout is not None:
             decoder.stdout.close()
         if encoder.stdin is not None:
             encoder.stdin.close()
 
-    decoder_stderr = decoder.stderr.read().decode("utf-8", errors="replace") if decoder.stderr else ""
-    encoder_stderr = encoder.stderr.read().decode("utf-8", errors="replace") if encoder.stderr else ""
     decoder_return = decoder.wait()
     encoder_return = encoder.wait()
+    decoder_log_thread.join(timeout=2)
+    encoder_log_thread.join(timeout=2)
 
     if decoder_return != 0:
-        raise RuntimeError(decoder_stderr.strip() or "Base video render failed")
+        raise RuntimeError("Base video render failed")
     if encoder_return != 0:
-        raise RuntimeError(encoder_stderr.strip() or "MP4 encode failed")
+        raise RuntimeError("MP4 encode failed")
+
+
+def export_project(
+    project: Project,
+    output_path: str | Path,
+    progress_callback: Callable[[float], None] | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    if not project.primary_video.path:
+        raise ValueError("Primary video is required for export")
+
+    project.scoring.hit_factor = calculate_hit_factor(project)
+    plan = build_base_render_plan(project)
+    crop_left, crop_top, crop_width, crop_height = compute_crop_box(
+        plan.width,
+        plan.height,
+        project.export.aspect_ratio,
+        project.export.crop_center_x,
+        project.export.crop_center_y,
+    )
+    output_width, output_height = _target_dimensions(project, crop_width, crop_height)
+
+    output_target = Path(output_path)
+    output_target.parent.mkdir(parents=True, exist_ok=True)
+    project.export.last_log = ""
+    project.export.last_error = None
+    log_lines: list[str] = [
+        f"Export target: {output_target}",
+        f"Preset: {project.export.preset.value}",
+        f"Video: {project.export.video_codec.value} {output_width}x{output_height} {plan.fps:.3f} fps {project.export.video_bitrate_mbps:g} Mbps",
+        f"Audio: {project.export.audio_codec.value} {project.export.audio_sample_rate} Hz {project.export.audio_bitrate_kbps} kbps",
+        f"Color: {project.export.color_space.value}",
+        f"Two pass requested: {project.export.two_pass}",
+        f"Decoder command: {shlex.join(plan.command)}",
+    ]
+
+    try:
+        crop_box = (crop_left, crop_top, crop_width, crop_height)
+        if project.export.two_pass:
+            with TemporaryDirectory(prefix="splitshot-export-pass-") as pass_dir:
+                passlogfile = Path(pass_dir) / "ffmpeg-pass"
+                pass_one_command = _encoder_command(
+                    project,
+                    output_width,
+                    output_height,
+                    plan.fps,
+                    output_target,
+                    pass_number=1,
+                    passlogfile=passlogfile,
+                    first_pass=True,
+                )
+                pass_two_command = _encoder_command(
+                    project,
+                    output_width,
+                    output_height,
+                    plan.fps,
+                    output_target,
+                    pass_number=2,
+                    passlogfile=passlogfile,
+                    first_pass=False,
+                )
+                log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
+                log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
+                _render_pass(
+                    project,
+                    plan,
+                    crop_box,
+                    output_width,
+                    output_height,
+                    pass_one_command,
+                    log_lines,
+                    log_callback,
+                    progress_callback,
+                    0.0,
+                    0.5,
+                )
+                _render_pass(
+                    project,
+                    plan,
+                    crop_box,
+                    output_width,
+                    output_height,
+                    pass_two_command,
+                    log_lines,
+                    log_callback,
+                    progress_callback,
+                    0.5,
+                    0.5,
+                )
+        else:
+            encoder_command = _encoder_command(project, output_width, output_height, plan.fps, output_target)
+            log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
+            _render_pass(
+                project,
+                plan,
+                crop_box,
+                output_width,
+                output_height,
+                encoder_command,
+                log_lines,
+                log_callback,
+                progress_callback,
+                0.0,
+                1.0,
+            )
+    except RuntimeError as exc:
+        project.export.last_error = str(exc)
+        project.export.last_log = "\n".join(log_lines[-400:])
+        raise RuntimeError(project.export.last_log or str(exc)) from exc
+
+    project.export.last_log = "\n".join(log_lines[-400:])
 
     return output_target

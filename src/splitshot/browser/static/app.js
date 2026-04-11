@@ -155,7 +155,9 @@ function setActiveTool(tool) {
 
 async function api(path, payload = null) {
   activity("api.request", { path, payload });
-  const finishProcessing = payload === null ? null : beginProcessing("Saving changes...", "Local update");
+  const processingMessage = path === "/api/export" ? "Exporting MP4..." : "Saving changes...";
+  const processingDetail = path === "/api/export" ? "Running FFmpeg locally" : "Local update";
+  const finishProcessing = payload === null ? null : beginProcessing(processingMessage, processingDetail);
   const options = payload === null
     ? {}
     : {
@@ -475,9 +477,65 @@ function renderSelection() {
     : "No shot selected.";
   $("selected-timing-shot").textContent = selectedLabel;
   $("selected-score-shot").textContent = selectedLabel;
-  if (segment?.score_letter) $("score-letter").value = segment.score_letter;
+  if (segment?.score_letter && Array.from($("score-letter").options).some((option) => option.value === segment.score_letter)) {
+    $("score-letter").value = segment.score_letter;
+  }
   $("place-score").disabled = !segment;
   $("place-score").textContent = segment ? `Place ${$("score-letter").value} for ${segment.label}` : "Select Shot";
+}
+
+function renderScoreOptions(summary) {
+  const selected = $("score-letter").value;
+  const options = summary.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
+  $("score-letter").innerHTML = "";
+  options.forEach((letter) => {
+    const option = document.createElement("option");
+    option.value = letter;
+    option.textContent = letter;
+    $("score-letter").appendChild(option);
+  });
+  $("score-letter").value = options.includes(selected) ? selected : options[0];
+
+  const grid = $("score-option-grid");
+  grid.innerHTML = "";
+  options.forEach((letter) => {
+    const value = summary.score_values?.[letter] ?? 0;
+    const penalty = summary.score_penalties?.[letter] ?? 0;
+    const item = document.createElement("span");
+    item.textContent = penalty ? `${letter}: ${value} / -${penalty}` : `${letter}: ${value}`;
+    grid.appendChild(item);
+  });
+}
+
+function renderScoringPenaltyFields(summary) {
+  const grid = $("scoring-penalty-grid");
+  grid.innerHTML = "";
+  const manual = document.createElement("label");
+  manual.textContent = `${summary.penalty_label || "Manual penalties"} `;
+  const manualInput = document.createElement("input");
+  manualInput.id = "penalties";
+  manualInput.type = "number";
+  manualInput.value = state.project.scoring.penalties;
+  manualInput.min = "0";
+  manualInput.step = summary.mode === "hit_factor" ? "1" : "0.5";
+  manualInput.dataset.penaltyManual = "true";
+  manual.appendChild(manualInput);
+  grid.appendChild(manual);
+
+  (summary.penalty_fields || []).forEach((field) => {
+    const label = document.createElement("label");
+    label.textContent = `${field.label} `;
+    const input = document.createElement("input");
+    input.className = "penalty-input";
+    input.type = "number";
+    input.min = "0";
+    input.step = "1";
+    input.value = field.count ?? 0;
+    input.dataset.penaltyId = field.id;
+    input.title = `${field.description || ""} ${field.value} ${field.unit}`.trim();
+    label.appendChild(input);
+    grid.appendChild(label);
+  });
 }
 
 function renderScoringPresetOptions() {
@@ -495,8 +553,9 @@ function renderScoringPresetOptions() {
   const preset = (state.scoring_presets || []).find((item) => item.id === selected);
   const summary = state.scoring_summary;
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "Choose a scoring preset.";
-  $("penalties-label").firstChild.textContent = `${summary.penalty_label || "Penalties"} `;
   $("scoring-result").textContent = `${summary.display_label}: ${summary.display_value}`;
+  renderScoreOptions(summary);
+  renderScoringPenaltyFields(summary);
   if (previousLength === 0) select.addEventListener("change", renderScoringPresetDescription);
 }
 
@@ -504,6 +563,33 @@ function renderScoringPresetDescription() {
   const selected = $("scoring-preset").value;
   const preset = (state.scoring_presets || []).find((item) => item.id === selected);
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "";
+}
+
+function renderExportPresetOptions() {
+  const select = $("export-preset");
+  const selected = state.project.export.preset;
+  select.innerHTML = "";
+  (state.export_presets || []).forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name;
+    select.appendChild(option);
+  });
+  const custom = document.createElement("option");
+  custom.value = "custom";
+  custom.textContent = "Custom";
+  select.appendChild(custom);
+  const hasSelected = Array.from(select.options).some((option) => option.value === selected);
+  select.value = hasSelected ? selected : "custom";
+  const preset = (state.export_presets || []).find((item) => item.id === select.value);
+  $("export-preset-description").textContent = preset ? preset.description : "Manual custom export settings.";
+}
+
+function renderExportLog() {
+  const log = state.project.export.last_error
+    ? `ERROR: ${state.project.export.last_error}\n${state.project.export.last_log || ""}`
+    : state.project.export.last_log;
+  $("export-log").textContent = log || "No export log yet.";
 }
 
 function renderControls() {
@@ -520,7 +606,20 @@ function renderControls() {
   $("aspect-ratio").value = state.project.export.aspect_ratio;
   $("crop-center-x").value = state.project.export.crop_center_x;
   $("crop-center-y").value = state.project.export.crop_center_y;
+  $("target-width").value = state.project.export.target_width ?? "";
+  $("target-height").value = state.project.export.target_height ?? "";
+  $("frame-rate").value = state.project.export.frame_rate;
+  $("video-codec").value = state.project.export.video_codec;
+  $("video-bitrate").value = state.project.export.video_bitrate_mbps;
+  $("audio-codec").value = state.project.export.audio_codec;
+  $("audio-sample-rate").value = state.project.export.audio_sample_rate;
+  $("audio-bitrate").value = state.project.export.audio_bitrate_kbps;
+  $("color-space").value = state.project.export.color_space;
+  $("two-pass").checked = state.project.export.two_pass;
+  $("ffmpeg-preset").value = state.project.export.ffmpeg_preset;
   renderScoringPresetOptions();
+  renderExportPresetOptions();
+  renderExportLog();
   renderStyleControls();
 }
 
@@ -652,8 +751,8 @@ function render() {
   renderWaveform();
   renderSplitCards();
   renderTimingTables();
-  renderSelection();
   renderControls();
+  renderSelection();
   renderLiveOverlay();
   setActiveTool(activeTool);
 }
@@ -838,12 +937,41 @@ function readLayoutPayload() {
   };
 }
 
-async function applyScoringSettings() {
-  await callApi("/api/scoring/profile", { ruleset: $("scoring-preset").value });
-  await callApi("/api/scoring", {
-    enabled: $("scoring-enabled").checked,
-    penalties: Number($("penalties").value || 0),
+function readScoringPayload() {
+  const penaltyCounts = {};
+  document.querySelectorAll(".penalty-input").forEach((input) => {
+    penaltyCounts[input.dataset.penaltyId] = Number(input.value || 0);
   });
+  return {
+    enabled: $("scoring-enabled").checked,
+    penalties: Number($("penalties")?.value || 0),
+    penalty_counts: penaltyCounts,
+  };
+}
+
+function readExportSettingsPayload() {
+  return {
+    target_width: $("target-width").value ? Number($("target-width").value) : "",
+    target_height: $("target-height").value ? Number($("target-height").value) : "",
+    frame_rate: $("frame-rate").value,
+    video_codec: $("video-codec").value,
+    video_bitrate_mbps: Number($("video-bitrate").value || 15),
+    audio_codec: $("audio-codec").value,
+    audio_sample_rate: Number($("audio-sample-rate").value || 48000),
+    audio_bitrate_kbps: Number($("audio-bitrate").value || 320),
+    color_space: $("color-space").value,
+    two_pass: $("two-pass").checked,
+    ffmpeg_preset: $("ffmpeg-preset").value,
+  };
+}
+
+async function applyScoringSettings() {
+  const scoringPayload = readScoringPayload();
+  const ruleset = $("scoring-preset").value;
+  const previousRuleset = state.project.scoring.ruleset;
+  if (ruleset !== previousRuleset) scoringPayload.penalty_counts = {};
+  await callApi("/api/scoring/profile", { ruleset });
+  await callApi("/api/scoring", scoringPayload);
 }
 
 function assignSelectedScore() {
@@ -872,6 +1000,11 @@ const autoApplyMerge = debounce(() => {
 const autoApplyLayout = debounce(() => {
   activity("auto_apply.layout", {});
   callApi("/api/layout", readLayoutPayload());
+}, 300);
+
+const autoApplyExportSettings = debounce(() => {
+  activity("auto_apply.export_settings", {});
+  callApi("/api/export/settings", readExportSettingsPayload());
 }, 300);
 
 const autoApplyScoring = debounce(() => {
@@ -957,7 +1090,7 @@ function wireEvents() {
   ["scoring-enabled", "scoring-preset"].forEach((id) => {
     $(id).addEventListener("change", autoApplyScoring);
   });
-  $("penalties").addEventListener("input", autoApplyScoring);
+  $("scoring-penalty-grid").addEventListener("input", autoApplyScoring);
   $("score-letter").addEventListener("change", () => {
     assignSelectedScore();
   });
@@ -982,6 +1115,29 @@ function wireEvents() {
   });
   ["crop-center-x", "crop-center-y"].forEach((id) => {
     $(id).addEventListener("input", autoApplyLayout);
+  });
+  $("export-preset").addEventListener("change", () => {
+    activity("auto_apply.export_preset", { preset: $("export-preset").value });
+    callApi("/api/export/preset", { preset: $("export-preset").value });
+  });
+  [
+    "target-width",
+    "target-height",
+    "video-bitrate",
+    "audio-sample-rate",
+    "audio-bitrate",
+  ].forEach((id) => {
+    $(id).addEventListener("input", autoApplyExportSettings);
+  });
+  [
+    "frame-rate",
+    "video-codec",
+    "audio-codec",
+    "color-space",
+    "ffmpeg-preset",
+    "two-pass",
+  ].forEach((id) => {
+    $(id).addEventListener("change", autoApplyExportSettings);
   });
   $("export-video").addEventListener("click", () => callApi("/api/export", { path: requireValue("export-path", "Output MP4 path") }));
 }

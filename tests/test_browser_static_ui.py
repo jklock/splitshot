@@ -80,11 +80,27 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="badge-style-grid"' in html
     assert 'id="score-color-grid"' in html
     assert 'id="scoring-preset"' in html
+    assert 'id="score-option-grid"' in html
+    assert 'id="scoring-penalty-grid"' in html
     assert 'id="browse-project-path"' in html
     assert 'id="browse-export-path"' in html
+    assert 'id="export-preset"' in html
+    assert 'id="target-width"' in html
+    assert 'id="target-height"' in html
+    assert 'id="frame-rate"' in html
+    assert 'id="video-codec"' in html
+    assert 'id="video-bitrate"' in html
+    assert 'id="audio-codec"' in html
+    assert 'id="audio-sample-rate"' in html
+    assert 'id="audio-bitrate"' in html
+    assert 'id="color-space"' in html
+    assert 'id="ffmpeg-preset"' in html
+    assert 'id="export-log"' in html
     assert "/api/files/primary" in js
     assert "/api/files/secondary" in js
     assert "/api/dialog/path" in js
+    assert "/api/export/settings" in js
+    assert "/api/export/preset" in js
     assert "/api/activity" in js
     assert 'activity("button.click"' in js
     assert "wireGlobalActivityLogging" in js
@@ -96,7 +112,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyOverlay" in js
     assert "autoApplyMerge" in js
     assert "autoApplyLayout" in js
+    assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
+    assert "renderScoringPenaltyFields" in js
+    assert "renderExportPresetOptions" in js
     assert "scoring-active" in js
     assert "Score letter is saved to that shot" in html
     assert "empty-start" not in js
@@ -137,6 +156,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "grid-template-rows: minmax(0, 1fr) 38px 26px auto;" in css
     assert "input[type=\"color\"]" in css
+    assert ".penalty-grid" in css
+    assert ".export-log" in css
     assert ".cockpit.scoring-active .score-target-button" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
