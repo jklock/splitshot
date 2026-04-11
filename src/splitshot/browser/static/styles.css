@@ -52,7 +52,7 @@ select {
 
 button {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 800;
   letter-spacing: 0;
   text-transform: none;
 }
@@ -116,7 +116,7 @@ h3 {
   background: linear-gradient(180deg, #151719, #0d0f11);
   border-right: 1px solid #252a30;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 76px minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -135,11 +135,11 @@ h3 {
 
 .rail-logo {
   display: block;
-  height: 56px;
-  max-height: 56px;
-  max-width: 56px;
+  height: 72px;
+  max-height: 72px;
+  max-width: 72px;
   object-fit: contain;
-  width: 56px;
+  width: 72px;
 }
 
 .tool-nav {
@@ -154,7 +154,7 @@ h3 {
   border: 0;
   border-bottom: 1px solid #20252b;
   border-radius: 0;
-  color: var(--muted);
+  color: #e9edf2;
   display: grid;
   justify-items: center;
   min-height: 0;
@@ -167,21 +167,14 @@ h3 {
 }
 
 .tool-item b {
-  font-size: 0.68rem;
-  font-weight: 850;
+  font-size: 0.72rem;
+  font-weight: 950;
   line-height: 1;
-}
-
-.rail-action {
-  border: 0;
-  border-radius: 0;
-  border-top: 1px solid var(--line);
-  min-height: 34px;
 }
 
 .cockpit {
   display: grid;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: 32px minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   min-width: 0;
@@ -203,10 +196,39 @@ small,
   text-transform: uppercase;
 }
 
-.sidebar-actions {
+.status-strip {
+  align-items: center;
+  background: rgba(18, 20, 23, 0.98);
+  border-bottom: 1px solid var(--line);
   display: grid;
   gap: 0;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(220px, 1fr) repeat(4, max-content);
+  min-width: 0;
+}
+
+.status-strip strong,
+.status-strip span {
+  border-right: 1px solid var(--line);
+  display: block;
+  font-weight: 900;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-strip strong {
+  color: var(--text);
+}
+
+.status-strip span {
+  color: var(--muted);
+}
+
+.status-strip b {
+  color: var(--text);
+  font-weight: 950;
 }
 
 .ghost-button {
@@ -230,33 +252,6 @@ small,
   min-width: 180px;
 }
 
-.sidebar-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.sidebar-metrics article {
-  background: rgba(21, 23, 25, 0.95);
-  border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
-  display: grid;
-  gap: 0.05rem;
-  min-height: 68px;
-  padding: 0.5rem 0.55rem;
-}
-
-.sidebar-metrics span {
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 600;
-  text-transform: none;
-}
-
-.sidebar-metrics strong {
-  font-size: clamp(1.28rem, 2vw, 1.85rem);
-  line-height: 1;
-}
-
 .review-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -274,7 +269,7 @@ small,
 .review-stack {
   border-right: 1px solid var(--line);
   display: grid;
-  grid-template-rows: minmax(320px, 1fr) 190px;
+  grid-template-rows: minmax(320px, 1fr) 206px;
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -288,6 +283,34 @@ small,
   justify-content: space-between;
   min-height: 0;
   padding: 0.35rem 0.65rem;
+}
+
+.legend-row,
+.waveform-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.legend-row {
+  overflow: hidden;
+}
+
+.legend-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waveform-actions {
+  flex: 0 0 auto;
+}
+
+.mode-button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #111;
 }
 
 .video-stage {
@@ -449,7 +472,7 @@ small,
 .waveform-panel {
   background: var(--blue-video);
   display: grid;
-  grid-template-rows: 26px 32px minmax(0, 1fr);
+  grid-template-rows: 26px 38px minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -462,11 +485,16 @@ small,
   background: #102033;
   border: 0;
   border-bottom: 1px solid #2c4059;
-  cursor: crosshair;
+  cursor: pointer;
   display: block;
   height: 100%;
   min-height: 0;
   width: 100%;
+}
+
+.waveform-panel canvas:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .beep-key,
@@ -485,10 +513,27 @@ small,
   background: var(--green);
 }
 
-.split-section {
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
+.waveform-shot-list {
+  background: #0c1725;
+  border-top: 1px solid #2c4059;
+  display: none;
+  gap: 0;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.waveform-shot-list button {
+  border: 0;
+  border-bottom: 1px solid #25354c;
+  border-right: 1px solid #25354c;
+  min-height: 32px;
+  text-align: left;
+}
+
+.waveform-shot-list button.selected {
+  background: var(--accent);
+  color: #111;
 }
 
 .split-card-grid {
@@ -534,7 +579,6 @@ small,
 }
 
 .inspector-section,
-.sidebar-section,
 .tool-pane {
   border-bottom: 1px solid var(--line);
   display: grid;
@@ -542,17 +586,15 @@ small,
   padding: 0.48rem;
 }
 
-.sidebar-metrics {
-  gap: 0;
-  padding: 0;
+.contextual-shot-controls {
+  display: none;
 }
 
-.session-panel {
-  background: rgba(18, 20, 23, 0.98);
-}
-
-.compact-header {
-  margin: 0.25rem -0.48rem 0;
+.inspector[data-active-tool="review"] .contextual-shot-controls,
+.inspector[data-active-tool="timing"] .contextual-shot-controls,
+.inspector[data-active-tool="edit"] .contextual-shot-controls,
+.inspector[data-active-tool="scoring"] .contextual-shot-controls {
+  display: grid;
 }
 
 .tool-pane {
@@ -618,6 +660,23 @@ small,
   overflow-x: auto;
 }
 
+.timing-workbench {
+  background: var(--surface);
+  display: none;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.timing-workbench-table {
+  align-content: start;
+  overflow: auto;
+}
+
+.timing-workbench-table div {
+  min-height: 38px;
+}
+
 .data-table div {
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
@@ -651,8 +710,8 @@ small,
   }
 
   .rail-logo {
-    height: 54px;
-    width: 54px;
+    height: 66px;
+    width: 66px;
   }
 
   .review-grid {
@@ -700,12 +759,11 @@ small,
   }
 
   .review-stack {
-    grid-template-rows: minmax(280px, 58vh) 180px;
+    grid-template-rows: minmax(280px, 58vh) 206px;
   }
 
   .button-grid,
-  .button-grid.compact,
-  .sidebar-metrics {
+  .button-grid.compact {
     grid-template-columns: 1fr;
   }
 
@@ -713,4 +771,39 @@ small,
   .video-stage video {
     min-height: 280px;
   }
+}
+
+.cockpit.waveform-expanded .review-grid,
+.cockpit.timing-expanded .review-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .inspector,
+.cockpit.timing-expanded .inspector {
+  display: none;
+}
+
+.cockpit.waveform-expanded .review-stack {
+  grid-template-rows: 104px minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .waveform-panel {
+  grid-template-rows: 26px 40px minmax(0, 1fr) 96px;
+}
+
+.cockpit.waveform-expanded .waveform-shot-list {
+  display: grid;
+}
+
+.cockpit.timing-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.timing-expanded .video-stage,
+.cockpit.timing-expanded .waveform-panel {
+  display: none;
+}
+
+.cockpit.timing-expanded .timing-workbench {
+  display: grid;
 }

@@ -24,10 +24,22 @@
           <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
           <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
         </nav>
-        <button id="new-project" class="rail-action" type="button">New</button>
       </aside>
 
-      <main class="cockpit">
+      <main id="cockpit-root" class="cockpit">
+        <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
+        <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
+        <span id="project-title" hidden>Untitled Project</span>
+        <span id="status" hidden>Ready.</span>
+
+        <section class="status-strip" aria-label="Current stage metrics">
+          <strong id="current-file">No video selected</strong>
+          <span>Draw <b id="draw">--.--</b></span>
+          <span>Raw <b id="raw-time">--.--</b></span>
+          <span>Shots <b id="shot-count">0</b></span>
+          <span>Avg <b id="avg-split">--.--</b></span>
+        </section>
+
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-stage" id="video-stage">
@@ -40,39 +52,34 @@
 
             <section class="waveform-panel">
               <div class="timeline-strip" id="timeline-strip"></div>
-              <div class="section-header">
-                <span><b class="beep-key"></b> Beep</span>
-                <span><b class="shot-key"></b> Shot</span>
-                <small>Click waveform to add shot. Shift-click to move beep.</small>
+              <div class="section-header waveform-header">
+                <div class="legend-row">
+                  <span><b class="beep-key"></b> Beep</span>
+                  <span><b class="shot-key"></b> Shot</span>
+                  <small id="waveform-help">Select mode: click a shot marker, drag to move, arrows nudge.</small>
+                </div>
+                <div class="waveform-actions">
+                  <button class="mode-button active" data-waveform-mode="select" type="button">Select</button>
+                  <button class="mode-button" data-waveform-mode="add" type="button">Add Shot</button>
+                  <button class="mode-button" data-waveform-mode="beep" type="button">Move Beep</button>
+                  <button id="expand-waveform" type="button">Expand</button>
+                </div>
               </div>
-              <canvas id="waveform" width="1600" height="260"></canvas>
+              <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
+              <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
+            </section>
+
+            <section id="timing-workbench" class="timing-workbench" aria-label="Expanded timing editor">
+              <div class="section-header">
+                <h2>Timing</h2>
+                <button id="collapse-timing" type="button">Collapse</button>
+              </div>
+              <div id="timing-workbench-table" class="data-table timing-workbench-table"></div>
             </section>
           </section>
 
           <aside class="inspector" aria-label="Context inspector">
-            <section class="sidebar-section session-panel">
-              <div class="section-header">
-                <h2 id="selected-tool-title">Review</h2>
-                <span id="status">Ready.</span>
-              </div>
-              <span id="project-title" hidden>Untitled Project</span>
-              <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
-              <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
-              <div class="sidebar-actions">
-                <button id="choose-primary" class="primary-button" type="button">Open Stage Video</button>
-                <button id="choose-secondary" type="button">Add Second Angle</button>
-                <button id="refresh" class="ghost-button" type="button">Refresh</button>
-              </div>
-            </section>
-
-            <section class="sidebar-section sidebar-metrics" aria-label="Stage metrics">
-              <article><span>Draw</span><strong id="draw">--.--</strong><small>beep to first</small></article>
-              <article><span>Raw</span><strong id="raw-time">--.--</strong><small>beep to final</small></article>
-              <article><span>Shots</span><strong id="shot-count">0</strong><small>detected + manual</small></article>
-              <article><span>Avg Split</span><strong id="avg-split">--.--</strong><small>shot to shot</small></article>
-            </section>
-
-            <section class="inspector-section">
+            <section id="selected-shot-panel" class="inspector-section contextual-shot-controls">
               <div class="section-header">
                 <h3>Selected Shot</h3>
                 <span id="selected-score-shot">No shot selected</span>
@@ -93,15 +100,6 @@
                 <span id="timing-summary">No timing data.</span>
               </div>
               <div id="split-card-grid" class="split-card-grid"></div>
-              <div class="section-header compact-header">
-                <h3>Readiness</h3>
-                <span id="media-badge">No video selected</span>
-              </div>
-              <dl class="details">
-                <dt>Primary</dt><dd id="primary-file">None</dd>
-                <dt>Secondary</dt><dd id="secondary-file">None</dd>
-                <dt>Project</dt><dd id="project-file">Active in memory</dd>
-              </dl>
               <label>Detection threshold
                 <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
               </label>
@@ -111,7 +109,7 @@
             <section class="tool-pane" data-tool-pane="timing">
               <div class="section-header">
                 <h3>Timing Table</h3>
-                <small>Draw, split, cumulative, and absolute time.</small>
+                <button id="expand-timing" type="button">Expand</button>
               </div>
               <div id="timing-table" class="data-table"></div>
             </section>
@@ -121,7 +119,7 @@
                 <h3>Timeline Editing</h3>
                 <small>All edits apply live.</small>
               </div>
-              <p class="hint">Use the waveform for add/move-beep. Use selected-shot controls above for nudge/delete. Score assignment is in Scoring.</p>
+              <p class="hint">Use waveform Select, Add Shot, and Move Beep modes. Select a shot to nudge, drag, or delete it.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
@@ -256,8 +254,18 @@
             <section class="tool-pane" data-tool-pane="project">
               <div class="section-header">
                 <h3>Project</h3>
-                <small>Local bundle</small>
+                <span id="media-badge">No video selected</span>
               </div>
+              <div class="button-grid compact">
+                <button id="choose-primary" class="primary-button" type="button">Primary Video</button>
+                <button id="choose-secondary" type="button">Second Angle</button>
+                <button id="new-project" type="button">New Project</button>
+              </div>
+              <dl class="details">
+                <dt>Primary</dt><dd id="primary-file">None</dd>
+                <dt>Secondary</dt><dd id="secondary-file">None</dd>
+                <dt>Project</dt><dd id="project-file">Active in memory</dd>
+              </dl>
               <label>Project bundle path
                 <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
               </label>

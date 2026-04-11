@@ -101,6 +101,27 @@ def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
     assert not is_expected_disconnect_error(RuntimeError())
 
 
+def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, log_dir=tmp_path)
+    server.start_background(open_browser=False)
+    try:
+        _get_json(f"{server.url}api/state")
+        payload = _post_json(
+            f"{server.url}api/activity",
+            {"event": "test.click", "detail": {"target": "waveform"}},
+        )
+
+        assert payload == {"ok": True}
+        log_text = server.activity.path.read_text(encoding="utf-8")
+        assert "server.initialized" in log_text
+        assert "http.get" in log_text
+        assert "browser.activity" in log_text
+        assert "test.click" in log_text
+    finally:
+        server.shutdown()
+
+
 def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_factory) -> None:
     controller = ProjectController()
     video_path = synthetic_video_factory()
