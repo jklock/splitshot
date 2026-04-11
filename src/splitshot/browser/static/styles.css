@@ -148,7 +148,7 @@ h3 {
 
 .tool-nav {
   display: grid;
-  grid-template-rows: repeat(9, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
   min-height: 0;
 }
 
@@ -178,11 +178,39 @@ h3 {
 
 .cockpit {
   display: grid;
-  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) auto minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.processing-bar {
+  align-items: center;
+  background: #1f2a18;
+  border-bottom: 1px solid #3f6a28;
+  color: var(--text);
+  display: flex;
+  gap: 0.65rem;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 0 0.75rem;
+}
+
+.processing-bar[hidden] {
+  display: none;
+}
+
+.processing-bar strong {
+  font-weight: 950;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.processing-bar span {
+  color: #b7d7aa;
+  font-weight: 850;
 }
 
 .hint,
@@ -350,22 +378,6 @@ small,
   width: 100%;
 }
 
-.video-status {
-  background: rgba(5, 6, 7, 0.72);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--muted);
-  font-weight: 750;
-  left: 0.7rem;
-  max-width: min(420px, calc(100% - 1.4rem));
-  overflow: hidden;
-  padding: 0.36rem 0.5rem;
-  position: absolute;
-  text-overflow: ellipsis;
-  top: 0.7rem;
-  white-space: nowrap;
-  z-index: 3;
-}
-
 .live-overlay {
   display: flex;
   gap: 0;
@@ -455,14 +467,25 @@ small,
 
 .score-target-button {
   bottom: 1rem;
+  display: none;
   position: absolute;
   right: 1rem;
   z-index: 3;
 }
 
+.cockpit.scoring-active .score-target-button {
+  display: block;
+}
+
 .score-target-button.armed {
   background: var(--accent);
   color: #111;
+}
+
+button:disabled {
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.62;
 }
 
 .timeline-strip {
@@ -492,7 +515,7 @@ small,
 .waveform-panel {
   background: var(--blue-video);
   display: grid;
-  grid-template-rows: 26px 38px minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) 38px 26px auto;
   min-height: 0;
   overflow: hidden;
 }
@@ -558,8 +581,9 @@ small,
 
 .split-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-  max-height: 220px;
+  grid-auto-rows: minmax(72px, auto);
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  max-height: 320px;
   overflow-y: auto;
 }
 
@@ -608,23 +632,28 @@ small,
   padding: 0.48rem;
 }
 
-.contextual-shot-controls {
-  display: none;
-}
-
-.inspector[data-active-tool="review"] .contextual-shot-controls,
-.inspector[data-active-tool="timing"] .contextual-shot-controls,
-.inspector[data-active-tool="edit"] .contextual-shot-controls,
-.inspector[data-active-tool="scoring"] .contextual-shot-controls {
-  display: grid;
-}
-
 .tool-pane {
   display: none;
 }
 
 .tool-pane.active {
   display: grid;
+}
+
+.selected-shot-controls {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.36rem;
+}
+
+.selected-shot-controls > p,
+.selected-shot-controls > .button-grid,
+.selected-shot-controls > button {
+  margin: 0 0.42rem;
+}
+
+.selected-shot-controls > button {
+  margin-bottom: 0.42rem;
 }
 
 .details {
@@ -660,12 +689,28 @@ small,
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.control-grid,
-.style-grid,
-.score-color-grid {
+.path-row {
+  display: grid;
+  gap: 0;
+  grid-template-columns: minmax(0, 1fr) 78px;
+}
+
+.control-grid {
   display: grid;
   gap: 0;
   grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+
+.style-grid {
+  display: grid;
+  gap: 0;
+  grid-template-columns: 1fr;
+}
+
+.score-color-grid {
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
 }
 
 .style-card {
@@ -673,8 +718,35 @@ small,
   border: 1px solid var(--line);
   border-radius: 0;
   display: grid;
-  gap: 0.36rem;
-  padding: 0.48rem;
+  gap: 0.24rem;
+  grid-template-columns: minmax(96px, 1fr) auto auto auto;
+  padding: 0.32rem;
+}
+
+.style-card h4 {
+  align-self: center;
+  font-size: 0.76rem;
+}
+
+.style-card label,
+.score-color-grid label {
+  align-items: center;
+  display: flex;
+  flex-direction: row;
+  font-size: 0.7rem;
+  gap: 0.24rem;
+  justify-content: space-between;
+}
+
+input[type="color"] {
+  height: 24px;
+  min-height: 24px;
+  padding: 1px;
+  width: 34px;
+}
+
+.style-card input[type="range"] {
+  max-width: 86px;
 }
 
 .data-table {
@@ -828,7 +900,7 @@ small,
 }
 
 .cockpit.waveform-expanded .waveform-panel {
-  grid-template-rows: 32px 46px minmax(0, 1fr) 128px;
+  grid-template-rows: minmax(0, 1fr) 46px 32px 128px;
 }
 
 .cockpit.waveform-expanded .waveform-shot-list {
