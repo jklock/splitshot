@@ -27,7 +27,11 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert "<b>Score</b>" in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
-    assert 'class="command-strip"' in html
+    assert 'class="command-strip"' not in html
+    assert 'class="empty-start"' not in html
+    assert 'class="metrics-strip"' not in html
+    assert 'class="sidebar-actions"' in html
+    assert 'class="sidebar-section sidebar-metrics"' in html
     assert "Open Stage Video" in html
     assert html.count("Open Stage Video") == 1
     assert "Local review cockpit" not in html
@@ -41,6 +45,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
 
+    assert html.index('class="video-stage"') < html.index('class="waveform-panel"')
+    assert html.index('class="waveform-panel"') < html.index('class="inspector"')
     assert 'id="primary-video" controls' in html
     assert 'id="live-overlay"' in html
     assert 'id="score-layer"' in html
@@ -53,6 +59,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="scoring-preset"' in html
     assert "/api/files/primary" in js
     assert "/api/files/secondary" in js
+    assert "empty-start" not in js
     assert "setActiveTool" in js
     assert "setActivePage" not in js
 
@@ -68,9 +75,13 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "overflow: hidden;" in css
     assert ".review-grid {\n  display: grid;" in css
     assert ".button-grid {\n  display: grid;\n  gap: 0;" in css
-    assert ".metrics-strip {\n  display: grid;" in css
+    assert ".sidebar-metrics {\n  display: grid;" in css
+    assert ".command-strip" not in css
+    assert ".empty-start" not in css
+    assert ".metrics-strip" not in css
     assert "grid-template-columns: 76px minmax(0, 1fr);" in css
-    assert "grid-template-rows: 38px auto 54px minmax(0, 1fr);" in css
+    assert "grid-template-rows: minmax(0, 1fr);" in css
+    assert "grid-template-rows: minmax(320px, 1fr) 190px;" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
 
