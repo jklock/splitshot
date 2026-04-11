@@ -21,11 +21,11 @@ This audit covers the browser control UI. Every button click is logged through t
 | Project | Left rail | Activates primary, secondary, project save, open, and delete controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Review | Left rail | Activates review inspector pane without changing the loaded session. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Timing | Left rail | Activates timing pane with timing table and expand control. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
-| Score | Left rail | Activates scoring controls for ruleset, penalties, and selected shot score. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
+| Score | Left rail | Activates selected-shot score assignment plus ruleset-specific scoring and penalty controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Overlay | Left rail | Activates overlay position, badge size, badge color, and score color controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Merge | Left rail | Activates second-angle, merge layout, sync, and swap controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Layout | Left rail | Activates export layout quality, aspect, and crop controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
-| Export | Left rail | Activates local MP4 export controls. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
+| Export | Left rail | Activates local FFmpeg MP4 export presets, encoding variables, output path, export button, and export log. | `button.click`, `ui.tool.click`, `ui.tool.active`. |
 | Place Score | Video stage in Score mode | Places scoring coordinates for the selected shot on the video preview. | `button.click`, `score.place.*`, `api.start /api/scoring/position`, `api.success`. |
 | Select | Waveform | Sets waveform editor to select and drag shot markers. | `button.click`, `waveform.mode`. |
 | Add Shot | Waveform | Sets waveform editor to click-to-add manual shot mode. | `button.click`, `waveform.mode`, then `api.start /api/shots/add` on waveform click. |
@@ -60,11 +60,13 @@ This audit covers the browser control UI. Every button click is logged through t
 | Control | Location | Expected app effect | QA evidence |
 | --- | --- | --- | --- |
 | Detection threshold | Review pane | Debounced re-run of shot detection threshold against the current primary video. | `control.change`, `auto_apply.threshold`, `api.start /api/analysis/threshold`. |
-| Scoring enabled / preset / penalties | Scoring pane | Debounced scoring profile and penalty updates. | `control.change`, `auto_apply.scoring`, `api.start /api/scoring/profile`, `api.start /api/scoring`. |
+| Scoring enabled / preset / penalties | Scoring pane | Debounced scoring profile and dynamic ruleset penalty updates. | `control.change`, `auto_apply.scoring`, `api.start /api/scoring/profile`, `api.start /api/scoring`. |
 | Score for selected shot | Scoring pane | Saves the chosen score letter to the selected shot. | `control.change`, `api.start /api/scoring/score`. |
 | Overlay position / badge size / colors | Overlay pane | Debounced overlay preview/export settings update. | `control.change`, `auto_apply.overlay`, `api.start /api/overlay`. |
 | Merge enabled / layout / PiP size | Merge pane | Debounced merge settings update. | `control.change`, `auto_apply.merge`, `api.start /api/merge`. |
 | Layout quality / aspect / crop | Layout pane | Debounced export layout settings update. | `control.change`, `auto_apply.layout`, `api.start /api/layout`. |
+| Export preset | Export pane | Applies a named export preset directly to encoding variables. | `control.change`, `auto_apply.export_preset`, `api.start /api/export/preset`. |
+| Export width / height / frame rate / codec / bitrate / audio / color / FFmpeg preset / two-pass | Export pane | Debounced local FFmpeg export settings update. | `control.change`, `auto_apply.export_settings`, `api.start /api/export/settings`. |
 
 ## Validation Commands
 

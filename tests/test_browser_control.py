@@ -281,10 +281,59 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         state = _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
         assert state["project"]["scoring"]["point_map"]["C"] == 4
+        assert "penalty_fields" in state["scoring_summary"]
+
+        state = _post_json(
+            f"{server.url}api/scoring",
+            {"penalties": 1, "penalty_counts": {"procedural_errors": 2}},
+        )
+        assert state["project"]["scoring"]["penalty_counts"]["procedural_errors"] == 2
+        assert state["scoring_summary"]["field_penalties"] == 20
 
         state = _post_json(f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8})
         assert state["project"]["analysis"]["shots"][0]["score"]["x_norm"] == 0.2
         assert state["project"]["analysis"]["shots"][0]["score"]["y_norm"] == 0.8
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_updates_export_presets_and_variables() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _get_json(f"{server.url}api/state")
+        preset_ids = {preset["id"] for preset in state["export_presets"]}
+        assert "universal_vertical" in preset_ids
+        assert "youtube_long_4k" in preset_ids
+
+        state = _post_json(f"{server.url}api/export/preset", {"preset": "universal_vertical"})
+        assert state["project"]["export"]["preset"] == "universal_vertical"
+        assert state["project"]["export"]["target_width"] == 1080
+        assert state["project"]["export"]["target_height"] == 1920
+        assert state["project"]["export"]["video_bitrate_mbps"] == 20.0
+
+        state = _post_json(
+            f"{server.url}api/export/settings",
+            {
+                "target_width": 720,
+                "target_height": 1280,
+                "frame_rate": "60",
+                "video_codec": "h264",
+                "video_bitrate_mbps": 18,
+                "audio_codec": "aac",
+                "audio_sample_rate": 48000,
+                "audio_bitrate_kbps": 320,
+                "color_space": "bt709_sdr",
+                "two_pass": True,
+                "ffmpeg_preset": "slow",
+            },
+        )
+        assert state["project"]["export"]["preset"] == "custom"
+        assert state["project"]["export"]["target_width"] == 720
+        assert state["project"]["export"]["target_height"] == 1280
+        assert state["project"]["export"]["frame_rate"] == "60"
+        assert state["project"]["export"]["two_pass"] is True
     finally:
         server.shutdown()
 

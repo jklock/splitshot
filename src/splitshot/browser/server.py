@@ -19,9 +19,7 @@ from uuid import uuid4
 from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.state import browser_state
 from splitshot.domain.models import (
-    AspectRatio,
     BadgeSize,
-    ExportQuality,
     MergeLayout,
     OverlayPosition,
     PipSize,
@@ -252,6 +250,8 @@ class BrowserControlServer:
                     "/api/sync": self._set_sync,
                     "/api/swap": self._swap_videos,
                     "/api/layout": self._set_layout,
+                    "/api/export/settings": self._set_export_settings,
+                    "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
                 }
                 route = routes.get(self.path)
@@ -521,6 +521,13 @@ class BrowserControlServer:
                     controller.set_scoring_enabled(bool(payload["enabled"]))
                 if "penalties" in payload:
                     controller.set_penalties(int(payload["penalties"]))
+                if "penalty_counts" in payload:
+                    controller.set_penalty_counts(
+                        {
+                            str(key): float(value)
+                            for key, value in payload["penalty_counts"].items()
+                        }
+                    )
 
             def _set_scoring_profile(self, payload: dict[str, Any]) -> None:
                 controller.set_scoring_preset(str(payload["ruleset"]))
@@ -569,22 +576,29 @@ class BrowserControlServer:
                 controller.swap_videos()
 
             def _set_layout(self, payload: dict[str, Any]) -> None:
-                project = controller.project
-                if "aspect_ratio" in payload:
-                    project.export.aspect_ratio = AspectRatio(str(payload["aspect_ratio"]))
-                if "quality" in payload:
-                    controller.set_export_quality(ExportQuality(str(payload["quality"])))
-                if "crop_center_x" in payload:
-                    project.export.crop_center_x = float(payload["crop_center_x"])
-                if "crop_center_y" in payload:
-                    project.export.crop_center_y = float(payload["crop_center_y"])
-                project.touch()
-                controller.project_changed.emit()
+                controller.set_export_settings(payload)
+
+            def _set_export_settings(self, payload: dict[str, Any]) -> None:
+                controller.set_export_settings(payload)
+
+            def _set_export_preset(self, payload: dict[str, Any]) -> None:
+                controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
                 output_path = Path(str(payload["path"]))
                 controller.project.export.output_path = str(output_path)
-                export_project(controller.project, output_path)
+                activity.log("api.export.start", path=str(output_path))
+                export_project(
+                    controller.project,
+                    output_path,
+                    progress_callback=lambda value: activity.log("api.export.progress", progress=value),
+                    log_callback=lambda line: activity.log("api.export.log", line=line),
+                )
+                activity.log(
+                    "api.export.complete",
+                    path=str(output_path),
+                    bytes=output_path.stat().st_size if output_path.exists() else 0,
+                )
                 controller.project.touch()
                 controller.status_message = f"Exported MP4 to {output_path}."
 

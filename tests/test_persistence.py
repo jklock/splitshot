@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from splitshot.domain.models import (
+    AspectRatio,
+    ExportFrameRate,
+    ExportPreset,
     OverlayPosition,
     Project,
     ScoreLetter,
@@ -29,9 +32,17 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     ]
     project.scoring.enabled = True
     project.scoring.penalties = 10
+    project.scoring.penalty_counts = {"procedural_errors": 2}
     project.overlay.position = OverlayPosition.TOP
     project.merge.enabled = True
     project.export.output_path = "/tmp/export.mp4"
+    project.export.preset = ExportPreset.CUSTOM
+    project.export.aspect_ratio = AspectRatio.PORTRAIT
+    project.export.target_width = 1080
+    project.export.target_height = 1920
+    project.export.frame_rate = ExportFrameRate.FPS_60
+    project.export.video_bitrate_mbps = 20.0
+    project.export.last_log = "Encoder command: ffmpeg"
 
     bundle = save_project(project, tmp_path / "round-trip.ssproj")
     loaded = load_project(bundle)
@@ -45,6 +56,14 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.analysis.shots[0].score.letter == ScoreLetter.C
     assert loaded.scoring.enabled is True
     assert loaded.scoring.penalties == 10
+    assert loaded.scoring.penalty_counts["procedural_errors"] == 2
     assert loaded.overlay.position == OverlayPosition.TOP
     assert loaded.merge.enabled is True
     assert loaded.export.output_path == "/tmp/export.mp4"
+    assert loaded.export.preset == ExportPreset.CUSTOM
+    assert loaded.export.aspect_ratio == AspectRatio.PORTRAIT
+    assert loaded.export.target_width == 1080
+    assert loaded.export.target_height == 1920
+    assert loaded.export.frame_rate == ExportFrameRate.FPS_60
+    assert loaded.export.video_bitrate_mbps == 20.0
+    assert loaded.export.last_log == "Encoder command: ffmpeg"

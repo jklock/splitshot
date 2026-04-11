@@ -128,18 +128,10 @@
                 <select id="scoring-preset"></select>
               </label>
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
-              <label id="penalties-label">Penalties
-                <input id="penalties" type="number" value="0" min="0" />
-              </label>
+              <div id="score-option-grid" class="score-option-grid"></div>
+              <div id="scoring-penalty-grid" class="penalty-grid"></div>
               <label>Score for selected shot
                 <select id="score-letter">
-                  <option>A</option>
-                  <option>C</option>
-                  <option>D</option>
-                  <option>M</option>
-                  <option>NS</option>
-                  <option>MU</option>
-                  <option>M+NS</option>
                 </select>
               </label>
             </section>
@@ -238,6 +230,72 @@
                 <h3>Export</h3>
                 <small>Local MP4</small>
               </div>
+              <label>Preset
+                <select id="export-preset"></select>
+              </label>
+              <p id="export-preset-description" class="hint">Choose an export preset.</p>
+              <div class="control-grid">
+                <label>Width
+                  <input id="target-width" type="number" min="2" step="2" placeholder="source" />
+                </label>
+                <label>Height
+                  <input id="target-height" type="number" min="2" step="2" placeholder="source" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Frame rate
+                  <select id="frame-rate">
+                    <option value="source">Source</option>
+                    <option value="30">30 fps</option>
+                    <option value="60">60 fps</option>
+                  </select>
+                </label>
+                <label>Video codec
+                  <select id="video-codec">
+                    <option value="h264">H.264</option>
+                    <option value="hevc">HEVC</option>
+                  </select>
+                </label>
+              </div>
+              <label>Video bitrate Mbps
+                <input id="video-bitrate" type="number" min="0.1" step="0.5" value="15" />
+              </label>
+              <div class="control-grid">
+                <label>Audio codec
+                  <select id="audio-codec">
+                    <option value="aac">AAC</option>
+                  </select>
+                </label>
+                <label>Audio kHz
+                  <input id="audio-sample-rate" type="number" min="8000" step="1000" value="48000" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Audio kbps
+                  <input id="audio-bitrate" type="number" min="32" step="32" value="320" />
+                </label>
+                <label>Color
+                  <select id="color-space">
+                    <option value="bt709_sdr">Rec.709 SDR</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>FFmpeg preset
+                  <select id="ffmpeg-preset">
+                    <option value="ultrafast">ultrafast</option>
+                    <option value="superfast">superfast</option>
+                    <option value="veryfast">veryfast</option>
+                    <option value="faster">faster</option>
+                    <option value="fast">fast</option>
+                    <option value="medium">medium</option>
+                    <option value="slow">slow</option>
+                    <option value="slower">slower</option>
+                    <option value="veryslow">veryslow</option>
+                  </select>
+                </label>
+                <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
+              </div>
               <label>Output path
                 <div class="path-row">
                   <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
@@ -245,6 +303,7 @@
                 </div>
               </label>
               <button id="export-video" class="primary-button" type="button">Export MP4</button>
+              <pre id="export-log" class="export-log">No export log yet.</pre>
             </section>
 
             <section class="tool-pane" data-tool-pane="project">
