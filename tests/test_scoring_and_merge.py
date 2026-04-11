@@ -62,14 +62,105 @@ def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
     summary = calculate_scoring_summary(project)
     assert summary["ruleset"] == "uspsa_major"
     assert summary["mode"] == "hit_factor"
-    assert summary["hit_factor"] == (5 + 4 + 0) / 1.5
+    assert summary["hit_factor"] == 0.0
+    assert summary["shot_penalties"] == 10
 
     apply_scoring_preset(project, "idpa_time_plus")
     project.scoring.penalties = 3
     summary = calculate_scoring_summary(project)
     assert summary["ruleset"] == "idpa_time_plus"
     assert summary["mode"] == "time_plus"
-    assert summary["final_time"] == 1.5 + 0 + 1 + 5 + 3
+    assert summary["final_time"] == 1.5 + 5 + 3
+
+
+def test_uspsa_minor_counts_misses_no_shoots_and_procedurals() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 500
+    project.analysis.shots = [
+        ShotEvent(time_ms=1000, score=ScoreMark(letter=ScoreLetter.A)),
+        ShotEvent(time_ms=1500, score=ScoreMark(letter=ScoreLetter.C)),
+        ShotEvent(time_ms=2000, score=ScoreMark(letter=ScoreLetter.M)),
+        ShotEvent(time_ms=2500, score=ScoreMark(letter=ScoreLetter.NS)),
+    ]
+
+    apply_scoring_preset(project, "uspsa_minor")
+    project.scoring.penalty_counts = {"procedural_errors": 1}
+    summary = calculate_scoring_summary(project)
+
+    assert summary["shot_points"] == 8
+    assert summary["shot_penalties"] == 20
+    assert summary["field_penalties"] == 10
+    assert summary["hit_factor"] == 0.0
+
+
+def test_ipsc_major_matches_major_hit_factor_values() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 500
+    project.analysis.shots = [
+        ShotEvent(time_ms=1000, score=ScoreMark(letter=ScoreLetter.A)),
+        ShotEvent(time_ms=1500, score=ScoreMark(letter=ScoreLetter.C)),
+        ShotEvent(time_ms=2000, score=ScoreMark(letter=ScoreLetter.D)),
+    ]
+
+    apply_scoring_preset(project, "ipsc_major")
+    summary = calculate_scoring_summary(project)
+
+    assert summary["shot_points"] == 11
+    assert summary["hit_factor"] == 11 / 1.5
+
+
+def test_idpa_time_plus_uses_points_down_and_penalty_seconds() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 500
+    project.analysis.shots = [
+        ShotEvent(time_ms=1000, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+        ShotEvent(time_ms=1500, score=ScoreMark(letter=ScoreLetter.DOWN_1)),
+        ShotEvent(time_ms=2000, score=ScoreMark(letter=ScoreLetter.DOWN_3)),
+        ShotEvent(time_ms=2500, score=ScoreMark(letter=ScoreLetter.M)),
+    ]
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.penalty_counts = {
+        "non_threats": 1,
+        "procedural_errors": 2,
+        "flagrant_penalties": 1,
+        "failures_to_do_right": 1,
+    }
+    summary = calculate_scoring_summary(project)
+
+    assert summary["shot_points"] == 9
+    assert summary["field_penalties"] == 41
+    assert summary["final_time"] == 2.0 + 9 + 41
+
+
+def test_steel_and_gpa_time_plus_presets_are_explicit() -> None:
+    steel = Project()
+    steel.scoring.enabled = True
+    steel.analysis.beep_time_ms_primary = 100
+    steel.analysis.shots = [
+        ShotEvent(time_ms=1100, score=ScoreMark(letter=ScoreLetter.STEEL_HIT)),
+        ShotEvent(time_ms=1600, score=ScoreMark(letter=ScoreLetter.M)),
+    ]
+    apply_scoring_preset(steel, "steel_challenge")
+    steel.scoring.penalty_counts = {"stop_plate_failures": 1}
+    steel_summary = calculate_scoring_summary(steel)
+    assert steel_summary["final_time"] == 1.5 + 3 + 30
+
+    gpa = Project()
+    gpa.scoring.enabled = True
+    gpa.analysis.beep_time_ms_primary = 100
+    gpa.analysis.shots = [
+        ShotEvent(time_ms=1100, score=ScoreMark(letter=ScoreLetter.GPA_1)),
+        ShotEvent(time_ms=1600, score=ScoreMark(letter=ScoreLetter.GPA_3)),
+        ShotEvent(time_ms=2100, score=ScoreMark(letter=ScoreLetter.GPA_10)),
+    ]
+    apply_scoring_preset(gpa, "gpa_time_plus")
+    gpa.scoring.penalty_counts = {"non_threats": 1, "steel_not_down": 1}
+    gpa_summary = calculate_scoring_summary(gpa)
+    assert gpa_summary["final_time"] == 2.0 + 0.5 + 1.5 + 5 + 15
 
 
 def test_merge_canvas_covers_layouts() -> None:

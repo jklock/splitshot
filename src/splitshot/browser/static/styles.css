@@ -713,6 +713,30 @@ button:disabled {
   grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
 }
 
+.score-option-grid,
+.penalty-grid {
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+}
+
+.score-option-grid span {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  min-height: 28px;
+  padding: 0.36rem 0.45rem;
+}
+
+.penalty-grid label {
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 0.32rem;
+}
+
 .style-card {
   background: var(--surface-2);
   border: 1px solid var(--line);
@@ -747,6 +771,21 @@ input[type="color"] {
 
 .style-card input[type="range"] {
   max-width: 86px;
+}
+
+.export-log {
+  background: #050607;
+  border: 1px solid var(--line);
+  color: #cbd5e1;
+  font-family: "SF Mono", "Menlo", monospace;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  margin: 0;
+  max-height: 190px;
+  min-height: 86px;
+  overflow: auto;
+  padding: 0.45rem;
+  white-space: pre-wrap;
 }
 
 .data-table {

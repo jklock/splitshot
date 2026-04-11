@@ -26,6 +26,15 @@ class ScoreLetter(StrEnum):
     NS = "NS"
     MU = "MU"
     M_NS = "M+NS"
+    DOWN_0 = "-0"
+    DOWN_1 = "-1"
+    DOWN_3 = "-3"
+    GPA_0 = "0"
+    GPA_1 = "+1"
+    GPA_3 = "+3"
+    GPA_10 = "+10"
+    STEEL_HIT = "HIT"
+    STEEL_STOP_FAIL = "STOP"
 
 
 class OverlayPosition(StrEnum):
@@ -60,6 +69,34 @@ class ExportQuality(StrEnum):
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
+
+
+class ExportPreset(StrEnum):
+    SOURCE = "source"
+    UNIVERSAL_VERTICAL = "universal_vertical"
+    SHORT_FORM_VERTICAL = "short_form_vertical"
+    YOUTUBE_LONG_1080P = "youtube_long_1080p"
+    YOUTUBE_LONG_4K = "youtube_long_4k"
+    CUSTOM = "custom"
+
+
+class ExportFrameRate(StrEnum):
+    SOURCE = "source"
+    FPS_30 = "30"
+    FPS_60 = "60"
+
+
+class ExportVideoCodec(StrEnum):
+    H264 = "h264"
+    HEVC = "hevc"
+
+
+class ExportAudioCodec(StrEnum):
+    AAC = "aac"
+
+
+class ExportColorSpace(StrEnum):
+    BT709_SDR = "bt709_sdr"
 
 
 class AspectRatio(StrEnum):
@@ -129,7 +166,7 @@ class ScoringState:
     enabled: bool = False
     ruleset: str = "uspsa_minor"
     penalties: int = 0
-    point_map: dict[str, int] = field(
+    point_map: dict[str, float] = field(
         default_factory=lambda: {
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 3,
@@ -140,6 +177,7 @@ class ScoringState:
             ScoreLetter.M_NS.value: 0,
         }
     )
+    penalty_counts: dict[str, float] = field(default_factory=dict)
     hit_factor: float | None = None
 
 
@@ -166,6 +204,15 @@ class OverlaySettings:
             ScoreLetter.NS.value: "#7C3AED",
             ScoreLetter.MU.value: "#0EA5E9",
             ScoreLetter.M_NS.value: "#BE123C",
+            ScoreLetter.DOWN_0.value: "#22C55E",
+            ScoreLetter.DOWN_1.value: "#F59E0B",
+            ScoreLetter.DOWN_3.value: "#FB7185",
+            ScoreLetter.GPA_0.value: "#22C55E",
+            ScoreLetter.GPA_1.value: "#F59E0B",
+            ScoreLetter.GPA_3.value: "#FB7185",
+            ScoreLetter.GPA_10.value: "#EF4444",
+            ScoreLetter.STEEL_HIT.value: "#22C55E",
+            ScoreLetter.STEEL_STOP_FAIL.value: "#EF4444",
         }
     )
 
@@ -185,6 +232,20 @@ class ExportSettings:
     crop_center_x: float = 0.5
     crop_center_y: float = 0.5
     output_path: str | None = None
+    preset: ExportPreset = ExportPreset.SOURCE
+    target_width: int | None = None
+    target_height: int | None = None
+    frame_rate: ExportFrameRate = ExportFrameRate.SOURCE
+    video_codec: ExportVideoCodec = ExportVideoCodec.H264
+    video_bitrate_mbps: float = 15.0
+    audio_codec: ExportAudioCodec = ExportAudioCodec.AAC
+    audio_sample_rate: int = 48000
+    audio_bitrate_kbps: int = 320
+    color_space: ExportColorSpace = ExportColorSpace.BT709_SDR
+    two_pass: bool = False
+    ffmpeg_preset: str = "medium"
+    last_log: str = ""
+    last_error: str | None = None
 
 
 @dataclass(slots=True)
@@ -321,8 +382,12 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),
             penalties=int(scoring_data.get("penalties", 0)),
             point_map={
-                str(key): int(value)
+                str(key): float(value)
                 for key, value in scoring_data.get("point_map", ScoringState().point_map).items()
+            },
+            penalty_counts={
+                str(key): float(value)
+                for key, value in scoring_data.get("penalty_counts", {}).items()
             },
             hit_factor=(
                 None if scoring_data.get("hit_factor") is None else float(scoring_data["hit_factor"])
@@ -336,8 +401,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             current_shot_badge=_badge_style_from_dict(overlay_data.get("current_shot_badge")),
             hit_factor_badge=_badge_style_from_dict(overlay_data.get("hit_factor_badge")),
             scoring_colors={
-                str(key): str(value)
-                for key, value in overlay_data.get("scoring_colors", OverlaySettings().scoring_colors).items()
+                **OverlaySettings().scoring_colors,
+                **{
+                    str(key): str(value)
+                    for key, value in overlay_data.get("scoring_colors", {}).items()
+                },
             },
         ),
         merge=MergeSettings(
@@ -352,6 +420,26 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             crop_center_x=float(export_data.get("crop_center_x", 0.5)),
             crop_center_y=float(export_data.get("crop_center_y", 0.5)),
             output_path=export_data.get("output_path"),
+            preset=ExportPreset(export_data.get("preset", ExportPreset.SOURCE.value)),
+            target_width=(
+                None if export_data.get("target_width") in {None, ""} else int(export_data["target_width"])
+            ),
+            target_height=(
+                None if export_data.get("target_height") in {None, ""} else int(export_data["target_height"])
+            ),
+            frame_rate=ExportFrameRate(export_data.get("frame_rate", ExportFrameRate.SOURCE.value)),
+            video_codec=ExportVideoCodec(export_data.get("video_codec", ExportVideoCodec.H264.value)),
+            video_bitrate_mbps=float(export_data.get("video_bitrate_mbps", 15.0)),
+            audio_codec=ExportAudioCodec(export_data.get("audio_codec", ExportAudioCodec.AAC.value)),
+            audio_sample_rate=int(export_data.get("audio_sample_rate", 48000)),
+            audio_bitrate_kbps=int(export_data.get("audio_bitrate_kbps", 320)),
+            color_space=ExportColorSpace(export_data.get("color_space", ExportColorSpace.BT709_SDR.value)),
+            two_pass=bool(export_data.get("two_pass", False)),
+            ffmpeg_preset=str(export_data.get("ffmpeg_preset", "medium")),
+            last_log=str(export_data.get("last_log", "")),
+            last_error=(
+                None if export_data.get("last_error") in {None, ""} else str(export_data["last_error"])
+            ),
         ),
         ui_state=UIState(
             selected_shot_id=ui_data.get("selected_shot_id"),
