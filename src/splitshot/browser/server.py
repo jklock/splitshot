@@ -60,6 +60,7 @@ class BrowserControlServer:
         self._thread: threading.Thread | None = None
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
+        self._display_names: dict[str, str] = {}
         self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
     @property
@@ -107,6 +108,7 @@ class BrowserControlServer:
         controller = self.controller
         session_path = self._session_path
         activity = self.activity
+        display_names = self._display_names
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "SplitShotBrowser/1.0"
@@ -124,7 +126,7 @@ class BrowserControlServer:
                     self._send_static(request_path.removeprefix("/static/"))
                     return
                 if request_path == "/api/state":
-                    self._send_json(browser_state(controller.project, controller.status_message))
+                    self._send_json(self._browser_state())
                     return
                 if request_path == "/media/primary":
                     self._send_media(Path(controller.project.primary_video.path))
@@ -181,7 +183,7 @@ class BrowserControlServer:
                     activity.log("api.start", path=self.path, payload=payload)
                     route(payload)
                     activity.log("api.success", path=self.path, status=controller.status_message)
-                    self._send_json(browser_state(controller.project, controller.status_message))
+                    self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.error", path=self.path, error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -200,6 +202,24 @@ class BrowserControlServer:
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
+
+            def _browser_state(self) -> dict[str, Any]:
+                payload = browser_state(controller.project, controller.status_message)
+                primary_path = controller.project.primary_video.path
+                secondary_path = (
+                    ""
+                    if controller.project.secondary_video is None
+                    else controller.project.secondary_video.path
+                )
+                payload["media"]["primary_display_name"] = display_names.get(
+                    primary_path,
+                    Path(primary_path).name if primary_path else "No video selected",
+                )
+                payload["media"]["secondary_display_name"] = display_names.get(
+                    secondary_path,
+                    Path(secondary_path).name if secondary_path else "None",
+                )
+                return payload
 
             def _send_static(self, name: str, content_type: str | None = None) -> None:
                 safe_name = name.replace("\\", "/").lstrip("/")
@@ -326,6 +346,7 @@ class BrowserControlServer:
                         file_bytes = file_bytes[:-2]
                     target = session_path / f"{uuid4().hex}_{safe_name}"
                     target.write_bytes(file_bytes)
+                    display_names[str(target)] = Path(filename).name
                     return target
                 raise ValueError("Multipart request must contain a file field named 'file'")
 
@@ -340,7 +361,7 @@ class BrowserControlServer:
                         shots=len(controller.project.analysis.shots),
                         status=controller.status_message,
                     )
-                    self._send_json(browser_state(controller.project, controller.status_message))
+                    self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.files.primary.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -355,7 +376,7 @@ class BrowserControlServer:
                         path=str(path),
                         status=controller.status_message,
                     )
-                    self._send_json(browser_state(controller.project, controller.status_message))
+                    self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.files.secondary.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)

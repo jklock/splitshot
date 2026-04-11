@@ -29,6 +29,38 @@ function activity(event, detail = {}) {
   });
 }
 
+function buttonDescriptor(button) {
+  return {
+    id: button.id || "",
+    text: button.textContent.trim().replace(/\s+/g, " "),
+    tool: button.dataset.tool || "",
+    waveform_mode: button.dataset.waveformMode || "",
+    nudge_ms: button.dataset.nudge || "",
+    sync_ms: button.dataset.sync || "",
+    opens_secondary: button.hasAttribute("data-open-secondary"),
+  };
+}
+
+function wireGlobalActivityLogging() {
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest("button");
+    if (!button) return;
+    activity("button.click", buttonDescriptor(button));
+  }, true);
+  document.addEventListener("change", (event) => {
+    if (!(event.target instanceof HTMLElement)) return;
+    const control = event.target;
+    if (!["INPUT", "SELECT", "TEXTAREA"].includes(control.tagName)) return;
+    activity("control.change", {
+      id: control.id || "",
+      name: control.name || "",
+      type: control.type || control.tagName.toLowerCase(),
+      value: control.type === "file" ? Array.from(control.files || []).map((file) => file.name) : control.value,
+    });
+  }, true);
+}
+
 function seconds(ms) {
   if (ms === null || ms === undefined || ms === "") return "--.--";
   return (ms / 1000).toFixed(2);
@@ -45,16 +77,11 @@ function requireValue(id, label) {
   return value;
 }
 
-function shortPath(path) {
-  if (!path) return "None";
-  const normalized = path.replaceAll("\\", "/");
-  return normalized.split("/").filter(Boolean).slice(-2).join("/");
-}
-
 function fileName(path) {
   if (!path) return "No video selected";
   const normalized = path.replaceAll("\\", "/");
-  return normalized.split("/").filter(Boolean).pop() || path;
+  const base = normalized.split("/").filter(Boolean).pop() || path;
+  return base.replace(/^[a-f0-9]{32}_/i, "");
 }
 
 function hexToRgb(hex) {
@@ -170,12 +197,14 @@ function renderHeader() {
   $("project-title").textContent = projectName;
   $("rail-project").textContent = projectName;
   $("status").textContent = state.status;
-  $("current-file").textContent = fileName(state.project.primary_video.path);
-  $("primary-file").textContent = state.project.primary_video.path || "None";
-  $("secondary-file").textContent = state.project.secondary_video?.path || "None";
+  const primaryName = state.media.primary_display_name || fileName(state.project.primary_video.path);
+  const secondaryName = state.media.secondary_display_name || fileName(state.project.secondary_video?.path || "");
+  $("current-file").textContent = primaryName;
+  $("primary-file").textContent = state.project.primary_video.path ? primaryName : "None";
+  $("secondary-file").textContent = state.project.secondary_video?.path ? secondaryName : "None";
   $("project-file").textContent = state.project.path || "Active in memory";
   $("media-badge").textContent = state.media.primary_available
-    ? `Primary: ${shortPath(state.project.primary_video.path)}`
+    ? `Primary: ${primaryName}`
     : "No video selected";
 }
 
@@ -808,6 +837,7 @@ function wireEvents() {
     event.stopPropagation();
     scorePlacementArmed = !scorePlacementArmed;
     $("place-score").classList.toggle("armed", scorePlacementArmed);
+    activity("score.place.toggle", { armed: scorePlacementArmed, shot_id: selectedShotId });
   });
   $("video-stage").addEventListener("click", (event) => {
     if (!scorePlacementArmed || !selectedShotId) return;
@@ -816,6 +846,7 @@ function wireEvents() {
     const y_norm = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
     scorePlacementArmed = false;
     $("place-score").classList.remove("armed");
+    activity("score.place.commit", { shot_id: selectedShotId, x_norm, y_norm });
     callApi("/api/scoring/position", { shot_id: selectedShotId, x_norm, y_norm });
   });
   $("apply-layout").addEventListener("click", () => callApi("/api/layout", {
@@ -828,5 +859,6 @@ function wireEvents() {
 }
 
 setActiveTool(activeTool);
+wireGlobalActivityLogging();
 wireEvents();
 refresh();

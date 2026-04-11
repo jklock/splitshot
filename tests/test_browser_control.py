@@ -183,8 +183,39 @@ def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_v
 
         assert state["metrics"]["total_shots"] == 3
         assert state["media"]["primary_available"] is True
+        assert state["media"]["primary_display_name"] == video_path.name
+        assert video_path.name in state["media"]["primary_display_name"]
+        assert "splitshot-browser-" not in state["media"]["primary_display_name"]
         assert state["project"]["primary_video"]["path"] != str(video_path)
         assert Path(state["project"]["primary_video"]["path"]).exists()
+    finally:
+        server.shutdown()
+
+
+def test_browser_file_picker_endpoint_preserves_secondary_display_name(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="primary"))
+        secondary_path = Path(synthetic_video_factory(name="secondary"))
+
+        _post_multipart(
+            f"{server.url}api/files/primary",
+            "file",
+            primary_path.name,
+            primary_path.read_bytes(),
+        )
+        state = _post_multipart(
+            f"{server.url}api/files/secondary",
+            "file",
+            secondary_path.name,
+            secondary_path.read_bytes(),
+        )
+
+        assert state["media"]["secondary_display_name"] == secondary_path.name
+        assert state["project"]["secondary_video"]["path"] != str(secondary_path)
+        assert Path(state["project"]["secondary_video"]["path"]).exists()
     finally:
         server.shutdown()
 
