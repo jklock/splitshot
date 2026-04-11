@@ -7,235 +7,179 @@
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
-      <aside class="rail" aria-label="SplitShot workflow">
+    <div class="app-shell cockpit-shell">
+      <aside class="tool-rail" aria-label="SplitShot tools">
         <div class="rail-brand">
           <span class="rail-mark">SS</span>
           <strong>SplitShot</strong>
           <small id="rail-project">Untitled Project</small>
         </div>
-        <nav class="rail-nav">
-          <button class="rail-item active" data-page="open" type="button">
-            <span class="rail-icon">OP</span><span>Open</span>
-          </button>
-          <button class="rail-item" data-page="review" type="button">
-            <span class="rail-icon">RV</span><span>Review</span>
-          </button>
-          <button class="rail-item" data-page="timing" type="button">
-            <span class="rail-icon">TM</span><span>Timing</span>
-          </button>
-          <button class="rail-item" data-page="edit" type="button">
-            <span class="rail-icon">ED</span><span>Edit</span>
-          </button>
-          <button class="rail-item" data-page="merge" type="button">
-            <span class="rail-icon">MG</span><span>Merge</span>
-          </button>
-          <button class="rail-item" data-page="overlay" type="button">
-            <span class="rail-icon">OV</span><span>Overlay</span>
-          </button>
-          <button class="rail-item" data-page="scoring" type="button">
-            <span class="rail-icon">SC</span><span>Scoring</span>
-          </button>
-          <button class="rail-item" data-page="layout" type="button">
-            <span class="rail-icon">LY</span><span>Layout</span>
-          </button>
-          <button class="rail-item" data-page="export" type="button">
-            <span class="rail-icon">EX</span><span>Export</span>
-          </button>
+        <nav class="tool-nav">
+          <button class="tool-item active" data-tool="review" type="button"><span>RV</span><b>Review</b></button>
+          <button class="tool-item" data-tool="timing" type="button"><span>TM</span><b>Timing</b></button>
+          <button class="tool-item" data-tool="edit" type="button"><span>ED</span><b>Edit</b></button>
+          <button class="tool-item" data-tool="scoring" type="button"><span>SC</span><b>Scoring</b></button>
+          <button class="tool-item" data-tool="overlay" type="button"><span>OV</span><b>Overlay</b></button>
+          <button class="tool-item" data-tool="merge" type="button"><span>MG</span><b>Merge</b></button>
+          <button class="tool-item" data-tool="layout" type="button"><span>LY</span><b>Layout</b></button>
+          <button class="tool-item" data-tool="export" type="button"><span>EX</span><b>Export</b></button>
+          <button class="tool-item" data-tool="project" type="button"><span>PR</span><b>Project</b></button>
         </nav>
-        <button id="new-project" class="rail-action" type="button">New Session</button>
+        <button id="new-project" class="rail-action" type="button">New</button>
       </aside>
 
-      <div class="main-shell">
+      <main class="cockpit">
         <header class="topbar">
-          <div>
-            <p class="eyebrow">Local browser control</p>
+          <div class="project-heading">
+            <p class="eyebrow">Local review cockpit</p>
             <h1 id="project-title">Untitled Project</h1>
-          </div>
-          <div class="session-strip" aria-live="polite">
             <span id="status">Starting local session...</span>
+          </div>
+          <div class="top-actions">
+            <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
+            <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
+            <button id="choose-primary" class="primary-button" type="button">Open Stage Video</button>
+            <button id="choose-secondary" type="button">Add Second Angle</button>
             <button id="refresh" class="ghost-button" type="button">Refresh</button>
           </div>
         </header>
 
-        <main class="workspace">
-          <section class="page active" id="page-open" aria-labelledby="open-title">
-            <div class="hero-panel">
+        <section id="empty-start" class="empty-start">
+          <div>
+            <p class="eyebrow">Start here</p>
+            <h2>Open a local stage video. SplitShot analyzes it and drops you into review.</h2>
+            <p class="lead">Video, timeline, waveform, scoring, overlay, and export stay in one workspace. No cloud transfer, no remote file handoff.</p>
+          </div>
+          <button class="primary-button large-button" data-open-primary type="button">Open Stage Video</button>
+        </section>
+
+        <section class="metrics-strip" aria-label="Stage metrics">
+          <article><span>Draw</span><strong id="draw">--.--</strong><small>beep to first</small></article>
+          <article><span>Raw</span><strong id="raw-time">--.--</strong><small>beep to final</small></article>
+          <article><span>Shots</span><strong id="shot-count">0</strong><small>detected + manual</small></article>
+          <article><span>Avg Split</span><strong id="avg-split">--.--</strong><small>shot to shot</small></article>
+        </section>
+
+        <div class="review-grid">
+          <section class="review-stack" aria-label="Video and timeline review">
+            <div class="video-toolbar">
               <div>
-                <p class="eyebrow">Start here</p>
-                <h2 id="open-title">Choose a stage video from this computer.</h2>
-                <p class="lead">SplitShot opens the selected file through the local server, analyzes timer beep and shots, then keeps the session active while this window is open.</p>
+                <p class="eyebrow">Review</p>
+                <h2>Video, overlay, timeline, and waveform stay connected.</h2>
               </div>
-              <div class="hero-actions">
-                <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
-                <button id="choose-primary" class="primary-button" type="button">Choose Primary Video</button>
-                <button class="secondary-button" data-page-jump="review" type="button">Go To Review</button>
-              </div>
+              <span id="review-summary">No video open.</span>
             </div>
 
-            <div class="panel-grid two">
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Session Media</h3>
-                  <span id="media-badge">No video selected</span>
-                </div>
-                <dl class="details">
-                  <dt>Primary</dt><dd id="primary-file">None</dd>
-                  <dt>Secondary</dt><dd id="secondary-file">None</dd>
-                  <dt>Project</dt><dd id="project-file">Active in memory</dd>
-                </dl>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Project Bundle</h3>
-                  <span>Local save/load</span>
-                </div>
-                <label>Project bundle path
-                  <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
-                </label>
-                <div class="button-grid compact">
-                  <button id="save-project" type="button">Save</button>
-                  <button id="open-project" type="button">Open</button>
-                  <button id="delete-project" type="button">Delete</button>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <section class="page" id="page-review" aria-labelledby="review-title">
-            <div class="metric-grid">
-              <article class="metric-card"><span>Draw Time</span><strong id="draw">--.--</strong><small>beep to first shot</small></article>
-              <article class="metric-card"><span>Raw Time</span><strong id="raw-time">--.--</strong><small>beep to final shot</small></article>
-              <article class="metric-card"><span>Total Shots</span><strong id="shot-count">0</strong><small>detected + manual</small></article>
-              <article class="metric-card"><span>Avg Split</span><strong id="avg-split">--.--</strong><small>shot to shot</small></article>
+            <div class="video-stage" id="video-stage">
+              <video id="primary-video" controls playsinline></video>
+              <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
+              <div id="score-layer" class="score-layer" aria-hidden="true"></div>
+              <button id="place-score" class="score-target-button" type="button">Place Score</button>
             </div>
 
-            <section class="video-panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Review</p>
-                  <h2 id="review-title">Watch video and preview overlay live.</h2>
-                </div>
-                <span id="review-summary">No video open.</span>
+            <div class="timeline-strip" id="timeline-strip"></div>
+
+            <section class="waveform-panel">
+              <div class="section-header">
+                <span><b class="beep-key"></b> Beep</span>
+                <span><b class="shot-key"></b> Shot</span>
+                <small>Click waveform to add shot. Shift-click to move beep.</small>
               </div>
-              <div class="video-stage" id="video-stage">
-                <video id="primary-video" controls playsinline></video>
-                <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
-                <div id="score-layer" class="score-layer" aria-hidden="true"></div>
-                <button id="place-score" class="score-target-button" type="button">Place Score</button>
-              </div>
-              <div class="timeline-strip" id="timeline-strip"></div>
+              <canvas id="waveform" width="1600" height="260"></canvas>
             </section>
-          </section>
 
-          <section class="page" id="page-timing" aria-labelledby="timing-title">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Beep to final shot</p>
-                  <h2 id="timing-title">Timing Data</h2>
-                </div>
+            <section class="split-section">
+              <div class="section-header">
+                <h3>Splits</h3>
                 <span id="timing-summary">No timing data.</span>
               </div>
               <div id="split-card-grid" class="split-card-grid"></div>
+            </section>
+          </section>
+
+          <aside class="inspector" aria-label="Context inspector">
+            <section class="inspector-section">
+              <div class="section-header">
+                <div>
+                  <p class="eyebrow">Selected Shot</p>
+                  <h2 id="selected-tool-title">Review</h2>
+                </div>
+                <span id="selected-score-shot">No shot selected</span>
+              </div>
+              <p id="selected-shot-copy">No shot selected.</p>
+              <div class="button-grid">
+                <button data-nudge="-10" type="button">-10 ms</button>
+                <button data-nudge="-1" type="button">-1 ms</button>
+                <button data-nudge="1" type="button">+1 ms</button>
+                <button data-nudge="10" type="button">+10 ms</button>
+              </div>
+              <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
+            </section>
+
+            <section class="tool-pane active" data-tool-pane="review">
+              <div class="section-header">
+                <h3>Readiness</h3>
+                <span id="media-badge">No video selected</span>
+              </div>
+              <dl class="details">
+                <dt>Primary</dt><dd id="primary-file">None</dd>
+                <dt>Secondary</dt><dd id="secondary-file">None</dd>
+                <dt>Project</dt><dd id="project-file">Active in memory</dd>
+              </dl>
+              <label>Detection threshold
+                <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
+              </label>
+              <button id="apply-threshold" type="button">Apply Threshold</button>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="timing">
+              <div class="section-header">
+                <h3>Timing Table</h3>
+                <small>Draw, split, cumulative, and absolute time.</small>
+              </div>
               <div id="timing-table" class="data-table"></div>
             </section>
-          </section>
 
-          <section class="page" id="page-edit" aria-labelledby="edit-title">
-            <section class="panel waveform-panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Interactive waveform</p>
-                  <h2 id="edit-title">Click to add shot, shift-click to move beep.</h2>
-                </div>
-                <span><b class="beep-key"></b> Beep <b class="shot-key"></b> Shot</span>
+            <section class="tool-pane" data-tool-pane="edit">
+              <div class="section-header">
+                <h3>Timeline Editing</h3>
+                <small>All edits apply live.</small>
               </div>
-              <canvas id="waveform" width="1600" height="320"></canvas>
-              <p class="hint">Select a split card or timing row, then nudge, score, or delete it. All changes update the active session immediately.</p>
+              <p class="hint">Use the waveform for add/move-beep. Use selected-shot controls above for nudge/delete. Score assignment is in Scoring.</p>
             </section>
-            <div class="panel-grid two">
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Selected Shot</h3>
-                  <button id="delete-selected" class="danger-button" type="button">Delete</button>
-                </div>
-                <p id="selected-shot-copy">No shot selected.</p>
-                <div class="button-grid">
-                  <button data-nudge="-10" type="button">-10 ms</button>
-                  <button data-nudge="-1" type="button">-1 ms</button>
-                  <button data-nudge="1" type="button">+1 ms</button>
-                  <button data-nudge="10" type="button">+10 ms</button>
-                </div>
-              </section>
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Detector</h3>
-                  <span>Generic sensitivity</span>
-                </div>
-                <label>Detection threshold
-                  <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
-                </label>
-                <button id="apply-threshold" class="secondary-button" type="button">Apply Threshold</button>
-              </section>
-            </div>
-          </section>
 
-          <section class="page" id="page-merge" aria-labelledby="merge-title">
-            <div class="panel-grid two">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="eyebrow">Second angle</p>
-                    <h2 id="merge-title">Choose secondary video and sync by beep.</h2>
-                  </div>
-                </div>
-                <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
-                <button id="choose-secondary" class="primary-button" type="button">Choose Secondary Video</button>
-                <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
-                <label>Merge layout
-                  <select id="merge-layout">
-                    <option value="side_by_side">Side by side</option>
-                    <option value="above_below">Above / below</option>
-                    <option value="pip">Picture in picture</option>
-                  </select>
-                </label>
-                <label>PiP size
-                  <select id="pip-size">
-                    <option value="25%">25%</option>
-                    <option value="35%">35%</option>
-                    <option value="50%">50%</option>
-                  </select>
-                </label>
-                <button id="apply-merge" class="secondary-button" type="button">Apply Merge</button>
-              </section>
+            <section class="tool-pane" data-tool-pane="scoring">
+              <div class="section-header">
+                <h3>Scoring</h3>
+                <strong id="scoring-result">--</strong>
+              </div>
+              <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
+              <label>Preset
+                <select id="scoring-preset"></select>
+              </label>
+              <p id="scoring-description" class="hint">Choose a scoring preset.</p>
+              <label id="penalties-label">Penalties
+                <input id="penalties" type="number" value="0" min="0" />
+              </label>
+              <label>Selected shot score
+                <select id="score-letter">
+                  <option>A</option>
+                  <option>C</option>
+                  <option>D</option>
+                  <option>M</option>
+                  <option>NS</option>
+                  <option>MU</option>
+                  <option>M+NS</option>
+                </select>
+              </label>
+              <button id="apply-scoring" type="button">Apply Scoring</button>
+              <button id="assign-score" class="primary-button" type="button">Assign To Selected Shot</button>
+            </section>
 
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Sync Offset</h3>
-                  <strong id="sync-offset">0 ms</strong>
-                </div>
-                <p class="hint">Offset is computed from timer beeps. Nudge it if the two angles need manual alignment.</p>
-                <div class="button-grid">
-                  <button data-sync="-10" type="button">-10 ms</button>
-                  <button data-sync="-1" type="button">-1 ms</button>
-                  <button data-sync="1" type="button">+1 ms</button>
-                  <button data-sync="10" type="button">+10 ms</button>
-                </div>
-                <button id="swap-videos" type="button">Swap Primary And Secondary</button>
-              </section>
-            </div>
-          </section>
-
-          <section class="page" id="page-overlay" aria-labelledby="overlay-title">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Shot stream overlay</p>
-                  <h2 id="overlay-title">Customize badges and scoring colors.</h2>
-                </div>
-                <button id="apply-overlay" class="primary-button" type="button">Apply Overlay</button>
+            <section class="tool-pane" data-tool-pane="overlay">
+              <div class="section-header">
+                <h3>Overlay</h3>
+                <button id="apply-overlay" class="primary-button" type="button">Apply</button>
               </div>
               <div class="control-grid">
                 <label>Position
@@ -258,106 +202,98 @@
                 </label>
               </div>
               <div class="style-grid" id="badge-style-grid"></div>
-              <h3>Score Letter Colors</h3>
+              <h3>Score Colors</h3>
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
-          </section>
 
-          <section class="page" id="page-scoring" aria-labelledby="scoring-title">
-            <div class="panel-grid two">
-              <section class="panel">
-                <div class="panel-header">
-                  <div>
-                    <p class="eyebrow">Ruleset</p>
-                    <h2 id="scoring-title">Select scoring mechanism.</h2>
-                  </div>
-                  <strong id="scoring-result">--</strong>
-                </div>
-                <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
-                <label>Scoring preset
-                  <select id="scoring-preset"></select>
-                </label>
-                <p id="scoring-description" class="hint">Choose a scoring preset.</p>
-                <label id="penalties-label">Penalties
-                  <input id="penalties" type="number" value="0" min="0" />
-                </label>
-                <button id="apply-scoring" class="secondary-button" type="button">Apply Scoring</button>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <h3>Assign Selected Shot</h3>
-                  <span id="selected-score-shot">No shot selected</span>
-                </div>
-                <label>Score letter
-                  <select id="score-letter">
-                    <option>A</option>
-                    <option>C</option>
-                    <option>D</option>
-                    <option>M</option>
-                    <option>NS</option>
-                    <option>MU</option>
-                    <option>M+NS</option>
-                  </select>
-                </label>
-                <button id="assign-score" class="primary-button" type="button">Assign To Selected Shot</button>
-                <p class="hint">Use Place Score on the Review page, then click the video to set where the letter appears.</p>
-              </section>
-            </div>
-          </section>
-
-          <section class="page" id="page-layout" aria-labelledby="layout-title">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Export frame</p>
-                  <h2 id="layout-title">Aspect ratio and crop center.</h2>
-                </div>
-                <button id="apply-layout" class="secondary-button" type="button">Apply Layout</button>
+            <section class="tool-pane" data-tool-pane="merge">
+              <div class="section-header">
+                <h3>Second Angle</h3>
+                <strong id="sync-offset">0 ms</strong>
               </div>
-              <div class="control-grid">
-                <label>Quality
-                  <select id="quality">
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </label>
-                <label>Aspect ratio
-                  <select id="aspect-ratio">
-                    <option value="original">Original</option>
-                    <option value="16:9">16:9</option>
-                    <option value="9:16">9:16</option>
-                    <option value="1:1">1:1</option>
-                    <option value="4:5">4:5</option>
-                  </select>
-                </label>
-                <label>Crop center X
-                  <input id="crop-center-x" type="range" min="0" max="1" step="0.01" value="0.5" />
-                </label>
-                <label>Crop center Y
-                  <input id="crop-center-y" type="range" min="0" max="1" step="0.01" value="0.5" />
-                </label>
+              <button class="primary-button" data-open-secondary type="button">Choose Secondary Video</button>
+              <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
+              <label>Layout
+                <select id="merge-layout">
+                  <option value="side_by_side">Side by side</option>
+                  <option value="above_below">Above / below</option>
+                  <option value="pip">Picture in picture</option>
+                </select>
+              </label>
+              <label>PiP size
+                <select id="pip-size">
+                  <option value="25%">25%</option>
+                  <option value="35%">35%</option>
+                  <option value="50%">50%</option>
+                </select>
+              </label>
+              <button id="apply-merge" type="button">Apply Merge</button>
+              <div class="button-grid">
+                <button data-sync="-10" type="button">-10 ms</button>
+                <button data-sync="-1" type="button">-1 ms</button>
+                <button data-sync="1" type="button">+1 ms</button>
+                <button data-sync="10" type="button">+10 ms</button>
               </div>
+              <button id="swap-videos" type="button">Swap Angles</button>
             </section>
-          </section>
 
-          <section class="page" id="page-export" aria-labelledby="export-title">
-            <section class="panel">
-              <div class="panel-header">
-                <div>
-                  <p class="eyebrow">Render</p>
-                  <h2 id="export-title">Export local MP4.</h2>
-                </div>
+            <section class="tool-pane" data-tool-pane="layout">
+              <div class="section-header">
+                <h3>Layout</h3>
+                <button id="apply-layout" type="button">Apply</button>
               </div>
-              <label>Output MP4 path
+              <label>Quality
+                <select id="quality">
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </label>
+              <label>Aspect ratio
+                <select id="aspect-ratio">
+                  <option value="original">Original</option>
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:5">4:5</option>
+                </select>
+              </label>
+              <label>Crop center X
+                <input id="crop-center-x" type="range" min="0" max="1" step="0.01" value="0.5" />
+              </label>
+              <label>Crop center Y
+                <input id="crop-center-y" type="range" min="0" max="1" step="0.01" value="0.5" />
+              </label>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="export">
+              <div class="section-header">
+                <h3>Export</h3>
+                <small>Local MP4</small>
+              </div>
+              <label>Output path
                 <input id="export-path" placeholder="/absolute/path/to/output.mp4" />
               </label>
               <button id="export-video" class="primary-button" type="button">Export MP4</button>
             </section>
-          </section>
-        </main>
-      </div>
+
+            <section class="tool-pane" data-tool-pane="project">
+              <div class="section-header">
+                <h3>Project</h3>
+                <small>Local bundle</small>
+              </div>
+              <label>Project bundle path
+                <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
+              </label>
+              <div class="button-grid compact">
+                <button id="save-project" type="button">Save</button>
+                <button id="open-project" type="button">Open</button>
+                <button id="delete-project" type="button">Delete</button>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </main>
     </div>
 
     <script src="/static/app.js"></script>

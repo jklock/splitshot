@@ -1,6 +1,6 @@
 let state = null;
 let selectedShotId = null;
-let activePage = window.localStorage.getItem("splitshot.activePage") || "open";
+let activeTool = window.localStorage.getItem("splitshot.activeTool") || "review";
 let scorePlacementArmed = false;
 let overlayFrame = null;
 
@@ -56,16 +56,17 @@ function setStatus(message) {
   $("status").textContent = message;
 }
 
-function setActivePage(page) {
-  if (!$(`page-${page}`)) page = "open";
-  activePage = page;
-  window.localStorage.setItem("splitshot.activePage", page);
-  document.querySelectorAll(".rail-item").forEach((item) => {
-    item.classList.toggle("active", item.dataset.page === page);
+function setActiveTool(tool) {
+  if (!document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "review";
+  activeTool = tool;
+  window.localStorage.setItem("splitshot.activeTool", tool);
+  document.querySelectorAll(".tool-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.tool === tool);
   });
-  document.querySelectorAll(".page").forEach((panel) => {
-    panel.classList.toggle("active", panel.id === `page-${page}`);
+  document.querySelectorAll(".tool-pane").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.toolPane === tool);
   });
+  $("selected-tool-title").textContent = tool.charAt(0).toUpperCase() + tool.slice(1);
   renderLiveOverlay();
 }
 
@@ -142,6 +143,7 @@ function renderHeader() {
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${shortPath(state.project.primary_video.path)}`
     : "No video selected";
+  $("empty-start").classList.toggle("hidden", state.media.primary_available);
 }
 
 function renderStats() {
@@ -468,7 +470,7 @@ function render() {
   renderSelection();
   renderControls();
   renderLiveOverlay();
-  setActivePage(activePage);
+  setActiveTool(activeTool);
 }
 
 function waveformTime(event) {
@@ -500,24 +502,27 @@ function readOverlayPayload() {
 }
 
 function wireEvents() {
-  document.querySelectorAll("[data-page]").forEach((item) => {
-    item.addEventListener("click", () => setActivePage(item.dataset.page));
-  });
-  document.querySelectorAll("[data-page-jump]").forEach((item) => {
-    item.addEventListener("click", () => setActivePage(item.dataset.pageJump));
+  document.querySelectorAll("[data-tool]").forEach((item) => {
+    item.addEventListener("click", () => setActiveTool(item.dataset.tool));
   });
   $("refresh").addEventListener("click", refresh);
   $("new-project").addEventListener("click", () => callApi("/api/project/new", {}));
   $("choose-primary").addEventListener("click", () => $("primary-file-input").click());
   $("choose-secondary").addEventListener("click", () => $("secondary-file-input").click());
+  document.querySelectorAll("[data-open-primary]").forEach((item) => {
+    item.addEventListener("click", () => $("primary-file-input").click());
+  });
+  document.querySelectorAll("[data-open-secondary]").forEach((item) => {
+    item.addEventListener("click", () => $("secondary-file-input").click());
+  });
   $("primary-file-input").addEventListener("change", async (event) => {
     const result = await postFile("/api/files/primary", event.target.files[0]);
-    if (result) setActivePage("review");
+    if (result) setActiveTool("review");
     event.target.value = "";
   });
   $("secondary-file-input").addEventListener("change", async (event) => {
     const result = await postFile("/api/files/secondary", event.target.files[0]);
-    if (result) setActivePage("merge");
+    if (result) setActiveTool("merge");
     event.target.value = "";
   });
   $("save-project").addEventListener("click", () => callApi("/api/project/save", { path: requireValue("project-path", "Project path") }));
@@ -586,6 +591,6 @@ function wireEvents() {
   $("export-video").addEventListener("click", () => callApi("/api/export", { path: requireValue("export-path", "Output MP4 path") }));
 }
 
-setActivePage(activePage);
+setActiveTool(activeTool);
 wireEvents();
 refresh();
