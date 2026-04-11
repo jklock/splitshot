@@ -13,5 +13,6 @@ htmlcov/
 coverage.xml
 projects/
 tmp/
+logs/
 Stage*.MP4
 Stage*.mp4

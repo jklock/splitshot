@@ -1,0 +1,23 @@
+# Browser Usability Logging Waveform Todo
+
+- [x] Add per-run server activity logging to console and file.
+- [x] Add browser-to-server activity event logging.
+- [x] Review current logs before UI behavior changes.
+- [x] Remove always-visible open, second angle, and refresh command buttons.
+- [x] Remove the left rail bottom New button.
+- [x] Increase logo fill inside the rail brand cell.
+- [x] Improve left rail text brightness, weight, and sizing.
+- [x] Add thin filename and metrics strip at the top of the cockpit.
+- [x] Hide selected-shot controls from unrelated tool panes.
+- [x] Move file-open actions into contextual tool panes.
+- [x] Add explicit waveform select, add-shot, and move-beep modes.
+- [x] Add waveform expanded editing mode.
+- [x] Draw shot numbers/times and selected regions on the waveform.
+- [x] Add pointer drag shot movement on waveform markers.
+- [x] Add keyboard nudge/delete for selected shots.
+- [x] Add expanded timing workbench mode.
+- [x] Add tests for logging, decluttered UI, and interaction wiring.
+- [x] Run browser UI tests.
+- [x] Run browser control tests.
+- [x] Run the full test suite.
+- [x] Complete final UI quality audit.
