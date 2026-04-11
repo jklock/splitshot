@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
@@ -71,6 +72,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "/api/files/primary" in js
     assert "/api/files/secondary" in js
     assert "/api/activity" in js
+    assert 'activity("button.click"' in js
+    assert "wireGlobalActivityLogging" in js
+    assert "document.addEventListener(\"click\"" in js
     assert "handleWaveformPointerDown" in js
     assert "handleWaveformPointerMove" in js
     assert "handleKeyboardEdit" in js
@@ -95,13 +99,73 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".empty-start" not in css
     assert ".metrics-strip" not in css
     assert ".rail-action" not in css
-    assert "grid-template-columns: 76px minmax(0, 1fr);" in css
-    assert "grid-template-rows: 32px minmax(0, 1fr);" in css
+    assert "--rail-width: 96px;" in css
+    assert "--topbar-height: 38px;" in css
+    assert "--inspector-width: 440px;" in css
+    assert "grid-template-columns: var(--rail-width) minmax(0, 1fr);" in css
+    assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
+    assert "grid-template-columns: minmax(0, 1fr) repeat(4, calc(var(--inspector-width) / 4));" in css
+    assert "width: var(--inspector-width);" in css
+    assert "overflow-x: hidden;" in css
     assert "grid-template-rows: minmax(320px, 1fr) 206px;" in css
     assert ".cockpit.waveform-expanded .review-grid" in css
+    assert ".cockpit.waveform-expanded .video-stage" in css
+    assert "display: none;" in css
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
+
+
+def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
+    html = (STATIC_ROOT / "index.html").read_text()
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'activity("button.click"' in js
+
+    wired_button_ids = {
+        "place-score",
+        "expand-waveform",
+        "collapse-timing",
+        "delete-selected",
+        "apply-threshold",
+        "expand-timing",
+        "apply-scoring",
+        "assign-score",
+        "apply-overlay",
+        "apply-merge",
+        "swap-videos",
+        "apply-layout",
+        "export-video",
+        "choose-primary",
+        "choose-secondary",
+        "new-project",
+        "save-project",
+        "open-project",
+        "delete-project",
+    }
+    behavior_attributes = (
+        "data-tool=",
+        "data-waveform-mode=",
+        "data-nudge=",
+        "data-sync=",
+        "data-open-secondary",
+    )
+    button_tags = re.findall(r"<button\b[^>]*>", html)
+
+    assert button_tags
+    for tag in button_tags:
+        id_match = re.search(r'id="([^"]+)"', tag)
+        has_wired_id = bool(id_match and id_match.group(1) in wired_button_ids)
+        has_behavior_attribute = any(attribute in tag for attribute in behavior_attributes)
+        assert has_wired_id or has_behavior_attribute, tag
+
+
+def test_browser_display_names_strip_session_uuid_prefixes() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert "primary_display_name" in js
+    assert "secondary_display_name" in js
+    assert 'replace(/^[a-f0-9]{32}_/i, "")' in js
 
 
 def test_browser_static_logo_is_packaged() -> None:

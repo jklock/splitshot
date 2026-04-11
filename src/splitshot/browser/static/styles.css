@@ -13,6 +13,9 @@
   --green: #39d06f;
   --red: #f05252;
   --blue-video: #101a2a;
+  --rail-width: 96px;
+  --topbar-height: 38px;
+  --inspector-width: 440px;
 }
 
 * {
@@ -106,7 +109,7 @@ h3 {
 
 .cockpit-shell {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -116,7 +119,7 @@ h3 {
   background: linear-gradient(180deg, #151719, #0d0f11);
   border-right: 1px solid #252a30;
   display: grid;
-  grid-template-rows: 76px minmax(0, 1fr);
+  grid-template-rows: var(--rail-width) minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -126,7 +129,7 @@ h3 {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  height: 76px;
+  height: var(--rail-width);
   justify-items: center;
   overflow: hidden;
   padding: 0;
@@ -135,11 +138,12 @@ h3 {
 
 .rail-logo {
   display: block;
-  height: 72px;
-  max-height: 72px;
-  max-width: 72px;
-  object-fit: contain;
-  width: 72px;
+  height: var(--rail-width);
+  max-height: none;
+  max-width: none;
+  object-fit: cover;
+  transform: scale(1.34);
+  width: var(--rail-width);
 }
 
 .tool-nav {
@@ -174,7 +178,7 @@ h3 {
 
 .cockpit {
   display: grid;
-  grid-template-rows: 32px minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   min-width: 0;
@@ -202,7 +206,8 @@ small,
   border-bottom: 1px solid var(--line);
   display: grid;
   gap: 0;
-  grid-template-columns: minmax(220px, 1fr) repeat(4, max-content);
+  grid-template-columns: minmax(0, 1fr) repeat(4, calc(var(--inspector-width) / 4));
+  height: var(--topbar-height);
   min-width: 0;
 }
 
@@ -211,9 +216,11 @@ small,
   border-right: 1px solid var(--line);
   display: block;
   font-weight: 900;
+  height: var(--topbar-height);
+  line-height: var(--topbar-height);
   min-width: 0;
   overflow: hidden;
-  padding: 0 0.68rem;
+  padding: 0 0.8rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -254,7 +261,7 @@ small,
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -282,7 +289,20 @@ small,
   gap: 0.65rem;
   justify-content: space-between;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   padding: 0.35rem 0.65rem;
+}
+
+.section-header > * {
+  min-width: 0;
+}
+
+.section-header span,
+.section-header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .legend-row,
@@ -575,7 +595,9 @@ small,
   grid-auto-rows: max-content;
   height: 100%;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+  width: var(--inspector-width);
 }
 
 .inspector-section,
@@ -607,8 +629,9 @@ small,
 
 .details {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
+  grid-template-columns: 78px minmax(0, 1fr);
   margin: 0;
+  min-width: 0;
 }
 
 .details dt,
@@ -656,8 +679,9 @@ small,
 
 .data-table {
   display: grid;
-  grid-template-columns: 80px repeat(6, minmax(100px, 1fr));
-  overflow-x: auto;
+  grid-template-columns: 62px repeat(6, minmax(0, 1fr));
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .timing-workbench {
@@ -670,6 +694,7 @@ small,
 
 .timing-workbench-table {
   align-content: start;
+  grid-template-columns: 96px repeat(6, minmax(120px, 1fr));
   overflow: auto;
 }
 
@@ -680,8 +705,11 @@ small,
 .data-table div {
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
-  min-width: 100px;
+  min-width: 0;
+  overflow: hidden;
   padding: 0.42rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .data-table .head {
@@ -706,16 +734,24 @@ small,
 
 @media (max-width: 1180px) {
   .cockpit-shell {
-    grid-template-columns: 70px minmax(0, 1fr);
+    grid-template-columns: 84px minmax(0, 1fr);
   }
 
   .rail-logo {
-    height: 66px;
-    width: 66px;
+    height: 84px;
+    width: 84px;
   }
 
   .review-grid {
-    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-columns: minmax(0, 1fr) 380px;
+  }
+
+  .inspector {
+    width: 380px;
+  }
+
+  .status-strip {
+    grid-template-columns: minmax(0, 1fr) repeat(4, 95px);
   }
 }
 
@@ -784,11 +820,15 @@ small,
 }
 
 .cockpit.waveform-expanded .review-stack {
-  grid-template-rows: 104px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .video-stage {
+  display: none;
 }
 
 .cockpit.waveform-expanded .waveform-panel {
-  grid-template-rows: 26px 40px minmax(0, 1fr) 96px;
+  grid-template-rows: 32px 46px minmax(0, 1fr) 128px;
 }
 
 .cockpit.waveform-expanded .waveform-shot-list {
