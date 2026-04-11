@@ -10,30 +10,27 @@
     <div class="app-shell cockpit-shell">
       <aside class="tool-rail" aria-label="SplitShot tools">
         <div class="rail-brand">
-          <span class="rail-mark">🍎</span>
-          <strong>Split</strong>
-          <small id="rail-project">Untitled Project</small>
+          <img class="rail-logo" src="/static/logo.png" alt="SplitShot" />
+          <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
-          <button class="tool-item active" data-tool="review" type="button"><span>🍎</span><b>Review</b></button>
-          <button class="tool-item" data-tool="timing" type="button"><span>🍎</span><b>Timing</b></button>
-          <button class="tool-item" data-tool="edit" type="button"><span>🍎</span><b>Edit</b></button>
-          <button class="tool-item" data-tool="scoring" type="button"><span>🍎</span><b>Score</b></button>
-          <button class="tool-item" data-tool="overlay" type="button"><span>🍎</span><b>Overlay</b></button>
-          <button class="tool-item" data-tool="merge" type="button"><span>🍎</span><b>Merge</b></button>
-          <button class="tool-item" data-tool="layout" type="button"><span>🍎</span><b>Layout</b></button>
-          <button class="tool-item" data-tool="export" type="button"><span>🍎</span><b>Export</b></button>
-          <button class="tool-item" data-tool="project" type="button"><span>🍎</span><b>Project</b></button>
+          <button class="tool-item active" data-tool="review" type="button"><b>Review</b></button>
+          <button class="tool-item" data-tool="timing" type="button"><b>Timing</b></button>
+          <button class="tool-item" data-tool="edit" type="button"><b>Edit</b></button>
+          <button class="tool-item" data-tool="scoring" type="button"><b>Score</b></button>
+          <button class="tool-item" data-tool="overlay" type="button"><b>Overlay</b></button>
+          <button class="tool-item" data-tool="merge" type="button"><b>Merge</b></button>
+          <button class="tool-item" data-tool="layout" type="button"><b>Layout</b></button>
+          <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
+          <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
         </nav>
         <button id="new-project" class="rail-action" type="button">New</button>
       </aside>
 
       <main class="cockpit">
-        <header class="topbar">
-          <div class="project-heading">
-            <h1 id="project-title">Untitled Project</h1>
-            <span id="status">Ready.</span>
-          </div>
+        <section class="command-strip" aria-label="Local session commands">
+          <span id="project-title" hidden>Untitled Project</span>
+          <span id="status" class="command-status">Ready.</span>
           <div class="top-actions">
             <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
             <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
@@ -41,7 +38,7 @@
             <button id="choose-secondary" type="button">Add Second Angle</button>
             <button id="refresh" class="ghost-button" type="button">Refresh</button>
           </div>
-        </header>
+        </section>
 
         <section id="empty-start" class="empty-start">
           <span>No video</span>

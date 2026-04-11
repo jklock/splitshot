@@ -22,8 +22,12 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'data-tool="merge"' in html
     assert 'data-tool="layout"' in html
     assert 'data-tool="export"' in html
-    assert "<span>🍎</span><b>Review</b>" in html
-    assert "<span>🍎</span><b>Score</b>" in html
+    assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
+    assert "<b>Review</b>" in html
+    assert "<b>Score</b>" in html
+    assert "🍎" not in html
+    assert 'class="topbar"' not in html
+    assert 'class="command-strip"' in html
     assert "Open Stage Video" in html
     assert html.count("Open Stage Video") == 1
     assert "Local review cockpit" not in html
@@ -60,9 +64,16 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "border-radius: 8px" not in css
     assert "border-radius: 9px" not in css
     assert "border-radius: 10px" not in css
+    assert "html,\nbody {\n  height: 100%;" in css
+    assert "overflow: hidden;" in css
     assert ".review-grid {\n  display: grid;" in css
     assert ".button-grid {\n  display: grid;\n  gap: 0;" in css
     assert ".metrics-strip {\n  display: grid;" in css
-    assert "grid-template-columns: 68px minmax(0, 1fr);" in css
+    assert "grid-template-columns: 76px minmax(0, 1fr);" in css
+    assert "grid-template-rows: 38px auto 54px minmax(0, 1fr);" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
+
+
+def test_browser_static_logo_is_packaged() -> None:
+    assert (STATIC_ROOT / "logo.png").is_file()
