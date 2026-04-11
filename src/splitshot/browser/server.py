@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import re
+import sys
 import threading
 import webbrowser
 from http import HTTPStatus
@@ -28,6 +29,20 @@ from splitshot.export.pipeline import export_project
 from splitshot.ui.controller import ProjectController
 
 
+EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+
+
+def is_expected_disconnect_error(exc: BaseException | None) -> bool:
+    return isinstance(exc, EXPECTED_DISCONNECT_ERRORS)
+
+
+class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
+        if is_expected_disconnect_error(sys.exc_info()[1]):
+            return
+        super().handle_error(request, client_address)
+
+
 class BrowserControlServer:
     def __init__(
         self,
@@ -51,17 +66,19 @@ class BrowserControlServer:
         return f"http://{self.host}:{self.port}/"
 
     def serve_forever(self, open_browser: bool = True) -> None:
-        self._httpd = ThreadingHTTPServer((self.host, self.port), self._handler())
+        self._httpd = self._build_httpd()
         if open_browser:
             webbrowser.open(self.url)
         try:
             self._httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nSplitShot browser control stopped.")
         finally:
             self._httpd.server_close()
             self._session_dir.cleanup()
 
     def start_background(self, open_browser: bool = False) -> None:
-        self._httpd = ThreadingHTTPServer((self.host, self.port), self._handler())
+        self._httpd = self._build_httpd()
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
         if open_browser:
@@ -74,6 +91,9 @@ class BrowserControlServer:
         if self._thread is not None:
             self._thread.join(timeout=2)
         self._session_dir.cleanup()
+
+    def _build_httpd(self) -> ThreadingHTTPServer:
+        return QuietThreadingHTTPServer((self.host, self.port), self._handler())
 
     def _handler(self) -> type[BaseHTTPRequestHandler]:
         controller = self.controller
@@ -218,7 +238,10 @@ class BrowserControlServer:
                         chunk = media_file.read(min(1024 * 1024, remaining))
                         if not chunk:
                             break
-                        self.wfile.write(chunk)
+                        try:
+                            self.wfile.write(chunk)
+                        except EXPECTED_DISCONNECT_ERRORS:
+                            return
                         remaining -= len(chunk)
 
             def _save_uploaded_file(self) -> Path:

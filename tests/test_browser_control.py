@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.request
 from pathlib import Path
 
-from splitshot.browser.server import BrowserControlServer
+from splitshot.browser.server import (
+    BrowserControlServer,
+    QuietThreadingHTTPServer,
+    is_expected_disconnect_error,
+)
 from splitshot.browser.state import browser_state
 from splitshot.ui.controller import ProjectController
 
@@ -40,6 +45,60 @@ def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) ->
 def _get_json(url: str) -> dict:
     with urllib.request.urlopen(url, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def test_browser_foreground_server_handles_keyboard_interrupt_cleanly(capsys) -> None:
+    class InterruptingHTTPD:
+        server_address = ("127.0.0.1", 8765)
+
+        def __init__(self) -> None:
+            self.closed = False
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    fake_httpd = InterruptingHTTPD()
+    server = BrowserControlServer(port=0)
+    server._build_httpd = lambda: fake_httpd  # type: ignore[method-assign]
+
+    server.serve_forever(open_browser=False)
+
+    assert fake_httpd.closed is True
+    assert "SplitShot browser control stopped." in capsys.readouterr().out
+
+
+def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:
+    calls: list[tuple[object, tuple[str, int]]] = []
+
+    def fake_handle_error(self, request, client_address) -> None:
+        calls.append((request, client_address))
+
+    monkeypatch.setattr(ThreadingHTTPServer, "handle_error", fake_handle_error)
+    httpd = QuietThreadingHTTPServer(("127.0.0.1", 0), BaseHTTPRequestHandler)
+    try:
+        try:
+            raise BrokenPipeError
+        except BrokenPipeError:
+            httpd.handle_error(object(), ("127.0.0.1", 1))
+        assert calls == []
+
+        try:
+            raise RuntimeError("real failure")
+        except RuntimeError:
+            httpd.handle_error(object(), ("127.0.0.1", 1))
+        assert len(calls) == 1
+    finally:
+        httpd.server_close()
+
+
+def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
+    assert is_expected_disconnect_error(BrokenPipeError())
+    assert is_expected_disconnect_error(ConnectionResetError())
+    assert is_expected_disconnect_error(ConnectionAbortedError())
+    assert not is_expected_disconnect_error(RuntimeError())
 
 
 def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_factory) -> None:
