@@ -44,7 +44,7 @@ class ProjectController(QObject):
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
         self.project_path: Path | None = None
-        self.status_message = "Choose a stage video to start automatic local analysis."
+        self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
 
     def new_project(self) -> None:
@@ -56,7 +56,7 @@ class ProjectController(QObject):
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
         self.project_path = None
-        self._set_status("Choose a stage video to start automatic local analysis.")
+        self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
         self.project_changed.emit()
 

@@ -28,8 +28,9 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Avenir Next Condensed", "DIN Alternate", "Bahnschrift", "Arial Narrow", sans-serif;
-  letter-spacing: 0.015em;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
 }
 
 button,
@@ -40,15 +41,15 @@ select {
   border-radius: 0;
   color: var(--text);
   font: inherit;
-  min-height: 42px;
-  padding: 0.6rem 0.75rem;
+  min-height: 30px;
+  padding: 0.34rem 0.55rem;
 }
 
 button {
   cursor: pointer;
-  font-weight: 850;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 button:hover,
@@ -66,11 +67,11 @@ select {
 label {
   color: var(--muted);
   display: grid;
-  font-size: 0.86rem;
-  font-weight: 800;
-  gap: 0.4rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  font-size: 0.76rem;
+  font-weight: 600;
+  gap: 0.28rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 h1,
@@ -82,25 +83,25 @@ p {
 }
 
 h1 {
-  font-size: clamp(1.45rem, 2.3vw, 2.25rem);
-  line-height: 0.95;
-  text-transform: uppercase;
+  font-size: 1.12rem;
+  line-height: 1.1;
+  text-transform: none;
 }
 
 h2 {
-  font-size: clamp(1.15rem, 1.7vw, 1.55rem);
-  line-height: 1.05;
+  font-size: 0.96rem;
+  line-height: 1.15;
 }
 
 h3 {
-  font-size: 1rem;
+  font-size: 0.84rem;
   line-height: 1;
-  text-transform: uppercase;
+  text-transform: none;
 }
 
 .cockpit-shell {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 68px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -118,24 +119,24 @@ h3 {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.3rem;
+  gap: 0.16rem;
   justify-items: center;
-  padding: 1rem 0.55rem 0.85rem;
+  padding: 0.55rem 0.25rem;
   text-align: center;
 }
 
 .rail-brand strong {
-  font-size: 0.82rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .rail-brand small {
   color: var(--quiet);
-  font-size: 0.72rem;
+  font-size: 0.58rem;
   overflow: hidden;
   text-overflow: ellipsis;
-  width: 82px;
+  width: 58px;
   white-space: nowrap;
 }
 
@@ -145,15 +146,15 @@ h3 {
   border-radius: 0;
   color: #111;
   display: inline-flex;
-  font-weight: 950;
-  height: 34px;
+  font-size: 1rem;
+  height: 24px;
   justify-content: center;
-  width: 40px;
+  width: 28px;
 }
 
 .tool-nav {
   display: grid;
-  grid-auto-rows: minmax(70px, auto);
+  grid-auto-rows: minmax(46px, auto);
 }
 
 .tool-item {
@@ -165,7 +166,7 @@ h3 {
   color: var(--muted);
   display: grid;
   justify-items: center;
-  padding: 0.65rem 0.3rem;
+  padding: 0.38rem 0.18rem;
 }
 
 .tool-item.active {
@@ -174,11 +175,12 @@ h3 {
 }
 
 .tool-item span {
-  font-size: 1.15rem;
+  font-size: 0.9rem;
 }
 
 .tool-item b {
-  font-size: 0.72rem;
+  font-size: 0.58rem;
+  font-weight: 600;
 }
 
 .rail-action {
@@ -200,8 +202,8 @@ h3 {
   display: flex;
   gap: 1rem;
   justify-content: space-between;
-  min-height: 82px;
-  padding: 0.85rem 1rem;
+  min-height: 52px;
+  padding: 0.45rem 0.65rem;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -223,17 +225,10 @@ small,
 
 .eyebrow {
   color: var(--accent);
-  font-size: 0.74rem;
+  font-size: 0.66rem;
   font-weight: 950;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-
-.lead {
-  color: var(--muted);
-  font-size: 1.08rem;
-  line-height: 1.35;
-  max-width: 58rem;
 }
 
 .top-actions {
@@ -258,9 +253,9 @@ small,
 }
 
 .large-button {
-  font-size: 1rem;
-  min-height: 56px;
-  min-width: 240px;
+  font-size: 0.86rem;
+  min-height: 36px;
+  min-width: 180px;
 }
 
 .empty-start {
@@ -268,10 +263,9 @@ small,
   background: rgba(21, 23, 25, 0.95);
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 1rem;
-  grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 170px;
-  padding: 1.35rem;
+  justify-content: start;
+  min-height: 54px;
+  padding: 0.55rem 0.65rem;
 }
 
 .empty-start.hidden {
@@ -288,26 +282,26 @@ small,
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   display: grid;
-  gap: 0.1rem;
-  min-height: 104px;
-  padding: 0.8rem;
+  gap: 0.05rem;
+  min-height: 62px;
+  padding: 0.45rem 0.55rem;
 }
 
 .metrics-strip span {
   color: var(--muted);
-  font-size: 0.8rem;
-  font-weight: 850;
-  text-transform: uppercase;
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: none;
 }
 
 .metrics-strip strong {
-  font-size: clamp(2.2rem, 3.6vw, 3.7rem);
-  line-height: 0.95;
+  font-size: clamp(1.3rem, 2.2vw, 2rem);
+  line-height: 1;
 }
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 26vw);
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 24vw);
   min-height: 0;
 }
 
@@ -328,15 +322,15 @@ small,
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 1rem;
+  gap: 0.65rem;
   justify-content: space-between;
-  padding: 0.8rem 1rem;
+  padding: 0.42rem 0.65rem;
 }
 
 .video-stage {
   background: #000;
   border-bottom: 1px solid #252a30;
-  min-height: 44vh;
+  min-height: 38vh;
   overflow: hidden;
   position: relative;
 }
@@ -344,8 +338,8 @@ small,
 .video-stage video {
   background: #000;
   display: block;
-  height: min(62vh, 620px);
-  min-height: 360px;
+  height: min(58vh, 560px);
+  min-height: 300px;
   object-fit: contain;
   width: 100%;
 }
@@ -353,7 +347,7 @@ small,
 .live-overlay {
   display: flex;
   gap: 0;
-  padding: 1rem;
+  padding: 0.65rem;
   pointer-events: none;
   position: absolute;
   z-index: 2;
@@ -397,7 +391,7 @@ small,
   border-radius: 0;
   font-weight: 950;
   line-height: 1;
-  padding: 0.65rem 0.85rem;
+  padding: 0.42rem 0.58rem;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
 }
@@ -452,7 +446,7 @@ small,
 .timeline-strip {
   background: var(--blue-video);
   border-bottom: 1px solid var(--line);
-  min-height: 48px;
+  min-height: 34px;
   overflow: hidden;
   position: relative;
 }
@@ -478,16 +472,16 @@ small,
   border-bottom: 1px solid #2c4059;
   cursor: crosshair;
   display: block;
-  height: 260px;
+  height: 160px;
   width: 100%;
 }
 
 .beep-key,
 .shot-key {
   display: inline-block;
-  height: 12px;
-  margin: 0 0.35rem;
-  width: 12px;
+  height: 8px;
+  margin: 0 0.24rem;
+  width: 8px;
 }
 
 .beep-key {
@@ -504,7 +498,7 @@ small,
 
 .split-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
 }
 
 .split-card {
@@ -514,8 +508,8 @@ small,
   border-right: 1px solid #343a42;
   cursor: pointer;
   display: grid;
-  gap: 0.22rem;
-  padding: 0.75rem;
+  gap: 0.12rem;
+  padding: 0.45rem 0.5rem;
   text-align: left;
 }
 
@@ -530,14 +524,14 @@ small,
 }
 
 .split-card strong {
-  font-size: 1.65rem;
+  font-size: 1rem;
   line-height: 1;
 }
 
 .inspector {
   display: grid;
   grid-auto-rows: max-content;
-  max-height: calc(100vh - 187px);
+  max-height: calc(100vh - 115px);
   overflow-y: auto;
 }
 
@@ -545,8 +539,8 @@ small,
 .tool-pane {
   border-bottom: 1px solid var(--line);
   display: grid;
-  gap: 0.8rem;
-  padding: 0.9rem;
+  gap: 0.5rem;
+  padding: 0.55rem;
 }
 
 .tool-pane {
@@ -559,7 +553,7 @@ small,
 
 .details {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr);
   margin: 0;
 }
 
@@ -569,7 +563,7 @@ small,
   margin: 0;
   min-width: 0;
   overflow: hidden;
-  padding: 0.65rem 0;
+  padding: 0.42rem 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -594,7 +588,7 @@ small,
 .score-color-grid {
   display: grid;
   gap: 0;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
 }
 
 .style-card {
@@ -602,8 +596,8 @@ small,
   border: 1px solid var(--line);
   border-radius: 0;
   display: grid;
-  gap: 0.55rem;
-  padding: 0.75rem;
+  gap: 0.36rem;
+  padding: 0.48rem;
 }
 
 .data-table {
@@ -616,7 +610,7 @@ small,
   border-bottom: 1px solid var(--line);
   border-right: 1px solid var(--line);
   min-width: 100px;
-  padding: 0.65rem;
+  padding: 0.42rem;
 }
 
 .data-table .head {
@@ -641,7 +635,7 @@ small,
 
 @media (max-width: 1180px) {
   .cockpit-shell {
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: 62px minmax(0, 1fr);
   }
 
   .rail-brand strong,
