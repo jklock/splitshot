@@ -22,8 +22,14 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'data-tool="merge"' in html
     assert 'data-tool="layout"' in html
     assert 'data-tool="export"' in html
+    assert "<span>🍎</span><b>Review</b>" in html
+    assert "<span>🍎</span><b>Score</b>" in html
     assert "Open Stage Video" in html
-    assert "No cloud transfer" in html
+    assert html.count("Open Stage Video") == 1
+    assert "Local review cockpit" not in html
+    assert "Start here" not in html
+    assert "SplitShot analyzes" not in html
+    assert "No cloud transfer" not in html
     assert "upload" not in html.lower()
 
 
@@ -57,3 +63,6 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".review-grid {\n  display: grid;" in css
     assert ".button-grid {\n  display: grid;\n  gap: 0;" in css
     assert ".metrics-strip {\n  display: grid;" in css
+    assert "grid-template-columns: 68px minmax(0, 1fr);" in css
+    assert "font-family: -apple-system" in css
+    assert "font-size: 13px;" in css

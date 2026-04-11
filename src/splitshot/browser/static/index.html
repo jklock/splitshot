@@ -10,20 +10,20 @@
     <div class="app-shell cockpit-shell">
       <aside class="tool-rail" aria-label="SplitShot tools">
         <div class="rail-brand">
-          <span class="rail-mark">SS</span>
-          <strong>SplitShot</strong>
+          <span class="rail-mark">🍎</span>
+          <strong>Split</strong>
           <small id="rail-project">Untitled Project</small>
         </div>
         <nav class="tool-nav">
-          <button class="tool-item active" data-tool="review" type="button"><span>RV</span><b>Review</b></button>
-          <button class="tool-item" data-tool="timing" type="button"><span>TM</span><b>Timing</b></button>
-          <button class="tool-item" data-tool="edit" type="button"><span>ED</span><b>Edit</b></button>
-          <button class="tool-item" data-tool="scoring" type="button"><span>SC</span><b>Scoring</b></button>
-          <button class="tool-item" data-tool="overlay" type="button"><span>OV</span><b>Overlay</b></button>
-          <button class="tool-item" data-tool="merge" type="button"><span>MG</span><b>Merge</b></button>
-          <button class="tool-item" data-tool="layout" type="button"><span>LY</span><b>Layout</b></button>
-          <button class="tool-item" data-tool="export" type="button"><span>EX</span><b>Export</b></button>
-          <button class="tool-item" data-tool="project" type="button"><span>PR</span><b>Project</b></button>
+          <button class="tool-item active" data-tool="review" type="button"><span>🍎</span><b>Review</b></button>
+          <button class="tool-item" data-tool="timing" type="button"><span>🍎</span><b>Timing</b></button>
+          <button class="tool-item" data-tool="edit" type="button"><span>🍎</span><b>Edit</b></button>
+          <button class="tool-item" data-tool="scoring" type="button"><span>🍎</span><b>Score</b></button>
+          <button class="tool-item" data-tool="overlay" type="button"><span>🍎</span><b>Overlay</b></button>
+          <button class="tool-item" data-tool="merge" type="button"><span>🍎</span><b>Merge</b></button>
+          <button class="tool-item" data-tool="layout" type="button"><span>🍎</span><b>Layout</b></button>
+          <button class="tool-item" data-tool="export" type="button"><span>🍎</span><b>Export</b></button>
+          <button class="tool-item" data-tool="project" type="button"><span>🍎</span><b>Project</b></button>
         </nav>
         <button id="new-project" class="rail-action" type="button">New</button>
       </aside>
@@ -31,9 +31,8 @@
       <main class="cockpit">
         <header class="topbar">
           <div class="project-heading">
-            <p class="eyebrow">Local review cockpit</p>
             <h1 id="project-title">Untitled Project</h1>
-            <span id="status">Starting local session...</span>
+            <span id="status">Ready.</span>
           </div>
           <div class="top-actions">
             <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
@@ -45,12 +44,7 @@
         </header>
 
         <section id="empty-start" class="empty-start">
-          <div>
-            <p class="eyebrow">Start here</p>
-            <h2>Open a local stage video. SplitShot analyzes it and drops you into review.</h2>
-            <p class="lead">Video, timeline, waveform, scoring, overlay, and export stay in one workspace. No cloud transfer, no remote file handoff.</p>
-          </div>
-          <button class="primary-button large-button" data-open-primary type="button">Open Stage Video</button>
+          <span>No video</span>
         </section>
 
         <section class="metrics-strip" aria-label="Stage metrics">
@@ -63,10 +57,7 @@
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-toolbar">
-              <div>
-                <p class="eyebrow">Review</p>
-                <h2>Video, overlay, timeline, and waveform stay connected.</h2>
-              </div>
+              <h2>Review</h2>
               <span id="review-summary">No video open.</span>
             </div>
 
@@ -101,7 +92,6 @@
             <section class="inspector-section">
               <div class="section-header">
                 <div>
-                  <p class="eyebrow">Selected Shot</p>
                   <h2 id="selected-tool-title">Review</h2>
                 </div>
                 <span id="selected-score-shot">No shot selected</span>
