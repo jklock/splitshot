@@ -16,7 +16,7 @@ This repository contains:
 Launch the browser control interface:
 
 ```bash
-uv run --python 3.12 splitshot
+uv run splitshot
 ```
 
 The app runs locally and opens your browser at `127.0.0.1:8765`.
@@ -24,19 +24,19 @@ The app runs locally and opens your browser at `127.0.0.1:8765`.
 Launch without opening a browser automatically:
 
 ```bash
-uv run --python 3.12 splitshot --no-open
+uv run splitshot --no-open
 ```
 
 Launch the secondary desktop UI:
 
 ```bash
-uv run --python 3.12 splitshot --desktop
+uv run splitshot --desktop
 ```
 
 Validate the local runtime:
 
 ```bash
-uv run --python 3.12 splitshot --check
+uv run splitshot --check
 ```
 
 Compatibility aliases are also available:
@@ -68,6 +68,6 @@ uv run splitshot --check
 
 ## Packaging
 
-The source package is browser-first and runnable with one command through `uv run --python 3.12 splitshot`. Native `.dmg` and `.exe` artifacts are intentionally not required for the current workflow.
+The source package is browser-first and runnable with one command through `uv run splitshot`. The repository includes `.python-version` with Python 3.12, so `uv` creates/uses the right virtual environment without requiring `--python 3.12` on every command. Native `.dmg` and `.exe` artifacts are intentionally not required for the current workflow.
 
 The app needs `ffmpeg` and `ffprobe`. During development it finds them from `PATH`; packaged/source distributions can also point to bundled binaries with `SPLITSHOT_FFMPEG_DIR`.
