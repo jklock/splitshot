@@ -143,7 +143,6 @@ function renderHeader() {
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${shortPath(state.project.primary_video.path)}`
     : "No video selected";
-  $("empty-start").classList.toggle("hidden", state.media.primary_available);
 }
 
 function renderStats() {
