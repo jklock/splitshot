@@ -261,6 +261,65 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
+    def set_overlay_display_options(self, payload: dict[str, object]) -> None:
+        overlay = self.project.overlay
+        valid_quadrants = {
+            "top_left",
+            "top_middle",
+            "top_right",
+            "middle_left",
+            "middle_middle",
+            "middle_right",
+            "bottom_left",
+            "bottom_middle",
+            "bottom_right",
+        }
+        valid_directions = {"right", "left", "down", "up"}
+        if "max_visible_shots" in payload:
+            overlay.max_visible_shots = max(1, min(40, int(payload["max_visible_shots"])))
+        if "shot_quadrant" in payload:
+            value = str(payload["shot_quadrant"])
+            overlay.shot_quadrant = value if value in valid_quadrants else "bottom_left"
+        if "shot_direction" in payload:
+            value = str(payload["shot_direction"])
+            overlay.shot_direction = value if value in valid_directions else "right"
+        if "custom_x" in payload:
+            value = payload["custom_x"]
+            overlay.custom_x = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        if "custom_y" in payload:
+            value = payload["custom_y"]
+            overlay.custom_y = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        if "bubble_width" in payload:
+            overlay.bubble_width = max(0, min(400, int(payload["bubble_width"])))
+        if "bubble_height" in payload:
+            overlay.bubble_height = max(0, min(220, int(payload["bubble_height"])))
+        if "font_family" in payload:
+            overlay.font_family = str(payload["font_family"])[:80]
+        if "font_size" in payload:
+            overlay.font_size = max(8, min(72, int(payload["font_size"])))
+        if "font_bold" in payload:
+            overlay.font_bold = bool(payload["font_bold"])
+        if "font_italic" in payload:
+            overlay.font_italic = bool(payload["font_italic"])
+        for field_name in ("show_timer", "show_draw", "show_shots", "show_score"):
+            if field_name in payload:
+                setattr(overlay, field_name, bool(payload[field_name]))
+        if "custom_box_enabled" in payload:
+            overlay.custom_box_enabled = bool(payload["custom_box_enabled"])
+        if "custom_box_text" in payload:
+            overlay.custom_box_text = str(payload["custom_box_text"])[:500]
+        if "custom_box_quadrant" in payload:
+            value = str(payload["custom_box_quadrant"])
+            overlay.custom_box_quadrant = value if value in valid_quadrants else "top_right"
+        if "custom_box_x" in payload:
+            value = payload["custom_box_x"]
+            overlay.custom_box_x = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        if "custom_box_y" in payload:
+            value = payload["custom_box_y"]
+            overlay.custom_box_y = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        self.project.touch()
+        self.project_changed.emit()
+
     def set_overlay_badge_style(
         self,
         badge_name: str,

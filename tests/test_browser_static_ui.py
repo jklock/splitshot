@@ -7,7 +7,7 @@ from pathlib import Path
 STATIC_ROOT = Path("src/splitshot/browser/static")
 
 
-def test_browser_ui_is_review_first_cockpit_workflow() -> None:
+def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
@@ -16,7 +16,9 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'class="review-grid"' in html
     assert 'class="review-stack"' in html
     assert 'class="inspector"' in html
-    assert html.index('data-tool="project"') < html.index('data-tool="review"')
+    assert html.index('data-tool="project"') < html.index('data-tool="timing"')
+    assert html.index('data-tool="layout"') < html.index('data-tool="review"')
+    assert html.index('data-tool="review"') < html.index('data-tool="export"')
     assert 'data-tool="project"' in html
     assert 'data-tool="review"' in html
     assert 'data-tool="timing"' in html
@@ -28,6 +30,7 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
     assert "<b>Review</b>" in html
+    assert "<b>Splits</b>" in html
     assert "<b>Score</b>" in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
@@ -56,6 +59,8 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert "SplitShot analyzes" not in html
     assert "No cloud transfer" not in html
     assert "upload" not in html.lower()
+    assert "Add Second Angle" not in html
+    assert "Add Second Video" in html
 
 
 def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> None:
@@ -65,11 +70,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert html.index('class="video-stage"') < html.index('class="waveform-panel"')
     assert html.index('class="waveform-panel"') < html.index('class="inspector"')
     assert 'id="primary-video" controls' in html
+    assert 'id="secondary-video"' in html
     assert 'id="live-overlay"' in html
+    assert 'id="custom-overlay"' in html
     assert 'id="score-layer"' in html
     assert 'id="timeline-strip"' in html
     assert 'id="waveform"' in html
     assert 'id="expand-waveform"' in html
+    assert 'id="zoom-waveform-out"' in html
+    assert 'id="zoom-waveform-in"' in html
+    assert 'id="amp-waveform-out"' in html
+    assert 'id="amp-waveform-in"' in html
+    assert 'id="reset-waveform-view"' in html
     assert 'id="resize-rail"' in html
     assert 'id="resize-sidebar"' in html
     assert 'id="resize-waveform"' in html
@@ -87,6 +99,19 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert html.index('id="waveform"') < html.index('waveform-header')
     assert 'id="badge-style-grid"' in html
     assert 'id="score-color-grid"' in html
+    assert 'id="max-visible-shots"' in html
+    assert 'id="shot-quadrant"' in html
+    assert 'id="shot-direction"' in html
+    assert 'id="overlay-custom-x"' in html
+    assert 'id="bubble-width"' in html
+    assert 'id="overlay-font-family"' in html
+    assert 'id="show-timer"' in html
+    assert 'id="custom-box-text"' in html
+    assert 'id="layout-threshold"' in html
+    assert 'id="layout-scoring-enabled"' in html
+    assert 'id="layout-overlay-position"' in html
+    assert 'id="layout-max-visible-shots"' in html
+    assert 'id="layout-merge-enabled"' in html
     assert 'id="scoring-preset"' in html
     assert 'id="score-option-grid"' in html
     assert 'id="scoring-penalty-grid"' in html
@@ -125,11 +150,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
     assert "renderScoringPenaltyFields" in js
+    assert "copyLayoutOverlayControls" in js
+    assert "copyLayoutMergeControls" in js
+    assert "copyLayoutScoringControls" in js
     assert "importTypedPath" in js
+    assert "syncSecondaryPreview" in js
+    assert "merge-preview" in js
     assert 'pickPath("primary", "primary-file-path", async (path)' in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' in js
     assert '$("penalties").value = state.project.scoring.penalties' not in js
     assert "renderExportPresetOptions" in js
+    assert "processingForPath" in js
+    assert "Opening file browser..." not in js
     assert "scoring-active" in js
     assert "layoutLocked" in js
     assert "applyLayoutState" in js
@@ -137,6 +169,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'activity("layout.resize.start"' in js
     assert 'activity("layout.resize.commit"' in js
     assert "Score letter is saved to that shot" in html
+    assert "appears inside its split badge" in html
     assert "empty-start" not in js
     assert "setActiveTool" in js
     assert "setActivePage" not in js
@@ -165,7 +198,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "--waveform-height: 206px;" in css
     assert "--resize-handle-size: 6px;" in css
     assert "grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);" in css
-    assert "grid-template-rows: var(--topbar-height) 28px minmax(0, 1fr);" in css
+    assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
+    assert ".processing-bar[hidden] {\n  display: none !important;" in css
     assert "grid-template-rows: repeat(8, minmax(0, 1fr));" in css
     assert "grid-template-columns: minmax(0, 1fr) repeat(4, calc(var(--inspector-width) / 4));" in css
     assert "width: var(--inspector-width);" in css
@@ -173,6 +207,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--waveform-height));" in css
     assert "grid-template-rows: minmax(320px, 1fr) 206px;" not in css
     assert ".layout-unlocked .resize-handle" in css
+    assert ".video-stage.merge-preview" in css
+    assert ".video-stage.merge-pip #secondary-video" in css
+    assert ".project-delete-button" in css
     assert ".cockpit.waveform-expanded .review-grid" in css
     assert ".cockpit.waveform-expanded .video-stage" in css
     assert "display: none;" in css
@@ -183,6 +220,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".export-log" in css
     assert ".cockpit.scoring-active .score-target-button" not in css
     assert ".overlay-badge.timer-badge" in css
+    assert ".score-float" not in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
 
@@ -196,6 +234,11 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
     wired_button_ids = {
         "place-score",
         "expand-waveform",
+        "zoom-waveform-out",
+        "zoom-waveform-in",
+        "amp-waveform-out",
+        "amp-waveform-in",
+        "reset-waveform-view",
         "collapse-timing",
         "delete-selected",
         "expand-timing",
