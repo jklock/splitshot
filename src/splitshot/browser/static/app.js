@@ -271,8 +271,18 @@ function setActiveTool(tool) {
 
 async function api(path, payload = null) {
   activity("api.request", { path, payload });
-  const processingMessage = path === "/api/export" ? "Exporting MP4..." : "Saving changes...";
-  const processingDetail = path === "/api/export" ? "Running FFmpeg locally" : "Local update";
+  const processingMessage = path === "/api/export"
+    ? "Exporting MP4..."
+    : path === "/api/import/primary"
+      ? "Analyzing primary video..."
+      : path === "/api/import/secondary"
+        ? "Analyzing second angle..."
+        : "Saving changes...";
+  const processingDetail = path === "/api/export"
+    ? "Running FFmpeg locally"
+    : path.startsWith("/api/import/")
+      ? "Detecting beep and shots locally"
+      : "Local update";
   const finishProcessing = payload === null ? null : beginProcessing(processingMessage, processingDetail);
   const options = payload === null
     ? {}
@@ -329,7 +339,7 @@ async function postFile(path, file) {
   }
 }
 
-async function pickPath(kind, targetId) {
+async function pickPath(kind, targetId, afterSelect = null) {
   const target = $(targetId);
   const finishProcessing = beginProcessing("Opening file browser...", "Waiting for local path");
   activity("dialog.path.request", { kind, target: targetId, current: target.value });
@@ -344,6 +354,9 @@ async function pickPath(kind, targetId) {
     if (data.path) {
       target.value = data.path;
       activity("dialog.path.selected", { kind, target: targetId, path: data.path });
+      if (afterSelect) {
+        await afterSelect(data.path);
+      }
     } else {
       activity("dialog.path.cancelled", { kind, target: targetId });
     }
@@ -670,7 +683,7 @@ function renderSelection() {
     $("score-letter").value = segment.score_letter;
   }
   $("place-score").disabled = !segment;
-  $("place-score").textContent = segment ? `Place ${$("score-letter").value} for ${segment.label}` : "Select Shot";
+  $("place-score").textContent = segment ? `Set ${$("score-letter").value} Position For ${segment.label}` : "Select Shot First";
 }
 
 function renderScoreOptions(summary) {
@@ -867,7 +880,14 @@ function renderStyleControls() {
 
 function badgeElement(text, style, size) {
   const badge = document.createElement("span");
-  badge.className = `overlay-badge badge-${size}`;
+  const role = text.startsWith("Timer")
+    ? "timer-badge"
+    : text.startsWith("Draw")
+      ? "draw-badge"
+      : text.startsWith("Hit Factor") || text.startsWith("Final Time")
+        ? "score-badge"
+        : "shot-badge";
+  badge.className = `overlay-badge badge-${size} ${role}`;
   badge.textContent = text;
   badge.style.background = rgba(style.background_color, style.opacity);
   badge.style.color = style.text_color;
@@ -1182,6 +1202,15 @@ function readExportSettingsPayload() {
   };
 }
 
+async function importTypedPath(targetId, apiPath, label) {
+  const path = $(targetId).value.trim();
+  if (!path) {
+    setStatus(`${label} video path is required.`);
+    return null;
+  }
+  return callApi(apiPath, { path });
+}
+
 async function applyScoringSettings() {
   const scoringPayload = readScoringPayload();
   const ruleset = $("scoring-preset").value;
@@ -1237,27 +1266,36 @@ function wireEvents() {
     });
   });
   $("new-project").addEventListener("click", () => callApi("/api/project/new", {}));
-  $("choose-primary").addEventListener("click", () => $("primary-file-input").click());
-  $("choose-secondary").addEventListener("click", () => $("secondary-file-input").click());
-  $("import-primary-path").addEventListener("click", () => {
-    const path = $("primary-file-path").value.trim();
-    if (!path) return setStatus("Primary video path is required.");
-    callApi("/api/import/primary", { path });
+  $("primary-file-path").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
+    if (result) setActiveTool("review");
   });
-  $("import-secondary-path").addEventListener("click", () => {
-    const path = $("secondary-file-path").value.trim();
-    if (!path) return setStatus("Secondary video path is required.");
-    callApi("/api/import/secondary", { path });
+  $("secondary-file-path").addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const result = await importTypedPath("secondary-file-path", "/api/import/secondary", "Secondary");
+    if (result) setActiveTool("merge");
   });
   $("browse-project-path").addEventListener("click", () => pickPath("project", "project-path"));
   $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path"));
-  $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path"));
-  $("browse-secondary-path").addEventListener("click", () => pickPath("secondary", "secondary-file-path"));
+  $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
+    const result = await callApi("/api/import/primary", { path });
+    if (result) setActiveTool("review");
+  }));
+  $("browse-secondary-path").addEventListener("click", () => pickPath("secondary", "secondary-file-path", async (path) => {
+    const result = await callApi("/api/import/secondary", { path });
+    if (result) setActiveTool("merge");
+  }));
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => $("primary-file-input").click());
   });
   document.querySelectorAll("[data-open-secondary]").forEach((item) => {
-    item.addEventListener("click", () => $("secondary-file-input").click());
+    item.addEventListener("click", () => pickPath("secondary", "secondary-file-path", async (path) => {
+      const result = await callApi("/api/import/secondary", { path });
+      if (result) setActiveTool("merge");
+    }));
   });
   $("primary-file-input").addEventListener("change", async (event) => {
     const result = await postFile("/api/files/primary", event.target.files[0]);

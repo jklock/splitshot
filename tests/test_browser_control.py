@@ -368,6 +368,42 @@ def test_browser_control_api_updates_export_presets_and_variables() -> None:
         server.shutdown()
 
 
+def test_browser_control_api_exports_mp4_and_exposes_ffmpeg_log(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory(resolution=(320, 180)))
+        output_path = tmp_path / "browser-export.mp4"
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        _post_json(
+            f"{server.url}api/export/settings",
+            {
+                "target_width": 160,
+                "target_height": 90,
+                "frame_rate": "30",
+                "video_codec": "h264",
+                "video_bitrate_mbps": 1,
+                "audio_codec": "aac",
+                "audio_sample_rate": 48000,
+                "audio_bitrate_kbps": 128,
+                "color_space": "bt709_sdr",
+                "two_pass": False,
+                "ffmpeg_preset": "ultrafast",
+            },
+        )
+        state = _post_json(f"{server.url}api/export", {"path": str(output_path)})
+
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+        assert state["project"]["export"]["output_path"] == str(output_path)
+        assert "Encoder command:" in state["project"]["export"]["last_log"]
+        assert state["project"]["export"]["last_error"] is None
+    finally:
+        server.shutdown()
+
+
 def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
