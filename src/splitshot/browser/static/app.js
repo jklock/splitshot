@@ -1,7 +1,6 @@
 let state = null;
 let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "timing";
-let scorePlacementArmed = false;
 let overlayFrame = null;
 let waveformMode = "select";
 let draggingShotId = null;
@@ -16,7 +15,7 @@ let waveformOffsetMs = Math.max(0, Number(window.localStorage.getItem("splitshot
 let busyCount = 0;
 let layoutLocked = window.localStorage.getItem("splitshot.layoutLocked") !== "false";
 let layoutSizes = {
-  railWidth: savedNumber("splitshot.layout.railWidth", 96),
+  railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 72), 72),
   inspectorWidth: savedNumber("splitshot.layout.inspectorWidth", 440),
   waveformHeight: savedNumber("splitshot.layout.waveformHeight", 206),
 };
@@ -164,7 +163,7 @@ function setCssPixels(name, value) {
 
 function applyLayoutState() {
   layoutSizes = {
-    railWidth: clamp(layoutSizes.railWidth, 72, 150),
+    railWidth: clamp(layoutSizes.railWidth, 60, 120),
     inspectorWidth: clamp(layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
     waveformHeight: clamp(layoutSizes.waveformHeight, 112, Math.max(112, window.innerHeight * 0.42)),
   };
@@ -201,7 +200,7 @@ function toggleLayoutLock() {
 }
 
 function resetLayout() {
-  layoutSizes = { railWidth: 96, inspectorWidth: 440, waveformHeight: 206 };
+  layoutSizes = { railWidth: 72, inspectorWidth: 440, waveformHeight: 206 };
   ["splitshot.layout.railWidth", "splitshot.layout.inspectorWidth", "splitshot.layout.waveformHeight"].forEach((key) => {
     window.localStorage.removeItem(key);
   });
@@ -226,7 +225,7 @@ function moveLayoutResize(event) {
   if (!activeResize) return;
   const kind = activeResize.kind;
   if (kind === "railWidth") {
-    persistLayoutSize("railWidth", clamp(event.clientX, 72, 150));
+    persistLayoutSize("railWidth", clamp(event.clientX, 60, 120));
   } else if (kind === "inspectorWidth") {
     const grid = document.querySelector(".review-grid");
     const right = grid?.getBoundingClientRect().right || window.innerWidth;
@@ -638,24 +637,6 @@ function renderWaveformShotList() {
   });
 }
 
-function renderSplitCards() {
-  const grid = $("split-card-grid");
-  grid.innerHTML = "";
-  (state.timing_segments || []).forEach((segment) => {
-    const card = document.createElement("button");
-    card.type = "button";
-    card.className = `split-card${segment.shot_id === selectedShotId ? " selected" : ""}`;
-    card.innerHTML = `
-      <span>${segment.card_title}</span>
-      <strong>${segment.card_value}</strong>
-      <small>${segment.card_subtitle}</small>
-      <small>${segment.card_meta}</small>
-    `;
-    card.addEventListener("click", () => selectShot(segment.shot_id));
-    grid.appendChild(card);
-  });
-}
-
 function formatTimingValue(value) {
   return value === null || value === undefined ? "--" : String(value);
 }
@@ -783,8 +764,6 @@ function renderSelection() {
   if (segment?.score_letter && Array.from($("score-letter").options).some((option) => option.value === segment.score_letter)) {
     $("score-letter").value = segment.score_letter;
   }
-  $("place-score").disabled = !segment;
-  $("place-score").textContent = segment ? `Set ${$("score-letter").value} Position For ${segment.label}` : "Select Shot First";
 }
 
 function renderScoreOptions(summary) {
@@ -814,13 +793,32 @@ function renderScoringShotList() {
   const list = $("scoring-shot-list");
   if (!list) return;
   list.innerHTML = "";
+  const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
   (state.timing_segments || []).forEach((segment) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `split-card ${segment.shot_id === selectedShotId ? "selected" : ""}`;
-    item.textContent = `${segment.label} ${segment.cumulative_s}s${segment.score_letter ? ` • ${segment.score_letter}` : " • unscored"}`;
-    item.addEventListener("click", () => selectShot(segment.shot_id));
-    list.appendChild(item);
+    const row = document.createElement("div");
+    row.className = `scoring-shot-row ${segment.shot_id === selectedShotId ? "selected" : ""}`;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = `${segment.label} | ${segment.cumulative_s}s`;
+    button.addEventListener("click", () => selectShot(segment.shot_id));
+    const select = document.createElement("select");
+    select.setAttribute("aria-label", `Score ${segment.label}`);
+    scoreOptions.forEach((letter) => {
+      const option = document.createElement("option");
+      option.value = letter;
+      const value = state.scoring_summary?.score_values?.[letter] ?? 0;
+      const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
+      option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
+      select.appendChild(option);
+    });
+    select.value = segment.score_letter || scoreOptions[0];
+    select.addEventListener("change", () => {
+      selectedShotId = segment.shot_id;
+      callApi("/api/scoring/score", { shot_id: segment.shot_id, letter: select.value });
+    });
+    row.appendChild(button);
+    row.appendChild(select);
+    list.appendChild(row);
   });
 }
 
@@ -1058,8 +1056,8 @@ function badgeElement(text, style, size, textColorOverride = null) {
   badge.style.borderRadius = overlayStyleMode === "bubble" ? "999px" : overlayStyleMode === "rounded" ? "16px" : "0";
   badge.style.padding = `${overlaySpacing}px ${Math.max(8, overlaySpacing * 1.5)}px`;
   badge.style.margin = `${overlayMargin}px`;
-  if (state.project.overlay.bubble_width > 0) badge.style.minWidth = `${state.project.overlay.bubble_width}px`;
-  if (state.project.overlay.bubble_height > 0) badge.style.minHeight = `${state.project.overlay.bubble_height}px`;
+  if (state.project.overlay.bubble_width > 0) badge.style.width = `${state.project.overlay.bubble_width}px`;
+  if (state.project.overlay.bubble_height > 0) badge.style.height = `${state.project.overlay.bubble_height}px`;
   badge.style.fontFamily = state.project.overlay.font_family || "Helvetica Neue";
   badge.style.fontSize = `${state.project.overlay.font_size || 14}px`;
   badge.style.fontWeight = state.project.overlay.font_bold ? "950" : "700";
@@ -1076,6 +1074,10 @@ function positionOverlayContainer(overlay, quadrantValue = null, xValue = null, 
   overlay.style.top = "";
   overlay.style.bottom = "";
   overlay.style.transform = "";
+  overlay.style.width = "auto";
+  overlay.style.height = "auto";
+  overlay.style.maxWidth = "calc(100% - 12px)";
+  overlay.style.maxHeight = "calc(100% - 12px)";
   overlay.style.flexDirection = ["left", "right"].includes(direction) ? "row" : "column";
   if (direction === "left") overlay.style.flexDirection = "row-reverse";
   if (direction === "up") overlay.style.flexDirection = "column-reverse";
@@ -1200,7 +1202,6 @@ function render() {
   renderVideo();
   renderTimelineStrip();
   renderWaveform();
-  renderSplitCards();
   renderTimingTables();
   renderControls();
   renderSelection();
@@ -1729,22 +1730,6 @@ function wireEvents() {
       renderLiveOverlay();
       autoApplyOverlay();
     });
-  });
-  $("place-score").addEventListener("click", (event) => {
-    event.stopPropagation();
-    scorePlacementArmed = !scorePlacementArmed;
-    $("place-score").classList.toggle("armed", scorePlacementArmed);
-    activity("score.place.toggle", { armed: scorePlacementArmed, shot_id: selectedShotId });
-  });
-  $("video-stage").addEventListener("click", (event) => {
-    if (!scorePlacementArmed || !selectedShotId) return;
-    const rect = $("video-stage").getBoundingClientRect();
-    const x_norm = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-    const y_norm = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
-    scorePlacementArmed = false;
-    $("place-score").classList.remove("armed");
-    activity("score.place.commit", { shot_id: selectedShotId, x_norm, y_norm });
-    callApi("/api/scoring/position", { shot_id: selectedShotId, x_norm, y_norm });
   });
   ["quality", "aspect-ratio"].forEach((id) => {
     $(id).addEventListener("change", autoApplyLayout);
