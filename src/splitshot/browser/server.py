@@ -574,6 +574,7 @@ class BrowserControlServer:
                     int(payload.get("spacing", controller.project.overlay.spacing)),
                     int(payload.get("margin", controller.project.overlay.margin)),
                 )
+                controller.set_overlay_display_options(payload)
                 styles = payload.get("styles", {})
                 for badge_name, style in styles.items():
                     controller.set_overlay_badge_style(

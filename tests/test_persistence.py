@@ -37,6 +37,24 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.overlay.style_type = "rounded"
     project.overlay.spacing = 6
     project.overlay.margin = 4
+    project.overlay.max_visible_shots = 8
+    project.overlay.shot_quadrant = "top_right"
+    project.overlay.shot_direction = "down"
+    project.overlay.custom_x = 0.2
+    project.overlay.custom_y = 0.3
+    project.overlay.bubble_width = 120
+    project.overlay.bubble_height = 52
+    project.overlay.font_family = "Verdana"
+    project.overlay.font_size = 18
+    project.overlay.font_bold = False
+    project.overlay.font_italic = True
+    project.overlay.show_timer = False
+    project.overlay.show_score = False
+    project.overlay.custom_box_enabled = True
+    project.overlay.custom_box_text = "Stage review"
+    project.overlay.custom_box_quadrant = "middle_middle"
+    project.overlay.custom_box_x = 0.5
+    project.overlay.custom_box_y = 0.6
     project.merge.enabled = True
     project.export.output_path = "/tmp/export.mp4"
     project.export.preset = ExportPreset.CUSTOM
@@ -64,6 +82,24 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.overlay.style_type == "rounded"
     assert loaded.overlay.spacing == 6
     assert loaded.overlay.margin == 4
+    assert loaded.overlay.max_visible_shots == 8
+    assert loaded.overlay.shot_quadrant == "top_right"
+    assert loaded.overlay.shot_direction == "down"
+    assert loaded.overlay.custom_x == 0.2
+    assert loaded.overlay.custom_y == 0.3
+    assert loaded.overlay.bubble_width == 120
+    assert loaded.overlay.bubble_height == 52
+    assert loaded.overlay.font_family == "Verdana"
+    assert loaded.overlay.font_size == 18
+    assert loaded.overlay.font_bold is False
+    assert loaded.overlay.font_italic is True
+    assert loaded.overlay.show_timer is False
+    assert loaded.overlay.show_score is False
+    assert loaded.overlay.custom_box_enabled is True
+    assert loaded.overlay.custom_box_text == "Stage review"
+    assert loaded.overlay.custom_box_quadrant == "middle_middle"
+    assert loaded.overlay.custom_box_x == 0.5
+    assert loaded.overlay.custom_box_y == 0.6
     assert loaded.merge.enabled is True
     assert loaded.export.output_path == "/tmp/export.mp4"
     assert loaded.export.preset == ExportPreset.CUSTOM
