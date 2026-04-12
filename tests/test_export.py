@@ -86,6 +86,35 @@ def test_export_writes_mp4_with_requested_crop(synthetic_video_factory, tmp_path
     assert int(frame.sum()) > 0
 
 
+def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name="Overlay Export Test")
+    project.primary_video = probe_video(video_path)
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.style_type = "square"
+    project.overlay.spacing = 8
+    project.overlay.margin = 8
+    project.overlay.timer_badge.background_color = "#ff0000"
+    project.overlay.timer_badge.text_color = "#ffffff"
+    project.overlay.timer_badge.opacity = 1.0
+    project.export.target_width = 160
+    project.export.target_height = 90
+    project.export.video_bitrate_mbps = 1
+    project.export.ffmpeg_preset = "ultrafast"
+
+    output_path = tmp_path / "overlay-export.mp4"
+    export_project(project, output_path)
+
+    frame = _frame_rgb(output_path, 0.1)
+    top_band = frame[:36, :130]
+    red_dominant_pixels = (
+        (top_band[:, :, 0] > 120)
+        & (top_band[:, :, 0] > top_band[:, :, 1] + 40)
+        & (top_band[:, :, 0] > top_band[:, :, 2] + 40)
+    )
+    assert int(red_dominant_pixels.sum()) > 20
+
+
 def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: Path) -> None:
     primary_path = synthetic_video_factory(name="primary", resolution=(640, 360), beep_ms=400)
     secondary_path = synthetic_video_factory(name="secondary", resolution=(640, 360), beep_ms=650)
