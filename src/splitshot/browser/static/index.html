@@ -15,12 +15,12 @@
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
-          <button class="tool-item active" data-tool="review" type="button"><b>Review</b></button>
-          <button class="tool-item" data-tool="timing" type="button"><b>Timing</b></button>
+          <button class="tool-item active" data-tool="timing" type="button"><b>Splits</b></button>
           <button class="tool-item" data-tool="scoring" type="button"><b>Score</b></button>
           <button class="tool-item" data-tool="overlay" type="button"><b>Overlay</b></button>
           <button class="tool-item" data-tool="merge" type="button"><b>Merge</b></button>
           <button class="tool-item" data-tool="layout" type="button"><b>Layout</b></button>
+          <button class="tool-item" data-tool="review" type="button"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
         </nav>
       </aside>
@@ -48,7 +48,9 @@
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-stage" id="video-stage">
               <video id="primary-video" controls playsinline></video>
+              <video id="secondary-video" muted playsinline></video>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
+              <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
             </div>
 
@@ -62,10 +64,16 @@
                   <small id="waveform-help">Select mode: click a shot marker, drag to move, arrows nudge.</small>
                 </div>
                 <div class="waveform-actions">
+                  <button id="zoom-waveform-out" type="button">Zoom -</button>
+                  <button id="zoom-waveform-in" type="button">Zoom +</button>
+                  <button id="amp-waveform-out" type="button">Amp -</button>
+                  <button id="amp-waveform-in" type="button">Amp +</button>
+                  <button id="reset-waveform-view" type="button">Reset</button>
                   <button class="mode-button active" data-waveform-mode="select" type="button">Select</button>
                   <button class="mode-button" data-waveform-mode="add" type="button">Add Shot</button>
                   <button class="mode-button" data-waveform-mode="beep" type="button">Move Beep</button>
                   <button id="expand-waveform" type="button">Expand</button>
+                  <button id="toggle-layout-lock" class="expanded-only primary-button" type="button">Unlock Layout</button>
                 </div>
               </div>
               <div class="timeline-strip" id="timeline-strip"></div>
@@ -74,7 +82,7 @@
 
             <section id="timing-workbench" class="timing-workbench" aria-label="Expanded timing editor">
               <div class="section-header">
-                <h2>Timing</h2>
+                <h2>Splits</h2>
                 <button id="collapse-timing" type="button">Collapse</button>
               </div>
               <div id="timing-workbench-table" class="data-table timing-workbench-table"></div>
@@ -83,22 +91,53 @@
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context inspector">
-            <section class="tool-pane active" data-tool-pane="review">
+            <section class="tool-pane" data-tool-pane="review">
+              <div class="section-header">
+                <h3>Review</h3>
+                <span>Preview artifacts</span>
+              </div>
+              <label class="check-row"><input id="show-timer" type="checkbox" /> Show timer badge</label>
+              <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
+              <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
+              <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
+              <label class="check-row"><input id="custom-box-enabled" type="checkbox" /> Custom review box</label>
+              <label>Custom box text
+                <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
+              </label>
+              <div class="control-grid">
+                <label>Box quadrant
+                  <select id="custom-box-quadrant">
+                    <option value="top_left">Top left</option>
+                    <option value="top_middle">Top middle</option>
+                    <option value="top_right">Top right</option>
+                    <option value="middle_left">Middle left</option>
+                    <option value="middle_middle">Middle middle</option>
+                    <option value="middle_right">Middle right</option>
+                    <option value="bottom_left">Bottom left</option>
+                    <option value="bottom_middle">Bottom middle</option>
+                    <option value="bottom_right">Bottom right</option>
+                  </select>
+                </label>
+                <label>Box X
+                  <input id="custom-box-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+                <label>Box Y
+                  <input id="custom-box-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+              </div>
+            </section>
+
+            <section class="tool-pane active" data-tool-pane="timing">
               <div class="section-header">
                 <h3>Splits</h3>
-                <span id="timing-summary">No timing data.</span>
+                <button id="expand-timing" type="button">Expand</button>
               </div>
+              <span id="timing-summary">No timing data.</span>
               <div id="split-card-grid" class="split-card-grid"></div>
               <label>Detection threshold
                 <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
               </label>
-            </section>
-
-            <section class="tool-pane" data-tool-pane="timing">
-              <div class="section-header">
-                <h3>Timing Table</h3>
-                <button id="expand-timing" type="button">Expand</button>
-              </div>
+              <p class="hint">Lower values detect quieter shots; higher values require louder peaks. Changing this re-analyzes the local audio.</p>
               <section id="selected-shot-panel" class="selected-shot-controls">
                 <div class="section-header">
                   <h3>Selected Shot</h3>
@@ -131,7 +170,7 @@
               </label>
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
               <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
-              <p class="hint">Click a shot to select it and assign a score.</p>
+              <p class="hint">Click a shot to select it and assign a score. The score is stored on that shot and appears inside its split badge.</p>
               <div id="score-option-grid" class="score-option-grid"></div>
               <div id="scoring-penalty-grid" class="penalty-grid"></div>
               <label>Score for selected shot
@@ -177,6 +216,66 @@
                   <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" placeholder="Margin" />
                 </div>
               </div>
+              <div class="control-grid">
+                <label>Shots shown
+                  <input id="max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
+                </label>
+                <label>Quadrant
+                  <select id="shot-quadrant">
+                    <option value="top_left">Top left</option>
+                    <option value="top_middle">Top middle</option>
+                    <option value="top_right">Top right</option>
+                    <option value="middle_left">Middle left</option>
+                    <option value="middle_middle">Middle middle</option>
+                    <option value="middle_right">Middle right</option>
+                    <option value="bottom_left">Bottom left</option>
+                    <option value="bottom_middle">Bottom middle</option>
+                    <option value="bottom_right">Bottom right</option>
+                  </select>
+                </label>
+                <label>Direction
+                  <select id="shot-direction">
+                    <option value="right">Right</option>
+                    <option value="left">Left</option>
+                    <option value="down">Down</option>
+                    <option value="up">Up</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Custom X
+                  <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+                <label>Custom Y
+                  <input id="overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Bubble width
+                  <input id="bubble-width" type="number" min="0" max="400" step="4" value="0" />
+                </label>
+                <label>Bubble height
+                  <input id="bubble-height" type="number" min="0" max="220" step="4" value="0" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Font
+                  <select id="overlay-font-family">
+                    <option value="Helvetica Neue">Helvetica Neue</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Georgia">Georgia</option>
+                  </select>
+                </label>
+                <label>Font size
+                  <input id="overlay-font-size" type="number" min="8" max="72" step="1" value="14" />
+                </label>
+              </div>
+              <div class="button-grid two-up">
+                <label class="check-row"><input id="overlay-font-bold" type="checkbox" /> Bold</label>
+                <label class="check-row"><input id="overlay-font-italic" type="checkbox" /> Italic</label>
+              </div>
               <div class="style-grid" id="badge-style-grid"></div>
               <h3>Score Colors</h3>
               <div class="score-color-grid" id="score-color-grid"></div>
@@ -187,7 +286,7 @@
                 <h3>Second Angle</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button class="primary-button" data-open-secondary type="button">Add Second Angle</button>
+              <button class="primary-button" data-open-secondary type="button">Add Second Video</button>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
               <p class="hint">Use the selected secondary video to merge into the export. Flip positions or adjust the PiP size.</p>
               <label>Layout
@@ -218,11 +317,85 @@
                 <h3>Layout</h3>
                 <small>Auto-applies</small>
               </div>
-              <p class="hint">Unlock layout to resize the rail, inspector, and waveform. Export composition settings apply automatically.</p>
+              <p class="hint">Consolidated composition controls. Pane-specific pages remain for detailed editing; these controls drive the same state.</p>
               <div class="button-grid two-up">
-                <button id="toggle-layout-lock" class="primary-button" type="button">Unlock Layout</button>
                 <button id="reset-layout" type="button">Reset Layout</button>
               </div>
+              <h3>Splits</h3>
+              <label>Detection threshold
+                <input id="layout-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
+              </label>
+              <h3>Score</h3>
+              <label class="check-row"><input id="layout-scoring-enabled" type="checkbox" /> Enable scoring</label>
+              <label>Preset
+                <select id="layout-scoring-preset"></select>
+              </label>
+              <h3>Overlay</h3>
+              <div class="control-grid">
+                <label>Position
+                  <select id="layout-overlay-position">
+                    <option value="none">None</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+                <label>Badge size
+                  <select id="layout-badge-size">
+                    <option>XS</option>
+                    <option>S</option>
+                    <option>M</option>
+                    <option>L</option>
+                    <option>XL</option>
+                  </select>
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Shots shown
+                  <input id="layout-max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
+                </label>
+                <label>Quadrant
+                  <select id="layout-shot-quadrant">
+                    <option value="top_left">Top left</option>
+                    <option value="top_middle">Top middle</option>
+                    <option value="top_right">Top right</option>
+                    <option value="middle_left">Middle left</option>
+                    <option value="middle_middle">Middle middle</option>
+                    <option value="middle_right">Middle right</option>
+                    <option value="bottom_left">Bottom left</option>
+                    <option value="bottom_middle">Bottom middle</option>
+                    <option value="bottom_right">Bottom right</option>
+                  </select>
+                </label>
+                <label>Direction
+                  <select id="layout-shot-direction">
+                    <option value="right">Right</option>
+                    <option value="left">Left</option>
+                    <option value="down">Down</option>
+                    <option value="up">Up</option>
+                  </select>
+                </label>
+              </div>
+              <h3>Merge</h3>
+              <label class="check-row"><input id="layout-merge-enabled" type="checkbox" /> Enable second video preview/export</label>
+              <div class="control-grid">
+                <label>Layout
+                  <select id="layout-merge-layout">
+                    <option value="side_by_side">Side by side</option>
+                    <option value="above_below">Above / below</option>
+                    <option value="pip">Picture in picture</option>
+                  </select>
+                </label>
+                <label>PiP size
+                  <select id="layout-pip-size">
+                    <option value="25%">25%</option>
+                    <option value="35%">35%</option>
+                    <option value="50%">50%</option>
+                  </select>
+                </label>
+              </div>
+              <h3>Export Frame</h3>
               <label>Quality
                 <select id="quality">
                   <option value="high">High</option>
@@ -346,7 +519,7 @@
                   <input id="secondary-file-path" placeholder="/absolute/path/to/secondary.mp4" />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-secondary-path" type="button">Add Second Angle</button>
+                  <button id="browse-secondary-path" type="button">Add Second Video</button>
                 </div>
               </div>
               <label>Project bundle path
@@ -355,11 +528,11 @@
                   <button id="browse-project-path" type="button">Browse</button>
                 </div>
               </label>
-              <div class="button-grid compact">
+              <div class="project-action-grid">
                 <button id="save-project" type="button">Save Project</button>
                 <button id="open-project" type="button">Open Project</button>
                 <button id="new-project" type="button">New Project</button>
-                <button id="delete-project" type="button">Delete Project</button>
+                <button id="delete-project" class="danger-button project-delete-button" type="button">Delete Project</button>
               </div>
             </section>
           </aside>

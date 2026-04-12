@@ -188,6 +188,26 @@ class OverlaySettings:
     style_type: str = "square"
     spacing: int = 8
     margin: int = 8
+    max_visible_shots: int = 4
+    shot_quadrant: str = "bottom_left"
+    shot_direction: str = "right"
+    custom_x: float | None = None
+    custom_y: float | None = None
+    bubble_width: int = 0
+    bubble_height: int = 0
+    font_family: str = "Helvetica Neue"
+    font_size: int = 14
+    font_bold: bool = True
+    font_italic: bool = False
+    show_timer: bool = True
+    show_draw: bool = True
+    show_shots: bool = True
+    show_score: bool = True
+    custom_box_enabled: bool = False
+    custom_box_text: str = ""
+    custom_box_quadrant: str = "top_right"
+    custom_box_x: float | None = None
+    custom_box_y: float | None = None
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
     shot_badge: BadgeStyle = field(
         default_factory=lambda: BadgeStyle(background_color="#1D4ED8")
@@ -402,6 +422,34 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             style_type=str(overlay_data.get("style_type", "square")),
             spacing=int(overlay_data.get("spacing", 8)),
             margin=int(overlay_data.get("margin", 8)),
+            max_visible_shots=int(overlay_data.get("max_visible_shots", 4)),
+            shot_quadrant=str(overlay_data.get("shot_quadrant", "bottom_left")),
+            shot_direction=str(overlay_data.get("shot_direction", "right")),
+            custom_x=(
+                None if overlay_data.get("custom_x") in {None, ""} else float(overlay_data["custom_x"])
+            ),
+            custom_y=(
+                None if overlay_data.get("custom_y") in {None, ""} else float(overlay_data["custom_y"])
+            ),
+            bubble_width=int(overlay_data.get("bubble_width", 0)),
+            bubble_height=int(overlay_data.get("bubble_height", 0)),
+            font_family=str(overlay_data.get("font_family", "Helvetica Neue")),
+            font_size=int(overlay_data.get("font_size", 14)),
+            font_bold=bool(overlay_data.get("font_bold", True)),
+            font_italic=bool(overlay_data.get("font_italic", False)),
+            show_timer=bool(overlay_data.get("show_timer", True)),
+            show_draw=bool(overlay_data.get("show_draw", True)),
+            show_shots=bool(overlay_data.get("show_shots", True)),
+            show_score=bool(overlay_data.get("show_score", True)),
+            custom_box_enabled=bool(overlay_data.get("custom_box_enabled", False)),
+            custom_box_text=str(overlay_data.get("custom_box_text", "")),
+            custom_box_quadrant=str(overlay_data.get("custom_box_quadrant", "top_right")),
+            custom_box_x=(
+                None if overlay_data.get("custom_box_x") in {None, ""} else float(overlay_data["custom_box_x"])
+            ),
+            custom_box_y=(
+                None if overlay_data.get("custom_box_y") in {None, ""} else float(overlay_data["custom_box_y"])
+            ),
             timer_badge=_badge_style_from_dict(overlay_data.get("timer_badge")),
             shot_badge=_badge_style_from_dict(overlay_data.get("shot_badge")),
             current_shot_badge=_badge_style_from_dict(overlay_data.get("current_shot_badge")),

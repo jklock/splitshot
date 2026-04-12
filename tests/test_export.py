@@ -8,10 +8,11 @@ import numpy as np
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, OverlayPosition, Project
+from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, OverlayPosition, Project, ScoreLetter, ScoreMark
 from splitshot.export.pipeline import export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
+from splitshot.overlay.render import OverlayRenderer
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -113,6 +114,25 @@ def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, 
         & (top_band[:, :, 0] > top_band[:, :, 2] + 40)
     )
     assert int(red_dominant_pixels.sum()) > 20
+
+
+def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name="Scored Overlay")
+    project.primary_video = probe_video(video_path)
+    analysis = analyze_video_audio(video_path, threshold=0.35)
+    project.analysis.beep_time_ms_primary = analysis.beep_time_ms
+    project.analysis.shots = analysis.shots
+    project.scoring.enabled = True
+    project.overlay.show_score = False
+    project.overlay.max_visible_shots = 4
+    project.overlay.scoring_colors["C"] = "#00ff00"
+    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C)
+
+    badges, score_marks = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)
+
+    assert score_marks == []
+    assert any("Shot 1" in badge.text and " C" in badge.text and badge.text_color == "#00ff00" for badge in badges)
 
 
 def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: Path) -> None:

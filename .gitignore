@@ -16,3 +16,4 @@ tmp/
 logs/
 Stage*.MP4
 Stage*.mp4
+artifacts/*.png
