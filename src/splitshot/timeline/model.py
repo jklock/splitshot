@@ -7,6 +7,7 @@ from splitshot.domain.models import Project, ShotEvent
 
 @dataclass(slots=True)
 class SplitRow:
+    shot_id: str
     shot_number: int
     absolute_time_ms: int
     split_ms: int | None
@@ -26,6 +27,7 @@ def compute_split_rows(project: Project) -> list[SplitRow]:
     for index, shot in enumerate(shots, start=1):
         rows.append(
             SplitRow(
+                shot_id=shot.id,
                 shot_number=index,
                 absolute_time_ms=shot.time_ms,
                 split_ms=None if previous_time is None else shot.time_ms - previous_time,
