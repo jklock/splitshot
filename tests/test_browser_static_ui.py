@@ -75,7 +75,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="live-overlay"' in html
     assert 'id="custom-overlay"' in html
     assert 'id="score-layer"' in html
-    assert 'id="timeline-strip"' in html
+    assert 'id="timeline-strip"' not in html
     assert 'id="waveform"' in html
     assert 'id="expand-waveform"' in html
     assert 'id="zoom-waveform-out"' in html
@@ -158,6 +158,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "merge-preview" in js
     assert 'pickPath("primary", "primary-file-path", async (path)' in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' in js
+    assert 'pickPath("project_open", "project-path", async (path)' in js
+    assert 'pickPath("project_save", "project-path"' in js
+    assert "saveProjectFlow" in js
+    assert "openProjectWithDialog" in js
+    assert "resetMediaElement" in js
     assert '$("penalties").value = state.project.scoring.penalties' not in js
     assert "renderExportPresetOptions" in js
     assert "processingForPath" in js
@@ -221,7 +226,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit.waveform-expanded .video-stage" in css
     assert "display: none;" in css
     assert ".cockpit.timing-expanded .timing-workbench" in css
-    assert "grid-template-rows: minmax(0, 1fr) 38px 26px auto;" in css
+    assert "grid-template-rows: minmax(0, 1fr) 38px auto;" in css
+    assert ".timeline-strip" not in css
+    assert ".timeline-marker" not in css
     assert "input[type=\"color\"]" in css
     assert ".penalty-grid" in css
     assert ".export-log" in css

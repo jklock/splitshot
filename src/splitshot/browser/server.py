@@ -64,11 +64,17 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                     ("All files", "*.*"),
                 ],
             )
-        if kind == "project":
+        if kind in {"project", "project_save"}:
             return filedialog.asksaveasfilename(
                 title="Choose SplitShot project",
                 initialdir=initial_dir,
                 defaultextension=".ssproj",
+                filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
+            )
+        if kind == "project_open":
+            return filedialog.askopenfilename(
+                title="Open SplitShot project",
+                initialdir=initial_dir,
                 filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
             )
         if kind == "export":
@@ -104,7 +110,21 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
         if "User canceled" in result.stderr:
             return None
         raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
-    if kind == "project":
+    if kind == "project_open":
+        script = "\n".join(
+            [
+                f"set chosenFile to choose file with prompt {_applescript_string('Open SplitShot project')} "
+                f"default location POSIX file {_applescript_string(str(default_dir))}",
+                "POSIX path of chosenFile",
+            ]
+        )
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            return result.stdout.strip()
+        if "User canceled" in result.stderr:
+            return None
+        raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
+    if kind in {"project", "project_save"}:
         prompt = "Choose SplitShot project path"
     elif kind == "export":
         prompt = "Choose MP4 export path"
@@ -129,6 +149,12 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
 
 def _applescript_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def display_name_for_path(path: str, fallback: str) -> str:
+    if not path:
+        return fallback
+    return re.sub(r"^[A-Fa-f0-9]{32}_", "", Path(path).name)
 
 
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
@@ -328,12 +354,13 @@ class BrowserControlServer:
                 )
                 payload["media"]["primary_display_name"] = display_names.get(
                     primary_path,
-                    Path(primary_path).name if primary_path else "No video selected",
+                    display_name_for_path(primary_path, "No video selected"),
                 )
                 payload["media"]["secondary_display_name"] = display_names.get(
                     secondary_path,
-                    Path(secondary_path).name if secondary_path else "None",
+                    display_name_for_path(secondary_path, "None"),
                 )
+                payload["project"]["path"] = "" if controller.project_path is None else str(controller.project_path)
                 return payload
 
             def _send_static(self, name: str, content_type: str | None = None) -> None:
@@ -497,9 +524,11 @@ class BrowserControlServer:
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _new_project(self, payload: dict[str, Any]) -> None:
+                display_names.clear()
                 controller.new_project()
 
             def _open_project(self, payload: dict[str, Any]) -> None:
+                display_names.clear()
                 controller.open_project(str(payload["path"]))
 
             def _save_project(self, payload: dict[str, Any]) -> None:
@@ -511,6 +540,7 @@ class BrowserControlServer:
                 controller.save_project(str(target))
 
             def _delete_project(self, payload: dict[str, Any]) -> None:
+                display_names.clear()
                 controller.delete_current_project()
 
             def _import_primary(self, payload: dict[str, Any]) -> None:
