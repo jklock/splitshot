@@ -8,9 +8,11 @@ from pathlib import Path
 from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
+    display_name_for_path,
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
+from splitshot.domain.models import Project
 from splitshot.ui.controller import ProjectController
 
 
@@ -99,6 +101,11 @@ def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
     assert is_expected_disconnect_error(ConnectionResetError())
     assert is_expected_disconnect_error(ConnectionAbortedError())
     assert not is_expected_disconnect_error(RuntimeError())
+
+
+def test_display_name_fallback_strips_browser_session_prefix() -> None:
+    assert display_name_for_path("/tmp/1234567890abcdef1234567890abcdef_Stage1.MP4", "None") == "Stage1.MP4"
+    assert display_name_for_path("", "None") == "None"
 
 
 def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) -> None:
@@ -267,6 +274,68 @@ def test_browser_path_dialog_endpoint_supports_video_path_fields(tmp_path) -> No
         assert calls == [("primary", "/tmp/current-stage.mp4")]
     finally:
         server.shutdown()
+
+
+def test_browser_path_dialog_endpoint_supports_project_open_and_save(tmp_path) -> None:
+    open_path = tmp_path / "existing.ssproj"
+    save_path = tmp_path / "new.ssproj"
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        calls.append((kind, current))
+        return str(open_path if kind == "project_open" else save_path)
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, path_chooser=fake_path_chooser)
+    server.start_background(open_browser=False)
+    try:
+        assert _post_json(
+            f"{server.url}api/dialog/path",
+            {"kind": "project_open", "current": "/tmp/current.ssproj"},
+        ) == {"path": str(open_path)}
+        assert _post_json(
+            f"{server.url}api/dialog/path",
+            {"kind": "project_save", "current": ""},
+        ) == {"path": str(save_path)}
+        assert calls == [("project_open", "/tmp/current.ssproj"), ("project_save", None)]
+    finally:
+        server.shutdown()
+
+
+def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        project_path = tmp_path / "saved.ssproj"
+
+        imported = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        assert imported["media"]["primary_available"] is True
+
+        saved = _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
+        assert saved["project"]["path"] == str(project_path)
+
+        cleared = _post_json(f"{server.url}api/project/new", {})
+        assert cleared["media"]["primary_available"] is False
+        assert cleared["media"]["primary_display_name"] == "No video selected"
+
+        reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        assert reopened["project"]["path"] == str(project_path)
+        assert reopened["media"]["primary_available"] is True
+        assert reopened["project"]["primary_video"]["path"] == str(video_path)
+    finally:
+        server.shutdown()
+
+
+def test_browser_state_marks_missing_project_media_unavailable(tmp_path: Path) -> None:
+    project = Project()
+    project.primary_video.path = str(tmp_path / "missing.mp4")
+
+    payload = browser_state(project, "Ready.")
+
+    assert payload["media"]["primary_available"] is False
+    assert payload["media"]["primary_url"] is None
 
 
 def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
