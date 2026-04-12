@@ -14,6 +14,14 @@ from splitshot.timeline.model import compute_split_rows
 def browser_state(project: Project, status_message: str) -> dict[str, Any]:
     rows = compute_split_rows(project)
     presentation = build_stage_presentation(project)
+    primary_path = Path(project.primary_video.path) if project.primary_video.path else None
+    secondary_path = (
+        Path(project.secondary_video.path)
+        if project.secondary_video is not None and project.secondary_video.path
+        else None
+    )
+    primary_available = bool(primary_path and primary_path.exists() and primary_path.is_file())
+    secondary_available = bool(secondary_path and secondary_path.exists() and secondary_path.is_file())
     return {
         "status": status_message,
         "project": project_to_dict(project),
@@ -25,12 +33,12 @@ def browser_state(project: Project, status_message: str) -> dict[str, Any]:
         "export_presets": export_presets_for_api(),
         "default_project_path": str(Path.home() / "splitshot"),
         "media": {
-            "primary_available": bool(project.primary_video.path),
-            "secondary_available": bool(project.secondary_video and project.secondary_video.path),
-            "primary_url": "/media/primary" if project.primary_video.path else None,
+            "primary_available": primary_available,
+            "secondary_available": secondary_available,
+            "primary_url": "/media/primary" if primary_available else None,
             "secondary_url": (
                 "/media/secondary"
-                if project.secondary_video is not None and project.secondary_video.path
+                if secondary_available
                 else None
             ),
         },

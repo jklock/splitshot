@@ -20,6 +20,7 @@ let layoutSizes = {
   waveformHeight: savedNumber("splitshot.layout.waveformHeight", 206),
 };
 let activeResize = null;
+let currentProjectId = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -292,7 +293,7 @@ async function api(path, payload = null) {
   const response = await fetch(path, options);
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-  state = data;
+  applyRemoteState(data);
   render();
   activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
   if (finishProcessing) finishProcessing(data.status || "Ready.");
@@ -335,7 +336,7 @@ async function postFile(path, file) {
     const response = await fetch(path, { method: "POST", body: form });
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-    state = data;
+    applyRemoteState(data);
     render();
     activity("file.ingested", { path, name: file.name, shots: data.metrics?.total_shots });
     finishProcessing(data.status || "Analysis complete.");
@@ -379,8 +380,38 @@ async function pickPath(kind, targetId, afterSelect = null) {
 async function refresh() {
   activity("api.refresh", {});
   const response = await fetch("/api/state");
-  state = await response.json();
+  applyRemoteState(await response.json());
   render();
+}
+
+function applyRemoteState(nextState) {
+  const nextProjectId = nextState?.project?.id || "";
+  if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
+    resetLocalProjectView();
+  }
+  currentProjectId = nextProjectId;
+  state = nextState;
+  if (selectedShotId && !(state.project.analysis.shots || []).some((shot) => shot.id === selectedShotId)) {
+    selectedShotId = state.project.ui_state?.selected_shot_id || null;
+  }
+}
+
+function resetLocalProjectView() {
+  selectedShotId = null;
+  draggingShotId = null;
+  pendingDragTimeMs = null;
+  timingRowEdits.clear();
+  resetMediaElement($("primary-video"));
+  resetMediaElement($("secondary-video"));
+  stopOverlayLoop();
+}
+
+function resetMediaElement(video) {
+  if (!video) return;
+  video.pause();
+  video.removeAttribute("src");
+  video.dataset.sourcePath = "";
+  video.load();
 }
 
 function durationMs() {
@@ -429,7 +460,8 @@ function renderHeader() {
   $("current-file").textContent = primaryName;
   $("primary-file-path").value = state.project.primary_video.path || "";
   $("secondary-file-path").value = state.project.secondary_video?.path || "";
-  $("project-path").value = state.project.path || $("project-path").value || `${state.default_project_path || "~/splitshot"}/project.ssproj`;
+  $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/project.ssproj`;
+  $("project-path").value = state.project.path || "";
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${primaryName}`
     : "No video selected";
@@ -457,8 +489,7 @@ function renderVideo() {
     video.load();
   }
   if (!state.media.primary_available) {
-    video.removeAttribute("src");
-    video.dataset.sourcePath = "";
+    resetMediaElement(video);
   }
   const secondaryPath = state.project.secondary_video?.path || "";
   if (state.media.secondary_available && secondary.dataset.sourcePath !== secondaryPath) {
@@ -467,8 +498,7 @@ function renderVideo() {
     secondary.load();
   }
   if (!state.media.secondary_available) {
-    secondary.removeAttribute("src");
-    secondary.dataset.sourcePath = "";
+    resetMediaElement(secondary);
   }
   const mergePreview = Boolean(state.media.secondary_available && state.project.merge.enabled);
   stage.classList.toggle("merge-preview", mergePreview);
@@ -498,18 +528,6 @@ function syncSecondaryPreview() {
   }
 }
 
-function renderTimelineStrip() {
-  const strip = $("timeline-strip");
-  strip.innerHTML = "";
-  const beep = state.project.analysis.beep_time_ms_primary;
-  if (beep !== null && beep !== undefined) {
-    strip.appendChild(marker("beep", beep));
-  }
-  state.project.analysis.shots.forEach((shot) => {
-    strip.appendChild(marker("shot", shot.time_ms));
-  });
-}
-
 function resizeCanvasToDisplay(canvas) {
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(1, Math.floor(rect.width || canvas.clientWidth || 1600));
@@ -518,13 +536,6 @@ function resizeCanvasToDisplay(canvas) {
     canvas.width = width;
     canvas.height = height;
   }
-}
-
-function marker(kind, timeMs) {
-  const node = document.createElement("span");
-  node.className = `timeline-marker ${kind}`;
-  node.style.left = `${Math.max(0, Math.min(100, (timeMs / durationMs()) * 100))}%`;
-  return node;
 }
 
 function renderWaveform() {
@@ -1200,7 +1211,6 @@ function render() {
   renderHeader();
   renderStats();
   renderVideo();
-  renderTimelineStrip();
   renderWaveform();
   renderTimingTables();
   renderControls();
@@ -1481,6 +1491,23 @@ async function importTypedPath(targetId, apiPath, label) {
   return callApi(apiPath, { path });
 }
 
+async function openProjectWithDialog() {
+  return pickPath("project_open", "project-path", async (path) => {
+    const result = await callApi("/api/project/open", { path });
+    if (result) setActiveTool("project");
+  });
+}
+
+async function saveProjectFlow() {
+  const existingPath = $("project-path").value.trim();
+  if (existingPath) {
+    return callApi("/api/project/save", { path: existingPath });
+  }
+  return pickPath("project_save", "project-path", async (path) => {
+    await callApi("/api/project/save", { path });
+  });
+}
+
 async function applyScoringSettings() {
   const scoringPayload = readScoringPayload();
   const ruleset = $("scoring-preset").value;
@@ -1548,7 +1575,7 @@ function wireEvents() {
     const result = await importTypedPath("secondary-file-path", "/api/import/secondary", "Secondary");
     if (result) setActiveTool("merge");
   });
-  $("browse-project-path").addEventListener("click", () => pickPath("project", "project-path"));
+  $("browse-project-path").addEventListener("click", () => pickPath("project_save", "project-path"));
   $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path"));
   $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
     const result = await callApi("/api/import/primary", { path });
@@ -1559,7 +1586,10 @@ function wireEvents() {
     if (result) setActiveTool("merge");
   }));
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
-    item.addEventListener("click", () => $("primary-file-input").click());
+    item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
+      const result = await callApi("/api/import/primary", { path });
+      if (result) setActiveTool("review");
+    }));
   });
   document.querySelectorAll("[data-open-secondary]").forEach((item) => {
     item.addEventListener("click", () => pickPath("secondary", "secondary-file-path", async (path) => {
@@ -1577,8 +1607,8 @@ function wireEvents() {
     if (result) setActiveTool("merge");
     event.target.value = "";
   });
-  $("save-project").addEventListener("click", () => callApi("/api/project/save", { path: requireValue("project-path", "Project path") }));
-  $("open-project").addEventListener("click", () => callApi("/api/project/open", { path: requireValue("project-path", "Project path") }));
+  $("save-project").addEventListener("click", saveProjectFlow);
+  $("open-project").addEventListener("click", openProjectWithDialog);
   $("delete-project").addEventListener("click", () => callApi("/api/project/delete", {}));
   $("primary-video").addEventListener("play", startOverlayLoop);
   $("primary-video").addEventListener("pause", stopOverlayLoop);
