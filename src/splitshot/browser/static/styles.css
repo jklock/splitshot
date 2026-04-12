@@ -16,6 +16,8 @@
   --rail-width: 96px;
   --topbar-height: 38px;
   --inspector-width: 440px;
+  --resize-handle-size: 6px;
+  --waveform-height: 206px;
 }
 
 * {
@@ -109,7 +111,7 @@ h3 {
 
 .cockpit-shell {
   display: grid;
-  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   overflow: hidden;
@@ -178,7 +180,7 @@ h3 {
 
 .cockpit {
   display: grid;
-  grid-template-rows: var(--topbar-height) auto minmax(0, 1fr);
+  grid-template-rows: var(--topbar-height) 28px minmax(0, 1fr);
   height: 100vh;
   min-height: 0;
   min-width: 0;
@@ -194,11 +196,14 @@ h3 {
   gap: 0.65rem;
   justify-content: space-between;
   min-height: 28px;
+  height: 28px;
   padding: 0 0.75rem;
 }
 
 .processing-bar[hidden] {
-  display: none;
+  display: flex !important;
+  visibility: hidden;
+  opacity: 0;
 }
 
 .processing-bar strong {
@@ -289,7 +294,7 @@ small,
 
 .review-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--inspector-width);
+  grid-template-columns: minmax(0, 1fr) var(--resize-handle-size) var(--inspector-width);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -304,10 +309,50 @@ small,
 .review-stack {
   border-right: 1px solid var(--line);
   display: grid;
-  grid-template-rows: minmax(320px, 1fr) 206px;
+  grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--waveform-height));
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.resize-handle {
+  background: #050607;
+  border: 0;
+  border-radius: 0;
+  display: block;
+  min-height: 0;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+  position: relative;
+  z-index: 7;
+}
+
+.resize-handle-rail,
+.resize-handle-sidebar {
+  cursor: col-resize;
+  width: var(--resize-handle-size);
+}
+
+.resize-handle-waveform {
+  cursor: row-resize;
+  height: var(--resize-handle-size);
+  width: 100%;
+}
+
+.layout-unlocked .resize-handle {
+  background: var(--accent);
+  opacity: 0.72;
+  pointer-events: auto;
+}
+
+.layout-unlocked .resize-handle:hover,
+.resizing-layout .resize-handle {
+  opacity: 1;
+}
+
+.layout-locked .resize-handle {
+  cursor: default;
 }
 
 .section-header {
@@ -689,10 +734,60 @@ button:disabled {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.button-grid.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .path-row {
   display: grid;
   gap: 0;
   grid-template-columns: minmax(0, 1fr) 78px;
+}
+
+.project-path-row,
+.label-row {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.path-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.badge-style-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px 54px;
+  gap: 0.25rem;
+}
+
+.scoring-shot-list {
+  display: grid;
+  gap: 0.28rem;
+  margin-bottom: 0.65rem;
+}
+
+.scoring-shot-list button {
+  justify-content: space-between;
+}
+
+.lock-button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  min-width: 36px;
+}
+
+.lock-button.unlocked {
+  color: var(--accent);
+}
+
+.lock-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .control-grid {
@@ -763,14 +858,14 @@ button:disabled {
 }
 
 input[type="color"] {
-  height: 24px;
-  min-height: 24px;
+  height: 18px;
+  min-height: 18px;
   padding: 1px;
-  width: 34px;
+  width: 24px;
 }
 
 .style-card input[type="range"] {
-  max-width: 86px;
+  max-width: 64px;
 }
 
 .export-log {
@@ -845,7 +940,7 @@ input[type="color"] {
 
 @media (max-width: 1180px) {
   .cockpit-shell {
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: 84px var(--resize-handle-size) minmax(0, 1fr);
   }
 
   .rail-logo {
@@ -854,7 +949,7 @@ input[type="color"] {
   }
 
   .review-grid {
-    grid-template-columns: minmax(0, 1fr) 380px;
+    grid-template-columns: minmax(0, 1fr) var(--resize-handle-size) 380px;
   }
 
   .inspector {
@@ -877,6 +972,10 @@ input[type="color"] {
     display: block;
     height: auto;
     min-height: 100vh;
+  }
+
+  .resize-handle {
+    display: none;
   }
 
   .tool-rail {
@@ -906,7 +1005,7 @@ input[type="color"] {
   }
 
   .review-stack {
-    grid-template-rows: minmax(280px, 58vh) 206px;
+    grid-template-rows: minmax(280px, 58vh) var(--resize-handle-size) minmax(112px, var(--waveform-height));
   }
 
   .button-grid,
@@ -926,7 +1025,9 @@ input[type="color"] {
 }
 
 .cockpit.waveform-expanded .inspector,
-.cockpit.timing-expanded .inspector {
+.cockpit.timing-expanded .inspector,
+.cockpit.waveform-expanded .resize-handle-sidebar,
+.cockpit.timing-expanded .resize-handle-sidebar {
   display: none;
 }
 
@@ -934,7 +1035,8 @@ input[type="color"] {
   grid-template-rows: minmax(0, 1fr);
 }
 
-.cockpit.waveform-expanded .video-stage {
+.cockpit.waveform-expanded .video-stage,
+.cockpit.waveform-expanded .resize-handle-waveform {
   display: none;
 }
 
@@ -951,7 +1053,8 @@ input[type="color"] {
 }
 
 .cockpit.timing-expanded .video-stage,
-.cockpit.timing-expanded .waveform-panel {
+.cockpit.timing-expanded .waveform-panel,
+.cockpit.timing-expanded .resize-handle-waveform {
   display: none;
 }
 
