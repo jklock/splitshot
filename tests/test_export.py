@@ -9,7 +9,7 @@ import numpy as np
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, OverlayPosition, Project, ScoreLetter, ScoreMark
-from splitshot.export.pipeline import export_project
+from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import OverlayRenderer
@@ -178,6 +178,17 @@ def test_export_presets_map_to_explicit_encoding_variables() -> None:
     assert project.export.audio_bitrate_kbps == 320
     preset_ids = {preset["id"] for preset in export_presets_for_api()}
     assert {"universal_vertical", "short_form_vertical", "youtube_long_1080p", "youtube_long_4k"} <= preset_ids
+
+
+def test_export_accepts_expected_decoder_broken_pipe_after_successful_encode() -> None:
+    log_lines = [
+        "decoder: [out#0/rawvideo @ 0x1] Error writing trailer: Broken pipe",
+        "decoder: Conversion failed!",
+        "encoder: frame=  942 fps= 66 q=-1.0 Lsize=   93069KiB",
+    ]
+
+    assert _is_expected_decoder_pipe_shutdown(1, 0, log_lines)
+    assert not _is_expected_decoder_pipe_shutdown(1, 1, log_lines)
 
 
 def test_export_uses_target_dimensions_and_stores_ffmpeg_log(synthetic_video_factory, tmp_path: Path) -> None:

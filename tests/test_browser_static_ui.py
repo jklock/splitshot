@@ -44,6 +44,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="current-file"' in html
     assert 'id="processing-bar"' in html
     assert 'id="selected-shot-panel"' in html
+    assert 'id="split-card-grid"' not in html
     assert 'class="video-status"' not in html
     assert "No video open" not in html
     assert "Apply Threshold" not in html
@@ -93,7 +94,6 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="waveform-shot-list"' in html
     assert 'id="timing-workbench"' in html
     assert 'id="expand-timing"' in html
-    assert 'id="split-card-grid"' in html
     assert 'id="selected-shot-copy"' in html
     assert html.index('id="timing-table"') > html.index('id="selected-shot-panel"')
     assert html.index('id="waveform"') < html.index('waveform-header')
@@ -168,7 +168,13 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "beginLayoutResize" in js
     assert 'activity("layout.resize.start"' in js
     assert 'activity("layout.resize.commit"' in js
-    assert "Score letter is saved to that shot" in html
+    assert "Behavior" not in html
+    assert "Score letter is saved to that shot" not in html
+    assert "Assign a score value on any shot row" in html
+    assert "scoring-shot-row" in js
+    assert 'callApi("/api/scoring/score", { shot_id: segment.shot_id, letter: select.value })' in js
+    assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 72), 72)' in js
+    assert 'persistLayoutSize("railWidth", clamp(event.clientX, 60, 120))' in js
     assert "appears inside its split badge" in html
     assert "empty-start" not in js
     assert "setActiveTool" in js
@@ -192,7 +198,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".empty-start" not in css
     assert ".metrics-strip" not in css
     assert ".rail-action" not in css
-    assert "--rail-width: 96px;" in css
+    assert "--rail-width: 72px;" in css
     assert "--topbar-height: 38px;" in css
     assert "--inspector-width: 440px;" in css
     assert "--waveform-height: 206px;" in css
@@ -210,6 +216,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".video-stage.merge-preview" in css
     assert ".video-stage.merge-pip #secondary-video" in css
     assert ".project-delete-button" in css
+    assert "gap: 0.5rem;" in css
     assert ".cockpit.waveform-expanded .review-grid" in css
     assert ".cockpit.waveform-expanded .video-stage" in css
     assert "display: none;" in css
@@ -221,6 +228,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit.scoring-active .score-target-button" not in css
     assert ".overlay-badge.timer-badge" in css
     assert ".score-float" not in css
+    assert ".overlay-left {\n  flex-direction: column;\n}" in css
+    assert ".overlay-right {\n  flex-direction: column;\n}" in css
+    assert "height: fit-content;" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
 
@@ -232,7 +242,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
     assert 'activity("button.click"' in js
 
     wired_button_ids = {
-        "place-score",
         "expand-waveform",
         "zoom-waveform-out",
         "zoom-waveform-in",
