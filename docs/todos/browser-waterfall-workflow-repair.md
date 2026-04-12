@@ -38,5 +38,5 @@
 ## Closeout
 
 - [x] Write final audit.
-- [ ] Commit the branch.
-- [ ] Merge into `main`.
+- [x] Commit the branch.
+- [x] Merge into `main`.
