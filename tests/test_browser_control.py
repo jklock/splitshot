@@ -246,6 +246,29 @@ def test_browser_path_dialog_endpoint_uses_local_path_chooser(tmp_path) -> None:
         server.shutdown()
 
 
+def test_browser_path_dialog_endpoint_supports_video_path_fields(tmp_path) -> None:
+    selected = tmp_path / "stage.mp4"
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        calls.append((kind, current))
+        return str(selected)
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, path_chooser=fake_path_chooser)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(
+            f"{server.url}api/dialog/path",
+            {"kind": "primary", "current": "/tmp/current-stage.mp4"},
+        )
+
+        assert payload == {"path": str(selected)}
+        assert calls == [("primary", "/tmp/current-stage.mp4")]
+    finally:
+        server.shutdown()
+
+
 def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -268,6 +291,9 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                     }
                 },
                 "scoring_colors": {"A": "#00ff00"},
+                "style_type": "rounded",
+                "spacing": 6,
+                "margin": 4,
             },
         )
 
@@ -277,6 +303,9 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["timer_badge"]["text_color"] == "#abcdef"
         assert state["project"]["overlay"]["timer_badge"]["opacity"] == 0.55
         assert state["project"]["overlay"]["scoring_colors"]["A"] == "#00ff00"
+        assert state["project"]["overlay"]["style_type"] == "rounded"
+        assert state["project"]["overlay"]["spacing"] == 6
+        assert state["project"]["overlay"]["margin"] == 4
 
         state = _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
@@ -285,9 +314,10 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
 
         state = _post_json(
             f"{server.url}api/scoring",
-            {"penalties": 1, "penalty_counts": {"procedural_errors": 2}},
+            {"penalties": 1.5, "penalty_counts": {"procedural_errors": 2}},
         )
         assert state["project"]["scoring"]["penalty_counts"]["procedural_errors"] == 2
+        assert state["project"]["scoring"]["penalties"] == 1.5
         assert state["scoring_summary"]["field_penalties"] == 20
 
         state = _post_json(f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8})

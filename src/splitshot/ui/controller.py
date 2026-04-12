@@ -217,8 +217,8 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def set_penalties(self, penalties: int) -> None:
-        self.project.scoring.penalties = max(0, penalties)
+    def set_penalties(self, penalties: float) -> None:
+        self.project.scoring.penalties = max(0.0, float(penalties))
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
@@ -251,6 +251,13 @@ class ProjectController(QObject):
         self.settings.badge_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_overlay_badge_layout(self, style_type: str, spacing: int, margin: int) -> None:
+        self.project.overlay.style_type = style_type if style_type in {"square", "bubble", "rounded"} else "square"
+        self.project.overlay.spacing = max(0, min(40, int(spacing)))
+        self.project.overlay.margin = max(0, min(40, int(margin)))
         self.project.touch()
         self.project_changed.emit()
 

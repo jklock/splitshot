@@ -24,6 +24,7 @@
           <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
         </nav>
       </aside>
+      <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
 
       <main id="cockpit-root" class="cockpit">
         <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
@@ -52,6 +53,7 @@
               <button id="place-score" class="score-target-button" type="button">Place Score</button>
             </div>
 
+            <button id="resize-waveform" class="resize-handle resize-handle-waveform" type="button" aria-label="Resize waveform"></button>
             <section class="waveform-panel">
               <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
               <div class="section-header waveform-header">
@@ -80,6 +82,7 @@
             </section>
           </section>
 
+          <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context inspector">
             <section class="tool-pane active" data-tool-pane="review">
               <div class="section-header">
@@ -128,11 +131,12 @@
                 <select id="scoring-preset"></select>
               </label>
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
+              <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
+              <p class="hint">Click a shot to select it and assign a score.</p>
               <div id="score-option-grid" class="score-option-grid"></div>
               <div id="scoring-penalty-grid" class="penalty-grid"></div>
               <label>Score for selected shot
-                <select id="score-letter">
-                </select>
+                <select id="score-letter"></select>
               </label>
             </section>
 
@@ -161,6 +165,18 @@
                   </select>
                 </label>
               </div>
+              <div class="control-grid">
+                <label>Badge</label>
+                <div class="badge-style-controls">
+                  <select id="overlay-style">
+                    <option value="square">Square</option>
+                    <option value="bubble">Bubble</option>
+                    <option value="rounded">Rounded Bubble</option>
+                  </select>
+                  <input id="overlay-spacing" type="number" min="0" max="40" step="2" value="8" placeholder="Spacing" />
+                  <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" placeholder="Margin" />
+                </div>
+              </div>
               <div class="style-grid" id="badge-style-grid"></div>
               <h3>Score Colors</h3>
               <div class="score-color-grid" id="score-color-grid"></div>
@@ -173,6 +189,7 @@
               </div>
               <button class="primary-button" data-open-secondary type="button">Choose Secondary Video</button>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
+              <p class="hint">Use the selected secondary video to merge into the export. Flip positions or adjust the PiP size.</p>
               <label>Layout
                 <select id="merge-layout">
                   <option value="side_by_side">Side by side</option>
@@ -193,13 +210,18 @@
                 <button data-sync="1" type="button">+1 ms</button>
                 <button data-sync="10" type="button">+10 ms</button>
               </div>
-              <button id="swap-videos" type="button">Swap Angles</button>
+              <button id="swap-videos" type="button">Flip Merge Direction</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="layout">
               <div class="section-header">
                 <h3>Layout</h3>
                 <small>Auto-applies</small>
+              </div>
+              <p class="hint">Unlock layout to resize the rail, inspector, and waveform. Export composition settings apply automatically.</p>
+              <div class="button-grid two-up">
+                <button id="toggle-layout-lock" class="primary-button" type="button">Unlock Layout</button>
+                <button id="reset-layout" type="button">Reset Layout</button>
               </div>
               <label>Quality
                 <select id="quality">
@@ -311,26 +333,37 @@
                 <h3>Project</h3>
                 <span id="media-badge">No video selected</span>
               </div>
-              <div class="button-grid compact">
-                <button id="choose-primary" class="primary-button" type="button">Primary Video</button>
-                <button id="choose-secondary" type="button">Second Angle</button>
-                <button id="new-project" type="button">New Project</button>
+              <div class="project-path-row">
+                <label>Primary Video
+                  <input id="primary-file-path" placeholder="/absolute/path/to/primary.mp4" />
+                </label>
+                <div class="path-actions">
+                  <button id="browse-primary-path" type="button">Browse</button>
+                  <button id="import-primary-path" type="button">Import Path</button>
+                  <button id="choose-primary" class="primary-button" type="button">Choose Primary</button>
+                </div>
               </div>
-              <dl class="details">
-                <dt>Primary</dt><dd id="primary-file">None</dd>
-                <dt>Secondary</dt><dd id="secondary-file">None</dd>
-                <dt>Project</dt><dd id="project-file">Active in memory</dd>
-              </dl>
+              <div class="project-path-row">
+                <label>Secondary Video
+                  <input id="secondary-file-path" placeholder="/absolute/path/to/secondary.mp4" />
+                </label>
+                <div class="path-actions">
+                  <button id="browse-secondary-path" type="button">Browse</button>
+                  <button id="import-secondary-path" type="button">Import Path</button>
+                  <button id="choose-secondary" type="button">Choose Secondary</button>
+                </div>
+              </div>
               <label>Project bundle path
                 <div class="path-row">
-                  <input id="project-path" placeholder="/absolute/path/to/project.ssproj" />
+                  <input id="project-path" placeholder="~/splitshot/project.ssproj" />
                   <button id="browse-project-path" type="button">Browse</button>
                 </div>
               </label>
               <div class="button-grid compact">
-                <button id="save-project" type="button">Save</button>
-                <button id="open-project" type="button">Open</button>
-                <button id="delete-project" type="button">Delete</button>
+                <button id="save-project" type="button">Save Project</button>
+                <button id="open-project" type="button">Open Project</button>
+                <button id="new-project" type="button">New Project</button>
+                <button id="delete-project" type="button">Delete Project</button>
               </div>
             </section>
           </aside>

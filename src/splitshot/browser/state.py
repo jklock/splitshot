@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from splitshot.domain.models import Project, project_to_dict
@@ -22,6 +23,7 @@ def browser_state(project: Project, status_message: str) -> dict[str, Any]:
         "scoring_summary": calculate_scoring_summary(project),
         "scoring_presets": scoring_presets_for_api(),
         "export_presets": export_presets_for_api(),
+        "default_project_path": str(Path.home() / "splitshot"),
         "media": {
             "primary_available": bool(project.primary_video.path),
             "secondary_available": bool(project.secondary_video and project.secondary_video.path),

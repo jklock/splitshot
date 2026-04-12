@@ -55,6 +55,15 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
+        if kind in {"primary", "secondary"}:
+            return filedialog.askopenfilename(
+                title="Choose stage video" if kind == "primary" else "Choose secondary angle video",
+                initialdir=initial_dir,
+                filetypes=[
+                    ("Video files", "*.mp4 *.mov *.avi *.wmv *.webm"),
+                    ("All files", "*.*"),
+                ],
+            )
         if kind == "project":
             return filedialog.asksaveasfilename(
                 title="Choose SplitShot project",
@@ -77,11 +86,24 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
 def choose_local_path_macos(kind: str, current: str | None = None) -> str | None:
     current_path = Path(current).expanduser() if current else None
     default_dir = (current_path.parent if current_path else Path.home()).resolve()
-    default_name = (
-        current_path.name
-        if current_path and current_path.name
-        else ("project.ssproj" if kind == "project" else "output.mp4")
+    default_name = current_path.name if current_path and current_path.name else (
+        "project.ssproj" if kind == "project" else "output.mp4"
     )
+    if kind in {"primary", "secondary"}:
+        prompt = "Choose stage video" if kind == "primary" else "Choose secondary angle video"
+        script = "\n".join(
+            [
+                f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
+                f"default location POSIX file {_applescript_string(str(default_dir))}",
+                "POSIX path of chosenFile",
+            ]
+        )
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            return result.stdout.strip()
+        if "User canceled" in result.stderr:
+            return None
+        raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
     if kind == "project":
         prompt = "Choose SplitShot project path"
     elif kind == "export":
@@ -520,7 +542,7 @@ class BrowserControlServer:
                 if "enabled" in payload:
                     controller.set_scoring_enabled(bool(payload["enabled"]))
                 if "penalties" in payload:
-                    controller.set_penalties(int(payload["penalties"]))
+                    controller.set_penalties(float(payload["penalties"]))
                 if "penalty_counts" in payload:
                     controller.set_penalty_counts(
                         {
@@ -547,6 +569,11 @@ class BrowserControlServer:
                     controller.set_overlay_position(OverlayPosition(str(payload["position"])))
                 if "badge_size" in payload:
                     controller.set_badge_size(BadgeSize(str(payload["badge_size"])))
+                controller.set_overlay_badge_layout(
+                    str(payload.get("style_type", controller.project.overlay.style_type)),
+                    int(payload.get("spacing", controller.project.overlay.spacing)),
+                    int(payload.get("margin", controller.project.overlay.margin)),
+                )
                 styles = payload.get("styles", {})
                 for badge_name, style in styles.items():
                     controller.set_overlay_badge_style(
