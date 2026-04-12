@@ -10,4 +10,4 @@
 - [x] Add focused feature/static tests.
 - [x] Run full test suite.
 - [x] Write final audit.
-- [ ] Commit and merge.
+- [x] Commit and merge.
