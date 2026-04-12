@@ -294,6 +294,26 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                 "style_type": "rounded",
                 "spacing": 6,
                 "margin": 4,
+                "max_visible_shots": 6,
+                "shot_quadrant": "top_right",
+                "shot_direction": "down",
+                "custom_x": 0.12,
+                "custom_y": 0.18,
+                "bubble_width": 96,
+                "bubble_height": 42,
+                "font_family": "Verdana",
+                "font_size": 18,
+                "font_bold": False,
+                "font_italic": True,
+                "show_timer": False,
+                "show_draw": True,
+                "show_shots": True,
+                "show_score": False,
+                "custom_box_enabled": True,
+                "custom_box_text": "Classifier ready",
+                "custom_box_quadrant": "middle_middle",
+                "custom_box_x": 0.5,
+                "custom_box_y": 0.5,
             },
         )
 
@@ -306,6 +326,24 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["style_type"] == "rounded"
         assert state["project"]["overlay"]["spacing"] == 6
         assert state["project"]["overlay"]["margin"] == 4
+        assert state["project"]["overlay"]["max_visible_shots"] == 6
+        assert state["project"]["overlay"]["shot_quadrant"] == "top_right"
+        assert state["project"]["overlay"]["shot_direction"] == "down"
+        assert state["project"]["overlay"]["custom_x"] == 0.12
+        assert state["project"]["overlay"]["custom_y"] == 0.18
+        assert state["project"]["overlay"]["bubble_width"] == 96
+        assert state["project"]["overlay"]["bubble_height"] == 42
+        assert state["project"]["overlay"]["font_family"] == "Verdana"
+        assert state["project"]["overlay"]["font_size"] == 18
+        assert state["project"]["overlay"]["font_bold"] is False
+        assert state["project"]["overlay"]["font_italic"] is True
+        assert state["project"]["overlay"]["show_timer"] is False
+        assert state["project"]["overlay"]["show_score"] is False
+        assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_text"] == "Classifier ready"
+        assert state["project"]["overlay"]["custom_box_quadrant"] == "middle_middle"
+        assert state["project"]["overlay"]["custom_box_x"] == 0.5
+        assert state["project"]["overlay"]["custom_box_y"] == 0.5
 
         state = _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
