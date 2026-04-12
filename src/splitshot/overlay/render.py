@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project
@@ -84,7 +84,7 @@ class OverlayRenderer:
         painter.setRenderHint(QPainter.TextAntialiasing, True)
 
         badges, score_marks = self.build_badges(project, position_ms)
-        self._paint_badges(painter, badges, project.overlay.position, project.overlay.badge_size, width, height)
+        self._paint_badges(painter, badges, project, width, height)
         self._paint_scores(painter, project, score_marks, width, height)
 
         painter.restore()
@@ -93,32 +93,30 @@ class OverlayRenderer:
         self,
         painter: QPainter,
         badges: list[Badge],
-        position: OverlayPosition,
-        badge_size: BadgeSize,
+        project: Project,
         width: int,
         height: int,
     ) -> None:
         if not badges:
             return
 
-        font = QFont("Helvetica Neue", _FONT_SIZE[badge_size])
+        position = project.overlay.position
+        font = QFont("Helvetica Neue", _FONT_SIZE[project.overlay.badge_size])
         painter.setFont(font)
-        padding_x = 12
-        padding_y = 8
-        gap = 8
-        cursor_x = 16
-        cursor_y = 16
+        padding_y = max(2, int(project.overlay.spacing))
+        padding_x = max(6, int(project.overlay.spacing * 1.5))
+        gap = max(0, int(project.overlay.margin))
+        cursor_x = max(0, int(project.overlay.margin))
+        cursor_y = max(0, int(project.overlay.margin))
 
         if position == OverlayPosition.BOTTOM:
-            cursor_y = height - 48
+            cursor_y = max(0, height - 48 - max(0, int(project.overlay.margin)))
         elif position == OverlayPosition.RIGHT:
-            cursor_x = width - 200
-        elif position == OverlayPosition.LEFT:
-            cursor_x = 16
+            cursor_x = max(0, width - 220 - max(0, int(project.overlay.margin)))
 
         for badge in badges:
             metrics = painter.fontMetrics()
-            text_width = metrics.horizontalAdvance(badge.text)
+            text_width = max(metrics.horizontalAdvance(badge.text), self._minimum_badge_text_width(metrics, badge.text))
             text_height = metrics.height()
             rect = QRectF(cursor_x, cursor_y, text_width + (padding_x * 2), text_height + (padding_y * 2))
 
@@ -131,13 +129,34 @@ class OverlayRenderer:
             background.setAlphaF(badge.style.opacity)
             painter.setPen(Qt.NoPen)
             painter.setBrush(background)
-            painter.drawRoundedRect(rect, 10, 10)
+            if project.overlay.style_type == "bubble":
+                radius = rect.height() / 2
+            elif project.overlay.style_type == "rounded":
+                radius = 16
+            else:
+                radius = 0
+            if radius:
+                painter.drawRoundedRect(rect, radius, radius)
+            else:
+                painter.drawRect(rect)
             painter.setPen(QColor(badge.style.text_color))
             painter.drawText(
                 rect.adjusted(padding_x, padding_y, -padding_x, -padding_y),
                 Qt.AlignCenter,
                 badge.text,
             )
+
+    @staticmethod
+    def _minimum_badge_text_width(metrics, text: str) -> int:
+        if text.startswith("Timer"):
+            return metrics.horizontalAdvance("Timer 00:00.000")
+        if text.startswith("Draw"):
+            return metrics.horizontalAdvance("Draw 00:00.000")
+        if text.startswith("Hit Factor"):
+            return metrics.horizontalAdvance("Hit Factor 00.00")
+        if text.startswith("Final Time"):
+            return metrics.horizontalAdvance("Final Time 00:00.000")
+        return 0
 
     def _paint_scores(
         self,

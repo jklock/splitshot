@@ -50,7 +50,6 @@
               <video id="primary-video" controls playsinline></video>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
-              <button id="place-score" class="score-target-button" type="button">Place Score</button>
             </div>
 
             <button id="resize-waveform" class="resize-handle resize-handle-waveform" type="button" aria-label="Resize waveform"></button>
@@ -138,6 +137,7 @@
               <label>Score for selected shot
                 <select id="score-letter"></select>
               </label>
+              <button id="place-score" class="score-target-button" type="button">Set Score Position</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
@@ -187,7 +187,7 @@
                 <h3>Second Angle</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button class="primary-button" data-open-secondary type="button">Choose Secondary Video</button>
+              <button class="primary-button" data-open-secondary type="button">Add Second Angle</button>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
               <p class="hint">Use the selected secondary video to merge into the export. Flip positions or adjust the PiP size.</p>
               <label>Layout
@@ -338,9 +338,7 @@
                   <input id="primary-file-path" placeholder="/absolute/path/to/primary.mp4" />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-primary-path" type="button">Browse</button>
-                  <button id="import-primary-path" type="button">Import Path</button>
-                  <button id="choose-primary" class="primary-button" type="button">Choose Primary</button>
+                  <button id="browse-primary-path" class="primary-button" type="button">Open Primary Video</button>
                 </div>
               </div>
               <div class="project-path-row">
@@ -348,9 +346,7 @@
                   <input id="secondary-file-path" placeholder="/absolute/path/to/secondary.mp4" />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-secondary-path" type="button">Browse</button>
-                  <button id="import-secondary-path" type="button">Import Path</button>
-                  <button id="choose-secondary" type="button">Choose Secondary</button>
+                  <button id="browse-secondary-path" type="button">Add Second Angle</button>
                 </div>
               </div>
               <label>Project bundle path
