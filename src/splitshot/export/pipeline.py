@@ -404,10 +404,17 @@ def _render_pass(
     decoder_log_thread.join(timeout=2)
     encoder_log_thread.join(timeout=2)
 
-    if decoder_return != 0:
+    if decoder_return != 0 and not _is_expected_decoder_pipe_shutdown(decoder_return, encoder_return, log_lines):
         raise RuntimeError("Base video render failed")
     if encoder_return != 0:
         raise RuntimeError("MP4 encode failed")
+
+
+def _is_expected_decoder_pipe_shutdown(decoder_return: int, encoder_return: int, log_lines: list[str]) -> bool:
+    if decoder_return == 0 or encoder_return != 0:
+        return False
+    decoder_log = "\n".join(line for line in log_lines if line.startswith("decoder:"))
+    return "Broken pipe" in decoder_log and "Conversion failed!" in decoder_log
 
 
 def export_project(
