@@ -37,7 +37,6 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'class="sidebar-section sidebar-metrics"' not in html
     assert 'class="rail-action"' not in html
     assert "Open Stage Video" not in html
-    assert "Add Second Angle" not in html
     assert "Refresh" not in html
     assert 'id="current-file"' in html
     assert 'id="processing-bar"' in html
@@ -49,6 +48,9 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert 'id="apply-scoring"' not in html
     assert "Assign To Selected Shot" not in html
     assert "Apply Merge" not in html
+    assert "Choose Primary" not in html
+    assert "Choose Secondary" not in html
+    assert "Import Path" not in html
     assert "Local review cockpit" not in html
     assert "Start here" not in html
     assert "SplitShot analyzes" not in html
@@ -123,6 +125,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
     assert "renderScoringPenaltyFields" in js
+    assert "importTypedPath" in js
+    assert 'pickPath("primary", "primary-file-path", async (path)' in js
+    assert 'pickPath("secondary", "secondary-file-path", async (path)' in js
     assert '$("penalties").value = state.project.scoring.penalties' not in js
     assert "renderExportPresetOptions" in js
     assert "scoring-active" in js
@@ -176,7 +181,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "input[type=\"color\"]" in css
     assert ".penalty-grid" in css
     assert ".export-log" in css
-    assert ".cockpit.scoring-active .score-target-button" in css
+    assert ".cockpit.scoring-active .score-target-button" not in css
+    assert ".overlay-badge.timer-badge" in css
     assert "font-family: -apple-system" in css
     assert "font-size: 13px;" in css
 
@@ -198,10 +204,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "browse-export-path",
         "browse-primary-path",
         "browse-secondary-path",
-        "import-primary-path",
-        "import-secondary-path",
-        "choose-primary",
-        "choose-secondary",
         "new-project",
         "browse-project-path",
         "save-project",
