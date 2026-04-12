@@ -579,34 +579,10 @@ button:disabled {
   opacity: 0.62;
 }
 
-.timeline-strip {
-  background: var(--blue-video);
-  border-bottom: 1px solid var(--line);
-  height: 26px;
-  min-height: 0;
-  overflow: hidden;
-  position: relative;
-}
-
-.timeline-marker {
-  bottom: 0;
-  position: absolute;
-  top: 0;
-  width: 3px;
-}
-
-.timeline-marker.beep {
-  background: var(--accent);
-}
-
-.timeline-marker.shot {
-  background: var(--green);
-}
-
 .waveform-panel {
   background: var(--blue-video);
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 38px 26px auto;
+  grid-template-rows: minmax(0, 1fr) 38px auto;
   min-height: 0;
   overflow: hidden;
 }
