@@ -165,7 +165,7 @@ class AnalysisState:
 class ScoringState:
     enabled: bool = False
     ruleset: str = "uspsa_minor"
-    penalties: int = 0
+    penalties: float = 0.0
     point_map: dict[str, float] = field(
         default_factory=lambda: {
             ScoreLetter.A.value: 5,
@@ -185,6 +185,9 @@ class ScoringState:
 class OverlaySettings:
     position: OverlayPosition = OverlayPosition.BOTTOM
     badge_size: BadgeSize = BadgeSize.M
+    style_type: str = "square"
+    spacing: int = 8
+    margin: int = 8
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
     shot_badge: BadgeStyle = field(
         default_factory=lambda: BadgeStyle(background_color="#1D4ED8")
@@ -380,7 +383,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", False)),
             ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),
-            penalties=int(scoring_data.get("penalties", 0)),
+            penalties=float(scoring_data.get("penalties", 0)),
             point_map={
                 str(key): float(value)
                 for key, value in scoring_data.get("point_map", ScoringState().point_map).items()
@@ -396,6 +399,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         overlay=OverlaySettings(
             position=OverlayPosition(overlay_data.get("position", OverlayPosition.BOTTOM.value)),
             badge_size=BadgeSize(overlay_data.get("badge_size", BadgeSize.M.value)),
+            style_type=str(overlay_data.get("style_type", "square")),
+            spacing=int(overlay_data.get("spacing", 8)),
+            margin=int(overlay_data.get("margin", 8)),
             timer_badge=_badge_style_from_dict(overlay_data.get("timer_badge")),
             shot_badge=_badge_style_from_dict(overlay_data.get("shot_badge")),
             current_shot_badge=_badge_style_from_dict(overlay_data.get("current_shot_badge")),

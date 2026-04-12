@@ -46,6 +46,7 @@ def test_browser_ui_is_review_first_cockpit_workflow() -> None:
     assert "No video open" not in html
     assert "Apply Threshold" not in html
     assert "Apply Scoring" not in html
+    assert 'id="apply-scoring"' not in html
     assert "Assign To Selected Shot" not in html
     assert "Apply Merge" not in html
     assert "Local review cockpit" not in html
@@ -67,6 +68,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="timeline-strip"' in html
     assert 'id="waveform"' in html
     assert 'id="expand-waveform"' in html
+    assert 'id="resize-rail"' in html
+    assert 'id="resize-sidebar"' in html
+    assert 'id="resize-waveform"' in html
+    assert 'id="toggle-layout-lock"' in html
+    assert 'id="reset-layout"' in html
     assert 'data-waveform-mode="select"' in html
     assert 'data-waveform-mode="add"' in html
     assert 'data-waveform-mode="beep"' in html
@@ -84,6 +90,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="scoring-penalty-grid"' in html
     assert 'id="browse-project-path"' in html
     assert 'id="browse-export-path"' in html
+    assert 'id="browse-primary-path"' in html
+    assert 'id="browse-secondary-path"' in html
     assert 'id="export-preset"' in html
     assert 'id="target-width"' in html
     assert 'id="target-height"' in html
@@ -115,8 +123,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
     assert "renderScoringPenaltyFields" in js
+    assert '$("penalties").value = state.project.scoring.penalties' not in js
     assert "renderExportPresetOptions" in js
     assert "scoring-active" in js
+    assert "layoutLocked" in js
+    assert "applyLayoutState" in js
+    assert "beginLayoutResize" in js
+    assert 'activity("layout.resize.start"' in js
+    assert 'activity("layout.resize.commit"' in js
     assert "Score letter is saved to that shot" in html
     assert "empty-start" not in js
     assert "setActiveTool" in js
@@ -143,13 +157,17 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "--rail-width: 96px;" in css
     assert "--topbar-height: 38px;" in css
     assert "--inspector-width: 440px;" in css
-    assert "grid-template-columns: var(--rail-width) minmax(0, 1fr);" in css
-    assert "grid-template-rows: var(--topbar-height) auto minmax(0, 1fr);" in css
+    assert "--waveform-height: 206px;" in css
+    assert "--resize-handle-size: 6px;" in css
+    assert "grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);" in css
+    assert "grid-template-rows: var(--topbar-height) 28px minmax(0, 1fr);" in css
     assert "grid-template-rows: repeat(8, minmax(0, 1fr));" in css
     assert "grid-template-columns: minmax(0, 1fr) repeat(4, calc(var(--inspector-width) / 4));" in css
     assert "width: var(--inspector-width);" in css
     assert "overflow-x: hidden;" in css
-    assert "grid-template-rows: minmax(320px, 1fr) 206px;" in css
+    assert "grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--waveform-height));" in css
+    assert "grid-template-rows: minmax(320px, 1fr) 206px;" not in css
+    assert ".layout-unlocked .resize-handle" in css
     assert ".cockpit.waveform-expanded .review-grid" in css
     assert ".cockpit.waveform-expanded .video-stage" in css
     assert "display: none;" in css
@@ -178,6 +196,10 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "swap-videos",
         "export-video",
         "browse-export-path",
+        "browse-primary-path",
+        "browse-secondary-path",
+        "import-primary-path",
+        "import-secondary-path",
         "choose-primary",
         "choose-secondary",
         "new-project",
@@ -185,6 +207,11 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "save-project",
         "open-project",
         "delete-project",
+        "toggle-layout-lock",
+        "reset-layout",
+        "resize-rail",
+        "resize-sidebar",
+        "resize-waveform",
     }
     behavior_attributes = (
         "data-tool=",
