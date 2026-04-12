@@ -14,4 +14,4 @@
 - [x] Run full test suite.
 - [x] Generate corrected Stage1 output.
 - [x] Write final audit.
-- [ ] Commit and merge.
+- [x] Commit and merge.
