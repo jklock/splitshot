@@ -5,9 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from splitshot.analysis.detection import analyze_video_audio
+from splitshot.analysis.detection import DetectionResult, analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import BadgeSize, MergeLayout, OverlayPosition, ScoreLetter
+from splitshot.domain.models import (
+    BadgeSize,
+    MergeLayout,
+    MergeSource,
+    OverlayPosition,
+    ScoreLetter,
+    ShotEvent,
+    ShotSource,
+    VideoAsset,
+)
 from splitshot.media.probe import probe_video
 from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, stage_time_ms
 from splitshot.ui.controller import ProjectController
@@ -191,6 +200,47 @@ def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:
 
     offset = compute_sync_offset(primary_result.beep_time_ms, secondary_result.beep_time_ms)
     assert abs(offset - 250) <= 40
+
+
+def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch) -> None:
+    controller = ProjectController()
+    primary = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    secondary = VideoAsset(path="/tmp/secondary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    controller.project.primary_video = primary
+    controller.project.secondary_video = secondary
+    controller.project.merge_sources = [MergeSource(asset=secondary)]
+
+    calls: list[tuple[str, float]] = []
+
+    def fake_analyze(path: str, threshold: float) -> DetectionResult:
+        calls.append((path, threshold))
+        if path == primary.path:
+            return DetectionResult(
+                beep_time_ms=410,
+                shots=[ShotEvent(time_ms=820, source=ShotSource.AUTO, confidence=0.9)],
+                waveform=[0.1, 0.2],
+                sample_rate=48000,
+            )
+        return DetectionResult(
+            beep_time_ms=655,
+            shots=[],
+            waveform=[0.3, 0.4],
+            sample_rate=48000,
+        )
+
+    monkeypatch.setattr("splitshot.ui.controller.analyze_video_audio", fake_analyze)
+    monkeypatch.setattr("splitshot.ui.controller.compute_sync_offset", lambda primary_ms, secondary_ms: secondary_ms - primary_ms)
+
+    controller.set_detection_threshold(0.35)
+
+    assert calls == [(primary.path, 0.35), (secondary.path, 0.35)]
+    assert controller.project.analysis.detection_threshold == 0.35
+    assert controller.project.analysis.beep_time_ms_primary == 410
+    assert controller.project.analysis.beep_time_ms_secondary == 655
+    assert controller.project.analysis.sync_offset_ms == 245
+    assert [shot.time_ms for shot in controller.project.analysis.shots] == [820]
+    assert controller.project.analysis.waveform_primary == [0.1, 0.2]
+    assert controller.project.analysis.waveform_secondary == [0.3, 0.4]
 
 
 def test_probe_reads_video_metadata(synthetic_video_factory) -> None:

@@ -74,10 +74,10 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                 filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
             )
         if kind == "project_open":
-            return filedialog.askopenfilename(
+            return filedialog.askdirectory(
                 title="Open SplitShot project",
                 initialdir=initial_dir,
-                filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
+                mustexist=True,
             )
         if kind == "export":
             return filedialog.asksaveasfilename(
@@ -115,7 +115,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
     if kind == "project_open":
         script = "\n".join(
             [
-                f"set chosenFile to choose file with prompt {_applescript_string('Open SplitShot project')} "
+                f"set chosenFile to choose folder with prompt {_applescript_string('Open SplitShot project')} "
                 f"default location POSIX file {_applescript_string(str(default_dir))}",
                 "POSIX path of chosenFile",
             ]
@@ -182,6 +182,7 @@ class BrowserControlServer:
         self.path_chooser = path_chooser or choose_local_path
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._controller_lock = threading.Lock()
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
         self._display_names: dict[str, str] = {}
@@ -230,6 +231,7 @@ class BrowserControlServer:
 
     def _handler(self) -> type[BaseHTTPRequestHandler]:
         controller = self.controller
+        controller_lock = self._controller_lock
         session_path = self._session_path
         activity = self.activity
         display_names = self._display_names
@@ -318,7 +320,8 @@ class BrowserControlServer:
                 try:
                     payload = self._read_json()
                     activity.log("api.start", path=self.path, payload=payload)
-                    route(payload)
+                    with controller_lock:
+                        route(payload)
                     activity.log("api.success", path=self.path, status=controller.status_message)
                     self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
@@ -479,45 +482,99 @@ class BrowserControlServer:
                 length = int(self.headers.get("Content-Length", "0") or 0)
                 if length <= 0:
                     raise ValueError("Video file is required")
-                body = self.rfile.read(length)
+
+                remaining = length
+
+                def read_line() -> bytes:
+                    nonlocal remaining
+                    if remaining <= 0:
+                        return b""
+                    line = self.rfile.readline(remaining + 1)
+                    remaining -= len(line)
+                    return line
+
+                def drain_remaining() -> None:
+                    nonlocal remaining
+                    if remaining > 0:
+                        self.rfile.read(remaining)
+                        remaining = 0
+
                 part_boundary = b"--" + boundary
-                for raw_part in body.split(part_boundary):
-                    part = raw_part.strip(b"\r\n")
-                    if not part or part == b"--":
-                        continue
-                    headers_blob, separator, file_bytes = part.partition(b"\r\n\r\n")
-                    if not separator:
-                        continue
-                    disposition = next(
-                        (
-                            line.decode("utf-8", errors="replace")
-                            for line in headers_blob.split(b"\r\n")
-                            if line.lower().startswith(b"content-disposition:")
-                        ),
-                        "",
-                    )
-                    if 'name="file"' not in disposition or "filename=" not in disposition:
-                        continue
-                    filename_match = re.search(r'filename="(?P<filename>[^"]*)"', disposition)
-                    filename = filename_match.group("filename") if filename_match else "video.mp4"
-                    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename).name).strip("._")
-                    if not safe_name:
-                        safe_name = "video.mp4"
-                    if file_bytes.endswith(b"\r\n"):
-                        file_bytes = file_bytes[:-2]
-                    if file_bytes.endswith(b"--"):
-                        file_bytes = file_bytes[:-2]
-                    target = session_path / f"{uuid4().hex}_{safe_name}"
-                    target.write_bytes(file_bytes)
-                    display_names[str(target)] = Path(filename).name
-                    return target
-                raise ValueError("Multipart request must contain a file field named 'file'")
+                opening_boundary = read_line()
+                if not opening_boundary.startswith(part_boundary):
+                    drain_remaining()
+                    raise ValueError("Malformed multipart body: starting boundary not found")
+
+                disposition = ""
+                while True:
+                    header_line = read_line()
+                    if header_line in {b"", b"\r\n", b"\n"}:
+                        break
+                    decoded = header_line.decode("utf-8", errors="replace")
+                    if decoded.lower().startswith("content-disposition:"):
+                        disposition = decoded
+
+                if 'name="file"' not in disposition or "filename=" not in disposition:
+                    drain_remaining()
+                    raise ValueError("Multipart request must contain a file field named 'file'")
+
+                filename_match = re.search(r'filename="(?P<filename>[^"]*)"', disposition)
+                filename = filename_match.group("filename") if filename_match else "video.mp4"
+                safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename).name).strip("._")
+                if not safe_name:
+                    safe_name = "video.mp4"
+
+                target = session_path / f"{uuid4().hex}_{safe_name}"
+                boundary_marker = b"\r\n" + part_boundary
+                lookbehind = len(boundary_marker) + 4
+                buffer = b""
+                bytes_written = 0
+
+                with target.open("wb") as output_file:
+                    while remaining > 0:
+                        chunk = self.rfile.read(min(64 * 1024, remaining))
+                        if not chunk:
+                            break
+                        remaining -= len(chunk)
+                        buffer += chunk
+                        while True:
+                            marker_index = buffer.find(boundary_marker)
+                            if marker_index < 0:
+                                break
+                            marker_end = marker_index + len(boundary_marker)
+                            suffix = buffer[marker_end : marker_end + 2]
+                            if suffix in {b"--", b"\r\n"}:
+                                output_file.write(buffer[:marker_index])
+                                bytes_written += marker_index
+                                if remaining > 0:
+                                    drain_remaining()
+                                if bytes_written == 0:
+                                    raise ValueError("Video file is required")
+                                display_names[str(target)] = Path(filename).name
+                                return target
+                            if remaining <= 0:
+                                break
+                            next_chunk = self.rfile.read(min(64 * 1024, remaining))
+                            if not next_chunk:
+                                break
+                            remaining -= len(next_chunk)
+                            buffer += next_chunk
+                        if len(buffer) > lookbehind:
+                            output_file.write(buffer[:-lookbehind])
+                            bytes_written += len(buffer[:-lookbehind])
+                            buffer = buffer[-lookbehind:]
+
+                drain_remaining()
+                if target.exists():
+                    target.unlink(missing_ok=True)
+                raise ValueError("Malformed multipart body: closing boundary not found")
 
             def _import_primary_file(self) -> None:
                 try:
                     path = self._save_uploaded_file()
                     activity.log("api.files.primary.saved", path=str(path))
-                    controller.ingest_primary_video(str(path))
+                    with controller_lock:
+                        controller.ingest_primary_video(str(path))
                     activity.log(
                         "api.files.primary.ingested",
                         path=str(path),
@@ -533,7 +590,8 @@ class BrowserControlServer:
                 try:
                     path = self._save_uploaded_file()
                     activity.log("api.files.merge.saved", path=str(path))
-                    controller.add_merge_source(str(path))
+                    with controller_lock:
+                        controller.add_merge_source(str(path))
                     activity.log(
                         "api.files.merge.ingested",
                         path=str(path),

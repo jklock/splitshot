@@ -22,6 +22,7 @@ let layoutSizes = {
 let activeResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
+let secondaryPreviewSyncFrame = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -107,9 +108,25 @@ function requireValue(id, label) {
   return value;
 }
 
+function controlIsActive(control) {
+  return !!control && document.activeElement === control;
+}
+
+function syncControlValue(control, value) {
+  if (!control || controlIsActive(control)) return;
+  const nextValue = value === null || value === undefined ? "" : String(value);
+  if (control.value !== nextValue) control.value = nextValue;
+}
+
+function syncControlChecked(control, checked) {
+  if (!control || controlIsActive(control)) return;
+  const nextChecked = Boolean(checked);
+  if (control.checked !== nextChecked) control.checked = nextChecked;
+}
+
 function fileName(path) {
   if (!path) return "No video selected";
-  const normalized = path.replaceAll("\\", "/");
+  const normalized = path.split("\\").join("/");
   const base = normalized.split("/").filter(Boolean).pop() || path;
   return base.replace(/^[a-f0-9]{32}_/i, "");
 }
@@ -278,7 +295,8 @@ function layoutViewportHeight() {
   const cockpit = document.querySelector(".cockpit");
   const documentHeight = document.documentElement?.clientHeight || 0;
   const visualViewportHeight = window.visualViewport?.height || 0;
-  return Math.max(1, Math.floor(cockpit?.clientHeight || documentHeight || visualViewportHeight || window.innerHeight));
+  const cockpitHeight = cockpit?.getBoundingClientRect().height || cockpit?.clientHeight || 0;
+  return Math.max(1, Math.floor(visualViewportHeight || documentHeight || window.innerHeight || cockpitHeight));
 }
 
 function alignToEdge(value) {
@@ -539,19 +557,29 @@ async function pickPath(kind, targetId, afterSelect = null) {
 
 async function refresh() {
   activity("api.refresh", {});
-  const response = await fetch("/api/state");
-  applyRemoteState(await response.json());
-  render();
+  try {
+    const response = await fetch("/api/state");
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+    applyRemoteState(data);
+    render();
+  } catch (error) {
+    setStatus(error.message);
+    activity("api.error", { path: "/api/state", error: error.message });
+  }
 }
 
 function applyRemoteState(nextState) {
+  if (!nextState?.project?.analysis) {
+    throw new Error("Received invalid project state from the local server.");
+  }
   const nextProjectId = nextState?.project?.id || "";
   if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
     resetLocalProjectView();
   }
   currentProjectId = nextProjectId;
   state = nextState;
-  if (selectedShotId && !(state.project.analysis.shots || []).some((shot) => shot.id === selectedShotId)) {
+  if (selectedShotId && !(state.project.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {
     selectedShotId = state.project.ui_state?.selected_shot_id || null;
   }
 }
@@ -690,9 +718,9 @@ function renderHeader() {
   const primaryName = state.media.primary_display_name || fileName(state.project.primary_video.path);
   $("current-file").textContent = primaryName;
   const mergeCount = (state.project.merge_sources || []).length;
-  $("primary-file-path").value = state.project.primary_video.path || "";
+  syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
   $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/project.ssproj`;
-  $("project-path").value = state.project.path || "";
+  syncControlValue($("project-path"), state.project.path || "");
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} merge item${mergeCount === 1 ? "" : "s"}` : ""}`
     : "No video selected";
@@ -811,7 +839,7 @@ function renderVideo() {
       button.disabled = !waveformEnabled;
     }
   });
-  syncSecondaryPreview();
+  scheduleSecondaryPreviewSync();
 }
 
 function syncSecondaryPreview() {
@@ -819,7 +847,8 @@ function syncSecondaryPreview() {
   const secondary = $("secondary-video");
   if (!state?.media?.secondary_available || !state.project.merge.enabled || !secondary.src) return;
   const target = Math.max(0, primary.currentTime + ((state.project.analysis.sync_offset_ms || 0) / 1000));
-  if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > 0.08) {
+  const seekThreshold = primary.paused ? 0.08 : 0.2;
+  if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > seekThreshold) {
     try {
       secondary.currentTime = target;
     } catch {
@@ -831,6 +860,14 @@ function syncSecondaryPreview() {
   } else if (!primary.paused && secondary.paused) {
     secondary.play().catch(() => {});
   }
+}
+
+function scheduleSecondaryPreviewSync() {
+  if (secondaryPreviewSyncFrame !== null) return;
+  secondaryPreviewSyncFrame = window.requestAnimationFrame(() => {
+    secondaryPreviewSyncFrame = null;
+    syncSecondaryPreview();
+  });
 }
 
 function waveformCanvasDisplayHeight(canvas) {
@@ -997,7 +1034,7 @@ function selectShot(shotId) {
     } catch {
       // Some browsers reject seeks before metadata is ready.
     }
-    syncSecondaryPreview();
+    scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   }
   callApi("/api/shots/select", { shot_id: shotId });
@@ -1423,70 +1460,70 @@ function syncExportPathControl() {
 }
 
 function renderControls() {
-  $("threshold").value = state.project.analysis.detection_threshold;
-    $("sync-offset").textContent = `${state.project.analysis.sync_offset_ms || 0} ms`;
-  $("project-name").value = state.project.name || "Untitled Project";
-  $("project-description").value = state.project.description || "";
-  $("merge-enabled").checked = state.project.merge.enabled;
-  $("merge-layout").value = state.project.merge.layout;
+  syncControlValue($("threshold"), state.project.analysis.detection_threshold);
+  $("sync-offset").textContent = `${state.project.analysis.sync_offset_ms || 0} ms`;
+  syncControlValue($("project-name"), state.project.name || "Untitled Project");
+  syncControlValue($("project-description"), state.project.description || "");
+  syncControlChecked($("merge-enabled"), state.project.merge.enabled);
+  syncControlValue($("merge-layout"), state.project.merge.layout);
   const pipValue = Number(
     state.project.merge.pip_size_percent
       ?? Number(String(state.project.merge.pip_size || "35%").replace(/%$/, ""))
       ?? 35,
   );
-  $("pip-size").value = pipValue;
+  syncControlValue($("pip-size"), pipValue);
   $("pip-size-label").textContent = `${pipValue}%`;
-  $("pip-x").value = state.project.merge.pip_x ?? 1;
-  $("pip-y").value = state.project.merge.pip_y ?? 1;
-  $("badge-size").value = state.project.overlay.badge_size;
+  syncControlValue($("pip-x"), state.project.merge.pip_x ?? 1);
+  syncControlValue($("pip-y"), state.project.merge.pip_y ?? 1);
+  syncControlValue($("badge-size"), state.project.overlay.badge_size);
   overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
   overlayMargin = Number(state.project.overlay.margin ?? overlayMargin);
-  $("overlay-style").value = overlayStyleMode;
-  $("overlay-spacing").value = overlaySpacing;
-  $("overlay-margin").value = overlayMargin;
-  $("max-visible-shots").value = state.project.overlay.max_visible_shots;
-  $("shot-quadrant").value = state.project.overlay.shot_quadrant;
-  $("shot-direction").value = state.project.overlay.shot_direction;
-  $("overlay-custom-x").value = state.project.overlay.custom_x ?? "";
-  $("overlay-custom-y").value = state.project.overlay.custom_y ?? "";
-  $("bubble-width").value = state.project.overlay.bubble_width;
-  $("bubble-height").value = state.project.overlay.bubble_height;
-  $("overlay-font-family").value = state.project.overlay.font_family;
-  $("overlay-font-size").value = state.project.overlay.font_size;
-  $("overlay-font-bold").checked = state.project.overlay.font_bold;
-  $("overlay-font-italic").checked = state.project.overlay.font_italic;
-  $("show-timer").checked = state.project.overlay.show_timer;
-  $("show-draw").checked = state.project.overlay.show_draw;
-  $("show-shots").checked = state.project.overlay.show_shots;
-  $("show-score").checked = state.project.overlay.show_score;
-  $("custom-box-enabled").checked = state.project.overlay.custom_box_enabled;
-  $("custom-box-text").value = state.project.overlay.custom_box_text || "";
-  $("custom-box-quadrant").value = state.project.overlay.custom_box_quadrant;
-  $("custom-box-x").value = state.project.overlay.custom_box_x ?? "";
-  $("custom-box-y").value = state.project.overlay.custom_box_y ?? "";
-  $("custom-box-width").value = state.project.overlay.custom_box_width || 0;
-  $("custom-box-height").value = state.project.overlay.custom_box_height || 0;
-  $("custom-box-opacity").value = state.project.overlay.custom_box_opacity ?? 0.9;
-  $("custom-box-background-color").value = state.project.overlay.custom_box_background_color || "#000000";
-  $("custom-box-text-color").value = state.project.overlay.custom_box_text_color || "#ffffff";
+  syncControlValue($("overlay-style"), overlayStyleMode);
+  syncControlValue($("overlay-spacing"), overlaySpacing);
+  syncControlValue($("overlay-margin"), overlayMargin);
+  syncControlValue($("max-visible-shots"), state.project.overlay.max_visible_shots);
+  syncControlValue($("shot-quadrant"), state.project.overlay.shot_quadrant);
+  syncControlValue($("shot-direction"), state.project.overlay.shot_direction);
+  syncControlValue($("overlay-custom-x"), state.project.overlay.custom_x ?? "");
+  syncControlValue($("overlay-custom-y"), state.project.overlay.custom_y ?? "");
+  syncControlValue($("bubble-width"), state.project.overlay.bubble_width);
+  syncControlValue($("bubble-height"), state.project.overlay.bubble_height);
+  syncControlValue($("overlay-font-family"), state.project.overlay.font_family);
+  syncControlValue($("overlay-font-size"), state.project.overlay.font_size);
+  syncControlChecked($("overlay-font-bold"), state.project.overlay.font_bold);
+  syncControlChecked($("overlay-font-italic"), state.project.overlay.font_italic);
+  syncControlChecked($("show-timer"), state.project.overlay.show_timer);
+  syncControlChecked($("show-draw"), state.project.overlay.show_draw);
+  syncControlChecked($("show-shots"), state.project.overlay.show_shots);
+  syncControlChecked($("show-score"), state.project.overlay.show_score);
+  syncControlChecked($("custom-box-enabled"), state.project.overlay.custom_box_enabled);
+  syncControlValue($("custom-box-text"), state.project.overlay.custom_box_text || "");
+  syncControlValue($("custom-box-quadrant"), state.project.overlay.custom_box_quadrant);
+  syncControlValue($("custom-box-x"), state.project.overlay.custom_box_x ?? "");
+  syncControlValue($("custom-box-y"), state.project.overlay.custom_box_y ?? "");
+  syncControlValue($("custom-box-width"), state.project.overlay.custom_box_width || 0);
+  syncControlValue($("custom-box-height"), state.project.overlay.custom_box_height || 0);
+  syncControlValue($("custom-box-opacity"), state.project.overlay.custom_box_opacity ?? 0.9);
+  syncControlValue($("custom-box-background-color"), state.project.overlay.custom_box_background_color || "#000000");
+  syncControlValue($("custom-box-text-color"), state.project.overlay.custom_box_text_color || "#ffffff");
   syncOverlayCoordinateControlState();
-  $("scoring-enabled").checked = state.project.scoring.enabled;
-  $("quality").value = state.project.export.quality;
-  $("aspect-ratio").value = state.project.export.aspect_ratio;
-  $("crop-center-x").value = state.project.export.crop_center_x;
-  $("crop-center-y").value = state.project.export.crop_center_y;
-  $("target-width").value = state.project.export.target_width ?? "";
-  $("target-height").value = state.project.export.target_height ?? "";
-  $("frame-rate").value = state.project.export.frame_rate;
-  $("video-codec").value = state.project.export.video_codec;
-  $("video-bitrate").value = state.project.export.video_bitrate_mbps;
-  $("audio-codec").value = state.project.export.audio_codec;
-  $("audio-sample-rate").value = state.project.export.audio_sample_rate;
-  $("audio-bitrate").value = state.project.export.audio_bitrate_kbps;
-  $("color-space").value = state.project.export.color_space;
-  $("two-pass").checked = state.project.export.two_pass;
-  $("ffmpeg-preset").value = state.project.export.ffmpeg_preset;
+  syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
+  syncControlValue($("quality"), state.project.export.quality);
+  syncControlValue($("aspect-ratio"), state.project.export.aspect_ratio);
+  syncControlValue($("crop-center-x"), state.project.export.crop_center_x);
+  syncControlValue($("crop-center-y"), state.project.export.crop_center_y);
+  syncControlValue($("target-width"), state.project.export.target_width ?? "");
+  syncControlValue($("target-height"), state.project.export.target_height ?? "");
+  syncControlValue($("frame-rate"), state.project.export.frame_rate);
+  syncControlValue($("video-codec"), state.project.export.video_codec);
+  syncControlValue($("video-bitrate"), state.project.export.video_bitrate_mbps);
+  syncControlValue($("audio-codec"), state.project.export.audio_codec);
+  syncControlValue($("audio-sample-rate"), state.project.export.audio_sample_rate);
+  syncControlValue($("audio-bitrate"), state.project.export.audio_bitrate_kbps);
+  syncControlValue($("color-space"), state.project.export.color_space);
+  syncControlChecked($("two-pass"), state.project.export.two_pass);
+  syncControlValue($("ffmpeg-preset"), state.project.export.ffmpeg_preset);
   syncExportPathControl();
   renderScoringPresetOptions();
   renderExportPresetOptions();
@@ -1497,37 +1534,57 @@ function renderControls() {
 
 function renderStyleControls() {
   const grid = $("badge-style-grid");
-  grid.innerHTML = "";
+  const badgeKeys = new Set(badgeControls.map(([key]) => key));
+  grid.querySelectorAll(".style-card[data-badge]").forEach((card) => {
+    if (!badgeKeys.has(card.dataset.badge)) card.remove();
+  });
   badgeControls.forEach(([key, title]) => {
     const style = state.project.overlay[key];
-    const card = document.createElement("section");
-    card.className = "style-card";
-    card.dataset.badge = key;
-    card.innerHTML = `
-      <h4>${title}</h4>
-      <label>Background <input type="color" data-field="background_color" value="${style.background_color}" /></label>
-      <label>Text <input type="color" data-field="text_color" value="${style.text_color}" /></label>
-      <label>Opacity <input type="range" data-field="opacity" min="0" max="1" step="0.05" value="${style.opacity}" /></label>
-    `;
-    grid.appendChild(card);
+    let card = grid.querySelector(`.style-card[data-badge="${key}"]`);
+    if (!card) {
+      card = document.createElement("section");
+      card.className = "style-card";
+      card.dataset.badge = key;
+      card.innerHTML = `
+        <h4></h4>
+        <label>Background <input type="color" data-field="background_color" /></label>
+        <label>Text <input type="color" data-field="text_color" /></label>
+        <label>Opacity <input type="range" data-field="opacity" min="0" max="1" step="0.05" /></label>
+      `;
+      grid.appendChild(card);
+    }
+    const heading = card.querySelector("h4");
+    if (heading && heading.textContent !== title) heading.textContent = title;
+    syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
+    syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
+    syncControlValue(card.querySelector('[data-field="opacity"]'), style.opacity);
   });
 
   const scoreGrid = $("score-color-grid");
-  scoreGrid.innerHTML = "";
   const scoreKeys = [
     ...(state.scoring_summary?.score_options || []),
     ...Object.keys(state.project.overlay.scoring_colors || {}),
   ];
-  [...new Set(scoreKeys)].forEach((letter) => {
-    const label = document.createElement("label");
-    label.textContent = `${letter} `;
-    const input = document.createElement("input");
-    input.type = "color";
-    input.className = "score-color-input";
-    input.dataset.letter = letter;
-    input.value = state.project.overlay.scoring_colors[letter] || "#ffffff";
-    label.appendChild(input);
-    scoreGrid.appendChild(label);
+  const uniqueLetters = [...new Set(scoreKeys)];
+  const validLetters = new Set(uniqueLetters);
+  scoreGrid.querySelectorAll(".score-color-input[data-letter]").forEach((input) => {
+    if (!validLetters.has(input.dataset.letter)) {
+      input.closest("label")?.remove();
+    }
+  });
+  uniqueLetters.forEach((letter) => {
+    let input = scoreGrid.querySelector(`.score-color-input[data-letter="${letter}"]`);
+    if (!input) {
+      const label = document.createElement("label");
+      label.append(`${letter} `);
+      input = document.createElement("input");
+      input.type = "color";
+      input.className = "score-color-input";
+      input.dataset.letter = letter;
+      label.appendChild(input);
+      scoreGrid.appendChild(label);
+    }
+    syncControlValue(input, state.project.overlay.scoring_colors[letter] || "#ffffff");
   });
 }
 
@@ -1863,9 +1920,8 @@ function renderLiveOverlay() {
 function startOverlayLoop() {
   if (overlayFrame !== null) return;
   activity("video.play", { current_time_s: $("primary-video").currentTime });
-  syncSecondaryPreview();
+  scheduleSecondaryPreviewSync();
   const tick = () => {
-    syncSecondaryPreview();
     renderLiveOverlay();
     overlayFrame = requestAnimationFrame(tick);
   };
@@ -1877,7 +1933,7 @@ function stopOverlayLoop() {
   activity("video.pause", { current_time_s: $("primary-video").currentTime });
   cancelAnimationFrame(overlayFrame);
   overlayFrame = null;
-  syncSecondaryPreview();
+  scheduleSecondaryPreviewSync();
   renderLiveOverlay();
 }
 
@@ -2132,7 +2188,7 @@ function readMergePayload() {
   return {
     enabled: $("merge-enabled").checked,
     layout: $("merge-layout").value,
-    pip_size_percent: Number.isFinite(pipValue) ? pipValue : 35,
+    pip_size_percent: Number.isFinite(pipValue) ? clampNumber(pipValue, 10, 95) : 35,
     pip_x: normalizedCoordinateValue($("pip-x").value) ?? 1,
     pip_y: normalizedCoordinateValue($("pip-y").value) ?? 1,
   };
@@ -2185,10 +2241,22 @@ async function importTypedPath(targetId, apiPath, label) {
 }
 
 async function openProjectWithDialog() {
+  const path = $("project-path").value.trim();
+  if (path) {
+    const result = await callApi("/api/project/open", { path });
+    if (result) setActiveTool("project");
+    return result;
+  }
   return pickPath("project_open", "project-path", async (path) => {
     const result = await callApi("/api/project/open", { path });
     if (result) setActiveTool("project");
   });
+}
+
+async function browseProjectPath() {
+  const currentPath = $("project-path").value.trim();
+  const kind = currentPath ? "project_open" : "project_save";
+  return pickPath(kind, "project-path");
 }
 
 async function saveProjectFlow() {
@@ -2276,7 +2344,7 @@ function wireEvents() {
     const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
     if (result) setActiveTool("project");
   });
-  $("browse-project-path").addEventListener("click", () => pickPath("project_save", "project-path"));
+  $("browse-project-path").addEventListener("click", browseProjectPath);
   $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path"));
   $("export-path").addEventListener("input", () => {
     exportPathDraft = $("export-path").value;
@@ -2313,11 +2381,11 @@ function wireEvents() {
   });
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
-      syncSecondaryPreview();
+      scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
     $("secondary-video").addEventListener(eventName, () => {
-      syncSecondaryPreview();
+      scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
   });
@@ -2325,11 +2393,11 @@ function wireEvents() {
   $("primary-video").addEventListener("pause", stopOverlayLoop);
   $("primary-video").addEventListener("seeked", () => {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
-    syncSecondaryPreview();
+    scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   });
   $("primary-video").addEventListener("timeupdate", () => {
-    syncSecondaryPreview();
+    scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
@@ -2349,6 +2417,9 @@ function wireEvents() {
   $("waveform").addEventListener("pointermove", handleWaveformPointerMove);
   $("waveform").addEventListener("pointerup", handleWaveformPointerUp);
   $("waveform").addEventListener("pointercancel", handleWaveformPointerUp);
+  document.addEventListener("pointermove", handleWaveformPointerMove);
+  document.addEventListener("pointerup", handleWaveformPointerUp);
+  document.addEventListener("pointercancel", handleWaveformPointerUp);
   document.addEventListener("keydown", handleKeyboardEdit);
   window.addEventListener("resize", handleViewportLayoutChange);
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);

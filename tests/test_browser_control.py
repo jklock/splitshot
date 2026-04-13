@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+import pytest
 
 from splitshot.browser.server import (
     BrowserControlServer,
@@ -286,6 +289,31 @@ def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_v
         server.shutdown()
 
 
+def test_browser_file_picker_upload_preserves_trailing_bytes(monkeypatch) -> None:
+    controller = ProjectController()
+    captured: dict[str, bytes] = {}
+
+    def fake_ingest(path: str) -> None:
+        captured["bytes"] = Path(path).read_bytes()
+        controller.status_message = "Uploaded primary video."
+
+    monkeypatch.setattr(controller, "ingest_primary_video", fake_ingest)
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = b"splitshot-binary-payload--"
+        _post_multipart(
+            f"{server.url}api/files/primary",
+            "file",
+            "stage.mp4",
+            payload,
+        )
+
+        assert captured["bytes"] == payload
+    finally:
+        server.shutdown()
+
+
 def test_browser_file_picker_endpoint_preserves_secondary_display_name(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -411,6 +439,87 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         assert reopened["project"]["path"] == str(project_path)
         assert reopened["media"]["primary_available"] is True
         assert reopened["project"]["primary_video"]["path"] == str(video_path)
+    finally:
+        server.shutdown()
+
+
+def test_browser_project_save_bundles_uploaded_media_for_reopen(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="primary-upload"))
+        secondary_path = Path(synthetic_video_factory(name="secondary-upload"))
+        project_path = tmp_path / "uploaded-media.ssproj"
+
+        _post_multipart(
+            f"{server.url}api/files/primary",
+            "file",
+            primary_path.name,
+            primary_path.read_bytes(),
+        )
+        _post_multipart(
+            f"{server.url}api/files/merge",
+            "file",
+            secondary_path.name,
+            secondary_path.read_bytes(),
+        )
+        saved = _post_json(f"{server.url}api/project/save", {"path": str(project_path)})
+
+        bundled_primary = Path(saved["project"]["primary_video"]["path"])
+        bundled_secondary = Path(saved["project"]["secondary_video"]["path"])
+        assert bundled_primary.parent == project_path / "media"
+        assert bundled_secondary.parent == project_path / "media"
+    finally:
+        server.shutdown()
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    assert Path(reopened.project.primary_video.path).exists()
+    assert Path(reopened.project.primary_video.path).parent == project_path / "media"
+    assert reopened.project.secondary_video is not None
+    assert Path(reopened.project.secondary_video.path).exists()
+    assert Path(reopened.project.secondary_video.path).parent == project_path / "media"
+
+
+def test_browser_media_endpoint_supports_http_range_requests(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        controller.ingest_primary_video(str(video_path))
+
+        request = urllib.request.Request(
+            f"{server.url}media/primary",
+            headers={"Range": "bytes=0-31"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            assert response.status == 206
+            assert response.headers["Content-Range"].startswith("bytes 0-31/")
+            assert response.read() == video_path.read_bytes()[:32]
+    finally:
+        server.shutdown()
+
+
+def test_browser_media_endpoint_rejects_invalid_ranges(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        controller.ingest_primary_video(str(video_path))
+        invalid_start = video_path.stat().st_size + 128
+        request = urllib.request.Request(
+            f"{server.url}media/primary",
+            headers={"Range": f"bytes={invalid_start}-{invalid_start + 32}"},
+        )
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen(request, timeout=30)
+
+        assert exc_info.value.code == 416
     finally:
         server.shutdown()
 
