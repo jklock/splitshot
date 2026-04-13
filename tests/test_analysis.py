@@ -7,6 +7,7 @@ import pytest
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
+from splitshot.domain.models import BadgeSize, MergeLayout, OverlayPosition, ScoreLetter
 from splitshot.media.probe import probe_video
 from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, stage_time_ms
 from splitshot.ui.controller import ProjectController
@@ -71,6 +72,21 @@ def test_primary_ingest_runs_detection_automatically(synthetic_video_factory) ->
     assert controller.status_message.startswith("Primary analysis complete.")
 
 
+def test_badge_size_updates_overlay_font_size_preset() -> None:
+    controller = ProjectController()
+
+    controller.set_badge_size(BadgeSize.XL)
+    assert controller.project.overlay.badge_size == BadgeSize.XL
+    assert controller.project.overlay.font_size == 20
+
+    controller.set_overlay_display_options({"font_size": 18})
+    assert controller.project.overlay.font_size == 18
+
+    controller.set_badge_size(BadgeSize.S)
+    assert controller.project.overlay.badge_size == BadgeSize.S
+    assert controller.project.overlay.font_size == 12
+
+
 def test_secondary_ingest_runs_sync_automatically(synthetic_video_factory) -> None:
     controller = ProjectController()
     primary = synthetic_video_factory(name="primary", beep_ms=400)
@@ -83,6 +99,87 @@ def test_secondary_ingest_runs_sync_automatically(synthetic_video_factory) -> No
     assert controller.project.merge.enabled is True
     assert controller.project.analysis.beep_time_ms_secondary is not None
     assert abs(controller.project.analysis.sync_offset_ms - 250) <= 40
+
+
+def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
+    synthetic_video_factory,
+) -> None:
+    controller = ProjectController()
+    first_primary = synthetic_video_factory(name="primary-one", beep_ms=400)
+    second_primary = synthetic_video_factory(name="primary-two", beep_ms=520)
+    secondary = synthetic_video_factory(name="secondary-angle", beep_ms=680)
+
+    controller.ingest_primary_video(str(first_primary))
+    first_shot_id = controller.project.analysis.shots[0].id
+
+    controller.set_project_details(name="Classifier Template", description="Carry these settings forward")
+    controller.set_detection_threshold(0.35)
+    controller.set_overlay_position(OverlayPosition.TOP)
+    controller.set_overlay_display_options(
+        {
+            "custom_box_enabled": True,
+            "custom_box_text": "Stage review",
+            "custom_box_x": 0.45,
+            "custom_box_y": 0.55,
+        }
+    )
+    controller.apply_export_preset("universal_vertical")
+    controller.set_export_settings({"video_bitrate_mbps": 18, "two_pass": True})
+    controller.set_scoring_enabled(True)
+    controller.set_scoring_preset("uspsa_major")
+    controller.set_penalties(5.0)
+    controller.set_penalty_counts({"procedural_errors": 1})
+    controller.assign_score(first_shot_id, ScoreLetter.C)
+    controller.add_timing_event("reload", after_shot_id=first_shot_id, note="Old review note")
+    controller.ingest_secondary_video(str(secondary))
+    controller.set_merge_layout(MergeLayout.PIP)
+    controller.set_pip_size_percent(50)
+    controller.set_pip_position(0.2, 0.8)
+    controller.select_shot(first_shot_id)
+    controller.project.ui_state.timeline_offset_ms = 1234
+    controller.project.export.output_path = "/tmp/classifier-export.mp4"
+    controller.project.export.last_log = "previous export log"
+    controller.project.export.last_error = "previous export error"
+
+    controller.ingest_primary_video(str(second_primary))
+
+    assert controller.project.primary_video.path == str(second_primary)
+    assert controller.project.name == "Classifier Template"
+    assert controller.project.description == "Carry these settings forward"
+    assert controller.project.analysis.detection_threshold == 0.35
+    assert controller.project.analysis.beep_time_ms_primary is not None
+    assert controller.project.analysis.beep_time_ms_secondary is None
+    assert controller.project.analysis.sync_offset_ms == 0
+    assert controller.project.analysis.events == []
+    assert len(controller.project.analysis.shots) == 3
+    assert all(shot.score is None for shot in controller.project.analysis.shots)
+    assert controller.project.scoring.enabled is True
+    assert controller.project.scoring.ruleset == "uspsa_major"
+    assert controller.project.scoring.point_map[ScoreLetter.C.value] == 4
+    assert controller.project.scoring.penalties == 0.0
+    assert controller.project.scoring.penalty_counts == {}
+    assert controller.project.scoring.hit_factor == 0.0
+    assert controller.project.overlay.position == OverlayPosition.TOP
+    assert controller.project.overlay.custom_box_enabled is True
+    assert controller.project.overlay.custom_box_text == ""
+    assert controller.project.overlay.custom_box_x == 0.45
+    assert controller.project.overlay.custom_box_y == 0.55
+    assert controller.project.secondary_video is None
+    assert controller.project.merge_sources == []
+    assert controller.project.merge.enabled is False
+    assert controller.project.merge.layout == MergeLayout.SIDE_BY_SIDE
+    assert controller.project.merge.pip_size_percent == 35
+    assert controller.project.merge.pip_x == 1.0
+    assert controller.project.merge.pip_y == 1.0
+    assert controller.project.export.target_width == 1080
+    assert controller.project.export.target_height == 1920
+    assert controller.project.export.video_bitrate_mbps == 18.0
+    assert controller.project.export.two_pass is True
+    assert controller.project.export.output_path == "/tmp/classifier-export.mp4"
+    assert controller.project.export.last_log == ""
+    assert controller.project.export.last_error is None
+    assert controller.project.ui_state.selected_shot_id is None
+    assert controller.project.ui_state.timeline_offset_ms == 0
 
 
 def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:

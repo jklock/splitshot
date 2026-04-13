@@ -28,9 +28,9 @@ _FONT_SIZE = {
     BadgeSize.XL: 20,
 }
 
-_FINAL_SHOT_FLASH_HALF_PERIOD_MS = 150
-_FINAL_SHOT_FLASH_CYCLES = 3
-_FINAL_SHOT_FLASH_DURATION_MS = _FINAL_SHOT_FLASH_HALF_PERIOD_MS * 2 * _FINAL_SHOT_FLASH_CYCLES
+
+def _format_split_seconds(value_ms: int) -> str:
+    return f"{value_ms / 1000.0:.2f}s"
 
 
 class OverlayRenderer:
@@ -47,10 +47,15 @@ class OverlayRenderer:
             badges.append(Badge(f"Timer {format_time_ms(elapsed)}", project.overlay.timer_badge))
 
         draw_value = draw_time_ms(project)
-        if project.overlay.show_draw and draw_value is not None:
+        first_shot_time = None if not shots else shots[0].time_ms
+        if (
+            project.overlay.show_draw
+            and draw_value is not None
+            and first_shot_time is not None
+            and position_ms < first_shot_time
+        ):
             badges.append(Badge(f"Draw {format_time_ms(draw_value)}", project.overlay.shot_badge))
 
-        final_shot_index = len(shots) - 1 if shots else None
         final_shot_time = None if not shots else shots[-1].time_ms
         final_shot_reached = final_shot_time is not None and position_ms >= final_shot_time
 
@@ -59,14 +64,10 @@ class OverlayRenderer:
             start = max(0, current_index - max_visible + 1)
             for index in range(start, current_index + 1):
                 shot = shots[index]
-                if final_shot_index is not None and index == final_shot_index and final_shot_reached and final_shot_time is not None:
-                    flash_elapsed = position_ms - final_shot_time
-                    if flash_elapsed < _FINAL_SHOT_FLASH_DURATION_MS and (flash_elapsed // _FINAL_SHOT_FLASH_HALF_PERIOD_MS) % 2 == 1:
-                        continue
                 if index == 0:
-                    split_text = format_time_ms(shot.time_ms - (beep_time or 0))
+                    split_text = _format_split_seconds(shot.time_ms - (beep_time or 0))
                 else:
-                    split_text = format_time_ms(shot.time_ms - shots[index - 1].time_ms)
+                    split_text = _format_split_seconds(shot.time_ms - shots[index - 1].time_ms)
                 style = (
                     project.overlay.current_shot_badge if index == current_index else project.overlay.shot_badge
                 )
@@ -157,6 +158,11 @@ class OverlayRenderer:
 
         x_override = project.overlay.custom_x if custom_x is None and quadrant_value == "custom" else custom_x
         y_override = project.overlay.custom_y if custom_y is None and quadrant_value == "custom" else custom_y
+        if quadrant_value == "custom":
+            if x_override is None:
+                x_override = 0.5
+            if y_override is None:
+                y_override = 0.5
         if x_override is not None:
             cursor_x = int(x_override * width)
         if y_override is not None:
@@ -227,8 +233,8 @@ class OverlayRenderer:
             return metrics.horizontalAdvance("Draw 00:00.000")
         if text.startswith("Hit Factor"):
             return metrics.horizontalAdvance("Hit Factor 00.00")
-        if text.startswith("Final Time"):
-            return metrics.horizontalAdvance("Final Time 00:00.000")
+        if text.startswith("Final"):
+            return metrics.horizontalAdvance("Final 00.00")
         return 0
 
     def _paint_scores(

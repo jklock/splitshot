@@ -31,10 +31,14 @@ const badgeControls = [
   ["current_shot_badge", "Current Shot Badge"],
   ["hit_factor_badge", "Score Badge"],
 ];
+const BADGE_FONT_SIZES = {
+  XS: 10,
+  S: 12,
+  M: 14,
+  L: 16,
+  XL: 20,
+};
 const CUSTOM_QUADRANT_VALUE = "custom";
-const FINAL_SHOT_FLASH_HALF_PERIOD_MS = 150;
-const FINAL_SHOT_FLASH_CYCLES = 3;
-const FINAL_SHOT_FLASH_DURATION_MS = FINAL_SHOT_FLASH_HALF_PERIOD_MS * 2 * FINAL_SHOT_FLASH_CYCLES;
 
 function activity(event, detail = {}) {
   const payload = { event, detail };
@@ -90,6 +94,11 @@ function seconds(ms) {
 function precise(ms) {
   if (ms === null || ms === undefined || ms === "") return "";
   return (ms / 1000).toFixed(3);
+}
+
+function splitSeconds(ms) {
+  if (ms === null || ms === undefined || ms === "") return "--.--s";
+  return `${seconds(ms)}s`;
 }
 
 function requireValue(id, label) {
@@ -176,6 +185,18 @@ function normalizedCoordinateValue(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? clamp(numeric, 0, 1) : null;
+}
+
+function syncOverlayFontSizePreset() {
+  const badgeSize = $("badge-size").value;
+  const fontSize = BADGE_FONT_SIZES[badgeSize] || BADGE_FONT_SIZES.M;
+  $("overlay-font-size").value = String(fontSize);
+}
+
+function ensureShotQuadrantDefaults() {
+  if (!usesCustomQuadrant($("shot-quadrant").value)) return;
+  if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";
+  if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";
 }
 
 function syncOverlayPreviewStateFromControls() {
@@ -1583,7 +1604,7 @@ function badgeElement(
     ? "timer-badge"
     : text.startsWith("Draw")
       ? "draw-badge"
-      : text.startsWith("Hit Factor") || text.startsWith("Final Time")
+      : text.startsWith("Hit Factor") || text.startsWith("Final ")
         ? "score-badge"
         : "shot-badge";
   badge.className = `overlay-badge badge-${size} ${role}`;
@@ -1767,6 +1788,7 @@ function renderLiveOverlay() {
   const beep = state.project.analysis.beep_time_ms_primary;
   let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
   const shots = state.project.analysis.shots || [];
+  const firstShotTime = shots.length > 0 ? shots[0].time_ms : null;
   const finalShotIndex = shots.length - 1;
   const finalShotTime = finalShotIndex >= 0 ? shots[finalShotIndex].time_ms : null;
   const finalShotReached = finalShotTime !== null && finalShotTime !== undefined && positionMs >= finalShotTime;
@@ -1779,7 +1801,13 @@ function renderLiveOverlay() {
   if (state.project.overlay.show_timer) {
     overlay.appendChild(badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center"));
   }
-  if (state.project.overlay.show_draw && state.metrics.draw_ms !== null && state.metrics.draw_ms !== undefined) {
+  if (
+    state.project.overlay.show_draw
+    && firstShotTime !== null
+    && positionMs < firstShotTime
+    && state.metrics.draw_ms !== null
+    && state.metrics.draw_ms !== undefined
+  ) {
     overlay.appendChild(badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center"));
   }
 
@@ -1790,12 +1818,6 @@ function renderLiveOverlay() {
     for (let index = start; index <= currentIndex; index += 1) {
       const shot = shots[index];
       if (!shot) continue;
-      if (index === finalShotIndex && finalShotReached && finalShotTime !== null) {
-        const flashElapsed = positionMs - finalShotTime;
-        if (flashElapsed < FINAL_SHOT_FLASH_DURATION_MS && Math.floor(flashElapsed / FINAL_SHOT_FLASH_HALF_PERIOD_MS) % 2 === 1) {
-          continue;
-        }
-      }
       const splitMs = index === 0
         ? shot.time_ms - (beep || 0)
         : shot.time_ms - shots[index - 1].time_ms;
@@ -1806,7 +1828,7 @@ function renderLiveOverlay() {
       const scoreColor = state.project.scoring.enabled && shot.score
         ? state.project.overlay.scoring_colors[shot.score.letter]
         : null;
-      overlay.appendChild(badgeElement(`Shot ${index + 1} ${seconds(splitMs)}${scoreText}`, style, size, scoreColor, null, null, shotTextBias));
+      overlay.appendChild(badgeElement(`Shot ${index + 1} ${splitSeconds(splitMs)}${scoreText}`, style, size, scoreColor, null, null, shotTextBias));
     }
   }
 
@@ -2069,7 +2091,7 @@ function readOverlayPayload() {
     bubble_width: Number($("bubble-width").value || 0),
     bubble_height: Number($("bubble-height").value || 0),
     font_family: $("overlay-font-family").value,
-    font_size: Number($("overlay-font-size").value || 14),
+    font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),
     font_bold: $("overlay-font-bold").checked,
     font_italic: $("overlay-font-italic").checked,
     show_timer: $("show-timer").checked,
@@ -2370,7 +2392,12 @@ function wireEvents() {
   $("add-timing-event").addEventListener("click", addTimingEvent);
   $("custom-overlay").addEventListener("pointerdown", beginCustomOverlayDrag);
   ["badge-size"].forEach((id) => {
-    $(id).addEventListener("change", autoApplyOverlay);
+    $(id).addEventListener("change", () => {
+      syncOverlayFontSizePreset();
+      syncOverlayPreviewStateFromControls();
+      renderLiveOverlay();
+      autoApplyOverlay();
+    });
   });
   [
     "max-visible-shots",
@@ -2401,18 +2428,32 @@ function wireEvents() {
   ].forEach((id) => {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
-      if (id === "shot-quadrant") syncOverlayCoordinateControlState();
+      if (id === "shot-quadrant") {
+        syncOverlayCoordinateControlState();
+        ensureShotQuadrantDefaults();
+      }
       syncOverlayPreviewStateFromControls();
       renderLiveOverlay();
       autoApplyOverlay();
     });
   });
-  $("badge-style-grid").addEventListener("input", () => {
+  $("badge-style-grid").addEventListener("input", (event) => {
+    syncOverlayPreviewStateFromControls();
+    renderLiveOverlay();
+    const target = event.target;
+    if (target instanceof HTMLInputElement && target.type === "color") return;
+    autoApplyOverlay();
+  });
+  $("badge-style-grid").addEventListener("change", () => {
     syncOverlayPreviewStateFromControls();
     renderLiveOverlay();
     autoApplyOverlay();
   });
   $("score-color-grid").addEventListener("input", () => {
+    syncOverlayPreviewStateFromControls();
+    renderLiveOverlay();
+  });
+  $("score-color-grid").addEventListener("change", () => {
     syncOverlayPreviewStateFromControls();
     renderLiveOverlay();
     autoApplyOverlay();

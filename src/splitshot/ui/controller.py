@@ -43,8 +43,45 @@ def _pip_size_percent_from_enum(size: PipSize) -> int:
     }[size]
 
 
+def _badge_font_size_from_enum(size: BadgeSize) -> int:
+    return {
+        BadgeSize.XS: 10,
+        BadgeSize.S: 12,
+        BadgeSize.M: 14,
+        BadgeSize.L: 16,
+        BadgeSize.XL: 20,
+    }[size]
+
+
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
     project.secondary_video = project.merge_sources[0].asset if project.merge_sources else None
+
+
+def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
+    project.analysis.beep_time_ms_primary = None
+    project.analysis.beep_time_ms_secondary = None
+    project.analysis.sync_offset_ms = 0
+    project.analysis.waveform_primary = []
+    project.analysis.waveform_secondary = []
+    project.analysis.shots = []
+    project.analysis.events = []
+    project.scoring.penalties = 0.0
+    project.scoring.penalty_counts = {}
+    project.scoring.hit_factor = None
+    project.secondary_video = None
+    project.merge_sources = []
+    project.merge.enabled = False
+    project.merge.layout = MergeLayout.SIDE_BY_SIDE
+    project.merge.pip_size = PipSize.MEDIUM
+    project.merge.pip_size_percent = _pip_size_percent_from_enum(PipSize.MEDIUM)
+    project.merge.pip_x = 1.0
+    project.merge.pip_y = 1.0
+    project.merge.primary_is_left_or_top = True
+    project.overlay.custom_box_text = ""
+    project.export.last_log = ""
+    project.export.last_error = None
+    project.ui_state.selected_shot_id = None
+    project.ui_state.timeline_offset_ms = 0
 
 
 class ProjectController(QObject):
@@ -64,6 +101,7 @@ class ProjectController(QObject):
         self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
+        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
         self.project_path: Path | None = None
         self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
@@ -77,6 +115,7 @@ class ProjectController(QObject):
         self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
+        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
         self.project_path = None
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
@@ -86,10 +125,8 @@ class ProjectController(QObject):
         return project_to_dict(self.project) != self._saved_snapshot
 
     def load_primary_video(self, path: str) -> None:
+        _reset_media_dependent_state_for_primary_video(self.project)
         self.project.primary_video = probe_video(path)
-        self.project.analysis.waveform_primary = []
-        self.project.analysis.shots = []
-        self.project.analysis.beep_time_ms_primary = None
         self._set_status("Loaded primary video.")
         self.project.touch()
         self.project_changed.emit()
@@ -297,6 +334,7 @@ class ProjectController(QObject):
 
     def set_badge_size(self, size: BadgeSize) -> None:
         self.project.overlay.badge_size = size
+        self.project.overlay.font_size = _badge_font_size_from_enum(size)
         self.settings.badge_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
@@ -595,6 +633,7 @@ class ProjectController(QObject):
         self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
+        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
         self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()

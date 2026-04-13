@@ -12,6 +12,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260413b"' in html
+    assert 'src="/static/app.js?v=20260413c"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'class="tool-rail"' in html
@@ -213,8 +214,23 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "beginLayoutResize" in js
     assert "syncOverlayCoordinateControlState" in js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
+    assert "const BADGE_FONT_SIZES = {" in js
+    assert "function syncOverlayFontSizePreset()" in js
+    assert "function ensureShotQuadrantDefaults()" in js
     assert 'activity("layout.resize.start"' in js
     assert 'activity("layout.resize.commit"' in js
+    assert 'font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),' in js
+    assert 'syncOverlayFontSizePreset();' in js
+    assert 'if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";' in js
+    assert 'if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";' in js
+    assert 'function splitSeconds(ms)' in js
+    assert 'const FINAL_SHOT_FLASH_HALF_PERIOD_MS' not in js
+    assert 'const FINAL_SHOT_FLASH_CYCLES' not in js
+    assert 'const FINAL_SHOT_FLASH_DURATION_MS' not in js
+    assert '`Shot ${index + 1} ${splitSeconds(splitMs)}${scoreText}`' in js
+    assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
+    assert '$("badge-style-grid").addEventListener("change", () => {' in js
+    assert '$("score-color-grid").addEventListener("change", () => {' in js
     assert "Behavior" not in html
     assert "Score letter is saved to that shot" not in html
     assert "Assign a score value on any shot row" in html
