@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: User guide
+    url: https://github.com/jklock/splitshot/blob/main/docs/USER_GUIDE.md
+    about: Check the user guide before filing a usage question.
+  - name: Project documentation
+    url: https://github.com/jklock/splitshot/blob/main/docs/README.md
+    about: Review the docs hub for architecture, development, and limitation notes.
