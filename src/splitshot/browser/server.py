@@ -31,6 +31,8 @@ from splitshot.ui.controller import ProjectController
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
 PathChooser = Callable[[str, str | None], str | None]
+COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
+COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
 
 
 def is_expected_disconnect_error(exc: BaseException | None) -> bool:
@@ -60,7 +62,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                 title="Choose stage video" if kind == "primary" else "Choose secondary angle video",
                 initialdir=initial_dir,
                 filetypes=[
-                    ("Video files", "*.mp4 *.mov *.avi *.wmv *.webm"),
+                    ("Video files", COMMON_VIDEO_FILE_PATTERNS),
                     ("All files", "*.*"),
                 ],
             )
@@ -79,10 +81,10 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             )
         if kind == "export":
             return filedialog.asksaveasfilename(
-                title="Choose MP4 export path",
+                title="Choose video export path",
                 initialdir=initial_dir,
                 defaultextension=".mp4",
-                filetypes=[("MP4 video", "*.mp4"), ("All files", "*.*")],
+                filetypes=[("Video files", COMMON_EXPORT_FILE_PATTERNS), ("All files", "*.*")],
             )
         raise ValueError(f"Unsupported path chooser kind: {kind}")
     finally:
@@ -127,7 +129,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
     if kind in {"project", "project_save"}:
         prompt = "Choose SplitShot project path"
     elif kind == "export":
-        prompt = "Choose MP4 export path"
+        prompt = "Choose video export path"
     else:
         raise ValueError(f"Unsupported path chooser kind: {kind}")
 
@@ -271,18 +273,23 @@ class BrowserControlServer:
                     self._import_primary_file()
                     return
                 if self.path == "/api/files/secondary":
-                    self._import_secondary_file()
+                    self._import_merge_file()
+                    return
+                if self.path == "/api/files/merge":
+                    self._import_merge_file()
                     return
                 if self.path == "/api/dialog/path":
                     self._choose_dialog_path()
                     return
                 routes: dict[str, Callable[[dict[str, Any]], None]] = {
+                    "/api/project/details": self._set_project_details,
                     "/api/project/new": self._new_project,
                     "/api/project/open": self._open_project,
                     "/api/project/save": self._save_project,
                     "/api/project/delete": self._delete_project,
                     "/api/import/primary": self._import_primary,
-                    "/api/import/secondary": self._import_secondary,
+                    "/api/import/secondary": self._import_merge,
+                    "/api/import/merge": self._import_merge,
                     "/api/analysis/threshold": self._set_threshold,
                     "/api/beep": self._set_beep,
                     "/api/shots/add": self._add_shot,
@@ -293,6 +300,8 @@ class BrowserControlServer:
                     "/api/scoring/profile": self._set_scoring_profile,
                     "/api/scoring/score": self._assign_score,
                     "/api/scoring/position": self._set_score_position,
+                    "/api/events/add": self._add_event,
+                    "/api/merge/remove": self._remove_merge_source,
                     "/api/overlay": self._set_overlay,
                     "/api/merge": self._set_merge,
                     "/api/sync": self._set_sync,
@@ -328,6 +337,9 @@ class BrowserControlServer:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -363,6 +375,12 @@ class BrowserControlServer:
                 payload["project"]["path"] = "" if controller.project_path is None else str(controller.project_path)
                 return payload
 
+            def _set_project_details(self, payload: dict[str, Any]) -> None:
+                controller.set_project_details(
+                    name=None if payload.get("name") in {None, ""} else str(payload["name"]),
+                    description=None if payload.get("description") is None else str(payload["description"]),
+                )
+
             def _send_static(self, name: str, content_type: str | None = None) -> None:
                 safe_name = name.replace("\\", "/").lstrip("/")
                 if ".." in safe_name:
@@ -379,6 +397,9 @@ class BrowserControlServer:
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", guessed)
                 self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+                self.send_header("Pragma", "no-cache")
+                self.send_header("Expires", "0")
                 self.end_headers()
                 self.wfile.write(data)
                 activity.log("static.sent", name=safe_name, bytes=len(data))
@@ -508,19 +529,19 @@ class BrowserControlServer:
                     activity.log("api.files.primary.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
-            def _import_secondary_file(self) -> None:
+            def _import_merge_file(self) -> None:
                 try:
                     path = self._save_uploaded_file()
-                    activity.log("api.files.secondary.saved", path=str(path))
-                    controller.ingest_secondary_video(str(path))
+                    activity.log("api.files.merge.saved", path=str(path))
+                    controller.add_merge_source(str(path))
                     activity.log(
-                        "api.files.secondary.ingested",
+                        "api.files.merge.ingested",
                         path=str(path),
                         status=controller.status_message,
                     )
                     self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001
-                    activity.log("api.files.secondary.error", error=str(exc))
+                    activity.log("api.files.merge.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
             def _new_project(self, payload: dict[str, Any]) -> None:
@@ -547,7 +568,16 @@ class BrowserControlServer:
                 controller.ingest_primary_video(str(payload["path"]))
 
             def _import_secondary(self, payload: dict[str, Any]) -> None:
-                controller.ingest_secondary_video(str(payload["path"]))
+                controller.add_merge_source(str(payload["path"]))
+
+            def _import_merge(self, payload: dict[str, Any]) -> None:
+                controller.add_merge_source(str(payload["path"]))
+
+            def _remove_merge_source(self, payload: dict[str, Any]) -> None:
+                source_id = payload.get("source_id") or payload.get("id")
+                if source_id in {None, ""}:
+                    raise ValueError("source_id is required")
+                controller.remove_merge_source(str(source_id))
 
             def _set_threshold(self, payload: dict[str, Any]) -> None:
                 controller.set_detection_threshold(float(payload["threshold"]))
@@ -621,8 +651,24 @@ class BrowserControlServer:
                     controller.set_merge_enabled(bool(payload["enabled"]))
                 if "layout" in payload:
                     controller.set_merge_layout(MergeLayout(str(payload["layout"])))
+                if "pip_size_percent" in payload:
+                    controller.set_pip_size_percent(int(payload["pip_size_percent"]))
                 if "pip_size" in payload:
                     controller.set_pip_size(PipSize(str(payload["pip_size"])))
+                if "pip_x" in payload or "pip_y" in payload:
+                    controller.set_pip_position(
+                        None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
+                        None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
+                    )
+
+            def _add_event(self, payload: dict[str, Any]) -> None:
+                controller.add_timing_event(
+                    kind=str(payload.get("kind", "reload")),
+                    after_shot_id=None if payload.get("after_shot_id") in {None, ""} else str(payload["after_shot_id"]),
+                    before_shot_id=None if payload.get("before_shot_id") in {None, ""} else str(payload["before_shot_id"]),
+                    label=None if payload.get("label") in {None, ""} else str(payload["label"]),
+                    note=str(payload.get("note", "")),
+                )
 
             def _set_sync(self, payload: dict[str, Any]) -> None:
                 if "offset_ms" in payload:
@@ -644,20 +690,20 @@ class BrowserControlServer:
 
             def _export_project(self, payload: dict[str, Any]) -> None:
                 output_path = Path(str(payload["path"]))
-                controller.project.export.output_path = str(output_path)
                 activity.log("api.export.start", path=str(output_path))
-                export_project(
+                exported_path = export_project(
                     controller.project,
                     output_path,
                     progress_callback=lambda value: activity.log("api.export.progress", progress=value),
                     log_callback=lambda line: activity.log("api.export.log", line=line),
                 )
+                controller.project.export.output_path = str(exported_path)
                 activity.log(
                     "api.export.complete",
-                    path=str(output_path),
-                    bytes=output_path.stat().st_size if output_path.exists() else 0,
+                    path=str(exported_path),
+                    bytes=exported_path.stat().st_size if exported_path.exists() else 0,
                 )
                 controller.project.touch()
-                controller.status_message = f"Exported MP4 to {output_path}."
+                controller.status_message = f"Exported video to {exported_path}."
 
         return Handler

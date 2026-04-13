@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
+import pytest
+
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.media.probe import probe_video
@@ -97,3 +102,78 @@ def test_probe_reads_video_metadata(synthetic_video_factory) -> None:
     assert asset.width == 640
     assert asset.height == 360
     assert asset.duration_ms >= 1900
+
+
+def test_probe_reads_still_image_metadata(tmp_path: Path) -> None:
+    image_path = tmp_path / "merge-image.png"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=#00aa55:s=320x180",
+            "-frames:v",
+            "1",
+            str(image_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    asset = probe_video(image_path)
+
+    assert asset.is_still_image is True
+    assert asset.width == 320
+    assert asset.height == 180
+    assert asset.duration_ms == 0
+
+
+@pytest.mark.parametrize(
+    ("suffix", "command"),
+    [
+        (".mov", ["-c:v", "copy", "-c:a", "copy"]),
+        (".m4v", ["-c:v", "copy", "-c:a", "copy"]),
+        (".mkv", ["-c:v", "copy", "-c:a", "copy"]),
+        (".avi", ["-c:v", "mpeg4", "-c:a", "mp3"]),
+        (".webm", ["-c:v", "libvpx-vp9", "-c:a", "libopus"]),
+        (".wmv", ["-c:v", "wmv2", "-c:a", "wmav2"]),
+        (".mpg", ["-c:v", "mpeg2video", "-c:a", "mp2"]),
+        (".mts", ["-c:v", "libx264", "-c:a", "aac", "-f", "mpegts"]),
+        (".m2ts", ["-c:v", "libx264", "-c:a", "aac", "-f", "mpegts"]),
+    ],
+)
+def test_probe_reads_common_video_container_metadata(
+    synthetic_video_factory,
+    tmp_path: Path,
+    suffix: str,
+    command: list[str],
+) -> None:
+    source_path = synthetic_video_factory(duration_ms=2000, resolution=(320, 180))
+    container_path = tmp_path / f"sample{suffix}"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            str(source_path),
+            *command,
+            str(container_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    asset = probe_video(container_path)
+
+    assert asset.path == str(container_path)
+    assert asset.width == 320
+    assert asset.height == 180
+    assert asset.duration_ms > 0

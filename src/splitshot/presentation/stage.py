@@ -84,16 +84,19 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         confidence = shot.confidence
         score_letter = None if shot.score is None else shot.score.letter.value
         if shot.source == ShotSource.MANUAL:
-            subtitle = "Manual edit"
+            subtitle = "Manual"
+            source_label = "Manual"
         elif confidence is None:
-            subtitle = "Auto detected"
+            subtitle = "ShotML"
+            source_label = "ShotML"
         else:
-            subtitle = f"{int(round(confidence * 100))}% conf"
+            subtitle = f"{confidence:.2f}"
+            source_label = "ShotML"
 
         meta_parts = []
         if cumulative_ms is not None:
-            meta_parts.append(f"Beep to shot {format_seconds_short(cumulative_ms)} s")
-        meta_parts.append(f"Absolute {format_time_ms(shot.time_ms)}")
+            meta_parts.append(f"Split {format_seconds_short(cumulative_ms)}s")
+        meta_parts.append(source_label)
         if score_letter is not None:
             meta_parts.append(f"Score {score_letter}")
 

@@ -179,7 +179,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
     ),
     "idpa_time_plus": ScoringPreset(
         id="idpa_time_plus",
-        name="IDPA Time Plus",
+        name="IDPA - Time Plus",
         sport="IDPA",
         mode="time_plus",
         description="Time Plus = raw time + points down + penalties. -0/+0, -1/+1s, -3/+3s, miss/+5s.",

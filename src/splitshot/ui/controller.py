@@ -21,6 +21,7 @@ from splitshot.domain.models import (
     OverlayPosition,
     PipSize,
     Project,
+    MergeSource,
     ScoreLetter,
     ScoreMark,
     ShotEvent,
@@ -32,6 +33,18 @@ from splitshot.export.presets import apply_export_preset as apply_export_preset_
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import delete_project, load_project, save_project
 from splitshot.scoring.logic import apply_scoring_preset, calculate_hit_factor
+
+
+def _pip_size_percent_from_enum(size: PipSize) -> int:
+    return {
+        PipSize.SMALL: 25,
+        PipSize.MEDIUM: 35,
+        PipSize.LARGE: 50,
+    }[size]
+
+
+def _sync_secondary_video_from_merge_sources(project: Project) -> None:
+    project.secondary_video = project.merge_sources[0].asset if project.merge_sources else None
 
 
 class ProjectController(QObject):
@@ -48,6 +61,7 @@ class ProjectController(QObject):
         self.project.overlay.position = self.settings.overlay_position
         self.project.merge.layout = self.settings.merge_layout
         self.project.merge.pip_size = self.settings.pip_size
+        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
         self.project_path: Path | None = None
@@ -60,6 +74,7 @@ class ProjectController(QObject):
         self.project.overlay.position = self.settings.overlay_position
         self.project.merge.layout = self.settings.merge_layout
         self.project.merge.pip_size = self.settings.pip_size
+        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
         self.project_path = None
@@ -80,13 +95,7 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def load_secondary_video(self, path: str) -> None:
-        self.project.secondary_video = probe_video(path)
-        self.project.merge.enabled = True
-        self.project.analysis.waveform_secondary = []
-        self.project.analysis.beep_time_ms_secondary = None
-        self._set_status("Loaded secondary video.")
-        self.project.touch()
-        self.project_changed.emit()
+        self.add_merge_source(path)
 
     def analyze_primary(self) -> None:
         if not self.project.primary_video.path:
@@ -137,7 +146,47 @@ class ProjectController(QObject):
     def ingest_secondary_video(self, path: str) -> None:
         self._set_status("Importing secondary video...")
         self.load_secondary_video(path)
-        self.analyze_secondary()
+
+    def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
+        if name is not None:
+            self.project.name = name.strip() or "Untitled Project"
+        if description is not None:
+            self.project.description = str(description)
+        self.project.touch()
+        self.project_changed.emit()
+
+    def add_merge_source(self, path: str) -> None:
+        asset = probe_video(path)
+        self.project.merge_sources.append(MergeSource(asset=asset))
+        self.project.merge.enabled = True
+        _sync_secondary_video_from_merge_sources(self.project)
+        if len(self.project.merge_sources) == 1 and not asset.is_still_image:
+            self._set_status("Imported merge media.")
+            self.analyze_secondary()
+            return
+        self._set_status("Imported merge media.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def remove_merge_source(self, source_id: str) -> None:
+        before_sources = list(self.project.merge_sources)
+        before_count = len(before_sources)
+        self.project.merge_sources = [source for source in self.project.merge_sources if source.id != source_id]
+        if len(self.project.merge_sources) == before_count:
+            return
+        if not self.project.merge_sources:
+            self.project.merge.enabled = False
+        removed_first = bool(before_sources and before_sources[0].id == source_id)
+        _sync_secondary_video_from_merge_sources(self.project)
+        if removed_first:
+            self.project.analysis.beep_time_ms_secondary = None
+            self.project.analysis.waveform_secondary = []
+            if self.project.merge_sources and not self.project.merge_sources[0].asset.is_still_image:
+                self.analyze_secondary()
+                return
+        self._set_status("Removed merge media.")
+        self.project.touch()
+        self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
         self.project.analysis.detection_threshold = value
@@ -274,12 +323,13 @@ class ProjectController(QObject):
             "bottom_middle",
             "bottom_right",
         }
+        valid_shot_quadrants = {*valid_quadrants, "custom"}
         valid_directions = {"right", "left", "down", "up"}
         if "max_visible_shots" in payload:
             overlay.max_visible_shots = max(1, min(40, int(payload["max_visible_shots"])))
         if "shot_quadrant" in payload:
             value = str(payload["shot_quadrant"])
-            overlay.shot_quadrant = value if value in valid_quadrants else "bottom_left"
+            overlay.shot_quadrant = value if value in valid_shot_quadrants else "bottom_left"
         if "shot_direction" in payload:
             value = str(payload["shot_direction"])
             overlay.shot_direction = value if value in valid_directions else "right"
@@ -317,6 +367,16 @@ class ProjectController(QObject):
         if "custom_box_y" in payload:
             value = payload["custom_box_y"]
             overlay.custom_box_y = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        if "custom_box_background_color" in payload:
+            overlay.custom_box_background_color = str(payload["custom_box_background_color"])
+        if "custom_box_text_color" in payload:
+            overlay.custom_box_text_color = str(payload["custom_box_text_color"])
+        if "custom_box_opacity" in payload:
+            overlay.custom_box_opacity = max(0.0, min(1.0, float(payload["custom_box_opacity"])))
+        if "custom_box_width" in payload:
+            overlay.custom_box_width = max(0, int(payload["custom_box_width"]))
+        if "custom_box_height" in payload:
+            overlay.custom_box_height = max(0, int(payload["custom_box_height"]))
         self.project.touch()
         self.project_changed.emit()
 
@@ -359,9 +419,46 @@ class ProjectController(QObject):
 
     def set_pip_size(self, size: PipSize) -> None:
         self.project.merge.pip_size = size
+        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(size)
         self.settings.pip_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_pip_size_percent(self, percent: int) -> None:
+        self.project.merge.pip_size_percent = max(10, min(95, int(percent)))
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_pip_position(self, pip_x: float | None = None, pip_y: float | None = None) -> None:
+        if pip_x is not None:
+            self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
+        if pip_y is not None:
+            self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
+        self.project.touch()
+        self.project_changed.emit()
+
+    def add_timing_event(
+        self,
+        kind: str,
+        after_shot_id: str | None = None,
+        before_shot_id: str | None = None,
+        label: str | None = None,
+        note: str = "",
+    ) -> None:
+        from splitshot.domain.models import TimingEvent
+
+        event_label = label or kind.replace("_", " ").title()
+        self.project.analysis.events.append(
+            TimingEvent(
+                kind=kind,
+                label=event_label,
+                after_shot_id=after_shot_id,
+                before_shot_id=before_shot_id,
+                note=note,
+            )
+        )
         self.project.touch()
         self.project_changed.emit()
 
@@ -439,12 +536,18 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def swap_videos(self) -> None:
-        if self.project.secondary_video is None:
+        if self.project.merge_sources:
+            first_source = self.project.merge_sources[0].asset
+            self.project.merge_sources[0].asset = self.project.primary_video
+            self.project.primary_video = first_source
+            _sync_secondary_video_from_merge_sources(self.project)
+        elif self.project.secondary_video is None:
             return
-        self.project.primary_video, self.project.secondary_video = (
-            self.project.secondary_video,
-            self.project.primary_video,
-        )
+        else:
+            self.project.primary_video, self.project.secondary_video = (
+                self.project.secondary_video,
+                self.project.primary_video,
+            )
         self.project.analysis.beep_time_ms_primary, self.project.analysis.beep_time_ms_secondary = (
             self.project.analysis.beep_time_ms_secondary,
             self.project.analysis.beep_time_ms_primary,
@@ -489,6 +592,7 @@ class ProjectController(QObject):
         self.project.overlay.position = self.settings.overlay_position
         self.project.merge.layout = self.settings.merge_layout
         self.project.merge.pip_size = self.settings.pip_size
+        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
         self.project.export.quality = self.settings.export_quality
         self.project.overlay.badge_size = self.settings.badge_size
         self.project.touch()

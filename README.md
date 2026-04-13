@@ -68,7 +68,7 @@ uv run splitshot --check
 
 ## Export
 
-SplitShot exports with local FFmpeg. The app renders the selected video/merge, overlays, and scoring into frames, then encodes an MP4 with the selected export variables.
+SplitShot exports with local FFmpeg. The app renders the selected video/merge, overlays, and scoring into frames, then encodes a local video file with the selected export variables.
 
 Browser export controls expose:
 
@@ -76,7 +76,10 @@ Browser export controls expose:
 - Video: aspect ratio, crop center, target width/height, source/30/60 fps, H.264 or HEVC, bitrate, FFmpeg preset, and optional two-pass encode.
 - Audio: AAC, sample rate, and bitrate.
 - Color: Rec.709 SDR.
+- Containers: output path extensions `.mp4`, `.m4v`, `.mov`, and `.mkv` are supported.
 - Logs: the Export pane stores the FFmpeg command/log output for the last export so failures are visible.
+
+Browser file pickers and typed-path imports support common stage containers including `.mp4`, `.m4v`, `.mov`, `.avi`, `.wmv`, `.webm`, `.mkv`, `.mpg`, `.mpeg`, `.mts`, and `.m2ts`.
 
 ## Packaging
 
