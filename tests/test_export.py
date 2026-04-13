@@ -10,11 +10,12 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark
+from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import OverlayRenderer
+from splitshot.scoring.logic import apply_scoring_preset
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -192,7 +193,46 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     badges, score_marks = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)
 
     assert score_marks == []
-    assert any("Shot 1" in badge.text and " C" in badge.text and badge.text_color == "#00ff00" for badge in badges)
+    assert any(badge.text.startswith("Shot 1 ") and badge.text.endswith("s C") and badge.text_color == "#00ff00" for badge in badges)
+
+
+def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name="Draw Overlay")
+    project.primary_video = probe_video(video_path)
+    analysis = analyze_video_audio(video_path, threshold=0.35)
+    project.analysis.beep_time_ms_primary = analysis.beep_time_ms
+    project.analysis.shots = analysis.shots
+    project.overlay.show_timer = False
+    project.overlay.show_shots = True
+    project.overlay.show_draw = True
+    project.overlay.show_score = False
+
+    before_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms - 1)[0]
+    after_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)[0]
+
+    assert any(badge.text.startswith("Draw ") for badge in before_first)
+    assert not any(badge.text.startswith("Draw ") for badge in after_first)
+    assert any("Shot 1" in badge.text and badge.text.endswith("s") for badge in after_first)
+
+
+def test_overlay_renderer_keeps_final_shot_visible_and_uses_final_label() -> None:
+    project = Project(name="Final Overlay")
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [
+        ShotEvent(time_ms=1100, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+        ShotEvent(time_ms=1600, score=ScoreMark(letter=ScoreLetter.DOWN_1)),
+        ShotEvent(time_ms=2100, score=ScoreMark(letter=ScoreLetter.DOWN_3)),
+    ]
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.overlay.show_draw = False
+    project.overlay.show_score = True
+
+    badges, _score_marks = OverlayRenderer().build_badges(project, 2400)
+
+    assert any(badge.text.startswith("Shot 3 ") for badge in badges)
+    assert any(badge.text.startswith("Final ") for badge in badges)
 
 
 def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
@@ -201,6 +241,42 @@ def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
     project.overlay.shot_quadrant = "custom"
     project.overlay.custom_x = 0.5
     project.overlay.custom_y = 0.5
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.timer_badge.background_color = "#ff0000"
+    project.overlay.timer_badge.text_color = "#ffffff"
+    project.overlay.timer_badge.opacity = 1.0
+
+    image = QImage(160, 90, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 100, 160, 90)
+    painter.end()
+
+    center_red = 0
+    corner_red = 0
+    for y in range(30, 62):
+        for x in range(34, 126):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                center_red += 1
+    for y in range(0, 24):
+        for x in range(0, 70):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                corner_red += 1
+
+    assert center_red > 20
+    assert center_red > corner_red
+
+
+def test_overlay_renderer_defaults_empty_custom_quadrant_coordinates_to_center() -> None:
+    project = Project(name="Default Custom Overlay Position")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.shot_quadrant = "custom"
+    project.overlay.custom_x = None
+    project.overlay.custom_y = None
     project.overlay.show_draw = False
     project.overlay.show_shots = False
     project.overlay.show_score = False

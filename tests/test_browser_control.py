@@ -175,6 +175,93 @@ def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) ->
         server.shutdown()
 
 
+def test_browser_primary_replacement_preserves_reusable_settings_and_clears_video_state(
+    synthetic_video_factory,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        first_primary = Path(synthetic_video_factory(name="primary-one", beep_ms=400))
+        second_primary = Path(synthetic_video_factory(name="primary-two", beep_ms=520))
+        secondary = Path(synthetic_video_factory(name="secondary-angle", beep_ms=680))
+
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(first_primary)})
+        first_shot_id = state["project"]["analysis"]["shots"][0]["id"]
+
+        _post_json(
+            f"{server.url}api/overlay",
+            {
+                "position": "top",
+                "custom_box_enabled": True,
+                "custom_box_text": "Classifier ready",
+                "custom_box_x": 0.45,
+                "custom_box_y": 0.55,
+            },
+        )
+        _post_json(f"{server.url}api/export/preset", {"preset": "universal_vertical"})
+        _post_json(
+            f"{server.url}api/export/settings",
+            {"video_bitrate_mbps": 18, "two_pass": True},
+        )
+        _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
+        _post_json(
+            f"{server.url}api/scoring",
+            {"enabled": True, "penalties": 1.5, "penalty_counts": {"procedural_errors": 2}},
+        )
+        _post_json(
+            f"{server.url}api/events/add",
+            {"kind": "reload", "after_shot_id": first_shot_id, "note": "Old review note"},
+        )
+        _post_json(f"{server.url}api/shots/select", {"shot_id": first_shot_id})
+        _post_json(f"{server.url}api/import/secondary", {"path": str(secondary)})
+        _post_json(
+            f"{server.url}api/merge",
+            {"layout": "pip", "pip_size_percent": 50, "pip_x": 0.2, "pip_y": 0.8},
+        )
+        controller.project.export.output_path = "/tmp/browser-template-export.mp4"
+        controller.project.export.last_log = "previous export log"
+        controller.project.export.last_error = "previous export error"
+        controller.project.ui_state.timeline_offset_ms = 999
+
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(second_primary)})
+
+        assert state["project"]["primary_video"]["path"] == str(second_primary)
+        assert state["project"]["analysis"]["beep_time_ms_secondary"] is None
+        assert state["project"]["analysis"]["sync_offset_ms"] == 0
+        assert state["project"]["analysis"]["events"] == []
+        assert len(state["project"]["analysis"]["shots"]) == 3
+        assert all(shot["score"] is None for shot in state["project"]["analysis"]["shots"])
+        assert state["project"]["overlay"]["position"] == "top"
+        assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_text"] == ""
+        assert state["project"]["overlay"]["custom_box_x"] == 0.45
+        assert state["project"]["overlay"]["custom_box_y"] == 0.55
+        assert state["project"]["scoring"]["enabled"] is True
+        assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
+        assert state["project"]["scoring"]["penalties"] == 0.0
+        assert state["project"]["scoring"]["penalty_counts"] == {}
+        assert state["project"]["scoring"]["hit_factor"] == 0.0
+        assert state["project"]["secondary_video"] is None
+        assert state["project"]["merge_sources"] == []
+        assert state["project"]["merge"]["enabled"] is False
+        assert state["project"]["merge"]["layout"] == "side_by_side"
+        assert state["project"]["merge"]["pip_size_percent"] == 35
+        assert state["project"]["merge"]["pip_x"] == 1.0
+        assert state["project"]["merge"]["pip_y"] == 1.0
+        assert state["project"]["export"]["target_width"] == 1080
+        assert state["project"]["export"]["target_height"] == 1920
+        assert state["project"]["export"]["video_bitrate_mbps"] == 18.0
+        assert state["project"]["export"]["two_pass"] is True
+        assert state["project"]["export"]["output_path"] == "/tmp/browser-template-export.mp4"
+        assert state["project"]["export"]["last_log"] == ""
+        assert state["project"]["export"]["last_error"] is None
+        assert state["project"]["ui_state"]["selected_shot_id"] is None
+        assert state["project"]["ui_state"]["timeline_offset_ms"] == 0
+    finally:
+        server.shutdown()
+
+
 def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)

@@ -62,6 +62,7 @@ def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
     summary = calculate_scoring_summary(project)
     assert summary["ruleset"] == "uspsa_major"
     assert summary["mode"] == "hit_factor"
+    assert summary["display_label"] == "Hit Factor"
     assert summary["hit_factor"] == 0.0
     assert summary["shot_penalties"] == 10
 
@@ -70,6 +71,7 @@ def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
     summary = calculate_scoring_summary(project)
     assert summary["ruleset"] == "idpa_time_plus"
     assert summary["mode"] == "time_plus"
+    assert summary["display_label"] == "Final"
     assert summary["final_time"] == 1.5 + 5 + 3
 
 

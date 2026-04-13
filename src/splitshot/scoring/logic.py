@@ -347,7 +347,7 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         "total_penalties": total_penalty_value,
         "hit_factor": calculate_hit_factor(project),
         "final_time": None,
-        "display_label": "Hit Factor" if preset.mode == "hit_factor" else "Final Time",
+        "display_label": "Hit Factor" if preset.mode == "hit_factor" else "Final",
         "display_value": "--",
     }
     if not project.scoring.enabled or raw_seconds is None:
