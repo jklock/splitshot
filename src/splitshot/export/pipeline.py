@@ -12,7 +12,7 @@ from typing import Callable
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPainter
+from PySide6.QtGui import QGuiApplication, QImage, QPainter
 
 from splitshot.domain.models import (
     AspectRatio,
@@ -21,11 +21,17 @@ from splitshot.domain.models import (
     ExportVideoCodec,
     MergeLayout,
     Project,
+    VideoAsset,
 )
 from splitshot.media.ffmpeg import ffmpeg_command
 from splitshot.merge.layouts import calculate_merge_canvas
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import calculate_hit_factor
+
+
+_QT_GUI_APP: QGuiApplication | None = None
+_SUPPORTED_EXPORT_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4"}
+_FASTSTART_EXPORT_EXTENSIONS = {".m4v", ".mov", ".mp4"}
 
 
 @dataclass(slots=True)
@@ -35,6 +41,30 @@ class BaseRenderPlan:
     height: int
     fps: float
     duration_ms: int
+
+
+def _ensure_qt_gui_application() -> QGuiApplication:
+    global _QT_GUI_APP
+
+    instance = QGuiApplication.instance()
+    if isinstance(instance, QGuiApplication):
+        return instance
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    _QT_GUI_APP = QGuiApplication(["splitshot-export"])
+    return _QT_GUI_APP
+
+
+def _normalize_output_target(output_path: str | Path) -> Path:
+    output_target = Path(output_path).expanduser()
+    if not output_target.suffix:
+        output_target = output_target.with_suffix(".mp4")
+    if output_target.suffix.lower() not in _SUPPORTED_EXPORT_EXTENSIONS:
+        supported = ", ".join(ext.lstrip(".") for ext in sorted(_SUPPORTED_EXPORT_EXTENSIONS))
+        raise ValueError(
+            f"Unsupported export format '{output_target.suffix or '<none>'}'. Supported extensions: {supported}."
+        )
+    return output_target
 
 
 def _quality_crf(quality: ExportQuality) -> str:
@@ -108,13 +138,92 @@ def compute_crop_box(
     return left, top, crop_width, crop_height
 
 
-def _merged_duration_ms(project: Project) -> int:
+def _merge_assets(project: Project) -> list[VideoAsset]:
+    if project.merge_sources:
+        return [source.asset for source in project.merge_sources if source.asset.path]
+    if project.secondary_video is None or not project.secondary_video.path:
+        return []
+    return [project.secondary_video]
+
+
+def _merged_duration_ms(project: Project, merge_assets: list[VideoAsset]) -> int:
     primary = project.primary_video.duration_ms
-    secondary = project.secondary_video.duration_ms if project.secondary_video else 0
-    offset = project.analysis.sync_offset_ms
-    secondary_visible = max(0, secondary - max(0, offset))
-    secondary_end = max(0, -offset) + secondary_visible
-    return max(primary, secondary_end)
+    if not merge_assets:
+        return primary
+    if len(merge_assets) == 1:
+        secondary = merge_assets[0].duration_ms
+        offset = project.analysis.sync_offset_ms
+        secondary_visible = max(0, secondary - max(0, offset))
+        secondary_end = max(0, -offset) + secondary_visible
+        return max(primary, secondary_end)
+    return max([primary, *[asset.duration_ms for asset in merge_assets]])
+
+
+def _build_grid_merge_plan(project: Project, merge_assets: list[VideoAsset]) -> BaseRenderPlan:
+    fps = _output_fps(project)
+    sources = [project.primary_video, *merge_assets]
+    tile_width = max(2, int(project.primary_video.width or 0))
+    tile_height = max(2, int(project.primary_video.height or 0))
+    columns = max(1, math.ceil(math.sqrt(len(sources))))
+    rows = math.ceil(len(sources) / columns)
+
+    input_args = [
+        *ffmpeg_command([
+            "-v",
+            "info",
+        ]),
+        "-i",
+        project.primary_video.path,
+    ]
+    for asset in merge_assets:
+        if asset.is_still_image:
+            input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
+        else:
+            input_args.extend(["-i", asset.path])
+    input_args.append("-an")
+
+    chain_parts: list[str] = []
+    layout_parts: list[str] = []
+    for index, _source in enumerate(sources):
+        chain_parts.append(
+            f"[{index}:v]setpts=PTS-STARTPTS,scale={tile_width}:{tile_height}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={tile_width}:{tile_height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[t{index}]"
+        )
+        layout_parts.append(f"{(index % columns) * tile_width}_{(index // columns) * tile_height}")
+
+    stacked_inputs = "".join(f"[t{index}]" for index in range(len(sources)))
+    filter_complex = ";".join(
+        [
+            *chain_parts,
+            (
+                f"{stacked_inputs}xstack=inputs={len(sources)}:layout={'|'.join(layout_parts)}:"
+                "fill=black:shortest=0,format=rgba[f]"
+            ),
+        ]
+    )
+
+    command = [
+        *input_args,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[f]",
+        "-r",
+        f"{fps:.3f}",
+        "-pix_fmt",
+        "rgba",
+        "-f",
+        "rawvideo",
+        "pipe:1",
+    ]
+    return BaseRenderPlan(
+        command=command,
+        width=tile_width * columns,
+        height=tile_height * rows,
+        fps=fps,
+        duration_ms=_merged_duration_ms(project, merge_assets),
+    )
 
 
 def _build_single_video_plan(project: Project) -> BaseRenderPlan:
@@ -143,12 +252,20 @@ def _build_single_video_plan(project: Project) -> BaseRenderPlan:
 
 
 def _build_merge_plan(project: Project) -> BaseRenderPlan:
-    assert project.secondary_video is not None
+    merge_assets = _merge_assets(project)
+    if not merge_assets:
+        return _build_single_video_plan(project)
+    if len(merge_assets) > 1:
+        return _build_grid_merge_plan(project, merge_assets)
+
+    secondary = merge_assets[0]
     canvas = calculate_merge_canvas(
         project.primary_video,
-        project.secondary_video,
+        secondary,
         project.merge.layout,
-        project.merge.pip_size,
+        project.merge.pip_size_percent,
+        project.merge.pip_x,
+        project.merge.pip_y,
     )
     fps = _output_fps(project)
     offset_ms = project.analysis.sync_offset_ms
@@ -163,7 +280,11 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
     ]
     if offset_ms > 0:
         input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
-    input_args.extend(["-i", project.secondary_video.path, "-an"])
+    if secondary.is_still_image:
+        input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", secondary.path])
+    else:
+        input_args.extend(["-i", secondary.path])
+    input_args.append("-an")
 
     secondary_chain = "[1:v]setpts=PTS-STARTPTS"
     if offset_ms < 0:
@@ -208,7 +329,7 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         width=canvas.width,
         height=canvas.height,
         fps=fps,
-        duration_ms=_merged_duration_ms(project),
+        duration_ms=_merged_duration_ms(project, [secondary]),
     )
 
 
@@ -318,8 +439,7 @@ def _encoder_command(
         audio_bitrate,
     ]
     output_args = ["-f", "null", os.devnull] if first_pass else [
-        "-movflags",
-        "+faststart",
+        *(["-movflags", "+faststart"] if output_target.suffix.lower() in _FASTSTART_EXPORT_EXTENSIONS else []),
         "-shortest",
         str(output_target),
     ]
@@ -426,6 +546,7 @@ def export_project(
     if not project.primary_video.path:
         raise ValueError("Primary video is required for export")
 
+    _ensure_qt_gui_application()
     project.scoring.hit_factor = calculate_hit_factor(project)
     plan = build_base_render_plan(project)
     crop_left, crop_top, crop_width, crop_height = compute_crop_box(
@@ -437,12 +558,13 @@ def export_project(
     )
     output_width, output_height = _target_dimensions(project, crop_width, crop_height)
 
-    output_target = Path(output_path)
+    output_target = _normalize_output_target(output_path)
     output_target.parent.mkdir(parents=True, exist_ok=True)
     project.export.last_log = ""
     project.export.last_error = None
     log_lines: list[str] = [
         f"Export target: {output_target}",
+        f"Container: {output_target.suffix.lower()}",
         f"Preset: {project.export.preset.value}",
         f"Video: {project.export.video_codec.value} {output_width}x{output_height} {plan.fps:.3f} fps {project.export.video_bitrate_mbps:g} Mbps",
         f"Audio: {project.export.audio_codec.value} {project.export.audio_sample_rate} Hz {project.export.audio_bitrate_kbps} kbps",

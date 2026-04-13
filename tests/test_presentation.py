@@ -26,4 +26,5 @@ def test_stage_presentation_exposes_full_beep_to_final_timing() -> None:
     assert [segment.cumulative_ms for segment in segments] == [150, 300, 650]
     assert segments[0].card_title == "Draw"
     assert segments[-1].card_value == "0.35"
-    assert "Beep to shot 0.65 s" in segments[-1].card_meta
+    assert "Split 0.65s" in segments[-1].card_meta
+    assert "ShotML" in segments[-1].card_meta

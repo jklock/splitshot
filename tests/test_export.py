@@ -5,10 +5,12 @@ import subprocess
 from pathlib import Path
 
 import numpy as np
+import pytest
+from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, OverlayPosition, Project, ScoreLetter, ScoreMark
+from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
@@ -87,6 +89,64 @@ def test_export_writes_mp4_with_requested_crop(synthetic_video_factory, tmp_path
     assert int(frame.sum()) > 0
 
 
+def test_export_project_initializes_qt_gui_application_for_headless_runs(
+    synthetic_video_factory,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    video_path = synthetic_video_factory()
+    project = Project(name="Headless Export Test")
+    project.primary_video = probe_video(video_path)
+
+    called = False
+
+    def fake_ensure_qt_gui_application():
+        nonlocal called
+        called = True
+        return None
+
+    monkeypatch.setattr("splitshot.export.pipeline._ensure_qt_gui_application", fake_ensure_qt_gui_application)
+
+    output_path = tmp_path / "headless-export.mp4"
+    export_project(project, output_path)
+
+    assert called is True
+    assert output_path.exists()
+
+
+@pytest.mark.parametrize("suffix", [".mov", ".m4v", ".mkv"])
+def test_export_supports_common_output_containers(
+    synthetic_video_factory,
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name=f"Container Export {suffix}")
+    project.primary_video = probe_video(video_path)
+    project.export.target_width = 160
+    project.export.target_height = 90
+    project.export.video_bitrate_mbps = 1
+    project.export.ffmpeg_preset = "ultrafast"
+
+    output_path = tmp_path / f"container-export{suffix}"
+    export_project(project, output_path)
+
+    assert output_path.exists()
+    metadata = _ffprobe_json(output_path)
+    video_stream = next(item for item in metadata["streams"] if item["codec_type"] == "video")
+    assert int(video_stream["width"]) == 160
+    assert int(video_stream["height"]) == 90
+
+
+def test_export_rejects_unsupported_output_container(synthetic_video_factory, tmp_path: Path) -> None:
+    video_path = synthetic_video_factory()
+    project = Project(name="Unsupported Container Export")
+    project.primary_video = probe_video(video_path)
+
+    with pytest.raises(ValueError, match="Unsupported export format"):
+        export_project(project, tmp_path / "export.webm")
+
+
 def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
     video_path = synthetic_video_factory(resolution=(320, 180))
     project = Project(name="Overlay Export Test")
@@ -135,6 +195,42 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     assert any("Shot 1" in badge.text and " C" in badge.text and badge.text_color == "#00ff00" for badge in badges)
 
 
+def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
+    project = Project(name="Custom Overlay Position")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.shot_quadrant = "custom"
+    project.overlay.custom_x = 0.5
+    project.overlay.custom_y = 0.5
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.timer_badge.background_color = "#ff0000"
+    project.overlay.timer_badge.text_color = "#ffffff"
+    project.overlay.timer_badge.opacity = 1.0
+
+    image = QImage(160, 90, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 100, 160, 90)
+    painter.end()
+
+    center_red = 0
+    corner_red = 0
+    for y in range(30, 62):
+        for x in range(34, 126):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                center_red += 1
+    for y in range(0, 24):
+        for x in range(0, 70):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                corner_red += 1
+
+    assert center_red > 20
+    assert center_red > corner_red
+
+
 def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: Path) -> None:
     primary_path = synthetic_video_factory(name="primary", resolution=(640, 360), beep_ms=400)
     secondary_path = synthetic_video_factory(name="secondary", resolution=(640, 360), beep_ms=650)
@@ -163,6 +259,49 @@ def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: 
     video_stream = next(item for item in metadata["streams"] if item["codec_type"] == "video")
     assert int(video_stream["width"]) > 640
     assert int(video_stream["height"]) == 360
+
+
+def test_merge_export_supports_many_sources_and_still_images(synthetic_video_factory, tmp_path: Path) -> None:
+    primary_path = synthetic_video_factory(name="primary", resolution=(640, 360), beep_ms=400)
+    secondary_path = synthetic_video_factory(name="secondary", resolution=(640, 360), beep_ms=650)
+    tertiary_path = synthetic_video_factory(name="tertiary", resolution=(640, 360), beep_ms=900)
+    image_path = tmp_path / "merge-image.png"
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=#00aa55:s=320x180",
+            "-frames:v",
+            "1",
+            str(image_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    project = Project(name="Grid Merge Export")
+    project.primary_video = probe_video(primary_path)
+    project.merge_sources = [
+        MergeSource(asset=probe_video(secondary_path)),
+        MergeSource(asset=probe_video(image_path)),
+        MergeSource(asset=probe_video(tertiary_path)),
+    ]
+    project.secondary_video = project.merge_sources[0].asset
+    project.merge.enabled = True
+
+    output_path = tmp_path / "grid-merge-export.mp4"
+    export_project(project, output_path)
+
+    metadata = _ffprobe_json(output_path)
+    video_stream = next(item for item in metadata["streams"] if item["codec_type"] == "video")
+    assert int(video_stream["width"]) == 1280
+    assert int(video_stream["height"]) == 720
+    assert project.export.last_error is None
 
 
 def test_export_presets_map_to_explicit_encoding_variables() -> None:

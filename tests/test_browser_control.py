@@ -364,7 +364,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                 "spacing": 6,
                 "margin": 4,
                 "max_visible_shots": 6,
-                "shot_quadrant": "top_right",
+                "shot_quadrant": "custom",
                 "shot_direction": "down",
                 "custom_x": 0.12,
                 "custom_y": 0.18,
@@ -396,7 +396,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["spacing"] == 6
         assert state["project"]["overlay"]["margin"] == 4
         assert state["project"]["overlay"]["max_visible_shots"] == 6
-        assert state["project"]["overlay"]["shot_quadrant"] == "top_right"
+        assert state["project"]["overlay"]["shot_quadrant"] == "custom"
         assert state["project"]["overlay"]["shot_direction"] == "down"
         assert state["project"]["overlay"]["custom_x"] == 0.12
         assert state["project"]["overlay"]["custom_y"] == 0.18
@@ -524,6 +524,12 @@ def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_fac
 
         assert state["project"]["merge"]["enabled"] is True
         assert state["project"]["analysis"]["beep_time_ms_secondary"] is not None
+
+        state = _post_json(f"{server.url}api/merge", {"layout": "pip", "pip_size_percent": 50, "pip_x": 0.25, "pip_y": 0.75})
+        assert state["project"]["merge"]["layout"] == "pip"
+        assert state["project"]["merge"]["pip_size_percent"] == 50
+        assert state["project"]["merge"]["pip_x"] == 0.25
+        assert state["project"]["merge"]["pip_y"] == 0.75
 
         initial_offset = state["project"]["analysis"]["sync_offset_ms"]
         state = _post_json(f"{server.url}api/sync", {"delta_ms": 10})

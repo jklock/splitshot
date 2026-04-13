@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260413b" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -19,7 +19,6 @@
           <button class="tool-item" data-tool="scoring" type="button"><b>Score</b></button>
           <button class="tool-item" data-tool="overlay" type="button"><b>Overlay</b></button>
           <button class="tool-item" data-tool="merge" type="button"><b>Merge</b></button>
-          <button class="tool-item" data-tool="layout" type="button"><b>Layout</b></button>
           <button class="tool-item" data-tool="review" type="button"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
         </nav>
@@ -27,8 +26,8 @@
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
 
       <main id="cockpit-root" class="cockpit">
-        <input id="primary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
-        <input id="secondary-file-input" type="file" accept="video/*,.mp4,.mov,.avi,.wmv,.webm" hidden />
+        <input id="primary-file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts" hidden />
+        <input id="merge-media-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
         <span id="project-title" hidden>Untitled Project</span>
         <span id="status" hidden>Ready.</span>
 
@@ -49,32 +48,33 @@
             <div class="video-stage" id="video-stage">
               <video id="primary-video" controls playsinline></video>
               <video id="secondary-video" muted playsinline></video>
+              <img id="secondary-image" alt="Secondary frame" hidden />
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
+              <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-video" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
             </div>
 
             <button id="resize-waveform" class="resize-handle resize-handle-waveform" type="button" aria-label="Resize waveform"></button>
             <section class="waveform-panel">
-              <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
               <div class="section-header waveform-header">
                 <div class="legend-row">
                   <span><b class="beep-key"></b> Beep</span>
                   <span><b class="shot-key"></b> Shot</span>
                   <small id="waveform-help">Select mode: click a shot marker, drag to move, arrows nudge.</small>
                 </div>
-                <div class="waveform-actions">
-                  <button id="zoom-waveform-out" type="button">Zoom -</button>
-                  <button id="zoom-waveform-in" type="button">Zoom +</button>
-                  <button id="amp-waveform-out" type="button">Amp -</button>
-                  <button id="amp-waveform-in" type="button">Amp +</button>
-                  <button id="reset-waveform-view" type="button">Reset</button>
-                  <button class="mode-button active" data-waveform-mode="select" type="button">Select</button>
-                  <button class="mode-button" data-waveform-mode="add" type="button">Add Shot</button>
-                  <button class="mode-button" data-waveform-mode="beep" type="button">Move Beep</button>
-                  <button id="expand-waveform" type="button">Expand</button>
-                  <button id="toggle-layout-lock" class="expanded-only primary-button" type="button">Unlock Layout</button>
-                </div>
+                <button id="toggle-layout-lock-waveform" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock waveform layout">🔒</button>
+              </div>
+              <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
+              <div class="waveform-actions waveform-footer">
+                <button id="zoom-waveform-out" type="button">Zoom -</button>
+                <button id="zoom-waveform-in" type="button">Zoom +</button>
+                <button id="amp-waveform-out" type="button">Amp -</button>
+                <button id="amp-waveform-in" type="button">Amp +</button>
+                <button id="reset-waveform-view" type="button">Reset</button>
+                <button class="mode-button active" data-waveform-mode="select" type="button">Select</button>
+                <button class="mode-button" data-waveform-mode="add" type="button">Add Shot</button>
+                <button id="expand-waveform" type="button">Expand</button>
               </div>
               <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
             </section>
@@ -84,12 +84,33 @@
                 <h2>Splits</h2>
                 <button id="collapse-timing" type="button">Collapse</button>
               </div>
+              <div class="timing-event-editor">
+                <label>Event
+                  <select id="timing-event-kind">
+                    <option value="reload">Reload</option>
+                    <option value="malfunction">Malfunction</option>
+                    <option value="note">Note</option>
+                  </select>
+                </label>
+                <label>After shot
+                  <select id="timing-event-after"></select>
+                </label>
+                <label>Before shot
+                  <select id="timing-event-before"></select>
+                </label>
+                <button id="add-timing-event" class="primary-button" type="button">Add Event</button>
+              </div>
               <div id="timing-workbench-table" class="data-table timing-workbench-table"></div>
+              <div id="timing-event-list" class="timing-event-list" aria-label="Timing event list"></div>
             </section>
           </section>
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context inspector">
+            <div class="section-header inspector-header">
+              <h3>Inspector</h3>
+              <button id="toggle-layout-lock-inspector" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock inspector layout">🔒</button>
+            </div>
             <section class="tool-pane" data-tool-pane="review">
               <div class="section-header">
                 <h3>Review</h3>
@@ -99,30 +120,48 @@
               <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
               <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
               <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
-              <label class="check-row"><input id="custom-box-enabled" type="checkbox" /> Custom review box</label>
-              <label>Custom box text
-                <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
-              </label>
-              <div class="control-grid">
-                <label>Box quadrant
-                  <select id="custom-box-quadrant">
-                    <option value="top_left">Top left</option>
-                    <option value="top_middle">Top middle</option>
-                    <option value="top_right">Top right</option>
-                    <option value="middle_left">Middle left</option>
-                    <option value="middle_middle">Middle middle</option>
-                    <option value="middle_right">Middle right</option>
-                    <option value="bottom_left">Bottom left</option>
-                    <option value="bottom_middle">Bottom middle</option>
-                    <option value="bottom_right">Bottom right</option>
-                  </select>
+              <div class="review-custom-box">
+                <label class="check-row"><input id="custom-box-enabled" type="checkbox" /> Custom review box</label>
+                <label>Custom box text
+                  <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
                 </label>
-                <label>Box X
-                  <input id="custom-box-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                </label>
-                <label>Box Y
-                  <input id="custom-box-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                </label>
+                <div class="control-grid">
+                  <label>Box quadrant
+                    <select id="custom-box-quadrant">
+                      <option value="top_left">Top left</option>
+                      <option value="top_middle">Top middle</option>
+                      <option value="top_right">Top right</option>
+                      <option value="middle_left">Middle left</option>
+                      <option value="middle_middle">Middle middle</option>
+                      <option value="middle_right">Middle right</option>
+                      <option value="bottom_left">Bottom left</option>
+                      <option value="bottom_middle">Bottom middle</option>
+                      <option value="bottom_right">Bottom right</option>
+                    </select>
+                  </label>
+                  <label>Box X
+                    <input id="custom-box-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                  <label>Box Y
+                    <input id="custom-box-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Box width
+                    <input id="custom-box-width" type="number" min="0" max="1000" step="1" value="0" />
+                  </label>
+                  <label>Box height
+                    <input id="custom-box-height" type="number" min="0" max="1000" step="1" value="0" />
+                  </label>
+                </div>
+                <div class="style-grid review-style-grid">
+                  <section class="style-card custom-box-style-card">
+                    <h4>Custom Box Style</h4>
+                    <label>Background <input id="custom-box-background-color" type="color" value="#000000" /></label>
+                    <label>Text <input id="custom-box-text-color" type="color" value="#ffffff" /></label>
+                    <label>Opacity <input id="custom-box-opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
+                  </section>
+                </div>
               </div>
             </section>
 
@@ -181,15 +220,6 @@
                 <small>Auto-applies</small>
               </div>
               <div class="control-grid">
-                <label>Position
-                  <select id="overlay-position">
-                    <option value="none">None</option>
-                    <option value="top">Top</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
                 <label>Badge size
                   <select id="badge-size">
                     <option>XS</option>
@@ -201,16 +231,19 @@
                 </label>
               </div>
               <div class="control-grid">
-                <label>Badge</label>
-                <div class="badge-style-controls">
+                <label>Badge style
                   <select id="overlay-style">
                     <option value="square">Square</option>
                     <option value="bubble">Bubble</option>
                     <option value="rounded">Rounded Bubble</option>
                   </select>
-                  <input id="overlay-spacing" type="number" min="0" max="40" step="2" value="8" placeholder="Spacing" />
-                  <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" placeholder="Margin" />
-                </div>
+                </label>
+                <label>Spacing
+                  <input id="overlay-spacing" type="number" min="0" max="40" step="2" value="8" />
+                </label>
+                <label>Margin
+                  <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" />
+                </label>
               </div>
               <div class="control-grid">
                 <label>Shots shown
@@ -227,6 +260,7 @@
                     <option value="bottom_left">Bottom left</option>
                     <option value="bottom_middle">Bottom middle</option>
                     <option value="bottom_right">Bottom right</option>
+                    <option value="custom">Custom</option>
                   </select>
                 </label>
                 <label>Direction
@@ -240,10 +274,10 @@
               </div>
               <div class="control-grid">
                 <label>Custom X
-                  <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
                 </label>
                 <label>Custom Y
-                  <input id="overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  <input id="overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
                 </label>
               </div>
               <div class="control-grid">
@@ -279,12 +313,14 @@
 
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">
-                <h3>Second Angle</h3>
+                <h3>Merge Media</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button class="primary-button" data-open-secondary type="button">Add Second Video</button>
+              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
+              <p id="merge-media-summary" class="hint">Add as many videos or images as you want. Multiple items export as a grid.</p>
+              <div id="merge-media-list" class="merge-media-list" aria-label="Merge media list"></div>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
-              <p class="hint">Use the selected secondary video to merge into the export. Flip positions or adjust the PiP size.</p>
+              <p class="hint">The first added item stays in the secondary preview. Extra items are included in the export grid automatically.</p>
               <label>Layout
                 <select id="merge-layout">
                   <option value="side_by_side">Side by side</option>
@@ -293,12 +329,19 @@
                 </select>
               </label>
               <label>PiP size
-                <select id="pip-size">
-                  <option value="25%">25%</option>
-                  <option value="35%">35%</option>
-                  <option value="50%">50%</option>
-                </select>
+                <div class="pip-size-control">
+                  <input id="pip-size" type="range" min="10" max="95" step="1" value="35" />
+                  <output id="pip-size-label">35%</output>
+                </div>
               </label>
+              <div class="control-grid pip-position-grid">
+                <label>PiP X
+                  <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                </label>
+                <label>PiP Y
+                  <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                </label>
+              </div>
               <div class="button-grid">
                 <button data-sync="-10" type="button">-10 ms</button>
                 <button data-sync="-1" type="button">-1 ms</button>
@@ -308,90 +351,16 @@
               <button id="swap-videos" type="button">Flip Merge Direction</button>
             </section>
 
-            <section class="tool-pane" data-tool-pane="layout">
+            <section class="tool-pane" data-tool-pane="export">
               <div class="section-header">
-                <h3>Layout</h3>
-                <small>Auto-applies</small>
+                <h3>Export</h3>
+                <small>Local video</small>
               </div>
-              <p class="hint">Consolidated composition controls. Pane-specific pages remain for detailed editing; these controls drive the same state.</p>
-              <div class="button-grid two-up">
-                <button id="reset-layout" type="button">Reset Layout</button>
-              </div>
-              <h3>Splits</h3>
-              <label>Detection threshold
-                <input id="layout-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
-              </label>
-              <h3>Score</h3>
-              <label class="check-row"><input id="layout-scoring-enabled" type="checkbox" /> Enable scoring</label>
               <label>Preset
-                <select id="layout-scoring-preset"></select>
+                <select id="export-preset"></select>
               </label>
-              <h3>Overlay</h3>
-              <div class="control-grid">
-                <label>Position
-                  <select id="layout-overlay-position">
-                    <option value="none">None</option>
-                    <option value="top">Top</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
-                <label>Badge size
-                  <select id="layout-badge-size">
-                    <option>XS</option>
-                    <option>S</option>
-                    <option>M</option>
-                    <option>L</option>
-                    <option>XL</option>
-                  </select>
-                </label>
-              </div>
-              <div class="control-grid">
-                <label>Shots shown
-                  <input id="layout-max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
-                </label>
-                <label>Quadrant
-                  <select id="layout-shot-quadrant">
-                    <option value="top_left">Top left</option>
-                    <option value="top_middle">Top middle</option>
-                    <option value="top_right">Top right</option>
-                    <option value="middle_left">Middle left</option>
-                    <option value="middle_middle">Middle middle</option>
-                    <option value="middle_right">Middle right</option>
-                    <option value="bottom_left">Bottom left</option>
-                    <option value="bottom_middle">Bottom middle</option>
-                    <option value="bottom_right">Bottom right</option>
-                  </select>
-                </label>
-                <label>Direction
-                  <select id="layout-shot-direction">
-                    <option value="right">Right</option>
-                    <option value="left">Left</option>
-                    <option value="down">Down</option>
-                    <option value="up">Up</option>
-                  </select>
-                </label>
-              </div>
-              <h3>Merge</h3>
-              <label class="check-row"><input id="layout-merge-enabled" type="checkbox" /> Enable second video preview/export</label>
-              <div class="control-grid">
-                <label>Layout
-                  <select id="layout-merge-layout">
-                    <option value="side_by_side">Side by side</option>
-                    <option value="above_below">Above / below</option>
-                    <option value="pip">Picture in picture</option>
-                  </select>
-                </label>
-                <label>PiP size
-                  <select id="layout-pip-size">
-                    <option value="25%">25%</option>
-                    <option value="35%">35%</option>
-                    <option value="50%">50%</option>
-                  </select>
-                </label>
-              </div>
-              <h3>Export Frame</h3>
+              <p id="export-preset-description" class="hint">Choose an export preset.</p>
+              <h3>Frame</h3>
               <label>Quality
                 <select id="quality">
                   <option value="high">High</option>
@@ -408,23 +377,14 @@
                   <option value="4:5">4:5</option>
                 </select>
               </label>
-              <label>Crop center X
-                <input id="crop-center-x" type="range" min="0" max="1" step="0.01" value="0.5" />
-              </label>
-              <label>Crop center Y
-                <input id="crop-center-y" type="range" min="0" max="1" step="0.01" value="0.5" />
-              </label>
-            </section>
-
-            <section class="tool-pane" data-tool-pane="export">
-              <div class="section-header">
-                <h3>Export</h3>
-                <small>Local MP4</small>
+              <div class="control-grid">
+                <label>Crop center X
+                  <input id="crop-center-x" type="range" min="0" max="1" step="0.01" value="0.5" />
+                </label>
+                <label>Crop center Y
+                  <input id="crop-center-y" type="range" min="0" max="1" step="0.01" value="0.5" />
+                </label>
               </div>
-              <label>Preset
-                <select id="export-preset"></select>
-              </label>
-              <p id="export-preset-description" class="hint">Choose an export preset.</p>
               <div class="control-grid">
                 <label>Width
                   <input id="target-width" type="number" min="2" step="2" placeholder="source" />
@@ -493,7 +453,8 @@
                   <button id="browse-export-path" type="button">Browse</button>
                 </div>
               </label>
-              <button id="export-video" class="primary-button" type="button">Export MP4</button>
+              <p class="hint">Supported export containers: MP4, M4V, MOV, and MKV. The output path extension selects the container.</p>
+              <button id="export-video" class="primary-button" type="button">Export Video</button>
               <pre id="export-log" class="export-log">No export log yet.</pre>
             </section>
 
@@ -502,20 +463,18 @@
                 <h3>Project</h3>
                 <span id="media-badge">No video selected</span>
               </div>
+              <label>Project name
+                <input id="project-name" placeholder="Untitled Project" />
+              </label>
+              <label>Project description
+                <textarea id="project-description" rows="5" placeholder="Summarize the stage, what the run is for, and any notes to save with the project."></textarea>
+              </label>
               <div class="project-path-row">
                 <label>Primary Video
                   <input id="primary-file-path" placeholder="/absolute/path/to/primary.mp4" />
                 </label>
                 <div class="path-actions">
                   <button id="browse-primary-path" class="primary-button" type="button">Open Primary Video</button>
-                </div>
-              </div>
-              <div class="project-path-row">
-                <label>Secondary Video
-                  <input id="secondary-file-path" placeholder="/absolute/path/to/secondary.mp4" />
-                </label>
-                <div class="path-actions">
-                  <button id="browse-secondary-path" type="button">Add Second Video</button>
                 </div>
               </div>
               <label>Project bundle path
@@ -536,6 +495,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260413b"></script>
   </body>
 </html>

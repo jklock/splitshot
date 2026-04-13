@@ -26,7 +26,8 @@ def test_main_window_switches_from_upload_to_review_after_primary_ingest(qtbot, 
     assert len(card_ids) == 3
     cards = sorted(window.findChildren(SplitCard), key=lambda card: card.data.title)
     draw_card = next(card for card in cards if card.data.title == "Draw")
-    assert "Beep to shot" in draw_card.data.meta
+    assert "Split" in draw_card.data.meta
+    assert "ShotML" in draw_card.data.meta
 
 
 def test_split_card_click_selects_shot_in_loaded_review(qtbot, synthetic_video_factory) -> None:

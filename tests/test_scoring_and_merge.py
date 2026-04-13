@@ -179,3 +179,16 @@ def test_merge_canvas_covers_layouts() -> None:
     assert pip.width == 640
     assert pip.secondary_rect is not None
     assert pip.secondary_rect.width < pip.width
+
+
+def test_merge_canvas_positions_pip_from_normalized_coordinates() -> None:
+    primary = VideoAsset(path="primary.mp4", width=640, height=360, fps=30.0)
+    secondary = VideoAsset(path="secondary.mp4", width=1280, height=720, fps=30.0)
+
+    top_left = calculate_merge_canvas(primary, secondary, MergeLayout.PIP, 35, 0.0, 0.0)
+    bottom_right = calculate_merge_canvas(primary, secondary, MergeLayout.PIP, 35, 1.0, 1.0)
+
+    assert top_left.secondary_rect is not None
+    assert bottom_right.secondary_rect is not None
+    assert top_left.secondary_rect.x < bottom_right.secondary_rect.x
+    assert top_left.secondary_rect.y < bottom_right.secondary_rect.y

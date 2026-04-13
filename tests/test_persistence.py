@@ -6,20 +6,38 @@ from splitshot.domain.models import (
     AspectRatio,
     ExportFrameRate,
     ExportPreset,
+    MergeLayout,
     OverlayPosition,
+    MergeSource,
     Project,
     ScoreLetter,
     ScoreMark,
     ShotEvent,
     ShotSource,
     VideoAsset,
+    project_from_dict,
+    project_to_dict,
 )
 from splitshot.persistence.projects import load_project, save_project
 
 
 def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project = Project(name="Round Trip")
+    project.description = "Project details and merge media should persist."
     project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    project.merge_sources = [
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-image.png",
+                duration_ms=0,
+                width=320,
+                height=180,
+                fps=30.0,
+                is_still_image=True,
+            )
+        )
+    ]
+    project.secondary_video = project.merge_sources[0].asset
     project.analysis.beep_time_ms_primary = 400
     project.analysis.waveform_primary = [0.1, 0.2, 0.3]
     project.analysis.shots = [
@@ -56,6 +74,10 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.overlay.custom_box_x = 0.5
     project.overlay.custom_box_y = 0.6
     project.merge.enabled = True
+    project.merge.layout = MergeLayout.PIP
+    project.merge.pip_size_percent = 50
+    project.merge.pip_x = 0.2
+    project.merge.pip_y = 0.8
     project.export.output_path = "/tmp/export.mp4"
     project.export.preset = ExportPreset.CUSTOM
     project.export.aspect_ratio = AspectRatio.PORTRAIT
@@ -69,7 +91,13 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     loaded = load_project(bundle)
 
     assert loaded.name == project.name
+    assert loaded.description == project.description
     assert loaded.primary_video.path == project.primary_video.path
+    assert len(loaded.merge_sources) == 1
+    assert loaded.merge_sources[0].asset.path == "/tmp/merge-image.png"
+    assert loaded.merge_sources[0].asset.is_still_image is True
+    assert loaded.secondary_video is not None
+    assert loaded.secondary_video.path == "/tmp/merge-image.png"
     assert loaded.analysis.beep_time_ms_primary == 400
     assert loaded.analysis.waveform_primary == [0.1, 0.2, 0.3]
     assert len(loaded.analysis.shots) == 1
@@ -101,6 +129,10 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.overlay.custom_box_x == 0.5
     assert loaded.overlay.custom_box_y == 0.6
     assert loaded.merge.enabled is True
+    assert loaded.merge.layout == MergeLayout.PIP
+    assert loaded.merge.pip_size_percent == 50
+    assert loaded.merge.pip_x == 0.2
+    assert loaded.merge.pip_y == 0.8
     assert loaded.export.output_path == "/tmp/export.mp4"
     assert loaded.export.preset == ExportPreset.CUSTOM
     assert loaded.export.aspect_ratio == AspectRatio.PORTRAIT
@@ -109,3 +141,27 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.export.frame_rate == ExportFrameRate.FPS_60
     assert loaded.export.video_bitrate_mbps == 20.0
     assert loaded.export.last_log == "Encoder command: ffmpeg"
+
+
+def test_project_from_dict_infers_still_image_merge_sources() -> None:
+    project = Project(name="Legacy Merge")
+    project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+
+    legacy = project_to_dict(project)
+    legacy["secondary_video"] = {
+        "path": "/tmp/merge-image.png",
+        "duration_ms": 0,
+        "width": 320,
+        "height": 180,
+        "fps": 30.0,
+        "audio_sample_rate": 22050,
+        "rotation": 0,
+    }
+
+    loaded = project_from_dict(legacy)
+
+    assert loaded.secondary_video is not None
+    assert loaded.secondary_video.is_still_image is True
+    assert len(loaded.merge_sources) == 1
+    assert loaded.merge_sources[0].asset.path == "/tmp/merge-image.png"
+    assert loaded.merge_sources[0].asset.is_still_image is True

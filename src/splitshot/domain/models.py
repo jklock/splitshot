@@ -107,6 +107,24 @@ class AspectRatio(StrEnum):
     PORTRAIT_45 = "4:5"
 
 
+_STILL_IMAGE_SUFFIXES = {
+    ".apng",
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".heif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".qoi",
+    ".svg",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+
+
 @dataclass(slots=True)
 class BadgeStyle:
     background_color: str = "#111827"
@@ -123,6 +141,7 @@ class VideoAsset:
     fps: float = 30.0
     audio_sample_rate: int = 22050
     rotation: int = 0
+    is_still_image: bool = False
 
     @property
     def path_obj(self) -> Path:
@@ -131,6 +150,12 @@ class VideoAsset:
     @property
     def size(self) -> tuple[int, int]:
         return self.width, self.height
+
+
+@dataclass(slots=True)
+class MergeSource:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    asset: VideoAsset = field(default_factory=VideoAsset)
 
 
 @dataclass(slots=True)
@@ -151,6 +176,16 @@ class ShotEvent:
 
 
 @dataclass(slots=True)
+class TimingEvent:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    kind: str = "reload"
+    label: str = "Reload"
+    after_shot_id: str | None = None
+    before_shot_id: str | None = None
+    note: str = ""
+
+
+@dataclass(slots=True)
 class AnalysisState:
     beep_time_ms_primary: int | None = None
     beep_time_ms_secondary: int | None = None
@@ -159,6 +194,7 @@ class AnalysisState:
     waveform_primary: list[float] = field(default_factory=list)
     waveform_secondary: list[float] = field(default_factory=list)
     shots: list[ShotEvent] = field(default_factory=list)
+    events: list[TimingEvent] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -208,6 +244,11 @@ class OverlaySettings:
     custom_box_quadrant: str = "top_right"
     custom_box_x: float | None = None
     custom_box_y: float | None = None
+    custom_box_background_color: str = "#000000"
+    custom_box_text_color: str = "#ffffff"
+    custom_box_opacity: float = 0.9
+    custom_box_width: int = 0
+    custom_box_height: int = 0
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
     shot_badge: BadgeStyle = field(
         default_factory=lambda: BadgeStyle(background_color="#1D4ED8")
@@ -245,6 +286,9 @@ class MergeSettings:
     enabled: bool = False
     layout: MergeLayout = MergeLayout.SIDE_BY_SIDE
     pip_size: PipSize = PipSize.MEDIUM
+    pip_size_percent: int = 35
+    pip_x: float = 1.0
+    pip_y: float = 1.0
     primary_is_left_or_top: bool = True
 
 
@@ -282,10 +326,12 @@ class UIState:
 class Project:
     id: str = field(default_factory=lambda: uuid4().hex)
     name: str = "Untitled Project"
+    description: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     primary_video: VideoAsset = field(default_factory=VideoAsset)
     secondary_video: VideoAsset | None = None
+    merge_sources: list[MergeSource] = field(default_factory=list)
     analysis: AnalysisState = field(default_factory=AnalysisState)
     scoring: ScoringState = field(default_factory=ScoringState)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
@@ -347,6 +393,30 @@ def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark | None:
     )
 
 
+def _path_looks_like_still_image(path: str) -> bool:
+    return Path(path).suffix.lower() in _STILL_IMAGE_SUFFIXES
+
+
+def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
+    payload = data or {}
+    asset_data = payload.get("asset", payload)
+    return MergeSource(
+        id=str(payload.get("id", uuid4().hex)),
+        asset=_video_from_dict(asset_data),
+    )
+
+
+def _timing_event_from_dict(data: dict[str, Any]) -> TimingEvent:
+    return TimingEvent(
+        id=str(data.get("id", uuid4().hex)),
+        kind=str(data.get("kind", "reload")),
+        label=str(data.get("label", data.get("kind", "Reload"))),
+        after_shot_id=None if data.get("after_shot_id") in {None, ""} else str(data["after_shot_id"]),
+        before_shot_id=None if data.get("before_shot_id") in {None, ""} else str(data["before_shot_id"]),
+        note=str(data.get("note", "")),
+    )
+
+
 def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
     return ShotEvent(
         id=str(data.get("id", uuid4().hex)),
@@ -359,14 +429,21 @@ def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
 
 def _video_from_dict(data: dict[str, Any] | None) -> VideoAsset:
     payload = data or {}
+    path = str(payload.get("path", ""))
+    still_image = payload.get("is_still_image")
+    if still_image is None:
+        still_image = _path_looks_like_still_image(path)
+    else:
+        still_image = bool(still_image) or _path_looks_like_still_image(path)
     return VideoAsset(
-        path=str(payload.get("path", "")),
+        path=path,
         duration_ms=int(payload.get("duration_ms", 0)),
         width=int(payload.get("width", 0)),
         height=int(payload.get("height", 0)),
         fps=float(payload.get("fps", 30.0)),
         audio_sample_rate=int(payload.get("audio_sample_rate", 22050)),
         rotation=int(payload.get("rotation", 0)),
+        is_still_image=bool(still_image),
     )
 
 
@@ -377,16 +454,32 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     export_data = data.get("export", {})
     ui_data = data.get("ui_state", {})
     analysis_data = data.get("analysis", {})
+    secondary_video = (
+        None if data.get("secondary_video") is None else _video_from_dict(data.get("secondary_video"))
+    )
+    merge_sources = [_merge_source_from_dict(item) for item in data.get("merge_sources", [])]
+    if not merge_sources and secondary_video is not None:
+        merge_sources = [MergeSource(asset=secondary_video)]
+    merge_pip_value = merge_data.get("pip_size", PipSize.MEDIUM.value)
+    if isinstance(merge_pip_value, PipSize):
+        merge_pip_enum = merge_pip_value
+    else:
+        merge_pip_enum = PipSize(str(merge_pip_value))
+    merge_pip_percent_default = {
+        PipSize.SMALL: 25,
+        PipSize.MEDIUM: 35,
+        PipSize.LARGE: 50,
+    }[merge_pip_enum]
 
     project = Project(
         id=str(data.get("id", uuid4().hex)),
         name=str(data.get("name", "Untitled Project")),
+        description=str(data.get("description", "")),
         created_at=datetime.fromisoformat(data.get("created_at", datetime.now(UTC).isoformat())),
         updated_at=datetime.fromisoformat(data.get("updated_at", datetime.now(UTC).isoformat())),
         primary_video=_video_from_dict(data.get("primary_video")),
-        secondary_video=(
-            None if data.get("secondary_video") is None else _video_from_dict(data.get("secondary_video"))
-        ),
+        secondary_video=secondary_video,
+        merge_sources=merge_sources,
         analysis=AnalysisState(
             beep_time_ms_primary=analysis_data.get("beep_time_ms_primary"),
             beep_time_ms_secondary=analysis_data.get("beep_time_ms_secondary"),
@@ -399,6 +492,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 float(item) for item in analysis_data.get("waveform_secondary", [])
             ],
             shots=[_shot_from_dict(item) for item in analysis_data.get("shots", [])],
+            events=[_timing_event_from_dict(item) for item in analysis_data.get("events", [])],
         ),
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", False)),
@@ -450,6 +544,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             custom_box_y=(
                 None if overlay_data.get("custom_box_y") in {None, ""} else float(overlay_data["custom_box_y"])
             ),
+            custom_box_background_color=str(overlay_data.get("custom_box_background_color", "#000000")),
+            custom_box_text_color=str(overlay_data.get("custom_box_text_color", "#ffffff")),
+            custom_box_opacity=float(overlay_data.get("custom_box_opacity", 0.9)),
+            custom_box_width=int(overlay_data.get("custom_box_width", 0)),
+            custom_box_height=int(overlay_data.get("custom_box_height", 0)),
             timer_badge=_badge_style_from_dict(overlay_data.get("timer_badge")),
             shot_badge=_badge_style_from_dict(overlay_data.get("shot_badge")),
             current_shot_badge=_badge_style_from_dict(overlay_data.get("current_shot_badge")),
@@ -465,7 +564,10 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         merge=MergeSettings(
             enabled=bool(merge_data.get("enabled", False)),
             layout=MergeLayout(merge_data.get("layout", MergeLayout.SIDE_BY_SIDE.value)),
-            pip_size=PipSize(merge_data.get("pip_size", PipSize.MEDIUM.value)),
+            pip_size=merge_pip_enum,
+            pip_size_percent=int(merge_data.get("pip_size_percent", merge_pip_percent_default)),
+            pip_x=float(merge_data.get("pip_x", 1.0)),
+            pip_y=float(merge_data.get("pip_y", 1.0)),
             primary_is_left_or_top=bool(merge_data.get("primary_is_left_or_top", True)),
         ),
         export=ExportSettings(
@@ -502,5 +604,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         ),
         schema_version=int(data.get("schema_version", 1)),
     )
+    if project.merge_sources:
+        project.secondary_video = project.merge_sources[0].asset
     project.sort_shots()
     return project

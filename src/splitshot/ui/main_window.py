@@ -99,7 +99,9 @@ class PreviewContainer(QWidget):
             project.primary_video,
             project.secondary_video,
             project.merge.layout,
-            project.merge.pip_size,
+            project.merge.pip_size_percent,
+            project.merge.pip_x,
+            project.merge.pip_y,
         )
         scale_x = self.width() / max(1, canvas.width)
         scale_y = self.height() / max(1, canvas.height)
