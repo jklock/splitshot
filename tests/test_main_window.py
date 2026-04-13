@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFileDialog
 
 from splitshot.ui.controller import ProjectController
 from splitshot.ui.main_window import MainWindow
@@ -47,3 +48,25 @@ def test_split_card_click_selects_shot_in_loaded_review(qtbot, synthetic_video_f
 
     assert controller.project.ui_state.selected_shot_id == cards[1].shot_id
     assert "Selected shot at" in window.scoring_target_label.text()
+
+
+def test_main_window_opens_project_bundle_via_directory_picker(qtbot, monkeypatch, tmp_path) -> None:
+    controller = ProjectController()
+    window = MainWindow(controller)
+    qtbot.addWidget(window)
+    window.show()
+
+    project_dir = tmp_path / "review.ssproj"
+    project_dir.mkdir()
+    opened_paths: list[str] = []
+    selected_sections: list[str] = []
+
+    monkeypatch.setattr(window, "_confirm_unsaved", lambda: True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args, **kwargs: str(project_dir))
+    monkeypatch.setattr(controller, "open_project", lambda path: opened_paths.append(path))
+    monkeypatch.setattr(window, "_select_section", lambda section_id: selected_sections.append(section_id))
+
+    window._open_project()
+
+    assert opened_paths == [str(project_dir)]
+    assert selected_sections == ["manage"]

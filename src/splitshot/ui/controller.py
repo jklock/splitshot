@@ -93,29 +93,13 @@ class ProjectController(QObject):
     def __init__(self) -> None:
         super().__init__()
         self.settings: AppSettings = load_settings()
-        self.project = Project()
-        self.project.analysis.detection_threshold = self.settings.detection_threshold
-        self.project.overlay.position = self.settings.overlay_position
-        self.project.merge.layout = self.settings.merge_layout
-        self.project.merge.pip_size = self.settings.pip_size
-        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        self.project.export.quality = self.settings.export_quality
-        self.project.overlay.badge_size = self.settings.badge_size
-        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        self.project = self._new_project_with_settings_defaults()
         self.project_path: Path | None = None
         self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
 
     def new_project(self) -> None:
-        self.project = Project()
-        self.project.analysis.detection_threshold = self.settings.detection_threshold
-        self.project.overlay.position = self.settings.overlay_position
-        self.project.merge.layout = self.settings.merge_layout
-        self.project.merge.pip_size = self.settings.pip_size
-        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        self.project.export.quality = self.settings.export_quality
-        self.project.overlay.badge_size = self.settings.badge_size
-        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        self.project = self._new_project_with_settings_defaults()
         self.project_path = None
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
@@ -230,6 +214,13 @@ class ProjectController(QObject):
         self.settings.detection_threshold = value
         save_settings(self.settings)
         self.settings_changed.emit()
+        if self.project.primary_video.path:
+            self.analyze_primary()
+            if self.project.secondary_video is not None and not self.project.secondary_video.is_still_image:
+                self.analyze_secondary()
+            return
+        self.project.touch()
+        self._set_status("Updated detection threshold.")
         self.project_changed.emit()
 
     def set_beep_time(self, time_ms: int) -> None:
@@ -601,6 +592,7 @@ class ProjectController(QObject):
             raise ValueError("Project path is required")
         self.project.touch()
         self.project_path = save_project(self.project, target_path)
+        self.project = load_project(self.project_path)
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_project(self.project_path)
         self._set_status(f"Saved project to {self.project_path}.")
@@ -648,6 +640,18 @@ class ProjectController(QObject):
         self.settings.recent_projects = entries[:10]
         save_settings(self.settings)
         self.settings_changed.emit()
+
+    def _new_project_with_settings_defaults(self) -> Project:
+        project = Project()
+        project.analysis.detection_threshold = self.settings.detection_threshold
+        project.overlay.position = self.settings.overlay_position
+        project.merge.layout = self.settings.merge_layout
+        project.merge.pip_size = self.settings.pip_size
+        project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
+        project.export.quality = self.settings.export_quality
+        project.overlay.badge_size = self.settings.badge_size
+        project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        return project
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

@@ -14,13 +14,13 @@
           <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
-          <button class="tool-item" data-tool="project" type="button"><b>Project</b></button>
-          <button class="tool-item active" data-tool="timing" type="button"><b>Splits</b></button>
-          <button class="tool-item" data-tool="scoring" type="button"><b>Score</b></button>
-          <button class="tool-item" data-tool="overlay" type="button"><b>Overlay</b></button>
-          <button class="tool-item" data-tool="merge" type="button"><b>Merge</b></button>
-          <button class="tool-item" data-tool="review" type="button"><b>Review</b></button>
-          <button class="tool-item" data-tool="export" type="button"><b>Export</b></button>
+          <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
+          <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
+          <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
+          <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
+          <button class="tool-item" data-tool="merge" type="button" aria-label="Show merge tool"><b>Merge</b></button>
+          <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
+          <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
         </nav>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
@@ -72,8 +72,8 @@
                 <button id="amp-waveform-out" type="button">Amp -</button>
                 <button id="amp-waveform-in" type="button">Amp +</button>
                 <button id="reset-waveform-view" type="button">Reset</button>
-                <button class="mode-button active" data-waveform-mode="select" type="button">Select</button>
-                <button class="mode-button" data-waveform-mode="add" type="button">Add Shot</button>
+                <button class="mode-button active" data-waveform-mode="select" type="button" aria-label="Use waveform select mode">Select</button>
+                <button class="mode-button" data-waveform-mode="add" type="button" aria-label="Use waveform add shot mode">Add Shot</button>
                 <button id="expand-waveform" type="button">Expand</button>
               </div>
               <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
@@ -182,10 +182,10 @@
                 </div>
                 <p id="selected-shot-copy">No shot selected.</p>
                 <div class="button-grid">
-                  <button data-nudge="-10" type="button">-10 ms</button>
-                  <button data-nudge="-1" type="button">-1 ms</button>
-                  <button data-nudge="1" type="button">+1 ms</button>
-                  <button data-nudge="10" type="button">+10 ms</button>
+                  <button data-nudge="-10" type="button" aria-label="Move selected shot earlier by 10 milliseconds">-10 ms</button>
+                  <button data-nudge="-1" type="button" aria-label="Move selected shot earlier by 1 millisecond">-1 ms</button>
+                  <button data-nudge="1" type="button" aria-label="Move selected shot later by 1 millisecond">+1 ms</button>
+                  <button data-nudge="10" type="button" aria-label="Move selected shot later by 10 milliseconds">+10 ms</button>
                 </div>
                 <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
               </section>
@@ -316,7 +316,7 @@
                 <h3>Merge Media</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
+              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Merge Media</button>
               <p id="merge-media-summary" class="hint">Add as many videos or images as you want. Multiple items export as a grid.</p>
               <div id="merge-media-list" class="merge-media-list" aria-label="Merge media list"></div>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
@@ -343,12 +343,12 @@
                 </label>
               </div>
               <div class="button-grid">
-                <button data-sync="-10" type="button">-10 ms</button>
-                <button data-sync="-1" type="button">-1 ms</button>
-                <button data-sync="1" type="button">+1 ms</button>
-                <button data-sync="10" type="button">+10 ms</button>
+                <button data-sync="-10" type="button" aria-label="Adjust merge sync earlier by 10 milliseconds">-10 ms</button>
+                <button data-sync="-1" type="button" aria-label="Adjust merge sync earlier by 1 millisecond">-1 ms</button>
+                <button data-sync="1" type="button" aria-label="Adjust merge sync later by 1 millisecond">+1 ms</button>
+                <button data-sync="10" type="button" aria-label="Adjust merge sync later by 10 milliseconds">+10 ms</button>
               </div>
-              <button id="swap-videos" type="button">Flip Merge Direction</button>
+              <button id="swap-videos" type="button">Swap Primary and First Merge</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
@@ -474,7 +474,7 @@
                   <input id="primary-file-path" placeholder="/absolute/path/to/primary.mp4" />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Open Primary Video</button>
+                  <button id="browse-primary-path" class="primary-button" type="button">Upload Primary Video</button>
                 </div>
               </div>
               <label>Project bundle path
@@ -495,6 +495,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260413c"></script>
+    <script src="/static/app.js?v=20260413d"></script>
   </body>
 </html>

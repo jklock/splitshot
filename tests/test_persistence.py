@@ -165,3 +165,32 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert len(loaded.merge_sources) == 1
     assert loaded.merge_sources[0].asset.path == "/tmp/merge-image.png"
     assert loaded.merge_sources[0].asset.is_still_image is True
+
+
+def test_save_project_bundles_browser_session_media_into_project_bundle(tmp_path: Path) -> None:
+    session_dir = tmp_path / "splitshot-browser-session"
+    session_dir.mkdir()
+    primary_path = session_dir / "1234567890abcdef1234567890abcdef_primary.mp4"
+    merge_path = session_dir / "fedcba0987654321fedcba0987654321_merge.mp4"
+    primary_path.write_bytes(b"primary-video")
+    merge_path.write_bytes(b"merge-video")
+
+    project = Project(name="Bundled Browser Media")
+    project.primary_video = VideoAsset(path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0)
+    merge_asset = VideoAsset(path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0)
+    project.merge_sources = [MergeSource(asset=merge_asset)]
+    project.secondary_video = merge_asset
+
+    bundle = save_project(project, tmp_path / "bundled.ssproj")
+    loaded = load_project(bundle)
+
+    assert project.primary_video.path == str(primary_path)
+    assert project.merge_sources[0].asset.path == str(merge_path)
+    assert loaded.primary_video.path != str(primary_path)
+    assert loaded.merge_sources[0].asset.path != str(merge_path)
+    assert Path(loaded.primary_video.path).parent == bundle / "media"
+    assert Path(loaded.merge_sources[0].asset.path).parent == bundle / "media"
+    assert Path(loaded.primary_video.path).read_bytes() == b"primary-video"
+    assert Path(loaded.merge_sources[0].asset.path).read_bytes() == b"merge-video"
+    assert loaded.secondary_video is not None
+    assert loaded.secondary_video.path == loaded.merge_sources[0].asset.path

@@ -12,7 +12,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260413b"' in html
-    assert 'src="/static/app.js?v=20260413c"' in html
+    assert 'src="/static/app.js?v=20260413d"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'class="tool-rail"' in html
@@ -65,13 +65,15 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Start here" not in html
     assert "SplitShot analyzes" not in html
     assert "No cloud transfer" not in html
-    assert "upload" not in html.lower()
+    assert "cloud upload" not in html.lower()
     assert "Add Second Angle" not in html
     assert "Add Second Video" not in html
-    assert "Add Media" in html
+    assert "Add Merge Media" in html
     assert 'id="merge-media-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
+    assert "Swap Primary and First Merge" in html
+    assert "Upload Primary Video" in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
     assert 'id="layout-threshold"' not in html
@@ -112,6 +114,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="waveform-shot-list"' in html
     assert 'id="timing-workbench"' in html
     assert 'id="expand-timing"' in html
+    assert 'aria-label="Use waveform select mode"' in html
+    assert 'aria-label="Use waveform add shot mode"' in html
     assert 'id="selected-shot-copy"' in html
     assert html.index('id="timing-table"') > html.index('id="selected-shot-panel"')
     assert html.index('waveform-header') < html.index('id="waveform"')
@@ -125,6 +129,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="add-merge-media"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
+    assert 'aria-label="Move selected shot earlier by 10 milliseconds"' in html
+    assert 'aria-label="Adjust merge sync later by 10 milliseconds"' in html
     assert 'id="max-visible-shots"' in html
     assert 'id="shot-quadrant"' in html
     assert '<option value="custom">Custom</option>' in html
@@ -164,12 +170,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "/api/export/settings" in js
     assert "/api/export/preset" in js
     assert "/api/activity" in js
+    assert 'activity("api.refresh", {})' in js
+    assert 'if (!response.ok || data.error) throw new Error(data.error || response.statusText);' in js
+    assert 'throw new Error("Received invalid project state from the local server.");' in js
     assert 'activity("button.click"' in js
     assert "wireGlobalActivityLogging" in js
     assert "document.addEventListener(\"click\"" in js
     assert "handleWaveformPointerDown" in js
     assert "handleWaveformPointerMove" in js
     assert "handleKeyboardEdit" in js
+    assert "scheduleSecondaryPreviewSync" in js
     assert "autoApplyThreshold" in js
     assert "autoApplyOverlay" in js
     assert "autoApplyMerge" in js
@@ -184,13 +194,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "syncExportPathControl" in js
     assert "syncOverlayPreviewStateFromControls" in js
     assert "syncMergePreviewStateFromControls" in js
+    assert "controlIsActive" in js
+    assert "syncControlValue" in js
     assert "importTypedPath" in js
     assert "syncSecondaryPreview" in js
+    assert "replaceAll(" not in js
     assert "merge-preview" in js
     assert 'pickPath("primary", "primary-file-path", async (path)' in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' not in js
     assert 'pickPath("project_open", "project-path", async (path)' in js
     assert 'pickPath("project_save", "project-path"' in js
+    assert 'const path = $("project-path").value.trim();' in js
+    assert 'const kind = currentPath ? "project_open" : "project_save";' in js
     assert "saveProjectFlow" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
     assert 'const existingPath = $("project-path").value.trim();' in js
@@ -224,6 +239,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";' in js
     assert 'if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";' in js
     assert 'function splitSeconds(ms)' in js
+    assert 'grid.querySelectorAll(".style-card[data-badge]")' in js
+    assert 'scoreGrid.querySelectorAll(".score-color-input[data-letter]")' in js
     assert 'const FINAL_SHOT_FLASH_HALF_PERIOD_MS' not in js
     assert 'const FINAL_SHOT_FLASH_CYCLES' not in js
     assert 'const FINAL_SHOT_FLASH_DURATION_MS' not in js
@@ -345,6 +362,9 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'document.addEventListener("pointermove", moveLayoutResize);' in js
     assert 'document.addEventListener("pointerup", endLayoutResize);' in js
     assert 'document.addEventListener("pointercancel", endLayoutResize);' in js
+    assert 'document.addEventListener("pointermove", handleWaveformPointerMove);' in js
+    assert 'document.addEventListener("pointerup", handleWaveformPointerUp);' in js
+    assert 'document.addEventListener("pointercancel", handleWaveformPointerUp);' in js
     assert 'releasePointer(activeResize.target, activeResize.pointerId);' in js
     assert '["loadedmetadata", "loadeddata"].forEach((eventName) => {' in js
 
