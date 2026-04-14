@@ -83,7 +83,7 @@ def _import_idpa(
         last_name_key="Last Name",
     )
     stage_prefix = f"Stage {stage_number}"
-    raw_seconds = _required_float(row.get(f"{stage_prefix} Time"), f"{stage_prefix} Time")
+    final_time = _required_float(row.get(f"{stage_prefix} Time"), f"{stage_prefix} Time")
     points_down = _float_or_zero(row.get(f"{stage_prefix} PD"))
     non_threats = _float_or_zero(row.get(f"{stage_prefix} Hits on Non-Threat"))
     procedural_errors = _float_or_zero(row.get(f"{stage_prefix} Procedural Error"))
@@ -101,10 +101,11 @@ def _import_idpa(
         }.items()
         if value
     }
-    final_time = raw_seconds + points_down + sum(
+    other_penalties = sum(
         IDPA_PENALTY_SECONDS[key] * value
         for key, value in penalty_counts.items()
     )
+    raw_seconds = max(0.0, final_time - points_down - other_penalties)
     imported_stage = ImportedStageScore(
         source_name=source_name,
         source_path=str(path),
@@ -305,7 +306,7 @@ def _float_or_zero(value: str | None) -> float:
 def _float_or_none(value: str | None) -> float | None:
     if value in {None, ""}:
         return None
-    return float(str(value).strip())
+    return float(str(value).strip().replace(",", ""))
 
 
 def _required_float(value: str | None, label: str) -> float:

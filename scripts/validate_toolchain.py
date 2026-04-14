@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import shutil
 import subprocess
 from importlib import resources
-from pathlib import Path
 
 from splitshot.media.ffmpeg import resolve_media_binary
 
@@ -33,16 +31,8 @@ def main() -> None:
             raise SystemExit(f"Missing browser asset: {asset}")
         checks.append((f"browser:{asset}", "present"))
 
-    for script in ("packaging/build_macos.sh", "packaging/build_windows.ps1", "packaging/splitshot.spec"):
-        path = Path(script)
-        if not path.exists():
-            raise SystemExit(f"Missing packaging file: {script}")
-        checks.append((script, "present"))
-
-    if shutil.which("hdiutil"):
-        checks.append(("macOS dmg tool", "hdiutil present"))
-    else:
-        checks.append(("macOS dmg tool", "hdiutil not present on this platform"))
+    ffmpeg_resources = resources.files("splitshot.resources") / "ffmpeg"
+    checks.append(("resources:ffmpeg", "present" if ffmpeg_resources.is_dir() else "missing"))
 
     print("SplitShot toolchain validation")
     for name, result in checks:

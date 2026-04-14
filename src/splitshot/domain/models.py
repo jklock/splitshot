@@ -156,6 +156,8 @@ class VideoAsset:
 class MergeSource:
     id: str = field(default_factory=lambda: uuid4().hex)
     asset: VideoAsset = field(default_factory=VideoAsset)
+    pip_x: float = 1.0
+    pip_y: float = 1.0
 
 
 @dataclass(slots=True)
@@ -164,6 +166,7 @@ class ScoreMark:
     x_norm: float = 0.5
     y_norm: float = 0.5
     animation_preset: str = "fade_scale"
+    penalty_counts: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -257,6 +260,12 @@ class OverlaySettings:
     shot_direction: str = "right"
     custom_x: float | None = None
     custom_y: float | None = None
+    timer_x: float | None = None
+    timer_y: float | None = None
+    draw_x: float | None = None
+    draw_y: float | None = None
+    score_x: float | None = None
+    score_y: float | None = None
     bubble_width: int = 0
     bubble_height: int = 0
     font_family: str = "Helvetica Neue"
@@ -419,6 +428,10 @@ def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark | None:
         x_norm=float(data.get("x_norm", 0.5)),
         y_norm=float(data.get("y_norm", 0.5)),
         animation_preset=str(data.get("animation_preset", "fade_scale")),
+        penalty_counts={
+            str(key): float(value)
+            for key, value in data.get("penalty_counts", {}).items()
+        },
     )
 
 
@@ -473,6 +486,8 @@ def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
     return MergeSource(
         id=str(payload.get("id", uuid4().hex)),
         asset=_video_from_dict(asset_data),
+        pip_x=float(payload.get("pip_x", 1.0)),
+        pip_y=float(payload.get("pip_y", 1.0)),
     )
 
 
@@ -607,6 +622,24 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             custom_y=(
                 None if overlay_data.get("custom_y") in {None, ""} else float(overlay_data["custom_y"])
+            ),
+            timer_x=(
+                None if overlay_data.get("timer_x") in {None, ""} else float(overlay_data["timer_x"])
+            ),
+            timer_y=(
+                None if overlay_data.get("timer_y") in {None, ""} else float(overlay_data["timer_y"])
+            ),
+            draw_x=(
+                None if overlay_data.get("draw_x") in {None, ""} else float(overlay_data["draw_x"])
+            ),
+            draw_y=(
+                None if overlay_data.get("draw_y") in {None, ""} else float(overlay_data["draw_y"])
+            ),
+            score_x=(
+                None if overlay_data.get("score_x") in {None, ""} else float(overlay_data["score_x"])
+            ),
+            score_y=(
+                None if overlay_data.get("score_y") in {None, ""} else float(overlay_data["score_y"])
             ),
             bubble_width=int(overlay_data.get("bubble_width", 0)),
             bubble_height=int(overlay_data.get("bubble_height", 0)),

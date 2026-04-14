@@ -34,17 +34,40 @@ def _format_split_seconds(value_ms: int) -> str:
 
 
 class OverlayRenderer:
-    def build_badges(self, project: Project, position_ms: int) -> tuple[list[Badge], list[tuple[str, float, float, float]]]:
+    def build_badges(
+        self,
+        project: Project,
+        position_ms: int,
+    ) -> tuple[list[Badge], list[tuple[str, float, float, float]]]:
+        badges, positioned_badges, score_marks = self._build_badges_with_positions(project, position_ms)
+        return badges + [badge for badge, _x, _y in positioned_badges], score_marks
+
+    def _build_badges_with_positions(
+        self,
+        project: Project,
+        position_ms: int,
+    ) -> tuple[list[Badge], list[tuple[Badge, float, float]], list[tuple[str, float, float, float]]]:
         current_index = current_shot_index(project, position_ms)
         shots = project.analysis.shots
         badges: list[Badge] = []
+        positioned_badges: list[tuple[Badge, float, float]] = []
+
+        def append_badge(badge: Badge, x: float | None = None, y: float | None = None) -> None:
+            if x is not None and y is not None:
+                positioned_badges.append((badge, x, y))
+                return
+            badges.append(badge)
 
         beep_time = project.analysis.beep_time_ms_primary
         elapsed = max(0, position_ms - beep_time) if beep_time is not None else position_ms
         if beep_time is not None and shots:
             elapsed = min(elapsed, max(0, shots[-1].time_ms - beep_time))
         if project.overlay.show_timer:
-            badges.append(Badge(f"Timer {format_time_ms(elapsed)}", project.overlay.timer_badge))
+            append_badge(
+                Badge(f"Timer {format_time_ms(elapsed)}", project.overlay.timer_badge),
+                project.overlay.timer_x,
+                project.overlay.timer_y,
+            )
 
         draw_value = draw_time_ms(project)
         first_shot_time = None if not shots else shots[0].time_ms
@@ -54,7 +77,11 @@ class OverlayRenderer:
             and first_shot_time is not None
             and position_ms < first_shot_time
         ):
-            badges.append(Badge(f"Draw {format_time_ms(draw_value)}", project.overlay.shot_badge))
+            append_badge(
+                Badge(f"Draw {format_time_ms(draw_value)}", project.overlay.shot_badge),
+                project.overlay.draw_x,
+                project.overlay.draw_y,
+            )
 
         final_shot_time = None if not shots else shots[-1].time_ms
         final_shot_reached = final_shot_time is not None and position_ms >= final_shot_time
@@ -82,16 +109,18 @@ class OverlayRenderer:
         if final_shot_reached and project.scoring.enabled and project.overlay.show_score:
             summary = calculate_scoring_summary(project)
             if summary["display_value"] != "--":
-                badges.append(
+                append_badge(
                     Badge(
                         f"{summary['display_label']} {summary['display_value']}",
                         project.overlay.hit_factor_badge,
-                    )
+                    ),
+                    project.overlay.score_x,
+                    project.overlay.score_y,
                 )
 
         score_marks: list[tuple[str, float, float, float]] = []
 
-        return badges, score_marks
+        return badges, positioned_badges, score_marks
 
     @staticmethod
     def _custom_box_text(project: Project, position_ms: int) -> str:
@@ -114,8 +143,19 @@ class OverlayRenderer:
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
 
-        badges, score_marks = self.build_badges(project, position_ms)
+        badges, positioned_badges, score_marks = self._build_badges_with_positions(project, position_ms)
         self._paint_badges(painter, badges, project, width, height)
+        for badge, x, y in positioned_badges:
+            self._paint_badges(
+                painter,
+                [badge],
+                project,
+                width,
+                height,
+                quadrant="custom",
+                custom_x=x,
+                custom_y=y,
+            )
         custom_box_text = self._custom_box_text(project, position_ms)
         if custom_box_text:
             custom_style = BadgeStyle(

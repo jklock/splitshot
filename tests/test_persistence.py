@@ -46,7 +46,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             time_ms=800,
             source=ShotSource.MANUAL,
             confidence=1.0,
-            score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8),
+            score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
         )
     ]
     project.scoring.enabled = True
@@ -80,6 +80,12 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.overlay.shot_direction = "down"
     project.overlay.custom_x = 0.2
     project.overlay.custom_y = 0.3
+    project.overlay.timer_x = 0.15
+    project.overlay.timer_y = 0.1
+    project.overlay.draw_x = 0.82
+    project.overlay.draw_y = 0.12
+    project.overlay.score_x = 0.8
+    project.overlay.score_y = 0.2
     project.overlay.bubble_width = 120
     project.overlay.bubble_height = 52
     project.overlay.font_family = "Verdana"
@@ -124,6 +130,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert len(loaded.analysis.shots) == 1
     assert loaded.analysis.shots[0].score is not None
     assert loaded.analysis.shots[0].score.letter == ScoreLetter.C
+    assert loaded.analysis.shots[0].score.penalty_counts == {"procedural_errors": 1}
     assert loaded.scoring.enabled is True
     assert loaded.scoring.match_type == "idpa"
     assert loaded.scoring.stage_number == 2
@@ -145,6 +152,12 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.overlay.shot_direction == "down"
     assert loaded.overlay.custom_x == 0.2
     assert loaded.overlay.custom_y == 0.3
+    assert loaded.overlay.timer_x == 0.15
+    assert loaded.overlay.timer_y == 0.1
+    assert loaded.overlay.draw_x == 0.82
+    assert loaded.overlay.draw_y == 0.12
+    assert loaded.overlay.score_x == 0.8
+    assert loaded.overlay.score_y == 0.2
     assert loaded.overlay.bubble_width == 120
     assert loaded.overlay.bubble_height == 52
     assert loaded.overlay.font_family == "Verdana"

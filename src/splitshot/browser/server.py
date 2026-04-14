@@ -26,7 +26,7 @@ from splitshot.domain.models import (
     Project,
     ScoreLetter,
 )
-from splitshot.export.pipeline import export_project
+from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.ui.controller import ProjectController
 
 
@@ -233,6 +233,7 @@ class BrowserControlServer:
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
         self._display_names: dict[str, str] = {}
+        prepare_export_runtime()
         self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
     @property
@@ -311,6 +312,9 @@ class BrowserControlServer:
                         return
                     self._send_media(Path(controller.project.secondary_video.path))
                     return
+                if request_path.startswith("/media/merge/"):
+                    self._send_merge_media(request_path.removeprefix("/media/merge/"))
+                    return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
             def do_POST(self) -> None:  # noqa: N802
@@ -356,11 +360,11 @@ class BrowserControlServer:
                     "/api/events/add": self._add_event,
                     "/api/events/delete": self._delete_event,
                     "/api/merge/remove": self._remove_merge_source,
+                    "/api/merge/source": self._set_merge_source,
                     "/api/overlay": self._set_overlay,
                     "/api/merge": self._set_merge,
                     "/api/sync": self._set_sync,
                     "/api/swap": self._swap_videos,
-                    "/api/layout": self._set_layout,
                     "/api/export/settings": self._set_export_settings,
                     "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
@@ -529,6 +533,14 @@ class BrowserControlServer:
                         remaining -= len(chunk)
                 activity.log("media.complete", path=str(path), bytes=content_length)
 
+            def _send_merge_media(self, source_id: str) -> None:
+                source = next((item for item in controller.project.merge_sources if item.id == source_id), None)
+                if source is None or not source.asset.path:
+                    activity.log("media.missing", source_id=source_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self._send_media(Path(source.asset.path))
+
             def _record_browser_activity(self) -> None:
                 try:
                     payload = self._read_json()
@@ -536,9 +548,18 @@ class BrowserControlServer:
                     activity.log("browser.activity.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                     return
-                event = str(payload.get("event", "browser.event"))
-                detail = payload.get("detail", {})
-                activity.log("browser.activity", browser_event=event, detail=detail)
+                entries = payload.get("entries")
+                if isinstance(entries, list):
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        event = str(entry.get("event", "browser.event"))
+                        detail = entry.get("detail", {})
+                        activity.log("browser.activity", browser_event=event, detail=detail, browser_ts=entry.get("ts"))
+                else:
+                    event = str(payload.get("event", "browser.event"))
+                    detail = payload.get("detail", {})
+                    activity.log("browser.activity", browser_event=event, detail=detail)
                 self._send_json({"ok": True})
 
             def _save_uploaded_file(self) -> Path:
@@ -759,7 +780,20 @@ class BrowserControlServer:
                 controller.set_scoring_preset(str(payload["ruleset"]))
 
             def _assign_score(self, payload: dict[str, Any]) -> None:
-                controller.assign_score(str(payload["shot_id"]), ScoreLetter(str(payload["letter"])))
+                letter_value = payload.get("letter")
+                penalty_counts = payload.get("penalty_counts")
+                if letter_value in {None, ""} and penalty_counts is None:
+                    raise ValueError("letter or penalty_counts is required")
+                controller.assign_score(
+                    str(payload["shot_id"]),
+                    None if letter_value in {None, ""} else ScoreLetter(str(letter_value)),
+                    None
+                    if penalty_counts is None
+                    else {
+                        str(key): float(value)
+                        for key, value in dict(penalty_counts).items()
+                    },
+                )
 
             def _set_score_position(self, payload: dict[str, Any]) -> None:
                 controller.set_score_position(
@@ -780,7 +814,11 @@ class BrowserControlServer:
                 )
                 controller.set_overlay_display_options(payload)
                 styles = payload.get("styles", {})
+                if not isinstance(styles, dict):
+                    raise ValueError("styles must be an object")
                 for badge_name, style in styles.items():
+                    if not isinstance(style, dict):
+                        raise ValueError(f"Overlay style for {badge_name} must be an object")
                     controller.set_overlay_badge_style(
                         str(badge_name),
                         background_color=style.get("background_color"),
@@ -804,6 +842,16 @@ class BrowserControlServer:
                         None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                         None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     )
+
+            def _set_merge_source(self, payload: dict[str, Any]) -> None:
+                source_id = payload.get("source_id") or payload.get("id")
+                if source_id in {None, ""}:
+                    raise ValueError("source_id is required")
+                controller.set_merge_source_position(
+                    str(source_id),
+                    None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
+                    None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
+                )
 
             def _add_event(self, payload: dict[str, Any]) -> None:
                 controller.add_timing_event(
@@ -829,9 +877,6 @@ class BrowserControlServer:
             def _swap_videos(self, payload: dict[str, Any]) -> None:
                 controller.swap_videos()
 
-            def _set_layout(self, payload: dict[str, Any]) -> None:
-                controller.set_export_settings(payload)
-
             def _set_export_settings(self, payload: dict[str, Any]) -> None:
                 controller.set_export_settings(payload)
 
@@ -848,6 +893,8 @@ class BrowserControlServer:
                     progress_callback=lambda value: activity.log("api.export.progress", progress=value),
                     log_callback=lambda line: activity.log("api.export.log", line=line),
                 )
+                if not exported_path.exists() or exported_path.stat().st_size <= 0:
+                    raise RuntimeError("Export did not produce an output file.")
                 controller.project.export.output_path = str(exported_path)
                 activity.log(
                     "api.export.complete",

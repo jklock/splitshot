@@ -25,8 +25,20 @@ let exportPathDraft = "";
 let secondaryPreviewSyncFrame = null;
 let secondaryPreviewPlayErrorKey = null;
 let overlayColorCommitTimer = null;
+let processingBarShowTimer = null;
+let processingBarHideTimer = null;
+let processingBarVisibleAtMs = 0;
+let pendingMergeMediaAutoOpen = false;
+let activityQueue = [];
+let activityFlushTimer = null;
+let overlayBadgeDrag = null;
+let mergePreviewDrag = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
+const PROCESSING_BAR_SHOW_DELAY_MS = 180;
+const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
+const ACTIVITY_FLUSH_DELAY_MS = 160;
+const ACTIVITY_BATCH_SIZE = 48;
 
 const $ = (id) => document.getElementById(id);
 
@@ -36,6 +48,30 @@ const badgeControls = [
   ["current_shot_badge", "Current Shot Badge"],
   ["hit_factor_badge", "Score Badge"],
 ];
+const VALID_OVERLAY_BADGE_NAMES = new Set(badgeControls.map(([badgeName]) => badgeName));
+const REVIEW_OVERLAY_MIRROR_MAP = {
+  "review-badge-size": "badge-size",
+  "review-overlay-style": "overlay-style",
+  "review-overlay-spacing": "overlay-spacing",
+  "review-overlay-margin": "overlay-margin",
+  "review-max-visible-shots": "max-visible-shots",
+  "review-shot-quadrant": "shot-quadrant",
+  "review-shot-direction": "shot-direction",
+  "review-overlay-custom-x": "overlay-custom-x",
+  "review-overlay-custom-y": "overlay-custom-y",
+  "review-timer-x": "timer-x",
+  "review-timer-y": "timer-y",
+  "review-draw-x": "draw-x",
+  "review-draw-y": "draw-y",
+  "review-score-x": "score-x",
+  "review-score-y": "score-y",
+  "review-bubble-width": "bubble-width",
+  "review-bubble-height": "bubble-height",
+  "review-overlay-font-family": "overlay-font-family",
+  "review-overlay-font-size": "overlay-font-size",
+  "review-overlay-font-bold": "overlay-font-bold",
+  "review-overlay-font-italic": "overlay-font-italic",
+};
 const BADGE_FONT_SIZES = {
   XS: 10,
   S: 12,
@@ -45,17 +81,40 @@ const BADGE_FONT_SIZES = {
 };
 const CUSTOM_QUADRANT_VALUE = "custom";
 
-function activity(event, detail = {}) {
-  const payload = { event, detail };
-  console.info("[splitshot]", event, detail);
+function flushActivityQueue() {
+  if (activityFlushTimer !== null) {
+    window.clearTimeout(activityFlushTimer);
+    activityFlushTimer = null;
+  }
+  if (activityQueue.length === 0) return;
+  const entries = activityQueue;
+  activityQueue = [];
   fetch("/api/activity", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ entries }),
     keepalive: true,
   }).catch((error) => {
     console.warn("[splitshot] activity log failed", error);
   });
+}
+
+function queueActivity(event, detail = {}) {
+  activityQueue.push({ event, detail, ts: new Date().toISOString() });
+  if (activityQueue.length >= ACTIVITY_BATCH_SIZE) {
+    flushActivityQueue();
+    return;
+  }
+  if (activityFlushTimer !== null) return;
+  activityFlushTimer = window.setTimeout(() => {
+    activityFlushTimer = null;
+    flushActivityQueue();
+  }, ACTIVITY_FLUSH_DELAY_MS);
+}
+
+function activity(event, detail = {}) {
+  console.info("[splitshot]", event, detail);
+  queueActivity(event, detail);
 }
 
 function buttonDescriptor(button) {
@@ -87,6 +146,18 @@ function wireGlobalActivityLogging() {
       name: control.name || "",
       type: control.type || control.tagName.toLowerCase(),
       value: control.type === "file" ? Array.from(control.files || []).map((file) => file.name) : control.value,
+    });
+  }, true);
+  document.addEventListener("input", (event) => {
+    if (!(event.target instanceof HTMLElement)) return;
+    const control = event.target;
+    if (!["INPUT", "TEXTAREA"].includes(control.tagName)) return;
+    if (control.type === "file") return;
+    activity("control.input", {
+      id: control.id || "",
+      name: control.name || "",
+      type: control.type || control.tagName.toLowerCase(),
+      value: control.value,
     });
   }, true);
 }
@@ -127,6 +198,55 @@ function formatImportedCounts(scoreCounts) {
     .filter(([, value]) => Number(value || 0) !== 0)
     .map(([label, value]) => `${label} ${formatNumber(value, 2)}`)
     .join(", ");
+}
+
+function penaltyFieldLabel(fieldId, fallbackLabel = "") {
+  return {
+    procedural_errors: "PE",
+    manual_no_shoots: "No-shoot",
+    manual_misses: "Miss",
+    non_threats: "Non-threat",
+    flagrant_penalties: "Flagrant",
+    failures_to_do_right: "FTDR",
+    finger_pe: "Finger PE",
+    steel_misses: "Plate Miss",
+    stop_plate_failures: "Stop Plate",
+    steel_not_down: "Steel",
+  }[fieldId] || fallbackLabel || fieldId.replace(/_/g, " ");
+}
+
+function formatPenaltyCountsText(penaltyCounts) {
+  return Object.entries(penaltyCounts || {})
+    .filter(([, value]) => Number(value || 0) > 0)
+    .map(([fieldId, value]) => `${penaltyFieldLabel(fieldId)} x${formatNumber(value, 1)}`)
+    .join(", ");
+}
+
+function formatConfidenceValue(confidence) {
+  if (confidence === null || confidence === undefined || confidence === "") return "Manual";
+  const numeric = Number(confidence);
+  if (!Number.isFinite(numeric)) return String(confidence);
+  if (numeric <= 1) return `${Math.round(numeric * 100)}%`;
+  return `${Math.round(numeric)}%`;
+}
+
+function isLowConfidence(confidence) {
+  const numeric = Number(confidence);
+  if (!Number.isFinite(numeric)) return false;
+  return numeric <= 1 ? numeric < 1 : numeric < 100;
+}
+
+function numberInputValue(input, fallback = 0) {
+  const numeric = Number(input?.value ?? fallback);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
+function collectPenaltyCounts(scope, selector = ".shot-penalty-input[data-penalty-id]") {
+  const penaltyCounts = {};
+  scope.querySelectorAll(selector).forEach((input) => {
+    penaltyCounts[input.dataset.penaltyId] = numberInputValue(input, 0);
+  });
+  return penaltyCounts;
 }
 
 function renderDetailsList(id, rows) {
@@ -203,6 +323,67 @@ function isImagePath(path) {
   return !!path && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(path);
 }
 
+function nowMs() {
+  return window.performance?.now?.() ?? Date.now();
+}
+
+function clearProcessingBarShowTimer() {
+  if (processingBarShowTimer === null) return;
+  window.clearTimeout(processingBarShowTimer);
+  processingBarShowTimer = null;
+}
+
+function clearProcessingBarHideTimer() {
+  if (processingBarHideTimer === null) return;
+  window.clearTimeout(processingBarHideTimer);
+  processingBarHideTimer = null;
+}
+
+function hideProcessingBarNow(finalMessage = "Ready.") {
+  const bar = $("processing-bar");
+  clearProcessingBarShowTimer();
+  clearProcessingBarHideTimer();
+  processingBarVisibleAtMs = 0;
+  $("processing-message").textContent = finalMessage;
+  $("processing-detail").textContent = "Ready";
+  bar.hidden = true;
+}
+
+function scheduleProcessingBarShow(message, detail) {
+  const bar = $("processing-bar");
+  clearProcessingBarHideTimer();
+  $("processing-message").textContent = message;
+  $("processing-detail").textContent = detail;
+  if (!bar.hidden) return;
+  clearProcessingBarShowTimer();
+  processingBarShowTimer = window.setTimeout(() => {
+    processingBarShowTimer = null;
+    if (busyCount <= 0) return;
+    bar.hidden = false;
+    processingBarVisibleAtMs = nowMs();
+  }, PROCESSING_BAR_SHOW_DELAY_MS);
+}
+
+function scheduleProcessingBarHide(finalMessage = "Ready.") {
+  clearProcessingBarShowTimer();
+  clearProcessingBarHideTimer();
+  const bar = $("processing-bar");
+  $("processing-message").textContent = finalMessage;
+  $("processing-detail").textContent = "Ready";
+  if (bar.hidden) return;
+  const remainingMs = Math.max(0, PROCESSING_BAR_MIN_VISIBLE_MS - (nowMs() - processingBarVisibleAtMs));
+  processingBarHideTimer = window.setTimeout(() => {
+    processingBarHideTimer = null;
+    if (busyCount !== 0) return;
+    hideProcessingBarNow(finalMessage);
+  }, remainingMs);
+}
+
+function forceHideProcessingBar(finalMessage = "Ready.") {
+  busyCount = 0;
+  hideProcessingBarNow(finalMessage);
+}
+
 function setStatus(message) {
   $("status").textContent = message;
   const processingMessage = $("processing-message");
@@ -212,19 +393,12 @@ function setStatus(message) {
 
 function beginProcessing(message, detail = "Working locally") {
   busyCount += 1;
-  const bar = $("processing-bar");
-  $("processing-message").textContent = message;
-  $("processing-detail").textContent = detail;
-  bar.hidden = false;
+  scheduleProcessingBarShow(message, detail);
   activity("ui.processing.start", { message, detail, busy_count: busyCount });
   return (finalMessage = "Ready.") => {
     busyCount = Math.max(0, busyCount - 1);
     activity("ui.processing.finish", { message: finalMessage, busy_count: busyCount });
-    if (busyCount === 0) {
-      $("processing-message").textContent = finalMessage;
-      $("processing-detail").textContent = "Ready";
-      bar.hidden = true;
-    }
+    if (busyCount === 0) scheduleProcessingBarHide(finalMessage);
   };
 }
 
@@ -249,6 +423,53 @@ function normalizedCoordinateValue(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? clamp(numeric, 0, 1) : null;
+}
+
+function currentPipSizePercent() {
+  return Number(
+    state?.project?.merge?.pip_size_percent
+      ?? Number(String(state?.project?.merge?.pip_size || "35%").replace(/%$/, ""))
+      ?? 35,
+  );
+}
+
+function sourceIdentifier(source, fallback = "") {
+  const asset = source?.asset || source || {};
+  return source?.id || asset.id || fallback || fileName(asset.path || "");
+}
+
+function mergeSourceById(sourceId) {
+  return (state?.project?.merge_sources || []).find((source, index) => sourceIdentifier(source, String(index)) === sourceId) || null;
+}
+
+function syncMergeSourceControls(sourceId, pipX, pipY) {
+  const xValue = Number.isFinite(pipX) ? pipX.toFixed(3) : "";
+  const yValue = Number.isFinite(pipY) ? pipY.toFixed(3) : "";
+  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="x"]`).forEach((input) => {
+    syncControlValue(input, xValue);
+  });
+  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="y"]`).forEach((input) => {
+    syncControlValue(input, yValue);
+  });
+  const firstSourceId = sourceIdentifier(state?.project?.merge_sources?.[0], "0");
+  if (sourceId === firstSourceId) {
+    syncControlValue($("pip-x"), xValue);
+    syncControlValue($("pip-y"), yValue);
+  }
+}
+
+function updateLocalMergeSourcePosition(sourceId, pipX, pipY) {
+  const source = mergeSourceById(sourceId);
+  if (!source || !state?.project) return;
+  const nextX = normalizedCoordinateValue(pipX) ?? 1;
+  const nextY = normalizedCoordinateValue(pipY) ?? 1;
+  source.pip_x = nextX;
+  source.pip_y = nextY;
+  if (sourceIdentifier(state.project.merge_sources[0], "0") === sourceId) {
+    state.project.merge.pip_x = nextX;
+    state.project.merge.pip_y = nextY;
+  }
+  syncMergeSourceControls(sourceId, nextX, nextY);
 }
 
 function syncOverlayFontSizePreset() {
@@ -276,6 +497,12 @@ function syncOverlayPreviewStateFromControls() {
   overlay.shot_direction = payload.shot_direction;
   overlay.custom_x = normalizedCoordinateValue(payload.custom_x);
   overlay.custom_y = normalizedCoordinateValue(payload.custom_y);
+  overlay.timer_x = normalizedCoordinateValue(payload.timer_x);
+  overlay.timer_y = normalizedCoordinateValue(payload.timer_y);
+  overlay.draw_x = normalizedCoordinateValue(payload.draw_x);
+  overlay.draw_y = normalizedCoordinateValue(payload.draw_y);
+  overlay.score_x = normalizedCoordinateValue(payload.score_x);
+  overlay.score_y = normalizedCoordinateValue(payload.score_y);
   overlay.bubble_width = Math.max(0, Number(payload.bubble_width || 0));
   overlay.bubble_height = Math.max(0, Number(payload.bubble_height || 0));
   overlay.font_family = payload.font_family;
@@ -320,7 +547,7 @@ function previewOverlayControlChanges() {
 
 function commitOverlayControlChanges() {
   previewOverlayControlChanges();
-  autoApplyOverlay();
+  scheduleOverlayApply();
 }
 
 function clearOverlayColorCommitTimer() {
@@ -333,11 +560,15 @@ function scheduleOverlayColorCommit() {
   clearOverlayColorCommitTimer();
   overlayColorCommitTimer = window.setTimeout(() => {
     overlayColorCommitTimer = null;
-    autoApplyOverlay();
+    scheduleOverlayApply();
   }, OVERLAY_COLOR_COMMIT_DELAY_MS);
 }
 
 function previewOverlayColorChanges() {
+  previewOverlayControlChanges();
+}
+
+function queueOverlayColorCommit() {
   previewOverlayControlChanges();
   scheduleOverlayColorCommit();
 }
@@ -345,14 +576,14 @@ function previewOverlayColorChanges() {
 function flushOverlayColorCommit() {
   if (overlayColorCommitTimer === null) return;
   clearOverlayColorCommitTimer();
-  autoApplyOverlay();
+  scheduleOverlayApply();
 }
 
 function bindOverlayColorInput(control) {
   if (!isColorInput(control) || control.dataset.overlayColorBound === "true") return;
   control.dataset.overlayColorBound = "true";
   control.addEventListener("input", previewOverlayColorChanges);
-  control.addEventListener("change", previewOverlayColorChanges);
+  control.addEventListener("change", queueOverlayColorCommit);
   control.addEventListener("blur", flushOverlayColorCommit);
 }
 
@@ -370,6 +601,97 @@ function usesCustomQuadrant(quadrant) {
   return quadrant === CUSTOM_QUADRANT_VALUE;
 }
 
+function defaultTimingEventLabel(kind) {
+  return {
+    reload: "Reload",
+    malfunction: "Malfunction",
+    custom_label: "Custom Label",
+  }[String(kind || "")] || String(kind || "Event").replace(/_/g, " ");
+}
+
+function timingEventKindLabel(kind) {
+  return {
+    reload: "Reload",
+    malfunction: "Malfunction",
+    custom_label: "Custom",
+  }[String(kind || "")] || defaultTimingEventLabel(kind);
+}
+
+function timingEventPlacementText(event) {
+  if (event.after_shot_id && event.before_shot_id) {
+    return `Between ${shotLabelForEvent(event.after_shot_id)} and ${shotLabelForEvent(event.before_shot_id)}`;
+  }
+  if (event.before_shot_id) return `Before ${shotLabelForEvent(event.before_shot_id)}`;
+  if (event.after_shot_id) return `After ${shotLabelForEvent(event.after_shot_id)}`;
+  return "Floating marker";
+}
+
+function mirrorControlState(source, target) {
+  if (!source || !target) return;
+  if (target.type === "checkbox") {
+    syncControlChecked(target, source.checked);
+    return;
+  }
+  syncControlValue(target, source.value);
+}
+
+function syncReviewOverlayMirrors() {
+  Object.entries(REVIEW_OVERLAY_MIRROR_MAP).forEach(([reviewId, sourceId]) => {
+    mirrorControlState($(sourceId), $(reviewId));
+  });
+}
+
+function syncReviewOverlayCoordinateControlState() {
+  [["overlay-custom-x", "review-overlay-custom-x"], ["overlay-custom-y", "review-overlay-custom-y"]].forEach(([sourceId, reviewId]) => {
+    const source = $(sourceId);
+    const review = $(reviewId);
+    if (!source || !review) return;
+    review.disabled = source.disabled;
+    review.placeholder = source.placeholder;
+    review.title = source.title;
+  });
+}
+
+function dispatchCanonicalControlEvent(control) {
+  if (!control) return;
+  const eventName = control.tagName === "SELECT" || control.type === "checkbox" ? "change" : "input";
+  control.dispatchEvent(new Event(eventName, { bubbles: true }));
+}
+
+function mirrorToCanonicalControl(sourceControl, canonicalControl) {
+  if (!sourceControl || !canonicalControl) return;
+  if (canonicalControl.type === "checkbox") {
+    canonicalControl.checked = sourceControl.checked;
+  } else {
+    canonicalControl.value = sourceControl.value;
+  }
+  dispatchCanonicalControlEvent(canonicalControl);
+}
+
+function bindReviewOverlayMirrorControls() {
+  Object.entries(REVIEW_OVERLAY_MIRROR_MAP).forEach(([reviewId, sourceId]) => {
+    const reviewControl = $(reviewId);
+    const canonicalControl = $(sourceId);
+    if (!reviewControl || !canonicalControl || reviewControl.dataset.mirrorBound === "true") return;
+    reviewControl.dataset.mirrorBound = "true";
+    const eventName = reviewControl.tagName === "SELECT" || reviewControl.type === "checkbox" ? "change" : "input";
+    reviewControl.addEventListener(eventName, () => {
+      mirrorToCanonicalControl(reviewControl, canonicalControl);
+    });
+  });
+}
+
+function bindMirroredStyleInput(input, canonicalInput) {
+  if (!input || !canonicalInput || input.dataset.mirrorBound === "true") return;
+  input.dataset.mirrorBound = "true";
+  ["input", "change", "blur"].forEach((eventName) => {
+    input.addEventListener(eventName, () => {
+      canonicalInput.value = input.value;
+      canonicalInput.dispatchEvent(new Event(eventName, { bubbles: true }));
+    });
+  });
+}
+
 function syncOverlayCoordinateControlState() {
   const customEnabled = usesCustomQuadrant($("shot-quadrant").value);
   [["overlay-custom-x", "X"], ["overlay-custom-y", "Y"]].forEach(([id, axis]) => {
@@ -380,6 +702,7 @@ function syncOverlayCoordinateControlState() {
       ? `Set custom ${axis.toLowerCase()} position from 0 to 1.`
       : "Enable the Custom quadrant to edit coordinates.";
   });
+  syncReviewOverlayCoordinateControlState();
 }
 
 function effectiveCustomBoxText() {
@@ -410,6 +733,16 @@ function syncCustomBoxModeState() {
       ? "Uses the imported PractiScore stage summary and appears only after the last shot. Clear Box X/Y to use the selected quadrant."
       : "Import an IDPA CSV or USPSA/IPSC PractiScore results file first. The summary appears after the last shot. Clear Box X/Y to use the selected quadrant."
     : "Uses the text below and follows the same box styling and placement as export. Clear Box X/Y to use the selected quadrant.";
+}
+
+function syncTimingEventLabelState() {
+  const kind = $("timing-event-kind")?.value || "reload";
+  const input = $("timing-event-label");
+  if (!input) return;
+  input.placeholder = kind === "custom_label" ? "Hand switch" : defaultTimingEventLabel(kind);
+  input.title = kind === "custom_label"
+    ? "Enter the short phrase that should appear in the overlay."
+    : "Optional short overlay label. Leave blank to use the default event name.";
 }
 
 function layoutViewportHeight() {
@@ -564,6 +897,13 @@ function setActiveTool(tool) {
   document.querySelectorAll(".tool-pane").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.toolPane === tool);
   });
+  if (tool === "merge") {
+    $("add-merge-media")?.focus();
+    if (changed && pendingMergeMediaAutoOpen && (state?.project?.merge_sources || []).length === 0) {
+      $("add-merge-media")?.click();
+    }
+  }
+  pendingMergeMediaAutoOpen = false;
   if (changed) activity("ui.tool.active", { tool });
   renderLiveOverlay();
 }
@@ -595,10 +935,7 @@ async function callApi(path, payload = null) {
   try {
     return await api(path, payload);
   } catch (error) {
-    if (!$("processing-bar").hidden) {
-      busyCount = 0;
-      $("processing-bar").hidden = true;
-    }
+    forceHideProcessingBar();
     setStatus(error.message);
     activity("api.error", { path, error: error.message });
     return null;
@@ -697,18 +1034,35 @@ async function refresh() {
 }
 
 function applyRemoteState(nextState) {
-  if (!nextState?.project?.analysis) {
+  if (!hasCompleteProjectState(nextState)) {
     throw new Error("Received invalid project state from the local server.");
   }
   const nextProjectId = nextState?.project?.id || "";
+  const remoteSelectedShotId = nextState.project.ui_state?.selected_shot_id || null;
   if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
     resetLocalProjectView();
   }
   currentProjectId = nextProjectId;
   state = nextState;
-  if (selectedShotId && !(state.project?.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {
-    selectedShotId = state.project.ui_state?.selected_shot_id || null;
-  }
+  if (stateHasShot(state, selectedShotId)) return;
+  selectedShotId = stateHasShot(state, remoteSelectedShotId) ? remoteSelectedShotId : null;
+}
+
+function hasCompleteProjectState(nextState) {
+  return Boolean(
+    nextState?.project?.analysis
+      && nextState?.project?.overlay
+      && nextState?.project?.merge
+      && nextState?.project?.export
+      && nextState?.project?.ui_state
+      && nextState?.metrics
+      && nextState?.media,
+  );
+}
+
+function stateHasShot(nextState, shotId) {
+  return Boolean(shotId)
+    && (nextState?.project?.analysis?.shots || []).some((shot) => shot.id === shotId);
 }
 
 function resetLocalProjectView() {
@@ -751,7 +1105,6 @@ function resetLocalProjectView() {
     "timing-summary",
     "selected-shot-copy",
     "selected-timing-shot",
-    "selected-score-shot",
     "scoring-result",
     "scoring-imported-caption",
     "status",
@@ -774,7 +1127,7 @@ function resetLocalProjectView() {
       element.textContent = "No timing data.";
     } else if (id === "selected-shot-copy") {
       element.textContent = "No shot selected.";
-    } else if (id === "selected-timing-shot" || id === "selected-score-shot") {
+    } else if (id === "selected-timing-shot") {
       element.textContent = "No shot selected";
     } else if (id === "scoring-result") {
       element.textContent = "--";
@@ -804,8 +1157,6 @@ function resetLocalProjectView() {
   if (practiscoreFileInput) practiscoreFileInput.value = "";
   const mergeMediaList = $("merge-media-list");
   if (mergeMediaList) mergeMediaList.innerHTML = "";
-  const mergeMediaSummary = $("merge-media-summary");
-  if (mergeMediaSummary) mergeMediaSummary.textContent = "Add as many videos or images as you want. Multiple items export as a grid.";
   renderDetailsList("practiscore-import-summary", []);
   renderDetailsList("scoring-imported-summary", []);
   setActiveTool("project");
@@ -881,12 +1232,132 @@ function renderStats() {
     : "No timing data.";
 }
 
+function mergeSourcePipRect(source, frameRect, pipSizeValue) {
+  const asset = source.asset || source;
+  const sourceWidth = Math.max(1, asset.width || 1);
+  const sourceHeight = Math.max(1, asset.height || 1);
+  let insetWidth = Math.max(1, Math.round(frameRect.width * (pipSizeValue / 100)));
+  let insetHeight = Math.max(1, Math.round((sourceHeight / sourceWidth) * insetWidth));
+  if (insetHeight > frameRect.height) {
+    const fitScale = frameRect.height / insetHeight;
+    insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
+    insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
+  }
+  const travelX = Math.max(0, frameRect.width - insetWidth);
+  const travelY = Math.max(0, frameRect.height - insetHeight);
+  const pipX = normalizedCoordinateValue(source.pip_x) ?? normalizedCoordinateValue(state.project.merge.pip_x) ?? 1;
+  const pipY = normalizedCoordinateValue(source.pip_y) ?? normalizedCoordinateValue(state.project.merge.pip_y) ?? 1;
+  return {
+    left: frameRect.left + (travelX * pipX),
+    top: frameRect.top + (travelY * pipY),
+    width: insetWidth,
+    height: insetHeight,
+  };
+}
+
+function ensureMergePreviewItem(layer, source) {
+  const asset = source.asset || source;
+  const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
+  let item = layer.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
+  if (!item) {
+    item = document.createElement("div");
+    item.className = "merge-preview-item";
+    item.dataset.sourceId = sourceId;
+    layer.appendChild(item);
+  }
+  item.dataset.sourceId = sourceId;
+  item.dataset.mediaType = asset.is_still_image ? "image" : "video";
+  let media = item.firstElementChild;
+  const desiredTag = asset.is_still_image ? "IMG" : "VIDEO";
+  if (!(media instanceof HTMLElement) || media.tagName !== desiredTag) {
+    item.innerHTML = "";
+    media = document.createElement(asset.is_still_image ? "img" : "video");
+    if (media instanceof HTMLVideoElement) {
+      media.muted = true;
+      media.playsInline = true;
+      media.preload = "metadata";
+    }
+    item.appendChild(media);
+  }
+  const mediaPath = `/media/merge/${sourceId}?v=${encodeURIComponent(asset.path || "")}`;
+  if (media instanceof HTMLImageElement) {
+    if (media.dataset.sourcePath !== asset.path) {
+      media.dataset.sourcePath = asset.path;
+      media.src = mediaPath;
+    }
+  } else if (media instanceof HTMLVideoElement && media.dataset.sourcePath !== asset.path) {
+    media.dataset.sourcePath = asset.path;
+    media.src = mediaPath;
+    media.load();
+  }
+  return item;
+}
+
+function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
+  const layer = $("merge-preview-layer");
+  if (!layer) return;
+  const frameRect = videoContentRect(video, stage);
+  if (!frameRect || mergeSources.length === 0) {
+    layer.hidden = true;
+    layer.innerHTML = "";
+    return;
+  }
+  layer.hidden = false;
+  const expectedIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
+  layer.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
+    if (!expectedIds.has(item.dataset.sourceId)) item.remove();
+  });
+  mergeSources.forEach((source, index) => {
+    const item = ensureMergePreviewItem(layer, source);
+    const rect = mergeSourcePipRect(source, frameRect, pipSizeValue);
+    item.style.left = `${rect.left}px`;
+    item.style.top = `${rect.top}px`;
+    item.style.width = `${rect.width}px`;
+    item.style.height = `${rect.height}px`;
+    item.style.maxWidth = `${rect.width}px`;
+    item.style.maxHeight = `${rect.height}px`;
+    item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
+  });
+}
+
+function syncMergePreviewElements(primary) {
+  const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));
+  if (previews.length === 0) return;
+  const target = Math.max(0, primary.currentTime + ((state.project.analysis.sync_offset_ms || 0) / 1000));
+  const seekThreshold = primary.paused ? 0.08 : 0.2;
+  previews.forEach((preview) => {
+    if (Number.isFinite(target) && Math.abs((preview.currentTime || 0) - target) > seekThreshold) {
+      try {
+        preview.currentTime = target;
+      } catch {
+        // Ignore early metadata seek failures.
+      }
+    }
+    if (primary.paused && !preview.paused) {
+      preview.pause();
+      return;
+    }
+    if (!primary.paused && preview.paused) {
+      if (preview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+      preview.play().catch((error) => {
+        activity("video.merge_preview.error", {
+          source_id: preview.closest(".merge-preview-item")?.dataset.sourceId || "",
+          name: error?.name || "Error",
+          error: error?.message || String(error || "Unknown error"),
+        });
+      });
+    }
+  });
+}
+
 function renderVideo() {
   const video = $("primary-video");
   const secondary = $("secondary-video");
   const secondaryImage = $("secondary-image");
+  const mergePreviewLayer = $("merge-preview-layer");
   const stage = $("video-stage");
   const merge = state.project.merge;
+  const mergeSources = state?.project?.merge_sources || [];
   const path = state.project.primary_video.path || "";
   if (state.media.primary_available && video.dataset.sourcePath !== path) {
     video.dataset.sourcePath = path;
@@ -896,6 +1367,7 @@ function renderVideo() {
   if (!state.media.primary_available) {
     resetMediaElement(video);
   }
+
   const secondaryPath = state.project.secondary_video?.path || "";
   const imageSecondary = isImagePath(secondaryPath);
   if (state.media.secondary_available && imageSecondary) {
@@ -916,22 +1388,18 @@ function renderVideo() {
     secondaryImage.removeAttribute("src");
     secondaryImage.hidden = true;
   }
-  const mergePreview = Boolean(state.media.secondary_available && merge.enabled);
-  const showSecondaryVideo = mergePreview && !imageSecondary;
-  const showSecondaryImage = mergePreview && imageSecondary;
-  secondary.hidden = !showSecondaryVideo;
-  secondary.style.display = showSecondaryVideo ? "" : "none";
-  secondaryImage.hidden = !showSecondaryImage;
-  secondaryImage.style.display = showSecondaryImage ? "block" : "none";
+
+  const mergePreview = Boolean(merge.enabled && mergeSources.length > 0);
+  if (mergePreviewLayer) {
+    mergePreviewLayer.hidden = true;
+    if (merge.layout !== "pip") mergePreviewLayer.innerHTML = "";
+  }
   stage.classList.toggle("merge-preview", mergePreview);
   stage.classList.toggle("merge-side-by-side", mergePreview && merge.layout === "side_by_side");
   stage.classList.toggle("merge-above-below", mergePreview && merge.layout === "above_below");
   stage.classList.toggle("merge-pip", mergePreview && merge.layout === "pip");
-  const pipSizeValue = Number(
-    merge.pip_size_percent
-      ?? Number(String(merge.pip_size || "35%").replace(/%$/, ""))
-      ?? 35,
-  );
+
+  const pipSizeValue = currentPipSizePercent();
   stage.style.setProperty("--pip-size", `${pipSizeValue}%`);
   [secondary, secondaryImage].forEach((element) => {
     element.style.left = "";
@@ -943,39 +1411,56 @@ function renderVideo() {
     element.style.maxWidth = "";
     element.style.maxHeight = "";
   });
+
   if (mergePreview && merge.layout === "pip") {
-    const activeSecondary = imageSecondary ? secondaryImage : secondary;
-    const frameRect = videoContentRect(video, stage);
-    const secondaryWidth = Math.max(
-      1,
-      imageSecondary
-        ? (secondaryImage.naturalWidth || state.project.secondary_video?.width || 1)
-        : (secondary.videoWidth || state.project.secondary_video?.width || 1),
-    );
-    const secondaryHeight = Math.max(
-      1,
-      imageSecondary
-        ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
-        : (secondary.videoHeight || state.project.secondary_video?.height || 1),
-    );
-    if (frameRect) {
-      let insetWidth = Math.max(1, Math.round(frameRect.width * (pipSizeValue / 100)));
-      let insetHeight = Math.max(1, Math.round((secondaryHeight / secondaryWidth) * insetWidth));
-      if (insetHeight > frameRect.height) {
-        const fitScale = frameRect.height / insetHeight;
-        insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
-        insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
+    renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
+    secondary.hidden = true;
+    secondary.style.display = "none";
+    secondaryImage.hidden = true;
+    secondaryImage.style.display = "none";
+  } else {
+    const showSecondaryVideo = mergePreview && !imageSecondary;
+    const showSecondaryImage = mergePreview && imageSecondary;
+    secondary.hidden = !showSecondaryVideo;
+    secondary.style.display = showSecondaryVideo ? "" : "none";
+    secondaryImage.hidden = !showSecondaryImage;
+    secondaryImage.style.display = showSecondaryImage ? "block" : "none";
+
+    if (mergePreview) {
+      const activeSecondary = imageSecondary ? secondaryImage : secondary;
+      const frameRect = videoContentRect(video, stage);
+      const secondaryWidth = Math.max(
+        1,
+        imageSecondary
+          ? (secondaryImage.naturalWidth || state.project.secondary_video?.width || 1)
+          : (secondary.videoWidth || state.project.secondary_video?.width || 1),
+      );
+      const secondaryHeight = Math.max(
+        1,
+        imageSecondary
+          ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
+          : (secondary.videoHeight || state.project.secondary_video?.height || 1),
+      );
+      if (merge.layout === "pip" && frameRect) {
+        let insetWidth = Math.max(1, Math.round(frameRect.width * (pipSizeValue / 100)));
+        let insetHeight = Math.max(1, Math.round((secondaryHeight / secondaryWidth) * insetWidth));
+        if (insetHeight > frameRect.height) {
+          const fitScale = frameRect.height / insetHeight;
+          insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
+          insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
+        }
+        const travelX = Math.max(0, frameRect.width - insetWidth);
+        const travelY = Math.max(0, frameRect.height - insetHeight);
+        activeSecondary.style.left = `${frameRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1))}px`;
+        activeSecondary.style.top = `${frameRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1))}px`;
+        activeSecondary.style.width = `${insetWidth}px`;
+        activeSecondary.style.height = `${insetHeight}px`;
+        activeSecondary.style.maxWidth = `${insetWidth}px`;
+        activeSecondary.style.maxHeight = `${insetHeight}px`;
       }
-      const travelX = Math.max(0, frameRect.width - insetWidth);
-      const travelY = Math.max(0, frameRect.height - insetHeight);
-      activeSecondary.style.left = `${frameRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1))}px`;
-      activeSecondary.style.top = `${frameRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1))}px`;
-      activeSecondary.style.width = `${insetWidth}px`;
-      activeSecondary.style.height = `${insetHeight}px`;
-      activeSecondary.style.maxWidth = `${insetWidth}px`;
-      activeSecondary.style.maxHeight = `${insetHeight}px`;
     }
   }
+
   const waveformEnabled = Boolean(state.project.analysis?.shots?.length);
   document.querySelectorAll(".waveform-actions button").forEach((button) => {
     if (button.id === "amp-waveform-out" || button.id === "amp-waveform-in") {
@@ -991,41 +1476,52 @@ function syncSecondaryPreview() {
   const primary = $("primary-video");
   const secondary = $("secondary-video");
   if (!primary || !secondary) return;
-  if (!state?.media?.secondary_available || !state.project.merge.enabled || !secondary.src) {
+  const classicSecondaryActive = Boolean(
+    state?.media?.secondary_available
+      && state.project.merge.enabled
+      && secondary.src
+      && state.project.merge.layout !== "pip"
+      && (state.project.merge_sources || []).length <= 1,
+  );
+  if (!classicSecondaryActive) {
     clearSecondaryPreviewPlayError();
-    return;
-  }
-  const target = Math.max(0, primary.currentTime + ((state.project.analysis.sync_offset_ms || 0) / 1000));
-  const seekThreshold = primary.paused ? 0.08 : 0.2;
-  if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > seekThreshold) {
-    try {
-      secondary.currentTime = target;
-    } catch {
-      // Some browsers reject seeks before metadata is ready.
-    }
-  }
-  if (primary.paused && !secondary.paused) {
-    secondary.pause();
-    clearSecondaryPreviewPlayError();
-  } else if (!primary.paused && secondary.paused) {
-    if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) return;
-    try {
-      const playPromise = secondary.play();
-      if (playPromise && typeof playPromise.then === "function") {
-        playPromise
-          .then(() => {
-            clearSecondaryPreviewPlayError();
-          })
-          .catch((error) => {
-            reportSecondaryPreviewPlayError(error);
-          });
-      } else {
-        clearSecondaryPreviewPlayError();
+  } else {
+    const target = Math.max(0, primary.currentTime + ((state.project.analysis.sync_offset_ms || 0) / 1000));
+    const seekThreshold = primary.paused ? 0.08 : 0.2;
+    if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > seekThreshold) {
+      try {
+        secondary.currentTime = target;
+      } catch {
+        // Some browsers reject seeks before metadata is ready.
       }
-    } catch (error) {
-      reportSecondaryPreviewPlayError(error);
+    }
+    if (primary.paused && !secondary.paused) {
+      secondary.pause();
+      clearSecondaryPreviewPlayError();
+    } else if (!primary.paused && secondary.paused) {
+      if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) {
+        syncMergePreviewElements(primary);
+        return;
+      }
+      try {
+        const playPromise = secondary.play();
+        if (playPromise && typeof playPromise.then === "function") {
+          playPromise
+            .then(() => {
+              clearSecondaryPreviewPlayError();
+            })
+            .catch((error) => {
+              reportSecondaryPreviewPlayError(error);
+            });
+        } else {
+          clearSecondaryPreviewPlayError();
+        }
+      } catch (error) {
+        reportSecondaryPreviewPlayError(error);
+      }
     }
   }
+  syncMergePreviewElements(primary);
 }
 
 function clearSecondaryPreviewPlayError() {
@@ -1259,7 +1755,11 @@ function renderWaveformShotList() {
   (state.timing_segments || []).forEach((segment) => {
     const item = document.createElement("button");
     item.type = "button";
-    item.className = segment.shot_id === selectedShotId ? "selected" : "";
+    if (segment.shot_id === selectedShotId) item.classList.add("selected");
+    if (isLowConfidence(segment.confidence)) {
+      item.classList.add("low-confidence");
+      item.title = `Review this split manually: confidence ${formatConfidenceValue(segment.confidence)}.`;
+    }
     const title = document.createElement("strong");
     title.textContent = segment.card_title;
     const meta = document.createElement("small");
@@ -1298,77 +1798,57 @@ function renderTimingEventList() {
     const row = document.createElement("div");
     row.className = "timing-event-row";
 
-    const kind = document.createElement("strong");
-    kind.textContent = event.label || event.kind;
+    const label = document.createElement("strong");
+    label.textContent = event.label || defaultTimingEventLabel(event.kind);
 
-    const after = document.createElement("span");
-    after.textContent = event.after_shot_id ? `After ${shotLabelForEvent(event.after_shot_id)}` : "After any shot";
+    const kind = document.createElement("span");
+    kind.textContent = timingEventKindLabel(event.kind);
 
-    const before = document.createElement("span");
-    before.textContent = event.before_shot_id ? `Before ${shotLabelForEvent(event.before_shot_id)}` : "Before any shot";
-
-    const note = document.createElement("span");
-    note.textContent = event.note || event.kind;
+    const placement = document.createElement("span");
+    placement.textContent = timingEventPlacementText(event);
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Remove";
-    remove.setAttribute("aria-label", `Remove timing event ${event.label || event.kind}`);
+    remove.setAttribute("aria-label", `Remove timing event ${event.label || defaultTimingEventLabel(event.kind)}`);
     remove.addEventListener("click", () => deleteTimingEvent(event.id));
 
-    row.append(kind, after, before, note, remove);
+    row.append(label, kind, placement, remove);
     list.appendChild(row);
   });
 }
 
 function renderTimingEventEditor() {
   const shotSegments = state.timing_segments || [];
-  const afterSelect = $("timing-event-after");
-  const beforeSelect = $("timing-event-before");
+  const positionSelect = $("timing-event-position");
   const addButton = $("add-timing-event");
-  if (!afterSelect || !beforeSelect || !addButton) return;
+  if (!positionSelect || !addButton) return;
 
-  const previousAfter = afterSelect.value;
-  const previousBefore = beforeSelect.value;
+  const previousPosition = positionSelect.value;
   const selectedIndex = selectedShotId
     ? shotSegments.findIndex((segment) => segment.shot_id === selectedShotId)
     : -1;
 
-  afterSelect.innerHTML = "";
-  beforeSelect.innerHTML = "";
-
-  const afterBlank = document.createElement("option");
-  afterBlank.value = "";
-  afterBlank.textContent = "After any shot";
-  afterSelect.appendChild(afterBlank);
-
-  const beforeBlank = document.createElement("option");
-  beforeBlank.value = "";
-  beforeBlank.textContent = "Before any shot";
-  beforeSelect.appendChild(beforeBlank);
-
-  shotSegments.forEach((segment) => {
-    const afterOption = document.createElement("option");
-    afterOption.value = segment.shot_id;
-    afterOption.textContent = `${segment.label} ${segment.absolute_s}s`;
-    afterSelect.appendChild(afterOption);
-
+  positionSelect.innerHTML = "";
+  shotSegments.forEach((segment, index) => {
     const beforeOption = document.createElement("option");
-    beforeOption.value = segment.shot_id;
-    beforeOption.textContent = `${segment.label} ${segment.absolute_s}s`;
-    beforeSelect.appendChild(beforeOption);
+    beforeOption.value = `::${segment.shot_id}`;
+    beforeOption.textContent = `Before ${segment.label}`;
+    positionSelect.appendChild(beforeOption);
+
+    const nextSegment = shotSegments[index + 1];
+    const afterOption = document.createElement("option");
+    afterOption.value = `${segment.shot_id}::${nextSegment?.shot_id || ""}`;
+    afterOption.textContent = nextSegment
+      ? `Between ${segment.label} and ${nextSegment.label}`
+      : `After ${segment.label}`;
+    positionSelect.appendChild(afterOption);
   });
 
-  if (previousAfter && shotSegments.some((segment) => segment.shot_id === previousAfter)) {
-    afterSelect.value = previousAfter;
+  if (previousPosition && Array.from(positionSelect.options).some((option) => option.value === previousPosition)) {
+    positionSelect.value = previousPosition;
   } else if (selectedIndex >= 0) {
-    afterSelect.value = shotSegments[selectedIndex].shot_id;
-  }
-
-  if (previousBefore && shotSegments.some((segment) => segment.shot_id === previousBefore)) {
-    beforeSelect.value = previousBefore;
-  } else if (selectedIndex >= 0) {
-    beforeSelect.value = shotSegments[selectedIndex + 1]?.shot_id || "";
+    positionSelect.value = `${shotSegments[selectedIndex].shot_id}::${shotSegments[selectedIndex + 1]?.shot_id || ""}`;
   }
 
   addButton.disabled = shotSegments.length === 0;
@@ -1377,11 +1857,13 @@ function renderTimingEventEditor() {
 
 function addTimingEvent() {
   const kind = $("timing-event-kind").value;
-  const afterShotId = $("timing-event-after").value || selectedShotId || "";
-  const beforeShotId = $("timing-event-before").value;
-  activity("timing.event.add", { kind, after_shot_id: afterShotId, before_shot_id: beforeShotId });
+  const labelValue = $("timing-event-label").value.trim();
+  const [afterShotId = "", beforeShotId = ""] = String($("timing-event-position").value || "::").split("::");
+  const label = labelValue || defaultTimingEventLabel(kind);
+  activity("timing.event.add", { kind, label, after_shot_id: afterShotId, before_shot_id: beforeShotId });
   callApi("/api/events/add", {
     kind,
+    label,
     after_shot_id: afterShotId,
     before_shot_id: beforeShotId,
   });
@@ -1426,6 +1908,7 @@ function renderTimingTable(tableId = "timing-table") {
   const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
   (state.split_rows || []).forEach((row) => {
     const editing = expandedTable && timingRowEdits.has(row.shot_id);
+    const lowConfidence = isLowConfidence(row.confidence);
     if (expandedTable) {
       const lockCell = document.createElement("div");
       lockCell.className = "lock-cell";
@@ -1441,7 +1924,8 @@ function renderTimingTable(tableId = "timing-table") {
 
     const shotCell = document.createElement("div");
     shotCell.textContent = String(row.shot_number);
-    if (row.shot_id === selectedShotId) shotCell.className = "selected";
+  if (row.shot_id === selectedShotId) shotCell.classList.add("selected");
+  if (lowConfidence) shotCell.classList.add("low-confidence");
     shotCell.addEventListener("click", () => selectShot(row.shot_id));
     table.appendChild(shotCell);
 
@@ -1450,6 +1934,7 @@ function renderTimingTable(tableId = "timing-table") {
     table.appendChild(splitCell);
 
     const scoreCell = document.createElement("div");
+    if (lowConfidence) scoreCell.classList.add("low-confidence");
     if (editing) {
       const select = document.createElement("select");
       scoreOptions.forEach((letter) => {
@@ -1470,7 +1955,11 @@ function renderTimingTable(tableId = "timing-table") {
     const confidenceCell = document.createElement("div");
     confidenceCell.textContent = row.confidence === null || row.confidence === undefined
       ? "Manual"
-      : Number(row.confidence).toFixed(2);
+      : formatConfidenceValue(row.confidence);
+    if (lowConfidence) {
+      confidenceCell.classList.add("low-confidence");
+      confidenceCell.title = `Review this split manually: confidence ${formatConfidenceValue(row.confidence)}.`;
+    }
     table.appendChild(confidenceCell);
 
     const sourceCell = document.createElement("div");
@@ -1490,29 +1979,17 @@ function renderSelection() {
   selectedShotId = state.project.ui_state.selected_shot_id || selectedShotId;
   const segment = (state.timing_segments || []).find((item) => item.shot_id === selectedShotId);
   const selectedLabel = segment ? segment.label : "No shot selected";
+  const penaltyText = segment ? formatPenaltyCountsText(segment.penalty_counts) : "";
   $("selected-shot-copy").textContent = segment
-    ? `${segment.label}: ${segment.segment_s || "--.--"}s split, ${segment.cumulative_s || "--.--"}s from beep.`
+    ? `${segment.label}: ${segment.segment_s || "--.--"}s split, ${segment.cumulative_s || "--.--"}s from beep${penaltyText ? `, ${penaltyText}` : ""}.`
     : "No shot selected.";
   $("selected-timing-shot").textContent = selectedLabel;
-  $("selected-score-shot").textContent = selectedLabel;
-  if (segment?.score_letter && Array.from($("score-letter").options).some((option) => option.value === segment.score_letter)) {
-    $("score-letter").value = segment.score_letter;
-  }
 }
 
 function renderScoreOptions(summary) {
-  const selected = $("score-letter").value;
   const options = summary.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
-  $("score-letter").innerHTML = "";
-  options.forEach((letter) => {
-    const option = document.createElement("option");
-    option.value = letter;
-    option.textContent = letter;
-    $("score-letter").appendChild(option);
-  });
-  $("score-letter").value = options.includes(selected) ? selected : options[0];
-
-  const grid = $("score-option-grid");
+  const grid = $("scoring-preset-summary");
+  if (!grid) return;
   grid.innerHTML = "";
   options.forEach((letter) => {
     const value = summary.score_values?.[letter] ?? 0;
@@ -1528,13 +2005,25 @@ function renderScoringShotList() {
   if (!list) return;
   list.innerHTML = "";
   const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
+  const penaltyFields = state.scoring_summary?.penalty_fields || [];
   (state.timing_segments || []).forEach((segment) => {
     const row = document.createElement("div");
-    row.className = `scoring-shot-row ${segment.shot_id === selectedShotId ? "selected" : ""}`;
+    row.className = "scoring-shot-row";
+    if (segment.shot_id === selectedShotId) row.classList.add("selected");
+    if (isLowConfidence(segment.confidence)) row.classList.add("low-confidence");
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent = `${segment.label} | ${segment.cumulative_s}s`;
+    button.className = "scoring-shot-button";
+    const title = document.createElement("strong");
+    title.textContent = `${segment.label} | ${segment.cumulative_s || "--.--"}s`;
+    const meta = document.createElement("small");
+    meta.textContent = `${segment.card_meta}${isLowConfidence(segment.confidence) ? ` | Review confidence ${formatConfidenceValue(segment.confidence)}` : ""}`;
+    button.append(title, meta);
     button.addEventListener("click", () => selectShot(segment.shot_id));
+
+    const controls = document.createElement("div");
+    controls.className = "scoring-shot-controls";
+
     const select = document.createElement("select");
     select.setAttribute("aria-label", `Score ${segment.label}`);
     scoreOptions.forEach((letter) => {
@@ -1546,18 +2035,55 @@ function renderScoringShotList() {
       select.appendChild(option);
     });
     select.value = segment.score_letter || scoreOptions[0];
-    select.addEventListener("change", () => {
+    const applyShotScoring = () => {
       selectedShotId = segment.shot_id;
-      callApi("/api/scoring/score", { shot_id: segment.shot_id, letter: select.value });
-    });
+      callApi("/api/scoring/score", {
+        shot_id: segment.shot_id,
+        letter: select.value,
+        penalty_counts: collectPenaltyCounts(controls),
+      });
+    };
+    select.addEventListener("change", applyShotScoring);
+
+    const scoreField = document.createElement("label");
+    scoreField.className = "shot-score-field";
+    const scoreFieldLabel = document.createElement("span");
+    scoreFieldLabel.textContent = "Score";
+    scoreField.append(scoreFieldLabel, select);
+    controls.appendChild(scoreField);
+
+    if (penaltyFields.length > 0) {
+      const penaltyGrid = document.createElement("div");
+      penaltyGrid.className = "shot-penalty-fields";
+      penaltyFields.forEach((field) => {
+        const label = document.createElement("label");
+        label.className = "shot-penalty-field";
+        label.title = [field.label, field.description].filter(Boolean).join(" - ");
+        const text = document.createElement("span");
+        text.textContent = penaltyFieldLabel(field.id, field.label);
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "1";
+        input.value = segment.penalty_counts?.[field.id] ?? 0;
+        input.dataset.penaltyId = field.id;
+        input.className = "shot-penalty-input";
+        input.addEventListener("change", applyShotScoring);
+        label.append(text, input);
+        penaltyGrid.appendChild(label);
+      });
+      controls.appendChild(penaltyGrid);
+    }
+
     row.appendChild(button);
-    row.appendChild(select);
+    row.appendChild(controls);
     list.appendChild(row);
   });
 }
 
 function renderScoringPenaltyFields(summary) {
-  const grid = $("scoring-penalty-grid");
+  const grid = $("scoring-stage-penalties");
+  if (!grid) return;
   grid.innerHTML = "";
   const manual = document.createElement("label");
   manual.textContent = `${summary.penalty_label || "Manual penalties"} `;
@@ -1568,6 +2094,7 @@ function renderScoringPenaltyFields(summary) {
   manualInput.min = "0";
   manualInput.step = summary.mode === "hit_factor" ? "1" : "0.5";
   manualInput.dataset.penaltyManual = "true";
+  manualInput.className = "stage-penalty-input";
   manual.appendChild(manualInput);
   grid.appendChild(manual);
 
@@ -1575,7 +2102,7 @@ function renderScoringPenaltyFields(summary) {
     const label = document.createElement("label");
     label.textContent = `${field.label} `;
     const input = document.createElement("input");
-    input.className = "penalty-input";
+    input.className = "stage-penalty-input";
     input.type = "number";
     input.min = "0";
     input.step = "1";
@@ -1728,6 +2255,12 @@ function renderControls() {
   syncControlValue($("shot-direction"), state.project.overlay.shot_direction);
   syncControlValue($("overlay-custom-x"), state.project.overlay.custom_x ?? "");
   syncControlValue($("overlay-custom-y"), state.project.overlay.custom_y ?? "");
+  syncControlValue($("timer-x"), state.project.overlay.timer_x ?? "");
+  syncControlValue($("timer-y"), state.project.overlay.timer_y ?? "");
+  syncControlValue($("draw-x"), state.project.overlay.draw_x ?? "");
+  syncControlValue($("draw-y"), state.project.overlay.draw_y ?? "");
+  syncControlValue($("score-x"), state.project.overlay.score_x ?? "");
+  syncControlValue($("score-y"), state.project.overlay.score_y ?? "");
   syncControlValue($("bubble-width"), state.project.overlay.bubble_width);
   syncControlValue($("bubble-height"), state.project.overlay.bubble_height);
   syncControlValue($("overlay-font-family"), state.project.overlay.font_family);
@@ -1750,7 +2283,9 @@ function renderControls() {
   syncControlValue($("custom-box-background-color"), state.project.overlay.custom_box_background_color || "#000000");
   syncControlValue($("custom-box-text-color"), state.project.overlay.custom_box_text_color || "#ffffff");
   syncOverlayCoordinateControlState();
+  syncReviewOverlayMirrors();
   syncCustomBoxModeState();
+  syncTimingEventLabelState();
   syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
   syncControlValue($("quality"), state.project.export.quality);
   syncControlValue($("aspect-ratio"), state.project.export.aspect_ratio);
@@ -1771,87 +2306,110 @@ function renderControls() {
   renderExportPresetOptions();
   renderExportLog();
   renderStyleControls();
+  renderStyleControls("review-badge-style-grid", "review-score-color-grid", true);
   renderMergeMediaList();
 }
 
-function renderStyleControls() {
-  const grid = $("badge-style-grid");
+function renderStyleControls(gridId = "badge-style-grid", scoreGridId = "score-color-grid", reviewMirror = false) {
+  const grid = $(gridId);
+  const scoreGrid = $(scoreGridId);
+  if (!grid || !scoreGrid) return;
   const badgeKeys = new Set(badgeControls.map(([key]) => key));
-  grid.querySelectorAll(".style-card[data-badge]").forEach((card) => {
-    if (!badgeKeys.has(card.dataset.badge)) card.remove();
+  grid.querySelectorAll(reviewMirror ? ".style-card[data-review-badge]" : ".style-card[data-badge]").forEach((card) => {
+    const badgeName = reviewMirror ? card.dataset.reviewBadge : card.dataset.badge;
+    if (!badgeKeys.has(badgeName)) card.remove();
   });
   badgeControls.forEach(([key, title]) => {
     const style = state.project.overlay[key];
-    let card = grid.querySelector(`.style-card[data-badge="${key}"]`);
+    let card = grid.querySelector(
+      reviewMirror
+        ? `.style-card[data-review-badge="${key}"]`
+        : `.style-card[data-badge="${key}"]`,
+    );
     if (!card) {
       card = document.createElement("section");
       card.className = "style-card";
-      card.dataset.badge = key;
+      if (reviewMirror) card.dataset.reviewBadge = key;
+      else card.dataset.badge = key;
       card.innerHTML = `
         <h4></h4>
         <label>Background <input type="color" data-field="background_color" /></label>
         <label>Text <input type="color" data-field="text_color" /></label>
         <label>Opacity <input type="range" data-field="opacity" min="0" max="1" step="0.05" /></label>
       `;
-      bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
-      bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
+      if (!reviewMirror) {
+        bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
+        bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
+      }
       grid.appendChild(card);
     }
     const heading = card.querySelector("h4");
     if (heading && heading.textContent !== title) heading.textContent = title;
-    syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
-    syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
-    syncControlValue(card.querySelector('[data-field="opacity"]'), style.opacity);
+    const backgroundInput = card.querySelector('[data-field="background_color"]');
+    const textInput = card.querySelector('[data-field="text_color"]');
+    const opacityInput = card.querySelector('[data-field="opacity"]');
+    syncControlValue(backgroundInput, style.background_color);
+    syncControlValue(textInput, style.text_color);
+    syncControlValue(opacityInput, style.opacity);
+    if (reviewMirror) {
+      bindMirroredStyleInput(backgroundInput, document.querySelector(`#badge-style-grid .style-card[data-badge="${key}"] [data-field="background_color"]`));
+      bindMirroredStyleInput(textInput, document.querySelector(`#badge-style-grid .style-card[data-badge="${key}"] [data-field="text_color"]`));
+      bindMirroredStyleInput(opacityInput, document.querySelector(`#badge-style-grid .style-card[data-badge="${key}"] [data-field="opacity"]`));
+    }
   });
 
-  const scoreGrid = $("score-color-grid");
   const scoreKeys = state.scoring_summary?.score_options || [];
   const uniqueLetters = [...new Set(scoreKeys)];
   const validLetters = new Set(uniqueLetters);
-  scoreGrid.querySelectorAll(".score-color-input[data-letter]").forEach((input) => {
+  const scoreSelector = reviewMirror ? ".review-score-color-input[data-letter]" : ".score-color-input[data-letter]";
+  scoreGrid.querySelectorAll(scoreSelector).forEach((input) => {
     if (!validLetters.has(input.dataset.letter)) {
       input.closest("label")?.remove();
     }
   });
   uniqueLetters.forEach((letter) => {
-    let input = scoreGrid.querySelector(`.score-color-input[data-letter="${letter}"]`);
+    const inputSelector = reviewMirror
+      ? `.review-score-color-input[data-letter="${letter}"]`
+      : `.score-color-input[data-letter="${letter}"]`;
+    let input = scoreGrid.querySelector(inputSelector);
     if (!input) {
       const label = document.createElement("label");
       label.append(`${letter} `);
       input = document.createElement("input");
       input.type = "color";
-      input.className = "score-color-input";
+      input.className = reviewMirror ? "review-score-color-input" : "score-color-input";
       input.dataset.letter = letter;
-      bindOverlayColorInput(input);
+      if (!reviewMirror) bindOverlayColorInput(input);
       label.appendChild(input);
       scoreGrid.appendChild(label);
     }
     syncControlValue(input, state.project.overlay.scoring_colors[letter] || "#ffffff");
+    if (reviewMirror) {
+      bindMirroredStyleInput(input, document.querySelector(`#score-color-grid .score-color-input[data-letter="${letter}"]`));
+    }
   });
 }
 
 function renderMergeMediaList() {
   const list = $("merge-media-list");
-  const summary = $("merge-media-summary");
-  if (!list || !summary) return;
+  if (!list) return;
   const mergeSources = state?.project?.merge_sources || [];
   const multiSource = mergeSources.length > 1;
-  summary.textContent = mergeSources.length > 0
-    ? `${mergeSources.length} added item${mergeSources.length === 1 ? "" : "s"} loaded. Multiple items export as a grid.`
-    : "Add as many videos or images as you want. Multiple items export as a grid.";
-  const mergeLayout = $("merge-layout");
-  if (mergeLayout) mergeLayout.disabled = multiSource;
-  const pipSize = $("pip-size");
-  if (pipSize) pipSize.disabled = multiSource;
   const pipX = $("pip-x");
-  if (pipX) pipX.disabled = multiSource;
+  if (pipX) {
+    pipX.disabled = multiSource;
+    pipX.title = multiSource ? "Use the per-item PiP X control below for multi-item PiP." : "Set the PiP X position from 0 to 1.";
+  }
   const pipY = $("pip-y");
-  if (pipY) pipY.disabled = multiSource;
+  if (pipY) {
+    pipY.disabled = multiSource;
+    pipY.title = multiSource ? "Use the per-item PiP Y control below for multi-item PiP." : "Set the PiP Y position from 0 to 1.";
+  }
   list.innerHTML = "";
   if (mergeSources.length === 0) {
     const empty = document.createElement("div");
     empty.className = "hint";
-    empty.textContent = "No media added yet.";
+    empty.textContent = "No PiP media added yet.";
     list.appendChild(empty);
     return;
   }
@@ -1869,18 +2427,83 @@ function renderMergeMediaList() {
     meta.textContent = `${mediaType}${dimensions}`;
     info.append(title, meta);
 
+    const controls = document.createElement("div");
+    controls.className = "merge-source-controls";
+    const buildPositionInput = (axis, value) => {
+      const label = document.createElement("label");
+      label.className = "merge-source-field";
+      const text = document.createElement("span");
+      text.textContent = `PiP ${axis.toUpperCase()}`;
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.max = "1";
+      input.step = "0.01";
+      input.value = value;
+      input.dataset.mergeSourceField = axis;
+      input.dataset.sourceId = sourceIdentifier(source, String(index));
+      input.title = axis === "x" ? "0 is left, 1 is right." : "0 is top, 1 is bottom.";
+      input.addEventListener("input", () => {
+        const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
+        const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
+        updateLocalMergeSourcePosition(input.dataset.sourceId, nextX, nextY);
+        renderVideo();
+        callApi("/api/merge/source", {
+          source_id: input.dataset.sourceId,
+          pip_x: nextX,
+          pip_y: nextY,
+        });
+      });
+      label.append(text, input);
+      return label;
+    };
+    controls.append(
+      buildPositionInput("x", normalizedCoordinateValue(source.pip_x) ?? 1),
+      buildPositionInput("y", normalizedCoordinateValue(source.pip_y) ?? 1),
+    );
+    if (state.project.merge.layout === "pip") {
+      const hint = document.createElement("small");
+      hint.textContent = "Drag this item in the video to place it visually.";
+      controls.appendChild(hint);
+    }
+
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Remove";
-    remove.dataset.mergeSourceRemove = source.id || asset.id || String(index);
+    remove.dataset.mergeSourceRemove = sourceIdentifier(source, String(index));
     remove.addEventListener("click", () => {
       activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
       callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
     });
 
-    card.append(info, remove);
+    card.append(info, controls, remove);
     list.appendChild(card);
   });
+}
+
+function visibleTimingEventsByShot(currentIndex) {
+  const shots = state?.project?.analysis?.shots || [];
+  const shotIndexById = new Map(shots.map((shot, index) => [shot.id, index]));
+  const beforeByShotId = new Map();
+  const afterByShotId = new Map();
+  (state?.project?.analysis?.events || []).forEach((event) => {
+    const eventLabel = event.label || defaultTimingEventLabel(event.kind);
+    const eventPayload = { ...event, label: eventLabel };
+    const beforeIndex = event.before_shot_id ? shotIndexById.get(event.before_shot_id) : undefined;
+    const afterIndex = event.after_shot_id ? shotIndexById.get(event.after_shot_id) : undefined;
+    if (beforeIndex !== undefined && beforeIndex <= currentIndex) {
+      const existing = beforeByShotId.get(event.before_shot_id) || [];
+      existing.push(eventPayload);
+      beforeByShotId.set(event.before_shot_id, existing);
+      return;
+    }
+    if (afterIndex !== undefined && afterIndex < currentIndex) {
+      const existing = afterByShotId.get(event.after_shot_id) || [];
+      existing.push(eventPayload);
+      afterByShotId.set(event.after_shot_id, existing);
+    }
+  });
+  return { beforeByShotId, afterByShotId };
 }
 
 function textBiasForDirection(direction) {
@@ -1920,7 +2543,7 @@ function badgeElement(
   badge.style.wordBreak = "break-word";
   badge.style.lineHeight = text.includes("\n") ? "1.2" : "1";
   badge.style.padding = `${overlaySpacing}px ${Math.max(8, overlaySpacing * 1.5)}px`;
-  badge.style.margin = `${overlayMargin}px`;
+  badge.style.margin = "0";
   if (widthOverride > 0) badge.style.width = `${widthOverride}px`;
   else if (state.project.overlay.bubble_width > 0) badge.style.width = `${state.project.overlay.bubble_width}px`;
   if (heightOverride > 0) badge.style.height = `${heightOverride}px`;
@@ -1972,10 +2595,15 @@ function positionOverlayContainer(overlay, quadrantValue = null, frameRect = nul
   overlay.style.transform = "";
   overlay.style.width = "auto";
   overlay.style.height = "auto";
+  overlay.style.boxSizing = "border-box";
+  overlay.style.padding = `${overlayMargin}px`;
+  overlay.style.gap = `${overlayMargin}px`;
   overlay.style.maxWidth = frameRect ? `${Math.max(0, frameRect.width)}px` : "calc(100% - 12px)";
   overlay.style.maxHeight = frameRect ? `${Math.max(0, frameRect.height)}px` : "calc(100% - 12px)";
   overlay.style.overflow = "hidden";
+  overlay.style.alignContent = "flex-start";
   overlay.style.flexDirection = ["left", "right"].includes(direction) ? "row" : "column";
+  overlay.style.flexWrap = ["left", "right"].includes(direction) ? "wrap" : "nowrap";
   if (direction === "left") overlay.style.flexDirection = "row-reverse";
   if (direction === "up") overlay.style.flexDirection = "column-reverse";
 
@@ -2046,6 +2674,19 @@ function positionCustomBadge(badge, frameRect) {
   return true;
 }
 
+function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
+  const x = normalizedCoordinateValue(xValue);
+  const y = normalizedCoordinateValue(yValue);
+  if (!layer || !badge || !frameRect || x === null || y === null) return false;
+  badge.style.position = "absolute";
+  badge.style.margin = "0";
+  badge.style.left = `${clamp(x * frameRect.width, 0, frameRect.width)}px`;
+  badge.style.top = `${clamp(y * frameRect.height, 0, frameRect.height)}px`;
+  badge.style.transform = "translate(-50%, -50%)";
+  layer.appendChild(badge);
+  return true;
+}
+
 let customOverlayDrag = null;
 
 function beginCustomOverlayDrag(event) {
@@ -2065,6 +2706,7 @@ function beginCustomOverlayDrag(event) {
   };
   capturePointer(customOverlay, event.pointerId);
   customOverlay.classList.add("dragging");
+  activity("overlay.custom_box.drag.start", { x: startX, y: startY });
 }
 
 function moveCustomOverlayDrag(event) {
@@ -2081,10 +2723,9 @@ function moveCustomOverlayDrag(event) {
   const newY = clamp(startY + deltaY, 0, 1);
   $("custom-box-x").value = newX.toFixed(3);
   $("custom-box-y").value = newY.toFixed(3);
-  $("custom-box-quadrant").value = "middle_middle";
   syncOverlayPreviewStateFromControls();
   renderLiveOverlay();
-  autoApplyOverlay();
+  scheduleOverlayApply();
 }
 
 function endCustomOverlayDrag(event) {
@@ -2092,7 +2733,174 @@ function endCustomOverlayDrag(event) {
   const customOverlay = $("custom-overlay");
   releasePointer(customOverlay, event.pointerId);
   customOverlay?.classList.remove("dragging");
+  activity("overlay.custom_box.drag.commit", {
+    x: normalizedCoordinateValue($("custom-box-x")?.value),
+    y: normalizedCoordinateValue($("custom-box-y")?.value),
+  });
+  scheduleOverlayApply();
   customOverlayDrag = null;
+}
+
+function overlayDragConfiguration(kind) {
+  return {
+    timer: { xId: "timer-x", yId: "timer-y" },
+    draw: { xId: "draw-x", yId: "draw-y" },
+    score: { xId: "score-x", yId: "score-y" },
+    shots: {
+      xId: "overlay-custom-x",
+      yId: "overlay-custom-y",
+      quadrantId: "shot-quadrant",
+      quadrantValue: CUSTOM_QUADRANT_VALUE,
+    },
+  }[kind] || null;
+}
+
+function overlayDragAnchor(kind, badge, frameRect) {
+  if (kind === "shots") {
+    const overlay = $("live-overlay");
+    const anchorBadge = overlay?.firstElementChild;
+    const anchorRect = anchorBadge?.getBoundingClientRect() || overlay?.getBoundingClientRect() || badge.getBoundingClientRect();
+    return {
+      x: clamp((anchorRect.left - frameRect.left + (anchorRect.width / 2)) / Math.max(1, frameRect.width), 0, 1),
+      y: clamp((anchorRect.top - frameRect.top + (anchorRect.height / 2)) / Math.max(1, frameRect.height), 0, 1),
+    };
+  }
+  const rect = badge.getBoundingClientRect();
+  return {
+    x: clamp((rect.left - frameRect.left + (rect.width / 2)) / Math.max(1, frameRect.width), 0, 1),
+    y: clamp((rect.top - frameRect.top + (rect.height / 2)) / Math.max(1, frameRect.height), 0, 1),
+  };
+}
+
+function beginOverlayBadgeDrag(event) {
+  if (event.button !== 0 || overlayBadgeDrag) return;
+  const badge = event.target instanceof Element ? event.target.closest("[data-overlay-drag]") : null;
+  if (!(badge instanceof HTMLElement)) return;
+  const kind = badge.dataset.overlayDrag || "";
+  const config = overlayDragConfiguration(kind);
+  if (!config || !state?.project) return;
+  const stage = $("video-stage");
+  const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const anchor = overlayDragAnchor(kind, badge, frameRect);
+  overlayBadgeDrag = {
+    target: stage,
+    kind,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startX: anchor.x,
+    startY: anchor.y,
+  };
+  capturePointer(stage, event.pointerId);
+  stage.classList.add("overlay-dragging");
+  event.preventDefault();
+  activity("overlay.drag.start", { kind, x: anchor.x, y: anchor.y });
+}
+
+function moveOverlayBadgeDrag(event) {
+  if (!overlayBadgeDrag || !state?.project) return;
+  const config = overlayDragConfiguration(overlayBadgeDrag.kind);
+  if (!config) return;
+  const stage = $("video-stage");
+  const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const width = Math.max(1, frameRect.width || 0);
+  const height = Math.max(1, frameRect.height || 0);
+  const deltaX = (event.clientX - overlayBadgeDrag.startClientX) / width;
+  const deltaY = (event.clientY - overlayBadgeDrag.startClientY) / height;
+  const nextX = clamp(overlayBadgeDrag.startX + deltaX, 0, 1);
+  const nextY = clamp(overlayBadgeDrag.startY + deltaY, 0, 1);
+
+  if (config.quadrantId) {
+    $(config.quadrantId).value = config.quadrantValue;
+    syncOverlayCoordinateControlState();
+  }
+  $(config.xId).value = nextX.toFixed(3);
+  $(config.yId).value = nextY.toFixed(3);
+  syncOverlayPreviewStateFromControls();
+  syncReviewOverlayMirrors();
+  renderLiveOverlay();
+}
+
+function endOverlayBadgeDrag(event) {
+  if (!overlayBadgeDrag) return;
+  const config = overlayDragConfiguration(overlayBadgeDrag.kind);
+  releasePointer(overlayBadgeDrag.target, event.pointerId);
+  overlayBadgeDrag.target.classList.remove("overlay-dragging");
+  if (config) {
+    activity("overlay.drag.commit", {
+      kind: overlayBadgeDrag.kind,
+      x: normalizedCoordinateValue($(config.xId)?.value),
+      y: normalizedCoordinateValue($(config.yId)?.value),
+    });
+    scheduleOverlayApply();
+  }
+  overlayBadgeDrag = null;
+}
+
+function beginMergePreviewDrag(event) {
+  if (event.button !== 0 || mergePreviewDrag || state?.project?.merge?.layout !== "pip") return;
+  const item = event.target instanceof Element ? event.target.closest(".merge-preview-item[data-source-id]") : null;
+  if (!(item instanceof HTMLElement)) return;
+  const sourceId = item.dataset.sourceId || "";
+  const source = mergeSourceById(sourceId);
+  if (!source) return;
+  const stage = $("video-stage");
+  const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const itemRect = item.getBoundingClientRect();
+  mergePreviewDrag = {
+    item,
+    sourceId,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startLeftPx: itemRect.left - frameRect.left,
+    startTopPx: itemRect.top - frameRect.top,
+  };
+  capturePointer(item, event.pointerId);
+  item.classList.add("dragging");
+  event.preventDefault();
+  activity("merge.preview.drag.start", {
+    source_id: sourceId,
+    pip_x: normalizedCoordinateValue(source.pip_x),
+    pip_y: normalizedCoordinateValue(source.pip_y),
+  });
+}
+
+function moveMergePreviewDrag(event) {
+  if (!mergePreviewDrag || !state?.project) return;
+  const source = mergeSourceById(mergePreviewDrag.sourceId);
+  if (!source) return;
+  const stage = $("video-stage");
+  const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const rect = mergeSourcePipRect(source, frameRect, currentPipSizePercent());
+  const travelX = Math.max(0, frameRect.width - rect.width);
+  const travelY = Math.max(0, frameRect.height - rect.height);
+  const nextLeft = clamp(mergePreviewDrag.startLeftPx + (event.clientX - mergePreviewDrag.startClientX), 0, travelX);
+  const nextTop = clamp(mergePreviewDrag.startTopPx + (event.clientY - mergePreviewDrag.startClientY), 0, travelY);
+  const nextX = travelX === 0 ? 0 : nextLeft / travelX;
+  const nextY = travelY === 0 ? 0 : nextTop / travelY;
+  updateLocalMergeSourcePosition(mergePreviewDrag.sourceId, nextX, nextY);
+  renderVideo();
+}
+
+function endMergePreviewDrag(event) {
+  if (!mergePreviewDrag) return;
+  releasePointer(mergePreviewDrag.item, event.pointerId);
+  mergePreviewDrag.item.classList.remove("dragging");
+  const source = mergeSourceById(mergePreviewDrag.sourceId);
+  if (source) {
+    activity("merge.preview.drag.commit", {
+      source_id: mergePreviewDrag.sourceId,
+      pip_x: normalizedCoordinateValue(source.pip_x),
+      pip_y: normalizedCoordinateValue(source.pip_y),
+    });
+    callApi("/api/merge/source", {
+      source_id: mergePreviewDrag.sourceId,
+      pip_x: normalizedCoordinateValue(source.pip_x) ?? 1,
+      pip_y: normalizedCoordinateValue(source.pip_y) ?? 1,
+    });
+  }
+  mergePreviewDrag = null;
 }
 
 function renderLiveOverlay() {
@@ -2123,6 +2931,8 @@ function renderLiveOverlay() {
     customOverlay.style.transform = "";
     customOverlay.style.justifyContent = "flex-start";
     customOverlay.style.alignItems = "flex-start";
+    customOverlay.style.padding = "0";
+    customOverlay.style.gap = "0";
   } else {
     positionOverlayContainer(customOverlay, state.project.overlay.custom_box_quadrant, frameRect);
   }
@@ -2142,29 +2952,45 @@ function renderLiveOverlay() {
   }
   const size = state.project.overlay.badge_size;
   const shotTextBias = textBiasForDirection(state.project.overlay.shot_direction || "right");
+  const currentIndex = currentShotIndex(positionMs);
+  const splitRowsByShotId = new Map((state.split_rows || []).map((row) => [row.shot_id, row]));
+  const visibleEvents = visibleTimingEventsByShot(currentIndex);
+  const appendOverlayBadge = (badge, xValue = null, yValue = null) => {
+    if (!placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
+      overlay.appendChild(badge);
+    }
+  };
   if (state.project.overlay.show_timer) {
-    overlay.appendChild(badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center"));
+    const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center");
+    timerBadge.dataset.overlayDrag = "timer";
+    appendOverlayBadge(timerBadge, state.project.overlay.timer_x, state.project.overlay.timer_y);
   }
   if (
     state.project.overlay.show_draw
     && firstShotTime !== null
+    && (beep === null || beep === undefined || positionMs >= beep)
     && positionMs < firstShotTime
     && state.metrics.draw_ms !== null
     && state.metrics.draw_ms !== undefined
+    && Number(state.metrics.draw_ms) > 0
   ) {
-    overlay.appendChild(badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center"));
+    const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center");
+    drawBadge.dataset.overlayDrag = "draw";
+    appendOverlayBadge(drawBadge, state.project.overlay.draw_x, state.project.overlay.draw_y);
   }
 
-  const currentIndex = currentShotIndex(positionMs);
   if (state.project.overlay.show_shots && currentIndex >= 0) {
     const maxVisible = Math.max(1, Number(state.project.overlay.max_visible_shots || 4));
     const start = Math.max(0, currentIndex - maxVisible + 1);
     for (let index = start; index <= currentIndex; index += 1) {
       const shot = shots[index];
       if (!shot) continue;
-      const splitMs = index === 0
-        ? shot.time_ms - (beep || 0)
-        : shot.time_ms - shots[index - 1].time_ms;
+      (visibleEvents.beforeByShotId.get(shot.id) || []).forEach((event) => {
+        const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center");
+        eventBadge.dataset.overlayDrag = "shots";
+        overlay.appendChild(eventBadge);
+      });
+      const splitMs = splitRowsByShotId.get(shot.id)?.split_ms;
       const style = index === currentIndex
         ? state.project.overlay.current_shot_badge
         : state.project.overlay.shot_badge;
@@ -2172,15 +2998,22 @@ function renderLiveOverlay() {
       const scoreColor = state.project.scoring.enabled && shot.score
         ? state.project.overlay.scoring_colors[shot.score.letter]
         : null;
-      overlay.appendChild(badgeElement(`Shot ${index + 1} ${splitSeconds(splitMs)}${scoreText}`, style, size, scoreColor, null, null, shotTextBias));
+      const shotBadge = badgeElement(`Shot ${index + 1} ${splitSeconds(splitMs)}${scoreText}`, style, size, scoreColor, null, null, shotTextBias);
+      shotBadge.dataset.overlayDrag = "shots";
+      overlay.appendChild(shotBadge);
+      (visibleEvents.afterByShotId.get(shot.id) || []).forEach((event) => {
+        const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center");
+        eventBadge.dataset.overlayDrag = "shots";
+        overlay.appendChild(eventBadge);
+      });
     }
   }
 
   const summary = state.scoring_summary || {};
   if (finalShotReached && state.project.scoring.enabled && state.project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
-    overlay.appendChild(
-      badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size),
-    );
+    const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size);
+    scoreBadge.dataset.overlayDrag = "score";
+    appendOverlayBadge(scoreBadge, state.project.overlay.score_x, state.project.overlay.score_y);
   }
 
   if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {
@@ -2207,6 +3040,7 @@ function renderLiveOverlay() {
       state.project.overlay.custom_box_height,
       "center",
     );
+    customBadge.dataset.overlayDrag = "custom_box";
     positionCustomBadge(customBadge, frameRect);
     customOverlay.appendChild(customBadge);
     customOverlay.classList.add("has-badge");
@@ -2218,6 +3052,11 @@ function startOverlayLoop() {
   activity("video.play", { current_time_s: $("primary-video").currentTime });
   scheduleSecondaryPreviewSync();
   const tick = () => {
+    activity("frame.overlay", {
+      current_time_s: $("primary-video").currentTime,
+      merge_sources: (state?.project?.merge_sources || []).length,
+      selected_shot_id: selectedShotId || "",
+    });
     renderLiveOverlay();
     overlayFrame = requestAnimationFrame(tick);
   };
@@ -2417,9 +3256,10 @@ function handleKeyboardEdit(event) {
 function readOverlayPayload() {
   const styles = {};
   document.querySelectorAll(".style-card[data-badge]").forEach((card) => {
-    const badge = card.dataset.badge;
+    const badge = card.dataset.badge || "";
+    if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;
     styles[badge] = {};
-    card.querySelectorAll("input").forEach((input) => {
+    card.querySelectorAll("input[data-field]").forEach((input) => {
       const value = input.type === "range" ? Number(input.value) : input.value;
       styles[badge][input.dataset.field] = value;
     });
@@ -2440,6 +3280,12 @@ function readOverlayPayload() {
     shot_direction: $("shot-direction").value,
     custom_x: $("overlay-custom-x").value,
     custom_y: $("overlay-custom-y").value,
+    timer_x: $("timer-x").value,
+    timer_y: $("timer-y").value,
+    draw_x: $("draw-x").value,
+    draw_y: $("draw-y").value,
+    score_x: $("score-x").value,
+    score_y: $("score-y").value,
     bubble_width: Number($("bubble-width").value || 0),
     bubble_height: Number($("bubble-height").value || 0),
     font_family: $("overlay-font-family").value,
@@ -2499,11 +3345,12 @@ function validatePractiScoreSelection() {
 
 async function postFiles(path, files) {
   const selectedFiles = Array.from(files || []);
-  let lastResult = null;
+  let latestSuccess = null;
   for (const file of selectedFiles) {
-    lastResult = await postFile(path, file);
+    const result = await postFile(path, file);
+    if (result) latestSuccess = result;
   }
-  return lastResult;
+  return latestSuccess;
 }
 
 function readMergePayload() {
@@ -2517,7 +3364,7 @@ function readMergePayload() {
   };
 }
 
-function readLayoutPayload() {
+function readExportLayoutPayload() {
   return {
     quality: $("quality").value,
     aspect_ratio: $("aspect-ratio").value,
@@ -2526,7 +3373,7 @@ function readLayoutPayload() {
 
 function readScoringPayload() {
   const penaltyCounts = {};
-  document.querySelectorAll(".penalty-input").forEach((input) => {
+  document.querySelectorAll(".stage-penalty-input[data-penalty-id]").forEach((input) => {
     penaltyCounts[input.dataset.penaltyId] = Number(input.value || 0);
   });
   return {
@@ -2556,7 +3403,7 @@ function buildExportPayload(path) {
   return {
     path,
     preset: $("export-preset").value,
-    ...readLayoutPayload(),
+    ...readExportLayoutPayload(),
     ...readExportSettingsPayload(),
   };
 }
@@ -2584,9 +3431,7 @@ async function openProjectWithDialog() {
 }
 
 async function browseProjectPath() {
-  const currentPath = $("project-path").value.trim();
-  const kind = currentPath ? "project_open" : "project_save";
-  return pickPath(kind, "project-path");
+  return pickPath("project_open", "project-path");
 }
 
 async function saveProjectFlow() {
@@ -2600,62 +3445,87 @@ async function saveProjectFlow() {
   });
 }
 
-async function applyScoringSettings() {
-  const scoringPayload = readScoringPayload();
-  const ruleset = $("scoring-preset").value;
+async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset").value) {
   const previousRuleset = state.project.scoring.ruleset;
   if (ruleset !== previousRuleset) scoringPayload.penalty_counts = {};
   await callApi("/api/scoring/profile", { ruleset });
   await callApi("/api/scoring", scoringPayload);
 }
 
-function assignSelectedScore() {
-  if (!selectedShotId) {
-    activity("score.assign.skipped", { reason: "no_selected_shot" });
-    return;
-  }
-  callApi("/api/scoring/score", { shot_id: selectedShotId, letter: $("score-letter").value });
-}
-
-const autoApplyThreshold = debounce(() => {
-  activity("auto_apply.threshold", { threshold: Number($("threshold").value) });
-  callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+const autoApplyThreshold = debounce((payload) => {
+  activity("auto_apply.threshold", payload);
+  callApi("/api/analysis/threshold", payload);
 }, 450);
 
-const autoApplyProjectDetails = debounce(() => {
+const autoApplyProjectDetails = debounce((payload) => {
   activity("auto_apply.project_details", {});
-  callApi("/api/project/details", readProjectDetailsPayload());
+  callApi("/api/project/details", payload);
 }, 300);
 
-const autoApplyPractiScoreContext = debounce(() => {
+const autoApplyPractiScoreContext = debounce((payload) => {
   activity("auto_apply.practiscore_context", {});
-  callApi("/api/project/practiscore", readPractiScoreContextPayload());
+  callApi("/api/project/practiscore", payload);
 }, 300);
 
-const autoApplyOverlay = debounce(() => {
+const autoApplyOverlay = debounce((payload) => {
   activity("auto_apply.overlay", {});
-  callApi("/api/overlay", readOverlayPayload());
+  callApi("/api/overlay", payload);
 }, 300);
 
-const autoApplyMerge = debounce(() => {
+const autoApplyMerge = debounce((payload) => {
   activity("auto_apply.merge", {});
-  callApi("/api/merge", readMergePayload());
+  callApi("/api/merge", payload);
 }, 300);
 
-const autoApplyLayout = debounce(() => {
-  activity("auto_apply.layout", {});
-  callApi("/api/layout", readLayoutPayload());
+const autoApplyExportLayout = debounce((payload) => {
+  activity("auto_apply.export_layout", {});
+  callApi("/api/export/settings", payload);
 }, 300);
 
-const autoApplyExportSettings = debounce(() => {
+const autoApplyExportSettings = debounce((payload) => {
   activity("auto_apply.export_settings", {});
-  callApi("/api/export/settings", readExportSettingsPayload());
+  callApi("/api/export/settings", payload);
 }, 300);
 
-const autoApplyScoring = debounce(() => {
+const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {
   activity("auto_apply.scoring", {});
-  applyScoringSettings();
+  applyScoringSettings(scoringPayload, ruleset);
 }, 300);
+
+function scheduleThresholdApply() {
+  autoApplyThreshold({ threshold: Number($("threshold").value) });
+}
+
+function scheduleProjectDetailsApply() {
+  autoApplyProjectDetails(readProjectDetailsPayload());
+}
+
+function schedulePractiScoreContextApply() {
+  autoApplyPractiScoreContext(readPractiScoreContextPayload());
+}
+
+function scheduleOverlayApply() {
+  autoApplyOverlay(readOverlayPayload());
+}
+
+function scheduleMergeApply() {
+  autoApplyMerge(readMergePayload());
+}
+
+function scheduleExportLayoutApply() {
+  autoApplyExportLayout(readExportLayoutPayload());
+}
+
+function scheduleExportSettingsApply() {
+  autoApplyExportSettings(readExportSettingsPayload());
+}
+
+function scheduleScoringApply() {
+  autoApplyScoring({
+    scoringPayload: readScoringPayload(),
+    ruleset: $("scoring-preset").value,
+  });
+}
 
 const handleViewportLayoutChange = debounce(() => {
   applyLayoutState();
@@ -2663,9 +3533,11 @@ const handleViewportLayoutChange = debounce(() => {
 }, 120);
 
 function wireEvents() {
+  bindReviewOverlayMirrorControls();
   document.querySelectorAll("[data-tool]").forEach((item) => {
     item.addEventListener("click", () => {
       activity("ui.tool.click", { tool: item.dataset.tool });
+      pendingMergeMediaAutoOpen = item.dataset.tool === "merge";
       setActiveTool(item.dataset.tool);
     });
   });
@@ -2732,11 +3604,11 @@ function wireEvents() {
   $("open-project").addEventListener("click", openProjectWithDialog);
   $("delete-project").addEventListener("click", () => callApi("/api/project/delete", {}));
   ["project-name", "project-description"].forEach((id) => {
-    $(id).addEventListener("input", autoApplyProjectDetails);
+    $(id).addEventListener("input", scheduleProjectDetailsApply);
   });
   ["match-type", "match-stage-number", "match-competitor-name", "match-competitor-place"].forEach((id) => {
-    $(id).addEventListener("input", autoApplyPractiScoreContext);
-    $(id).addEventListener("change", autoApplyPractiScoreContext);
+    $(id).addEventListener("input", schedulePractiScoreContextApply);
+    $(id).addEventListener("change", schedulePractiScoreContextApply);
   });
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
@@ -2794,39 +3666,41 @@ function wireEvents() {
       }
     });
   });
-  $("threshold").addEventListener("input", autoApplyThreshold);
+  $("threshold").addEventListener("input", scheduleThresholdApply);
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
       renderVideo();
-      autoApplyMerge();
+      scheduleMergeApply();
     });
   });
   $("pip-size").addEventListener("input", () => {
     $("pip-size-label").textContent = `${$("pip-size").value}%`;
     syncMergePreviewStateFromControls();
     renderVideo();
-    autoApplyMerge();
+    scheduleMergeApply();
   });
   ["pip-x", "pip-y"].forEach((id) => {
     $(id).addEventListener("input", () => {
       syncMergePreviewStateFromControls();
       renderVideo();
-      autoApplyMerge();
+      scheduleMergeApply();
     });
   });
   document.querySelectorAll("[data-sync]").forEach((button) => {
     button.addEventListener("click", () => callApi("/api/sync", { delta_ms: Number(button.dataset.sync) }));
   });
-  $("swap-videos").addEventListener("click", () => callApi("/api/swap", {}));
+  $("timing-event-kind").addEventListener("change", syncTimingEventLabelState);
   $("add-timing-event").addEventListener("click", addTimingEvent);
+  $("video-stage").addEventListener("pointerdown", beginOverlayBadgeDrag);
+  $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
   $("custom-overlay").addEventListener("pointerdown", beginCustomOverlayDrag);
   ["badge-size"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncOverlayFontSizePreset();
       syncOverlayPreviewStateFromControls();
       renderLiveOverlay();
-      autoApplyOverlay();
+      scheduleOverlayApply();
     });
   });
   [
@@ -2835,6 +3709,12 @@ function wireEvents() {
     "shot-direction",
     "overlay-custom-x",
     "overlay-custom-y",
+    "timer-x",
+    "timer-y",
+    "draw-x",
+    "draw-y",
+    "score-x",
+    "score-y",
     "bubble-width",
     "bubble-height",
     "overlay-font-family",
@@ -2872,19 +3752,16 @@ function wireEvents() {
     const target = event.target;
     if (isColorInput(target)) return;
     previewOverlayControlChanges();
-    autoApplyOverlay();
+    scheduleOverlayApply();
   });
   $("badge-style-grid").addEventListener("change", (event) => {
     if (isColorInput(event.target)) return;
     commitOverlayControlChanges();
   });
   ["scoring-enabled", "scoring-preset"].forEach((id) => {
-    $(id).addEventListener("change", autoApplyScoring);
+    $(id).addEventListener("change", scheduleScoringApply);
   });
-  $("scoring-penalty-grid").addEventListener("input", autoApplyScoring);
-  $("score-letter").addEventListener("change", () => {
-    assignSelectedScore();
-  });
+  $("scoring-stage-penalties")?.addEventListener("input", scheduleScoringApply);
   document.querySelectorAll("[data-layout-lock-toggle]").forEach((button) => {
     button.addEventListener("click", toggleLayoutLock);
   });
@@ -2900,6 +3777,12 @@ function wireEvents() {
   document.addEventListener("pointermove", moveLayoutResize);
   document.addEventListener("pointerup", endLayoutResize);
   document.addEventListener("pointercancel", endLayoutResize);
+  document.addEventListener("pointermove", moveOverlayBadgeDrag);
+  document.addEventListener("pointerup", endOverlayBadgeDrag);
+  document.addEventListener("pointercancel", endOverlayBadgeDrag);
+  document.addEventListener("pointermove", moveMergePreviewDrag);
+  document.addEventListener("pointerup", endMergePreviewDrag);
+  document.addEventListener("pointercancel", endMergePreviewDrag);
   document.addEventListener("pointermove", moveCustomOverlayDrag);
   document.addEventListener("pointerup", endCustomOverlayDrag);
   document.addEventListener("pointercancel", endCustomOverlayDrag);
@@ -2908,7 +3791,7 @@ function wireEvents() {
       overlayStyleMode = $(id).value;
       syncOverlayPreviewStateFromControls();
       renderLiveOverlay();
-      autoApplyOverlay();
+      scheduleOverlayApply();
     });
   });
   ["overlay-spacing", "overlay-margin"].forEach((id) => {
@@ -2921,11 +3804,11 @@ function wireEvents() {
       }
       syncOverlayPreviewStateFromControls();
       renderLiveOverlay();
-      autoApplyOverlay();
+      scheduleOverlayApply();
     });
   });
   ["quality", "aspect-ratio"].forEach((id) => {
-    $(id).addEventListener("change", autoApplyLayout);
+    $(id).addEventListener("change", scheduleExportLayoutApply);
   });
   $("export-preset").addEventListener("change", () => {
     activity("auto_apply.export_preset", { preset: $("export-preset").value });
@@ -2938,7 +3821,7 @@ function wireEvents() {
     "audio-sample-rate",
     "audio-bitrate",
   ].forEach((id) => {
-    $(id).addEventListener("input", autoApplyExportSettings);
+    $(id).addEventListener("input", scheduleExportSettingsApply);
   });
   [
     "frame-rate",
@@ -2948,7 +3831,7 @@ function wireEvents() {
     "ffmpeg-preset",
     "two-pass",
   ].forEach((id) => {
-    $(id).addEventListener("change", autoApplyExportSettings);
+    $(id).addEventListener("change", scheduleExportSettingsApply);
   });
   $("export-video").addEventListener("click", () => {
     const path = requireValue("export-path", "Output video path");

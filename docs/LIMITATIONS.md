@@ -5,7 +5,7 @@ This page records the current constraints that are visible in the source tree an
 ## Media Toolchain
 
 - SplitShot requires `ffmpeg` and `ffprobe`.
-- If those tools are not on `PATH`, the app can use bundled binaries through `SPLITSHOT_FFMPEG_DIR` or packaged resources.
+- If those tools are not on `PATH`, the app can use `SPLITSHOT_FFMPEG_DIR` or vendored binaries under `splitshot/resources/ffmpeg/<platform>`.
 - The export pipeline expects a Qt GUI application context before it draws overlay frames.
 
 ## Export Scope
@@ -39,5 +39,5 @@ This page records the current constraints that are visible in the source tree an
 - The repository includes a root LICENSE file and uses the MIT License.
 - The docs/plans and docs/todos directories are implementation history and task tracking, not the primary user manual.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** n/a
+**Last updated:** 2026-04-14
+**Referenced files last updated:** 2026-04-14

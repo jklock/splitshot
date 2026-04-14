@@ -26,10 +26,27 @@ def test_import_idpa_stage_results_from_csv() -> None:
     assert result.imported_stage.competitor_name == "John Klockenkemper"
     assert result.imported_stage.competitor_place == 4
     assert result.imported_stage.stage_number == 2
-    assert result.imported_stage.raw_seconds == 29.83
+    assert result.imported_stage.raw_seconds == 19.83
     assert result.imported_stage.aggregate_points == 5.0
-    assert result.imported_stage.final_time == 39.83
+    assert result.imported_stage.final_time == 29.83
     assert result.imported_stage.score_counts == {"Points Down": 5.0}
+
+
+def test_import_idpa_stage_time_is_treated_as_final_time() -> None:
+    result = import_practiscore_stage(
+        EXAMPLES_DIR / "IDPA.csv",
+        match_type="idpa",
+        stage_number=1,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+        source_name="IDPA.csv",
+    )
+
+    assert result.imported_stage.stage_number == 1
+    assert result.imported_stage.final_time == 14.55
+    assert result.imported_stage.raw_seconds == 13.55
+    assert result.imported_stage.aggregate_points == 1.0
+    assert result.penalty_counts == {}
 
 
 def test_import_uspsa_stage_results_from_report_text() -> None:

@@ -13,6 +13,7 @@ from typing import Callable
 import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter
+from PySide6.QtWidgets import QApplication
 
 from splitshot.domain.models import (
     AspectRatio,
@@ -20,11 +21,12 @@ from splitshot.domain.models import (
     ExportQuality,
     ExportVideoCodec,
     MergeLayout,
+    MergeSource,
     Project,
     VideoAsset,
 )
 from splitshot.media.ffmpeg import ffmpeg_command
-from splitshot.merge.layouts import calculate_merge_canvas
+from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import calculate_hit_factor
 
@@ -32,6 +34,9 @@ from splitshot.scoring.logic import calculate_hit_factor
 _QT_GUI_APP: QGuiApplication | None = None
 _SUPPORTED_EXPORT_EXTENSIONS = {".m4v", ".mkv", ".mov", ".mp4"}
 _FASTSTART_EXPORT_EXTENSIONS = {".m4v", ".mov", ".mp4"}
+_EXPORT_QT_MAIN_THREAD_ERROR = (
+    "SplitShot export must initialize Qt on the main thread before browser exports run."
+)
 
 
 @dataclass(slots=True)
@@ -50,9 +55,16 @@ def _ensure_qt_gui_application() -> QGuiApplication:
     if isinstance(instance, QGuiApplication):
         return instance
 
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError(_EXPORT_QT_MAIN_THREAD_ERROR)
+
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    _QT_GUI_APP = QGuiApplication(["splitshot-export"])
+    _QT_GUI_APP = QApplication(["splitshot-export"])
     return _QT_GUI_APP
+
+
+def prepare_export_runtime() -> QGuiApplication:
+    return _ensure_qt_gui_application()
 
 
 def _normalize_output_target(output_path: str | Path) -> Path:
@@ -138,29 +150,30 @@ def compute_crop_box(
     return left, top, crop_width, crop_height
 
 
-def _merge_assets(project: Project) -> list[VideoAsset]:
+def _merge_sources(project: Project) -> list[MergeSource]:
     if project.merge_sources:
-        return [source.asset for source in project.merge_sources if source.asset.path]
+        return [source for source in project.merge_sources if source.asset.path]
     if project.secondary_video is None or not project.secondary_video.path:
         return []
-    return [project.secondary_video]
+    return [MergeSource(asset=project.secondary_video, pip_x=project.merge.pip_x, pip_y=project.merge.pip_y)]
 
 
-def _merged_duration_ms(project: Project, merge_assets: list[VideoAsset]) -> int:
+def _merged_duration_ms(project: Project, merge_sources: list[MergeSource]) -> int:
     primary = project.primary_video.duration_ms
-    if not merge_assets:
+    if not merge_sources:
         return primary
-    if len(merge_assets) == 1:
-        secondary = merge_assets[0].duration_ms
+    if len(merge_sources) == 1:
+        secondary = merge_sources[0].asset.duration_ms
         offset = project.analysis.sync_offset_ms
         secondary_visible = max(0, secondary - max(0, offset))
         secondary_end = max(0, -offset) + secondary_visible
         return max(primary, secondary_end)
-    return max([primary, *[asset.duration_ms for asset in merge_assets]])
+    return max([primary, *[source.asset.duration_ms for source in merge_sources]])
 
 
-def _build_grid_merge_plan(project: Project, merge_assets: list[VideoAsset]) -> BaseRenderPlan:
+def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
     fps = _output_fps(project)
+    merge_assets = [source.asset for source in merge_sources]
     sources = [project.primary_video, *merge_assets]
     tile_width = max(2, int(project.primary_video.width or 0))
     tile_height = max(2, int(project.primary_video.height or 0))
@@ -222,7 +235,78 @@ def _build_grid_merge_plan(project: Project, merge_assets: list[VideoAsset]) -> 
         width=tile_width * columns,
         height=tile_height * rows,
         fps=fps,
-        duration_ms=_merged_duration_ms(project, merge_assets),
+        duration_ms=_merged_duration_ms(project, merge_sources),
+    )
+
+
+def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
+    fps = _output_fps(project)
+    offset_ms = project.analysis.sync_offset_ms
+
+    input_args = [
+        *ffmpeg_command([
+            "-v",
+            "info",
+        ]),
+        "-i",
+        project.primary_video.path,
+    ]
+    for source in merge_sources:
+        asset = source.asset
+        if offset_ms > 0:
+            input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
+        if asset.is_still_image:
+            input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
+        else:
+            input_args.extend(["-i", asset.path])
+    input_args.append("-an")
+
+    filter_parts = [
+        f"[0:v]setpts=PTS-STARTPTS,scale={project.primary_video.width}:{project.primary_video.height}[base0]"
+    ]
+    previous_label = "base0"
+    for index, source in enumerate(merge_sources, start=1):
+        asset = source.asset
+        rect = calculate_pip_rect(
+            project.primary_video,
+            asset,
+            project.merge.pip_size_percent,
+            source.pip_x,
+            source.pip_y,
+        )
+        asset_chain = f"[{index}:v]setpts=PTS-STARTPTS"
+        if offset_ms < 0:
+            asset_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
+        filter_parts.append(
+            f"{asset_chain},scale={rect.width}:{rect.height}[pip{index}]"
+        )
+        filter_parts.append(
+            f"[{previous_label}][pip{index}]overlay=x={rect.x}:y={rect.y}:"
+            f"eof_action=pass:shortest=0:repeatlast=0[base{index}]"
+        )
+        previous_label = f"base{index}"
+    filter_parts.append(f"[{previous_label}]format=rgba[f]")
+
+    command = [
+        *input_args,
+        "-filter_complex",
+        ";".join(filter_parts),
+        "-map",
+        "[f]",
+        "-r",
+        f"{fps:.3f}",
+        "-pix_fmt",
+        "rgba",
+        "-f",
+        "rawvideo",
+        "pipe:1",
+    ]
+    return BaseRenderPlan(
+        command=command,
+        width=project.primary_video.width,
+        height=project.primary_video.height,
+        fps=fps,
+        duration_ms=_merged_duration_ms(project, merge_sources),
     )
 
 
@@ -252,20 +336,23 @@ def _build_single_video_plan(project: Project) -> BaseRenderPlan:
 
 
 def _build_merge_plan(project: Project) -> BaseRenderPlan:
-    merge_assets = _merge_assets(project)
-    if not merge_assets:
+    merge_sources = _merge_sources(project)
+    if not merge_sources:
         return _build_single_video_plan(project)
-    if len(merge_assets) > 1:
-        return _build_grid_merge_plan(project, merge_assets)
+    if len(merge_sources) > 1:
+        if project.merge.layout == MergeLayout.PIP:
+            return _build_multi_pip_merge_plan(project, merge_sources)
+        return _build_grid_merge_plan(project, merge_sources)
 
-    secondary = merge_assets[0]
+    secondary_source = merge_sources[0]
+    secondary = secondary_source.asset
     canvas = calculate_merge_canvas(
         project.primary_video,
         secondary,
         project.merge.layout,
         project.merge.pip_size_percent,
-        project.merge.pip_x,
-        project.merge.pip_y,
+        secondary_source.pip_x,
+        secondary_source.pip_y,
     )
     fps = _output_fps(project)
     offset_ms = project.analysis.sync_offset_ms
@@ -329,12 +416,12 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         width=canvas.width,
         height=canvas.height,
         fps=fps,
-        duration_ms=_merged_duration_ms(project, [secondary]),
+        duration_ms=_merged_duration_ms(project, [secondary_source]),
     )
 
 
 def build_base_render_plan(project: Project) -> BaseRenderPlan:
-    if project.merge.enabled and project.secondary_video is not None:
+    if project.merge.enabled and _merge_sources(project):
         return _build_merge_plan(project)
     return _build_single_video_plan(project)
 

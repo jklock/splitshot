@@ -18,6 +18,8 @@ uv run splitshot --desktop
 uv run splitshot --no-open
 uv run splitshot --check
 uv run pytest
+uv run python -m playwright install chromium firefox webkit
+uv run python scripts/run_browser_ui_surface_audit.py
 uv run splitshot-benchmark-csv --output artifacts/stage_suite_analysis.csv
 ```
 
@@ -35,6 +37,9 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Run the full suite with `uv run pytest`.
 - Run a subset with `uv run pytest tests/test_export.py` or any other test module.
 - Re-run browser-focused tests after changing `src/splitshot/browser/static` or `src/splitshot/browser/server.py`.
+- Use `uv run python scripts/run_browser_ui_surface_audit.py` when you need rendered DOM checks for the browser shell.
+- The audit defaults to the available Chromium, Firefox, and Safari-class WebKit targets and also picks up installed Chrome or Edge channels when present.
+- The VS Code integrated browser is useful for Chromium-class debugging, but actual cross-browser validation should run from the VS Code terminal through Playwright.
 
 ## Project State Files
 
@@ -48,5 +53,5 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Update both the project bundle load/save path and the browser state serialization when the project schema changes.
 - Use the technical docs in `src/splitshot/.../README.md` to locate the owning module before adding new behavior.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-14
+**Referenced files last updated:** 2026-04-14
