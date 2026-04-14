@@ -13,6 +13,7 @@ Local-first competition shooting video analysis, merge, scoring, and export.
 - Development workflow: [docs/DEVELOPING.md](docs/DEVELOPING.md)
 - Known constraints: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
 - End-user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- Markdown inventory: [docs/MARKDOWN_INDEX.md](docs/MARKDOWN_INDEX.md)
 - Package-level technical docs live beside the source in `src/splitshot/.../README.md`.
 
 ## Setup
@@ -157,3 +158,6 @@ The app needs `ffmpeg` and `ffprobe`. During development it finds them from `PAT
 ## License
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-from splitshot.domain.models import Project, ScoreLetter, ScoreMark, ShotEvent
+from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.timeline.model import raw_time_ms
 
 
@@ -248,7 +248,11 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
 
 
 def scoring_presets_for_api() -> list[dict[str, object]]:
-    return [asdict(preset) for preset in SCORING_PRESETS.values()]
+    return [
+        asdict(preset)
+        for preset in SCORING_PRESETS.values()
+        if preset.id != "gpa_time_plus"
+    ]
 
 
 def get_scoring_preset(ruleset: str) -> ScoringPreset:
@@ -268,6 +272,8 @@ def apply_scoring_preset(project: Project, ruleset: str) -> None:
 
 
 def _shot_score_total(project: Project) -> float:
+    if project.scoring.imported_stage is not None:
+        return float(project.scoring.imported_stage.aggregate_points)
     return sum(
         project.scoring.point_map.get(shot.score.letter.value, 0)
         for shot in project.analysis.shots
@@ -276,6 +282,8 @@ def _shot_score_total(project: Project) -> float:
 
 
 def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
+    if project.scoring.imported_stage is not None:
+        return float(project.scoring.imported_stage.shot_penalties)
     return sum(
         preset.score_penalty_map.get(shot.score.letter.value, 0)
         for shot in project.analysis.shots
@@ -299,31 +307,88 @@ def total_penalties(project: Project, preset: ScoringPreset | None = None) -> fl
     )
 
 
+def _format_overlay_stat(value: float | None, *, decimals: int = 2) -> str:
+    if value is None:
+        return ""
+    rounded = round(float(value))
+    if abs(float(value) - rounded) < 1e-9:
+        return str(int(rounded))
+    return f"{float(value):.{decimals}f}".rstrip("0").rstrip(".")
+
+
+def format_imported_stage_overlay_text(imported_stage: ImportedStageScore | None) -> str:
+    if imported_stage is None:
+        return ""
+
+    lines = ["Official"]
+    if imported_stage.raw_seconds is not None:
+        lines.append(f"Raw {float(imported_stage.raw_seconds):.2f}")
+
+    if imported_stage.match_type == "idpa":
+        lines.append(f"PD {_format_overlay_stat(imported_stage.aggregate_points)}")
+        if imported_stage.final_time is not None:
+            lines.append(f"Final {float(imported_stage.final_time):.2f}")
+        return "\n".join(lines)
+
+    points_value = (
+        float(imported_stage.total_points)
+        if imported_stage.total_points is not None
+        else float(imported_stage.aggregate_points)
+    )
+    lines.append(f"Points {_format_overlay_stat(points_value)}")
+
+    hit_factor_value = imported_stage.hit_factor
+    if hit_factor_value is None and imported_stage.total_points is not None and imported_stage.raw_seconds:
+        raw_seconds = float(imported_stage.raw_seconds)
+        if raw_seconds > 0:
+            hit_factor_value = max(0.0, float(imported_stage.total_points)) / raw_seconds
+    if hit_factor_value is not None:
+        lines.append(f"HF {float(hit_factor_value):.4f}")
+    return "\n".join(lines)
+
+
 def calculate_hit_factor(project: Project) -> float | None:
     preset = get_scoring_preset(project.scoring.ruleset)
     raw_ms = raw_time_ms(project)
+    imported_stage = project.scoring.imported_stage
+    raw_seconds = (
+        float(imported_stage.raw_seconds)
+        if imported_stage is not None and imported_stage.raw_seconds is not None
+        else None if raw_ms is None else raw_ms / 1000.0
+    )
     if (
         not project.scoring.enabled
         or preset.mode != "hit_factor"
-        or raw_ms is None
-        or raw_ms <= 0
+        or raw_seconds is None
+        or raw_seconds <= 0
     ):
         return None
+    if imported_stage is not None:
+        if imported_stage.total_points is not None:
+            return max(0.0, float(imported_stage.total_points)) / raw_seconds
+        if imported_stage.hit_factor is not None:
+            return float(imported_stage.hit_factor)
 
     adjusted_points = max(0.0, _shot_score_total(project) - total_penalties(project, preset))
     if adjusted_points == 0:
         return 0.0
-    return adjusted_points / (raw_ms / 1000.0)
+    return adjusted_points / raw_seconds
 
 
 def calculate_scoring_summary(project: Project) -> dict[str, object]:
     preset = get_scoring_preset(project.scoring.ruleset)
     raw_ms = raw_time_ms(project)
-    raw_seconds = None if raw_ms is None else raw_ms / 1000.0
+    imported_stage = project.scoring.imported_stage
+    raw_seconds = (
+        float(imported_stage.raw_seconds)
+        if imported_stage is not None and imported_stage.raw_seconds is not None
+        else None if raw_ms is None else raw_ms / 1000.0
+    )
     shot_points = _shot_score_total(project)
     shot_penalties = _shot_penalty_total(project, preset)
     field_penalties = _field_penalty_total(project, preset)
     total_penalty_value = total_penalties(project, preset)
+    hit_factor_value = calculate_hit_factor(project)
     summary: dict[str, object] = {
         "enabled": project.scoring.enabled,
         "ruleset": preset.id,
@@ -345,19 +410,26 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         "shot_penalties": shot_penalties,
         "field_penalties": field_penalties,
         "total_penalties": total_penalty_value,
-        "hit_factor": calculate_hit_factor(project),
+        "hit_factor": hit_factor_value,
         "final_time": None,
+        "imported_stage": None if imported_stage is None else asdict(imported_stage),
+        "imported_overlay_text": format_imported_stage_overlay_text(imported_stage),
         "display_label": "Hit Factor" if preset.mode == "hit_factor" else "Final",
         "display_value": "--",
     }
     if not project.scoring.enabled or raw_seconds is None:
         return summary
     if preset.mode == "hit_factor":
-        value = summary["hit_factor"]
+        value = hit_factor_value
         summary["display_value"] = "--" if value is None else f"{float(value):.2f}"
         return summary
 
-    final_time = max(0.0, raw_seconds + shot_points + total_penalty_value)
+    imported_final_time = (
+        float(imported_stage.final_time)
+        if imported_stage is not None and imported_stage.final_time is not None
+        else None
+    )
+    final_time = imported_final_time if imported_final_time is not None else max(0.0, raw_seconds + shot_points + total_penalty_value)
     summary["final_time"] = final_time
     summary["display_value"] = f"{final_time:.2f}"
     return summary

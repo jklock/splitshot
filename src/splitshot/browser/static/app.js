@@ -23,6 +23,10 @@ let activeResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
 let secondaryPreviewSyncFrame = null;
+let secondaryPreviewPlayErrorKey = null;
+let overlayColorCommitTimer = null;
+
+const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 
 const $ = (id) => document.getElementById(id);
 
@@ -102,6 +106,45 @@ function splitSeconds(ms) {
   return `${seconds(ms)}s`;
 }
 
+function formatMatchType(matchType) {
+  return {
+    uspsa: "USPSA",
+    ipsc: "IPSC",
+    idpa: "IDPA",
+  }[String(matchType || "").toLowerCase()] || "PractiScore";
+}
+
+function formatNumber(value, digits = 2) {
+  if (value === null || value === undefined || value === "") return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  if (Number.isInteger(numeric)) return String(numeric);
+  return numeric.toFixed(digits);
+}
+
+function formatImportedCounts(scoreCounts) {
+  return Object.entries(scoreCounts || {})
+    .filter(([, value]) => Number(value || 0) !== 0)
+    .map(([label, value]) => `${label} ${formatNumber(value, 2)}`)
+    .join(", ");
+}
+
+function renderDetailsList(id, rows) {
+  const list = $(id);
+  if (!list) return;
+  list.innerHTML = "";
+  rows
+    .filter(([, value]) => value !== "" && value !== null && value !== undefined)
+    .forEach(([label, value]) => {
+      const title = document.createElement("dt");
+      title.textContent = label;
+      const detail = document.createElement("dd");
+      detail.textContent = String(value);
+      list.appendChild(title);
+      list.appendChild(detail);
+    });
+}
+
 function requireValue(id, label) {
   const value = $(id).value.trim();
   if (!value) throw new Error(`${label} is required.`);
@@ -122,6 +165,10 @@ function syncControlChecked(control, checked) {
   if (!control || controlIsActive(control)) return;
   const nextChecked = Boolean(checked);
   if (control.checked !== nextChecked) control.checked = nextChecked;
+}
+
+function isColorInput(control) {
+  return control instanceof HTMLInputElement && control.type === "color";
 }
 
 function fileName(path) {
@@ -240,6 +287,7 @@ function syncOverlayPreviewStateFromControls() {
   overlay.show_shots = Boolean(payload.show_shots);
   overlay.show_score = Boolean(payload.show_score);
   overlay.custom_box_enabled = Boolean(payload.custom_box_enabled);
+  overlay.custom_box_mode = payload.custom_box_mode || "manual";
   overlay.custom_box_text = payload.custom_box_text || "";
   overlay.custom_box_quadrant = payload.custom_box_quadrant;
   overlay.custom_box_x = normalizedCoordinateValue(payload.custom_box_x);
@@ -263,6 +311,49 @@ function syncOverlayPreviewStateFromControls() {
   overlayStyleMode = overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(overlay.spacing ?? overlaySpacing);
   overlayMargin = Number(overlay.margin ?? overlayMargin);
+}
+
+function previewOverlayControlChanges() {
+  syncOverlayPreviewStateFromControls();
+  renderLiveOverlay();
+}
+
+function commitOverlayControlChanges() {
+  previewOverlayControlChanges();
+  autoApplyOverlay();
+}
+
+function clearOverlayColorCommitTimer() {
+  if (overlayColorCommitTimer === null) return;
+  window.clearTimeout(overlayColorCommitTimer);
+  overlayColorCommitTimer = null;
+}
+
+function scheduleOverlayColorCommit() {
+  clearOverlayColorCommitTimer();
+  overlayColorCommitTimer = window.setTimeout(() => {
+    overlayColorCommitTimer = null;
+    autoApplyOverlay();
+  }, OVERLAY_COLOR_COMMIT_DELAY_MS);
+}
+
+function previewOverlayColorChanges() {
+  previewOverlayControlChanges();
+  scheduleOverlayColorCommit();
+}
+
+function flushOverlayColorCommit() {
+  if (overlayColorCommitTimer === null) return;
+  clearOverlayColorCommitTimer();
+  autoApplyOverlay();
+}
+
+function bindOverlayColorInput(control) {
+  if (!isColorInput(control) || control.dataset.overlayColorBound === "true") return;
+  control.dataset.overlayColorBound = "true";
+  control.addEventListener("input", previewOverlayColorChanges);
+  control.addEventListener("change", previewOverlayColorChanges);
+  control.addEventListener("blur", flushOverlayColorCommit);
 }
 
 function syncMergePreviewStateFromControls() {
@@ -289,6 +380,36 @@ function syncOverlayCoordinateControlState() {
       ? `Set custom ${axis.toLowerCase()} position from 0 to 1.`
       : "Enable the Custom quadrant to edit coordinates.";
   });
+}
+
+function effectiveCustomBoxText() {
+  if (!state?.project?.overlay) return "";
+  if ((state.project.overlay.custom_box_mode || "manual") === "imported_summary") {
+    return state.scoring_summary?.imported_overlay_text || "";
+  }
+  return state.project.overlay.custom_box_text || "";
+}
+
+function syncCustomBoxModeState() {
+  const mode = $("custom-box-mode").value;
+  const textArea = $("custom-box-text");
+  const hint = $("custom-box-mode-hint");
+  const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
+  const usesImportedSummary = mode === "imported_summary";
+
+  textArea.disabled = usesImportedSummary;
+  textArea.placeholder = usesImportedSummary
+    ? "Uses the imported PractiScore stage summary after the last shot"
+    : "Text to show over the reviewed video";
+  textArea.title = usesImportedSummary
+    ? "This box auto-populates from the imported PractiScore stage and appears after the last shot."
+    : "Enter the text to show over the reviewed video.";
+  if (!hint) return;
+  hint.textContent = usesImportedSummary
+    ? importedReady
+      ? "Uses the imported PractiScore stage summary and appears only after the last shot. Clear Box X/Y to use the selected quadrant."
+      : "Import an IDPA CSV or USPSA/IPSC PractiScore results file first. The summary appears after the last shot. Clear Box X/Y to use the selected quadrant."
+    : "Uses the text below and follows the same box styling and placement as export. Clear Box X/Y to use the selected quadrant.";
 }
 
 function layoutViewportHeight() {
@@ -490,12 +611,13 @@ function processingForPath(path) {
     return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
   }
   if (path === "/api/import/merge" || path === "/api/files/merge") {
-    return { message: "Importing merge media...", detail: "Adding media to the merge list" };
+    return { message: "Importing media...", detail: "Adding media to the list" };
   }
   if (path === "/api/import/secondary") {
-    return { message: "Importing merge media...", detail: "Adding media to the merge list" };
+    return { message: "Importing media...", detail: "Adding media to the list" };
   }
   if (path === "/api/project/details") return { message: "Updating project details...", detail: "Saving metadata locally" };
+  if (path === "/api/project/practiscore") return { message: "Updating match import settings...", detail: "Saving stage and competitor details" };
   if (path === "/api/project/save") return { message: "Saving project...", detail: "Updating project bundle" };
   if (path === "/api/project/delete") return { message: "Deleting project...", detail: "Removing project bundle" };
   if (path === "/api/project/new") return { message: "Creating new project...", detail: "Resetting project state" };
@@ -506,8 +628,13 @@ async function postFile(path, file) {
   if (!file) return null;
   const form = new FormData();
   form.append("file", file, file.name);
-  const finishProcessing = beginProcessing(`Analyzing ${file.name}...`, "Detecting beep and shots");
-  setStatus(`Analyzing ${file.name} locally...`);
+  const uploadState = path === "/api/files/practiscore"
+    ? { message: `Importing ${file.name}...`, detail: "Parsing PractiScore stage results" }
+    : path === "/api/files/merge"
+      ? { message: `Importing ${file.name}...`, detail: "Adding media to the list" }
+      : { message: `Analyzing ${file.name}...`, detail: "Detecting beep and shots" };
+  const finishProcessing = beginProcessing(uploadState.message, uploadState.detail);
+  setStatus(uploadState.message);
   activity("file.selected", { path, name: file.name, size: file.size });
   try {
     const response = await fetch(path, { method: "POST", body: form });
@@ -579,7 +706,7 @@ function applyRemoteState(nextState) {
   }
   currentProjectId = nextProjectId;
   state = nextState;
-  if (selectedShotId && !(state.project.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {
+  if (selectedShotId && !(state.project?.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {
     selectedShotId = state.project.ui_state?.selected_shot_id || null;
   }
 }
@@ -619,12 +746,14 @@ function resetLocalProjectView() {
     "media-badge",
     "project-name",
     "project-description",
+    "practiscore-status",
     "current-file",
     "timing-summary",
     "selected-shot-copy",
     "selected-timing-shot",
     "selected-score-shot",
     "scoring-result",
+    "scoring-imported-caption",
     "status",
     "processing-message",
     "processing-detail",
@@ -637,6 +766,8 @@ function resetLocalProjectView() {
       element.value = "Untitled Project";
     } else if (id === "project-description") {
       element.value = "";
+    } else if (id === "practiscore-status") {
+      element.textContent = "No results imported";
     } else if (id === "media-badge" || id === "current-file") {
       element.textContent = "No video selected";
     } else if (id === "timing-summary") {
@@ -647,22 +778,36 @@ function resetLocalProjectView() {
       element.textContent = "No shot selected";
     } else if (id === "scoring-result") {
       element.textContent = "--";
+    } else if (id === "scoring-imported-caption") {
+      element.textContent = "No PractiScore stage imported.";
     } else if (id === "status" || id === "processing-message") {
       element.textContent = "Ready.";
     } else if (id === "processing-detail") {
       element.textContent = "Local processing";
     }
   });
-  ["primary-file-path", "project-path", "export-path"].forEach((id) => {
+  [
+    "primary-file-path",
+    "project-path",
+    "export-path",
+    "match-type",
+    "match-stage-number",
+    "match-competitor-name",
+    "match-competitor-place",
+  ].forEach((id) => {
     const element = $(id);
     if (element) element.value = "";
   });
   const mergeMediaInput = $("merge-media-input");
   if (mergeMediaInput) mergeMediaInput.value = "";
+  const practiscoreFileInput = $("practiscore-file-input");
+  if (practiscoreFileInput) practiscoreFileInput.value = "";
   const mergeMediaList = $("merge-media-list");
   if (mergeMediaList) mergeMediaList.innerHTML = "";
   const mergeMediaSummary = $("merge-media-summary");
   if (mergeMediaSummary) mergeMediaSummary.textContent = "Add as many videos or images as you want. Multiple items export as a grid.";
+  renderDetailsList("practiscore-import-summary", []);
+  renderDetailsList("scoring-imported-summary", []);
   setActiveTool("project");
   stopOverlayLoop();
 }
@@ -722,7 +867,7 @@ function renderHeader() {
   $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/project.ssproj`;
   syncControlValue($("project-path"), state.project.path || "");
   $("media-badge").textContent = state.media.primary_available
-    ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} merge item${mergeCount === 1 ? "" : "s"}` : ""}`
+    ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
     : "No video selected";
 }
 
@@ -845,7 +990,11 @@ function renderVideo() {
 function syncSecondaryPreview() {
   const primary = $("primary-video");
   const secondary = $("secondary-video");
-  if (!state?.media?.secondary_available || !state.project.merge.enabled || !secondary.src) return;
+  if (!primary || !secondary) return;
+  if (!state?.media?.secondary_available || !state.project.merge.enabled || !secondary.src) {
+    clearSecondaryPreviewPlayError();
+    return;
+  }
   const target = Math.max(0, primary.currentTime + ((state.project.analysis.sync_offset_ms || 0) / 1000));
   const seekThreshold = primary.paused ? 0.08 : 0.2;
   if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > seekThreshold) {
@@ -857,9 +1006,44 @@ function syncSecondaryPreview() {
   }
   if (primary.paused && !secondary.paused) {
     secondary.pause();
+    clearSecondaryPreviewPlayError();
   } else if (!primary.paused && secondary.paused) {
-    secondary.play().catch(() => {});
+    if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) return;
+    try {
+      const playPromise = secondary.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            clearSecondaryPreviewPlayError();
+          })
+          .catch((error) => {
+            reportSecondaryPreviewPlayError(error);
+          });
+      } else {
+        clearSecondaryPreviewPlayError();
+      }
+    } catch (error) {
+      reportSecondaryPreviewPlayError(error);
+    }
   }
+}
+
+function clearSecondaryPreviewPlayError() {
+  secondaryPreviewPlayErrorKey = null;
+}
+
+function reportSecondaryPreviewPlayError(error) {
+  if (error?.name === "AbortError") return;
+  const errorName = error?.name || "Error";
+  const errorMessage = error?.message || String(error || "Unknown error");
+  const errorKey = `${errorName}:${errorMessage}`;
+  if (secondaryPreviewPlayErrorKey === errorKey) return;
+  secondaryPreviewPlayErrorKey = errorKey;
+  const statusMessage = errorName === "NotAllowedError"
+    ? "Secondary preview playback is blocked until the browser allows media playback."
+    : `Secondary preview playback failed: ${errorMessage}`;
+  setStatus(statusMessage);
+  activity("video.secondary_play.error", { name: errorName, error: errorMessage });
 }
 
 function scheduleSecondaryPreviewSync() {
@@ -1092,6 +1276,11 @@ function shotLabelForEvent(shotId) {
   return `${segment.label} ${segment.absolute_s}s`;
 }
 
+function deleteTimingEvent(eventId) {
+  activity("timing.event.delete", { event_id: eventId });
+  callApi("/api/events/delete", { event_id: eventId });
+}
+
 function renderTimingEventList() {
   const list = $("timing-event-list");
   if (!list) return;
@@ -1121,7 +1310,13 @@ function renderTimingEventList() {
     const note = document.createElement("span");
     note.textContent = event.note || event.kind;
 
-    row.append(kind, after, before, note);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.setAttribute("aria-label", `Remove timing event ${event.label || event.kind}`);
+    remove.addEventListener("click", () => deleteTimingEvent(event.id));
+
+    row.append(kind, after, before, note, remove);
     list.appendChild(row);
   });
 }
@@ -1395,16 +1590,18 @@ function renderScoringPenaltyFields(summary) {
 function renderScoringPresetOptions() {
   const select = $("scoring-preset");
   const selected = state.project.scoring.ruleset;
+  const presets = state.scoring_presets || [];
   const previousLength = select.options.length;
   select.innerHTML = "";
-  (state.scoring_presets || []).forEach((preset) => {
+  presets.forEach((preset) => {
     const option = document.createElement("option");
     option.value = preset.id;
     option.textContent = preset.name;
     select.appendChild(option);
   });
-  select.value = selected;
-  const preset = (state.scoring_presets || []).find((item) => item.id === selected);
+  const hasSelected = presets.some((item) => item.id === selected);
+  select.value = hasSelected ? selected : (select.options[0]?.value || "");
+  const preset = presets.find((item) => item.id === select.value);
   const summary = state.scoring_summary;
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "Choose a scoring preset.";
   $("scoring-result").textContent = `${summary.display_label}: ${summary.display_value}`;
@@ -1418,6 +1615,46 @@ function renderScoringPresetDescription() {
   const selected = $("scoring-preset").value;
   const preset = (state.scoring_presets || []).find((item) => item.id === selected);
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "";
+}
+
+function renderPractiScoreSummaries() {
+  const imported = state.scoring_summary?.imported_stage;
+  if (!imported) {
+    $("practiscore-status").textContent = "No results imported";
+    $("scoring-imported-caption").textContent = "No PractiScore stage imported.";
+    renderDetailsList("practiscore-import-summary", []);
+    renderDetailsList("scoring-imported-summary", []);
+    return;
+  }
+  const stageLabel = imported.stage_name
+    ? `Stage ${imported.stage_number}: ${imported.stage_name}`
+    : `Stage ${imported.stage_number}`;
+  const divisionLabel = [imported.division, imported.classification, imported.power_factor]
+    .filter(Boolean)
+    .join(" / ");
+  const countsLabel = formatImportedCounts(imported.score_counts);
+  const resultLabel = state.scoring_summary?.display_label || "Result";
+  $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
+  $("scoring-imported-caption").textContent = `Imported ${formatMatchType(imported.match_type)} data for ${imported.competitor_name}.`;
+  renderDetailsList("practiscore-import-summary", [
+    ["Source", imported.source_name || "Selected file"],
+    ["Match", formatMatchType(imported.match_type)],
+    ["Stage", stageLabel],
+    ["Competitor", imported.competitor_name],
+    ["Place", imported.competitor_place ? `#${imported.competitor_place}` : ""],
+    ["Division", divisionLabel],
+    ["Raw Time", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],
+    [resultLabel, state.scoring_summary?.display_value || ""],
+  ]);
+  renderDetailsList("scoring-imported-summary", [
+    ["Source", imported.source_name || "Selected file"],
+    ["Stage", stageLabel],
+    ["Competitor", imported.competitor_name],
+    ["Counts", countsLabel],
+    ["Official Points", imported.total_points !== null && imported.total_points !== undefined ? formatNumber(imported.total_points, 4) : ""],
+    ["Stage Points", imported.stage_points !== null && imported.stage_points !== undefined ? formatNumber(imported.stage_points, 4) : ""],
+    ["Stage Place", imported.stage_place ? `#${imported.stage_place}` : ""],
+  ]);
 }
 
 function renderExportPresetOptions() {
@@ -1464,6 +1701,10 @@ function renderControls() {
   $("sync-offset").textContent = `${state.project.analysis.sync_offset_ms || 0} ms`;
   syncControlValue($("project-name"), state.project.name || "Untitled Project");
   syncControlValue($("project-description"), state.project.description || "");
+  syncControlValue($("match-type"), state.project.scoring.match_type || "");
+  syncControlValue($("match-stage-number"), state.project.scoring.stage_number ?? "");
+  syncControlValue($("match-competitor-name"), state.project.scoring.competitor_name || "");
+  syncControlValue($("match-competitor-place"), state.project.scoring.competitor_place ?? "");
   syncControlChecked($("merge-enabled"), state.project.merge.enabled);
   syncControlValue($("merge-layout"), state.project.merge.layout);
   const pipValue = Number(
@@ -1498,6 +1739,7 @@ function renderControls() {
   syncControlChecked($("show-shots"), state.project.overlay.show_shots);
   syncControlChecked($("show-score"), state.project.overlay.show_score);
   syncControlChecked($("custom-box-enabled"), state.project.overlay.custom_box_enabled);
+  syncControlValue($("custom-box-mode"), state.project.overlay.custom_box_mode || "manual");
   syncControlValue($("custom-box-text"), state.project.overlay.custom_box_text || "");
   syncControlValue($("custom-box-quadrant"), state.project.overlay.custom_box_quadrant);
   syncControlValue($("custom-box-x"), state.project.overlay.custom_box_x ?? "");
@@ -1508,11 +1750,10 @@ function renderControls() {
   syncControlValue($("custom-box-background-color"), state.project.overlay.custom_box_background_color || "#000000");
   syncControlValue($("custom-box-text-color"), state.project.overlay.custom_box_text_color || "#ffffff");
   syncOverlayCoordinateControlState();
+  syncCustomBoxModeState();
   syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
   syncControlValue($("quality"), state.project.export.quality);
   syncControlValue($("aspect-ratio"), state.project.export.aspect_ratio);
-  syncControlValue($("crop-center-x"), state.project.export.crop_center_x);
-  syncControlValue($("crop-center-y"), state.project.export.crop_center_y);
   syncControlValue($("target-width"), state.project.export.target_width ?? "");
   syncControlValue($("target-height"), state.project.export.target_height ?? "");
   syncControlValue($("frame-rate"), state.project.export.frame_rate);
@@ -1526,6 +1767,7 @@ function renderControls() {
   syncControlValue($("ffmpeg-preset"), state.project.export.ffmpeg_preset);
   syncExportPathControl();
   renderScoringPresetOptions();
+  renderPractiScoreSummaries();
   renderExportPresetOptions();
   renderExportLog();
   renderStyleControls();
@@ -1551,6 +1793,8 @@ function renderStyleControls() {
         <label>Text <input type="color" data-field="text_color" /></label>
         <label>Opacity <input type="range" data-field="opacity" min="0" max="1" step="0.05" /></label>
       `;
+      bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
+      bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
       grid.appendChild(card);
     }
     const heading = card.querySelector("h4");
@@ -1561,10 +1805,7 @@ function renderStyleControls() {
   });
 
   const scoreGrid = $("score-color-grid");
-  const scoreKeys = [
-    ...(state.scoring_summary?.score_options || []),
-    ...Object.keys(state.project.overlay.scoring_colors || {}),
-  ];
+  const scoreKeys = state.scoring_summary?.score_options || [];
   const uniqueLetters = [...new Set(scoreKeys)];
   const validLetters = new Set(uniqueLetters);
   scoreGrid.querySelectorAll(".score-color-input[data-letter]").forEach((input) => {
@@ -1581,6 +1822,7 @@ function renderStyleControls() {
       input.type = "color";
       input.className = "score-color-input";
       input.dataset.letter = letter;
+      bindOverlayColorInput(input);
       label.appendChild(input);
       scoreGrid.appendChild(label);
     }
@@ -1595,7 +1837,7 @@ function renderMergeMediaList() {
   const mergeSources = state?.project?.merge_sources || [];
   const multiSource = mergeSources.length > 1;
   summary.textContent = mergeSources.length > 0
-    ? `${mergeSources.length} merge item${mergeSources.length === 1 ? "" : "s"} loaded. Multiple items export as a grid.`
+    ? `${mergeSources.length} added item${mergeSources.length === 1 ? "" : "s"} loaded. Multiple items export as a grid.`
     : "Add as many videos or images as you want. Multiple items export as a grid.";
   const mergeLayout = $("merge-layout");
   if (mergeLayout) mergeLayout.disabled = multiSource;
@@ -1609,7 +1851,7 @@ function renderMergeMediaList() {
   if (mergeSources.length === 0) {
     const empty = document.createElement("div");
     empty.className = "hint";
-    empty.textContent = "No merge media added yet.";
+    empty.textContent = "No media added yet.";
     list.appendChild(empty);
     return;
   }
@@ -1674,6 +1916,9 @@ function badgeElement(
   badge.style.justifyContent = textBias === "left" ? "flex-start" : textBias === "right" ? "flex-end" : "center";
   badge.style.textAlign = textBias;
   badge.style.overflow = "hidden";
+  badge.style.whiteSpace = text.includes("\n") ? "pre-line" : "nowrap";
+  badge.style.wordBreak = "break-word";
+  badge.style.lineHeight = text.includes("\n") ? "1.2" : "1";
   badge.style.padding = `${overlaySpacing}px ${Math.max(8, overlaySpacing * 1.5)}px`;
   badge.style.margin = `${overlayMargin}px`;
   if (widthOverride > 0) badge.style.width = `${widthOverride}px`;
@@ -1727,8 +1972,8 @@ function positionOverlayContainer(overlay, quadrantValue = null, frameRect = nul
   overlay.style.transform = "";
   overlay.style.width = "auto";
   overlay.style.height = "auto";
-  overlay.style.maxWidth = "calc(100% - 12px)";
-  overlay.style.maxHeight = "calc(100% - 12px)";
+  overlay.style.maxWidth = frameRect ? `${Math.max(0, frameRect.width)}px` : "calc(100% - 12px)";
+  overlay.style.maxHeight = frameRect ? `${Math.max(0, frameRect.height)}px` : "calc(100% - 12px)";
   overlay.style.overflow = "hidden";
   overlay.style.flexDirection = ["left", "right"].includes(direction) ? "row" : "column";
   if (direction === "left") overlay.style.flexDirection = "row-reverse";
@@ -1741,45 +1986,71 @@ function positionOverlayContainer(overlay, quadrantValue = null, frameRect = nul
       overlay.style.left = `${frameRect.left + (x * frameRect.width)}px`;
       overlay.style.top = `${frameRect.top + (y * frameRect.height)}px`;
     }
-    overlay.style.justifyContent = "center";
-    overlay.style.alignItems = "center";
-    overlay.style.transform = "translate(-50%, -50%)";
+    overlay.style.justifyContent = "flex-start";
+    overlay.style.alignItems = "flex-start";
+    overlay.style.transform = "";
     return;
   }
 
-  if (frameRect) {
-    overlay.style.left = `${frameRect.left}px`;
-    overlay.style.top = `${frameRect.top}px`;
-    overlay.style.width = `${frameRect.width}px`;
-    overlay.style.height = `${frameRect.height}px`;
-  }
+  if (!frameRect) return;
 
   const [vertical, horizontal] = quadrant.split("_");
-  const rowLayout = ["left", "right"].includes(direction);
-  const primaryAxis = rowLayout ? horizontal : vertical;
-  const crossAxis = rowLayout ? vertical : horizontal;
-  overlay.style.justifyContent = alignToEdge(primaryAxis);
-  overlay.style.alignItems = alignToEdge(crossAxis);
+  const anchorX = horizontal === "left"
+    ? frameRect.left
+    : horizontal === "middle"
+      ? frameRect.left + (frameRect.width / 2)
+      : frameRect.left + frameRect.width;
+  const anchorY = vertical === "top"
+    ? frameRect.top
+    : vertical === "middle"
+      ? frameRect.top + (frameRect.height / 2)
+      : frameRect.top + frameRect.height;
+  const translateX = horizontal === "left" ? "0" : horizontal === "middle" ? "-50%" : "-100%";
+  const translateY = vertical === "top" ? "0" : vertical === "middle" ? "-50%" : "-100%";
+  overlay.style.left = `${anchorX}px`;
+  overlay.style.top = `${anchorY}px`;
+  overlay.style.justifyContent = "flex-start";
+  overlay.style.alignItems = "flex-start";
+  overlay.style.transform = translateX === "0" && translateY === "0"
+    ? ""
+    : `translate(${translateX}, ${translateY})`;
+}
+
+function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
+  if (!overlay || !frameRect) return;
+  const anchorBadge = overlay.firstElementChild;
+  if (!(anchorBadge instanceof HTMLElement)) return;
+  const x = normalizedCoordinateValue(customPoint?.x) ?? 0.5;
+  const y = normalizedCoordinateValue(customPoint?.y) ?? 0.5;
+  overlay.style.left = `${frameRect.left + (x * frameRect.width)}px`;
+  overlay.style.top = `${frameRect.top + (y * frameRect.height)}px`;
+  overlay.style.justifyContent = "flex-start";
+  overlay.style.alignItems = "flex-start";
+  overlay.style.transform = "";
+  const overlayRect = overlay.getBoundingClientRect();
+  const badgeRect = anchorBadge.getBoundingClientRect();
+  const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);
+  const anchorOffsetY = (badgeRect.top - overlayRect.top) + (badgeRect.height / 2);
+  overlay.style.transform = `translate(${-anchorOffsetX}px, ${-anchorOffsetY}px)`;
 }
 
 function positionCustomBadge(badge, frameRect) {
-  const customX = state.project.overlay.custom_box_x;
-  const customY = state.project.overlay.custom_box_y;
-  if (customX === null || customX === undefined || customX === "" || customY === null || customY === undefined || customY === "") {
-    return;
-  }
+  const customX = normalizedCoordinateValue(state.project.overlay.custom_box_x);
+  const customY = normalizedCoordinateValue(state.project.overlay.custom_box_y);
+  if (customX === null || customY === null) return false;
   badge.style.position = "absolute";
   badge.style.margin = "0";
-  badge.style.left = `${clamp(Number(customX) * frameRect.width, 0, frameRect.width)}px`;
-  badge.style.top = `${clamp(Number(customY) * frameRect.height, 0, frameRect.height)}px`;
+  badge.style.left = `${clamp(customX * frameRect.width, 0, frameRect.width)}px`;
+  badge.style.top = `${clamp(customY * frameRect.height, 0, frameRect.height)}px`;
   badge.style.transform = "translate(-50%, -50%)";
+  return true;
 }
 
 let customOverlayDrag = null;
 
 function beginCustomOverlayDrag(event) {
   const customOverlay = $("custom-overlay");
-  if (event.button !== 0 || !customOverlay || !customOverlay.classList.contains("has-badge") || !state.project.overlay.custom_box_enabled || !state.project.overlay.custom_box_text) return;
+  if (event.button !== 0 || !customOverlay || !customOverlay.classList.contains("has-badge") || !state.project.overlay.custom_box_enabled || !effectiveCustomBoxText().trim()) return;
   event.preventDefault();
   const stage = $("video-stage");
   const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
@@ -1791,7 +2062,6 @@ function beginCustomOverlayDrag(event) {
     startClientY: event.clientY,
     startX,
     startY,
-    frameRect,
   };
   capturePointer(customOverlay, event.pointerId);
   customOverlay.classList.add("dragging");
@@ -1799,9 +2069,14 @@ function beginCustomOverlayDrag(event) {
 
 function moveCustomOverlayDrag(event) {
   if (!customOverlayDrag) return;
-  const { startClientX, startClientY, startX, startY, frameRect } = customOverlayDrag;
-  const deltaX = (event.clientX - startClientX) / frameRect.width;
-  const deltaY = (event.clientY - startClientY) / frameRect.height;
+  const stage = $("video-stage");
+  if (!stage) return;
+  const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const width = Math.max(1, frameRect.width || 0);
+  const height = Math.max(1, frameRect.height || 0);
+  const { startClientX, startClientY, startX, startY } = customOverlayDrag;
+  const deltaX = (event.clientX - startClientX) / width;
+  const deltaY = (event.clientY - startClientY) / height;
   const newX = clamp(startX + deltaX, 0, 1);
   const newY = clamp(startY + deltaY, 0, 1);
   $("custom-box-x").value = newX.toFixed(3);
@@ -1838,7 +2113,19 @@ function renderLiveOverlay() {
     x: state.project.overlay.custom_x,
     y: state.project.overlay.custom_y,
   });
-  positionOverlayContainer(customOverlay, state.project.overlay.custom_box_quadrant, frameRect);
+  const customBoxHasCoordinates = normalizedCoordinateValue(state.project.overlay.custom_box_x) !== null
+    && normalizedCoordinateValue(state.project.overlay.custom_box_y) !== null;
+  if (customBoxHasCoordinates) {
+    customOverlay.style.left = `${frameRect.left}px`;
+    customOverlay.style.top = `${frameRect.top}px`;
+    customOverlay.style.width = `${frameRect.width}px`;
+    customOverlay.style.height = `${frameRect.height}px`;
+    customOverlay.style.transform = "";
+    customOverlay.style.justifyContent = "flex-start";
+    customOverlay.style.alignItems = "flex-start";
+  } else {
+    positionOverlayContainer(customOverlay, state.project.overlay.custom_box_quadrant, frameRect);
+  }
 
   const video = $("primary-video");
   const positionMs = Math.round((video.currentTime || 0) * 1000);
@@ -1896,14 +2183,23 @@ function renderLiveOverlay() {
     );
   }
 
-  if (state.project.overlay.custom_box_enabled && state.project.overlay.custom_box_text) {
+  if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {
+    pinCustomOverlayAnchor(overlay, frameRect, {
+      x: state.project.overlay.custom_x,
+      y: state.project.overlay.custom_y,
+    });
+  }
+
+  const customBoxText = effectiveCustomBoxText().trim();
+  const importedSummaryMode = (state.project.overlay.custom_box_mode || "manual") === "imported_summary";
+  if (state.project.overlay.custom_box_enabled && customBoxText && (!importedSummaryMode || finalShotReached)) {
     const customBoxStyle = {
       background_color: state.project.overlay.custom_box_background_color || state.project.overlay.hit_factor_badge.background_color,
       text_color: state.project.overlay.custom_box_text_color || state.project.overlay.hit_factor_badge.text_color,
       opacity: state.project.overlay.custom_box_opacity ?? state.project.overlay.hit_factor_badge.opacity,
     };
     const customBadge = badgeElement(
-      state.project.overlay.custom_box_text,
+      customBoxText,
       customBoxStyle,
       size,
       null,
@@ -2155,6 +2451,7 @@ function readOverlayPayload() {
     show_shots: $("show-shots").checked,
     show_score: $("show-score").checked,
     custom_box_enabled: $("custom-box-enabled").checked,
+    custom_box_mode: $("custom-box-mode").value,
     custom_box_text: $("custom-box-text").value,
     custom_box_quadrant: $("custom-box-quadrant").value,
     custom_box_x: $("custom-box-x").value,
@@ -2172,6 +2469,32 @@ function readProjectDetailsPayload() {
     name: $("project-name").value,
     description: $("project-description").value,
   };
+}
+
+function readPractiScoreContextPayload() {
+  return {
+    match_type: $("match-type").value,
+    stage_number: $("match-stage-number").value ? Number($("match-stage-number").value) : "",
+    competitor_name: $("match-competitor-name").value.trim(),
+    competitor_place: $("match-competitor-place").value ? Number($("match-competitor-place").value) : "",
+  };
+}
+
+function validatePractiScoreSelection() {
+  const payload = readPractiScoreContextPayload();
+  if (!payload.match_type) {
+    setStatus("Choose a match type before selecting PractiScore results.");
+    return null;
+  }
+  if (!payload.stage_number) {
+    setStatus("Enter a stage number before selecting PractiScore results.");
+    return null;
+  }
+  if (!payload.competitor_name) {
+    setStatus("Enter a competitor name before selecting PractiScore results.");
+    return null;
+  }
+  return payload;
 }
 
 async function postFiles(path, files) {
@@ -2198,8 +2521,6 @@ function readLayoutPayload() {
   return {
     quality: $("quality").value,
     aspect_ratio: $("aspect-ratio").value,
-    crop_center_x: Number($("crop-center-x").value),
-    crop_center_y: Number($("crop-center-y").value),
   };
 }
 
@@ -2228,6 +2549,15 @@ function readExportSettingsPayload() {
     color_space: $("color-space").value,
     two_pass: $("two-pass").checked,
     ffmpeg_preset: $("ffmpeg-preset").value,
+  };
+}
+
+function buildExportPayload(path) {
+  return {
+    path,
+    preset: $("export-preset").value,
+    ...readLayoutPayload(),
+    ...readExportSettingsPayload(),
   };
 }
 
@@ -2295,6 +2625,11 @@ const autoApplyThreshold = debounce(() => {
 const autoApplyProjectDetails = debounce(() => {
   activity("auto_apply.project_details", {});
   callApi("/api/project/details", readProjectDetailsPayload());
+}, 300);
+
+const autoApplyPractiScoreContext = debounce(() => {
+  activity("auto_apply.practiscore_context", {});
+  callApi("/api/project/practiscore", readPractiScoreContextPayload());
 }, 300);
 
 const autoApplyOverlay = debounce(() => {
@@ -2373,11 +2708,35 @@ function wireEvents() {
     if (result) setActiveTool("merge");
     event.target.value = "";
   });
+  $("import-practiscore").addEventListener("click", () => {
+    if (!validatePractiScoreSelection()) return;
+    setStatus("Select a PractiScore results file.");
+    $("practiscore-file-input")?.click();
+  });
+  $("practiscore-file-input").addEventListener("change", async (event) => {
+    const payload = validatePractiScoreSelection();
+    if (!payload) {
+      event.target.value = "";
+      return;
+    }
+    const context = await callApi("/api/project/practiscore", payload);
+    if (!context) {
+      event.target.value = "";
+      return;
+    }
+    const result = await postFile("/api/files/practiscore", event.target.files[0]);
+    if (result) setActiveTool("scoring");
+    event.target.value = "";
+  });
   $("save-project").addEventListener("click", saveProjectFlow);
   $("open-project").addEventListener("click", openProjectWithDialog);
   $("delete-project").addEventListener("click", () => callApi("/api/project/delete", {}));
   ["project-name", "project-description"].forEach((id) => {
     $(id).addEventListener("input", autoApplyProjectDetails);
+  });
+  ["match-type", "match-stage-number", "match-competitor-name", "match-competitor-place"].forEach((id) => {
+    $(id).addEventListener("input", autoApplyPractiScoreContext);
+    $(id).addEventListener("change", autoApplyPractiScoreContext);
   });
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
@@ -2487,6 +2846,7 @@ function wireEvents() {
     "show-shots",
     "show-score",
     "custom-box-enabled",
+    "custom-box-mode",
     "custom-box-text",
     "custom-box-quadrant",
     "custom-box-x",
@@ -2494,8 +2854,6 @@ function wireEvents() {
     "custom-box-width",
     "custom-box-height",
     "custom-box-opacity",
-    "custom-box-background-color",
-    "custom-box-text-color",
   ].forEach((id) => {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
@@ -2503,31 +2861,22 @@ function wireEvents() {
         syncOverlayCoordinateControlState();
         ensureShotQuadrantDefaults();
       }
-      syncOverlayPreviewStateFromControls();
-      renderLiveOverlay();
-      autoApplyOverlay();
+      if (id === "custom-box-mode") syncCustomBoxModeState();
+      commitOverlayControlChanges();
     });
   });
+  ["custom-box-background-color", "custom-box-text-color"].forEach((id) => {
+    bindOverlayColorInput($(id));
+  });
   $("badge-style-grid").addEventListener("input", (event) => {
-    syncOverlayPreviewStateFromControls();
-    renderLiveOverlay();
     const target = event.target;
-    if (target instanceof HTMLInputElement && target.type === "color") return;
+    if (isColorInput(target)) return;
+    previewOverlayControlChanges();
     autoApplyOverlay();
   });
-  $("badge-style-grid").addEventListener("change", () => {
-    syncOverlayPreviewStateFromControls();
-    renderLiveOverlay();
-    autoApplyOverlay();
-  });
-  $("score-color-grid").addEventListener("input", () => {
-    syncOverlayPreviewStateFromControls();
-    renderLiveOverlay();
-  });
-  $("score-color-grid").addEventListener("change", () => {
-    syncOverlayPreviewStateFromControls();
-    renderLiveOverlay();
-    autoApplyOverlay();
+  $("badge-style-grid").addEventListener("change", (event) => {
+    if (isColorInput(event.target)) return;
+    commitOverlayControlChanges();
   });
   ["scoring-enabled", "scoring-preset"].forEach((id) => {
     $(id).addEventListener("change", autoApplyScoring);
@@ -2578,9 +2927,6 @@ function wireEvents() {
   ["quality", "aspect-ratio"].forEach((id) => {
     $(id).addEventListener("change", autoApplyLayout);
   });
-  ["crop-center-x", "crop-center-y"].forEach((id) => {
-    $(id).addEventListener("input", autoApplyLayout);
-  });
   $("export-preset").addEventListener("change", () => {
     activity("auto_apply.export_preset", { preset: $("export-preset").value });
     callApi("/api/export/preset", { preset: $("export-preset").value });
@@ -2607,7 +2953,7 @@ function wireEvents() {
   $("export-video").addEventListener("click", () => {
     const path = requireValue("export-path", "Output video path");
     exportPathDraft = path;
-    callApi("/api/export", { path });
+    callApi("/api/export", buildExportPayload(path));
   });
 }
 

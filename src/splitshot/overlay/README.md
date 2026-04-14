@@ -27,3 +27,6 @@ The overlay package draws the review badges that appear on top of the video prev
 - The badge layout honors `OverlaySettings` fields such as position, spacing, margin, font family, badge size, and quadrant.
 - Custom boxes can use their own position, dimensions, colors, opacity, and text.
 - The renderer paints directly into a `QPainter`, which makes it usable both in the browser preview path and in export.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

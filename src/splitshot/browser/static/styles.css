@@ -680,7 +680,7 @@ small,
   gap: 0;
   max-height: 100%;
   max-width: 100%;
-  padding: 0.65rem 0.65rem 0.65rem 0;
+  padding: 0;
   pointer-events: none;
   position: absolute;
   width: auto;
@@ -917,7 +917,7 @@ button:disabled {
   border: 1px solid var(--line);
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(120px, 0.8fr) minmax(120px, 0.8fr) minmax(0, 1fr) auto;
   padding: 0.4rem 0.48rem;
 }
 
@@ -926,6 +926,10 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.timing-event-row button {
+  justify-self: end;
 }
 
 .inspector-header {
@@ -1292,13 +1296,15 @@ button:disabled {
 }
 
 input[type="color"] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: #0e1012;
+  -webkit-appearance: auto;
+  appearance: auto;
+  background: transparent;
   border: 1px solid var(--line-strong);
+  cursor: pointer;
   height: 18px;
   min-height: 18px;
-  padding: 1px;
+  min-width: 24px;
+  padding: 0;
   width: 24px;
 }
 

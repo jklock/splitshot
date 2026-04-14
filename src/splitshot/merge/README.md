@@ -27,3 +27,6 @@ It returns a `MergeCanvas` with the output width and height plus the rectangle f
 
 - PiP placement clamps coordinates to the unit interval and keeps the inset away from the frame edges.
 - The same geometry helper is used by the browser preview and the export pipeline.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

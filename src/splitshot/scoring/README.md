@@ -36,3 +36,6 @@ Each preset defines its point map, scoring mode, human-readable description, pen
 - Penalties can come from manual penalty totals, score-letter penalties, or preset-specific penalty fields.
 - Hit factor is only meaningful when scoring is enabled and the active preset is a hit-factor ruleset.
 - Time-plus presets report a final time instead of hit factor.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

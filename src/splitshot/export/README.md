@@ -34,3 +34,6 @@ The export package turns a project into a rendered video file with overlays, mer
 - Still-image merge sources are looped so they can participate in video export.
 - Two-pass encoding is supported and uses a temporary pass log directory.
 - The final export log is stored on `project.export.last_log` and the last error on `project.export.last_error`.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

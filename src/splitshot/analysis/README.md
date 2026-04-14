@@ -30,3 +30,6 @@ The analysis package extracts audio features, runs the embedded model, and turns
 - The controller stores detected shots and beep timing on the shared `Project` model.
 - The browser waveform and stage presentation use the derived shot list and waveform envelope.
 - The benchmark CLI uses the same analysis pipeline to produce CSV output for Stage*.MP4 files.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-10

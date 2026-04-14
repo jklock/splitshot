@@ -23,6 +23,7 @@ from splitshot.domain.models import (
     MergeLayout,
     OverlayPosition,
     PipSize,
+    Project,
     ScoreLetter,
 )
 from splitshot.export.pipeline import export_project
@@ -159,6 +160,51 @@ def display_name_for_path(path: str, fallback: str) -> str:
     return re.sub(r"^[A-Fa-f0-9]{32}_", "", Path(path).name)
 
 
+def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> bool:
+    export = project.export
+    current_values: dict[str, object] = {
+        "quality": export.quality.value,
+        "aspect_ratio": export.aspect_ratio.value,
+        "target_width": export.target_width,
+        "target_height": export.target_height,
+        "frame_rate": export.frame_rate.value,
+        "video_codec": export.video_codec.value,
+        "video_bitrate_mbps": export.video_bitrate_mbps,
+        "audio_codec": export.audio_codec.value,
+        "audio_sample_rate": export.audio_sample_rate,
+        "audio_bitrate_kbps": export.audio_bitrate_kbps,
+        "color_space": export.color_space.value,
+        "two_pass": export.two_pass,
+        "ffmpeg_preset": export.ffmpeg_preset,
+    }
+    for key, current in current_values.items():
+        if key not in payload:
+            continue
+        value = payload[key]
+        if key in {"target_width", "target_height"}:
+            normalized = None if value in {"", None} else max(2, int(value))
+        elif key == "video_bitrate_mbps":
+            normalized = max(0.1, float(value))
+        elif key == "audio_sample_rate":
+            normalized = max(8000, int(value))
+        elif key == "audio_bitrate_kbps":
+            normalized = max(32, int(value))
+        elif key == "two_pass":
+            normalized = bool(value)
+        else:
+            normalized = str(value)
+        if normalized != current:
+            return False
+    return True
+
+
+def _sync_export_payload(controller: ProjectController, payload: dict[str, Any]) -> None:
+    selected_preset = str(payload.get("preset") or controller.project.export.preset.value)
+    controller.apply_export_preset(selected_preset)
+    if selected_preset == "custom" or not _payload_matches_export_state(controller.project, payload):
+        controller.set_export_settings(payload)
+
+
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
     def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
         if is_expected_disconnect_error(sys.exc_info()[1]):
@@ -173,12 +219,13 @@ class BrowserControlServer:
         host: str = "127.0.0.1",
         port: int = 8765,
         log_dir: str | Path | None = None,
+        log_level: str = "off",
         path_chooser: PathChooser | None = None,
     ) -> None:
         self.controller = controller or ProjectController()
         self.host = host
         self.port = port
-        self.activity = ActivityLogger(log_dir)
+        self.activity = ActivityLogger(log_dir, console_level=log_level)
         self.path_chooser = path_chooser or choose_local_path
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -280,11 +327,15 @@ class BrowserControlServer:
                 if self.path == "/api/files/merge":
                     self._import_merge_file()
                     return
+                if self.path == "/api/files/practiscore":
+                    self._import_practiscore_file()
+                    return
                 if self.path == "/api/dialog/path":
                     self._choose_dialog_path()
                     return
                 routes: dict[str, Callable[[dict[str, Any]], None]] = {
                     "/api/project/details": self._set_project_details,
+                    "/api/project/practiscore": self._set_practiscore_context,
                     "/api/project/new": self._new_project,
                     "/api/project/open": self._open_project,
                     "/api/project/save": self._save_project,
@@ -303,6 +354,7 @@ class BrowserControlServer:
                     "/api/scoring/score": self._assign_score,
                     "/api/scoring/position": self._set_score_position,
                     "/api/events/add": self._add_event,
+                    "/api/events/delete": self._delete_event,
                     "/api/merge/remove": self._remove_merge_source,
                     "/api/overlay": self._set_overlay,
                     "/api/merge": self._set_merge,
@@ -382,6 +434,22 @@ class BrowserControlServer:
                 controller.set_project_details(
                     name=None if payload.get("name") in {None, ""} else str(payload["name"]),
                     description=None if payload.get("description") is None else str(payload["description"]),
+                )
+
+            def _set_practiscore_context(self, payload: dict[str, Any]) -> None:
+                controller.set_practiscore_context(
+                    match_type=None if payload.get("match_type") is None else str(payload.get("match_type", "")),
+                    stage_number=(
+                        None if payload.get("stage_number") in {None, ""} else int(payload["stage_number"])
+                    ),
+                    competitor_name=(
+                        None if payload.get("competitor_name") is None else str(payload.get("competitor_name", ""))
+                    ),
+                    competitor_place=(
+                        None
+                        if payload.get("competitor_place") in {None, ""}
+                        else int(payload["competitor_place"])
+                    ),
                 )
 
             def _send_static(self, name: str, content_type: str | None = None) -> None:
@@ -602,6 +670,24 @@ class BrowserControlServer:
                     activity.log("api.files.merge.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
 
+            def _import_practiscore_file(self) -> None:
+                try:
+                    path = self._save_uploaded_file()
+                    activity.log("api.files.practiscore.saved", path=str(path))
+                    source_name = display_names.get(str(path), Path(path).name)
+                    with controller_lock:
+                        controller.import_practiscore_file(str(path), source_name=source_name)
+                    activity.log(
+                        "api.files.practiscore.imported",
+                        path=str(path),
+                        stage=controller.project.scoring.stage_number,
+                        status=controller.status_message,
+                    )
+                    self._send_json(self._browser_state())
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.files.practiscore.error", error=str(exc))
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
             def _new_project(self, payload: dict[str, Any]) -> None:
                 display_names.clear()
                 controller.new_project()
@@ -728,6 +814,12 @@ class BrowserControlServer:
                     note=str(payload.get("note", "")),
                 )
 
+            def _delete_event(self, payload: dict[str, Any]) -> None:
+                event_id = payload.get("event_id") or payload.get("id")
+                if event_id in {None, ""}:
+                    raise ValueError("event_id is required")
+                controller.delete_timing_event(str(event_id))
+
             def _set_sync(self, payload: dict[str, Any]) -> None:
                 if "offset_ms" in payload:
                     controller.set_sync_offset(int(payload["offset_ms"]))
@@ -747,6 +839,7 @@ class BrowserControlServer:
                 controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
+                _sync_export_payload(controller, payload)
                 output_path = Path(str(payload["path"]))
                 activity.log("api.export.start", path=str(output_path))
                 exported_path = export_project(

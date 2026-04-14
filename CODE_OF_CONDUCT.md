@@ -18,3 +18,6 @@ This project expects professional, respectful collaboration.
 ## Enforcement
 
 Project maintainers may remove content or restrict participation when behavior harms the project or its contributors.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** n/a

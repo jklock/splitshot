@@ -39,3 +39,6 @@ The helper functions at the top of `controller.py` reset media-dependent state, 
 ## Shared Behavior
 
 The desktop UI uses the same controller, the same project model, and the same export pipeline as the browser UI. The difference is the presentation layer, not the underlying data flow.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

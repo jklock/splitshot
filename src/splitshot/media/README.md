@@ -30,3 +30,6 @@ If none of those locations contains the requested tool, the module raises `Media
 
 - `ui.controller.ProjectController` uses `probe_video` when the user imports a primary or merge media path.
 - `export.pipeline` uses `ffmpeg_command` and `run_ffmpeg` to build and encode the final video.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

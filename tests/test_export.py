@@ -10,8 +10,8 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent
-from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, export_project
+from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent
+from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import OverlayRenderer
@@ -235,6 +235,56 @@ def test_overlay_renderer_keeps_final_shot_visible_and_uses_final_label() -> Non
     assert any(badge.text.startswith("Final ") for badge in badges)
 
 
+def test_overlay_renderer_shows_imported_summary_custom_box_only_after_final_shot() -> None:
+    project = Project(name="Imported Summary Overlay")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100)]
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.custom_box_enabled = True
+    project.overlay.custom_box_mode = "imported_summary"
+    project.overlay.custom_box_quadrant = "middle_middle"
+    project.overlay.custom_box_background_color = "#ff0000"
+    project.overlay.custom_box_text_color = "#ffffff"
+    project.overlay.custom_box_opacity = 1.0
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="uspsa",
+        raw_seconds=23.24,
+        aggregate_points=101.0,
+        total_points=101.0,
+        hit_factor=4.3460,
+    )
+
+    before = QImage(220, 120, QImage.Format.Format_ARGB32)
+    before.fill(QColor("#000000"))
+    before_painter = QPainter(before)
+    OverlayRenderer().paint(before_painter, project, 1099, 220, 120)
+    before_painter.end()
+
+    after = QImage(220, 120, QImage.Format.Format_ARGB32)
+    after.fill(QColor("#000000"))
+    after_painter = QPainter(after)
+    OverlayRenderer().paint(after_painter, project, 1200, 220, 120)
+    after_painter.end()
+
+    before_red = 0
+    after_red = 0
+    for y in range(0, 120):
+        for x in range(0, 220):
+            before_color = before.pixelColor(x, y)
+            after_color = after.pixelColor(x, y)
+            if before_color.red() > 120 and before_color.red() > before_color.green() + 40 and before_color.red() > before_color.blue() + 40:
+                before_red += 1
+            if after_color.red() > 120 and after_color.red() > after_color.green() + 40 and after_color.red() > after_color.blue() + 40:
+                after_red += 1
+
+    assert before_red == 0
+    assert after_red > 20
+
+
 def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
     project = Project(name="Custom Overlay Position")
     project.overlay.position = OverlayPosition.TOP
@@ -305,6 +355,61 @@ def test_overlay_renderer_defaults_empty_custom_quadrant_coordinates_to_center()
 
     assert center_red > 20
     assert center_red > corner_red
+
+
+def test_overlay_renderer_keeps_timer_anchor_stable_in_custom_quadrant() -> None:
+    project = Project(name="Custom Overlay Anchor")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.shot_quadrant = "custom"
+    project.overlay.custom_x = 0.5
+    project.overlay.custom_y = 0.5
+    project.overlay.show_draw = False
+    project.overlay.show_shots = True
+    project.overlay.show_score = False
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100)]
+    project.overlay.timer_badge.background_color = "#ff0000"
+    project.overlay.timer_badge.text_color = "#ffffff"
+    project.overlay.timer_badge.opacity = 1.0
+    project.overlay.shot_badge.background_color = "#0000ff"
+    project.overlay.shot_badge.text_color = "#ffffff"
+    project.overlay.shot_badge.opacity = 1.0
+    project.overlay.current_shot_badge.background_color = "#0000ff"
+    project.overlay.current_shot_badge.text_color = "#ffffff"
+    project.overlay.current_shot_badge.opacity = 1.0
+
+    before = QImage(220, 120, QImage.Format.Format_ARGB32)
+    before.fill(QColor("#000000"))
+    before_painter = QPainter(before)
+    OverlayRenderer().paint(before_painter, project, 200, 220, 120)
+    before_painter.end()
+
+    after = QImage(220, 120, QImage.Format.Format_ARGB32)
+    after.fill(QColor("#000000"))
+    after_painter = QPainter(after)
+    OverlayRenderer().paint(after_painter, project, 1200, 220, 120)
+    after_painter.end()
+
+    def red_centroid(image: QImage) -> tuple[float, float, int]:
+        total_x = 0.0
+        total_y = 0.0
+        count = 0
+        for y in range(image.height()):
+            for x in range(image.width()):
+                color = image.pixelColor(x, y)
+                if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                    total_x += x
+                    total_y += y
+                    count += 1
+        return (total_x / count, total_y / count, count)
+
+    before_x, before_y, before_count = red_centroid(before)
+    after_x, after_y, after_count = red_centroid(after)
+
+    assert before_count > 20
+    assert after_count > 20
+    assert abs(before_x - after_x) < 3
+    assert abs(before_y - after_y) < 3
 
 
 def test_merge_export_writes_combined_canvas(synthetic_video_factory, tmp_path: Path) -> None:
@@ -404,6 +509,20 @@ def test_export_accepts_expected_decoder_broken_pipe_after_successful_encode() -
 
     assert _is_expected_decoder_pipe_shutdown(1, 0, log_lines)
     assert not _is_expected_decoder_pipe_shutdown(1, 1, log_lines)
+
+
+def test_export_prunes_expected_decoder_broken_pipe_lines_from_successful_log() -> None:
+    log_lines = [
+        "Export target: /tmp/example.mp4",
+        "decoder: [out#0/rawvideo @ 0x1] Error writing trailer: Broken pipe",
+        "decoder: Conversion failed!",
+        "encoder: frame=  942 fps= 66 q=-1.0 Lsize=   93069KiB",
+    ]
+
+    assert _prune_expected_decoder_pipe_shutdown_lines(log_lines)
+    assert "Broken pipe" not in "\n".join(log_lines)
+    assert "Conversion failed!" not in "\n".join(log_lines)
+    assert log_lines[-1] == "decoder: rawvideo pipe closed after the encoder finished the shortest stream; decoder shutdown was expected."
 
 
 def test_export_uses_target_dimensions_and_stores_ffmpeg_log(synthetic_video_factory, tmp_path: Path) -> None:

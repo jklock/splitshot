@@ -31,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1", help="Browser bind host.")
     parser.add_argument("--port", type=int, default=8765, help="Browser bind port.")
     parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
+    parser.add_argument(
+        "--log-level",
+        choices=("off", "error", "warning", "info", "debug"),
+        default="off",
+        help="Mirror browser activity logs to the terminal at or above this level. File logging stays on.",
+    )
     parser.add_argument("--project", type=Path, help="Optional .ssproj bundle to open at startup.")
     parser.add_argument(
         "--check",
@@ -45,11 +51,12 @@ def run_browser(
     port: int = 8765,
     open_browser: bool = True,
     project_path: Path | None = None,
+    log_level: str = "off",
 ) -> int:
     controller = ProjectController()
     if project_path is not None:
         controller.open_project(str(project_path))
-    server = BrowserControlServer(controller=controller, host=host, port=port)
+    server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
     print(f"SplitShot browser control running at {server.url}")
     print(f"SplitShot activity log: {server.activity.path}")
     server.serve_forever(open_browser=open_browser)
@@ -84,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         port=args.port,
         open_browser=not args.no_open,
         project_path=args.project,
+        log_level=args.log_level,
     )
 
 
@@ -101,4 +109,5 @@ def web_main(argv: Sequence[str] | None = None) -> int:
         port=args.port,
         open_browser=not args.no_open,
         project_path=args.project,
+        log_level=args.log_level,
     )

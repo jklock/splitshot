@@ -43,3 +43,6 @@ The primary dataclasses are:
 - `project_from_dict` reconstructs `secondary_video` from `merge_sources` when needed.
 - Still-image assets are preserved through the `is_still_image` flag and suffix-based fallback.
 - `Project` is the shared schema used by both UIs and by the export pipeline.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

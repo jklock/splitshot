@@ -6,7 +6,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project
-from splitshot.scoring.logic import calculate_scoring_summary, current_shot_index
+from splitshot.scoring.logic import calculate_scoring_summary, current_shot_index, format_imported_stage_overlay_text
 from splitshot.timeline.model import draw_time_ms
 from splitshot.utils.time import format_time_ms
 
@@ -93,6 +93,19 @@ class OverlayRenderer:
 
         return badges, score_marks
 
+    @staticmethod
+    def _custom_box_text(project: Project, position_ms: int) -> str:
+        if not project.overlay.custom_box_enabled:
+            return ""
+
+        if project.overlay.custom_box_mode == "imported_summary":
+            final_shot_time = project.analysis.shots[-1].time_ms if project.analysis.shots else None
+            if final_shot_time is None or position_ms < final_shot_time:
+                return ""
+            return format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
+
+        return project.overlay.custom_box_text.strip()
+
     def paint(self, painter: QPainter, project: Project, position_ms: int, width: int, height: int) -> None:
         if project.overlay.position == OverlayPosition.NONE:
             return
@@ -103,7 +116,8 @@ class OverlayRenderer:
 
         badges, score_marks = self.build_badges(project, position_ms)
         self._paint_badges(painter, badges, project, width, height)
-        if project.overlay.custom_box_enabled and project.overlay.custom_box_text.strip():
+        custom_box_text = self._custom_box_text(project, position_ms)
+        if custom_box_text:
             custom_style = BadgeStyle(
                 background_color=project.overlay.custom_box_background_color or project.overlay.hit_factor_badge.background_color,
                 text_color=project.overlay.custom_box_text_color or project.overlay.hit_factor_badge.text_color,
@@ -113,7 +127,7 @@ class OverlayRenderer:
                 painter,
                 [
                     Badge(
-                        project.overlay.custom_box_text.strip(),
+                        custom_box_text,
                         custom_style,
                         width=project.overlay.custom_box_width or None,
                         height=project.overlay.custom_box_height or None,
@@ -168,22 +182,36 @@ class OverlayRenderer:
         if y_override is not None:
             cursor_y = int(y_override * height)
 
-        for badge in badges:
+        previous_rect: QRectF | None = None
+        for index, badge in enumerate(badges):
             metrics = painter.fontMetrics()
-            text_width = max(metrics.horizontalAdvance(badge.text), self._minimum_badge_text_width(metrics, badge.text))
-            text_height = metrics.height()
+            lines = badge.text.splitlines() or [""]
+            text_width = max(
+                max(metrics.horizontalAdvance(line) for line in lines),
+                self._minimum_badge_text_width(metrics, badge.text),
+            )
+            text_height = metrics.height() * max(1, len(lines))
             badge_width = max(text_width + (padding_x * 2), int(badge.width or project.overlay.bubble_width))
             badge_height = max(text_height + (padding_y * 2), int(badge.height or project.overlay.bubble_height))
-            rect = QRectF(cursor_x, cursor_y, badge_width, badge_height)
-
-            if project.overlay.shot_direction == "right":
-                cursor_x += rect.width() + gap
-            elif project.overlay.shot_direction == "left":
-                cursor_x -= rect.width() + gap
-            elif project.overlay.shot_direction == "up":
-                cursor_y -= rect.height() + gap
+            if previous_rect is None:
+                rect_x = float(cursor_x)
+                rect_y = float(cursor_y)
+                if quadrant_value == "custom":
+                    rect_x -= badge_width / 2
+                    rect_y -= badge_height / 2
             else:
-                cursor_y += rect.height() + gap
+                rect_x = previous_rect.x()
+                rect_y = previous_rect.y()
+                if project.overlay.shot_direction == "right":
+                    rect_x = previous_rect.x() + previous_rect.width() + gap
+                elif project.overlay.shot_direction == "left":
+                    rect_x = previous_rect.x() - badge_width - gap
+                elif project.overlay.shot_direction == "up":
+                    rect_y = previous_rect.y() - badge_height - gap
+                else:
+                    rect_y = previous_rect.y() + previous_rect.height() + gap
+            rect = QRectF(rect_x, rect_y, badge_width, badge_height)
+            previous_rect = rect
 
             background = QColor(badge.style.background_color)
             background.setAlphaF(badge.style.opacity)
@@ -202,7 +230,7 @@ class OverlayRenderer:
             painter.setPen(QColor(badge.text_color or badge.style.text_color))
             painter.drawText(
                 rect.adjusted(padding_x, padding_y, -padding_x, -padding_y),
-                Qt.AlignCenter,
+                Qt.AlignCenter | Qt.TextWordWrap,
                 badge.text,
             )
 

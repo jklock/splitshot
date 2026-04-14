@@ -54,3 +54,6 @@ The main rendering loop:
 
 - The frontend depends on the backend routes in `browser/server.py`; update both sides when adding or renaming an action.
 - After changing static assets, refresh the running browser page before validating the behavior.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

@@ -870,3 +870,6 @@ Implementation approach:
 	•	Use FFmpeg/ffprobe via subprocess wrappers, not shell strings concatenated unsafely.
 	•	Provide the full source tree.
 	•	Provide a runnable MVP first, then iterate feature-by-feature until all requirements above are implemented.If you want, I can turn this into an even tighter engineering PRD with explicit screen-by-screen UI requirements and JSON schemas.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** n/a
