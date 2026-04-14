@@ -60,7 +60,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="USPSA Minor",
         sport="USPSA",
         mode="hit_factor",
-        description="Hit Factor = (points - penalties) / raw time. A=5, C=3, D=1.",
+        description="Minor-power hit factor scoring with A, C, D, miss, and no-shoot results.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 3,
@@ -91,7 +91,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="USPSA Major",
         sport="USPSA",
         mode="hit_factor",
-        description="Hit Factor = (points - penalties) / raw time. A=5, C=4, D=2.",
+        description="Major-power hit factor scoring with A, C, D, miss, and no-shoot results.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 4,
@@ -122,7 +122,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IPSC Minor",
         sport="IPSC",
         mode="hit_factor",
-        description="Hit Factor = (points - penalties) / raw time. A=5, C=3, D=1.",
+        description="Minor-power IPSC hit factor scoring with A, C, D, miss, and no-shoot results.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 3,
@@ -152,7 +152,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IPSC Major",
         sport="IPSC",
         mode="hit_factor",
-        description="Hit Factor = (points - penalties) / raw time. A=5, C=4, D=2.",
+        description="Major-power IPSC hit factor scoring with A, C, D, miss, and no-shoot results.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 4,
@@ -182,7 +182,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IDPA - Time Plus",
         sport="IDPA",
         mode="time_plus",
-        description="Time Plus = raw time + points down + penalties. -0/+0, -1/+1s, -3/+3s, miss/+5s.",
+        description="IDPA time-plus scoring with points down, misses, and rule penalties.",
         point_map={
             ScoreLetter.DOWN_0.value: 0,
             ScoreLetter.DOWN_1.value: 1,
@@ -207,7 +207,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="Steel Challenge",
         sport="Steel Challenge",
         mode="time_plus",
-        description="Time only with penalty adders. Plate miss +3s; stop plate failure is a 30s string.",
+        description="Steel Challenge time scoring with misses and stop-plate failures.",
         point_map={
             ScoreLetter.STEEL_HIT.value: 0,
             ScoreLetter.M.value: 3,
@@ -286,6 +286,10 @@ def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
         return float(project.scoring.imported_stage.shot_penalties)
     return sum(
         preset.score_penalty_map.get(shot.score.letter.value, 0)
+        + sum(
+            field.value * max(0.0, float(shot.score.penalty_counts.get(field.id, 0)))
+            for field in preset.penalty_fields
+        )
         for shot in project.analysis.shots
         if shot.score is not None
     )
@@ -435,8 +439,21 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
     return summary
 
 
-def assign_score(shot: ShotEvent, letter: ScoreLetter) -> None:
-    shot.score = ScoreMark(letter=letter)
+def assign_score(
+    shot: ShotEvent,
+    letter: ScoreLetter | None = None,
+    penalty_counts: dict[str, float] | None = None,
+) -> None:
+    if shot.score is None:
+        shot.score = ScoreMark(letter=letter or ScoreLetter.A)
+    elif letter is not None:
+        shot.score.letter = letter
+    if penalty_counts is not None and shot.score is not None:
+        shot.score.penalty_counts = {
+            str(key): max(0.0, float(value))
+            for key, value in penalty_counts.items()
+            if max(0.0, float(value)) > 0
+        }
 
 
 def set_score_position(shot: ShotEvent, x_norm: float, y_norm: float) -> None:

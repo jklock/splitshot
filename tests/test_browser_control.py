@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 import pytest
+import splitshot.browser.server as browser_server_module
 
 from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.server import (
@@ -135,6 +137,20 @@ def test_activity_logger_console_level_filters_events(tmp_path, capsys) -> None:
     assert "http.get" not in output
 
 
+def test_browser_server_primes_export_runtime_on_construction(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_prepare_export_runtime() -> None:
+        calls.append(threading.current_thread().name)
+
+    monkeypatch.setattr(browser_server_module, "prepare_export_runtime", fake_prepare_export_runtime)
+    server = BrowserControlServer(port=0)
+    try:
+        assert calls == [threading.current_thread().name]
+    finally:
+        server.shutdown()
+
+
 def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0, log_dir=tmp_path)
@@ -194,9 +210,10 @@ def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) ->
 
         state = _post_json(
             f"{server.url}api/scoring/score",
-            {"shot_id": first_shot_id, "letter": "C"},
+            {"shot_id": first_shot_id, "letter": "C", "penalty_counts": {"procedural_errors": 1}},
         )
         assert state["project"]["analysis"]["shots"][0]["score"]["letter"] == "C"
+        assert state["project"]["analysis"]["shots"][0]["score"]["penalty_counts"] == {"procedural_errors": 1}
 
         state = _get_json(f"{server.url}api/state")
         assert state["metrics"]["total_shots"] == 3
@@ -405,10 +422,11 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
         assert state["project"]["secondary_video"] is None
 
         state = _post_json(
-            f"{server.url}api/layout",
-            {"target_width": 720, "target_height": 1280, "aspect_ratio": "9:16"},
+            f"{server.url}api/export/settings",
+            {"quality": "medium", "target_width": 720, "target_height": 1280, "aspect_ratio": "9:16"},
         )
         assert state["project"]["export"]["preset"] == "custom"
+        assert state["project"]["export"]["quality"] == "medium"
         assert state["project"]["export"]["target_width"] == 720
         assert state["project"]["export"]["target_height"] == 1280
         assert state["project"]["export"]["aspect_ratio"] == "9:16"
@@ -579,6 +597,22 @@ def test_browser_path_dialog_endpoint_supports_project_open_and_save(tmp_path) -
         server.shutdown()
 
 
+def test_browser_control_api_layout_route_is_not_available(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with pytest.raises(urllib.error.HTTPError) as error_info:
+            _post_json(
+                f"{server.url}api/layout",
+                {"quality": "medium", "aspect_ratio": "9:16"},
+            )
+
+        assert error_info.value.code == 404
+    finally:
+        server.shutdown()
+
+
 def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory, tmp_path: Path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -726,6 +760,12 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                 "shot_direction": "down",
                 "custom_x": 0.12,
                 "custom_y": 0.18,
+                "timer_x": 0.2,
+                "timer_y": 0.08,
+                "draw_x": 0.84,
+                "draw_y": 0.1,
+                "score_x": 0.82,
+                "score_y": 0.2,
                 "bubble_width": 96,
                 "bubble_height": 42,
                 "font_family": "Verdana",
@@ -759,6 +799,12 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["shot_direction"] == "down"
         assert state["project"]["overlay"]["custom_x"] == 0.12
         assert state["project"]["overlay"]["custom_y"] == 0.18
+        assert state["project"]["overlay"]["timer_x"] == 0.2
+        assert state["project"]["overlay"]["timer_y"] == 0.08
+        assert state["project"]["overlay"]["draw_x"] == 0.84
+        assert state["project"]["overlay"]["draw_y"] == 0.1
+        assert state["project"]["overlay"]["score_x"] == 0.82
+        assert state["project"]["overlay"]["score_y"] == 0.2
         assert state["project"]["overlay"]["bubble_width"] == 96
         assert state["project"]["overlay"]["bubble_height"] == 42
         assert state["project"]["overlay"]["font_family"] == "Verdana"
@@ -790,6 +836,66 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         state = _post_json(f"{server.url}api/scoring/position", {"shot_id": shot_id, "x_norm": 0.2, "y_norm": 0.8})
         assert state["project"]["analysis"]["shots"][0]["score"]["x_norm"] == 0.2
         assert state["project"]["analysis"]["shots"][0]["score"]["y_norm"] == 0.8
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_rejects_invalid_overlay_badge_name(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            _post_json(
+                f"{server.url}api/overlay",
+                {
+                    "styles": {
+                        "review_badge": {
+                            "background_color": "#000000",
+                            "text_color": "#ffffff",
+                            "opacity": 0.8,
+                        }
+                    }
+                },
+            )
+
+        assert exc_info.value.code == 400
+        error_payload = json.loads(exc_info.value.read().decode("utf-8"))
+        assert error_payload["error"] == "Unknown badge style: review_badge"
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_export_requires_output_file_to_exist(
+    synthetic_video_factory,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    missing_output = tmp_path / "missing-export.mp4"
+
+    def fake_export_project(*args, **kwargs):
+        return missing_output
+
+    monkeypatch.setattr(browser_server_module, "export_project", fake_export_project)
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            _post_json(
+                f"{server.url}api/export",
+                {"path": str(tmp_path / "requested-export.mp4"), "preset": "source_mp4"},
+            )
+
+        assert exc_info.value.code == 400
+        error_payload = json.loads(exc_info.value.read().decode("utf-8"))
+        assert error_payload["error"] == "Export did not produce an output file."
     finally:
         server.shutdown()
 

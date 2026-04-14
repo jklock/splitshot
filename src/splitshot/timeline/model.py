@@ -12,6 +12,7 @@ class SplitRow:
     absolute_time_ms: int
     split_ms: int | None
     score_letter: str | None
+    penalty_counts: dict[str, float]
     source: str
     confidence: float | None
 
@@ -20,8 +21,27 @@ def sort_shots(shots: list[ShotEvent]) -> list[ShotEvent]:
     return sorted(shots, key=lambda shot: shot.time_ms)
 
 
+def split_reset_shot_ids(project: Project) -> set[str]:
+    shots = sort_shots(project.analysis.shots)
+    if len(shots) < 2:
+        return set()
+
+    shot_index = {shot.id: index for index, shot in enumerate(shots)}
+    reset_ids: set[str] = set()
+    for event in project.analysis.events:
+        if event.before_shot_id and event.before_shot_id in shot_index:
+            reset_ids.add(event.before_shot_id)
+            continue
+        if event.after_shot_id and event.after_shot_id in shot_index:
+            next_index = shot_index[event.after_shot_id] + 1
+            if next_index < len(shots):
+                reset_ids.add(shots[next_index].id)
+    return reset_ids
+
+
 def compute_split_rows(project: Project) -> list[SplitRow]:
     shots = sort_shots(project.analysis.shots)
+    reset_ids = split_reset_shot_ids(project)
     rows: list[SplitRow] = []
     previous_time = None
     for index, shot in enumerate(shots, start=1):
@@ -30,8 +50,15 @@ def compute_split_rows(project: Project) -> list[SplitRow]:
                 shot_id=shot.id,
                 shot_number=index,
                 absolute_time_ms=shot.time_ms,
-                split_ms=None if previous_time is None else shot.time_ms - previous_time,
+                split_ms=(
+                    None
+                    if previous_time is None
+                    else 0
+                    if shot.id in reset_ids
+                    else shot.time_ms - previous_time
+                ),
                 score_letter=None if shot.score is None else shot.score.letter.value,
+                penalty_counts={} if shot.score is None else dict(shot.score.penalty_counts),
                 source=shot.source.value,
                 confidence=shot.confidence,
             )

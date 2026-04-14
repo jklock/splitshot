@@ -14,7 +14,7 @@ The media package locates FFmpeg binaries, probes video files, and extracts audi
 `resolve_media_binary` checks these locations in order:
 
 1. `SPLITSHOT_FFMPEG_DIR`
-2. Bundled resources in packaged builds
+2. Vendored binaries under `splitshot/resources/ffmpeg/<platform>`
 3. The current `PATH`
 
 If none of those locations contains the requested tool, the module raises `MediaError`.
@@ -31,5 +31,5 @@ If none of those locations contains the requested tool, the module raises `Media
 - `ui.controller.ProjectController` uses `probe_video` when the user imports a primary or merge media path.
 - `export.pipeline` uses `ffmpeg_command` and `run_ffmpeg` to build and encode the final video.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-14
+**Referenced files last updated:** 2026-04-14

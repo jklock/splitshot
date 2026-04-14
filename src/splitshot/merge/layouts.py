@@ -47,6 +47,29 @@ def _clamp_unit(value: float | None, default: float = 1.0) -> float:
     return max(0.0, min(1.0, float(value)))
 
 
+def calculate_pip_rect(
+    primary: VideoAsset,
+    secondary: VideoAsset,
+    pip_size: PipSize | int | float,
+    pip_x: float | None = 1.0,
+    pip_y: float | None = 1.0,
+) -> Rect:
+    inset_scale = _pip_scale(pip_size)
+    inset_width = max(2, int(round(primary.width * inset_scale)))
+    inset_height = max(2, int(round((secondary.height / secondary.width) * inset_width)))
+    margin = max(12, int(primary.width * 0.02))
+    max_width = max(2, primary.width - (margin * 2))
+    max_height = max(2, primary.height - (margin * 2))
+    fit_scale = min(1.0, max_width / inset_width, max_height / inset_height)
+    inset_width = max(2, int(round(inset_width * fit_scale)))
+    inset_height = max(2, int(round(inset_height * fit_scale)))
+    travel_x = max(0, primary.width - inset_width - (margin * 2))
+    travel_y = max(0, primary.height - inset_height - (margin * 2))
+    inset_x = margin + int(round(_clamp_unit(pip_x, 1.0) * travel_x))
+    inset_y = margin + int(round(_clamp_unit(pip_y, 1.0) * travel_y))
+    return Rect(inset_x, inset_y, inset_width, inset_height)
+
+
 def calculate_merge_canvas(
     primary: VideoAsset,
     secondary: VideoAsset | None,
@@ -85,27 +108,10 @@ def calculate_merge_canvas(
             secondary_rect=Rect(0, p_height, s_width, s_height),
         )
 
-    inset_scale = _pip_scale(pip_size)
-    inset_width = max(2, int(round(primary.width * inset_scale)))
-    inset_height = max(2, int(round((secondary.height / secondary.width) * inset_width)))
-    margin = max(12, int(primary.width * 0.02))
-    max_width = max(2, primary.width - (margin * 2))
-    max_height = max(2, primary.height - (margin * 2))
-    fit_scale = min(1.0, max_width / inset_width, max_height / inset_height)
-    inset_width = max(2, int(round(inset_width * fit_scale)))
-    inset_height = max(2, int(round(inset_height * fit_scale)))
-    travel_x = max(0, primary.width - inset_width - (margin * 2))
-    travel_y = max(0, primary.height - inset_height - (margin * 2))
-    inset_x = margin + int(round(_clamp_unit(pip_x, 1.0) * travel_x))
-    inset_y = margin + int(round(_clamp_unit(pip_y, 1.0) * travel_y))
+    pip_rect = calculate_pip_rect(primary, secondary, pip_size, pip_x, pip_y)
     return MergeCanvas(
         width=primary.width,
         height=primary.height,
         primary_rect=Rect(0, 0, primary.width, primary.height),
-        secondary_rect=Rect(
-            inset_x,
-            inset_y,
-            inset_width,
-            inset_height,
-        ),
+        secondary_rect=pip_rect,
     )

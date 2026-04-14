@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from splitshot.domain.models import Project, ShotSource
-from splitshot.timeline.model import average_split_ms, draw_time_ms, raw_time_ms, sort_shots
+from splitshot.timeline.model import average_split_ms, draw_time_ms, raw_time_ms, sort_shots, split_reset_shot_ids
 from splitshot.utils.time import format_time_ms
 
 
@@ -44,6 +44,7 @@ class TimingSegment:
     confidence: float | None
     source: str
     score_letter: str | None
+    penalty_counts: dict[str, float]
     card_title: str
     card_value: str
     card_subtitle: str
@@ -58,6 +59,7 @@ class StagePresentation:
 
 def build_stage_presentation(project: Project) -> StagePresentation:
     shots = sort_shots(project.analysis.shots)
+    reset_ids = split_reset_shot_ids(project)
     beep_ms = project.analysis.beep_time_ms_primary
     raw_ms = raw_time_ms(project)
     metrics = StageMetrics(
@@ -76,6 +78,9 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         if index == 1:
             label = "Draw"
             segment_ms = None if beep_ms is None else shot.time_ms - beep_ms
+        elif shot.id in reset_ids:
+            label = f"Shot {index}"
+            segment_ms = 0
         else:
             label = f"Shot {index}"
             segment_ms = None if previous_time_ms is None else shot.time_ms - previous_time_ms
@@ -83,6 +88,7 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         cumulative_ms = None if beep_ms is None else shot.time_ms - beep_ms
         confidence = shot.confidence
         score_letter = None if shot.score is None else shot.score.letter.value
+        penalty_counts = {} if shot.score is None else dict(shot.score.penalty_counts)
         if shot.source == ShotSource.MANUAL:
             subtitle = "Manual"
             source_label = "Manual"
@@ -99,6 +105,13 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         meta_parts.append(source_label)
         if score_letter is not None:
             meta_parts.append(f"Score {score_letter}")
+        if penalty_counts:
+            meta_parts.append(
+                ", ".join(
+                    f"{key.replace('_', ' ')} x{int(value) if float(value).is_integer() else value}"
+                    for key, value in penalty_counts.items()
+                )
+            )
 
         segments.append(
             TimingSegment(
@@ -114,6 +127,7 @@ def build_stage_presentation(project: Project) -> StagePresentation:
                 confidence=confidence,
                 source=shot.source.value,
                 score_letter=score_letter,
+                penalty_counts=penalty_counts,
                 card_title=label,
                 card_value=format_seconds_short(segment_ms),
                 card_subtitle=subtitle,

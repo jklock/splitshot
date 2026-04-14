@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260413c" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260414d" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -17,7 +17,7 @@
           <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
           <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
           <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
-          <button class="tool-item" data-tool="merge" type="button" aria-label="Show add tool"><b>Add</b></button>
+          <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
@@ -50,6 +50,7 @@
               <video id="primary-video" controls playsinline></video>
               <video id="secondary-video" muted playsinline></video>
               <img id="secondary-image" alt="Secondary frame" hidden />
+              <div id="merge-preview-layer" class="merge-preview-layer" aria-hidden="true"></div>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
@@ -90,14 +91,14 @@
                   <select id="timing-event-kind">
                     <option value="reload">Reload</option>
                     <option value="malfunction">Malfunction</option>
-                    <option value="note">Note</option>
+                    <option value="custom_label">Custom Label</option>
                   </select>
                 </label>
-                <label>After shot
-                  <select id="timing-event-after"></select>
+                <label>Overlay label
+                  <input id="timing-event-label" type="text" maxlength="28" placeholder="Reload" />
                 </label>
-                <label>Before shot
-                  <select id="timing-event-before"></select>
+                <label>Position
+                  <select id="timing-event-position"></select>
                 </label>
                 <button id="add-timing-event" class="primary-button" type="button">Add Event</button>
               </div>
@@ -147,10 +148,10 @@
                       <option value="bottom_right">Bottom right</option>
                     </select>
                   </label>
-                  <label>Box X
+                  <label>Custom box X (0 left, 1 right)
                     <input id="custom-box-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                   </label>
-                  <label>Box Y
+                  <label>Custom box Y (0 top, 1 bottom)
                     <input id="custom-box-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                   </label>
                 </div>
@@ -170,6 +171,124 @@
                     <label>Opacity <input id="custom-box-opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
                   </section>
                 </div>
+                <div class="section-header review-overlay-header">
+                  <h3>Review Overlay Styling</h3>
+                  <small>Separate controls, same output</small>
+                </div>
+                <div class="control-grid">
+                  <label>Badge size
+                    <select id="review-badge-size">
+                      <option>XS</option>
+                      <option>S</option>
+                      <option>M</option>
+                      <option>L</option>
+                      <option>XL</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Badge style
+                    <select id="review-overlay-style">
+                      <option value="square">Square</option>
+                      <option value="bubble">Bubble</option>
+                      <option value="rounded">Rounded Bubble</option>
+                    </select>
+                  </label>
+                  <label>Shot gap
+                    <input id="review-overlay-spacing" type="number" min="0" max="40" step="2" value="8" />
+                  </label>
+                  <label>Frame padding
+                    <input id="review-overlay-margin" type="number" min="0" max="40" step="2" value="8" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Shots shown
+                    <input id="review-max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
+                  </label>
+                  <label>Quadrant
+                    <select id="review-shot-quadrant">
+                      <option value="top_left">Top left</option>
+                      <option value="top_middle">Top middle</option>
+                      <option value="top_right">Top right</option>
+                      <option value="middle_left">Middle left</option>
+                      <option value="middle_middle">Middle middle</option>
+                      <option value="middle_right">Middle right</option>
+                      <option value="bottom_left">Bottom left</option>
+                      <option value="bottom_middle">Bottom middle</option>
+                      <option value="bottom_right">Bottom right</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </label>
+                  <label>Shot flow
+                    <select id="review-shot-direction">
+                      <option value="right">Right</option>
+                      <option value="left">Left</option>
+                      <option value="down">Down</option>
+                      <option value="up">Up</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Shot stack X (0 left, 1 right)
+                    <input id="review-overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
+                  </label>
+                  <label>Shot stack Y (0 top, 1 bottom)
+                    <input id="review-overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Timer X (0 left, 1 right)
+                    <input id="review-timer-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                  <label>Timer Y (0 top, 1 bottom)
+                    <input id="review-timer-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Draw X (0 left, 1 right)
+                    <input id="review-draw-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                  <label>Draw Y (0 top, 1 bottom)
+                    <input id="review-draw-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Score X (0 left, 1 right)
+                    <input id="review-score-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                  <label>Score Y (0 top, 1 bottom)
+                    <input id="review-score-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Bubble width
+                    <input id="review-bubble-width" type="number" min="0" max="400" step="4" value="0" />
+                  </label>
+                  <label>Bubble height
+                    <input id="review-bubble-height" type="number" min="0" max="220" step="4" value="0" />
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Font
+                    <select id="review-overlay-font-family">
+                      <option value="Helvetica Neue">Helvetica Neue</option>
+                      <option value="Arial">Arial</option>
+                      <option value="Verdana">Verdana</option>
+                      <option value="Courier New">Courier New</option>
+                      <option value="Georgia">Georgia</option>
+                    </select>
+                  </label>
+                  <label>Font size
+                    <input id="review-overlay-font-size" type="number" min="8" max="72" step="1" value="14" />
+                  </label>
+                </div>
+                <div class="button-grid two-up">
+                  <label class="check-row"><input id="review-overlay-font-bold" type="checkbox" /> Bold</label>
+                  <label class="check-row"><input id="review-overlay-font-italic" type="checkbox" /> Italic</label>
+                </div>
+                <div class="style-grid" id="review-badge-style-grid"></div>
+                <h3>Review Score Colors</h3>
+                <div class="score-color-grid" id="review-score-color-grid"></div>
               </div>
             </section>
 
@@ -197,7 +316,7 @@
               <label>Detection threshold
                 <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
               </label>
-              <p class="hint">Lower values detect quieter shots; higher values require louder peaks. Changing this re-analyzes the local audio.</p>
+              <p class="hint">Start near 0.50. Lower the threshold if quiet shots are being missed, and raise it if background noise is being marked as a shot. Each change re-analyzes the local audio for this stage.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
@@ -205,9 +324,6 @@
                 <h3>Scoring</h3>
                 <strong id="scoring-result">--</strong>
               </div>
-              <dl class="details">
-                <dt>Selected</dt><dd id="selected-score-shot">No shot selected</dd>
-              </dl>
               <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
               <label>Preset
                 <select id="scoring-preset"></select>
@@ -215,13 +331,9 @@
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
               <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
               <dl id="scoring-imported-summary" class="details"></dl>
+              <div id="scoring-preset-summary" class="score-option-grid" aria-label="Scoring preset summary"></div>
+              <div id="scoring-stage-penalties" class="penalty-grid" aria-label="Stage penalty fields"></div>
               <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
-              <p class="hint">Assign a score value on any shot row. The value is stored on that shot and appears inside its split badge.</p>
-              <div id="score-option-grid" class="score-option-grid"></div>
-              <div id="scoring-penalty-grid" class="penalty-grid"></div>
-              <label>Score for selected shot
-                <select id="score-letter"></select>
-              </label>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
@@ -248,10 +360,10 @@
                     <option value="rounded">Rounded Bubble</option>
                   </select>
                 </label>
-                <label>Spacing
+                <label>Shot gap
                   <input id="overlay-spacing" type="number" min="0" max="40" step="2" value="8" />
                 </label>
-                <label>Margin
+                <label>Frame padding
                   <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" />
                 </label>
               </div>
@@ -273,7 +385,7 @@
                     <option value="custom">Custom</option>
                   </select>
                 </label>
-                <label>Direction
+                <label>Shot flow
                   <select id="shot-direction">
                     <option value="right">Right</option>
                     <option value="left">Left</option>
@@ -283,11 +395,35 @@
                 </label>
               </div>
               <div class="control-grid">
-                <label>Custom X
+                <label>Shot stack X (0 left, 1 right)
                   <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
                 </label>
-                <label>Custom Y
+                <label>Shot stack Y (0 top, 1 bottom)
                   <input id="overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Timer X (0 left, 1 right)
+                  <input id="timer-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+                <label>Timer Y (0 top, 1 bottom)
+                  <input id="timer-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Draw X (0 left, 1 right)
+                  <input id="draw-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+                <label>Draw Y (0 top, 1 bottom)
+                  <input id="draw-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Score X (0 left, 1 right)
+                  <input id="score-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
+                </label>
+                <label>Score Y (0 top, 1 bottom)
+                  <input id="score-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                 </label>
               </div>
               <div class="control-grid">
@@ -323,14 +459,12 @@
 
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">
-                <h3>Add Media</h3>
+                <h3>PiP</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
-              <p id="merge-media-summary" class="hint">Add as many videos or images as you want. Multiple items export as a grid.</p>
+              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add PiP Media</button>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-              <p class="hint">The first added item stays in the secondary preview. Extra items are included in the export grid automatically.</p>
               <label>Layout
                 <select id="merge-layout">
                   <option value="side_by_side">Side by side</option>
@@ -345,10 +479,10 @@
                 </div>
               </label>
               <div class="control-grid pip-position-grid">
-                <label>PiP X
+                <label>PiP X (0 left, 1 right)
                   <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                 </label>
-                <label>PiP Y
+                <label>PiP Y (0 top, 1 bottom)
                   <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                 </label>
               </div>
@@ -357,7 +491,6 @@
                 <button data-sync="1" type="button" aria-label="Adjust added media sync later by 1 millisecond">+1 ms</button>
                 <button data-sync="10" type="button" aria-label="Adjust added media sync later by 10 milliseconds">+10 ms</button>
               </div>
-              <button id="swap-videos" type="button">Swap Primary and First Added Item</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
@@ -496,7 +629,6 @@
                 </label>
               </div>
               <button id="import-practiscore" type="button">Select PractiScore Results</button>
-              <p class="hint">Add the match data here, then select an IDPA CSV or USPSA/IPSC PractiScore results file.</p>
               <dl id="practiscore-import-summary" class="details"></dl>
               <div class="project-path-row">
                 <label>Primary Video
@@ -524,6 +656,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260414c"></script>
+    <script src="/static/app.js?v=20260414h"></script>
   </body>
 </html>

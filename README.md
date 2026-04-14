@@ -18,7 +18,7 @@ Local-first competition shooting video analysis, merge, scoring, and export.
 
 ## Setup
 
-SplitShot uses `uv` to provision its pinned Python 3.12 environment. You do not need a separate system Python install if you launch it through `uv`, but you do need `uv` plus FFmpeg and FFprobe on your `PATH`. If you want to use `python` directly outside `uv`, install Python 3.12 separately as well.
+SplitShot uses `uv` to provision its pinned Python 3.12 environment. From a cloned repository, `uv run splitshot` is the normal launch command and `uv` will create or reuse the environment automatically. You still need `uv` plus FFmpeg and FFprobe on your `PATH`, or vendored under `src/splitshot/resources/ffmpeg/<platform>`.
 
 ### macOS
 
@@ -45,23 +45,24 @@ git clone https://github.com/jklock/splitshot.git
 cd splitshot
 ```
 
-5. Install SplitShot's Python dependencies plus the test and packaging extras:
-
-```bash
-uv sync --all-extras
-```
-
-6. Start the browser UI:
+5. Start the browser UI from the repository root:
 
 ```bash
 uv run splitshot
 ```
 
-7. Optional commands:
+6. Optional commands:
 
 ```bash
 uv run splitshot --desktop
 uv run splitshot --no-open
+uv run splitshot --check
+```
+
+7. Development-only extras for tests and browser audits:
+
+```bash
+uv sync --extra dev
 ```
 
 ### Windows
@@ -89,12 +90,11 @@ ffmpeg -version
 ffprobe -version
 ```
 
-6. Clone the repository and install dependencies:
+6. Clone the repository:
 
 ```powershell
 git clone https://github.com/jklock/splitshot.git
 Set-Location splitshot
-uv sync --all-extras
 ```
 
 7. Run SplitShot:
@@ -103,9 +103,56 @@ uv sync --all-extras
 uv run splitshot
 uv run splitshot --desktop
 uv run splitshot --no-open
+uv run splitshot --check
 ```
 
 If you would rather not edit `PATH`, set `SPLITSHOT_FFMPEG_DIR` to the folder that contains `ffmpeg.exe` and `ffprobe.exe` before launching SplitShot.
+
+8. Development-only extras for tests and browser audits:
+
+```powershell
+uv sync --extra dev
+```
+
+### Linux
+
+1. Install Git, `uv`, FFmpeg, and FFprobe. Example for Ubuntu or Debian:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y git curl ffmpeg
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. Verify the tools from a fresh terminal:
+
+```bash
+uv --version
+ffmpeg -version
+ffprobe -version
+```
+
+3. Clone the repository and run SplitShot:
+
+```bash
+git clone https://github.com/jklock/splitshot.git
+cd splitshot
+uv run splitshot
+```
+
+4. Optional commands:
+
+```bash
+uv run splitshot --desktop
+uv run splitshot --no-open
+uv run splitshot --check
+```
+
+5. Development-only extras for tests and browser audits:
+
+```bash
+uv sync --extra dev
+```
 
 ## Run
 
@@ -130,9 +177,14 @@ uv run splitshot-desktop
 Use these commands to confirm the install and the local toolchain.
 
 ```bash
+uv sync --extra dev
 uv run pytest
 uv run splitshot --check
+uv run python -m playwright install chromium firefox webkit
+uv run python scripts/run_browser_ui_surface_audit.py
 ```
+
+The Playwright audit defaults to the available Chromium, Firefox, and Safari-class WebKit targets, and it also uses the locally installed Chrome or Edge channels when they are present. The VS Code integrated browser is effectively a Chromium debugging surface, so use the Playwright script from the VS Code terminal for actual cross-browser validation.
 
 ## Export
 
@@ -149,15 +201,15 @@ Browser export controls expose:
 
 Browser file pickers and typed-path imports support common stage containers including `.mp4`, `.m4v`, `.mov`, `.avi`, `.wmv`, `.webm`, `.mkv`, `.mpg`, `.mpeg`, `.mts`, and `.m2ts`.
 
-## Packaging
+## Runtime Model
 
-The source package is browser-first and runnable with one command through `uv run splitshot`. The repository includes `.python-version` with Python 3.12, so `uv` creates/uses the right virtual environment without requiring `--python 3.12` on every command. Native `.dmg` and `.exe` artifacts are intentionally not required for the current workflow.
+SplitShot is a source-first, uv-only project. The expected launch path is `uv run splitshot` from a clone or installed source checkout, and native `.dmg` / `.exe` packaging is intentionally out of scope for the current workflow.
 
-The app needs `ffmpeg` and `ffprobe`. During development it finds them from `PATH`; packaged/source distributions can also point to bundled binaries with `SPLITSHOT_FFMPEG_DIR`.
+The app still needs `ffmpeg` and `ffprobe`. It resolves them from `PATH`, `SPLITSHOT_FFMPEG_DIR`, or vendored binaries under `src/splitshot/resources/ffmpeg/<platform>`.
 
 ## License
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-14
+**Referenced files last updated:** 2026-04-14

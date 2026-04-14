@@ -40,6 +40,14 @@ from splitshot.scoring.practiscore import (
 )
 
 
+VALID_OVERLAY_BADGE_NAMES = {
+    "timer_badge",
+    "shot_badge",
+    "current_shot_badge",
+    "hit_factor_badge",
+}
+
+
 def _pip_size_percent_from_enum(size: PipSize) -> int:
     return {
         PipSize.SMALL: 25,
@@ -258,7 +266,13 @@ class ProjectController(QObject):
 
     def add_merge_source(self, path: str) -> None:
         asset = probe_video(path)
-        self.project.merge_sources.append(MergeSource(asset=asset))
+        self.project.merge_sources.append(
+            MergeSource(
+                asset=asset,
+                pip_x=self.project.merge.pip_x,
+                pip_y=self.project.merge.pip_y,
+            )
+        )
         self.project.merge.enabled = True
         _sync_secondary_video_from_merge_sources(self.project)
         if len(self.project.merge_sources) == 1 and not asset.is_still_image:
@@ -345,13 +359,24 @@ class ProjectController(QObject):
         self.project.ui_state.selected_shot_id = shot_id
         self.project_changed.emit()
 
-    def assign_score(self, shot_id: str, letter: ScoreLetter) -> None:
+    def assign_score(
+        self,
+        shot_id: str,
+        letter: ScoreLetter | None = None,
+        penalty_counts: dict[str, float] | None = None,
+    ) -> None:
         for shot in self.project.analysis.shots:
             if shot.id == shot_id:
                 if shot.score is None:
-                    shot.score = ScoreMark(letter=letter)
-                else:
+                    shot.score = ScoreMark(letter=letter or ScoreLetter.A)
+                elif letter is not None:
                     shot.score.letter = letter
+                if penalty_counts is not None:
+                    shot.score.penalty_counts = {
+                        str(key): max(0.0, float(value))
+                        for key, value in penalty_counts.items()
+                        if max(0.0, float(value)) > 0
+                    }
                 break
         self.update_hit_factor()
         self.project.touch()
@@ -449,6 +474,14 @@ class ProjectController(QObject):
         if "custom_y" in payload:
             value = payload["custom_y"]
             overlay.custom_y = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        for field_name in ("timer_x", "timer_y", "draw_x", "draw_y", "score_x", "score_y"):
+            if field_name in payload:
+                value = payload[field_name]
+                setattr(
+                    overlay,
+                    field_name,
+                    None if value in {"", None} else max(0.0, min(1.0, float(value))),
+                )
         if "bubble_width" in payload:
             overlay.bubble_width = max(0, min(400, int(payload["bubble_width"])))
         if "bubble_height" in payload:
@@ -500,6 +533,8 @@ class ProjectController(QObject):
         text_color: str | None = None,
         opacity: float | None = None,
     ) -> None:
+        if badge_name not in VALID_OVERLAY_BADGE_NAMES:
+            raise ValueError(f"Unknown badge style: {badge_name}")
         style = getattr(self.project.overlay, badge_name)
         if not isinstance(style, BadgeStyle):
             raise ValueError(f"Unknown badge style: {badge_name}")
@@ -549,8 +584,35 @@ class ProjectController(QObject):
             self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
         if pip_y is not None:
             self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
+        if self.project.merge_sources:
+            first_source = self.project.merge_sources[0]
+            if pip_x is not None:
+                first_source.pip_x = self.project.merge.pip_x
+            if pip_y is not None:
+                first_source.pip_y = self.project.merge.pip_y
         self.project.touch()
         self.project_changed.emit()
+
+    def set_merge_source_position(
+        self,
+        source_id: str,
+        pip_x: float | None = None,
+        pip_y: float | None = None,
+    ) -> None:
+        for source in self.project.merge_sources:
+            if source.id != source_id:
+                continue
+            if pip_x is not None:
+                source.pip_x = max(0.0, min(1.0, float(pip_x)))
+            if pip_y is not None:
+                source.pip_y = max(0.0, min(1.0, float(pip_y)))
+            if self.project.merge_sources and self.project.merge_sources[0].id == source_id:
+                self.project.merge.pip_x = source.pip_x
+                self.project.merge.pip_y = source.pip_y
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        raise ValueError("Merge source not found")
 
     def add_timing_event(
         self,

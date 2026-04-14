@@ -30,8 +30,6 @@ def _resource_roots() -> list[Path]:
     roots: list[Path] = []
     if override := os.environ.get("SPLITSHOT_FFMPEG_DIR"):
         roots.append(Path(override))
-    if hasattr(sys, "_MEIPASS"):
-        roots.append(Path(getattr(sys, "_MEIPASS")) / "splitshot" / "resources" / "ffmpeg")
     roots.append(Path(__file__).resolve().parents[1] / "resources" / "ffmpeg")
     return roots
 
@@ -47,8 +45,8 @@ def resolve_media_binary(tool: str) -> str:
     if resolved:
         return resolved
     raise MediaError(
-        f"Could not find {tool}. Set SPLITSHOT_FFMPEG_DIR or bundle {executable} "
-        f"under splitshot/resources/ffmpeg/{platform}."
+        f"Could not find {tool}. Add {executable} to PATH, set SPLITSHOT_FFMPEG_DIR, "
+        f"or place it under splitshot/resources/ffmpeg/{platform}."
     )
 
 

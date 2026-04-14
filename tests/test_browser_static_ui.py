@@ -11,8 +11,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260413c"' in html
-    assert 'src="/static/app.js?v=20260414c"' in html
+    assert 'href="/static/styles.css?v=20260414d"' in html
+    assert 'src="/static/app.js?v=20260414h"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -37,7 +37,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
-    assert '<b>Add</b>' in html
+    assert '<b>PiP</b>' in html
     assert "<b>Review</b>" in html
     assert "<b>Splits</b>" in html
     assert "<b>Score</b>" in html
@@ -80,12 +80,12 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "cloud upload" not in html.lower()
     assert "Add Second Angle" not in html
     assert "Add Second Video" not in html
-    assert "Add Media" in html
+    assert "Add PiP Media" in html
     assert 'id="merge-media-input"' in html
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
-    assert "Swap Primary and First Added Item" in html
+    assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore Results" in html
     assert "Select Primary Video" in html
     assert "John Klockenkemper" not in html
@@ -94,7 +94,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'placeholder="Optional"' in html
     assert "Upload Primary Video" not in html
     assert "upload an IDPA CSV" not in html
-    assert "Add the match data here" in html
+    assert "Add the match data here" not in html
+    assert "Multiple items export as a grid" not in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
     merge_start = html.index('data-tool-pane="merge"')
@@ -103,7 +104,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert merge_start < html.index('id="add-merge-media"') < export_start
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
-    assert merge_start < html.index('id="swap-videos"') < export_start
+    assert 'id="swap-videos"' not in html
     assert export_start < html.index('id="export-preset"') < project_start
     assert export_start < html.index('id="quality"') < project_start
     assert export_start < html.index('id="export-video"') < project_start
@@ -183,8 +184,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="scoring-preset"' in html
     assert 'id="scoring-imported-caption"' in html
     assert 'id="scoring-imported-summary"' in html
-    assert 'id="score-option-grid"' in html
-    assert 'id="scoring-penalty-grid"' in html
+    assert 'id="scoring-preset-summary"' in html
+    assert 'id="scoring-stage-penalties"' in html
+    assert 'id="timer-x"' in html
+    assert 'id="timer-y"' in html
+    assert 'id="draw-x"' in html
+    assert 'id="draw-y"' in html
+    assert 'id="score-x"' in html
+    assert 'id="score-y"' in html
     assert 'id="browse-project-path"' in html
     assert 'id="browse-export-path"' in html
     assert 'id="browse-primary-path"' in html
@@ -229,9 +236,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyThreshold" in js
     assert "autoApplyOverlay" in js
     assert "autoApplyMerge" in js
-    assert "autoApplyLayout" in js
+    assert "autoApplyExportLayout" in js
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
+    assert "/api/layout" not in js
     assert "renderScoringPenaltyFields" in js
     assert "renderPractiScoreSummaries" in js
     assert "renderMergeMediaList" in js
@@ -256,7 +264,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'pickPath("project_open", "project-path", async (path)' in js
     assert 'pickPath("project_save", "project-path"' in js
     assert 'const path = $("project-path").value.trim();' in js
-    assert 'const kind = currentPath ? "project_open" : "project_save";' in js
+    assert 'return pickPath("project_open", "project-path");' in js
+    assert 'const kind = currentPath ? "project_open" : "project_save";' not in js
     assert 'preset: $("export-preset").value,' in js
     assert 'callApi("/api/export", buildExportPayload(path));' in js
     assert "saveProjectFlow" in js
@@ -280,6 +289,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'setStatus("Select a PractiScore results file.");' in js
     assert 'await callApi("/api/project/practiscore", readPractiScoreContextPayload());\n    $("practiscore-file-input")?.click();' not in js
     assert "Opening file browser..." not in js
+    assert "function readExportLayoutPayload()" in js
+    assert "function scheduleExportLayoutApply()" in js
+    assert "function scheduleExportSettingsApply()" in js
+    assert "function scheduleProjectDetailsApply()" in js
+    assert "function schedulePractiScoreContextApply()" in js
+    assert "function scheduleOverlayApply()" in js
+    assert "function scheduleMergeApply()" in js
+    assert "function scheduleScoringApply()" in js
+    assert 'callApi("/api/export/settings", payload);' in js
+    assert '$(id).addEventListener("change", scheduleExportLayoutApply);' in js
     assert "scoring-active" in js
     assert "layoutLocked" in js
     assert "applyLayoutState" in js
@@ -310,8 +329,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);' in js
     assert 'const anchorOffsetY = (badgeRect.top - overlayRect.top) + (badgeRect.height / 2);' in js
     assert 'function splitSeconds(ms)' in js
-    assert 'grid.querySelectorAll(".style-card[data-badge]")' in js
-    assert 'scoreGrid.querySelectorAll(".score-color-input[data-letter]")' in js
+    assert 'grid.querySelectorAll(reviewMirror ? ".style-card[data-review-badge]" : ".style-card[data-badge]")' in js
+    assert 'const scoreSelector = reviewMirror ? ".review-score-color-input[data-letter]" : ".score-color-input[data-letter]";' in js
+    assert 'scoreGrid.querySelectorAll(scoreSelector).forEach((input) => {' in js
     assert 'const scoreKeys = state.scoring_summary?.score_options || [];' in js
     assert '...Object.keys(state.project.overlay.scoring_colors || {}),' not in js
     assert 'crop_center_x:' not in js
@@ -325,15 +345,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
     assert "Score letter is saved to that shot" not in html
-    assert "Assign a score value on any shot row" in html
+    assert "Assign a score value on any shot row" not in html
     assert "scoring-shot-row" in js
-    assert 'callApi("/api/scoring/score", { shot_id: segment.shot_id, letter: select.value })' in js
+    assert 'penalty_counts: collectPenaltyCounts(controls)' in js
     assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72)' in js
     assert 'persistLayoutSize("railWidth", clamp(event.clientX, 48, 72))' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
     assert 'parentRect?.width' in js
     assert 'canvas.style.width = "100%";' in js
-    assert "appears inside its split badge" in html
+    assert "appears inside its split badge" not in html
     assert "empty-start" not in js
     assert "setActiveTool" in js
     assert "setActivePage" not in js
@@ -454,7 +474,11 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
 
     assert 'let secondaryPreviewPlayErrorKey = null;' in js
-    assert 'if (selectedShotId && !(state.project?.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {' in js
+    assert 'let processingBarShowTimer = null;' in js
+    assert 'let processingBarHideTimer = null;' in js
+    assert 'function stateHasShot(nextState, shotId) {' in js
+    assert 'if (stateHasShot(state, selectedShotId)) return;' in js
+    assert 'selectedShotId = stateHasShot(state, remoteSelectedShotId) ? remoteSelectedShotId : null;' in js
     assert 'function clearSecondaryPreviewPlayError() {' in js
     assert 'function reportSecondaryPreviewPlayError(error) {' in js
     assert 'if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) return;' in js
@@ -465,13 +489,37 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();' in js
     assert 'let overlayColorCommitTimer = null;' in js
     assert 'const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;' in js
+    assert 'overlay.style.padding = `${overlayMargin}px`;' in js
+    assert 'overlay.style.gap = `${overlayMargin}px`;' in js
+    assert 'overlay.style.flexWrap = ["left", "right"].includes(direction) ? "wrap" : "nowrap";' in js
     assert 'function bindOverlayColorInput(control) {' in js
     assert 'control.addEventListener("input", previewOverlayColorChanges);' in js
-    assert 'control.addEventListener("change", previewOverlayColorChanges);' in js
+    assert 'control.addEventListener("change", queueOverlayColorCommit);' in js
     assert 'control.addEventListener("blur", flushOverlayColorCommit);' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-field="background_color"]\'));' in js
     assert 'bindOverlayColorInput(input);' in js
     assert 'if (isColorInput(event.target)) return;' in js
+
+
+def test_browser_processing_bar_uses_delayed_show_and_minimum_visibility() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'const PROCESSING_BAR_SHOW_DELAY_MS = 180;' in js
+    assert 'const PROCESSING_BAR_MIN_VISIBLE_MS = 320;' in js
+    assert 'function scheduleProcessingBarShow(message, detail) {' in js
+    assert 'function scheduleProcessingBarHide(finalMessage = "Ready.") {' in js
+    assert 'function forceHideProcessingBar(finalMessage = "Ready.") {' in js
+    assert 'scheduleProcessingBarShow(message, detail);' in js
+    assert 'if (busyCount === 0) scheduleProcessingBarHide(finalMessage);' in js
+    assert 'forceHideProcessingBar();' in js
+
+
+def test_browser_overlay_badges_use_container_gap_instead_of_per_badge_margin() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'badge.style.margin = "0";' in js
+    assert 'customOverlay.style.padding = "0";' in js
+    assert 'customOverlay.style.gap = "0";' in js
 
 
 def test_browser_color_inputs_keep_native_webkit_appearance() -> None:
@@ -501,7 +549,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "add-timing-event",
         "delete-selected",
         "expand-timing",
-        "swap-videos",
         "export-video",
         "browse-export-path",
         "browse-primary-path",
@@ -548,6 +595,93 @@ def test_browser_ui_removes_gpa_from_browser_preset_catalog() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
 
     assert "gpa_time_plus" not in js
+
+
+def test_browser_overlay_color_inputs_preview_on_input_and_commit_on_change() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+    match = re.search(r"function bindOverlayColorInput\(control\) \{(?P<body>.*?)\n\}", js, re.S)
+
+    assert match is not None
+    body = match.group("body")
+    assert 'control.addEventListener("input", previewOverlayColorChanges);' in body
+    assert 'control.addEventListener("change", queueOverlayColorCommit);' in body
+    assert 'control.addEventListener("blur", flushOverlayColorCommit);' in body
+
+
+def test_browser_client_validates_remote_state_shape_and_restores_server_selection() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert "function hasCompleteProjectState(nextState)" in js
+    assert "nextState?.project?.overlay" in js
+    assert "nextState?.project?.merge" in js
+    assert "nextState?.project?.export" in js
+    assert "nextState?.project?.ui_state" in js
+    assert "nextState?.metrics" in js
+    assert "nextState?.media" in js
+    assert "const remoteSelectedShotId = nextState.project.ui_state?.selected_shot_id || null;" in js
+    assert "selectedShotId = stateHasShot(state, remoteSelectedShotId) ? remoteSelectedShotId : null;" in js
+
+
+def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", js, re.S)
+
+    assert "const VALID_OVERLAY_BADGE_NAMES = new Set(badgeControls.map(([badgeName]) => badgeName));" in js
+    assert match is not None
+    body = match.group("body")
+    assert 'if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;' in body
+    assert 'card.querySelectorAll("input[data-field]")' in body
+
+
+def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'const autoApplyThreshold = debounce((payload) => {' in js
+    assert 'const autoApplyProjectDetails = debounce((payload) => {' in js
+    assert 'const autoApplyPractiScoreContext = debounce((payload) => {' in js
+    assert 'const autoApplyOverlay = debounce((payload) => {' in js
+    assert 'const autoApplyMerge = debounce((payload) => {' in js
+    assert 'const autoApplyExportLayout = debounce((payload) => {' in js
+    assert 'const autoApplyExportSettings = debounce((payload) => {' in js
+    assert 'const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {' in js
+    assert 'autoApplyThreshold({ threshold: Number($("threshold").value) });' in js
+    assert 'autoApplyProjectDetails(readProjectDetailsPayload());' in js
+    assert 'autoApplyPractiScoreContext(readPractiScoreContextPayload());' in js
+    assert 'autoApplyOverlay(readOverlayPayload());' in js
+    assert 'autoApplyMerge(readMergePayload());' in js
+    assert 'autoApplyExportLayout(readExportLayoutPayload());' in js
+    assert 'autoApplyExportSettings(readExportSettingsPayload());' in js
+
+
+def test_browser_merge_file_uploads_treat_partial_success_as_success() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+    match = re.search(r"async function postFiles\(path, files\) \{(?P<body>.*?)\n\}", js, re.S)
+
+    assert match is not None
+    body = match.group("body")
+    assert "let latestSuccess = null;" in body
+    assert "const result = await postFile(path, file);" in body
+    assert "if (result) latestSuccess = result;" in body
+    assert "return latestSuccess;" in body
+
+
+def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> None:
+    script = Path("scripts/run_browser_ui_surface_audit.py").read_text()
+
+    assert '"chromium": BrowserTarget(' in script
+    assert '"chrome": BrowserTarget(' in script
+    assert '"edge": BrowserTarget(' in script
+    assert '"firefox": BrowserTarget(' in script
+    assert '"safari": BrowserTarget(' in script
+    assert '"webkit": BrowserTarget(' in script
+    assert 'SUPPORTED_BROWSERS = tuple(BROWSER_TARGETS)' in script
+    assert 'def audit_fast_metadata_save(page: Page) -> CheckResult:' in script
+    assert 'def audit_blocking_save_progress(page: Page) -> CheckResult:' in script
+    assert 'def audit_color_input_preview(page: Page) -> CheckResult:' in script
+    assert 'def audit_overlay_surfaces(page: Page) -> CheckResult:' in script
+    assert 'def audit_waveform_drag(page: Page) -> CheckResult:' in script
+    assert 'def audit_layout_resize_persists(page: Page) -> CheckResult:' in script
+    assert 'def audit_merge_file_input_change(page: Page, primary_video: Path) -> CheckResult:' in script
 
 
 def test_readme_documents_one_command_uv_launch() -> None:
