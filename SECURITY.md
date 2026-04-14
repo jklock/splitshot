@@ -14,3 +14,6 @@ If you believe you have found a security issue, report it privately instead of o
 - The input that triggers the issue.
 - Any logs, screenshots, or crash output that help reproduce the problem.
 - Whether the issue affects analysis, export, file handling, or browser UI behavior.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** n/a

@@ -11,16 +11,20 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260413b"' in html
-    assert 'src="/static/app.js?v=20260413d"' in html
+    assert 'href="/static/styles.css?v=20260413c"' in html
+    assert 'src="/static/app.js?v=20260414c"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
+    assert 'accept=".csv,.txt,text/csv,text/plain"' in html
     assert 'class="tool-rail"' in html
     assert 'class="status-strip"' in html
     assert 'class="review-grid"' in html
     assert 'class="review-stack"' in html
     assert 'class="inspector"' in html
-    assert html.index('data-tool="project"') < html.index('data-tool="timing"')
+    assert html.index('data-tool="project"') < html.index('data-tool="scoring"')
+    assert html.index('data-tool="scoring"') < html.index('data-tool="timing"')
+    assert html.index('data-tool="timing"') < html.index('data-tool="merge"')
+    assert html.index('data-tool="merge"') < html.index('data-tool="overlay"')
     assert html.index('data-tool="merge"') < html.index('data-tool="review"')
     assert html.index('data-tool="review"') < html.index('data-tool="export"')
     assert 'data-tool="project"' in html
@@ -33,6 +37,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
+    assert '<b>Add</b>' in html
     assert "<b>Review</b>" in html
     assert "<b>Splits</b>" in html
     assert "<b>Score</b>" in html
@@ -47,6 +52,13 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Refresh" not in html
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
+    assert 'id="match-type"' in html
+    assert 'id="match-stage-number"' in html
+    assert 'id="match-competitor-name"' in html
+    assert 'id="match-competitor-place"' in html
+    assert 'id="import-practiscore"' in html
+    assert 'id="practiscore-status"' in html
+    assert 'id="practiscore-import-summary"' in html
     assert 'id="current-file"' in html
     assert 'id="processing-bar"' in html
     assert 'id="selected-shot-panel"' in html
@@ -68,14 +80,37 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "cloud upload" not in html.lower()
     assert "Add Second Angle" not in html
     assert "Add Second Video" not in html
-    assert "Add Merge Media" in html
+    assert "Add Media" in html
     assert 'id="merge-media-input"' in html
+    assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
-    assert "Swap Primary and First Merge" in html
-    assert "Upload Primary Video" in html
+    assert "Swap Primary and First Added Item" in html
+    assert "Select PractiScore Results" in html
+    assert "Select Primary Video" in html
+    assert "John Klockenkemper" not in html
+    assert 'placeholder="Add competitor name"' in html
+    assert 'placeholder="Add stage number"' in html
+    assert 'placeholder="Optional"' in html
+    assert "Upload Primary Video" not in html
+    assert "upload an IDPA CSV" not in html
+    assert "Add the match data here" in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
+    merge_start = html.index('data-tool-pane="merge"')
+    export_start = html.index('data-tool-pane="export"')
+    project_start = html.index('data-tool-pane="project"')
+    assert merge_start < html.index('id="add-merge-media"') < export_start
+    assert merge_start < html.index('id="merge-layout"') < export_start
+    assert merge_start < html.index('id="pip-size"') < export_start
+    assert merge_start < html.index('id="swap-videos"') < export_start
+    assert export_start < html.index('id="export-preset"') < project_start
+    assert export_start < html.index('id="quality"') < project_start
+    assert export_start < html.index('id="export-video"') < project_start
+    assert project_start < html.index('id="match-type"')
+    assert project_start < html.index('id="match-stage-number"')
+    assert project_start < html.index('id="match-competitor-name"')
+    assert project_start < html.index('id="match-competitor-place"')
     assert 'id="layout-threshold"' not in html
     assert 'id="layout-scoring-enabled"' not in html
     assert 'id="layout-overlay-position"' not in html
@@ -118,6 +153,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'aria-label="Use waveform add shot mode"' in html
     assert 'id="selected-shot-copy"' in html
     assert html.index('id="timing-table"') > html.index('id="selected-shot-panel"')
+    assert html.index('id="timing-table"') < html.index('id="threshold"')
     assert html.index('waveform-header') < html.index('id="waveform"')
     assert html.index('id="waveform"') < html.index('class="waveform-actions waveform-footer"')
     assert 'id="badge-style-grid"' in html
@@ -130,7 +166,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
     assert 'aria-label="Move selected shot earlier by 10 milliseconds"' in html
-    assert 'aria-label="Adjust merge sync later by 10 milliseconds"' in html
+    assert 'aria-label="Adjust added media sync later by 10 milliseconds"' in html
     assert 'id="max-visible-shots"' in html
     assert 'id="shot-quadrant"' in html
     assert '<option value="custom">Custom</option>' in html
@@ -139,10 +175,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="bubble-width"' in html
     assert 'id="overlay-font-family"' in html
     assert 'id="show-timer"' in html
+    assert 'id="custom-box-mode"' in html
     assert 'id="custom-box-text"' in html
+    assert 'Imported summary' in html
     assert 'Custom Box Style' in html
     assert 'id="layout-threshold"' not in html
     assert 'id="scoring-preset"' in html
+    assert 'id="scoring-imported-caption"' in html
+    assert 'id="scoring-imported-summary"' in html
     assert 'id="score-option-grid"' in html
     assert 'id="scoring-penalty-grid"' in html
     assert 'id="browse-project-path"' in html
@@ -150,6 +190,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="browse-primary-path"' in html
     assert 'id="browse-secondary-path"' not in html
     assert 'id="export-preset"' in html
+    assert 'id="crop-center-x"' not in html
+    assert 'id="crop-center-y"' not in html
     assert 'id="target-width"' in html
     assert 'id="target-height"' in html
     assert 'id="frame-rate"' in html
@@ -165,11 +207,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'Supported export containers: MP4, M4V, MOV, and MKV.' in html
     assert "/api/files/primary" in js
     assert "/api/files/merge" in js
+    assert "/api/files/practiscore" in js
     assert "/api/project/details" in js
+    assert "/api/project/practiscore" in js
     assert "/api/dialog/path" in js
     assert "/api/export/settings" in js
     assert "/api/export/preset" in js
+    assert "/api/events/delete" in js
     assert "/api/activity" in js
+    assert "Remove timing event" in js
     assert 'activity("api.refresh", {})' in js
     assert 'if (!response.ok || data.error) throw new Error(data.error || response.statusText);' in js
     assert 'throw new Error("Received invalid project state from the local server.");' in js
@@ -187,11 +233,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
     assert "renderScoringPenaltyFields" in js
+    assert "renderPractiScoreSummaries" in js
     assert "renderMergeMediaList" in js
     assert 'let exportPathDraft = "";' in js
     assert "readProjectDetailsPayload" in js
+    assert "readPractiScoreContextPayload" in js
+    assert "validatePractiScoreSelection" in js
     assert "autoApplyProjectDetails" in js
+    assert "autoApplyPractiScoreContext" in js
     assert "syncExportPathControl" in js
+    assert "buildExportPayload" in js
     assert "syncOverlayPreviewStateFromControls" in js
     assert "syncMergePreviewStateFromControls" in js
     assert "controlIsActive" in js
@@ -206,6 +257,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'pickPath("project_save", "project-path"' in js
     assert 'const path = $("project-path").value.trim();' in js
     assert 'const kind = currentPath ? "project_open" : "project_save";' in js
+    assert 'preset: $("export-preset").value,' in js
+    assert 'callApi("/api/export", buildExportPayload(path));' in js
     assert "saveProjectFlow" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
     assert 'const existingPath = $("project-path").value.trim();' in js
@@ -222,12 +275,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "syncExportPathControl();" in js
     assert "processingForPath" in js
     assert 'Exporting video...' in js
+    assert 'Importing media...' in js
+    assert 'Parsing PractiScore stage results' in js
+    assert 'setStatus("Select a PractiScore results file.");' in js
+    assert 'await callApi("/api/project/practiscore", readPractiScoreContextPayload());\n    $("practiscore-file-input")?.click();' not in js
     assert "Opening file browser..." not in js
     assert "scoring-active" in js
     assert "layoutLocked" in js
     assert "applyLayoutState" in js
     assert "beginLayoutResize" in js
     assert "syncOverlayCoordinateControlState" in js
+    assert "function syncCustomBoxModeState()" in js
+    assert "function effectiveCustomBoxText()" in js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert "const BADGE_FONT_SIZES = {" in js
     assert "function syncOverlayFontSizePreset()" in js
@@ -235,19 +294,35 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'activity("layout.resize.start"' in js
     assert 'activity("layout.resize.commit"' in js
     assert 'font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),' in js
+    assert 'custom_box_mode: $("custom-box-mode").value,' in js
+    assert 'overlay.custom_box_mode = payload.custom_box_mode || "manual";' in js
+    assert 'if (id === "custom-box-mode") syncCustomBoxModeState();' in js
+    assert 'const importedSummaryMode = (state.project.overlay.custom_box_mode || "manual") === "imported_summary";' in js
+    assert 'const customBoxHasCoordinates = normalizedCoordinateValue(state.project.overlay.custom_box_x) !== null' in js
+    assert 'positionOverlayContainer(customOverlay, state.project.overlay.custom_box_quadrant, frameRect);' in js
+    assert 'if (customX === null || customY === null) return false;' in js
+    assert 'Clear Box X/Y to use the selected quadrant.' in js
     assert 'syncOverlayFontSizePreset();' in js
     assert 'if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";' in js
     assert 'if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";' in js
+    assert 'function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {' in js
+    assert 'if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {' in js
+    assert 'const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);' in js
+    assert 'const anchorOffsetY = (badgeRect.top - overlayRect.top) + (badgeRect.height / 2);' in js
     assert 'function splitSeconds(ms)' in js
     assert 'grid.querySelectorAll(".style-card[data-badge]")' in js
     assert 'scoreGrid.querySelectorAll(".score-color-input[data-letter]")' in js
+    assert 'const scoreKeys = state.scoring_summary?.score_options || [];' in js
+    assert '...Object.keys(state.project.overlay.scoring_colors || {}),' not in js
+    assert 'crop_center_x:' not in js
+    assert 'crop_center_y:' not in js
     assert 'const FINAL_SHOT_FLASH_HALF_PERIOD_MS' not in js
     assert 'const FINAL_SHOT_FLASH_CYCLES' not in js
     assert 'const FINAL_SHOT_FLASH_DURATION_MS' not in js
     assert '`Shot ${index + 1} ${splitSeconds(splitMs)}${scoreText}`' in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
-    assert '$("badge-style-grid").addEventListener("change", () => {' in js
-    assert '$("score-color-grid").addEventListener("change", () => {' in js
+    assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
+    assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
     assert "Score letter is saved to that shot" not in html
     assert "Assign a score value on any shot row" in html
@@ -367,6 +442,46 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'document.addEventListener("pointercancel", handleWaveformPointerUp);' in js
     assert 'releasePointer(activeResize.target, activeResize.pointerId);' in js
     assert '["loadedmetadata", "loadeddata"].forEach((eventName) => {' in js
+    assert 'function isColorInput(control) {' in js
+    assert 'function previewOverlayControlChanges() {' in js
+    assert 'function commitOverlayControlChanges() {' in js
+    assert '["custom-box-background-color", "custom-box-text-color"].forEach((id) => {' in js
+    assert 'bindOverlayColorInput($(id));' in js
+    assert 'function bindOverlayColorInput(control) {' in js
+
+
+def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'let secondaryPreviewPlayErrorKey = null;' in js
+    assert 'if (selectedShotId && !(state.project?.analysis?.shots || []).some((shot) => shot.id === selectedShotId)) {' in js
+    assert 'function clearSecondaryPreviewPlayError() {' in js
+    assert 'function reportSecondaryPreviewPlayError(error) {' in js
+    assert 'if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) return;' in js
+    assert 'if (error?.name === "AbortError") return;' in js
+    assert 'activity("video.secondary_play.error", { name: errorName, error: errorMessage });' in js
+    assert 'secondary.play().catch(() => {});' not in js
+    assert 'const { startClientX, startClientY, startX, startY } = customOverlayDrag;' in js
+    assert 'const frameRect = videoContentRect($("primary-video"), stage) || stage.getBoundingClientRect();' in js
+    assert 'let overlayColorCommitTimer = null;' in js
+    assert 'const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;' in js
+    assert 'function bindOverlayColorInput(control) {' in js
+    assert 'control.addEventListener("input", previewOverlayColorChanges);' in js
+    assert 'control.addEventListener("change", previewOverlayColorChanges);' in js
+    assert 'control.addEventListener("blur", flushOverlayColorCommit);' in js
+    assert 'bindOverlayColorInput(card.querySelector(\'[data-field="background_color"]\'));' in js
+    assert 'bindOverlayColorInput(input);' in js
+    assert 'if (isColorInput(event.target)) return;' in js
+
+
+def test_browser_color_inputs_keep_native_webkit_appearance() -> None:
+    css = (STATIC_ROOT / "styles.css").read_text()
+
+    assert 'input[type="color"] {' in css
+    assert '-webkit-appearance: auto;' in css
+    assert 'appearance: auto;' in css
+    assert 'cursor: pointer;' in css
+    assert '-webkit-appearance: none;' not in css.split('input[type="color"] {', 1)[1].split('}', 1)[0]
 
 
 def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
@@ -392,6 +507,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "browse-primary-path",
         "new-project",
         "browse-project-path",
+        "import-practiscore",
         "save-project",
         "open-project",
         "delete-project",
@@ -426,6 +542,12 @@ def test_browser_display_names_strip_session_uuid_prefixes() -> None:
 
     assert "primary_display_name" in js
     assert 'replace(/^[a-f0-9]{32}_/i, "")' in js
+
+
+def test_browser_ui_removes_gpa_from_browser_preset_catalog() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert "gpa_time_plus" not in js
 
 
 def test_readme_documents_one_command_uv_launch() -> None:

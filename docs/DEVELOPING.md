@@ -47,3 +47,6 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Keep browser and desktop behavior aligned when the change affects the shared controller or domain model.
 - Update both the project bundle load/save path and the browser state serialization when the project schema changes.
 - Use the technical docs in `src/splitshot/.../README.md` to locate the owning module before adding new behavior.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

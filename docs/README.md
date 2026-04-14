@@ -51,6 +51,10 @@ These explain how to use the application from import to export.
 
 - [USER_GUIDE.md](USER_GUIDE.md)
 
+## Markdown Inventory
+
+A generated inventory of every tracked Markdown file lives at [MARKDOWN_INDEX.md](MARKDOWN_INDEX.md).
+
 ## Existing Planning Artifacts
 
 The repository also keeps implementation plans and task lists under [plans/](plans) and [todos/](todos). Those files are execution history and feature worklogs, not the primary user guide.
@@ -58,3 +62,6 @@ The repository also keeps implementation plans and task lists under [plans/](pla
 ## Governance Note
 
 The repository includes [LICENSE](../LICENSE) and uses the MIT License.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

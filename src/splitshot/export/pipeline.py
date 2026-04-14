@@ -375,6 +375,33 @@ def _start_log_reader(
     return thread
 
 
+_EXPECTED_DECODER_PIPE_SHUTDOWN_FRAGMENTS = (
+    "Broken pipe",
+    "Error muxing a packet",
+    "Task finished with error code: -32",
+    "Terminating thread with return code -32",
+    "Error writing trailer",
+    "Error closing file",
+    "Conversion failed!",
+)
+
+
+def _prune_expected_decoder_pipe_shutdown_lines(log_lines: list[str]) -> bool:
+    cleaned_lines: list[str] = []
+    suppressed = False
+    for line in log_lines:
+        if line.startswith("decoder:") and any(fragment in line for fragment in _EXPECTED_DECODER_PIPE_SHUTDOWN_FRAGMENTS):
+            suppressed = True
+            continue
+        cleaned_lines.append(line)
+    if suppressed:
+        cleaned_lines.append(
+            "decoder: rawvideo pipe closed after the encoder finished the shortest stream; decoder shutdown was expected."
+        )
+        log_lines[:] = cleaned_lines
+    return suppressed
+
+
 def _encoder_command(
     project: Project,
     output_width: int,
@@ -524,7 +551,11 @@ def _render_pass(
     decoder_log_thread.join(timeout=2)
     encoder_log_thread.join(timeout=2)
 
-    if decoder_return != 0 and not _is_expected_decoder_pipe_shutdown(decoder_return, encoder_return, log_lines):
+    expected_decoder_shutdown = _is_expected_decoder_pipe_shutdown(decoder_return, encoder_return, log_lines)
+    if expected_decoder_shutdown and _prune_expected_decoder_pipe_shutdown_lines(log_lines) and log_callback is not None:
+        log_callback(log_lines[-1])
+
+    if decoder_return != 0 and not expected_decoder_shutdown:
         raise RuntimeError("Base video render failed")
     if encoder_return != 0:
         raise RuntimeError("MP4 encode failed")

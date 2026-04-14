@@ -21,3 +21,6 @@ Contributions should stay aligned with the current local-first architecture.
 - Note any behavioral changes in the browser UI, desktop UI, or export pipeline.
 - Include test coverage for new behavior when practical.
 - Mention any tradeoffs or follow-up work that remains.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

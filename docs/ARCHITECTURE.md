@@ -63,3 +63,6 @@ The PySide6 desktop app in [src/splitshot/ui/main_window.py](../src/splitshot/ui
 ## Design Constraints
 
 The codebase is intentionally local-first. It does not depend on a remote service for detection, scoring, merge math, or export rendering. The main external dependencies are FFmpeg, FFprobe, NumPy, and PySide6.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-13

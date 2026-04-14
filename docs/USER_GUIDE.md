@@ -200,3 +200,6 @@ The waveform editor also switches between Select and Add Shot mode. Select mode 
 ## Desktop App
 
 SplitShot also includes a PySide6 desktop window. It uses the same project model and the same analysis and export pipeline, but the browser interface is the main documented workflow.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** n/a

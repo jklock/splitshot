@@ -13,12 +13,14 @@ def test_splitshot_defaults_to_browser_mode(monkeypatch) -> None:
         port: int,
         open_browser: bool,
         project_path: Path | None,
+        log_level: str,
     ) -> int:
         calls["mode"] = "web"
         calls["host"] = host
         calls["port"] = port
         calls["open_browser"] = open_browser
         calls["project_path"] = project_path
+        calls["log_level"] = log_level
         return 0
 
     monkeypatch.setattr(cli, "run_browser", fake_browser)
@@ -30,7 +32,27 @@ def test_splitshot_defaults_to_browser_mode(monkeypatch) -> None:
         "port": 0,
         "open_browser": False,
         "project_path": None,
+        "log_level": "off",
     }
+
+
+def test_splitshot_log_level_dispatches_to_browser(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_browser(
+        host: str,
+        port: int,
+        open_browser: bool,
+        project_path: Path | None,
+        log_level: str,
+    ) -> int:
+        calls["log_level"] = log_level
+        return 0
+
+    monkeypatch.setattr(cli, "run_browser", fake_browser)
+
+    assert cli.main(["--no-open", "--log-level", "debug", "--port", "0"]) == 0
+    assert calls == {"log_level": "debug"}
 
 
 def test_splitshot_desktop_flag_dispatches_to_desktop(monkeypatch, tmp_path: Path) -> None:
@@ -64,3 +86,4 @@ def test_cli_help_documents_browser_default() -> None:
 
     assert "Browser control is the default mode" in help_text
     assert "--desktop" in help_text
+    assert "--log-level" in help_text

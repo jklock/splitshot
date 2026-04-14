@@ -22,6 +22,9 @@ from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_
 from splitshot.ui.controller import ProjectController
 
 
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+
+
 def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
     video_path = synthetic_video_factory()
     result = analyze_video_audio(video_path, threshold=0.35)
@@ -127,6 +130,7 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     controller.set_overlay_display_options(
         {
             "custom_box_enabled": True,
+            "custom_box_mode": "imported_summary",
             "custom_box_text": "Stage review",
             "custom_box_x": 0.45,
             "custom_box_y": 0.55,
@@ -170,6 +174,7 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     assert controller.project.scoring.hit_factor == 0.0
     assert controller.project.overlay.position == OverlayPosition.TOP
     assert controller.project.overlay.custom_box_enabled is True
+    assert controller.project.overlay.custom_box_mode == "imported_summary"
     assert controller.project.overlay.custom_box_text == ""
     assert controller.project.overlay.custom_box_x == 0.45
     assert controller.project.overlay.custom_box_y == 0.55
@@ -189,6 +194,60 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     assert controller.project.export.last_error is None
     assert controller.project.ui_state.selected_shot_id is None
     assert controller.project.ui_state.timeline_offset_ms == 0
+
+
+def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA.csv"), source_name="IDPA.csv")
+
+    first_primary = synthetic_video_factory(name="stage-two-first", beep_ms=400)
+    second_primary = synthetic_video_factory(name="stage-two-second", beep_ms=500)
+
+    controller.ingest_primary_video(str(first_primary))
+    imported_before = controller.project.scoring.imported_stage
+
+    controller.ingest_primary_video(str(second_primary))
+
+    assert controller.project.scoring.imported_stage == imported_before
+    assert controller.project.scoring.penalty_counts == {"non_threats": 1.0}
+    assert controller.project.scoring.penalties == 0.0
+    assert controller.project.scoring.ruleset == "idpa_time_plus"
+
+
+def test_delete_timing_event_removes_matching_event() -> None:
+    controller = ProjectController()
+
+    controller.add_timing_event("reload", note="Cleanup")
+    event_id = controller.project.analysis.events[0].id
+
+    controller.delete_timing_event(event_id)
+
+    assert controller.project.analysis.events == []
+
+
+def test_practiscore_import_auto_enables_summary_only_after_file_import() -> None:
+    controller = ProjectController()
+
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+
+    assert controller.project.overlay.custom_box_enabled is False
+    assert controller.project.overlay.custom_box_mode == "manual"
+
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA.csv"), source_name="IDPA.csv")
+
+    assert controller.project.overlay.custom_box_enabled is True
+    assert controller.project.overlay.custom_box_mode == "imported_summary"
 
 
 def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:

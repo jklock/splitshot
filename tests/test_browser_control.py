@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
@@ -111,6 +112,29 @@ def test_display_name_fallback_strips_browser_session_prefix() -> None:
     assert display_name_for_path("", "None") == "None"
 
 
+def test_activity_logger_defaults_to_file_only(tmp_path, capsys) -> None:
+    logger = ActivityLogger(log_dir=tmp_path)
+
+    logger.log("http.get", path="/")
+
+    assert capsys.readouterr().out == ""
+    log_text = logger.path.read_text(encoding="utf-8")
+    assert '"event": "http.get"' in log_text
+    assert '"level": "debug"' in log_text
+
+
+def test_activity_logger_console_level_filters_events(tmp_path, capsys) -> None:
+    logger = ActivityLogger(log_dir=tmp_path, console_level="info")
+
+    logger.log("http.get", path="/")
+    logger.log("server.initialized", host="127.0.0.1", port=8765, log_path="/tmp/splitshot.log")
+
+    output = capsys.readouterr().out
+    assert "server.initialized" in output
+    assert '"level": "info"' in output
+    assert "http.get" not in output
+
+
 def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0, log_dir=tmp_path)
@@ -125,6 +149,8 @@ def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) ->
         assert payload == {"ok": True}
         log_text = server.activity.path.read_text(encoding="utf-8")
         assert "server.initialized" in log_text
+        assert '"level": "info"' in log_text
+        assert '"level": "debug"' in log_text
         assert "http.get" in log_text
         assert "browser.activity" in log_text
         assert "test.click" in log_text
@@ -261,6 +287,142 @@ def test_browser_primary_replacement_preserves_reusable_settings_and_clears_vide
         assert state["project"]["export"]["last_error"] is None
         assert state["project"]["ui_state"]["selected_shot_id"] is None
         assert state["project"]["ui_state"]["timeline_offset_ms"] == 0
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_imports_practiscore_results() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    examples_dir = Path(__file__).resolve().parent.parent / "examples"
+    try:
+        server.start_background(open_browser=False)
+
+        state = _post_json(
+            f"{server.url}api/project/practiscore",
+            {
+                "match_type": "uspsa",
+                "stage_number": 1,
+                "competitor_name": "Lutman, Stephen",
+                "competitor_place": 1,
+            },
+        )
+
+        assert state["project"]["overlay"]["custom_box_enabled"] is False
+        assert state["project"]["overlay"]["custom_box_mode"] == "manual"
+
+        state = _post_multipart(
+            f"{server.url}api/files/practiscore",
+            "file",
+            "report.txt",
+            (examples_dir / "report.txt").read_bytes(),
+        )
+
+        assert state["project"]["scoring"]["enabled"] is True
+        assert state["project"]["scoring"]["ruleset"] == "uspsa_minor"
+        assert state["project"]["scoring"]["match_type"] == "uspsa"
+        assert state["project"]["scoring"]["stage_number"] == 1
+        assert state["project"]["scoring"]["competitor_name"] == "Stephen Lutman"
+        assert state["project"]["scoring"]["competitor_place"] == 1
+        assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
+        assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
+        assert state["project"]["scoring"]["imported_stage"]["aggregate_points"] == 101.0
+        assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
+        assert state["scoring_summary"]["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
+        assert state["scoring_summary"]["hit_factor"] == pytest.approx(101.0 / 23.24)
+        assert state["scoring_summary"]["display_value"] == "4.35"
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_can_delete_timing_event() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    try:
+        server.start_background(open_browser=False)
+
+        state = _post_json(
+            f"{server.url}api/events/add",
+            {"kind": "reload", "note": "Cleanup"},
+        )
+        event_id = state["project"]["analysis"]["events"][0]["id"]
+
+        state = _post_json(
+            f"{server.url}api/events/delete",
+            {"event_id": event_id},
+        )
+
+        assert state["project"]["analysis"]["events"] == []
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="primary-route-cover"))
+        merge_path = Path(synthetic_video_factory(name="merge-route-cover", beep_ms=620))
+
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
+        assert state["project"]["primary_video"]["path"] == str(primary_path)
+
+        state = _get_json(f"{server.url}api/state")
+        assert state["metrics"]["total_shots"] == 3
+        first_shot_id = state["project"]["analysis"]["shots"][0]["id"]
+        shot_count = len(state["project"]["analysis"]["shots"])
+
+        state = _post_json(f"{server.url}api/analysis/threshold", {"threshold": 0.4})
+        assert state["project"]["analysis"]["detection_threshold"] == 0.4
+
+        state = _post_json(f"{server.url}api/beep", {"time_ms": 405})
+        assert state["project"]["analysis"]["beep_time_ms_primary"] == 405
+
+        state = _post_json(f"{server.url}api/shots/add", {"time_ms": 1750})
+        assert len(state["project"]["analysis"]["shots"]) == shot_count + 1
+        added_shot_id = next(
+            shot["id"]
+            for shot in state["project"]["analysis"]["shots"]
+            if shot["time_ms"] == 1750
+        )
+
+        state = _post_json(f"{server.url}api/shots/select", {"shot_id": first_shot_id})
+        assert state["project"]["ui_state"]["selected_shot_id"] == first_shot_id
+
+        state = _post_json(f"{server.url}api/shots/delete", {"shot_id": added_shot_id})
+        assert len(state["project"]["analysis"]["shots"]) == shot_count
+        assert all(shot["id"] != added_shot_id for shot in state["project"]["analysis"]["shots"])
+
+        state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
+        assert len(state["project"]["merge_sources"]) == 1
+        merge_source_id = state["project"]["merge_sources"][0]["id"]
+        assert state["project"]["secondary_video"]["path"] == str(merge_path)
+
+        state = _post_json(f"{server.url}api/merge/remove", {"source_id": merge_source_id})
+        assert state["project"]["merge_sources"] == []
+        assert state["project"]["secondary_video"] is None
+
+        state = _post_json(
+            f"{server.url}api/layout",
+            {"target_width": 720, "target_height": 1280, "aspect_ratio": "9:16"},
+        )
+        assert state["project"]["export"]["preset"] == "custom"
+        assert state["project"]["export"]["target_width"] == 720
+        assert state["project"]["export"]["target_height"] == 1280
+        assert state["project"]["export"]["aspect_ratio"] == "9:16"
+
+        bundle_path = tmp_path / "delete-me.ssproj"
+        _post_json(f"{server.url}api/project/details", {"name": "Delete Me"})
+        state = _post_json(f"{server.url}api/project/save", {"path": str(bundle_path)})
+        assert bundle_path.exists()
+        assert state["project"]["name"] == "Delete Me"
+
+        state = _post_json(f"{server.url}api/project/delete", {})
+        assert not bundle_path.exists()
+        assert state["project"]["name"] == "Untitled Project"
+        assert state["status"] == "Deleted the saved project bundle."
     finally:
         server.shutdown()
 
@@ -575,6 +737,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                 "show_shots": True,
                 "show_score": False,
                 "custom_box_enabled": True,
+                "custom_box_mode": "imported_summary",
                 "custom_box_text": "Classifier ready",
                 "custom_box_quadrant": "middle_middle",
                 "custom_box_x": 0.5,
@@ -605,6 +768,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["show_timer"] is False
         assert state["project"]["overlay"]["show_score"] is False
         assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
         assert state["project"]["overlay"]["custom_box_text"] == "Classifier ready"
         assert state["project"]["overlay"]["custom_box_quadrant"] == "middle_middle"
         assert state["project"]["overlay"]["custom_box_x"] == 0.5
@@ -701,6 +865,57 @@ def test_browser_control_api_exports_mp4_and_exposes_ffmpeg_log(synthetic_video_
         assert output_path.exists()
         assert output_path.stat().st_size > 0
         assert state["project"]["export"]["output_path"] == str(output_path)
+        assert "Encoder command:" in state["project"]["export"]["last_log"]
+        assert state["project"]["export"]["last_error"] is None
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_export_uses_request_payload_overrides(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory(resolution=(320, 180)))
+        output_path = tmp_path / "browser-export-custom.mov"
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        _post_json(f"{server.url}api/export/preset", {"preset": "youtube_long_4k"})
+
+        state = _post_json(
+            f"{server.url}api/export",
+            {
+                "path": str(output_path),
+                "preset": "custom",
+                "quality": "medium",
+                "aspect_ratio": "1:1",
+                "target_width": 120,
+                "target_height": 120,
+                "frame_rate": "30",
+                "video_codec": "hevc",
+                "video_bitrate_mbps": 1,
+                "audio_codec": "aac",
+                "audio_sample_rate": 44100,
+                "audio_bitrate_kbps": 96,
+                "color_space": "bt709_sdr",
+                "two_pass": False,
+                "ffmpeg_preset": "ultrafast",
+            },
+        )
+
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+        assert state["project"]["export"]["preset"] == "custom"
+        assert state["project"]["export"]["quality"] == "medium"
+        assert state["project"]["export"]["aspect_ratio"] == "1:1"
+        assert state["project"]["export"]["target_width"] == 120
+        assert state["project"]["export"]["target_height"] == 120
+        assert state["project"]["export"]["frame_rate"] == "30"
+        assert state["project"]["export"]["video_codec"] == "hevc"
+        assert state["project"]["export"]["video_bitrate_mbps"] == 1.0
+        assert state["project"]["export"]["audio_sample_rate"] == 44100
+        assert state["project"]["export"]["audio_bitrate_kbps"] == 96
+        assert state["project"]["export"]["ffmpeg_preset"] == "ultrafast"
         assert "Encoder command:" in state["project"]["export"]["last_log"]
         assert state["project"]["export"]["last_error"] is None
     finally:

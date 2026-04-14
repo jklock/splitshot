@@ -38,3 +38,6 @@ This page records the current constraints that are visible in the source tree an
 
 - The repository includes a root LICENSE file and uses the MIT License.
 - The docs/plans and docs/todos directories are implementation history and task tracking, not the primary user manual.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** n/a

@@ -19,3 +19,6 @@ The timeline package organizes shot detections into a table of split rows and de
 ## Browser Usage
 
 The browser UI uses the split rows for the timing table, the split cards, and the waveform shot labels. The stage presentation layer consumes the same helpers to build its summary cards.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-11

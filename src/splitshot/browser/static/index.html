@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260413b" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260413c" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -15,10 +15,10 @@
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
-          <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
           <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
+          <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
+          <button class="tool-item" data-tool="merge" type="button" aria-label="Show add tool"><b>Add</b></button>
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
-          <button class="tool-item" data-tool="merge" type="button" aria-label="Show merge tool"><b>Merge</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
         </nav>
@@ -28,6 +28,7 @@
       <main id="cockpit-root" class="cockpit">
         <input id="primary-file-input" type="file" accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts" hidden />
         <input id="merge-media-input" type="file" accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp" multiple hidden />
+        <input id="practiscore-file-input" type="file" accept=".csv,.txt,text/csv,text/plain" hidden />
         <span id="project-title" hidden>Untitled Project</span>
         <span id="status" hidden>Ready.</span>
 
@@ -122,7 +123,14 @@
               <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
               <div class="review-custom-box">
                 <label class="check-row"><input id="custom-box-enabled" type="checkbox" /> Custom review box</label>
-                <label>Custom box text
+                <label>Box content
+                  <select id="custom-box-mode">
+                    <option value="manual">Custom text</option>
+                    <option value="imported_summary">Imported summary</option>
+                  </select>
+                </label>
+                <p id="custom-box-mode-hint" class="hint">Uses the text below and follows the same box styling and coordinates as export.</p>
+                <label>Box text
                   <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
                 </label>
                 <div class="control-grid">
@@ -171,10 +179,6 @@
                 <button id="expand-timing" type="button">Expand</button>
               </div>
               <span id="timing-summary">No timing data.</span>
-              <label>Detection threshold
-                <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
-              </label>
-              <p class="hint">Lower values detect quieter shots; higher values require louder peaks. Changing this re-analyzes the local audio.</p>
               <section id="selected-shot-panel" class="selected-shot-controls">
                 <div class="section-header">
                   <h3>Selected Shot</h3>
@@ -190,6 +194,10 @@
                 <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
               </section>
               <div id="timing-table" class="data-table"></div>
+              <label>Detection threshold
+                <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
+              </label>
+              <p class="hint">Lower values detect quieter shots; higher values require louder peaks. Changing this re-analyzes the local audio.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
@@ -205,6 +213,8 @@
                 <select id="scoring-preset"></select>
               </label>
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
+              <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
+              <dl id="scoring-imported-summary" class="details"></dl>
               <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
               <p class="hint">Assign a score value on any shot row. The value is stored on that shot and appears inside its split badge.</p>
               <div id="score-option-grid" class="score-option-grid"></div>
@@ -313,13 +323,13 @@
 
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">
-                <h3>Merge Media</h3>
+                <h3>Add Media</h3>
                 <strong id="sync-offset">0 ms</strong>
               </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Merge Media</button>
+              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <p id="merge-media-summary" class="hint">Add as many videos or images as you want. Multiple items export as a grid.</p>
-              <div id="merge-media-list" class="merge-media-list" aria-label="Merge media list"></div>
-              <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable merge export</label>
+              <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+              <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
               <p class="hint">The first added item stays in the secondary preview. Extra items are included in the export grid automatically.</p>
               <label>Layout
                 <select id="merge-layout">
@@ -343,12 +353,11 @@
                 </label>
               </div>
               <div class="button-grid">
-                <button data-sync="-10" type="button" aria-label="Adjust merge sync earlier by 10 milliseconds">-10 ms</button>
-                <button data-sync="-1" type="button" aria-label="Adjust merge sync earlier by 1 millisecond">-1 ms</button>
-                <button data-sync="1" type="button" aria-label="Adjust merge sync later by 1 millisecond">+1 ms</button>
-                <button data-sync="10" type="button" aria-label="Adjust merge sync later by 10 milliseconds">+10 ms</button>
+                <button data-sync="-10" type="button" aria-label="Adjust added media sync earlier by 10 milliseconds">-10 ms</button>
+                <button data-sync="1" type="button" aria-label="Adjust added media sync later by 1 millisecond">+1 ms</button>
+                <button data-sync="10" type="button" aria-label="Adjust added media sync later by 10 milliseconds">+10 ms</button>
               </div>
-              <button id="swap-videos" type="button">Swap Primary and First Merge</button>
+              <button id="swap-videos" type="button">Swap Primary and First Added Item</button>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
@@ -377,14 +386,6 @@
                   <option value="4:5">4:5</option>
                 </select>
               </label>
-              <div class="control-grid">
-                <label>Crop center X
-                  <input id="crop-center-x" type="range" min="0" max="1" step="0.01" value="0.5" />
-                </label>
-                <label>Crop center Y
-                  <input id="crop-center-y" type="range" min="0" max="1" step="0.01" value="0.5" />
-                </label>
-              </div>
               <div class="control-grid">
                 <label>Width
                   <input id="target-width" type="number" min="2" step="2" placeholder="source" />
@@ -469,12 +470,40 @@
               <label>Project description
                 <textarea id="project-description" rows="5" placeholder="Summarize the stage, what the run is for, and any notes to save with the project."></textarea>
               </label>
+              <div class="section-header">
+                <h3>PractiScore Import</h3>
+                <span id="practiscore-status">No results imported</span>
+              </div>
+              <div class="control-grid">
+                <label>Match type
+                  <select id="match-type">
+                    <option value="">Select</option>
+                    <option value="uspsa">USPSA</option>
+                    <option value="ipsc">IPSC</option>
+                    <option value="idpa">IDPA</option>
+                  </select>
+                </label>
+                <label>Stage #
+                  <input id="match-stage-number" type="number" min="1" step="1" placeholder="Add stage number" />
+                </label>
+              </div>
+              <div class="control-grid">
+                <label>Competitor name
+                  <input id="match-competitor-name" placeholder="Add competitor name" />
+                </label>
+                <label>Place
+                  <input id="match-competitor-place" type="number" min="1" step="1" placeholder="Optional" />
+                </label>
+              </div>
+              <button id="import-practiscore" type="button">Select PractiScore Results</button>
+              <p class="hint">Add the match data here, then select an IDPA CSV or USPSA/IPSC PractiScore results file.</p>
+              <dl id="practiscore-import-summary" class="details"></dl>
               <div class="project-path-row">
                 <label>Primary Video
                   <input id="primary-file-path" placeholder="/absolute/path/to/primary.mp4" />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Upload Primary Video</button>
+                  <button id="browse-primary-path" class="primary-button" type="button">Select Primary Video</button>
                 </div>
               </div>
               <label>Project bundle path
@@ -495,6 +524,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260413d"></script>
+    <script src="/static/app.js?v=20260414c"></script>
   </body>
 </html>

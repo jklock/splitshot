@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from splitshot.domain.models import (
+    ImportedStageScore,
     MergeLayout,
     PipSize,
     Project,
@@ -15,6 +16,7 @@ from splitshot.scoring.logic import (
     calculate_hit_factor,
     calculate_scoring_summary,
     current_shot_index,
+    scoring_presets_for_api,
 )
 
 
@@ -138,6 +140,78 @@ def test_idpa_time_plus_uses_points_down_and_penalty_seconds() -> None:
     assert summary["final_time"] == 2.0 + 9 + 41
 
 
+def test_imported_stage_summary_uses_official_aggregate_values() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.scoring.penalties = 2.0
+    project.scoring.penalty_counts = {"procedural_errors": 1}
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="uspsa",
+        competitor_name="Stephen Lutman",
+        stage_number=1,
+        stage_name="Stage 1 Swangin’",
+        raw_seconds=23.24,
+        aggregate_points=101.0,
+        total_points=101.0,
+        shot_penalties=0.0,
+        hit_factor=4.3460,
+        stage_points=125.0,
+        stage_place=1,
+        score_counts={"A": 15.0, "C": 8.0, "D": 2.0},
+    )
+
+    apply_scoring_preset(project, "uspsa_minor")
+    summary = calculate_scoring_summary(project)
+
+    assert summary["raw_seconds"] == 23.24
+    assert summary["shot_points"] == 101.0
+    assert summary["shot_penalties"] == 0.0
+    assert summary["field_penalties"] == 10.0
+    assert summary["total_penalties"] == 12.0
+    assert summary["hit_factor"] == 101.0 / 23.24
+    assert summary["imported_stage"]["stage_place"] == 1
+    assert summary["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
+
+
+def test_imported_stage_hit_factor_uses_official_total_points_and_raw_time() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="uspsa",
+        competitor_name="Match Shooter",
+        stage_number=2,
+        raw_seconds=23.28,
+        aggregate_points=106.0,
+        total_points=96.0,
+        shot_penalties=10.0,
+        hit_factor=4.12,
+    )
+
+    apply_scoring_preset(project, "uspsa_minor")
+    summary = calculate_scoring_summary(project)
+
+    assert summary["hit_factor"] == 96.0 / 23.28
+    assert summary["display_value"] == "4.12"
+
+
+def test_imported_stage_overlay_text_uses_idpa_official_fields() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        competitor_name="Match Shooter",
+        stage_number=2,
+        raw_seconds=29.83,
+        aggregate_points=5.0,
+        final_time=39.83,
+    )
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    summary = calculate_scoring_summary(project)
+
+    assert summary["imported_overlay_text"] == "Official\nRaw 29.83\nPD 5\nFinal 39.83"
+
+
 def test_steel_and_gpa_time_plus_presets_are_explicit() -> None:
     steel = Project()
     steel.scoring.enabled = True
@@ -163,6 +237,13 @@ def test_steel_and_gpa_time_plus_presets_are_explicit() -> None:
     gpa.scoring.penalty_counts = {"non_threats": 1, "steel_not_down": 1}
     gpa_summary = calculate_scoring_summary(gpa)
     assert gpa_summary["final_time"] == 2.0 + 0.5 + 1.5 + 5 + 15
+
+
+def test_browser_api_hides_gpa_preset() -> None:
+    preset_ids = {preset["id"] for preset in scoring_presets_for_api()}
+
+    assert "gpa_time_plus" not in preset_ids
+    assert {"uspsa_minor", "uspsa_major", "ipsc_minor", "ipsc_major", "idpa_time_plus", "steel_challenge"}.issubset(preset_ids)
 
 
 def test_merge_canvas_covers_layouts() -> None:

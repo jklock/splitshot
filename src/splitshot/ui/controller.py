@@ -33,6 +33,11 @@ from splitshot.export.presets import apply_export_preset as apply_export_preset_
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import delete_project, load_project, save_project
 from splitshot.scoring.logic import apply_scoring_preset, calculate_hit_factor
+from splitshot.scoring.practiscore import (
+    default_ruleset_for_match_type,
+    import_practiscore_stage,
+    normalize_match_type,
+)
 
 
 def _pip_size_percent_from_enum(size: PipSize) -> int:
@@ -65,9 +70,10 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.analysis.waveform_secondary = []
     project.analysis.shots = []
     project.analysis.events = []
-    project.scoring.penalties = 0.0
-    project.scoring.penalty_counts = {}
-    project.scoring.hit_factor = None
+    if project.scoring.imported_stage is None:
+        project.scoring.penalties = 0.0
+        project.scoring.penalty_counts = {}
+        project.scoring.hit_factor = None
     project.secondary_video = None
     project.merge_sources = []
     project.merge.enabled = False
@@ -173,6 +179,80 @@ class ProjectController(QObject):
             self.project.name = name.strip() or "Untitled Project"
         if description is not None:
             self.project.description = str(description)
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_practiscore_context(
+        self,
+        match_type: str | None = None,
+        stage_number: int | None = None,
+        competitor_name: str | None = None,
+        competitor_place: int | None = None,
+    ) -> None:
+        scoring = self.project.scoring
+        changed = False
+        if match_type is not None:
+            clean_match_type = "" if not str(match_type).strip() else normalize_match_type(str(match_type))
+            if scoring.match_type != clean_match_type:
+                scoring.match_type = clean_match_type
+                changed = True
+            if clean_match_type:
+                apply_scoring_preset(self.project, default_ruleset_for_match_type(clean_match_type))
+        if stage_number is not None:
+            next_stage_number = max(1, int(stage_number))
+            if scoring.stage_number != next_stage_number:
+                scoring.stage_number = next_stage_number
+                changed = True
+        if competitor_name is not None:
+            next_competitor_name = str(competitor_name).strip()
+            if scoring.competitor_name != next_competitor_name:
+                scoring.competitor_name = next_competitor_name
+                changed = True
+        if competitor_place is not None or (competitor_place is None and scoring.competitor_place is not None):
+            if scoring.competitor_place != competitor_place:
+                scoring.competitor_place = competitor_place
+                changed = True
+        if changed:
+            scoring.imported_stage = None
+            scoring.penalties = 0.0
+            scoring.penalty_counts = {}
+            self.update_hit_factor()
+            self._set_status("Updated PractiScore import settings.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def import_practiscore_file(self, path: str, source_name: str | None = None) -> None:
+        scoring = self.project.scoring
+        previous_import = scoring.imported_stage
+        if not scoring.match_type:
+            raise ValueError("Choose a match type before importing PractiScore results.")
+        if scoring.stage_number is None:
+            raise ValueError("Stage number is required before importing PractiScore results.")
+        if not scoring.competitor_name.strip():
+            raise ValueError("Competitor name is required before importing PractiScore results.")
+        imported = import_practiscore_stage(
+            path,
+            match_type=scoring.match_type,
+            stage_number=scoring.stage_number,
+            competitor_name=scoring.competitor_name,
+            competitor_place=scoring.competitor_place,
+            source_name=source_name,
+        )
+        apply_scoring_preset(self.project, imported.ruleset)
+        self.project.scoring.enabled = True
+        self.project.scoring.penalties = max(0.0, float(imported.manual_penalties))
+        self.project.scoring.penalty_counts = dict(imported.penalty_counts)
+        self.project.scoring.imported_stage = imported.imported_stage
+        self.project.scoring.competitor_name = imported.imported_stage.competitor_name
+        self.project.scoring.competitor_place = imported.imported_stage.competitor_place
+        self.project.scoring.match_type = imported.imported_stage.match_type
+        self.project.scoring.stage_number = imported.imported_stage.stage_number
+        if previous_import is None:
+            self.project.overlay.custom_box_enabled = True
+            self.project.overlay.custom_box_mode = "imported_summary"
+        self.update_hit_factor()
+        stage_label = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+        self._set_status(f"Imported PractiScore results for {stage_label}.")
         self.project.touch()
         self.project_changed.emit()
 
@@ -354,6 +434,7 @@ class ProjectController(QObject):
         }
         valid_shot_quadrants = {*valid_quadrants, "custom"}
         valid_directions = {"right", "left", "down", "up"}
+        valid_custom_box_modes = {"manual", "imported_summary"}
         if "max_visible_shots" in payload:
             overlay.max_visible_shots = max(1, min(40, int(payload["max_visible_shots"])))
         if "shot_quadrant" in payload:
@@ -385,6 +466,9 @@ class ProjectController(QObject):
                 setattr(overlay, field_name, bool(payload[field_name]))
         if "custom_box_enabled" in payload:
             overlay.custom_box_enabled = bool(payload["custom_box_enabled"])
+        if "custom_box_mode" in payload:
+            value = str(payload["custom_box_mode"])
+            overlay.custom_box_mode = value if value in valid_custom_box_modes else "manual"
         if "custom_box_text" in payload:
             overlay.custom_box_text = str(payload["custom_box_text"])[:500]
         if "custom_box_quadrant" in payload:
@@ -488,6 +572,14 @@ class ProjectController(QObject):
                 note=note,
             )
         )
+        self.project.touch()
+        self.project_changed.emit()
+
+    def delete_timing_event(self, event_id: str) -> None:
+        remaining_events = [event for event in self.project.analysis.events if event.id != event_id]
+        if len(remaining_events) == len(self.project.analysis.events):
+            raise ValueError("Timing event not found")
+        self.project.analysis.events = remaining_events
         self.project.touch()
         self.project_changed.emit()
 

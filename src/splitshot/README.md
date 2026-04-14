@@ -24,3 +24,6 @@ The default entry path is browser mode:
 - The CLI aliases `splitshot-web` and `splitshot-desktop` are defined in `pyproject.toml`.
 - App settings are persisted in `~/.splitshot/settings.json` through `config.py`.
 - The package version is exported from `__init__.py` as `__version__`.
+
+**Last updated:** 2026-04-13
+**Referenced files last updated:** 2026-04-11

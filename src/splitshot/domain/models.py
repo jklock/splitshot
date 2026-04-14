@@ -198,9 +198,36 @@ class AnalysisState:
 
 
 @dataclass(slots=True)
+class ImportedStageScore:
+    source_name: str = ""
+    source_path: str = ""
+    match_type: str = ""
+    competitor_name: str = ""
+    competitor_place: int | None = None
+    stage_number: int | None = None
+    stage_name: str = ""
+    division: str = ""
+    classification: str = ""
+    power_factor: str = ""
+    raw_seconds: float | None = None
+    aggregate_points: float = 0.0
+    total_points: float | None = None
+    shot_penalties: float = 0.0
+    hit_factor: float | None = None
+    final_time: float | None = None
+    stage_points: float | None = None
+    stage_place: int | None = None
+    score_counts: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class ScoringState:
     enabled: bool = False
     ruleset: str = "uspsa_minor"
+    match_type: str = ""
+    stage_number: int | None = None
+    competitor_name: str = ""
+    competitor_place: int | None = None
     penalties: float = 0.0
     point_map: dict[str, float] = field(
         default_factory=lambda: {
@@ -215,6 +242,7 @@ class ScoringState:
     )
     penalty_counts: dict[str, float] = field(default_factory=dict)
     hit_factor: float | None = None
+    imported_stage: ImportedStageScore | None = None
 
 
 @dataclass(slots=True)
@@ -240,6 +268,7 @@ class OverlaySettings:
     show_shots: bool = True
     show_score: bool = True
     custom_box_enabled: bool = False
+    custom_box_mode: str = "manual"
     custom_box_text: str = ""
     custom_box_quadrant: str = "top_right"
     custom_box_x: float | None = None
@@ -393,6 +422,47 @@ def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark | None:
     )
 
 
+def _imported_stage_from_dict(data: dict[str, Any] | None) -> ImportedStageScore | None:
+    if not data:
+        return None
+    competitor_place = data.get("competitor_place")
+    stage_number = data.get("stage_number")
+    stage_place = data.get("stage_place")
+    raw_seconds = data.get("raw_seconds")
+    total_points = data.get("total_points")
+    hit_factor = data.get("hit_factor")
+    final_time = data.get("final_time")
+    stage_points = data.get("stage_points")
+    return ImportedStageScore(
+        source_name=str(data.get("source_name", "")),
+        source_path=str(data.get("source_path", "")),
+        match_type=str(data.get("match_type", "")),
+        competitor_name=str(data.get("competitor_name", "")),
+        competitor_place=(
+            None
+            if competitor_place in {None, ""}
+            else int(competitor_place)
+        ),
+        stage_number=None if stage_number in {None, ""} else int(stage_number),
+        stage_name=str(data.get("stage_name", "")),
+        division=str(data.get("division", "")),
+        classification=str(data.get("classification", "")),
+        power_factor=str(data.get("power_factor", "")),
+        raw_seconds=None if raw_seconds in {None, ""} else float(raw_seconds),
+        aggregate_points=float(data.get("aggregate_points", 0.0)),
+        total_points=None if total_points in {None, ""} else float(total_points),
+        shot_penalties=float(data.get("shot_penalties", 0.0)),
+        hit_factor=None if hit_factor in {None, ""} else float(hit_factor),
+        final_time=None if final_time in {None, ""} else float(final_time),
+        stage_points=None if stage_points in {None, ""} else float(stage_points),
+        stage_place=None if stage_place in {None, ""} else int(stage_place),
+        score_counts={
+            str(key): float(value)
+            for key, value in data.get("score_counts", {}).items()
+        },
+    )
+
+
 def _path_looks_like_still_image(path: str) -> bool:
     return Path(path).suffix.lower() in _STILL_IMAGE_SUFFIXES
 
@@ -497,6 +567,18 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", False)),
             ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),
+            match_type=str(scoring_data.get("match_type", "")),
+            stage_number=(
+                None
+                if scoring_data.get("stage_number") in {None, ""}
+                else int(scoring_data.get("stage_number"))
+            ),
+            competitor_name=str(scoring_data.get("competitor_name", "")),
+            competitor_place=(
+                None
+                if scoring_data.get("competitor_place") in {None, ""}
+                else int(scoring_data.get("competitor_place"))
+            ),
             penalties=float(scoring_data.get("penalties", 0)),
             point_map={
                 str(key): float(value)
@@ -509,6 +591,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             hit_factor=(
                 None if scoring_data.get("hit_factor") is None else float(scoring_data["hit_factor"])
             ),
+            imported_stage=_imported_stage_from_dict(scoring_data.get("imported_stage")),
         ),
         overlay=OverlaySettings(
             position=OverlayPosition(overlay_data.get("position", OverlayPosition.BOTTOM.value)),
@@ -536,6 +619,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             show_shots=bool(overlay_data.get("show_shots", True)),
             show_score=bool(overlay_data.get("show_score", True)),
             custom_box_enabled=bool(overlay_data.get("custom_box_enabled", False)),
+            custom_box_mode=(
+                str(overlay_data.get("custom_box_mode", "manual"))
+                if str(overlay_data.get("custom_box_mode", "manual")) in {"manual", "imported_summary"}
+                else "manual"
+            ),
             custom_box_text=str(overlay_data.get("custom_box_text", "")),
             custom_box_quadrant=str(overlay_data.get("custom_box_quadrant", "top_right")),
             custom_box_x=(
