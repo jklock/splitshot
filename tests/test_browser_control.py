@@ -18,7 +18,7 @@ from splitshot.browser.server import (
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import Project
+from splitshot.domain.models import OverlayPosition, Project
 from splitshot.ui.controller import ProjectController
 
 
@@ -187,6 +187,7 @@ def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_fact
     assert payload["media"]["primary_url"] == "/media/primary"
     assert len(payload["split_rows"]) == 3
     assert len(payload["timing_segments"]) == 3
+    assert payload["split_rows"][0]["split_ms"] == payload["metrics"]["draw_ms"]
     assert payload["timing_segments"][0]["label"] == "Draw"
     assert payload["timing_segments"][0]["segment_ms"] == payload["metrics"]["draw_ms"]
     assert payload["timing_segments"][-1]["cumulative_ms"] == payload["metrics"]["raw_time_ms"]
@@ -217,6 +218,143 @@ def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) ->
 
         state = _get_json(f"{server.url}api/state")
         assert state["metrics"]["total_shots"] == 3
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_restores_original_split_and_score(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+
+        first_shot = state["project"]["analysis"]["shots"][0]
+        shot_id = first_shot["id"]
+        original_time_ms = first_shot["time_ms"]
+        original_source = first_shot["source"]
+
+        state = _post_json(
+            f"{server.url}api/shots/move",
+            {"shot_id": shot_id, "time_ms": original_time_ms + 250},
+        )
+        moved_shot = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        assert moved_shot["source"] == "manual"
+
+        state = _post_json(
+            f"{server.url}api/scoring/score",
+            {"shot_id": shot_id, "letter": "C", "penalty_counts": {"procedural_errors": 1}},
+        )
+        scored_shot = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        assert scored_shot["score"]["letter"] == "C"
+
+        state = _post_json(f"{server.url}api/shots/restore", {"shot_id": shot_id})
+        restored_timing = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        assert restored_timing["time_ms"] == original_time_ms
+        assert restored_timing["source"] == original_source
+
+        state = _post_json(f"{server.url}api/scoring/restore", {"shot_id": shot_id})
+        restored_score = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
+        assert restored_score["score"] is None
+    finally:
+        server.shutdown()
+
+
+def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_render(
+    synthetic_video_factory,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="export-sync-primary"))
+        merge_path = Path(synthetic_video_factory(name="export-sync-merge", beep_ms=650))
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
+        state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
+        merge_source_id = state["project"]["merge_sources"][0]["id"]
+        output_path = tmp_path / "browser-export-sync.mp4"
+
+        def fake_export_project(project, output_target, progress_callback=None, log_callback=None):
+            assert project.scoring.enabled is True
+            assert project.scoring.ruleset == "uspsa_major"
+            assert project.overlay.position == OverlayPosition.TOP
+            assert project.overlay.custom_box_enabled is True
+            assert project.overlay.custom_box_text == "Session summary"
+            assert project.overlay.custom_box_width == 160
+            assert project.overlay.custom_box_height == 48
+            assert project.overlay.show_timer is False
+            assert project.merge.enabled is True
+            assert project.merge.layout.value == "pip"
+            assert project.merge.pip_size_percent == 44
+            assert len(project.merge_sources) == 1
+            assert project.merge_sources[0].pip_size_percent == 44
+            assert project.merge_sources[0].pip_x == pytest.approx(0.12)
+            assert project.merge_sources[0].pip_y == pytest.approx(0.76)
+            assert project.merge_sources[0].sync_offset_ms == -25
+            assert project.analysis.sync_offset_ms == -25
+            export_target = Path(output_target)
+            export_target.write_bytes(b"ok")
+            return export_target
+
+        monkeypatch.setattr(browser_server_module, "export_project", fake_export_project)
+
+        state = _post_json(
+            f"{server.url}api/export",
+            {
+                "path": str(output_path),
+                "preset": "custom",
+                "quality": "high",
+                "aspect_ratio": "original",
+                "scoring": {
+                    "ruleset": "uspsa_major",
+                    "enabled": True,
+                    "penalties": 0,
+                    "penalty_counts": {},
+                },
+                "overlay": {
+                    "position": "top",
+                    "show_timer": False,
+                    "show_draw": False,
+                    "show_shots": True,
+                    "show_score": False,
+                    "custom_box_enabled": True,
+                    "custom_box_text": "Session summary",
+                    "custom_box_width": 160,
+                    "custom_box_height": 48,
+                },
+                "merge": {
+                    "enabled": True,
+                    "layout": "pip",
+                    "pip_size_percent": 44,
+                    "pip_x": 0.12,
+                    "pip_y": 0.76,
+                    "sources": [
+                        {
+                            "source_id": merge_source_id,
+                            "pip_size_percent": 44,
+                            "pip_x": 0.12,
+                            "pip_y": 0.76,
+                            "sync_offset_ms": -25,
+                        }
+                    ],
+                },
+            },
+        )
+
+        assert output_path.exists()
+        assert state["project"]["overlay"]["position"] == "top"
+        assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
+        assert state["project"]["overlay"]["custom_box_text"] == "Session summary"
+        assert state["project"]["overlay"]["custom_box_width"] == 160
+        assert state["project"]["overlay"]["custom_box_height"] == 48
+        assert state["project"]["merge"]["pip_size_percent"] == 44
+        assert state["project"]["merge_sources"][0]["pip_size_percent"] == 44
+        assert state["project"]["merge_sources"][0]["sync_offset_ms"] == -25
+        assert state["project"]["analysis"]["sync_offset_ms"] == -25
     finally:
         server.shutdown()
 
@@ -349,6 +487,54 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["scoring_summary"]["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
         assert state["scoring_summary"]["hit_factor"] == pytest.approx(101.0 / 23.24)
         assert state["scoring_summary"]["display_value"] == "4.35"
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_infers_practiscore_results_without_manual_context() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    examples_dir = Path(__file__).resolve().parent.parent / "examples"
+    try:
+        server.start_background(open_browser=False)
+
+        _post_json(
+            f"{server.url}api/project/practiscore",
+            {
+                "match_type": "idpa",
+                "stage_number": 4,
+                "competitor_name": "John Klockenkemper",
+                "competitor_place": 4,
+            },
+        )
+        _post_json(
+            f"{server.url}api/project/practiscore",
+            {
+                "match_type": "",
+                "stage_number": "",
+                "competitor_name": "",
+                "competitor_place": "",
+            },
+        )
+
+        state = _post_multipart(
+            f"{server.url}api/files/practiscore",
+            "file",
+            "report.txt",
+            (examples_dir / "report.txt").read_bytes(),
+        )
+
+        assert state["project"]["scoring"]["enabled"] is True
+        assert state["project"]["scoring"]["ruleset"] == "uspsa_minor"
+        assert state["project"]["scoring"]["match_type"] == "uspsa"
+        assert state["project"]["scoring"]["stage_number"] == 1
+        assert state["project"]["scoring"]["competitor_name"] == "Ben Rice"
+        assert state["project"]["scoring"]["competitor_place"] == 1
+        assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
+        assert state["project"]["scoring"]["imported_stage"]["competitor_name"] == "Ben Rice"
+        assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
+        assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
     finally:
         server.shutdown()
 
@@ -572,7 +758,7 @@ def test_browser_path_dialog_endpoint_supports_video_path_fields(tmp_path) -> No
 
 
 def test_browser_path_dialog_endpoint_supports_project_open_and_save(tmp_path) -> None:
-    open_path = tmp_path / "existing.ssproj"
+    open_path = tmp_path / "existing.ssproj" / "project.json"
     save_path = tmp_path / "new.ssproj"
     calls: list[tuple[str, str | None]] = []
 
@@ -595,6 +781,58 @@ def test_browser_path_dialog_endpoint_supports_project_open_and_save(tmp_path) -
         assert calls == [("project_open", "/tmp/current.ssproj"), ("project_save", None)]
     finally:
         server.shutdown()
+
+
+def test_choose_local_path_macos_prompts_for_project_open_file(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, capture_output, text, check):
+        captured["command"] = command
+        captured["script"] = command[2]
+
+        class Result:
+            returncode = 0
+            stdout = "/Users/klock/splitshot/review.ssproj/project.json\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(browser_server_module.subprocess, "run", fake_run)
+
+    chosen = browser_server_module.choose_local_path_macos("project_open")
+
+    assert chosen == "/Users/klock/splitshot/review.ssproj/project.json"
+    assert captured["command"] == ["osascript", "-e", captured["script"]]
+    script = str(captured["script"])
+    assert "choose file with prompt" in script
+    assert "Choose SplitShot project.json file" in script
+    assert "choose folder" not in script
+
+
+def test_choose_local_path_macos_defaults_new_project_save_name(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(command, capture_output, text, check):
+        captured["command"] = command
+        captured["script"] = command[2]
+
+        class Result:
+            returncode = 0
+            stdout = "/Users/klock/splitshot/project.ssproj\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(browser_server_module.subprocess, "run", fake_run)
+
+    chosen = browser_server_module.choose_local_path_macos("project_save")
+
+    assert chosen == "/Users/klock/splitshot/project.ssproj"
+    assert captured["command"] == ["osascript", "-e", captured["script"]]
+    script = str(captured["script"])
+    assert 'Choose SplitShot project bundle' in script
+    assert 'default name "project.ssproj"' in script
+    assert 'output.mp4' not in script
 
 
 def test_browser_control_api_layout_route_is_not_available(synthetic_video_factory) -> None:
@@ -631,10 +869,11 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         assert cleared["media"]["primary_available"] is False
         assert cleared["media"]["primary_display_name"] == "No video selected"
 
-        reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path / "project.json")})
         assert reopened["project"]["path"] == str(project_path)
         assert reopened["media"]["primary_available"] is True
         assert reopened["project"]["primary_video"]["path"] == str(video_path)
+        assert controller.project_path == project_path
     finally:
         server.shutdown()
 
@@ -816,7 +1055,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
         assert state["project"]["overlay"]["custom_box_text"] == "Classifier ready"
-        assert state["project"]["overlay"]["custom_box_quadrant"] == "middle_middle"
+        assert state["project"]["overlay"]["custom_box_quadrant"] == "custom"
         assert state["project"]["overlay"]["custom_box_x"] == 0.5
         assert state["project"]["overlay"]["custom_box_y"] == 0.5
 
@@ -1047,6 +1286,30 @@ def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_fac
         assert state["project"]["merge"]["pip_size_percent"] == 50
         assert state["project"]["merge"]["pip_x"] == 0.25
         assert state["project"]["merge"]["pip_y"] == 0.75
+
+        merge_source_id = state["project"]["merge_sources"][0]["id"]
+        state = _post_json(
+            f"{server.url}api/merge/source",
+            {"source_id": merge_source_id, "pip_size_percent": 62, "pip_x": 0.1, "pip_y": 0.9},
+        )
+        assert state["project"]["merge_sources"][0]["pip_size_percent"] == 62
+        assert state["project"]["merge_sources"][0]["pip_x"] == 0.1
+        assert state["project"]["merge_sources"][0]["pip_y"] == 0.9
+
+        initial_source_offset = state["project"]["merge_sources"][0]["sync_offset_ms"]
+        state = _post_json(
+            f"{server.url}api/merge/source",
+            {"source_id": merge_source_id, "sync_delta_ms": 10},
+        )
+        assert state["project"]["merge_sources"][0]["sync_offset_ms"] == initial_source_offset + 10
+        assert state["project"]["analysis"]["sync_offset_ms"] == initial_source_offset + 10
+
+        state = _post_json(
+            f"{server.url}api/merge/source",
+            {"source_id": merge_source_id, "sync_offset_ms": -25},
+        )
+        assert state["project"]["merge_sources"][0]["sync_offset_ms"] == -25
+        assert state["project"]["analysis"]["sync_offset_ms"] == -25
 
         initial_offset = state["project"]["analysis"]["sync_offset_ms"]
         state = _post_json(f"{server.url}api/sync", {"delta_ms": 10})

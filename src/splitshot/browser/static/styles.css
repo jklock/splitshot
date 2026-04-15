@@ -709,12 +709,15 @@ small,
 }
 
 .pip-size-control {
-  display: flex;
   align-items: center;
+  display: flex;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .pip-size-control input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 120px;
 }
 
@@ -749,11 +752,16 @@ small,
 }
 
 #custom-overlay.has-badge {
-  cursor: move;
-  pointer-events: auto;
+  pointer-events: none;
 }
 
-#custom-overlay.dragging {
+#custom-overlay.has-badge [data-custom-box-drag] {
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#custom-overlay.dragging [data-custom-box-drag] {
   cursor: grabbing;
 }
 
@@ -778,18 +786,13 @@ small,
 }
 
 .overlay-badge {
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 0;
   display: inline-flex;
   flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
   font-weight: 950;
   height: auto;
   line-height: 1;
   padding: 0.42rem 0.58rem;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
   white-space: nowrap;
   max-width: 100%;
   width: auto;
@@ -806,13 +809,11 @@ small,
 }
 
 .overlay-badge.timer-badge {
-  min-width: 104px;
   text-align: center;
 }
 
 .overlay-badge.draw-badge,
 .overlay-badge.score-badge {
-  min-width: 92px;
   text-align: center;
 }
 
@@ -1077,6 +1078,7 @@ button:disabled {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  container-type: inline-size;
   width: var(--inspector-width);
 }
 
@@ -1211,8 +1213,14 @@ button:disabled {
   border: 1px solid var(--line);
   display: grid;
   gap: 0.5rem;
-  grid-template-columns: minmax(0, 1fr) minmax(170px, 220px) auto;
   padding: 0.42rem 0.48rem;
+}
+
+.merge-media-card-header {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .merge-media-card strong,
@@ -1222,27 +1230,62 @@ button:disabled {
   white-space: nowrap;
 }
 
+.merge-media-card-meta,
 .merge-media-card small {
   color: var(--muted);
-}
-
-.merge-media-card button {
-  align-self: center;
 }
 
 .merge-source-controls {
   align-items: end;
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.merge-source-controls small {
-  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1.35fr) repeat(2, minmax(104px, 1fr));
 }
 
 .merge-source-field {
   gap: 0.24rem;
+}
+
+.merge-source-size-field {
+  min-width: 0;
+}
+
+.merge-source-size-field .pip-size-control {
+  background: #0f1215;
+  border: 1px solid var(--line);
+  min-height: 30px;
+  padding: 0.2rem 0.45rem;
+}
+
+.merge-source-sync-row {
+  align-items: center;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.35rem 0.5rem;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, auto);
+  padding-top: 0.42rem;
+}
+
+.merge-source-sync-label {
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.merge-source-sync-buttons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.merge-source-sync-buttons button {
+  min-height: 28px;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.merge-source-sync-hint {
+  color: var(--muted);
+  grid-column: 1 / -1;
+  line-height: 1.25;
 }
 
 .badge-style-controls {
@@ -1253,42 +1296,46 @@ button:disabled {
 
 .scoring-shot-list {
   display: grid;
-  gap: 0.55rem;
+  gap: 0.35rem;
   margin-bottom: 0.65rem;
 }
 
 .scoring-shot-row {
-  background: var(--surface-2);
+  align-items: center;
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.5rem;
-  grid-template-columns: minmax(0, 1fr);
-  padding: 0.5rem;
-}
-
-.scoring-shot-row.selected {
-  border-color: var(--accent);
+  gap: 0.35rem;
+  grid-template-columns: minmax(108px, 136px) minmax(0, 1fr);
+  padding: 0.35rem 0.42rem;
 }
 
 .scoring-shot-button {
-  background: transparent;
-  border: 1px solid var(--line);
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+  justify-content: flex-start;
   overflow: hidden;
-  padding: 0.48rem;
   text-align: left;
+}
+
+.scoring-shot-button strong,
+.scoring-shot-button small {
+  overflow: hidden;
   text-overflow: ellipsis;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 .scoring-shot-button strong {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
+  min-width: 0;
 }
 
 .scoring-shot-button small {
   color: var(--muted);
-  line-height: 1.35;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .scoring-shot-row.selected .scoring-shot-button {
@@ -1297,35 +1344,57 @@ button:disabled {
 }
 
 .scoring-shot-controls {
-  display: grid;
-  gap: 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+  align-items: center;
+  min-width: 0;
 }
 
-.shot-score-field,
-.shot-penalty-field {
-  display: grid;
-  gap: 0.22rem;
+.shot-score-field {
+  flex: 0 0 88px;
+  min-width: 88px;
 }
 
-.shot-score-field span,
+.shot-score-select {
+  width: 100%;
+}
+
+.restore-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0.2rem 0.55rem;
+  white-space: nowrap;
+}
+
 .shot-penalty-field span {
   color: var(--muted);
   font-size: 0.66rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  min-width: 1.7rem;
 }
 
 .shot-penalty-fields {
-  display: grid;
-  gap: 0.35rem;
-  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.35rem;
+  align-items: center;
+  min-width: 0;
 }
 
-.shot-penalty-field input,
-.shot-score-field select,
-.stage-penalty-input {
-  width: 100%;
+.shot-penalty-field {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.shot-penalty-field input {
+  min-width: 3.4rem;
+  max-width: 3.4rem;
+  width: 3.4rem;
 }
 
 .lock-button {
@@ -1345,6 +1414,22 @@ button:disabled {
   justify-content: center;
 }
 
+.timing-edit-control {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.timing-edit-control input {
+  min-width: 0;
+  width: 100%;
+}
+
+.timing-split-input {
+  min-width: 6.4rem;
+}
+
 .control-grid {
   display: grid;
   gap: 0.48rem;
@@ -1360,7 +1445,7 @@ button:disabled {
 .score-color-grid {
   display: grid;
   gap: 0.35rem;
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 }
 
 .review-custom-box {
@@ -1373,35 +1458,24 @@ button:disabled {
 .score-option-grid,
 .penalty-grid {
   display: grid;
-  gap: 0;
+  gap: 0.35rem;
   grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-}
-
-.penalty-grid {
-  margin-bottom: 0.65rem;
 }
 
 .score-option-grid span {
   background: var(--surface-2);
-  border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
+  border: 1px solid var(--line);
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 850;
-  min-height: 28px;
-  padding: 0.36rem 0.45rem;
+  min-height: 42px;
+  line-height: 1.25;
+  padding: 0.42rem 0.5rem;
 }
 
 .penalty-grid label {
-  border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
-  display: grid;
-  gap: 0.22rem;
+  border: 1px solid var(--line);
   padding: 0.32rem;
-}
-
-.low-confidence {
-  color: #ff7a7a;
 }
 
 .waveform-shot-list button.low-confidence {
@@ -1410,13 +1484,31 @@ button:disabled {
 }
 
 .waveform-shot-list button.low-confidence small,
+.scoring-shot-row.low-confidence .scoring-shot-button,
 .scoring-shot-row.low-confidence .scoring-shot-button small,
+.scoring-shot-row.low-confidence select,
+.scoring-shot-row.low-confidence input,
 .data-table div.low-confidence {
   color: #ff7a7a;
 }
 
-.scoring-shot-row.low-confidence {
-  border-color: rgba(255, 122, 122, 0.45);
+@media (max-width: 680px) {
+  .scoring-shot-row {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .scoring-shot-controls {
+    width: 100%;
+  }
+
+  .merge-source-sync-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .merge-source-sync-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .style-card {
@@ -1425,12 +1517,12 @@ button:disabled {
   border-radius: 0;
   display: grid;
   gap: 0.24rem;
-  grid-template-columns: minmax(96px, 1fr) auto auto auto;
+  grid-template-columns: minmax(120px, 1fr) repeat(3, minmax(0, 1fr));
   padding: 0.32rem;
 }
 
 .custom-box-style-card {
-  grid-template-columns: minmax(136px, 1fr) auto auto auto;
+  grid-template-columns: minmax(136px, 1fr) repeat(3, minmax(0, 1fr));
 }
 
 .style-card h4 {
@@ -1445,7 +1537,63 @@ button:disabled {
   flex-direction: row;
   font-size: 0.7rem;
   gap: 0.24rem;
-  justify-content: space-between;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.style-card label > input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.color-field {
+  min-width: 0;
+}
+
+.color-control-pair {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.style-card-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cockpit-shell.inspector-compact .style-card-label {
+  display: none;
+}
+
+.cockpit-shell.inspector-compact .style-card label,
+.cockpit-shell.inspector-compact .score-color-grid label {
+  gap: 0.18rem;
+}
+
+.color-hex-input {
+  font-family: "SF Mono", "Menlo", monospace;
+  min-height: 24px;
+  min-width: 86px;
+  padding: 0.18rem 0.35rem;
+  text-transform: uppercase;
+  width: 86px;
+}
+
+.color-hex-input.invalid {
+  border-color: var(--red);
+  color: #ffd8d8;
+}
+
+.score-color-field {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  min-height: 38px;
+  padding: 0.35rem 0.45rem;
 }
 
 input[type="color"] {
@@ -1471,7 +1619,8 @@ input[type="color"]::-moz-color-swatch {
 }
 
 .style-card input[type="range"] {
-  max-width: 64px;
+  max-width: none;
+  width: 100%;
 }
 
 .export-log {
@@ -1632,6 +1781,19 @@ input[type="color"]::-moz-color-swatch {
 
   .merge-media-card,
   .merge-source-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-media-card-header {
+    grid-template-columns: 1fr;
+  }
+
+  .style-card,
+  .custom-box-style-card {
+    grid-template-columns: 1fr;
+  }
+
+  .score-color-grid {
     grid-template-columns: 1fr;
   }
 

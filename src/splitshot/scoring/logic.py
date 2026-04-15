@@ -60,7 +60,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="USPSA Minor",
         sport="USPSA",
         mode="hit_factor",
-        description="Minor-power hit factor scoring with A, C, D, miss, and no-shoot results.",
+        description="Minor PF HF scoring with A, C, D, M, and NS.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 3,
@@ -91,7 +91,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="USPSA Major",
         sport="USPSA",
         mode="hit_factor",
-        description="Major-power hit factor scoring with A, C, D, miss, and no-shoot results.",
+        description="Major PF HF scoring with A, C, D, M, and NS.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 4,
@@ -122,7 +122,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IPSC Minor",
         sport="IPSC",
         mode="hit_factor",
-        description="Minor-power IPSC hit factor scoring with A, C, D, miss, and no-shoot results.",
+        description="Minor PF HF scoring with A, C, D, M, and NS.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 3,
@@ -152,7 +152,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IPSC Major",
         sport="IPSC",
         mode="hit_factor",
-        description="Major-power IPSC hit factor scoring with A, C, D, miss, and no-shoot results.",
+        description="Major PF HF scoring with A, C, D, M, and NS.",
         point_map={
             ScoreLetter.A.value: 5,
             ScoreLetter.C.value: 4,
@@ -182,7 +182,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="IDPA - Time Plus",
         sport="IDPA",
         mode="time_plus",
-        description="IDPA time-plus scoring with points down, misses, and rule penalties.",
+        description="Time-plus scoring with PD, M, NS, PE, FP, FTDR, and FPE.",
         point_map={
             ScoreLetter.DOWN_0.value: 0,
             ScoreLetter.DOWN_1.value: 1,
@@ -207,7 +207,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="Steel Challenge",
         sport="Steel Challenge",
         mode="time_plus",
-        description="Steel Challenge time scoring with misses and stop-plate failures.",
+        description="Time scoring with PM and SPF.",
         point_map={
             ScoreLetter.STEEL_HIT.value: 0,
             ScoreLetter.M.value: 3,
@@ -226,7 +226,7 @@ SCORING_PRESETS: dict[str, ScoringPreset] = {
         name="GPA 0.5 Scoring",
         sport="GPA",
         mode="time_plus",
-        description="Time Plus style with target points down multiplied by 0.5 seconds.",
+        description="Time-plus scoring with PD x0.5, M, NT, and SND.",
         point_map={
             ScoreLetter.GPA_0.value: 0,
             ScoreLetter.GPA_1.value: 0.5,

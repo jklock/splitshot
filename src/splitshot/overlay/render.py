@@ -6,9 +6,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project
-from splitshot.scoring.logic import calculate_scoring_summary, current_shot_index, format_imported_stage_overlay_text
+from splitshot.scoring.logic import calculate_scoring_summary, format_imported_stage_overlay_text
 from splitshot.timeline.model import draw_time_ms
-from splitshot.utils.time import format_time_ms
 
 
 @dataclass(slots=True)
@@ -28,9 +27,44 @@ _FONT_SIZE = {
     BadgeSize.XL: 20,
 }
 
+_PENALTY_LABELS = {
+    "procedural_errors": "PE",
+    "manual_no_shoots": "NS",
+    "manual_misses": "M",
+    "non_threats": "NT",
+    "flagrant_penalties": "FP",
+    "failures_to_do_right": "FTDR",
+    "finger_pe": "FPE",
+    "steel_misses": "PM",
+    "stop_plate_failures": "SPF",
+    "steel_not_down": "SND",
+}
+
 
 def _format_split_seconds(value_ms: int) -> str:
     return f"{value_ms / 1000.0:.2f}s"
+
+
+def _format_elapsed_seconds(value_ms: int | None) -> str:
+    if value_ms is None:
+        return "--.--"
+    return f"{value_ms / 1000.0:.2f}"
+
+
+def _format_penalty_count(value: float) -> str:
+    numeric = float(value)
+    return str(int(numeric)) if numeric.is_integer() else f"{numeric:.1f}"
+
+
+def _format_penalty_counts(penalty_counts: dict[str, float]) -> str:
+    parts: list[str] = []
+    for field_id, value in penalty_counts.items():
+        numeric = float(value)
+        if numeric <= 0:
+            continue
+        label = _PENALTY_LABELS.get(field_id, field_id.replace("_", " "))
+        parts.append(f"{label} x{_format_penalty_count(numeric)}")
+    return ", ".join(parts)
 
 
 class OverlayRenderer:
@@ -47,8 +81,13 @@ class OverlayRenderer:
         project: Project,
         position_ms: int,
     ) -> tuple[list[Badge], list[tuple[Badge, float, float]], list[tuple[str, float, float, float]]]:
-        current_index = current_shot_index(project, position_ms)
-        shots = project.analysis.shots
+        shots = sorted(project.analysis.shots, key=lambda shot: shot.time_ms)
+        current_index = None
+        for index, shot in enumerate(shots):
+            if shot.time_ms <= position_ms:
+                current_index = index
+            else:
+                break
         badges: list[Badge] = []
         positioned_badges: list[tuple[Badge, float, float]] = []
 
@@ -64,7 +103,7 @@ class OverlayRenderer:
             elapsed = min(elapsed, max(0, shots[-1].time_ms - beep_time))
         if project.overlay.show_timer:
             append_badge(
-                Badge(f"Timer {format_time_ms(elapsed)}", project.overlay.timer_badge),
+                Badge(f"Timer {_format_elapsed_seconds(elapsed)}", project.overlay.timer_badge),
                 project.overlay.timer_x,
                 project.overlay.timer_y,
             )
@@ -78,7 +117,7 @@ class OverlayRenderer:
             and position_ms < first_shot_time
         ):
             append_badge(
-                Badge(f"Draw {format_time_ms(draw_value)}", project.overlay.shot_badge),
+                Badge(f"Draw {_format_elapsed_seconds(draw_value)}", project.overlay.shot_badge),
                 project.overlay.draw_x,
                 project.overlay.draw_y,
             )
@@ -98,7 +137,12 @@ class OverlayRenderer:
                 style = (
                     project.overlay.current_shot_badge if index == current_index else project.overlay.shot_badge
                 )
-                score_text = f" {shot.score.letter.value}" if project.scoring.enabled and shot.score else ""
+                score_text = ""
+                if project.scoring.enabled and shot.score:
+                    score_text = f" {shot.score.letter.value}"
+                    penalty_text = _format_penalty_counts(shot.score.penalty_counts)
+                    if penalty_text:
+                        score_text = f"{score_text} {penalty_text}"
                 score_color = (
                     project.overlay.scoring_colors.get(shot.score.letter.value)
                     if project.scoring.enabled and shot.score
@@ -200,7 +244,8 @@ class OverlayRenderer:
 
         position = project.overlay.position
         font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
-        font = QFont(project.overlay.font_family or "Helvetica Neue", font_size)
+        font = QFont(project.overlay.font_family or "Helvetica Neue")
+        font.setPixelSize(max(1, int(font_size)))
         font.setBold(project.overlay.font_bold)
         font.setItalic(project.overlay.font_italic)
         painter.setFont(font)
@@ -208,7 +253,6 @@ class OverlayRenderer:
         padding_x = max(6, int(project.overlay.spacing * 1.5))
         gap = max(0, int(project.overlay.margin))
         quadrant_value = quadrant or project.overlay.shot_quadrant
-        cursor_x, cursor_y = self._start_position(project, width, height, quadrant_value)
 
         x_override = project.overlay.custom_x if custom_x is None and quadrant_value == "custom" else custom_x
         y_override = project.overlay.custom_y if custom_y is None and quadrant_value == "custom" else custom_y
@@ -217,10 +261,6 @@ class OverlayRenderer:
                 x_override = 0.5
             if y_override is None:
                 y_override = 0.5
-        if x_override is not None:
-            cursor_x = int(x_override * width)
-        if y_override is not None:
-            cursor_y = int(y_override * height)
 
         previous_rect: QRectF | None = None
         for index, badge in enumerate(badges):
@@ -231,14 +271,25 @@ class OverlayRenderer:
                 self._minimum_badge_text_width(metrics, badge.text),
             )
             text_height = metrics.height() * max(1, len(lines))
-            badge_width = max(text_width + (padding_x * 2), int(badge.width or project.overlay.bubble_width))
-            badge_height = max(text_height + (padding_y * 2), int(badge.height or project.overlay.bubble_height))
+            explicit_width = int(badge.width or project.overlay.bubble_width or 0)
+            explicit_height = int(badge.height or project.overlay.bubble_height or 0)
+            badge_width = explicit_width if explicit_width > 0 else text_width + (padding_x * 2)
+            badge_height = explicit_height if explicit_height > 0 else text_height + (padding_y * 2)
             if previous_rect is None:
-                rect_x = float(cursor_x)
-                rect_y = float(cursor_y)
                 if quadrant_value == "custom":
-                    rect_x -= badge_width / 2
-                    rect_y -= badge_height / 2
+                    rect_x = (max(0.0, min(1.0, float(x_override))) * width) - (badge_width / 2)
+                    rect_y = (max(0.0, min(1.0, float(y_override))) * height) - (badge_height / 2)
+                else:
+                    rect_x, rect_y = self._first_badge_position(
+                        width,
+                        height,
+                        badge_width,
+                        badge_height,
+                        gap,
+                        quadrant_value,
+                    )
+                rect_x = max(0.0, min(rect_x, max(0.0, width - badge_width)))
+                rect_y = max(0.0, min(rect_y, max(0.0, height - badge_height)))
             else:
                 rect_x = previous_rect.x()
                 rect_y = previous_rect.y()
@@ -268,37 +319,43 @@ class OverlayRenderer:
             else:
                 painter.drawRect(rect)
             painter.setPen(QColor(badge.text_color or badge.style.text_color))
+            text_flags = Qt.AlignCenter
+            if "\n" in badge.text:
+                text_flags |= Qt.TextWordWrap
             painter.drawText(
                 rect.adjusted(padding_x, padding_y, -padding_x, -padding_y),
-                Qt.AlignCenter | Qt.TextWordWrap,
+                text_flags,
                 badge.text,
             )
 
     @staticmethod
-    def _start_position(project: Project, width: int, height: int, quadrant_override: str | None = None) -> tuple[int, int]:
-        margin = max(0, int(project.overlay.margin))
-        quadrant = quadrant_override or project.overlay.shot_quadrant
-        if quadrant == "custom":
-            return width // 2, height // 2
+    def _first_badge_position(
+        width: int,
+        height: int,
+        badge_width: int,
+        badge_height: int,
+        margin: int,
+        quadrant: str,
+    ) -> tuple[float, float]:
+        vertical, horizontal = quadrant.split("_", 1) if "_" in quadrant else ("bottom", "left")
         x_map = {
-            "left": margin,
-            "middle": width // 2,
-            "right": max(0, width - 220 - margin),
+            "left": float(margin),
+            "middle": max(0.0, (width - badge_width) / 2),
+            "right": max(0.0, width - badge_width - margin),
         }
         y_map = {
-            "top": margin,
-            "middle": height // 2,
-            "bottom": max(0, height - 48 - margin),
+            "top": float(margin),
+            "middle": max(0.0, (height - badge_height) / 2),
+            "bottom": max(0.0, height - badge_height - margin),
         }
-        vertical, horizontal = quadrant.split("_", 1) if "_" in quadrant else ("bottom", "left")
-        return x_map.get(horizontal, margin), y_map.get(vertical, margin)
+        return x_map.get(horizontal, float(margin)), y_map.get(vertical, float(margin))
 
     @staticmethod
     def _minimum_badge_text_width(metrics, text: str) -> int:
         if text.startswith("Timer"):
-            return metrics.horizontalAdvance("Timer 00:00.000")
+            return metrics.horizontalAdvance("Timer 00.00")
         if text.startswith("Draw"):
-            return metrics.horizontalAdvance("Draw 00:00.000")
+            return metrics.horizontalAdvance("Draw 00.00")
         if text.startswith("Hit Factor"):
             return metrics.horizontalAdvance("Hit Factor 00.00")
         if text.startswith("Final"):
@@ -320,7 +377,8 @@ class OverlayRenderer:
             color = QColor(project.overlay.scoring_colors.get(letter, "#FFFFFF"))
             color.setAlphaF(alpha)
             painter.setPen(color)
-            font = QFont("Helvetica Neue", 28)
+            font = QFont("Helvetica Neue")
+            font.setPixelSize(28)
             font.setBold(True)
             painter.setFont(font)
             point = QPointF(x_norm * width, y_norm * height)

@@ -1253,7 +1253,12 @@ class MainWindow(QMainWindow):
         if not self._confirm_unsaved():
             return
         current_path = "" if self.controller.project_path is None else str(self.controller.project_path.parent)
-        path = QFileDialog.getExistingDirectory(self, "Open Project", current_path)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open SplitShot Project",
+            current_path,
+            "SplitShot project file (project.json);;JSON files (*.json);;All files (*.*)",
+        )
         if path:
             self.controller.open_project(path)
             self._select_section("manage")

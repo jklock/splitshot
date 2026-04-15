@@ -12,6 +12,8 @@ MEDIA_DIRNAME = "media"
 
 def ensure_project_suffix(path: str | Path) -> Path:
     project_path = Path(path)
+    if project_path.name == PROJECT_FILENAME:
+        return project_path.parent
     if project_path.suffix != ".ssproj":
         project_path = project_path.with_suffix(".ssproj")
     return project_path

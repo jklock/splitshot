@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260414d" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260415a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -135,7 +135,7 @@
                   <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
                 </label>
                 <div class="control-grid">
-                  <label>Box quadrant
+                  <label>Box placement
                     <select id="custom-box-quadrant">
                       <option value="top_left">Top left</option>
                       <option value="top_middle">Top middle</option>
@@ -146,6 +146,7 @@
                       <option value="bottom_left">Bottom left</option>
                       <option value="bottom_middle">Bottom middle</option>
                       <option value="bottom_right">Bottom right</option>
+                      <option value="custom">Custom</option>
                     </select>
                   </label>
                   <label>Custom box X (0 left, 1 right)
@@ -166,129 +167,21 @@
                 <div class="style-grid review-style-grid">
                   <section class="style-card custom-box-style-card">
                     <h4>Custom Box Style</h4>
-                    <label>Background <input id="custom-box-background-color" type="color" value="#000000" /></label>
-                    <label>Text <input id="custom-box-text-color" type="color" value="#ffffff" /></label>
-                    <label>Opacity <input id="custom-box-opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
+                    <label class="color-field"><span class="style-card-label">Background</span>
+                      <span class="color-control-pair">
+                        <input id="custom-box-background-color" type="color" value="#000000" />
+                        <input id="custom-box-background-color-hex" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Custom box background hex value" />
+                      </span>
+                    </label>
+                    <label class="color-field"><span class="style-card-label">Text</span>
+                      <span class="color-control-pair">
+                        <input id="custom-box-text-color" type="color" value="#ffffff" />
+                        <input id="custom-box-text-color-hex" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Custom box text hex value" />
+                      </span>
+                    </label>
+                    <label><span class="style-card-label">Opacity</span> <input id="custom-box-opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
                   </section>
                 </div>
-                <div class="section-header review-overlay-header">
-                  <h3>Review Overlay Styling</h3>
-                  <small>Separate controls, same output</small>
-                </div>
-                <div class="control-grid">
-                  <label>Badge size
-                    <select id="review-badge-size">
-                      <option>XS</option>
-                      <option>S</option>
-                      <option>M</option>
-                      <option>L</option>
-                      <option>XL</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Badge style
-                    <select id="review-overlay-style">
-                      <option value="square">Square</option>
-                      <option value="bubble">Bubble</option>
-                      <option value="rounded">Rounded Bubble</option>
-                    </select>
-                  </label>
-                  <label>Shot gap
-                    <input id="review-overlay-spacing" type="number" min="0" max="40" step="2" value="8" />
-                  </label>
-                  <label>Frame padding
-                    <input id="review-overlay-margin" type="number" min="0" max="40" step="2" value="8" />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Shots shown
-                    <input id="review-max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
-                  </label>
-                  <label>Quadrant
-                    <select id="review-shot-quadrant">
-                      <option value="top_left">Top left</option>
-                      <option value="top_middle">Top middle</option>
-                      <option value="top_right">Top right</option>
-                      <option value="middle_left">Middle left</option>
-                      <option value="middle_middle">Middle middle</option>
-                      <option value="middle_right">Middle right</option>
-                      <option value="bottom_left">Bottom left</option>
-                      <option value="bottom_middle">Bottom middle</option>
-                      <option value="bottom_right">Bottom right</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </label>
-                  <label>Shot flow
-                    <select id="review-shot-direction">
-                      <option value="right">Right</option>
-                      <option value="left">Left</option>
-                      <option value="down">Down</option>
-                      <option value="up">Up</option>
-                    </select>
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Shot stack X (0 left, 1 right)
-                    <input id="review-overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
-                  </label>
-                  <label>Shot stack Y (0 top, 1 bottom)
-                    <input id="review-overlay-custom-y" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Timer X (0 left, 1 right)
-                    <input id="review-timer-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                  <label>Timer Y (0 top, 1 bottom)
-                    <input id="review-timer-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Draw X (0 left, 1 right)
-                    <input id="review-draw-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                  <label>Draw Y (0 top, 1 bottom)
-                    <input id="review-draw-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Score X (0 left, 1 right)
-                    <input id="review-score-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                  <label>Score Y (0 top, 1 bottom)
-                    <input id="review-score-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Bubble width
-                    <input id="review-bubble-width" type="number" min="0" max="400" step="4" value="0" />
-                  </label>
-                  <label>Bubble height
-                    <input id="review-bubble-height" type="number" min="0" max="220" step="4" value="0" />
-                  </label>
-                </div>
-                <div class="control-grid">
-                  <label>Font
-                    <select id="review-overlay-font-family">
-                      <option value="Helvetica Neue">Helvetica Neue</option>
-                      <option value="Arial">Arial</option>
-                      <option value="Verdana">Verdana</option>
-                      <option value="Courier New">Courier New</option>
-                      <option value="Georgia">Georgia</option>
-                    </select>
-                  </label>
-                  <label>Font size
-                    <input id="review-overlay-font-size" type="number" min="8" max="72" step="1" value="14" />
-                  </label>
-                </div>
-                <div class="button-grid two-up">
-                  <label class="check-row"><input id="review-overlay-font-bold" type="checkbox" /> Bold</label>
-                  <label class="check-row"><input id="review-overlay-font-italic" type="checkbox" /> Italic</label>
-                </div>
-                <div class="style-grid" id="review-badge-style-grid"></div>
-                <h3>Review Score Colors</h3>
-                <div class="score-color-grid" id="review-score-color-grid"></div>
               </div>
             </section>
 
@@ -331,8 +224,9 @@
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
               <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
               <dl id="scoring-imported-summary" class="details"></dl>
-              <div id="scoring-preset-summary" class="score-option-grid" aria-label="Scoring preset summary"></div>
-              <div id="scoring-stage-penalties" class="penalty-grid" aria-label="Stage penalty fields"></div>
+              <p class="hint">Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits.</p>
+              <div id="score-option-grid" class="score-option-grid"></div>
+              <p class="hint">Common shorthand: M miss, NS no-shoot, PE procedural error, FP flagrant penalty, FTDR failure to do right, and FPE finger procedural error.</p>
               <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
             </section>
 
@@ -367,6 +261,7 @@
                   <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" />
                 </label>
               </div>
+              <p class="hint">Shot gap adds space between split badges. Frame padding keeps the badge stack away from the edge of the video frame.</p>
               <div class="control-grid">
                 <label>Shots shown
                   <input id="max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
@@ -394,6 +289,7 @@
                   </select>
                 </label>
               </div>
+              <p class="hint">Quadrant chooses the starting corner for the badge stack. Shot flow chooses whether new badges build right, left, down, or up from that anchor.</p>
               <div class="control-grid">
                 <label>Shot stack X (0 left, 1 right)
                   <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
@@ -460,9 +356,10 @@
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">
                 <h3>PiP</h3>
-                <strong id="sync-offset">0 ms</strong>
+                <strong id="sync-offset">Defaults only</strong>
               </div>
               <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add PiP Media</button>
+              <p class="hint">Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.</p>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
               <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
               <label>Layout
@@ -472,25 +369,22 @@
                   <option value="pip">Picture in picture</option>
                 </select>
               </label>
-              <label>PiP size
+              <label>Default PiP size
                 <div class="pip-size-control">
                   <input id="pip-size" type="range" min="10" max="95" step="1" value="35" />
                   <output id="pip-size-label">35%</output>
                 </div>
               </label>
               <div class="control-grid pip-position-grid">
-                <label>PiP X (0 left, 1 right)
+                <label>Default PiP X (0 left, 1 right)
                   <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                 </label>
-                <label>PiP Y (0 top, 1 bottom)
+                <label>Default PiP Y (0 top, 1 bottom)
                   <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                 </label>
               </div>
-              <div class="button-grid">
-                <button data-sync="-10" type="button" aria-label="Adjust added media sync earlier by 10 milliseconds">-10 ms</button>
-                <button data-sync="1" type="button" aria-label="Adjust added media sync later by 1 millisecond">+1 ms</button>
-                <button data-sync="10" type="button" aria-label="Adjust added media sync later by 10 milliseconds">+10 ms</button>
-              </div>
+              <p class="hint">PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.</p>
+              <p class="hint">Each PiP card below has its own size, placement, and sync nudges. These defaults only affect new items.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
@@ -641,7 +535,7 @@
               <label>Project bundle path
                 <div class="path-row">
                   <input id="project-path" placeholder="~/splitshot/project.ssproj" />
-                  <button id="browse-project-path" type="button">Browse</button>
+                  <button id="browse-project-path" type="button">Choose Project</button>
                 </div>
               </label>
               <div class="project-action-grid">
@@ -656,6 +550,6 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260414h"></script>
+    <script src="/static/app.js?v=20260415b"></script>
   </body>
 </html>

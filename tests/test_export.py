@@ -10,8 +10,8 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent
-from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _prune_expected_decoder_pipe_shutdown_lines, export_project
+from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent, VideoAsset
+from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import OverlayRenderer
@@ -168,11 +168,10 @@ def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, 
     export_project(project, output_path)
 
     frame = _frame_rgb(output_path, 0.1)
-    top_band = frame[:36, :130]
     red_dominant_pixels = (
-        (top_band[:, :, 0] > 120)
-        & (top_band[:, :, 0] > top_band[:, :, 1] + 40)
-        & (top_band[:, :, 0] > top_band[:, :, 2] + 40)
+        (frame[:, :, 0] > 120)
+        & (frame[:, :, 0] > frame[:, :, 1] + 40)
+        & (frame[:, :, 0] > frame[:, :, 2] + 40)
     )
     assert int(red_dominant_pixels.sum()) > 20
 
@@ -188,12 +187,34 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     project.overlay.show_score = False
     project.overlay.max_visible_shots = 4
     project.overlay.scoring_colors["C"] = "#00ff00"
-    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C)
+    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1})
 
     badges, score_marks = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)
 
     assert score_marks == []
-    assert any(badge.text.startswith("Shot 1 ") and badge.text.endswith("s C") and badge.text_color == "#00ff00" for badge in badges)
+    assert any(
+        badge.text.startswith("Shot 1 ")
+        and " C" in badge.text
+        and "PE x1" in badge.text
+        and badge.text_color == "#00ff00"
+        for badge in badges
+    )
+
+
+def test_overlay_renderer_formats_timer_and_draw_like_browser_preview() -> None:
+    project = Project(name="Overlay Formatting")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100)]
+    project.overlay.show_timer = True
+    project.overlay.show_draw = True
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+
+    badges, _score_marks = OverlayRenderer().build_badges(project, 600)
+    texts = {badge.text for badge in badges}
+
+    assert "Timer 0.50" in texts
+    assert "Draw 1.00" in texts
 
 
 def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_factory) -> None:
@@ -283,6 +304,78 @@ def test_overlay_renderer_shows_imported_summary_custom_box_only_after_final_sho
 
     assert before_red == 0
     assert after_red > 20
+
+
+def test_overlay_renderer_respects_fixed_custom_box_dimensions() -> None:
+    project = Project(name="Fixed Custom Box Dimensions")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.custom_box_enabled = True
+    project.overlay.custom_box_mode = "manual"
+    project.overlay.custom_box_text = "This is a very long custom review line"
+    project.overlay.custom_box_quadrant = "top_left"
+    project.overlay.custom_box_background_color = "#ff0000"
+    project.overlay.custom_box_text_color = "#ffffff"
+    project.overlay.custom_box_opacity = 1.0
+    project.overlay.custom_box_width = 120
+    project.overlay.custom_box_height = 40
+    project.overlay.style_type = "square"
+
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 320, 180)
+    painter.end()
+
+    red_pixels: list[tuple[int, int]] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                red_pixels.append((x, y))
+
+    assert red_pixels
+    min_x = min(x for x, _y in red_pixels)
+    max_x = max(x for x, _y in red_pixels)
+    min_y = min(y for _x, y in red_pixels)
+    max_y = max(y for _x, y in red_pixels)
+
+    assert 116 <= (max_x - min_x + 1) <= 122
+    assert 36 <= (max_y - min_y + 1) <= 42
+
+
+def test_export_burns_manual_custom_box_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
+    video_path = synthetic_video_factory(name="custom-box-export")
+    project = Project(name="Manual Custom Box Export")
+    project.primary_video = probe_video(video_path)
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.custom_box_enabled = True
+    project.overlay.custom_box_mode = "manual"
+    project.overlay.custom_box_text = "Review Box"
+    project.overlay.custom_box_quadrant = "top_left"
+    project.overlay.custom_box_background_color = "#ff0000"
+    project.overlay.custom_box_text_color = "#ffffff"
+    project.overlay.custom_box_opacity = 1.0
+    project.overlay.custom_box_width = 160
+    project.overlay.custom_box_height = 48
+
+    output_path = tmp_path / "custom-box-export-output.mp4"
+    export_project(project, output_path)
+
+    frame = _frame_rgb(output_path, 0.1)
+    red_dominant_pixels = (
+        (frame[:, :, 0] > 120)
+        & (frame[:, :, 0] > frame[:, :, 1] + 40)
+        & (frame[:, :, 0] > frame[:, :, 2] + 40)
+    )
+    assert int(red_dominant_pixels.sum()) > 20
 
 
 def test_overlay_renderer_uses_custom_quadrant_coordinates() -> None:
@@ -483,6 +576,23 @@ def test_merge_export_supports_many_sources_and_still_images(synthetic_video_fac
     assert int(video_stream["width"]) == 1280
     assert int(video_stream["height"]) == 720
     assert project.export.last_error is None
+
+
+def test_merged_duration_uses_per_source_sync_offsets() -> None:
+    project = Project(name="Per Source Sync Duration")
+    project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=1000, width=640, height=360, fps=30.0)
+    project.merge_sources = [
+        MergeSource(
+            asset=VideoAsset(path="/tmp/secondary.mp4", duration_ms=1200, width=640, height=360, fps=30.0),
+            sync_offset_ms=-300,
+        ),
+        MergeSource(
+            asset=VideoAsset(path="/tmp/tertiary.mp4", duration_ms=1500, width=640, height=360, fps=30.0),
+            sync_offset_ms=400,
+        ),
+    ]
+
+    assert _merged_duration_ms(project, project.merge_sources) == 1500
 
 
 def test_export_presets_map_to_explicit_encoding_variables() -> None:

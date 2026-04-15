@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,6 +14,21 @@ class PractiScoreStageImport:
     manual_penalties: float
     penalty_counts: dict[str, float]
     imported_stage: ImportedStageScore
+
+
+@dataclass(frozen=True, slots=True)
+class PractiScoreContext:
+    match_type: str
+    stage_number: int
+    competitor_name: str
+    competitor_place: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _HitFactorReport:
+    competitor_rows: list[dict[str, str]]
+    stage_rows: dict[str, dict[str, str]]
+    stage_results: list[dict[str, str]]
 
 
 IDPA_PENALTY_SECONDS = {
@@ -36,6 +52,245 @@ def default_ruleset_for_match_type(match_type: str | None) -> str:
     if normalized == "idpa":
         return "idpa_time_plus"
     return f"{normalized}_minor"
+
+
+def infer_practiscore_context(
+    path: str | Path,
+    match_type: str | None = None,
+    stage_number: int | None = None,
+    competitor_name: str | None = None,
+    competitor_place: int | None = None,
+) -> PractiScoreContext:
+    results_path = Path(path)
+    normalized_match_type = normalize_match_type(match_type) if match_type else _infer_match_type(results_path)
+    clean_name = (competitor_name or "").strip()
+    resolved_stage_number = None if stage_number is None else max(1, int(stage_number))
+
+    if normalized_match_type == "idpa":
+        rows = _load_idpa_rows(results_path)
+        competitor_row = _select_competitor_row(
+            rows,
+            clean_name or None,
+            competitor_place,
+            place_key="Place",
+            first_name_key="First Name",
+            last_name_key="Last Name",
+        )
+        if resolved_stage_number is None:
+            resolved_stage_number = _infer_idpa_stage_number(competitor_row, rows)
+        return PractiScoreContext(
+            match_type=normalized_match_type,
+            stage_number=resolved_stage_number,
+            competitor_name=_row_name(competitor_row, "First Name", "Last Name"),
+            competitor_place=_int_or_none(competitor_row.get("Place")),
+        )
+
+    report = _load_hit_factor_report(results_path)
+    competitor_row = _select_competitor_row(
+        report.competitor_rows,
+        clean_name or None,
+        competitor_place,
+        place_key="Place Overall",
+        first_name_key="FirstName",
+        last_name_key="LastName",
+        reentry_key="Reentry",
+    )
+    if resolved_stage_number is None:
+        resolved_stage_number = _infer_hit_factor_stage_number(report, competitor_row)
+    return PractiScoreContext(
+        match_type=normalized_match_type,
+        stage_number=resolved_stage_number,
+        competitor_name=_row_name(competitor_row, "FirstName", "LastName"),
+        competitor_place=_int_or_none(competitor_row.get("Place Overall")),
+    )
+
+
+def _infer_match_type(path: Path) -> str:
+    if path.suffix.lower() == ".csv":
+        rows = _load_idpa_rows(path)
+        headers = [str(header or "").strip().lower() for header in (rows[0].keys() if rows else [])]
+        if headers and (
+            "idpa id" in headers
+            or "hits on non-threat" in headers
+            or any(header.startswith("stage 1 ") for header in headers)
+        ):
+            return "idpa"
+
+    text = path.read_text(encoding="utf-8", errors="replace")
+    region_match = re.search(r"^\$INFO\s+Region:(?P<region>\w+)", text, re.MULTILINE)
+    if region_match:
+        region = region_match.group("region").strip().lower()
+        if region in {"uspsa", "ipsc", "idpa"}:
+            return region
+    if "place overall" in text.lower() and "power factor" in text.lower():
+        return "uspsa"
+    raise ValueError("Could not infer the PractiScore match type from the selected file.")
+
+
+def _load_idpa_rows(path: Path) -> list[dict[str, str]]:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _load_hit_factor_report(path: Path) -> _HitFactorReport:
+    competitor_headers: list[str] = []
+    stage_headers: list[str] = []
+    stage_result_headers: list[str] = []
+    competitor_rows: list[dict[str, str]] = []
+    stage_rows: dict[str, dict[str, str]] = {}
+    stage_results: list[dict[str, str]] = []
+
+    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("$"):
+                continue
+            if len(line) < 2 or line[1] != " ":
+                continue
+            prefix = line[0]
+            values = next(csv.reader([line[2:]]))
+            if prefix == "D":
+                competitor_headers = values
+            elif prefix == "E" and competitor_headers:
+                competitor_rows.append(dict(zip(competitor_headers, values, strict=False)))
+            elif prefix == "F":
+                stage_headers = values
+            elif prefix == "G" and stage_headers:
+                stage_row = dict(zip(stage_headers, values, strict=False))
+                stage_rows[str(stage_row.get("Number", "")).strip()] = stage_row
+            elif prefix == "H":
+                stage_result_headers = values
+            elif prefix == "I" and stage_result_headers:
+                stage_results.append(dict(zip(stage_result_headers, values, strict=False)))
+
+    return _HitFactorReport(
+        competitor_rows=competitor_rows,
+        stage_rows=stage_rows,
+        stage_results=stage_results,
+    )
+
+
+def _select_competitor_row(
+    rows: list[dict[str, str]],
+    competitor_name: str | None,
+    competitor_place: int | None,
+    *,
+    place_key: str,
+    first_name_key: str,
+    last_name_key: str,
+    reentry_key: str | None = None,
+) -> dict[str, str]:
+    clean_name = (competitor_name or "").strip()
+    if clean_name:
+        return _find_competitor_row(
+            rows,
+            clean_name,
+            competitor_place,
+            place_key=place_key,
+            first_name_key=first_name_key,
+            last_name_key=last_name_key,
+        )
+    if competitor_place is not None:
+        candidates = [row for row in rows if _int_or_none(row.get(place_key)) == competitor_place]
+        if candidates:
+            return _prefer_non_reentry(candidates, reentry_key)
+        raise ValueError(f"Could not find place {competitor_place} in the results file.")
+    return _default_competitor_row(
+        rows,
+        place_key=place_key,
+        first_name_key=first_name_key,
+        last_name_key=last_name_key,
+    )
+
+
+def _default_competitor_row(
+    rows: list[dict[str, str]],
+    *,
+    place_key: str,
+    first_name_key: str,
+    last_name_key: str,
+) -> dict[str, str]:
+    if not rows:
+        raise ValueError("No competitor results were found in the PractiScore export.")
+    candidates = sorted(
+        rows,
+        key=lambda row: (
+            _int_or_none(row.get(place_key)) is None,
+            _int_or_none(row.get(place_key)) or 0,
+            _normalize_name(_row_name(row, first_name_key, last_name_key)),
+        ),
+    )
+    return candidates[0]
+
+
+def _prefer_non_reentry(rows: list[dict[str, str]], reentry_key: str | None) -> dict[str, str]:
+    if reentry_key is None:
+        return rows[0]
+    non_reentries = [row for row in rows if str(row.get(reentry_key, "No")).strip().lower() != "yes"]
+    return non_reentries[0] if non_reentries else rows[0]
+
+
+def _idpa_stage_numbers(rows: list[dict[str, str]]) -> list[int]:
+    if not rows:
+        raise ValueError("No competitor results were found in the PractiScore export.")
+    stage_numbers = sorted(
+        {
+            int(match.group(1))
+            for key in rows[0].keys()
+            if (match := re.match(r"Stage (\d+) ", key))
+        }
+    )
+    if not stage_numbers:
+        raise ValueError("No stage columns were found in the PractiScore export.")
+    return stage_numbers
+
+
+def _infer_idpa_stage_number(row: dict[str, str], rows: list[dict[str, str]]) -> int:
+    stage_numbers = _idpa_stage_numbers(rows)
+    for stage_number in stage_numbers:
+        if str(row.get(f"Stage {stage_number} Time", "")).strip():
+            return stage_number
+    for stage_number in stage_numbers:
+        prefix = f"Stage {stage_number} "
+        if any(str(value).strip() for key, value in row.items() if key.startswith(prefix)):
+            return stage_number
+    return stage_numbers[0]
+
+
+def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dict[str, str]) -> int:
+    competitor_id = str(competitor_row.get("Comp", "")).strip()
+    if competitor_id:
+        stage_numbers = sorted(
+            {
+                int(stage)
+                for row in report.stage_results
+                if str(row.get("Comp", "")).strip() == competitor_id
+                and _int_or_none(row.get("Stage")) is not None
+                for stage in [row.get("Stage")]
+            }
+        )
+        if stage_numbers:
+            return stage_numbers[0]
+    stage_numbers = sorted(
+        {
+            int(stage)
+            for stage in report.stage_rows.keys()
+            if _int_or_none(stage) is not None
+        }
+    )
+    if stage_numbers:
+        return stage_numbers[0]
+    stage_numbers = sorted(
+        {
+            int(stage)
+            for row in report.stage_results
+            if _int_or_none(row.get("Stage")) is not None
+            for stage in [row.get("Stage")]
+        }
+    )
+    if stage_numbers:
+        return stage_numbers[0]
+    raise ValueError("No stage results were found in the PractiScore export.")
 
 
 def import_practiscore_stage(
@@ -72,8 +327,7 @@ def _import_idpa(
     competitor_name: str,
     competitor_place: int | None,
 ) -> PractiScoreStageImport:
-    with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        rows = list(csv.DictReader(handle))
+    rows = _load_idpa_rows(path)
     row = _find_competitor_row(
         rows,
         competitor_name,
@@ -138,35 +392,10 @@ def _import_hit_factor_report(
     competitor_name: str,
     competitor_place: int | None,
 ) -> PractiScoreStageImport:
-    competitor_headers: list[str] = []
-    stage_headers: list[str] = []
-    stage_result_headers: list[str] = []
-    competitor_rows: list[dict[str, str]] = []
-    stage_rows: dict[str, dict[str, str]] = {}
-    stage_results: list[dict[str, str]] = []
-
-    with path.open("r", encoding="utf-8", errors="replace", newline="") as handle:
-        for raw_line in handle:
-            line = raw_line.strip()
-            if not line or line.startswith("$"):
-                continue
-            if len(line) < 2 or line[1] != " ":
-                continue
-            prefix = line[0]
-            values = next(csv.reader([line[2:]]))
-            if prefix == "D":
-                competitor_headers = values
-            elif prefix == "E" and competitor_headers:
-                competitor_rows.append(dict(zip(competitor_headers, values, strict=False)))
-            elif prefix == "F":
-                stage_headers = values
-            elif prefix == "G" and stage_headers:
-                stage_row = dict(zip(stage_headers, values, strict=False))
-                stage_rows[str(stage_row.get("Number", "")).strip()] = stage_row
-            elif prefix == "H":
-                stage_result_headers = values
-            elif prefix == "I" and stage_result_headers:
-                stage_results.append(dict(zip(stage_result_headers, values, strict=False)))
+    report = _load_hit_factor_report(path)
+    competitor_rows = report.competitor_rows
+    stage_rows = report.stage_rows
+    stage_results = report.stage_results
 
     competitor_row = _find_competitor_row(
         competitor_rows,

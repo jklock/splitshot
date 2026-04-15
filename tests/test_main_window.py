@@ -50,7 +50,7 @@ def test_split_card_click_selects_shot_in_loaded_review(qtbot, synthetic_video_f
     assert "Selected shot at" in window.scoring_target_label.text()
 
 
-def test_main_window_opens_project_bundle_via_directory_picker(qtbot, monkeypatch, tmp_path) -> None:
+def test_main_window_opens_project_bundle_via_file_picker(qtbot, monkeypatch, tmp_path) -> None:
     controller = ProjectController()
     window = MainWindow(controller)
     qtbot.addWidget(window)
@@ -58,15 +58,20 @@ def test_main_window_opens_project_bundle_via_directory_picker(qtbot, monkeypatc
 
     project_dir = tmp_path / "review.ssproj"
     project_dir.mkdir()
+    project_file = project_dir / "project.json"
     opened_paths: list[str] = []
     selected_sections: list[str] = []
 
     monkeypatch.setattr(window, "_confirm_unsaved", lambda: True)
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *args, **kwargs: str(project_dir))
+    monkeypatch.setattr(
+        QFileDialog,
+        "getOpenFileName",
+        lambda *args, **kwargs: (str(project_file), "SplitShot project file (project.json)"),
+    )
     monkeypatch.setattr(controller, "open_project", lambda path: opened_paths.append(path))
     monkeypatch.setattr(window, "_select_section", lambda section_id: selected_sections.append(section_id))
 
     window._open_project()
 
-    assert opened_paths == [str(project_dir)]
+    assert opened_paths == [str(project_file)]
     assert selected_sections == ["manage"]
