@@ -273,5 +273,9 @@ def test_merge_canvas_positions_pip_from_normalized_coordinates() -> None:
 
     assert top_left.secondary_rect is not None
     assert bottom_right.secondary_rect is not None
+    assert top_left.secondary_rect.x == 0
+    assert top_left.secondary_rect.y == 0
     assert top_left.secondary_rect.x < bottom_right.secondary_rect.x
     assert top_left.secondary_rect.y < bottom_right.secondary_rect.y
+    assert bottom_right.secondary_rect.x + bottom_right.secondary_rect.width == primary.width
+    assert bottom_right.secondary_rect.y + bottom_right.secondary_rect.height == primary.height

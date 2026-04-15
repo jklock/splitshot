@@ -45,13 +45,15 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 | Primary Video | Shows the current primary video path |
 | Upload Primary Video | Opens a local file picker for the source stage video |
 | Project bundle path | Sets the `.ssproj` bundle directory |
-| Browse | Chooses the project bundle path with a native dialog |
+| Choose Project | Opens a native file picker for the bundle's `project.json` file and loads the project |
 | Save Project | Saves the current project bundle |
 | Open Project | Loads an existing `.ssproj` bundle |
 | New Project | Clears the current project and starts fresh |
 | Delete Project | Deletes the current saved bundle directory |
 
 Loading a new primary video immediately starts automatic analysis and resets media-bound state from the previous project.
+
+PractiScore import can start with the fields blank. When you choose a CSV or TXT results file, SplitShot will infer the match type, stage number, competitor name, and place from the file whenever it can, then fill the values back into the form after import.
 
 ## Splits Page
 
@@ -193,7 +195,7 @@ The waveform editor also switches between Select and Add Shot mode. Select mode 
 ## Saving and Reopening
 
 - Use Save Project to keep the current state in a `.ssproj` bundle.
-- Use Open Project to reopen a previous bundle.
+- Use Choose Project or Open Project to reopen a previous bundle.
 - Use New Project to clear the current session and start over.
 - Use Delete Project only when you want to remove the saved bundle from disk.
 

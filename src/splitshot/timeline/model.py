@@ -42,6 +42,7 @@ def split_reset_shot_ids(project: Project) -> set[str]:
 def compute_split_rows(project: Project) -> list[SplitRow]:
     shots = sort_shots(project.analysis.shots)
     reset_ids = split_reset_shot_ids(project)
+    beep_time = project.analysis.beep_time_ms_primary
     rows: list[SplitRow] = []
     previous_time = None
     for index, shot in enumerate(shots, start=1):
@@ -51,7 +52,9 @@ def compute_split_rows(project: Project) -> list[SplitRow]:
                 shot_number=index,
                 absolute_time_ms=shot.time_ms,
                 split_ms=(
-                    None
+                    shot.time_ms - beep_time
+                    if previous_time is None and beep_time is not None
+                    else shot.time_ms
                     if previous_time is None
                     else 0
                     if shot.id in reset_ids

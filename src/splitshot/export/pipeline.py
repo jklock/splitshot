@@ -155,20 +155,35 @@ def _merge_sources(project: Project) -> list[MergeSource]:
         return [source for source in project.merge_sources if source.asset.path]
     if project.secondary_video is None or not project.secondary_video.path:
         return []
-    return [MergeSource(asset=project.secondary_video, pip_x=project.merge.pip_x, pip_y=project.merge.pip_y)]
+    return [
+        MergeSource(
+            asset=project.secondary_video,
+            pip_size_percent=project.merge.pip_size_percent,
+            pip_x=project.merge.pip_x,
+            pip_y=project.merge.pip_y,
+        )
+    ]
+
+
+def _source_sync_offset_ms(source: MergeSource) -> int:
+    return int(getattr(source, "sync_offset_ms", 0) or 0)
+
+
+def _source_end_ms(source: MergeSource) -> int:
+    duration_ms = int(source.asset.duration_ms or 0)
+    if duration_ms <= 0:
+        return 0
+    offset_ms = _source_sync_offset_ms(source)
+    visible_duration_ms = max(0, duration_ms - max(0, offset_ms))
+    return max(0, -offset_ms) + visible_duration_ms
 
 
 def _merged_duration_ms(project: Project, merge_sources: list[MergeSource]) -> int:
     primary = project.primary_video.duration_ms
     if not merge_sources:
         return primary
-    if len(merge_sources) == 1:
-        secondary = merge_sources[0].asset.duration_ms
-        offset = project.analysis.sync_offset_ms
-        secondary_visible = max(0, secondary - max(0, offset))
-        secondary_end = max(0, -offset) + secondary_visible
-        return max(primary, secondary_end)
-    return max([primary, *[source.asset.duration_ms for source in merge_sources]])
+    source_ends = [_source_end_ms(source) for source in merge_sources]
+    return max([primary, *source_ends])
 
 
 def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
@@ -188,7 +203,10 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
         "-i",
         project.primary_video.path,
     ]
-    for asset in merge_assets:
+    for source, asset in zip(merge_sources, merge_assets, strict=False):
+        offset_ms = _source_sync_offset_ms(source)
+        if offset_ms > 0 and not asset.is_still_image:
+            input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
         if asset.is_still_image:
             input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
         else:
@@ -197,9 +215,14 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
 
     chain_parts: list[str] = []
     layout_parts: list[str] = []
-    for index, _source in enumerate(sources):
+    for index, source in enumerate(sources):
+        source_chain = f"[{index}:v]setpts=PTS-STARTPTS"
+        if index > 0:
+            offset_ms = _source_sync_offset_ms(merge_sources[index - 1])
+            if offset_ms < 0:
+                source_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
         chain_parts.append(
-            f"[{index}:v]setpts=PTS-STARTPTS,scale={tile_width}:{tile_height}:"
+            f"{source_chain},scale={tile_width}:{tile_height}:"
             "force_original_aspect_ratio=decrease,"
             f"pad={tile_width}:{tile_height}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1[t{index}]"
         )
@@ -241,7 +264,6 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
 
 def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
     fps = _output_fps(project)
-    offset_ms = project.analysis.sync_offset_ms
 
     input_args = [
         *ffmpeg_command([
@@ -253,7 +275,8 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
     ]
     for source in merge_sources:
         asset = source.asset
-        if offset_ms > 0:
+        offset_ms = _source_sync_offset_ms(source)
+        if offset_ms > 0 and not asset.is_still_image:
             input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
         if asset.is_still_image:
             input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
@@ -267,10 +290,11 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
     previous_label = "base0"
     for index, source in enumerate(merge_sources, start=1):
         asset = source.asset
+        offset_ms = _source_sync_offset_ms(source)
         rect = calculate_pip_rect(
             project.primary_video,
             asset,
-            project.merge.pip_size_percent,
+            source.pip_size_percent if source.pip_size_percent is not None else project.merge.pip_size_percent,
             source.pip_x,
             source.pip_y,
         )
@@ -350,12 +374,12 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         project.primary_video,
         secondary,
         project.merge.layout,
-        project.merge.pip_size_percent,
+        secondary_source.pip_size_percent if secondary_source.pip_size_percent is not None else project.merge.pip_size_percent,
         secondary_source.pip_x,
         secondary_source.pip_y,
     )
     fps = _output_fps(project)
-    offset_ms = project.analysis.sync_offset_ms
+    offset_ms = _source_sync_offset_ms(secondary_source)
 
     input_args = [
         *ffmpeg_command([
@@ -365,7 +389,7 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         "-i",
         project.primary_video.path,
     ]
-    if offset_ms > 0:
+    if offset_ms > 0 and not secondary.is_still_image:
         input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
     if secondary.is_still_image:
         input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", secondary.path])
@@ -590,7 +614,6 @@ def _render_pass(
     renderer = OverlayRenderer()
     bytes_per_frame = plan.width * plan.height * 4
     total_frames = max(1, int(math.ceil((plan.duration_ms / 1000.0) * plan.fps)))
-
     try:
         for frame_index in range(total_frames):
             raw = decoder.stdout.read(bytes_per_frame)
@@ -623,7 +646,10 @@ def _render_pass(
             )
             painter.end()
 
-            encoder.stdin.write(_image_to_rgba_bytes(image))
+            try:
+                encoder.stdin.write(_image_to_rgba_bytes(image))
+            except BrokenPipeError:
+                break
             if progress_callback is not None:
                 frame_progress = min((frame_index + 1) / total_frames, 1.0)
                 progress_callback(min(progress_start + (frame_progress * progress_span), 1.0))

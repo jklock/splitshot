@@ -156,8 +156,10 @@ class VideoAsset:
 class MergeSource:
     id: str = field(default_factory=lambda: uuid4().hex)
     asset: VideoAsset = field(default_factory=VideoAsset)
+    pip_size_percent: int | None = None
     pip_x: float = 1.0
     pip_y: float = 1.0
+    sync_offset_ms: int = 0
 
 
 @dataclass(slots=True)
@@ -486,8 +488,14 @@ def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
     return MergeSource(
         id=str(payload.get("id", uuid4().hex)),
         asset=_video_from_dict(asset_data),
+        pip_size_percent=(
+            None
+            if payload.get("pip_size_percent") in {None, ""}
+            else int(payload.get("pip_size_percent"))
+        ),
         pip_x=float(payload.get("pip_x", 1.0)),
         pip_y=float(payload.get("pip_y", 1.0)),
+        sync_offset_ms=int(payload.get("sync_offset_ms", 0)),
     )
 
 
@@ -542,9 +550,8 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     secondary_video = (
         None if data.get("secondary_video") is None else _video_from_dict(data.get("secondary_video"))
     )
-    merge_sources = [_merge_source_from_dict(item) for item in data.get("merge_sources", [])]
-    if not merge_sources and secondary_video is not None:
-        merge_sources = [MergeSource(asset=secondary_video)]
+    raw_merge_sources = data.get("merge_sources", [])
+    merge_sources = [_merge_source_from_dict(item) for item in raw_merge_sources]
     merge_pip_value = merge_data.get("pip_size", PipSize.MEDIUM.value)
     if isinstance(merge_pip_value, PipSize):
         merge_pip_enum = merge_pip_value
@@ -555,6 +562,23 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         PipSize.MEDIUM: 35,
         PipSize.LARGE: 50,
     }[merge_pip_enum]
+    if not merge_sources and secondary_video is not None:
+        merge_sources = [
+            MergeSource(
+                asset=secondary_video,
+                pip_size_percent=int(merge_data.get("pip_size_percent", merge_pip_percent_default)),
+                pip_x=float(merge_data.get("pip_x", 1.0)),
+                pip_y=float(merge_data.get("pip_y", 1.0)),
+                sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
+            )
+        ]
+    elif len(merge_sources) == 1:
+        has_explicit_source_sync = any(
+            isinstance(item, dict) and item.get("sync_offset_ms") not in {None, ""}
+            for item in raw_merge_sources
+        )
+        if not has_explicit_source_sync:
+            merge_sources[0].sync_offset_ms = int(analysis_data.get("sync_offset_ms", 0))
 
     project = Project(
         id=str(data.get("id", uuid4().hex)),
@@ -727,5 +751,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     )
     if project.merge_sources:
         project.secondary_video = project.merge_sources[0].asset
+        if len(project.merge_sources) == 1:
+            project.analysis.sync_offset_ms = int(project.merge_sources[0].sync_offset_ms)
+    if project.overlay.custom_box_x is not None or project.overlay.custom_box_y is not None:
+        project.overlay.custom_box_quadrant = "custom"
     project.sort_shots()
     return project

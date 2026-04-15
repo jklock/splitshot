@@ -35,7 +35,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
                 height=180,
                 fps=30.0,
                 is_still_image=True,
-            )
+            ),
+            pip_size_percent=42,
+            sync_offset_ms=135,
         )
     ]
     project.secondary_video = project.merge_sources[0].asset
@@ -169,7 +171,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.overlay.custom_box_enabled is True
     assert loaded.overlay.custom_box_mode == "imported_summary"
     assert loaded.overlay.custom_box_text == "Stage review"
-    assert loaded.overlay.custom_box_quadrant == "middle_middle"
+    assert loaded.overlay.custom_box_quadrant == "custom"
     assert loaded.overlay.custom_box_x == 0.5
     assert loaded.overlay.custom_box_y == 0.6
     assert loaded.merge.enabled is True
@@ -177,6 +179,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.merge.pip_size_percent == 50
     assert loaded.merge.pip_x == 0.2
     assert loaded.merge.pip_y == 0.8
+    assert loaded.merge_sources[0].pip_size_percent == 42
+    assert loaded.merge_sources[0].sync_offset_ms == 135
+    assert loaded.analysis.sync_offset_ms == 135
     assert loaded.export.output_path == "/tmp/export.mp4"
     assert loaded.export.preset == ExportPreset.CUSTOM
     assert loaded.export.aspect_ratio == AspectRatio.PORTRAIT
@@ -201,6 +206,7 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
         "audio_sample_rate": 22050,
         "rotation": 0,
     }
+    legacy["analysis"]["sync_offset_ms"] = 87
 
     loaded = project_from_dict(legacy)
 
@@ -209,6 +215,9 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert len(loaded.merge_sources) == 1
     assert loaded.merge_sources[0].asset.path == "/tmp/merge-image.png"
     assert loaded.merge_sources[0].asset.is_still_image is True
+    assert loaded.merge_sources[0].pip_size_percent == loaded.merge.pip_size_percent
+    assert loaded.merge_sources[0].sync_offset_ms == 87
+    assert loaded.analysis.sync_offset_ms == 87
 
 
 def test_save_project_bundles_browser_session_media_into_project_bundle(tmp_path: Path) -> None:

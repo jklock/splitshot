@@ -2,10 +2,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from splitshot.scoring.practiscore import import_practiscore_stage
+from splitshot.scoring.practiscore import infer_practiscore_context, import_practiscore_stage
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+
+
+def test_infer_practiscore_context_from_idpa_csv() -> None:
+    result = infer_practiscore_context(EXAMPLES_DIR / "IDPA.csv")
+
+    assert result.match_type == "idpa"
+    assert result.stage_number == 1
+    assert result.competitor_name == "Jeff Graff"
+    assert result.competitor_place == 1
+
+
+def test_infer_practiscore_context_from_uspsa_report_text() -> None:
+    result = infer_practiscore_context(EXAMPLES_DIR / "report.txt")
+
+    assert result.match_type == "uspsa"
+    assert result.stage_number == 1
+    assert result.competitor_name == "Ben Rice"
+    assert result.competitor_place == 1
 
 
 def test_import_idpa_stage_results_from_csv() -> None:

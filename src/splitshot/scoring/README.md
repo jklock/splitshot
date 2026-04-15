@@ -25,6 +25,7 @@ Each preset defines its point map, scoring mode, human-readable description, pen
 - `scoring_presets_for_api` returns preset data for the browser UI.
 - `get_scoring_preset` resolves a preset id to a `ScoringPreset`.
 - `apply_scoring_preset` updates the project scoring state and clears invalid penalty counters.
+- `infer_practiscore_context` inspects a PractiScore CSV/TXT file and resolves the match type, stage, competitor, and place before import.
 - `assign_score` writes a `ScoreMark` onto a shot.
 - `set_score_position` stores the normalized position for the score mark.
 - `calculate_hit_factor` computes hit factor when the active preset uses hit-factor scoring.

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Signal
@@ -31,11 +33,12 @@ from splitshot.domain.models import (
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
 from splitshot.media.probe import probe_video
-from splitshot.persistence.projects import delete_project, load_project, save_project
+from splitshot.persistence.projects import delete_project, ensure_project_suffix, load_project, save_project
 from splitshot.scoring.logic import apply_scoring_preset, calculate_hit_factor
 from splitshot.scoring.practiscore import (
     default_ruleset_for_match_type,
     import_practiscore_stage,
+    infer_practiscore_context,
     normalize_match_type,
 )
 
@@ -46,6 +49,13 @@ VALID_OVERLAY_BADGE_NAMES = {
     "current_shot_badge",
     "hit_factor_badge",
 }
+
+
+@dataclass(slots=True)
+class _OriginalShotState:
+    time_ms: int
+    source: ShotSource
+    score: ScoreMark | None
 
 
 def _pip_size_percent_from_enum(size: PipSize) -> int:
@@ -111,12 +121,15 @@ class ProjectController(QObject):
         self.project_path: Path | None = None
         self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
+        self._original_shot_state_by_id: dict[str, _OriginalShotState] = {}
+        self._remember_original_shots()
 
     def new_project(self) -> None:
         self.project = self._new_project_with_settings_defaults()
         self.project_path = None
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
+        self._remember_original_shots()
         self.project_changed.emit()
 
     def has_unsaved_changes(self) -> bool:
@@ -125,6 +138,7 @@ class ProjectController(QObject):
     def load_primary_video(self, path: str) -> None:
         _reset_media_dependent_state_for_primary_video(self.project)
         self.project.primary_video = probe_video(path)
+        self._remember_original_shots()
         self._set_status("Loaded primary video.")
         self.project.touch()
         self.project_changed.emit()
@@ -143,6 +157,7 @@ class ProjectController(QObject):
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
         self.project.analysis.shots = result.shots
+        self._remember_original_shots()
         self.update_hit_factor()
         self._set_status(
             f"Primary analysis complete. Detected {len(result.shots)} shots"
@@ -166,6 +181,8 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_primary,
             self.project.analysis.beep_time_ms_secondary,
         )
+        if self.project.merge_sources:
+            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status(
             "Secondary analysis complete."
             + ("" if result.beep_time_ms is None else f" Sync offset: {self.project.analysis.sync_offset_ms} ms.")
@@ -206,8 +223,8 @@ class ProjectController(QObject):
                 changed = True
             if clean_match_type:
                 apply_scoring_preset(self.project, default_ruleset_for_match_type(clean_match_type))
-        if stage_number is not None:
-            next_stage_number = max(1, int(stage_number))
+        if stage_number is not None or scoring.stage_number is not None:
+            next_stage_number = None if stage_number is None else max(1, int(stage_number))
             if scoring.stage_number != next_stage_number:
                 scoring.stage_number = next_stage_number
                 changed = True
@@ -232,18 +249,19 @@ class ProjectController(QObject):
     def import_practiscore_file(self, path: str, source_name: str | None = None) -> None:
         scoring = self.project.scoring
         previous_import = scoring.imported_stage
-        if not scoring.match_type:
-            raise ValueError("Choose a match type before importing PractiScore results.")
-        if scoring.stage_number is None:
-            raise ValueError("Stage number is required before importing PractiScore results.")
-        if not scoring.competitor_name.strip():
-            raise ValueError("Competitor name is required before importing PractiScore results.")
+        resolved = infer_practiscore_context(
+            path,
+            match_type=scoring.match_type or None,
+            stage_number=scoring.stage_number,
+            competitor_name=scoring.competitor_name or None,
+            competitor_place=scoring.competitor_place,
+        )
         imported = import_practiscore_stage(
             path,
-            match_type=scoring.match_type,
-            stage_number=scoring.stage_number,
-            competitor_name=scoring.competitor_name,
-            competitor_place=scoring.competitor_place,
+            match_type=resolved.match_type,
+            stage_number=resolved.stage_number,
+            competitor_name=resolved.competitor_name,
+            competitor_place=resolved.competitor_place,
             source_name=source_name,
         )
         apply_scoring_preset(self.project, imported.ruleset)
@@ -269,8 +287,10 @@ class ProjectController(QObject):
         self.project.merge_sources.append(
             MergeSource(
                 asset=asset,
+                pip_size_percent=self.project.merge.pip_size_percent,
                 pip_x=self.project.merge.pip_x,
                 pip_y=self.project.merge.pip_y,
+                sync_offset_ms=0,
             )
         )
         self.project.merge.enabled = True
@@ -299,6 +319,7 @@ class ProjectController(QObject):
             if self.project.merge_sources and not self.project.merge_sources[0].asset.is_still_image:
                 self.analyze_secondary()
                 return
+            self.project.analysis.sync_offset_ms = self.project.merge_sources[0].sync_offset_ms if self.project.merge_sources else 0
         self._set_status("Removed merge media.")
         self.project.touch()
         self.project_changed.emit()
@@ -323,10 +344,10 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def add_shot(self, time_ms: int) -> None:
-        self.project.analysis.shots.append(
-            ShotEvent(time_ms=time_ms, source=ShotSource.MANUAL, confidence=1.0)
-        )
+        shot = ShotEvent(time_ms=time_ms, source=ShotSource.MANUAL, confidence=1.0)
+        self.project.analysis.shots.append(shot)
         self.project.sort_shots()
+        self._remember_original_shot(shot)
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
@@ -345,6 +366,7 @@ class ProjectController(QObject):
 
     def delete_shot(self, shot_id: str) -> None:
         self.project.analysis.shots = [shot for shot in self.project.analysis.shots if shot.id != shot_id]
+        self._forget_original_shot(shot_id)
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
@@ -365,22 +387,58 @@ class ProjectController(QObject):
         letter: ScoreLetter | None = None,
         penalty_counts: dict[str, float] | None = None,
     ) -> None:
+        normalized_penalty_counts = None if penalty_counts is None else {
+            str(key): max(0.0, float(value))
+            for key, value in penalty_counts.items()
+            if max(0.0, float(value)) > 0
+        }
         for shot in self.project.analysis.shots:
             if shot.id == shot_id:
+                if letter is None and normalized_penalty_counts == {}:
+                    shot.score = None
+                    break
                 if shot.score is None:
                     shot.score = ScoreMark(letter=letter or ScoreLetter.A)
                 elif letter is not None:
                     shot.score.letter = letter
-                if penalty_counts is not None:
-                    shot.score.penalty_counts = {
-                        str(key): max(0.0, float(value))
-                        for key, value in penalty_counts.items()
-                        if max(0.0, float(value)) > 0
-                    }
+                if normalized_penalty_counts is not None:
+                    shot.score.penalty_counts = normalized_penalty_counts
                 break
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
+
+    def restore_original_shot_timing(self, shot_id: str) -> None:
+        original = self._original_shot_state_by_id.get(shot_id)
+        if original is None:
+            raise ValueError("Original split not found")
+        for shot in self.project.analysis.shots:
+            if shot.id != shot_id:
+                continue
+            shot.time_ms = max(0, original.time_ms)
+            shot.source = original.source
+            self.project.sort_shots()
+            self.update_hit_factor()
+            self._set_status("Restored original split.")
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        raise ValueError("Shot not found")
+
+    def restore_original_shot_score(self, shot_id: str) -> None:
+        original = self._original_shot_state_by_id.get(shot_id)
+        if original is None:
+            raise ValueError("Original score not found")
+        for shot in self.project.analysis.shots:
+            if shot.id != shot_id:
+                continue
+            shot.score = None if original.score is None else deepcopy(original.score)
+            self.update_hit_factor()
+            self._set_status("Restored original score.")
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        raise ValueError("Shot not found")
 
     def set_scoring_preset(self, ruleset: str) -> None:
         apply_scoring_preset(self.project, ruleset)
@@ -458,6 +516,7 @@ class ProjectController(QObject):
             "bottom_right",
         }
         valid_shot_quadrants = {*valid_quadrants, "custom"}
+        valid_custom_box_quadrants = {*valid_quadrants, "custom"}
         valid_directions = {"right", "left", "down", "up"}
         valid_custom_box_modes = {"manual", "imported_summary"}
         if "max_visible_shots" in payload:
@@ -506,13 +565,15 @@ class ProjectController(QObject):
             overlay.custom_box_text = str(payload["custom_box_text"])[:500]
         if "custom_box_quadrant" in payload:
             value = str(payload["custom_box_quadrant"])
-            overlay.custom_box_quadrant = value if value in valid_quadrants else "top_right"
+            overlay.custom_box_quadrant = value if value in valid_custom_box_quadrants else "top_right"
         if "custom_box_x" in payload:
             value = payload["custom_box_x"]
             overlay.custom_box_x = None if value in {"", None} else max(0.0, min(1.0, float(value)))
         if "custom_box_y" in payload:
             value = payload["custom_box_y"]
             overlay.custom_box_y = None if value in {"", None} else max(0.0, min(1.0, float(value)))
+        if overlay.custom_box_x is not None or overlay.custom_box_y is not None:
+            overlay.custom_box_quadrant = "custom"
         if "custom_box_background_color" in payload:
             overlay.custom_box_background_color = str(payload["custom_box_background_color"])
         if "custom_box_text_color" in payload:
@@ -584,34 +645,48 @@ class ProjectController(QObject):
             self.project.merge.pip_x = max(0.0, min(1.0, float(pip_x)))
         if pip_y is not None:
             self.project.merge.pip_y = max(0.0, min(1.0, float(pip_y)))
-        if self.project.merge_sources:
-            first_source = self.project.merge_sources[0]
-            if pip_x is not None:
-                first_source.pip_x = self.project.merge.pip_x
-            if pip_y is not None:
-                first_source.pip_y = self.project.merge.pip_y
         self.project.touch()
         self.project_changed.emit()
 
     def set_merge_source_position(
         self,
         source_id: str,
+        pip_size_percent: int | None = None,
         pip_x: float | None = None,
         pip_y: float | None = None,
     ) -> None:
         for source in self.project.merge_sources:
             if source.id != source_id:
                 continue
+            if pip_size_percent is not None:
+                source.pip_size_percent = max(10, min(95, int(pip_size_percent)))
             if pip_x is not None:
                 source.pip_x = max(0.0, min(1.0, float(pip_x)))
             if pip_y is not None:
                 source.pip_y = max(0.0, min(1.0, float(pip_y)))
-            if self.project.merge_sources and self.project.merge_sources[0].id == source_id:
-                self.project.merge.pip_x = source.pip_x
-                self.project.merge.pip_y = source.pip_y
             self.project.touch()
             self.project_changed.emit()
             return
+        raise ValueError("Merge source not found")
+
+    def set_merge_source_sync_offset(self, source_id: str, offset_ms: int) -> None:
+        for index, source in enumerate(self.project.merge_sources):
+            if source.id != source_id:
+                continue
+            source.sync_offset_ms = int(offset_ms)
+            if index == 0:
+                self.project.analysis.sync_offset_ms = source.sync_offset_ms
+            self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        raise ValueError("Merge source not found")
+
+    def adjust_merge_source_sync_offset(self, source_id: str, delta_ms: int) -> None:
+        for source in self.project.merge_sources:
+            if source.id == source_id:
+                self.set_merge_source_sync_offset(source_id, source.sync_offset_ms + int(delta_ms))
+                return
         raise ValueError("Merge source not found")
 
     def add_timing_event(
@@ -708,12 +783,16 @@ class ProjectController(QObject):
 
     def adjust_sync_offset(self, delta_ms: int) -> None:
         self.project.analysis.sync_offset_ms += delta_ms
+        if self.project.merge_sources:
+            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status(f"Adjusted sync offset to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
 
     def set_sync_offset(self, offset_ms: int) -> None:
         self.project.analysis.sync_offset_ms = offset_ms
+        if self.project.merge_sources:
+            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status(f"Sync offset set to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
@@ -736,6 +815,8 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_primary,
         )
         self.project.analysis.sync_offset_ms *= -1
+        if self.project.merge_sources:
+            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status("Swapped primary and secondary videos.")
         self.project.touch()
         self.project_changed.emit()
@@ -755,8 +836,9 @@ class ProjectController(QObject):
 
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
-        self.project_path = Path(path)
+        self.project_path = ensure_project_suffix(path)
         self._saved_snapshot = project_to_dict(self.project)
+        self._remember_original_shots()
         self._remember_project(self.project_path)
         self._set_status(f"Opened project from {self.project_path}.")
         self.project_path_changed.emit(str(self.project_path))
@@ -788,6 +870,26 @@ class ProjectController(QObject):
     def update_hit_factor(self) -> None:
         self.project.sort_shots()
         self.project.scoring.hit_factor = calculate_hit_factor(self.project)
+
+    def _remember_original_shots(self) -> None:
+        self._original_shot_state_by_id = {
+            shot.id: _OriginalShotState(
+                time_ms=shot.time_ms,
+                source=shot.source,
+                score=None if shot.score is None else deepcopy(shot.score),
+            )
+            for shot in self.project.analysis.shots
+        }
+
+    def _remember_original_shot(self, shot: ShotEvent) -> None:
+        self._original_shot_state_by_id[shot.id] = _OriginalShotState(
+            time_ms=shot.time_ms,
+            source=shot.source,
+            score=None if shot.score is None else deepcopy(shot.score),
+        )
+
+    def _forget_original_shot(self, shot_id: str) -> None:
+        self._original_shot_state_by_id.pop(shot_id, None)
 
     def _remember_project(self, path: Path) -> None:
         entries = [str(path), *[item for item in self.settings.recent_projects if item != str(path)]]

@@ -68,6 +68,8 @@ def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None
     assert draw_time_ms(controller.project) is not None
     assert stage_time_ms(controller.project) is not None
     assert average_split_ms(controller.project) is not None
+    assert rows[0].split_ms is not None
+    assert abs(rows[0].split_ms - draw_time_ms(controller.project)) <= 60
     assert rows[1].split_ms is not None
     assert abs(rows[1].split_ms - 300) <= 60
 

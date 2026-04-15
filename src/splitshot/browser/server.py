@@ -27,6 +27,7 @@ from splitshot.domain.models import (
     ScoreLetter,
 )
 from splitshot.export.pipeline import export_project, prepare_export_runtime
+from splitshot.persistence.projects import PROJECT_FILENAME
 from splitshot.ui.controller import ProjectController
 
 
@@ -69,16 +70,20 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             )
         if kind in {"project", "project_save"}:
             return filedialog.asksaveasfilename(
-                title="Choose SplitShot project",
+                title="Choose SplitShot project bundle",
                 initialdir=initial_dir,
                 defaultextension=".ssproj",
                 filetypes=[("SplitShot project", "*.ssproj"), ("All files", "*.*")],
             )
         if kind == "project_open":
-            return filedialog.askdirectory(
-                title="Open SplitShot project",
+            return filedialog.askopenfilename(
+                title="Choose SplitShot project.json file",
                 initialdir=initial_dir,
-                mustexist=True,
+                filetypes=[
+                    ("SplitShot project file", PROJECT_FILENAME),
+                    ("JSON files", "*.json"),
+                    ("All files", "*.*"),
+                ],
             )
         if kind == "export":
             return filedialog.asksaveasfilename(
@@ -96,7 +101,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
     current_path = Path(current).expanduser() if current else None
     default_dir = (current_path.parent if current_path else Path.home()).resolve()
     default_name = current_path.name if current_path and current_path.name else (
-        "project.ssproj" if kind == "project" else "output.mp4"
+        "project.ssproj" if kind in {"project", "project_save"} else "output.mp4"
     )
     if kind in {"primary", "secondary"}:
         prompt = "Choose stage video" if kind == "primary" else "Choose secondary angle video"
@@ -116,7 +121,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
     if kind == "project_open":
         script = "\n".join(
             [
-                f"set chosenFile to choose folder with prompt {_applescript_string('Open SplitShot project')} "
+                f"set chosenFile to choose file with prompt {_applescript_string('Choose SplitShot project.json file')} "
                 f"default location POSIX file {_applescript_string(str(default_dir))}",
                 "POSIX path of chosenFile",
             ]
@@ -128,7 +133,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
             return None
         raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
     if kind in {"project", "project_save"}:
-        prompt = "Choose SplitShot project path"
+        prompt = "Choose SplitShot project bundle"
     elif kind == "export":
         prompt = "Choose video export path"
     else:
@@ -351,11 +356,13 @@ class BrowserControlServer:
                     "/api/beep": self._set_beep,
                     "/api/shots/add": self._add_shot,
                     "/api/shots/move": self._move_shot,
+                    "/api/shots/restore": self._restore_shot,
                     "/api/shots/delete": self._delete_shot,
                     "/api/shots/select": self._select_shot,
                     "/api/scoring": self._set_scoring,
                     "/api/scoring/profile": self._set_scoring_profile,
                     "/api/scoring/score": self._assign_score,
+                    "/api/scoring/restore": self._restore_score,
                     "/api/scoring/position": self._set_score_position,
                     "/api/events/add": self._add_event,
                     "/api/events/delete": self._delete_event,
@@ -756,6 +763,9 @@ class BrowserControlServer:
             def _move_shot(self, payload: dict[str, Any]) -> None:
                 controller.move_shot(str(payload["shot_id"]), int(payload["time_ms"]))
 
+            def _restore_shot(self, payload: dict[str, Any]) -> None:
+                controller.restore_original_shot_timing(str(payload["shot_id"]))
+
             def _delete_shot(self, payload: dict[str, Any]) -> None:
                 controller.delete_shot(str(payload["shot_id"]))
 
@@ -778,6 +788,9 @@ class BrowserControlServer:
 
             def _set_scoring_profile(self, payload: dict[str, Any]) -> None:
                 controller.set_scoring_preset(str(payload["ruleset"]))
+
+            def _restore_score(self, payload: dict[str, Any]) -> None:
+                controller.restore_original_shot_score(str(payload["shot_id"]))
 
             def _assign_score(self, payload: dict[str, Any]) -> None:
                 letter_value = payload.get("letter")
@@ -847,11 +860,17 @@ class BrowserControlServer:
                 source_id = payload.get("source_id") or payload.get("id")
                 if source_id in {None, ""}:
                     raise ValueError("source_id is required")
+                if payload.get("sync_delta_ms") not in {None, ""}:
+                    controller.adjust_merge_source_sync_offset(str(source_id), int(payload["sync_delta_ms"]))
+                    return
                 controller.set_merge_source_position(
                     str(source_id),
+                    None if payload.get("pip_size_percent") in {None, ""} else int(payload["pip_size_percent"]),
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                 )
+                if payload.get("sync_offset_ms") not in {None, ""}:
+                    controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
 
             def _add_event(self, payload: dict[str, Any]) -> None:
                 controller.add_timing_event(
@@ -884,6 +903,20 @@ class BrowserControlServer:
                 controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
+                scoring_payload = payload.get("scoring")
+                if isinstance(scoring_payload, dict):
+                    if "ruleset" in scoring_payload:
+                        self._set_scoring_profile(scoring_payload)
+                    self._set_scoring(scoring_payload)
+                overlay_payload = payload.get("overlay")
+                if isinstance(overlay_payload, dict):
+                    self._set_overlay(overlay_payload)
+                merge_payload = payload.get("merge")
+                if isinstance(merge_payload, dict):
+                    self._set_merge(merge_payload)
+                    for source_payload in merge_payload.get("sources", []):
+                        if isinstance(source_payload, dict):
+                            self._set_merge_source(source_payload)
                 _sync_export_payload(controller, payload)
                 output_path = Path(str(payload["path"]))
                 activity.log("api.export.start", path=str(output_path))
