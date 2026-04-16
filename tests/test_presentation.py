@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from splitshot.domain.models import Project, ShotEvent
+from splitshot.domain.models import Project, ShotEvent, TimingEvent
 from splitshot.presentation.stage import build_stage_presentation
 
 
@@ -28,3 +28,25 @@ def test_stage_presentation_exposes_full_beep_to_final_timing() -> None:
     assert segments[-1].card_value == "0.35"
     assert "Split 0.65s" in segments[-1].card_meta
     assert "ShotML" in segments[-1].card_meta
+
+
+def test_stage_presentation_keeps_following_shot_split_after_timing_event() -> None:
+    project = Project()
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [
+        ShotEvent(time_ms=250, confidence=0.9),
+        ShotEvent(time_ms=480, confidence=0.8),
+        ShotEvent(time_ms=720, confidence=0.7),
+    ]
+    project.analysis.events = [
+        TimingEvent(
+            kind="reload",
+            label="Reload",
+            after_shot_id=project.analysis.shots[0].id,
+            before_shot_id=project.analysis.shots[1].id,
+        )
+    ]
+
+    presentation = build_stage_presentation(project)
+
+    assert [segment.segment_ms for segment in presentation.timing_segments] == [150, 230, 240]

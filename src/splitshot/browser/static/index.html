@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260415a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260416c" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -21,6 +21,7 @@
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
+          <button class="tool-item" data-tool="metrics" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
         </nav>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
@@ -32,23 +33,28 @@
         <span id="project-title" hidden>Untitled Project</span>
         <span id="status" hidden>Ready.</span>
 
-        <section class="status-strip" aria-label="Current stage metrics">
-          <strong id="current-file">No video selected</strong>
-          <span>Draw <b id="draw">--.--</b></span>
-          <span>Raw <b id="raw-time">--.--</b></span>
-          <span>Shots <b id="shot-count">0</b></span>
-          <span>Avg <b id="avg-split">--.--</b></span>
+        <section class="status-bar" aria-label="Current video status bar">
+          <div class="status-bar-copy">
+            <strong id="current-file">No Video Selected</strong>
+            <span id="status-copy">Ready.</span>
+          </div>
         </section>
         <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
-          <strong id="processing-message">Ready.</strong>
-          <span id="processing-detail">Local processing</span>
+          <div class="processing-copy">
+            <strong id="processing-message">Ready.</strong>
+            <span id="processing-detail">Local processing</span>
+          </div>
+          <div class="processing-progress-track" aria-hidden="true">
+            <div id="processing-progress-fill" class="processing-progress-fill"></div>
+          </div>
+          <span id="processing-percent">0%</span>
         </section>
 
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-stage" id="video-stage">
               <video id="primary-video" controls playsinline></video>
-              <video id="secondary-video" muted playsinline></video>
+              <video id="secondary-video" playsinline></video>
               <img id="secondary-image" alt="Secondary frame" hidden />
               <div id="merge-preview-layer" class="merge-preview-layer" aria-hidden="true"></div>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
@@ -63,11 +69,16 @@
                 <div class="legend-row">
                   <span><b class="beep-key"></b> Beep</span>
                   <span><b class="shot-key"></b> Shot</span>
-                  <small id="waveform-help">Select mode: click a shot marker, drag to move, arrows nudge.</small>
+                  <small id="waveform-help">Select mode: click a shot marker, drag a shot to move, drag empty space to pan, arrows nudge.</small>
                 </div>
                 <button id="toggle-layout-lock-waveform" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock waveform layout">🔒</button>
               </div>
               <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
+              <div id="waveform-window" class="waveform-window" hidden>
+                <div id="waveform-window-track" class="waveform-window-track" aria-label="Waveform viewport window">
+                  <div id="waveform-window-handle" class="waveform-window-handle"></div>
+                </div>
+              </div>
               <div class="waveform-actions waveform-footer">
                 <button id="zoom-waveform-out" type="button">Zoom -</button>
                 <button id="zoom-waveform-in" type="button">Zoom +</button>
@@ -108,9 +119,12 @@
           </section>
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
-          <aside class="inspector" aria-label="Context inspector">
+          <aside class="inspector" aria-label="Context tools">
             <div class="section-header inspector-header">
-              <h3>Inspector</h3>
+              <div class="inspector-status-copy">
+                <strong id="inspector-file">No Video Selected</strong>
+                <span id="inspector-status-copy">Ready.</span>
+              </div>
               <button id="toggle-layout-lock-inspector" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock inspector layout">🔒</button>
             </div>
             <section class="tool-pane" data-tool-pane="review">
@@ -122,66 +136,40 @@
               <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
               <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
               <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
-              <div class="review-custom-box">
-                <label class="check-row"><input id="custom-box-enabled" type="checkbox" /> Custom review box</label>
-                <label>Box content
-                  <select id="custom-box-mode">
-                    <option value="manual">Custom text</option>
-                    <option value="imported_summary">Imported summary</option>
-                  </select>
-                </label>
-                <p id="custom-box-mode-hint" class="hint">Uses the text below and follows the same box styling and coordinates as export.</p>
-                <label>Box text
-                  <textarea id="custom-box-text" rows="4" placeholder="Text to show over the reviewed video"></textarea>
-                </label>
-                <div class="control-grid">
-                  <label>Box placement
-                    <select id="custom-box-quadrant">
-                      <option value="top_left">Top left</option>
-                      <option value="top_middle">Top middle</option>
-                      <option value="top_right">Top right</option>
-                      <option value="middle_left">Middle left</option>
-                      <option value="middle_middle">Middle middle</option>
-                      <option value="middle_right">Middle right</option>
-                      <option value="bottom_left">Bottom left</option>
-                      <option value="bottom_middle">Bottom middle</option>
-                      <option value="bottom_right">Bottom right</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </label>
-                  <label>Custom box X (0 left, 1 right)
-                    <input id="custom-box-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
-                  <label>Custom box Y (0 top, 1 bottom)
-                    <input id="custom-box-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
-                  </label>
+              <section class="text-box-manager">
+                <div class="section-header sub-section-header">
+                  <h3>Review Text Boxes</h3>
+                  <span>Imported summary and custom notes can coexist</span>
                 </div>
-                <div class="control-grid">
-                  <label>Box width
-                    <input id="custom-box-width" type="number" min="0" max="1000" step="1" value="0" />
-                  </label>
-                  <label>Box height
-                    <input id="custom-box-height" type="number" min="0" max="1000" step="1" value="0" />
-                  </label>
+                <div class="button-grid two-up">
+                  <button id="review-add-text-box" type="button">Add Custom Box</button>
+                  <button id="review-add-imported-box" type="button">Add Summary Box</button>
                 </div>
-                <div class="style-grid review-style-grid">
-                  <section class="style-card custom-box-style-card">
-                    <h4>Custom Box Style</h4>
-                    <label class="color-field"><span class="style-card-label">Background</span>
-                      <span class="color-control-pair">
-                        <input id="custom-box-background-color" type="color" value="#000000" />
-                        <input id="custom-box-background-color-hex" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Custom box background hex value" />
-                      </span>
-                    </label>
-                    <label class="color-field"><span class="style-card-label">Text</span>
-                      <span class="color-control-pair">
-                        <input id="custom-box-text-color" type="color" value="#ffffff" />
-                        <input id="custom-box-text-color-hex" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Custom box text hex value" />
-                      </span>
-                    </label>
-                    <label><span class="style-card-label">Opacity</span> <input id="custom-box-opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
-                  </section>
-                </div>
+                <p class="hint">Each box keeps its own enable state, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position.</p>
+                <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
+              </section>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="metrics">
+              <div class="section-header">
+                <h3>Metrics</h3>
+                <span>Stage dashboard</span>
+              </div>
+              <p class="hint">Built from the current metrics, split rows, timing segments, and scoring summary so timing and score context stay in one view.</p>
+              <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
+              <div class="section-header sub-section-header">
+                <h3>Trend Snapshot</h3>
+                <span>Splits and confidence</span>
+              </div>
+              <div id="metrics-trend-list" class="metrics-trend-list" aria-label="Metrics trend list"></div>
+              <div class="section-header sub-section-header">
+                <h3>Scoring Context</h3>
+                <span id="metrics-score-status">No scoring data.</span>
+              </div>
+              <dl id="metrics-score-summary" class="details metrics-details"></dl>
+              <div class="button-grid two-up">
+                <button id="metrics-export-csv" type="button">Export CSV</button>
+                <button id="metrics-export-text" type="button">Export Text</button>
               </div>
             </section>
 
@@ -261,7 +249,7 @@
                   <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" />
                 </label>
               </div>
-              <p class="hint">Shot gap adds space between split badges. Frame padding keeps the badge stack away from the edge of the video frame.</p>
+              <p class="hint">Shot gap spaces badges inside the live stack. Frame padding offsets the stack from the video frame edge.</p>
               <div class="control-grid">
                 <label>Shots shown
                   <input id="max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
@@ -349,7 +337,8 @@
                 <label class="check-row"><input id="overlay-font-italic" type="checkbox" /> Italic</label>
               </div>
               <div class="style-grid" id="badge-style-grid"></div>
-              <h3>Score Colors</h3>
+              <h3>Score Text Colors</h3>
+              <p class="hint">These colors only affect score text tokens. The shot box background stays with the badge style.</p>
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
 
@@ -396,6 +385,10 @@
                 <select id="export-preset"></select>
               </label>
               <p id="export-preset-description" class="hint">Choose an export preset.</p>
+              <div class="ffmpeg-help">
+                <strong>FFmpeg Renderer</strong>
+                <p>SplitShot renders locally with FFmpeg on this machine. The output settings below affect the same local pipeline used by browser and desktop validation runs.</p>
+              </div>
               <h3>Frame</h3>
               <label>Quality
                 <select id="quality">
@@ -414,10 +407,10 @@
                 </select>
               </label>
               <div class="control-grid">
-                <label>Width
+                <label>Output Width
                   <input id="target-width" type="number" min="2" step="2" placeholder="source" />
                 </label>
-                <label>Height
+                <label>Output Height
                   <input id="target-height" type="number" min="2" step="2" placeholder="source" />
                 </label>
               </div>
@@ -436,7 +429,7 @@
                   </select>
                 </label>
               </div>
-              <label>Video bitrate Mbps
+              <label>Video bitrate (Mbps)
                 <input id="video-bitrate" type="number" min="0.1" step="0.5" value="15" />
               </label>
               <div class="control-grid">
@@ -445,7 +438,7 @@
                     <option value="aac">AAC</option>
                   </select>
                 </label>
-                <label>Audio kHz
+                <label>Audio Sample Rate (Hz)
                   <input id="audio-sample-rate" type="number" min="8000" step="1000" value="48000" />
                 </label>
               </div>
@@ -482,14 +475,17 @@
                 </div>
               </label>
               <p class="hint">Supported export containers: MP4, M4V, MOV, and MKV. The output path extension selects the container.</p>
-              <button id="export-video" class="primary-button" type="button">Export Video</button>
-              <pre id="export-log" class="export-log">No export log yet.</pre>
+              <div class="button-grid two-up">
+                <button id="export-video" class="primary-button" type="button">Export Video</button>
+                <button id="show-export-log" type="button">Show Log</button>
+              </div>
+              <p id="export-log-status" class="hint">The live export log opens in a separate window so the output settings stay readable while rendering runs.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="project">
               <div class="section-header">
                 <h3>Project</h3>
-                <span id="media-badge">No video selected</span>
+                <span id="media-badge">No Video Selected</span>
               </div>
               <label>Project name
                 <input id="project-name" placeholder="Untitled Project" />
@@ -511,15 +507,21 @@
                   </select>
                 </label>
                 <label>Stage #
-                  <input id="match-stage-number" type="number" min="1" step="1" placeholder="Add stage number" />
+                  <select id="match-stage-number">
+                    <option value="">Select stage</option>
+                  </select>
                 </label>
               </div>
               <div class="control-grid">
                 <label>Competitor name
-                  <input id="match-competitor-name" placeholder="Add competitor name" />
+                  <select id="match-competitor-name">
+                    <option value="">Select competitor</option>
+                  </select>
                 </label>
                 <label>Place
-                  <input id="match-competitor-place" type="number" min="1" step="1" placeholder="Optional" />
+                  <select id="match-competitor-place">
+                    <option value="">Select place</option>
+                  </select>
                 </label>
               </div>
               <button id="import-practiscore" type="button">Select PractiScore Results</button>
@@ -550,6 +552,56 @@
       </main>
     </div>
 
-    <script src="/static/app.js?v=20260415b"></script>
+    <div id="color-picker-modal" class="modal color-picker-modal" hidden>
+      <div class="modal-backdrop" data-close-color-picker="true"></div>
+      <section class="modal-dialog color-picker-dialog" role="dialog" aria-modal="true" aria-labelledby="color-picker-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="color-picker-title">Color Picker</h2>
+            <p id="color-picker-target">Color</p>
+          </div>
+          <button id="close-color-picker" type="button">Done</button>
+        </div>
+        <div class="color-picker-body">
+          <div class="color-picker-preview-row">
+            <div id="color-picker-preview" class="color-picker-preview"></div>
+            <strong id="color-picker-current">#FFFFFF</strong>
+          </div>
+          <div id="color-picker-swatches" class="color-picker-swatches" aria-label="Quick color swatches"></div>
+          <label>Hue
+            <input id="color-picker-hue" type="range" min="0" max="360" step="1" value="0" />
+          </label>
+          <label>Saturation
+            <input id="color-picker-saturation" type="range" min="0" max="100" step="1" value="100" />
+          </label>
+          <label>Lightness
+            <input id="color-picker-lightness" type="range" min="0" max="100" step="1" value="50" />
+          </label>
+          <label>Hex
+            <input id="color-picker-hex" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF" aria-label="Selected color hex value" />
+          </label>
+        </div>
+      </section>
+    </div>
+
+    <div id="export-log-modal" class="modal" hidden>
+      <div class="modal-backdrop" data-close-export-log="true"></div>
+      <section class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="export-log-title">
+        <div class="modal-header">
+          <div>
+            <h2 id="export-log-title">Export Log</h2>
+            <p id="export-log-summary">No export activity yet.</p>
+          </div>
+          <button id="close-export-log" type="button">Close</button>
+        </div>
+        <div id="export-log-error" class="modal-alert" hidden></div>
+        <pre id="export-log-output" class="export-log-output">No export log yet.</pre>
+        <div class="modal-actions">
+          <button id="export-export-log" type="button">Export Log</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="/static/app.js?v=20260416c"></script>
   </body>
 </html>

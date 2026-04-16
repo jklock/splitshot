@@ -1,7 +1,7 @@
 [project]
 name = "splitshot"
 version = "0.1.0"
-description = "Local-first desktop app for competition shooting video analysis and export."
+description = "Local-first browser app for competition shooting video analysis, scoring, merge review, and export."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -37,6 +37,9 @@ packages = ["src/splitshot"]
 minversion = "8.0"
 testpaths = ["tests"]
 qt_api = "pyside6"
+
+[tool.uv]
+link-mode = "copy"
 
 [tool.ruff]
 line-length = 100

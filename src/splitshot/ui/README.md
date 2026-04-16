@@ -1,6 +1,6 @@
 # UI
 
-The UI package contains the PySide6 desktop interface and the shared controller that powers both user surfaces.
+The UI package contains the PySide6 desktop validation interface and the shared controller that powers both user surfaces.
 
 ## Files
 
@@ -23,22 +23,22 @@ The helper functions at the top of `controller.py` reset media-dependent state, 
 
 ## Desktop Window
 
-`MainWindow` creates the PySide6 experience with these major sections:
+`MainWindow` creates the PySide6 validation surface with these major sections:
 
-- a left navigation rail with Manage, Upload, Merge, Overlay, Scoring, Layout, Swap, and Export pages
+- a left navigation rail with Manage, Media, Merge, Overlay, Scoring, Layout, Swap, and Export pages
 - a top header with the current project name and status pill
 - a central review stack with playback, waveform editing, split cards, and the preview container
-- a right inspector with page-specific controls
+- a right inspector with validation-oriented controls plus runtime checks for FFmpeg, FFprobe, browser assets, dialogs, and local media state
 
 ## Widgets
 
 - `WaveformEditor` provides the interactive shot timeline editor.
 - `OverlayPreview` shows on-video placement for score marks, crop boxes, and review overlays.
-- `DashboardWidget` helpers in `widgets/dashboard.py` render the split cards, upload state, and summary cards.
+- `DashboardWidget` helpers in `widgets/dashboard.py` render the split cards, media selection state, and summary cards.
 
 ## Shared Behavior
 
-The desktop UI uses the same controller, the same project model, and the same export pipeline as the browser UI. The difference is the presentation layer, not the underlying data flow.
+The desktop UI uses the same controller, the same project model, and the same export pipeline as the browser UI. The difference is intentional: the browser is the primary product experience, while the desktop window is optimized for local validation, smoke tests, and platform-specific tooling behavior.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

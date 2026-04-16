@@ -220,6 +220,19 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert loaded.analysis.sync_offset_ms == 87
 
 
+def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None:
+    project = Project(name="Score Colors")
+    project.overlay.scoring_colors["A|procedural_errors"] = "#112233"
+    project.overlay.scoring_colors["PE"] = "#445566"
+
+    bundle = save_project(project, tmp_path / "score-colors.ssproj")
+    loaded = load_project(bundle)
+
+    assert "A|procedural_errors" not in project_to_dict(project)["overlay"]["scoring_colors"]
+    assert "A|procedural_errors" not in loaded.overlay.scoring_colors
+    assert loaded.overlay.scoring_colors["PE"] == "#445566"
+
+
 def test_save_project_bundles_browser_session_media_into_project_bundle(tmp_path: Path) -> None:
     session_dir = tmp_path / "splitshot-browser-session"
     session_dir.mkdir()

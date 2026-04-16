@@ -174,6 +174,77 @@ def test_browser_activity_logger_writes_run_file_and_browser_events(tmp_path) ->
         server.shutdown()
 
 
+def test_browser_activity_poll_returns_recent_entries(tmp_path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, log_dir=tmp_path)
+    server.start_background(open_browser=False)
+    try:
+        server.activity.log("api.export.progress", progress=0.35)
+        server.activity.log("api.export.log", line="Encoder command: ffmpeg ...")
+
+        payload = _get_json(f"{server.url}api/activity/poll?after=0")
+
+        assert payload["cursor"] >= 2
+        events = [entry["event"] for entry in payload["entries"]]
+        assert "api.export.progress" in events
+        assert "api.export.log" in events
+        assert any(entry.get("line") == "Encoder command: ffmpeg ..." for entry in payload["entries"])
+    finally:
+        server.shutdown()
+
+
+def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(
+            f"{server.url}api/overlay",
+            {
+                "text_boxes": [
+                    {
+                        "id": "manual-box",
+                        "enabled": True,
+                        "source": "manual",
+                        "text": "Session summary",
+                        "quadrant": "top_left",
+                        "background_color": "#101010",
+                        "text_color": "#ffffff",
+                        "opacity": 0.8,
+                        "width": 200,
+                        "height": 60,
+                    },
+                    {
+                        "id": "imported-box",
+                        "enabled": True,
+                        "source": "imported_summary",
+                        "text": "",
+                        "quadrant": "custom",
+                        "x": 0.5,
+                        "y": 0.4,
+                        "background_color": "#000000",
+                        "text_color": "#f8fafc",
+                        "opacity": 0.9,
+                        "width": 180,
+                        "height": 48,
+                    },
+                ],
+            },
+        )
+
+        boxes = state["project"]["overlay"]["text_boxes"]
+        assert len(boxes) == 2
+        assert boxes[0]["text"] == "Session summary"
+        assert boxes[0]["quadrant"] == "top_left"
+        assert boxes[1]["source"] == "imported_summary"
+        assert boxes[1]["quadrant"] == "custom"
+        assert boxes[1]["x"] == pytest.approx(0.5)
+        assert boxes[1]["y"] == pytest.approx(0.4)
+        assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
+    finally:
+        server.shutdown()
+
+
 def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_factory) -> None:
     controller = ProjectController()
     video_path = synthetic_video_factory()
@@ -185,9 +256,14 @@ def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_fact
     assert payload["metrics"]["draw_ms"] is not None
     assert payload["metrics"]["raw_time_ms"] == payload["metrics"]["stage_time_ms"]
     assert payload["media"]["primary_url"] == "/media/primary"
+    assert payload["media"]["cache_token"] == ""
     assert len(payload["split_rows"]) == 3
     assert len(payload["timing_segments"]) == 3
     assert payload["split_rows"][0]["split_ms"] == payload["metrics"]["draw_ms"]
+    assert payload["split_rows"][0]["row_type"] == "interval"
+    assert payload["split_rows"][0]["label"] == "Start -> Shot 1"
+    assert payload["split_rows"][0]["actions"][0]["label"] == "Draw"
+    assert payload["split_rows"][1]["split_ms"] is not None
     assert payload["timing_segments"][0]["label"] == "Draw"
     assert payload["timing_segments"][0]["segment_ms"] == payload["metrics"]["draw_ms"]
     assert payload["timing_segments"][-1]["cumulative_ms"] == payload["metrics"]["raw_time_ms"]
@@ -256,7 +332,7 @@ def test_browser_control_api_restores_original_split_and_score(synthetic_video_f
 
         state = _post_json(f"{server.url}api/scoring/restore", {"shot_id": shot_id})
         restored_score = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
-        assert restored_score["score"] is None
+        assert restored_score["score"]["letter"] == "A"
     finally:
         server.shutdown()
 
@@ -415,7 +491,7 @@ def test_browser_primary_replacement_preserves_reusable_settings_and_clears_vide
         assert state["project"]["analysis"]["sync_offset_ms"] == 0
         assert state["project"]["analysis"]["events"] == []
         assert len(state["project"]["analysis"]["shots"]) == 3
-        assert all(shot["score"] is None for shot in state["project"]["analysis"]["shots"])
+        assert all(shot["score"]["letter"] == "A" for shot in state["project"]["analysis"]["shots"])
         assert state["project"]["overlay"]["position"] == "top"
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_text"] == ""
@@ -425,7 +501,7 @@ def test_browser_primary_replacement_preserves_reusable_settings_and_clears_vide
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
         assert state["project"]["scoring"]["penalties"] == 0.0
         assert state["project"]["scoring"]["penalty_counts"] == {}
-        assert state["project"]["scoring"]["hit_factor"] == 0.0
+        assert state["project"]["scoring"]["hit_factor"] > 0.0
         assert state["project"]["secondary_video"] is None
         assert state["project"]["merge_sources"] == []
         assert state["project"]["merge"]["enabled"] is False
@@ -449,7 +525,7 @@ def test_browser_primary_replacement_preserves_reusable_settings_and_clears_vide
 def test_browser_control_api_imports_practiscore_results() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "examples"
+    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "USPSA"
     try:
         server.start_background(open_browser=False)
 
@@ -482,6 +558,13 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
         assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
         assert state["project"]["scoring"]["imported_stage"]["aggregate_points"] == 101.0
+        assert state["practiscore_options"]["source_name"] == "report.txt"
+        assert state["practiscore_options"]["detected_match_type"] == "uspsa"
+        assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4, 5, 6]
+        assert any(
+            option == {"name": "Stephen Lutman", "place": 1}
+            for option in state["practiscore_options"]["competitors"]
+        )
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
         assert state["scoring_summary"]["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
@@ -494,7 +577,7 @@ def test_browser_control_api_imports_practiscore_results() -> None:
 def test_browser_control_api_infers_practiscore_results_without_manual_context() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "examples"
+    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "USPSA"
     try:
         server.start_background(open_browser=False)
 
@@ -533,8 +616,50 @@ def test_browser_control_api_infers_practiscore_results_without_manual_context()
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
         assert state["project"]["scoring"]["imported_stage"]["competitor_name"] == "Ben Rice"
         assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Stage 1 Swangin’"
+        assert state["practiscore_options"]["source_name"] == "report.txt"
+        assert state["practiscore_options"]["detected_match_type"] == "uspsa"
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_reimports_practiscore_from_staged_file_when_context_changes() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "IDPA"
+    try:
+        server.start_background(open_browser=False)
+
+        state = _post_multipart(
+            f"{server.url}api/files/practiscore",
+            "file",
+            "IDPA.csv",
+            (examples_dir / "IDPA.csv").read_bytes(),
+        )
+
+        assert state["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
+        assert state["practiscore_options"]["source_name"] == "IDPA.csv"
+        assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
+
+        state = _post_json(
+            f"{server.url}api/project/practiscore",
+            {
+                "match_type": "idpa",
+                "stage_number": 2,
+                "competitor_name": "John Klockenkemper",
+                "competitor_place": 4,
+            },
+        )
+
+        assert state["project"]["scoring"]["match_type"] == "idpa"
+        assert state["project"]["scoring"]["stage_number"] == 2
+        assert state["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
+        assert state["project"]["scoring"]["competitor_place"] == 4
+        assert state["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
+        assert state["project"]["scoring"]["imported_stage"]["stage_number"] == 2
+        assert state["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
+        assert state["project"]["scoring"]["imported_stage"]["competitor_place"] == 4
     finally:
         server.shutdown()
 
@@ -655,13 +780,13 @@ def test_browser_file_picker_endpoint_imports_selected_primary_video(synthetic_v
         server.shutdown()
 
 
-def test_browser_file_picker_upload_preserves_trailing_bytes(monkeypatch) -> None:
+def test_browser_file_picker_import_preserves_trailing_bytes(monkeypatch) -> None:
     controller = ProjectController()
     captured: dict[str, bytes] = {}
 
     def fake_ingest(path: str) -> None:
         captured["bytes"] = Path(path).read_bytes()
-        controller.status_message = "Uploaded primary video."
+        controller.status_message = "Imported primary video."
 
     monkeypatch.setattr(controller, "ingest_primary_video", fake_ingest)
     server = BrowserControlServer(controller=controller, port=0)
@@ -867,7 +992,7 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
 
         cleared = _post_json(f"{server.url}api/project/new", {})
         assert cleared["media"]["primary_available"] is False
-        assert cleared["media"]["primary_display_name"] == "No video selected"
+        assert cleared["media"]["primary_display_name"] == "No Video Selected"
 
         reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path / "project.json")})
         assert reopened["project"]["path"] == str(project_path)
@@ -878,7 +1003,7 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         server.shutdown()
 
 
-def test_browser_project_save_bundles_uploaded_media_for_reopen(synthetic_video_factory, tmp_path: Path) -> None:
+def test_browser_project_save_bundles_imported_media_for_reopen(synthetic_video_factory, tmp_path: Path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -969,6 +1094,81 @@ def test_browser_state_marks_missing_project_media_unavailable(tmp_path: Path) -
     assert payload["media"]["primary_url"] is None
 
 
+def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, tmp_path: Path) -> None:
+    controller = ProjectController()
+    source_path = tmp_path / "Stage1.MP4"
+    source_path.write_bytes(b"source-media")
+    ffprobe_calls: list[Path] = []
+    ffmpeg_calls: list[list[str]] = []
+
+    def fake_ingest(path: str) -> None:
+        controller.project.primary_video.path = path
+        controller.project.primary_video.width = 1920
+        controller.project.primary_video.height = 1080
+        controller.project.primary_video.duration_ms = 31_425
+        controller.status_message = "Primary analysis complete."
+
+    def fake_ffprobe(path: Path) -> dict:
+        ffprobe_calls.append(path)
+        return {
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "pcm_s16le"},
+            ],
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+        }
+
+    def fake_ffmpeg(command: list[str]) -> None:
+        ffmpeg_calls.append(command)
+        Path(command[-1]).write_bytes(b"browser-preview")
+
+    monkeypatch.setattr(controller, "ingest_primary_video", fake_ingest)
+    monkeypatch.setattr(browser_server_module, "run_ffprobe_json", fake_ffprobe)
+    monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(source_path)})
+
+        assert state["media"]["primary_available"] is True
+        assert state["status"] == "Primary analysis complete."
+        assert len(ffprobe_calls) == 1
+        assert len(ffmpeg_calls) == 1
+        assert ["-c:a", "aac"] == ffmpeg_calls[0][8:10]
+
+        with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
+            assert response.read() == b"browser-preview"
+
+        with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
+            assert response.read() == b"browser-preview"
+
+        assert len(ffprobe_calls) == 1
+        assert len(ffmpeg_calls) == 1
+        log_text = server.activity.path.read_text(encoding="utf-8")
+        assert "media.compatibility.created" in log_text
+    finally:
+        server.shutdown()
+
+
+def test_browser_media_cache_token_changes_when_same_primary_path_is_reimported(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory())
+
+        first_state = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        second_state = _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+
+        assert first_state["media"]["primary_url"] == "/media/primary"
+        assert first_state["media"]["cache_token"]
+        assert second_state["media"]["cache_token"]
+        assert second_state["media"]["cache_token"] != first_state["media"]["cache_token"]
+    finally:
+        server.shutdown()
+
+
 def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -990,7 +1190,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
                         "opacity": 0.55,
                     }
                 },
-                "scoring_colors": {"A": "#00ff00"},
+                "scoring_colors": {"A": "#00ff00", "PE": "#112233"},
                 "style_type": "rounded",
                 "spacing": 6,
                 "margin": 4,
@@ -1030,6 +1230,7 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["overlay"]["timer_badge"]["text_color"] == "#abcdef"
         assert state["project"]["overlay"]["timer_badge"]["opacity"] == 0.55
         assert state["project"]["overlay"]["scoring_colors"]["A"] == "#00ff00"
+        assert state["project"]["overlay"]["scoring_colors"]["PE"] == "#112233"
         assert state["project"]["overlay"]["style_type"] == "rounded"
         assert state["project"]["overlay"]["spacing"] == 6
         assert state["project"]["overlay"]["margin"] == 4
@@ -1063,6 +1264,8 @@ def test_browser_control_api_updates_overlay_styles_and_scoring_preset(synthetic
         assert state["project"]["scoring"]["ruleset"] == "uspsa_major"
         assert state["project"]["scoring"]["point_map"]["C"] == 4
         assert "penalty_fields" in state["scoring_summary"]
+        assert any(item["key"] == "PE" for item in state["scoring_summary"]["scoring_color_options"])
+        assert not any("|" in item["key"] for item in state["scoring_summary"]["scoring_color_options"])
 
         state = _post_json(
             f"{server.url}api/scoring",

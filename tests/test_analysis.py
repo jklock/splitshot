@@ -22,7 +22,7 @@ from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_
 from splitshot.ui.controller import ProjectController
 
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
 
 
 def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
@@ -70,8 +70,37 @@ def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None
     assert average_split_ms(controller.project) is not None
     assert rows[0].split_ms is not None
     assert abs(rows[0].split_ms - draw_time_ms(controller.project)) <= 60
+    assert rows[0].row_type == "interval"
+    assert rows[0].label == "Start -> Shot 1"
+    assert rows[0].actions[0].label == "Draw"
     assert rows[1].split_ms is not None
     assert abs(rows[1].split_ms - 300) <= 60
+
+
+def test_timing_events_attach_to_the_interval_without_zeroing_the_shot_split() -> None:
+    controller = ProjectController()
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [
+        ShotEvent(time_ms=250),
+        ShotEvent(time_ms=480),
+        ShotEvent(time_ms=720),
+    ]
+    controller.add_timing_event(
+        "reload",
+        after_shot_id=controller.project.analysis.shots[0].id,
+        before_shot_id=controller.project.analysis.shots[1].id,
+    )
+
+    rows = compute_split_rows(controller.project)
+
+    assert [row.label for row in rows] == [
+        "Start -> Shot 1",
+        "Shot 1 -> Shot 2",
+        "Shot 2 -> Shot 3",
+    ]
+    assert rows[1].split_ms == 230
+    assert [action.label for action in rows[1].actions] == ["Reload"]
+    assert rows[2].split_ms == 240
 
 
 def test_primary_ingest_runs_detection_automatically(synthetic_video_factory) -> None:
@@ -167,13 +196,15 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     assert controller.project.analysis.sync_offset_ms == 0
     assert controller.project.analysis.events == []
     assert len(controller.project.analysis.shots) == 3
-    assert all(shot.score is None for shot in controller.project.analysis.shots)
+    assert all(shot.score is not None for shot in controller.project.analysis.shots)
+    assert all(shot.score.letter == ScoreLetter.A for shot in controller.project.analysis.shots)
     assert controller.project.scoring.enabled is True
     assert controller.project.scoring.ruleset == "uspsa_major"
     assert controller.project.scoring.point_map[ScoreLetter.C.value] == 4
     assert controller.project.scoring.penalties == 0.0
     assert controller.project.scoring.penalty_counts == {}
-    assert controller.project.scoring.hit_factor == 0.0
+    assert controller.project.scoring.hit_factor is not None
+    assert controller.project.scoring.hit_factor > 0.0
     assert controller.project.overlay.position == OverlayPosition.TOP
     assert controller.project.overlay.custom_box_enabled is True
     assert controller.project.overlay.custom_box_mode == "imported_summary"
@@ -198,6 +229,45 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
     assert controller.project.ui_state.timeline_offset_ms == 0
 
 
+def test_new_shots_default_to_active_preset_score_letter() -> None:
+    controller = ProjectController()
+
+    controller.add_shot(1200)
+    assert controller.project.analysis.shots[-1].score is not None
+    assert controller.project.analysis.shots[-1].score.letter == ScoreLetter.A
+
+    controller.set_scoring_preset("idpa_time_plus")
+    controller.add_shot(1600)
+    assert controller.project.analysis.shots[-1].score is not None
+    assert controller.project.analysis.shots[-1].score.letter == ScoreLetter.DOWN_0
+
+
+def test_switching_match_type_normalizes_existing_shot_scores_to_sport_default() -> None:
+    controller = ProjectController()
+
+    controller.add_shot(1200)
+    assert controller.project.analysis.shots[-1].score is not None
+    assert controller.project.analysis.shots[-1].score.letter == ScoreLetter.A
+
+    controller.set_practiscore_context(match_type="idpa")
+
+    assert controller.project.scoring.ruleset == "idpa_time_plus"
+    assert controller.project.analysis.shots[-1].score is not None
+    assert controller.project.analysis.shots[-1].score.letter == ScoreLetter.DOWN_0
+
+
+def test_primary_analysis_uses_active_sport_default_score_letter(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(match_type="idpa")
+
+    controller.ingest_primary_video(str(synthetic_video_factory()))
+
+    assert controller.project.scoring.ruleset == "idpa_time_plus"
+    assert controller.project.analysis.shots
+    assert all(shot.score is not None for shot in controller.project.analysis.shots)
+    assert all(shot.score.letter == ScoreLetter.DOWN_0 for shot in controller.project.analysis.shots)
+
+
 def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthetic_video_factory) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
@@ -206,7 +276,7 @@ def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthet
         competitor_name="John Klockenkemper",
         competitor_place=4,
     )
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
 
     first_primary = synthetic_video_factory(name="stage-two-first", beep_ms=400)
     second_primary = synthetic_video_factory(name="stage-two-second", beep_ms=500)
@@ -220,6 +290,53 @@ def test_primary_replacement_keeps_imported_stage_scoring_for_same_stage(synthet
     assert controller.project.scoring.penalty_counts == {"non_threats": 1.0}
     assert controller.project.scoring.penalties == 0.0
     assert controller.project.scoring.ruleset == "idpa_time_plus"
+
+
+def test_primary_replacement_keeps_staged_practiscore_source_for_stage_switch(synthetic_video_factory) -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+
+    first_primary = synthetic_video_factory(name="stage-two-first", beep_ms=400)
+    second_primary = synthetic_video_factory(name="stage-three-second", beep_ms=500)
+
+    controller.ingest_primary_video(str(first_primary))
+    controller.ingest_primary_video(str(second_primary))
+    controller.set_practiscore_context(stage_number=3)
+
+    assert controller.practiscore_browser_state()["source_name"] == "IDPA.csv"
+    assert controller.project.scoring.imported_stage is not None
+    assert controller.project.scoring.imported_stage.stage_number == 3
+
+
+def test_open_project_restores_practiscore_source_for_stage_switch(tmp_path: Path) -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
+
+    project_path = tmp_path / "stage-browser.ssproj"
+    controller.save_project(str(project_path))
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+    reopened.set_practiscore_context(stage_number=3)
+
+    browser_state = reopened.practiscore_browser_state()
+    assert browser_state["has_source"] is True
+    assert browser_state["source_name"] == "IDPA.csv"
+    assert browser_state["stage_numbers"] == [1, 2, 3, 4]
+    assert reopened.project.scoring.imported_stage is not None
+    assert reopened.project.scoring.imported_stage.stage_number == 3
 
 
 def test_delete_timing_event_removes_matching_event() -> None:
@@ -246,7 +363,7 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
     assert controller.project.overlay.custom_box_enabled is False
     assert controller.project.overlay.custom_box_mode == "manual"
 
-    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA.csv"), source_name="IDPA.csv")
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
 
     assert controller.project.overlay.custom_box_enabled is True
     assert controller.project.overlay.custom_box_mode == "imported_summary"

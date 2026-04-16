@@ -3,12 +3,13 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog
 
+from splitshot.domain.models import ScoreLetter
 from splitshot.ui.controller import ProjectController
 from splitshot.ui.main_window import MainWindow
 from splitshot.ui.widgets.dashboard import SplitCard
 
 
-def test_main_window_switches_from_upload_to_review_after_primary_ingest(qtbot, synthetic_video_factory) -> None:
+def test_main_window_switches_from_media_selection_to_review_after_primary_ingest(qtbot, synthetic_video_factory) -> None:
     controller = ProjectController()
     window = MainWindow(controller)
     qtbot.addWidget(window)
@@ -75,3 +76,40 @@ def test_main_window_opens_project_bundle_via_file_picker(qtbot, monkeypatch, tm
 
     assert opened_paths == [str(project_file)]
     assert selected_sections == ["manage"]
+
+
+def test_main_window_surfaces_runtime_validation_checks(qtbot, monkeypatch) -> None:
+    controller = ProjectController()
+    monkeypatch.setattr("splitshot.ui.main_window.resolve_media_binary", lambda tool: f"/opt/{tool}")
+
+    window = MainWindow(controller)
+    qtbot.addWidget(window)
+    window.show()
+    window.refresh_ui()
+
+    assert window.section_buttons["upload"].text() == "Media"
+    assert window.validation_ffmpeg_label.text() == "/opt/ffmpeg"
+    assert window.validation_ffprobe_label.text() == "/opt/ffprobe"
+    assert window.validation_browser_assets_label.text() == "Ready"
+    assert "No local media selected yet." == window.validation_media_label.text()
+
+
+def test_main_window_uses_audio_outputs_for_both_video_players(qtbot) -> None:
+    controller = ProjectController()
+    window = MainWindow(controller)
+    qtbot.addWidget(window)
+
+    assert window.primary_player.audioOutput() is window.primary_audio
+    assert window.secondary_player.audioOutput() is window.secondary_audio
+
+
+def test_main_window_score_picker_defaults_to_active_preset(qtbot) -> None:
+    controller = ProjectController()
+    controller.set_scoring_preset("idpa_time_plus")
+    controller.add_shot(1200)
+
+    window = MainWindow(controller)
+    qtbot.addWidget(window)
+    window.refresh_ui()
+
+    assert window.score_letter.currentData() == ScoreLetter.DOWN_0

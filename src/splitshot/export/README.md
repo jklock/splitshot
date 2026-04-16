@@ -1,6 +1,6 @@
 # Export
 
-The export package turns a project into a rendered video file with overlays, merge layouts, aspect-ratio cropping, and FFmpeg encoding.
+The export package turns a project into a rendered local video file with overlays, merge layouts, aspect-ratio cropping, and FFmpeg encoding.
 
 ## Files
 
@@ -33,7 +33,7 @@ The export package turns a project into a rendered video file with overlays, mer
 - Merge export uses `calculate_merge_canvas` to determine layout geometry.
 - Still-image merge sources are looped so they can participate in video export.
 - Two-pass encoding is supported and uses a temporary pass log directory.
-- The final export log is stored on `project.export.last_log` and the last error on `project.export.last_error`.
+- The final export log is stored on `project.export.last_log`, the last error on `project.export.last_error`, and browser mode can stream incremental progress and log lines through the activity logger while export is running.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

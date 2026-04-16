@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import resources
+
 from PySide6.QtCore import QUrl, Qt, QTimer
 from PySide6.QtGui import QAction
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -37,7 +39,9 @@ from splitshot.domain.models import (
     ScoreLetter,
 )
 from splitshot.export.pipeline import export_project
+from splitshot.media.ffmpeg import resolve_media_binary
 from splitshot.merge.layouts import calculate_merge_canvas
+from splitshot.scoring.logic import default_score_letter_for_ruleset
 from splitshot.presentation.stage import build_stage_presentation, format_seconds_short
 from splitshot.ui.controller import ProjectController
 from splitshot.ui.widgets.dashboard import (
@@ -66,7 +70,7 @@ SECTION_IDS = [
 
 SECTION_LABELS = {
     "manage": "Manage",
-    "upload": "Upload",
+    "upload": "Media",
     "merge": "Merge",
     "overlay": "Overlay",
     "scoring": "Scoring",
@@ -151,8 +155,10 @@ class MainWindow(QMainWindow):
         self.primary_player = QMediaPlayer(self)
         self.primary_player.setAudioOutput(self.primary_audio)
 
+        self.secondary_audio = QAudioOutput(self)
+        self.secondary_audio.setVolume(0.9)
         self.secondary_player = QMediaPlayer(self)
-        self.secondary_player.setAudioOutput(None)
+        self.secondary_player.setAudioOutput(self.secondary_audio)
 
         self.preview = PreviewContainer(controller)
         self.preview.setMinimumHeight(420)
@@ -192,18 +198,18 @@ class MainWindow(QMainWindow):
 
         self.project_title_label = QLabel("Untitled Project")
         self.project_title_label.setObjectName("projectTitle")
-        self.project_detail_label = QLabel("Local-first stage review")
+        self.project_detail_label = QLabel("Desktop validation for local media, merge, and export tooling")
         self.project_detail_label.setObjectName("projectDetail")
 
-        self.draw_card = StatCard("Draw Time", "--.--", "Upload a stage video to begin.")
+        self.draw_card = StatCard("Draw Time", "--.--", "Select a stage video to begin validation.")
         self.stage_card = StatCard("Raw Time", "--.--", "Beep to final shot, matching score Raw.")
         self.shot_count_card = StatCard("Total Shots", "0", "Automatic detections appear here.")
         self.average_split_card = StatCard("Avg Split", "--.--", "Average split after the draw.")
 
         self.empty_upload = UploadDropZone(
-            "Upload a stage video",
-            "SplitShot will probe the file, detect the timer beep, find shots, and open the waveform editor automatically.",
-            "Choose primary video",
+            "Select a stage video for validation",
+            "This desktop window verifies local file dialogs, media loading, waveform editing, sync, and export behavior against the shared controller.",
+            "Select primary video",
         )
         self.empty_upload.upload_requested.connect(self._load_primary_video)
         self.empty_upload.file_dropped.connect(self._ingest_primary_video)
@@ -212,18 +218,18 @@ class MainWindow(QMainWindow):
         self.split_cards.setMinimumHeight(340)
         self.split_cards.shot_selected.connect(self.controller.select_shot)
 
-        self.preview_card = SectionCard("Stage Review", "A large, playback-ready canvas for the current angle.")
+        self.preview_card = SectionCard("Validation Preview", "Playback-ready preview for the currently selected local media.")
         self.waveform_card = SectionCard(
-            "Interactive Waveform Editor",
+            "Waveform Validation",
             "Click to add shot | Drag to move | Right-click to delete | Shift+Click the beep to move",
         )
         self.secondary_waveform_card = SectionCard(
-            "Secondary Sync Waveform",
-            "Review the secondary angle alignment after automatic beep-based sync.",
+            "Secondary Sync Validation",
+            "Inspect the added-angle alignment after automatic beep-based sync.",
         )
         self.splits_card = SectionCard(
             "Split Times",
-            "Click a split card to select a shot for scoring or manual review.",
+            "Click a split card to validate shot selection, scoring, and manual review behavior.",
         )
 
         self.threshold_slider = QSlider(Qt.Horizontal)
@@ -310,11 +316,11 @@ class MainWindow(QMainWindow):
         self.restore_defaults_button = QPushButton("Restore defaults")
         self.restore_defaults_button.clicked.connect(self.controller.restore_defaults)
 
-        self.primary_upload_button = QPushButton("Upload primary video")
+        self.primary_upload_button = QPushButton("Select primary video")
         self.primary_upload_button.setProperty("primary", True)
         self.primary_upload_button.clicked.connect(self._load_primary_video)
 
-        self.secondary_upload_button = QPushButton("Add second angle")
+        self.secondary_upload_button = QPushButton("Add local angle")
         self.secondary_upload_button.clicked.connect(self._load_secondary_video)
 
         self.rerun_primary_button = QPushButton("Re-run primary analysis")
@@ -350,7 +356,7 @@ class MainWindow(QMainWindow):
         self.manage_path_label.setObjectName("panelInfo")
         self.manage_dirty_label = QLabel("No unsaved changes")
         self.manage_dirty_label.setObjectName("panelInfo")
-        self.manage_sync_label = QLabel("Upload a second angle to enable merge review.")
+        self.manage_sync_label = QLabel("Add a local angle to enable merge review.")
         self.manage_sync_label.setObjectName("panelInfo")
         self.upload_summary_label = QLabel("")
         self.upload_summary_label.setObjectName("panelInfo")
@@ -360,8 +366,18 @@ class MainWindow(QMainWindow):
         self.scoring_target_label.setObjectName("panelInfo")
         self.layout_summary_label = QLabel("Original framing.")
         self.layout_summary_label.setObjectName("panelInfo")
-        self.export_summary_label = QLabel("H.264 MP4 export with overlays and scoring.")
+        self.export_summary_label = QLabel("Local H.264 MP4 validation with overlays and scoring.")
         self.export_summary_label.setObjectName("panelInfo")
+        self.validation_ffmpeg_label = QLabel("")
+        self.validation_ffmpeg_label.setObjectName("panelInfo")
+        self.validation_ffprobe_label = QLabel("")
+        self.validation_ffprobe_label.setObjectName("panelInfo")
+        self.validation_browser_assets_label = QLabel("")
+        self.validation_browser_assets_label.setObjectName("panelInfo")
+        self.validation_dialog_label = QLabel("Native file dialogs validate local path handling on this platform.")
+        self.validation_dialog_label.setObjectName("panelInfo")
+        self.validation_media_label = QLabel("")
+        self.validation_media_label.setObjectName("panelInfo")
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -384,7 +400,7 @@ class MainWindow(QMainWindow):
         brand = QLabel("SplitShot")
         brand.setObjectName("brandLabel")
 
-        sublabel = QLabel("Local shot review")
+        sublabel = QLabel("Desktop validation surface")
         sublabel.setObjectName("brandSubLabel")
 
         self.section_group = QButtonGroup(self)
@@ -447,15 +463,15 @@ class MainWindow(QMainWindow):
         layout.setSpacing(18)
 
         intro = SectionCard(
-            "Automatic stage analysis",
-            "Upload once and SplitShot immediately detects the timer beep, shot events, and split timing for review.",
+            "Local validation workflow",
+            "Select local media and SplitShot immediately validates timer detection, shot analysis, waveform editing, and preview rendering.",
         )
         intro.content_layout.addWidget(self.empty_upload)
         layout.addWidget(intro)
 
         tips = SectionCard(
-            "What happens next",
-            "The loaded review screen opens automatically with playback, waveform editing, split cards, merge tools, overlays, scoring, and export controls.",
+            "What this surface validates",
+            "The loaded review screen exercises playback, waveform editing, split cards, merge tools, overlays, scoring, export, and file dialogs against the shared controller.",
         )
         layout.addWidget(tips)
         layout.addStretch(1)
@@ -566,6 +582,20 @@ class MainWindow(QMainWindow):
         details_card.content_layout.addLayout(details_form)
         layout.addWidget(details_card)
 
+        validation_card = SectionCard(
+            "Runtime Checks",
+            "Quick verification for toolchain binaries, browser assets, native dialogs, and local media loading.",
+        )
+        validation_form = QFormLayout()
+        validation_form.setContentsMargins(0, 0, 0, 0)
+        validation_form.addRow("FFmpeg", self.validation_ffmpeg_label)
+        validation_form.addRow("FFprobe", self.validation_ffprobe_label)
+        validation_form.addRow("Browser assets", self.validation_browser_assets_label)
+        validation_form.addRow("Dialogs", self.validation_dialog_label)
+        validation_form.addRow("Media", self.validation_media_label)
+        validation_card.content_layout.addLayout(validation_form)
+        layout.addWidget(validation_card)
+
         recent_card = SectionCard("Recent Projects", "Jump back into a recent local save.")
         recent_card.content_layout.addWidget(self.recent_projects_combo)
         layout.addWidget(recent_card)
@@ -579,8 +609,8 @@ class MainWindow(QMainWindow):
         layout.setSpacing(16)
 
         ingest_card = SectionCard(
-            "Upload And Analyze",
-            "Primary upload starts automatic analysis. Secondary upload auto-syncs against the primary beep.",
+            "Select And Analyze",
+            "Selecting primary media starts automatic analysis. Added local angles auto-sync against the primary beep.",
         )
         ingest_card.content_layout.addWidget(self.primary_upload_button)
         ingest_card.content_layout.addWidget(self.secondary_upload_button)
@@ -605,7 +635,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        merge_card = SectionCard("Dual-Angle Merge", "Automatic sync uses detected beeps and stays editable in milliseconds.")
+        merge_card = SectionCard("Dual-Angle Validation", "Automatic sync uses detected beeps and stays editable in milliseconds.")
         merge_form = QFormLayout()
         merge_form.setContentsMargins(0, 0, 0, 0)
         merge_form.addRow(self.merge_enabled)
@@ -633,7 +663,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        overlay_card = SectionCard("Shot Stream Overlay", "Badge styling and placement apply to preview and export.")
+        overlay_card = SectionCard("Overlay Validation", "Badge styling and placement apply to preview and export.")
         overlay_form = QFormLayout()
         overlay_form.setContentsMargins(0, 0, 0, 0)
         overlay_form.addRow("Position", self.overlay_position)
@@ -653,7 +683,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        scoring_card = SectionCard("Scoring", "Assign score letters, penalties, and animated placement from the loaded review.")
+        scoring_card = SectionCard("Scoring Validation", "Assign score letters, penalties, and animated placement from the loaded review.")
         scoring_form = QFormLayout()
         scoring_form.setContentsMargins(0, 0, 0, 0)
         scoring_form.addRow(self.scoring_enabled)
@@ -704,7 +734,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(16)
 
-        export_card = SectionCard("Export MP4", "Local H.264 export keeps overlays, scoring, and selected layout settings.")
+        export_card = SectionCard("Export Validation", "Local FFmpeg export keeps overlays, scoring, and selected layout settings.")
         export_form = QFormLayout()
         export_form.setContentsMargins(0, 0, 0, 0)
         export_form.addRow("Quality", self.export_quality)
@@ -736,10 +766,10 @@ class MainWindow(QMainWindow):
             project_menu.addAction(action)
 
         ingest_menu = menu.addMenu("Analyze")
-        primary_action = QAction("Upload Primary And Analyze", self)
+        primary_action = QAction("Select Primary And Analyze", self)
         primary_action.triggered.connect(self._load_primary_video)
         ingest_menu.addAction(primary_action)
-        secondary_action = QAction("Upload Secondary And Sync", self)
+        secondary_action = QAction("Add Local Angle And Sync", self)
         secondary_action.triggered.connect(self._load_secondary_video)
         ingest_menu.addAction(secondary_action)
         rerun_primary_action = QAction("Re-run Primary Analysis", self)
@@ -822,12 +852,13 @@ class MainWindow(QMainWindow):
             (shot for shot in project.analysis.shots if shot.id == project.ui_state.selected_shot_id),
             None,
         )
+        default_score = default_score_letter_for_ruleset(project.scoring.ruleset)
+        selected_letter = default_score if selected_shot is None or selected_shot.score is None else selected_shot.score.letter
         self.score_letter.blockSignals(True)
-        self.score_letter.setCurrentIndex(
-            self.score_letter.findData(
-                ScoreLetter.A if selected_shot is None or selected_shot.score is None else selected_shot.score.letter
-            )
-        )
+        score_index = self.score_letter.findData(selected_letter)
+        if score_index < 0:
+            score_index = self.score_letter.findData(default_score)
+        self.score_letter.setCurrentIndex(max(0, score_index))
         self.score_letter.blockSignals(False)
 
         self._sync_badge_style_controls()
@@ -842,6 +873,20 @@ class MainWindow(QMainWindow):
         self._update_enablement()
         self.preview.overlay.set_state(project, self.primary_player.position())
         self.preview.update()
+
+    def _tool_runtime_text(self, tool: str) -> str:
+        try:
+            return str(resolve_media_binary(tool))
+        except Exception as error:  # noqa: BLE001
+            return f"Unavailable: {error}"
+
+    def _browser_assets_status_text(self) -> str:
+        try:
+            static_root = resources.files("splitshot.browser.static")
+            required = [static_root / asset for asset in ("index.html", "styles.css", "app.js")]
+            return "Ready" if all(asset.is_file() for asset in required) else "Missing packaged asset"
+        except Exception as error:  # noqa: BLE001
+            return f"Unavailable: {error}"
 
     def _update_media_sources(self) -> None:
         project = self.controller.project
@@ -893,7 +938,7 @@ class MainWindow(QMainWindow):
             "Average split after the draw." if metrics.average_split_ms is not None else "Average split needs multiple shots.",
         )
 
-        merge_meta = "Single angle review"
+        merge_meta = "Single angle validation"
         if project.secondary_video is not None:
             merge_meta = f"Dual angle sync {project.analysis.sync_offset_ms:+d} ms"
         self.preview_card.set_meta_text(merge_meta)
@@ -966,16 +1011,22 @@ class MainWindow(QMainWindow):
             "Unsaved changes" if self.controller.has_unsaved_changes() else "Saved to disk or unchanged"
         )
         self.manage_sync_label.setText(
-            "Waiting for a second angle."
+            "Waiting for an added angle."
             if not has_secondary
             else f"Automatic offset {project.analysis.sync_offset_ms:+d} ms."
         )
 
         self.upload_summary_label.setText(self.controller.status_message)
         self.merge_summary_label.setText(
-            "Upload a second angle to unlock automatic sync."
+            "Add a local angle to unlock automatic sync."
             if not has_secondary
             else f"Primary beep {project.analysis.beep_time_ms_primary} ms | Secondary beep {project.analysis.beep_time_ms_secondary} ms | Offset {project.analysis.sync_offset_ms:+d} ms"
+        )
+        self.validation_ffmpeg_label.setText(self._tool_runtime_text("ffmpeg"))
+        self.validation_ffprobe_label.setText(self._tool_runtime_text("ffprobe"))
+        self.validation_browser_assets_label.setText(self._browser_assets_status_text())
+        self.validation_media_label.setText(
+            f"Primary {project.primary_video.path}" if has_primary else "No local media selected yet."
         )
 
         selected_shot = next(
@@ -994,7 +1045,7 @@ class MainWindow(QMainWindow):
             f"Aspect {aspect} | Crop {int(project.export.crop_center_x * 100)}% x, {int(project.export.crop_center_y * 100)}% y"
         )
         self.export_summary_label.setText(
-            f"{project.export.quality.value.title()} quality H.264 MP4 with overlay position {project.overlay.position.value}."
+            f"{project.export.quality.value.title()} quality H.264 MP4 validation with overlay position {project.overlay.position.value}."
         )
 
         self.current_time_label.setText(format_time_ms(self.primary_player.position()))
@@ -1207,12 +1258,12 @@ class MainWindow(QMainWindow):
         self.controller.project_changed.emit()
 
     def _load_primary_video(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open Primary Video")
+        path, _ = QFileDialog.getOpenFileName(self, "Select Primary Video")
         if path:
             self._ingest_primary_video(path)
 
     def _load_secondary_video(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Open Secondary Video")
+        path, _ = QFileDialog.getOpenFileName(self, "Select Added Angle")
         if path:
             self._ingest_secondary_video(path)
 
@@ -1222,7 +1273,7 @@ class MainWindow(QMainWindow):
 
     def _ingest_secondary_video(self, path: str) -> None:
         self._run_busy_task(
-            "Importing, analyzing, and syncing secondary video...",
+            "Importing, analyzing, and syncing added angle...",
             lambda: self.controller.ingest_secondary_video(path),
         )
         self._select_section("merge")
@@ -1352,7 +1403,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(
                     self,
                     "Videos already loaded",
-                    "This project already has a primary and secondary angle. Start a new project to load different files.",
+                    "This project already has a primary and added angle. Start a new project to validate different files.",
                 )
             event.acceptProposedAction()
             return

@@ -25,6 +25,20 @@ class PractiScoreContext:
 
 
 @dataclass(frozen=True, slots=True)
+class PractiScoreCompetitorOption:
+    name: str
+    place: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PractiScoreOptions:
+    source_name: str
+    match_type: str
+    stage_numbers: list[int]
+    competitors: list[PractiScoreCompetitorOption]
+
+
+@dataclass(frozen=True, slots=True)
 class _HitFactorReport:
     competitor_rows: list[dict[str, str]]
     stage_rows: dict[str, dict[str, str]]
@@ -52,6 +66,40 @@ def default_ruleset_for_match_type(match_type: str | None) -> str:
     if normalized == "idpa":
         return "idpa_time_plus"
     return f"{normalized}_minor"
+
+
+def describe_practiscore_file(path: str | Path, source_name: str | None = None) -> PractiScoreOptions:
+    results_path = Path(path)
+    normalized_match_type = _infer_match_type(results_path)
+    display_name = source_name or results_path.name
+
+    if normalized_match_type == "idpa":
+        rows = _load_idpa_rows(results_path)
+        return PractiScoreOptions(
+            source_name=display_name,
+            match_type=normalized_match_type,
+            stage_numbers=_idpa_stage_numbers(rows),
+            competitors=_competitor_options(
+                rows,
+                place_key="Place",
+                first_name_key="First Name",
+                last_name_key="Last Name",
+            ),
+        )
+
+    report = _load_hit_factor_report(results_path)
+    return PractiScoreOptions(
+        source_name=display_name,
+        match_type=normalized_match_type,
+        stage_numbers=_hit_factor_stage_numbers(report),
+        competitors=_competitor_options(
+            report.competitor_rows,
+            place_key="Place Overall",
+            first_name_key="FirstName",
+            last_name_key="LastName",
+            reentry_key="Reentry",
+        ),
+    )
 
 
 def infer_practiscore_context(
@@ -293,6 +341,23 @@ def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dic
     raise ValueError("No stage results were found in the PractiScore export.")
 
 
+def _hit_factor_stage_numbers(report: _HitFactorReport) -> list[int]:
+    stage_numbers = {
+        int(stage)
+        for stage in report.stage_rows.keys()
+        if _int_or_none(stage) is not None
+    }
+    stage_numbers.update(
+        int(stage)
+        for row in report.stage_results
+        if _int_or_none(row.get("Stage")) is not None
+        for stage in [row.get("Stage")]
+    )
+    if not stage_numbers:
+        raise ValueError("No stage results were found in the PractiScore export.")
+    return sorted(stage_numbers)
+
+
 def import_practiscore_stage(
     path: str | Path,
     match_type: str,
@@ -504,6 +569,48 @@ def _find_competitor_row(
         return non_reentries[0]
     raise ValueError(
         f"Found multiple results for {competitor_name}. Enter the competitor place to disambiguate."
+    )
+
+
+def _competitor_options(
+    rows: list[dict[str, str]],
+    *,
+    place_key: str,
+    first_name_key: str,
+    last_name_key: str,
+    reentry_key: str | None = None,
+) -> list[PractiScoreCompetitorOption]:
+    deduped_rows: dict[tuple[str, int | None], dict[str, str]] = {}
+    for row in rows:
+        name = _row_name(row, first_name_key, last_name_key)
+        if not name:
+            continue
+        place = _int_or_none(row.get(place_key))
+        key = (_normalize_name(name), place)
+        existing = deduped_rows.get(key)
+        if existing is None:
+            deduped_rows[key] = row
+            continue
+        if reentry_key is None:
+            continue
+        existing_reentry = str(existing.get(reentry_key, "No")).strip().lower() == "yes"
+        next_reentry = str(row.get(reentry_key, "No")).strip().lower() == "yes"
+        if existing_reentry and not next_reentry:
+            deduped_rows[key] = row
+
+    return sorted(
+        [
+            PractiScoreCompetitorOption(
+                name=_row_name(row, first_name_key, last_name_key),
+                place=_int_or_none(row.get(place_key)),
+            )
+            for row in deduped_rows.values()
+        ],
+        key=lambda option: (
+            option.place is None,
+            option.place or 0,
+            _normalize_name(option.name),
+        ),
     )
 
 

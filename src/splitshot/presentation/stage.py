@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from splitshot.domain.models import Project, ShotSource
-from splitshot.timeline.model import average_split_ms, draw_time_ms, raw_time_ms, sort_shots, split_reset_shot_ids
+from splitshot.timeline.model import average_split_ms, draw_time_ms, raw_time_ms, sort_shots
 from splitshot.utils.time import format_time_ms
 
 
@@ -59,7 +59,6 @@ class StagePresentation:
 
 def build_stage_presentation(project: Project) -> StagePresentation:
     shots = sort_shots(project.analysis.shots)
-    reset_ids = split_reset_shot_ids(project)
     beep_ms = project.analysis.beep_time_ms_primary
     raw_ms = raw_time_ms(project)
     metrics = StageMetrics(
@@ -78,9 +77,6 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         if index == 1:
             label = "Draw"
             segment_ms = None if beep_ms is None else shot.time_ms - beep_ms
-        elif shot.id in reset_ids:
-            label = f"Shot {index}"
-            segment_ms = 0
         else:
             label = f"Shot {index}"
             segment_ms = None if previous_time_ms is None else shot.time_ms - previous_time_ms

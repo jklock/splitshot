@@ -1,6 +1,6 @@
 # User Guide
 
-SplitShot is a local-first stage review tool. The browser interface is the default way to use it, and it walks through the whole flow from source video to export.
+SplitShot is a local-first stage review tool. The browser interface is the default way to use it, and it walks through the whole flow from source video to export. The desktop window remains available as a local validation surface for native dialogs, media loading, and toolchain checks.
 
 ## Normal Workflow
 
@@ -18,7 +18,7 @@ SplitShot is a local-first stage review tool. The browser interface is the defau
 The browser screen is split into four major parts:
 
 - The left rail contains the page buttons.
-- The top status strip shows draw time, raw time, shot count, and average split.
+- The top status bar always shows the current video name or `No Video Selected`.
 - The center review area shows playback, the waveform editor, and split cards.
 - The right inspector changes with the selected page.
 
@@ -29,12 +29,13 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 | Page | What it controls |
 | --- | --- |
 | Project | Project metadata, primary video, bundle path, save/open/new/delete |
+| Metrics | Derived timing and scoring summaries plus CSV and text export |
 | Splits | Detection threshold, shot timing, timing events, shot deletion, manual nudging |
 | Score | Scoring preset, score letters, penalties, and selected-shot scoring |
-| Overlay | Badge style, placement, custom review box, and score colors |
+| Overlay | Badge style, placement, overlay coordinates, and score colors |
 | Merge | Secondary media, merge layout, sync offset, and dual-angle swap |
-| Review | Preview-only overlay visibility and custom review box controls |
-| Export | Output framing, codecs, bitrate, audio, color, and final render |
+| Review | Preview-only overlay visibility plus repeatable imported-summary and custom text boxes |
+| Export | Output framing, codecs, bitrate, audio, shared text boxes, and final render |
 
 ## Project Page
 
@@ -43,7 +44,7 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 | Project name | Changes the saved project name |
 | Project description | Stores notes with the project bundle |
 | Primary Video | Shows the current primary video path |
-| Upload Primary Video | Opens a local file picker for the source stage video |
+| Select Primary Video | Opens a local file picker for the source stage video |
 | Project bundle path | Sets the `.ssproj` bundle directory |
 | Choose Project | Opens a native file picker for the bundle's `project.json` file and loads the project |
 | Save Project | Saves the current project bundle |
@@ -53,7 +54,7 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 
 Loading a new primary video immediately starts automatic analysis and resets media-bound state from the previous project.
 
-PractiScore import can start with the fields blank. When you choose a CSV or TXT results file, SplitShot will infer the match type, stage number, competitor name, and place from the file whenever it can, then fill the values back into the form after import.
+PractiScore import can start with the fields blank. After you choose a CSV or TXT results file, SplitShot stages that file locally, infers the match type, and fills dropdown suggestions for stage number, competitor name, and place. Changing those fields to another valid option from the same file automatically refreshes the imported stage.
 
 ## Splits Page
 
@@ -97,8 +98,8 @@ The available score letters and penalty fields change with the selected preset.
 | --- | --- |
 | Badge size | Changes the on-video badge size |
 | Badge style | Chooses square, bubble, or rounded bubble styling |
-| Spacing | Controls the space inside badges |
-| Margin | Controls the spacing between badges and frame edges |
+| Shot gap | Controls the spacing between badges in the live stack |
+| Frame padding | Controls the offset between the badge stack and the video frame edge |
 | Shots shown | Limits how many split badges stay visible |
 | Quadrant | Chooses where the badges begin |
 | Direction | Chooses the badge flow direction |
@@ -107,8 +108,18 @@ The available score letters and penalty fields change with the selected preset.
 | Font | Chooses the badge font family |
 | Font size | Sets the overlay font size |
 | Bold / Italic | Toggles the font style |
-| Custom Box Style | Controls the custom review box colors and opacity |
 | Score Colors | Controls the colors used for score letters |
+| Full | Opens the full video stage with overlays intact |
+
+## Metrics Page
+
+| Control | What it does |
+| --- | --- |
+| Summary cards | Shows draw, raw time, shots, average split, beep timing, and scoring result |
+| Trend snapshot | Shows timing segments, split progression, and confidence context |
+| Scoring context | Shows ruleset, penalties, raw time, and imported-stage context |
+| Export CSV | Downloads a flattened metrics table for spreadsheet review |
+| Export Text | Downloads a plain-text metrics summary for notes or trackers |
 
 ## Merge Page
 
@@ -133,12 +144,15 @@ If you add more than one merge item, the first item stays in the secondary previ
 | Show draw badge | Shows or hides the draw badge |
 | Show split badges | Shows or hides the split badges |
 | Show scoring summary | Shows or hides the final score or hit factor badge |
-| Custom review box | Turns the custom on-video review box on or off |
-| Custom box text | Sets the text shown in the custom box |
-| Box quadrant | Chooses the box anchor quadrant |
-| Box X / Box Y | Sets the box position when Custom is used |
-| Box width / Box height | Forces the custom box dimensions |
-| Background / Text / Opacity | Styles the custom box |
+| Add Custom Box | Adds a manual text box to the shared review/export overlay list |
+| Add Summary Box | Adds a PractiScore summary box that appears after the final shot |
+| Box enable toggle | Shows or hides an individual text box |
+| Content source | Chooses custom text or imported summary |
+| Box placement | Chooses the anchor quadrant or custom placement |
+| Box X / Box Y | Sets the box position when Custom placement is used |
+| Box width / Box height | Forces the text box dimensions |
+| Background / Text / Opacity | Styles the selected text box |
+| Duplicate / Remove | Copies or removes an individual text box |
 
 ## Export Page
 
@@ -148,20 +162,20 @@ If you add more than one merge item, the first item stays in the secondary previ
 | Quality | Chooses high, medium, or low quality |
 | Aspect ratio | Chooses original, 16:9, 9:16, 1:1, or 4:5 framing |
 | Crop center X / Y | Moves the crop window within the source frame |
-| Width / Height | Forces an output size |
+| Output Width / Output Height | Forces an output size |
 | Frame rate | Chooses source, 30 fps, or 60 fps |
 | Video codec | Chooses H.264 or HEVC |
-| Video bitrate Mbps | Sets the video bitrate |
+| Video bitrate (Mbps) | Sets the video bitrate |
 | Audio codec | Chooses the audio codec |
-| Audio kHz | Sets the audio sample rate |
+| Audio Sample Rate (Hz) | Sets the audio sample rate |
 | Audio kbps | Sets the audio bitrate |
 | Color | Chooses the export color space |
 | FFmpeg preset | Chooses the encoder speed/quality balance |
 | 2-pass | Enables two-pass encoding |
 | Output path | Sets the destination file path |
 | Browse | Opens a native save dialog for the output path |
+| Show Log | Opens the live export log modal while rendering is active |
 | Export Video | Starts the local export |
-| Export log | Shows the last FFmpeg command and output |
 
 The output file extension controls the container. Use `.mp4`, `.m4v`, `.mov`, or `.mkv`.
 
@@ -201,7 +215,7 @@ The waveform editor also switches between Select and Add Shot mode. Select mode 
 
 ## Desktop App
 
-SplitShot also includes a PySide6 desktop window. It uses the same project model and the same analysis and export pipeline, but the browser interface is the main documented workflow.
+SplitShot also includes a PySide6 desktop window. It uses the same project model and the same analysis and export pipeline, but it is intentionally framed as a local validation surface rather than the primary end-user workflow.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** n/a
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15
