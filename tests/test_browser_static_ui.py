@@ -162,7 +162,6 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="live-overlay"' in html
     assert 'id="custom-overlay"' in html
     assert 'id="score-layer"' in html
-    assert '<audio id="primary-audio" hidden preload="auto"></audio>' in html
     assert 'id="toggle-primary-audio"' not in html
     assert 'id="toggle-stage-fullscreen"' not in html
     assert 'id="timeline-strip"' not in html
@@ -468,15 +467,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function buildSplitRowActionCell(row, expandedTable) {' in js
     assert 'function maximumSplitRowActionLabelLength() {' in js
     assert 'const actionCell = buildSplitRowActionCell(row, expandedTable);' in js
-    assert 'const PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS = 18;' in js
-    assert 'const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS = 60;' in js
-    assert 'const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS = 750;' in js
-    assert 'function primaryAudioPreviewNeeded(video) {' in js
-    assert 'function mirrorPrimaryAudioPreviewState(video, audio) {' in js
-    assert 'function setMediaElementTime(media, targetTime) {' in js
-    assert 'function primaryAudioPreviewDriftMs(targetTime, audio) {' in js
-    assert 'function ensurePrimaryAudioPreview(video) {' in js
-    assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' in js
+    assert '/media/primary-audio' not in js
+    assert 'function primaryAudioPreviewNeeded(video) {' not in js
+    assert 'function ensurePrimaryAudioPreview(video) {' not in js
+    assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' not in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
@@ -676,7 +670,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'function bindOverlayColorInput(control) {' in js
     assert 'const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;' in js
     assert 'frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",' in js
-    assert 'syncPrimaryAudioPreview({ allowDriftCorrection: true });' in js
+    assert 'syncPrimaryAudioPreview({ allowDriftCorrection: true });' not in js
     assert 'if (overlayFrame !== null) return;' in js
 
 

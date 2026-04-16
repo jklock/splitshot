@@ -46,8 +46,6 @@ let exportLogLines = [];
 let activeColorPickerControl = null;
 let reviewStageRestoreFrame = null;
 let reviewStageRestoreSecondFrame = null;
-let primaryAudioPreviewPlayErrorKey = null;
-let primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
 let overlayBadgeMeasureCanvas = null;
 let overlayAutoBubbleCacheKey = null;
 let overlayAutoBubbleCache = { width: 0, height: 0 };
@@ -61,9 +59,6 @@ const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
-const PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS = 18;
-const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS = 60;
-const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS = 750;
 
 const $ = (id) => document.getElementById(id);
 
@@ -1982,9 +1977,7 @@ function resetLocalProjectView() {
   window.localStorage.removeItem("splitshot.waveform.zoomX");
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
   resetMediaElement($("primary-video"));
-  resetMediaElement($("primary-audio"));
   resetMediaElement($("secondary-video"));
-  primaryAudioPreviewPlayErrorKey = null;
   scoringShotExpansion.clear();
   const secondaryImage = $("secondary-image");
   if (secondaryImage) secondaryImage.hidden = true;
@@ -2175,112 +2168,6 @@ function ensurePrimaryVideoAudio(video) {
   video.defaultMuted = false;
   video.muted = false;
   video.volume = 1;
-}
-
-function primaryAudioPreviewNeeded(video) {
-  if (!(video instanceof HTMLVideoElement)) return false;
-  if (!state?.media?.primary_available || !state?.project?.primary_video?.path) return false;
-  return typeof video.mozHasAudio === "boolean" ? video.mozHasAudio === false : false;
-}
-
-function resetPrimaryAudioPreview() {
-  const audio = $("primary-audio");
-  if (!(audio instanceof HTMLAudioElement)) return;
-  primaryAudioPreviewPlayErrorKey = null;
-  primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
-  resetMediaElement(audio);
-}
-
-function mirrorPrimaryAudioPreviewState(video, audio) {
-  if (!(video instanceof HTMLVideoElement) || !(audio instanceof HTMLAudioElement)) return;
-  const playbackRate = Number.isFinite(video.playbackRate) ? video.playbackRate : 1;
-  const defaultPlaybackRate = Number.isFinite(video.defaultPlaybackRate) ? video.defaultPlaybackRate : playbackRate;
-  audio.playbackRate = playbackRate;
-  audio.defaultPlaybackRate = defaultPlaybackRate;
-  audio.defaultMuted = video.defaultMuted;
-  audio.muted = video.muted;
-  audio.volume = Number.isFinite(video.volume) ? video.volume : 1;
-}
-
-function setMediaElementTime(media, targetTime) {
-  if (!(media instanceof HTMLMediaElement) || !Number.isFinite(targetTime)) return;
-  const clampedTarget = Math.max(0, targetTime);
-  if (typeof media.fastSeek === "function") media.fastSeek(clampedTarget);
-  else media.currentTime = clampedTarget;
-}
-
-function primaryAudioPreviewDriftMs(targetTime, audio) {
-  if (!(audio instanceof HTMLAudioElement) || !Number.isFinite(targetTime)) return 0;
-  return Math.abs(((audio.currentTime || 0) - targetTime) * 1000);
-}
-
-function ensurePrimaryAudioPreview(video) {
-  const audio = $("primary-audio");
-  if (!(audio instanceof HTMLAudioElement)) return;
-  if (!primaryAudioPreviewNeeded(video)) {
-    resetPrimaryAudioPreview();
-    return;
-  }
-  const path = state?.project?.primary_video?.path || "";
-  const mediaUrl = buildMediaUrl("/media/primary-audio", path);
-  if (!mediaUrl) {
-    resetPrimaryAudioPreview();
-    return;
-  }
-  if (audio.dataset.sourcePath !== path || audio.dataset.mediaUrl !== mediaUrl) {
-    audio.dataset.sourcePath = path;
-    audio.dataset.mediaUrl = mediaUrl;
-    primaryAudioPreviewPlayErrorKey = null;
-    primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
-    audio.src = mediaUrl;
-    audio.load();
-  }
-  mirrorPrimaryAudioPreviewState(video, audio);
-}
-
-function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {
-  const video = $("primary-video");
-  const audio = $("primary-audio");
-  if (!(video instanceof HTMLVideoElement) || !(audio instanceof HTMLAudioElement)) return;
-  if (!audio.dataset.mediaUrl) {
-    if (primaryAudioPreviewNeeded(video)) ensurePrimaryAudioPreview(video);
-    else return;
-  }
-  if (!audio.dataset.mediaUrl) return;
-  ensurePrimaryAudioPreview(video);
-  const targetTime = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0;
-  const driftMs = primaryAudioPreviewDriftMs(targetTime, audio);
-  const nowMs = typeof performance !== "undefined" && typeof performance.now === "function"
-    ? performance.now()
-    : Date.now();
-  const shouldCorrectDrift = forceSeek
-    ? driftMs > PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS
-    : allowDriftCorrection
-      && driftMs > PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS
-      && (nowMs - primaryAudioPreviewLastCorrectionAtMs) >= PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS;
-  if (audio.readyState >= HTMLMediaElement.HAVE_METADATA && shouldCorrectDrift) {
-    try {
-      setMediaElementTime(audio, targetTime);
-      primaryAudioPreviewLastCorrectionAtMs = nowMs;
-    } catch {
-      // Ignore early metadata seek failures.
-    }
-  }
-  if (video.paused) {
-    if (!audio.paused) audio.pause();
-    return;
-  }
-  if (forceSeek && primaryAudioPreviewPlayErrorKey) primaryAudioPreviewPlayErrorKey = null;
-  if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || primaryAudioPreviewPlayErrorKey) return;
-  if (audio.paused) {
-    audio.play().catch((error) => {
-      primaryAudioPreviewPlayErrorKey = `${error?.name || "Error"}:${error?.message || String(error || "Unknown error")}`;
-      activity("audio.primary.preview.play_error", {
-        name: error?.name || "Error",
-        error: error?.message || String(error || "Unknown error"),
-      });
-    });
-  }
 }
 
 function normalizedPractiScorePlaceValue(rawValue) {
@@ -2722,12 +2609,10 @@ function renderVideo() {
     video.dataset.mediaUrl = primaryMediaPath;
     video.src = primaryMediaPath;
     video.load();
-    resetPrimaryAudioPreview();
     logPrimaryVideoState("source.attach");
   }
   if (!state.media.primary_available) {
     resetMediaElement(video);
-    resetPrimaryAudioPreview();
   }
 
   const secondaryPath = state.project.secondary_video?.path || "";
@@ -3211,7 +3096,6 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
     } catch {
       // Some browsers reject seeks before metadata is ready.
     }
-    syncPrimaryAudioPreview({ forceSeek: true });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   }
@@ -5513,7 +5397,6 @@ function startOverlayLoop() {
       merge_sources: (state?.project?.merge_sources || []).length,
       selected_shot_id: selectedShotId || "",
     });
-    syncPrimaryAudioPreview({ allowDriftCorrection: true });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);
     if (video.paused || video.ended) return;
@@ -6176,8 +6059,6 @@ function wireEvents() {
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
       logPrimaryVideoState(eventName);
-      ensurePrimaryAudioPreview($("primary-video"));
-      syncPrimaryAudioPreview({ forceSeek: true });
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
@@ -6188,30 +6069,23 @@ function wireEvents() {
   });
   $("primary-video").addEventListener("volumechange", () => {
     logPrimaryVideoState("volumechange");
-    ensurePrimaryAudioPreview($("primary-video"));
   });
   $("primary-video").addEventListener("canplay", () => {
     logPrimaryVideoState("canplay");
-    ensurePrimaryAudioPreview($("primary-video"));
   });
   $("primary-video").addEventListener("error", () => {
     logPrimaryVideoState("error");
-    resetPrimaryAudioPreview();
   });
   $("primary-video").addEventListener("play", () => {
     logPrimaryVideoState("play");
-    syncPrimaryAudioPreview({ forceSeek: true });
   });
   $("primary-video").addEventListener("pause", () => {
     logPrimaryVideoState("pause");
-    syncPrimaryAudioPreview({ forceSeek: true });
   });
-  $("primary-video").addEventListener("ratechange", () => syncPrimaryAudioPreview({ forceSeek: true }));
   $("primary-video").addEventListener("play", startOverlayLoop);
   $("primary-video").addEventListener("pause", stopOverlayLoop);
   $("primary-video").addEventListener("seeked", () => {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
-    syncPrimaryAudioPreview({ forceSeek: true });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   });
@@ -6219,21 +6093,6 @@ function wireEvents() {
     if (overlayFrame !== null) return;
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
-  });
-  ["loadedmetadata", "canplay"].forEach((eventName) => {
-    $("primary-audio").addEventListener(eventName, () => {
-      primaryAudioPreviewPlayErrorKey = null;
-      syncPrimaryAudioPreview({ forceSeek: true });
-    });
-  });
-  $("primary-audio").addEventListener("error", () => {
-    const audio = $("primary-audio");
-    primaryAudioPreviewPlayErrorKey = `audio-error:${audio?.error?.code || 0}`;
-    activity("audio.primary.preview.error", {
-      code: audio?.error?.code || null,
-      message: audio?.error?.message || "",
-      current_src: audio?.currentSrc || audio?.src || "",
-    });
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
     button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));
