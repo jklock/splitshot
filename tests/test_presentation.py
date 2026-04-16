@@ -21,12 +21,16 @@ def test_stage_presentation_exposes_full_beep_to_final_timing() -> None:
     assert presentation.metrics.final_shot_ms == 750
 
     segments = presentation.timing_segments
-    assert [segment.label for segment in segments] == ["Draw", "Shot 2", "Shot 3"]
+    assert [segment.label for segment in segments] == ["Shot 1", "Shot 2", "Shot 3"]
+    assert [segment.interval_label for segment in segments] == ["Draw", "Split", "Split"]
     assert [segment.segment_ms for segment in segments] == [150, 150, 350]
     assert [segment.cumulative_ms for segment in segments] == [150, 300, 650]
-    assert segments[0].card_title == "Draw"
+    assert [segment.sequence_total_ms for segment in segments] == [150, 300, 650]
+    assert segments[0].card_title == "Shot 1"
     assert segments[-1].card_value == "0.35"
-    assert "Split 0.65s" in segments[-1].card_meta
+    assert "Split 0.35s" in segments[-1].card_meta
+    assert "Run 0.65s" in segments[-1].card_meta
+    assert "Stage 0.65s" in segments[-1].card_meta
     assert "ShotML" in segments[-1].card_meta
 
 
@@ -49,4 +53,7 @@ def test_stage_presentation_keeps_following_shot_split_after_timing_event() -> N
 
     presentation = build_stage_presentation(project)
 
+    assert [segment.label for segment in presentation.timing_segments] == ["Shot 1", "Shot 2", "Shot 3"]
+    assert [segment.interval_label for segment in presentation.timing_segments] == ["Draw", "Reload", "Split"]
     assert [segment.segment_ms for segment in presentation.timing_segments] == [150, 230, 240]
+    assert [segment.sequence_total_ms for segment in presentation.timing_segments] == [150, 230, 470]

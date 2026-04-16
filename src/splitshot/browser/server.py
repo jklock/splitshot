@@ -50,6 +50,14 @@ class BrowserMediaCacheEntry:
     audio_codec: str | None
 
 
+@dataclass(slots=True)
+class BrowserAudioPreviewCacheEntry:
+    signature: tuple[int, int]
+    preview_path: str | None
+    preview_reason: str | None
+    audio_codec: str | None
+
+
 def _browser_media_signature(path: Path) -> tuple[int, int]:
     stats = path.stat()
     return (stats.st_size, stats.st_mtime_ns)
@@ -79,6 +87,11 @@ def _browser_audio_proxy_reason(path: Path, metadata: dict[str, Any]) -> tuple[s
 def _browser_preview_output_path(session_path: Path, source_path: Path) -> Path:
     safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source_path.stem).strip("._") or "preview"
     return session_path / f"{uuid4().hex}_{safe_stem}_browser.mp4"
+
+
+def _browser_audio_preview_output_path(session_path: Path, source_path: Path) -> Path:
+    safe_stem = re.sub(r"[^A-Za-z0-9._-]+", "_", source_path.stem).strip("._") or "preview"
+    return session_path / f"{uuid4().hex}_{safe_stem}_browser.wav"
 
 
 def _browser_preview_command(source_path: Path, preview_path: Path, metadata: dict[str, Any]) -> list[str]:
@@ -112,6 +125,19 @@ def _browser_preview_command(source_path: Path, preview_path: Path, metadata: di
         "192k",
         "-movflags",
         "+faststart",
+        str(preview_path),
+    ]
+
+
+def _browser_audio_preview_command(source_path: Path, preview_path: Path) -> list[str]:
+    return [
+        "-i",
+        str(source_path),
+        "-map",
+        "0:a:0",
+        "-vn",
+        "-c:a",
+        "pcm_s16le",
         str(preview_path),
     ]
 
@@ -309,12 +335,14 @@ class BrowserControlServer:
         log_dir: str | Path | None = None,
         log_level: str = "off",
         path_chooser: PathChooser | None = None,
+        browser_media_proxy_enabled: bool = False,
     ) -> None:
         self.controller = controller or ProjectController()
         self.host = host
         self.port = port
         self.activity = ActivityLogger(log_dir, console_level=log_level)
         self.path_chooser = path_chooser or choose_local_path
+        self.browser_media_proxy_enabled = browser_media_proxy_enabled
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._controller_lock = threading.Lock()
@@ -322,6 +350,7 @@ class BrowserControlServer:
         self._session_path = Path(self._session_dir.name)
         self._display_names: dict[str, str] = {}
         self._browser_media_cache: dict[str, BrowserMediaCacheEntry] = {}
+        self._browser_audio_preview_cache: dict[str, BrowserAudioPreviewCacheEntry] = {}
         self._browser_media_lock = threading.Lock()
         self._media_url_token = uuid4().hex
         prepare_export_runtime()
@@ -377,6 +406,8 @@ class BrowserControlServer:
         guessed_type = mimetypes.guess_type(path.name)[0] or ""
         if not guessed_type.startswith("video/"):
             return path, False, None, None
+        if not self.browser_media_proxy_enabled:
+            return path, False, None, None
 
         source_key = str(path.resolve())
         signature = _browser_media_signature(path)
@@ -423,10 +454,66 @@ class BrowserControlServer:
         )
         return preview_path, True, proxy_reason, audio_codec
 
+    def _prepare_browser_audio_preview(self, path: Path) -> tuple[Path | None, bool, str | None, str | None]:
+        if not path.exists() or not path.is_file():
+            return None, False, None, None
+        guessed_type = mimetypes.guess_type(path.name)[0] or ""
+        if not guessed_type.startswith("video/"):
+            return None, False, None, None
+
+        source_key = str(path.resolve())
+        signature = _browser_media_signature(path)
+        with self._browser_media_lock:
+            cached = self._browser_audio_preview_cache.get(source_key)
+            if cached and cached.signature == signature:
+                if cached.preview_path:
+                    preview_path = Path(cached.preview_path)
+                    if preview_path.exists() and preview_path.is_file():
+                        return preview_path, True, cached.preview_reason, cached.audio_codec
+                else:
+                    return None, False, cached.preview_reason, cached.audio_codec
+
+        metadata = run_ffprobe_json(path)
+        preview_reason, audio_codec = _browser_audio_proxy_reason(path, metadata)
+        if preview_reason is None:
+            with self._browser_media_lock:
+                self._browser_audio_preview_cache[source_key] = BrowserAudioPreviewCacheEntry(
+                    signature=signature,
+                    preview_path=None,
+                    preview_reason=None,
+                    audio_codec=audio_codec,
+                )
+            return None, False, None, audio_codec
+
+        preview_path = _browser_audio_preview_output_path(self._session_path, path)
+        run_ffmpeg(_browser_audio_preview_command(path, preview_path))
+        with self._browser_media_lock:
+            previous = self._browser_audio_preview_cache.get(source_key)
+            self._browser_audio_preview_cache[source_key] = BrowserAudioPreviewCacheEntry(
+                signature=signature,
+                preview_path=str(preview_path),
+                preview_reason=preview_reason,
+                audio_codec=audio_codec,
+            )
+        if previous and previous.preview_path and previous.preview_path != str(preview_path):
+            Path(previous.preview_path).unlink(missing_ok=True)
+        self.activity.log(
+            "media.audio.compatibility.created",
+            source_path=str(path),
+            preview_path=str(preview_path),
+            preview_reason=preview_reason,
+            audio_codec=audio_codec,
+        )
+        return preview_path, True, preview_reason, audio_codec
+
     def _clear_browser_media_cache(self) -> None:
         with self._browser_media_lock:
             cached_paths = [entry.preview_path for entry in self._browser_media_cache.values() if entry.preview_path]
+            cached_paths.extend(
+                entry.preview_path for entry in self._browser_audio_preview_cache.values() if entry.preview_path
+            )
             self._browser_media_cache.clear()
+            self._browser_audio_preview_cache.clear()
         for preview_path in cached_paths:
             Path(preview_path).unlink(missing_ok=True)
 
@@ -463,6 +550,9 @@ class BrowserControlServer:
                     return
                 if request_path == "/media/primary":
                     self._send_media(Path(controller.project.primary_video.path))
+                    return
+                if request_path == "/media/primary-audio":
+                    self._send_primary_audio(Path(controller.project.primary_video.path))
                     return
                 if request_path == "/media/secondary":
                     if controller.project.secondary_video is None:
@@ -653,21 +743,16 @@ class BrowserControlServer:
                 self.wfile.write(data)
                 activity.log("static.sent", name=safe_name, bytes=len(data))
 
-            def _send_media(self, path: Path) -> None:
-                if not path.exists() or not path.is_file():
-                    activity.log("media.missing", path=str(path))
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                served_path = path
-                proxied = False
-                proxy_reason = None
-                try:
-                    served_path, proxied, proxy_reason, _audio_codec = server._prepare_browser_media(path)
-                except Exception as exc:  # noqa: BLE001
-                    activity.log("media.compatibility.error", source_path=str(path), error=str(exc))
-                    served_path = path
-                    proxied = False
-                    proxy_reason = None
+            def _send_file_response(
+                self,
+                requested_path: Path,
+                served_path: Path,
+                *,
+                proxied: bool = False,
+                proxy_reason: str | None = None,
+                event_prefix: str = "media",
+                content_type: str | None = None,
+            ) -> None:
                 size = served_path.stat().st_size
                 start = 0
                 end = size - 1
@@ -683,12 +768,17 @@ class BrowserControlServer:
                         end = min(end, size - 1)
                         status = HTTPStatus.PARTIAL_CONTENT
                 if start > end:
-                    activity.log("media.range_invalid", path=str(path), start=start, end=end)
+                    activity.log("media.range_invalid", path=str(requested_path), start=start, end=end)
                     self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                     return
                 content_length = end - start + 1
+                guessed_content_type = mimetypes.guess_type(served_path.name)[0]
+                if content_type and guessed_content_type in {None, "audio/x-wav"}:
+                    resolved_content_type = content_type
+                else:
+                    resolved_content_type = guessed_content_type or content_type or "application/octet-stream"
                 self.send_response(status)
-                self.send_header("Content-Type", mimetypes.guess_type(served_path.name)[0] or "video/mp4")
+                self.send_header("Content-Type", resolved_content_type)
                 self.send_header("Accept-Ranges", "bytes")
                 self.send_header("Content-Length", str(content_length))
                 self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -698,8 +788,8 @@ class BrowserControlServer:
                     self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
                 self.end_headers()
                 activity.log(
-                    "media.start",
-                    path=str(path),
+                    f"{event_prefix}.start",
+                    path=str(requested_path),
                     served_path=str(served_path),
                     proxied=proxied,
                     proxy_reason=proxy_reason,
@@ -718,10 +808,51 @@ class BrowserControlServer:
                         try:
                             self.wfile.write(chunk)
                         except EXPECTED_DISCONNECT_ERRORS:
-                            activity.log("media.client_disconnect", path=str(served_path), remaining=remaining)
+                            activity.log(f"{event_prefix}.client_disconnect", path=str(served_path), remaining=remaining)
                             return
                         remaining -= len(chunk)
-                activity.log("media.complete", path=str(served_path), bytes=content_length, proxied=proxied)
+                activity.log(f"{event_prefix}.complete", path=str(served_path), bytes=content_length, proxied=proxied)
+
+            def _send_media(self, path: Path) -> None:
+                if not path.exists() or not path.is_file():
+                    activity.log("media.missing", path=str(path))
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                served_path = path
+                proxied = False
+                proxy_reason = None
+                try:
+                    served_path, proxied, proxy_reason, _audio_codec = server._prepare_browser_media(path)
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("media.compatibility.error", source_path=str(path), error=str(exc))
+                    served_path = path
+                    proxied = False
+                    proxy_reason = None
+                self._send_file_response(path, served_path, proxied=proxied, proxy_reason=proxy_reason, event_prefix="media", content_type="video/mp4")
+
+            def _send_primary_audio(self, path: Path) -> None:
+                if not path.exists() or not path.is_file():
+                    activity.log("media.audio.missing", path=str(path))
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                try:
+                    served_path, proxied, proxy_reason, _audio_codec = server._prepare_browser_audio_preview(path)
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("media.audio.compatibility.error", source_path=str(path), error=str(exc))
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                if served_path is None:
+                    activity.log("media.audio.unavailable", path=str(path))
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self._send_file_response(
+                    path,
+                    served_path,
+                    proxied=proxied,
+                    proxy_reason=proxy_reason,
+                    event_prefix="media.audio",
+                    content_type="audio/wav",
+                )
 
             def _send_merge_media(self, source_id: str) -> None:
                 source = next((item for item in controller.project.merge_sources if item.id == source_id), None)

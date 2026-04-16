@@ -17,9 +17,11 @@ from splitshot.domain.models import (
     ShotSource,
     VideoAsset,
 )
+from splitshot.media.ffmpeg import run_ffprobe_json
 from splitshot.media.probe import probe_video
 from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, stage_time_ms
 from splitshot.ui.controller import ProjectController
+from splitshot.utils.time import seconds_to_ms
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
@@ -36,6 +38,26 @@ def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
     assert abs(result.shots[1].time_ms - 1100) <= 50
     assert abs(result.shots[2].time_ms - 1450) <= 50
     assert len(result.waveform) == 4096
+
+
+def test_analysis_aligns_detections_to_media_timeline_when_audio_starts_late(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory(
+        name="audio-offset",
+        duration_ms=2600,
+        audio_stream_offset_ms=500,
+    )
+    metadata = run_ffprobe_json(video_path)
+    audio_stream = next(item for item in metadata["streams"] if item.get("codec_type") == "audio")
+    audio_start_ms = seconds_to_ms(float(audio_stream.get("start_time") or 0.0))
+
+    result = analyze_video_audio(video_path, threshold=0.35)
+
+    assert result.beep_time_ms is not None
+    assert abs(result.beep_time_ms - (400 + audio_start_ms)) <= 60
+    expected_shot_times = [800 + audio_start_ms, 1100 + audio_start_ms, 1450 + audio_start_ms]
+    assert len(result.shots) == len(expected_shot_times)
+    for shot, expected_time in zip(result.shots, expected_shot_times, strict=True):
+        assert abs(shot.time_ms - expected_time) <= 60
 
 
 def test_threshold_changes_shot_detection_sensitivity(synthetic_video_factory) -> None:
@@ -70,9 +92,10 @@ def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None
     assert average_split_ms(controller.project) is not None
     assert rows[0].split_ms is not None
     assert abs(rows[0].split_ms - draw_time_ms(controller.project)) <= 60
-    assert rows[0].row_type == "interval"
-    assert rows[0].label == "Start -> Shot 1"
-    assert rows[0].actions[0].label == "Draw"
+    assert rows[0].row_type == "shot"
+    assert rows[0].label == "Shot 1"
+    assert rows[0].interval_label == "Draw"
+    assert rows[0].sequence_total_ms == rows[0].split_ms
     assert rows[1].split_ms is not None
     assert abs(rows[1].split_ms - 300) <= 60
 
@@ -93,14 +116,35 @@ def test_timing_events_attach_to_the_interval_without_zeroing_the_shot_split() -
 
     rows = compute_split_rows(controller.project)
 
-    assert [row.label for row in rows] == [
-        "Start -> Shot 1",
-        "Shot 1 -> Shot 2",
-        "Shot 2 -> Shot 3",
-    ]
+    assert [row.label for row in rows] == ["Shot 1", "Shot 2", "Shot 3"]
+    assert [row.interval_label for row in rows] == ["Draw", "Reload", "Split"]
     assert rows[1].split_ms == 230
     assert [action.label for action in rows[1].actions] == ["Reload"]
+    assert rows[1].sequence_total_ms == 230
+    assert rows[2].sequence_total_ms == 470
     assert rows[2].split_ms == 240
+
+
+def test_custom_timing_labels_do_not_reset_the_running_split_total() -> None:
+    controller = ProjectController()
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [
+        ShotEvent(time_ms=250),
+        ShotEvent(time_ms=480),
+        ShotEvent(time_ms=720),
+    ]
+    controller.add_timing_event(
+        "custom_label",
+        after_shot_id=controller.project.analysis.shots[0].id,
+        before_shot_id=controller.project.analysis.shots[1].id,
+        label="Transition",
+    )
+
+    rows = compute_split_rows(controller.project)
+
+    assert [row.interval_label for row in rows] == ["Draw", "Transition", "Split"]
+    assert rows[1].sequence_total_ms == 380
+    assert rows[2].sequence_total_ms == 620
 
 
 def test_primary_ingest_runs_detection_automatically(synthetic_video_factory) -> None:

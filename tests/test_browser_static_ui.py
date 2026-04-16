@@ -162,6 +162,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="live-overlay"' in html
     assert 'id="custom-overlay"' in html
     assert 'id="score-layer"' in html
+    assert '<audio id="primary-audio" hidden preload="auto"></audio>' in html
     assert 'id="toggle-primary-audio"' not in html
     assert 'id="toggle-stage-fullscreen"' not in html
     assert 'id="timeline-strip"' not in html
@@ -187,6 +188,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="waveform-shot-list"' in html
     assert 'id="timing-workbench"' in html
     assert 'id="expand-timing"' in html
+    assert '<button id="expand-timing" type="button">Edit</button>' in html
     assert 'aria-label="Use waveform select mode"' in html
     assert 'aria-label="Use waveform add shot mode"' in html
     assert 'id="selected-shot-copy"' in html
@@ -211,6 +213,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="shot-direction"' in html
     assert 'id="overlay-custom-x"' in html
     assert 'id="bubble-width"' in html
+    assert 'id="bubble-width" type="number" min="0" max="400" step="4" placeholder="auto"' in html
+    assert 'id="bubble-height" type="number" min="0" max="220" step="4" placeholder="auto"' in html
     assert 'id="overlay-font-family"' in html
     assert 'id="show-timer"' in html
     assert 'id="review-text-box-list"' in html
@@ -453,13 +457,26 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '$("export-export-log")?.addEventListener("click", downloadExportLog);' in js
     assert '$("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));' in js
     assert 'function defaultScoreLetter() {' in js
-    assert 'function scoreBadgeContent(shot, shotNumber, splitText) {' in js
-    assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs))' in js
+    assert 'function shotBadgeBaseText(shotNumber, splitText, intervalLabel = "") {' in js
+    assert 'function scoreBadgeContent(shot, shotNumber, splitText, intervalLabel = "") {' in js
+    assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))' in js
     assert 'const unsetOption = document.createElement("option");' not in js
     assert 'select.value = segment.score_letter || defaultScore;' in js
     assert 'scoreCell.textContent = row.score_letter || defaultScore;' in js
     assert 'function splitRowActionSummary(row) {' in js
+    assert 'function splitRowIntervalLabel(row) {' in js
+    assert 'function buildSplitRowActionCell(row, expandedTable) {' in js
+    assert 'function maximumSplitRowActionLabelLength() {' in js
     assert 'const actionCell = buildSplitRowActionCell(row, expandedTable);' in js
+    assert 'const PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS = 18;' in js
+    assert 'const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS = 60;' in js
+    assert 'const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS = 750;' in js
+    assert 'function primaryAudioPreviewNeeded(video) {' in js
+    assert 'function mirrorPrimaryAudioPreviewState(video, audio) {' in js
+    assert 'function setMediaElementTime(media, targetTime) {' in js
+    assert 'function primaryAudioPreviewDriftMs(targetTime, audio) {' in js
+    assert 'function ensurePrimaryAudioPreview(video) {' in js
+    assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
@@ -469,7 +486,12 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "Score Text Colors" in html
     assert "These colors only affect score text tokens." in html
     assert "scoring-shot-row" in js
+    assert 'row.classList.toggle("collapsed", !expanded);' in js
+    assert 'header.className = "scoring-shot-header";' in js
     assert 'title.textContent = `Shot ${segment.shot_number}`;' in js
+    assert 'toggle.className = "scoring-shot-toggle";' in js
+    assert 'toggle.textContent = expanded ? "v" : ">";' in js
+    assert 'controls.hidden = !expanded;' in js
     assert 'const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;' in js
     assert 'if (penaltyFields.length > 0) {' in js
     assert 'penalty_counts: collectPenaltyCounts(controls),' in js
@@ -484,6 +506,13 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "empty-start" not in js
     assert "setActiveTool" in js
     assert "setActivePage" not in js
+    assert 'let overlayFrameMode = null;' in js
+    assert 'function overlayRenderPositionMs(video, mediaTimeS = null) {' in js
+    assert 'function requestOverlayFrame(video, tick) {' in js
+    assert 'function cancelOverlayFrame(video) {' in js
+    assert 'renderLiveOverlay(positionMsOverride = null)' in js
+    assert 'return Math.max(0, Math.floor(mediaTimeS * 1000));' in js
+    assert 'return Math.max(0, Math.floor((video?.currentTime || 0) * 1000));' in js
 
 
 def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
@@ -543,10 +572,10 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "display: none;" in css
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
-    assert ".timeline-strip" not in css
-    assert ".timeline-marker" not in css
-    assert ".color-swatch-button" in css
-    assert ".waveform-window-track" in css
+    assert ".scoring-shot-toggle" in css
+    assert ".scoring-shot-row.collapsed" in css
+    assert ".timing-action-remove" in css
+    assert "width: calc(var(--timing-action-chip-chars, 8) * 0.72ch + 3.2rem);" in css
     assert ".waveform-window-handle" in css
     assert ".penalty-grid" in css
     assert ".export-log-output" in css
@@ -602,6 +631,9 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);' in js
     assert 'window.visualViewport?.addEventListener("scroll", handleViewportLayoutChange);' in js
     assert 'window.requestAnimationFrame(() => renderWaveform());' in js
+    assert 'typeof video.requestVideoFrameCallback === "function"' in js
+    assert 'video.requestVideoFrameCallback(tick);' in js
+    assert 'video.cancelVideoFrameCallback(overlayFrame);' in js
     assert 'document.addEventListener("pointermove", moveLayoutResize);' in js
     assert 'document.addEventListener("pointerup", endLayoutResize);' in js
     assert 'document.addEventListener("pointercancel", endLayoutResize);' in js
@@ -625,9 +657,13 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'function scaledOverlayPixelValue(value, scale, minimum = 0) {' in js
     assert 'releasePointer(activeResize.target, activeResize.pointerId);' in js
     assert '["loadedmetadata", "loadeddata"].forEach((eventName) => {' in js
-    assert '["volumechange", "canplay", "error"].forEach((eventName) => {' in js
+    assert '$("primary-video").addEventListener("volumechange", () => {' in js
+    assert '$("primary-video").addEventListener("canplay", () => {' in js
+    assert '$("primary-video").addEventListener("error", () => {' in js
+    assert '["volumechange", "canplay", "error"].forEach((eventName) => {' not in js
     assert 'activity("video.primary.state", {' in js
     assert 'ensurePrimaryVideoAudio($("primary-video"));' not in js
+    assert 'ensurePrimaryVideoAudio(audio);' not in js
     assert 'function isColorInput(control) {' in js
     assert 'function previewOverlayControlChanges() {' in js
     assert 'function commitOverlayControlChanges() {' in js
@@ -638,6 +674,10 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="background_color"]\'));' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="text_color"]\'));' in js
     assert 'function bindOverlayColorInput(control) {' in js
+    assert 'const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;' in js
+    assert 'frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",' in js
+    assert 'syncPrimaryAudioPreview({ allowDriftCorrection: true });' in js
+    assert 'if (overlayFrame !== null) return;' in js
 
 
 def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
@@ -658,6 +698,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'activity("video.secondary_play.error", { name: errorName, error: errorMessage });' in js
     assert 'secondary.play().catch(() => {});' not in js
     assert 'ensurePrimaryVideoAudio(video);' not in js
+    assert 'ensurePrimaryVideoAudio(audio);' not in js
     assert 'ensurePrimaryVideoAudio(secondary);' in js
     assert 'logPrimaryVideoState("source.attach");' in js
     assert 'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);' in js
@@ -698,15 +739,20 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
 
     assert 'const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);' in js
     assert 'const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);' in js
-    assert 'const fontSize = Number(state.project.overlay.font_size || 14);' in js
-    assert 'const scaledPaddingY = scaledOverlayPixelValue(Math.max(4, fontSize * 0.45), scale, 0);' in js
-    assert 'const scaledPaddingX = scaledOverlayPixelValue(Math.max(8, fontSize * 0.85), scale, 0);' in js
+    assert 'const OVERLAY_BADGE_PADDING_X_PX = 10;' in js
+    assert 'const OVERLAY_BADGE_PADDING_Y_PX = 5;' in js
+    assert 'function overlayAutoSizedBadgeContents() {' in js
+    assert 'function overlayAutoBubbleSize() {' in js
+    assert 'function syncOverlayBubbleSizeControls() {' in js
+    assert 'const scaledPaddingY = scaledOverlayPixelValue(OVERLAY_BADGE_PADDING_Y_PX, scale, 0);' in js
+    assert 'const scaledPaddingX = scaledOverlayPixelValue(OVERLAY_BADGE_PADDING_X_PX, scale, 0);' in js
     assert 'badge.style.fontSize = `${scaledOverlayPixelValue(state.project.overlay.font_size || 14, scale, 1)}px`;' in js
-    assert 'const scaledWidth = widthOverride > 0' in js
-    assert 'const scaledHeight = heightOverride > 0' in js
-    assert 'badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);' in js
-    assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs))' in js
-    assert 'badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale);' in js
+    assert 'const resolvedWidth = widthOverride > 0' in js
+    assert 'const resolvedHeight = heightOverride > 0' in js
+    assert 'const autoBubbleSize = state.project.overlay.bubble_width > 0 && state.project.overlay.bubble_height > 0' in js
+    assert 'badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in js
+    assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))' in js
+    assert 'badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in js
     assert 'function scoreTokenColor(token) {' in js
 
 

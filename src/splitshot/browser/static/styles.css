@@ -1429,45 +1429,59 @@ button:disabled {
 }
 
 .scoring-shot-row {
-  align-items: start;
+  align-items: stretch;
   border: 1px solid var(--line);
   display: grid;
-  gap: 0.45rem;
+  gap: 0.4rem;
   grid-template-columns: minmax(0, 1fr);
-  padding: 0.45rem 0.5rem;
+  padding: 0.42rem 0.5rem;
+}
+
+.scoring-shot-header {
+  align-items: center;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-width: 0;
 }
 
 .scoring-shot-button {
-  align-items: start;
-  display: grid;
-  gap: 0.1rem;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  display: inline-flex;
   justify-content: flex-start;
+  min-width: 0;
   overflow: hidden;
+  padding: 0;
   text-align: left;
-}
-
-.scoring-shot-button strong,
-.scoring-shot-button small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .scoring-shot-button strong {
   font-size: 0.82rem;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.scoring-shot-button small {
+.scoring-shot-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
   color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  display: inline-flex;
+  font-size: 0.82rem;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 1.4rem;
+  min-width: 1.4rem;
+  padding: 0;
 }
 
-.scoring-shot-row.selected .scoring-shot-button {
-  border-color: var(--accent);
+.scoring-shot-row.selected .scoring-shot-button,
+.scoring-shot-row.selected .scoring-shot-toggle {
   color: var(--accent);
 }
 
@@ -2034,10 +2048,14 @@ button:disabled {
   background: var(--surface-3);
   border: 1px solid var(--line-strong);
   color: var(--text);
-  display: inline-flex;
+  display: inline-grid;
   gap: 0.3rem;
-  max-width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  justify-content: space-between;
+  min-height: 1.85rem;
+  min-width: 0;
   padding: 0.16rem 0.36rem;
+  width: calc(var(--timing-action-chip-chars, 8) * 0.72ch + 3.2rem);
 }
 
 .timing-action-chip.synthetic {
@@ -2047,7 +2065,7 @@ button:disabled {
 }
 
 .timing-action-chip span {
-  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2055,14 +2073,22 @@ button:disabled {
 
 .timing-action-remove {
   align-items: center;
+  align-self: center;
   background: transparent;
   border: 0;
   color: inherit;
   display: inline-flex;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 900;
-  min-height: 0;
+  height: 1.1rem;
+  justify-content: center;
+  line-height: 1;
+  min-width: 1.1rem;
   padding: 0;
+}
+
+.scoring-shot-row.collapsed {
+  gap: 0.18rem;
 }
 
 .data-table div {
@@ -2115,7 +2141,7 @@ button:disabled {
   }
 
   .metrics-row {
-    grid-template-columns: 56px minmax(0, 1fr) 70px 70px 70px;
+    grid-template-columns: minmax(0, 1.4fr) 82px 82px 82px minmax(0, 1fr);
   }
 }
 

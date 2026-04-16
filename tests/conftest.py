@@ -39,6 +39,7 @@ def synthetic_video_factory(tmp_path):
         beep_ms: int = 400,
         shot_times_ms: list[int] | None = None,
         resolution: tuple[int, int] = (640, 360),
+        audio_stream_offset_ms: int = 0,
     ) -> Path:
         shot_times = shot_times_ms or [800, 1100, 1450]
         sample_rate = 22050
@@ -60,6 +61,7 @@ def synthetic_video_factory(tmp_path):
             samples[shot_start : shot_start + shot_length] += burst
 
         audio_path = tmp_path / f"{name}.wav"
+        video_only_path = tmp_path / f"{name}-video-only.mp4"
         video_path = tmp_path / f"{name}.mp4"
         _write_wav(audio_path, samples, sample_rate)
         _ffmpeg(
@@ -67,12 +69,41 @@ def synthetic_video_factory(tmp_path):
             "lavfi",
             "-i",
             f"color=c=black:s={resolution[0]}x{resolution[1]}:d={duration_ms / 1000:.3f}",
-            "-i",
-            str(audio_path),
             "-c:v",
             "libx264",
             "-pix_fmt",
             "yuv420p",
+            str(video_only_path),
+        )
+
+        if audio_stream_offset_ms == 0:
+            _ffmpeg(
+                "-i",
+                str(video_only_path),
+                "-i",
+                str(audio_path),
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-shortest",
+                str(video_path),
+            )
+            return video_path
+
+        _ffmpeg(
+            "-i",
+            str(video_only_path),
+            "-itsoffset",
+            f"{audio_stream_offset_ms / 1000:.3f}",
+            "-i",
+            str(audio_path),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c:v",
+            "copy",
             "-c:a",
             "aac",
             "-shortest",

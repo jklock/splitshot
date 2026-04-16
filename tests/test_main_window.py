@@ -27,9 +27,9 @@ def test_main_window_switches_from_media_selection_to_review_after_primary_inges
     card_ids = {card.shot_id for card in window.findChildren(SplitCard)}
     assert len(card_ids) == 3
     cards = sorted(window.findChildren(SplitCard), key=lambda card: card.data.title)
-    draw_card = next(card for card in cards if card.data.title == "Draw")
-    assert "Split" in draw_card.data.meta
-    assert "ShotML" in draw_card.data.meta
+    first_shot_card = next(card for card in cards if card.data.title == "Shot 1")
+    assert "Draw" in first_shot_card.data.meta
+    assert "ShotML" in first_shot_card.data.meta
 
 
 def test_split_card_click_selects_shot_in_loaded_review(qtbot, synthetic_video_factory) -> None:

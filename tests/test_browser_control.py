@@ -260,12 +260,15 @@ def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_fact
     assert len(payload["split_rows"]) == 3
     assert len(payload["timing_segments"]) == 3
     assert payload["split_rows"][0]["split_ms"] == payload["metrics"]["draw_ms"]
-    assert payload["split_rows"][0]["row_type"] == "interval"
-    assert payload["split_rows"][0]["label"] == "Start -> Shot 1"
-    assert payload["split_rows"][0]["actions"][0]["label"] == "Draw"
+    assert payload["split_rows"][0]["row_type"] == "shot"
+    assert payload["split_rows"][0]["label"] == "Shot 1"
+    assert payload["split_rows"][0]["interval_label"] == "Draw"
+    assert payload["split_rows"][0]["sequence_total_ms"] == payload["metrics"]["draw_ms"]
     assert payload["split_rows"][1]["split_ms"] is not None
-    assert payload["timing_segments"][0]["label"] == "Draw"
+    assert payload["timing_segments"][0]["label"] == "Shot 1"
+    assert payload["timing_segments"][0]["interval_label"] == "Draw"
     assert payload["timing_segments"][0]["segment_ms"] == payload["metrics"]["draw_ms"]
+    assert payload["timing_segments"][0]["sequence_total_ms"] == payload["metrics"]["draw_ms"]
     assert payload["timing_segments"][-1]["cumulative_ms"] == payload["metrics"]["raw_time_ms"]
 
 
@@ -1126,7 +1129,7 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, t
     monkeypatch.setattr(browser_server_module, "run_ffprobe_json", fake_ffprobe)
     monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
 
-    server = BrowserControlServer(controller=controller, port=0)
+    server = BrowserControlServer(controller=controller, port=0, browser_media_proxy_enabled=True)
     server.start_background(open_browser=False)
     try:
         state = _post_json(f"{server.url}api/import/primary", {"path": str(source_path)})
@@ -1147,6 +1150,126 @@ def test_browser_media_endpoint_transcodes_pcm_audio_preview_once(monkeypatch, t
         assert len(ffmpeg_calls) == 1
         log_text = server.activity.path.read_text(encoding="utf-8")
         assert "media.compatibility.created" in log_text
+    finally:
+        server.shutdown()
+
+
+def test_browser_media_endpoint_serves_source_media_by_default_for_pcm_sources(monkeypatch, tmp_path: Path) -> None:
+    controller = ProjectController()
+    source_path = tmp_path / "Stage1.MP4"
+    source_path.write_bytes(b"source-media")
+    ffprobe_calls: list[Path] = []
+    ffmpeg_calls: list[list[str]] = []
+
+    def fake_ingest(path: str) -> None:
+        controller.project.primary_video.path = path
+        controller.project.primary_video.width = 1920
+        controller.project.primary_video.height = 1080
+        controller.project.primary_video.duration_ms = 31_425
+        controller.status_message = "Primary analysis complete."
+
+    def fake_ffprobe(path: Path) -> dict:
+        ffprobe_calls.append(path)
+        return {
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "pcm_s16le"},
+            ],
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+        }
+
+    def fake_ffmpeg(command: list[str]) -> None:
+        ffmpeg_calls.append(command)
+
+    monkeypatch.setattr(controller, "ingest_primary_video", fake_ingest)
+    monkeypatch.setattr(browser_server_module, "run_ffprobe_json", fake_ffprobe)
+    monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(source_path)})
+
+        assert state["media"]["primary_available"] is True
+        assert state["status"] == "Primary analysis complete."
+        assert ffprobe_calls == []
+        assert ffmpeg_calls == []
+
+        with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
+            assert response.read() == b"source-media"
+
+        log_text = server.activity.path.read_text(encoding="utf-8")
+        assert "media.compatibility.created" not in log_text
+    finally:
+        server.shutdown()
+
+
+def test_browser_primary_audio_endpoint_transcodes_pcm_audio_preview_once_without_proxying_video(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    source_path = tmp_path / "Stage1.MP4"
+    source_path.write_bytes(b"source-media")
+    ffprobe_calls: list[Path] = []
+    ffmpeg_calls: list[list[str]] = []
+
+    def fake_ingest(path: str) -> None:
+        controller.project.primary_video.path = path
+        controller.project.primary_video.width = 1920
+        controller.project.primary_video.height = 1080
+        controller.project.primary_video.duration_ms = 31_425
+        controller.status_message = "Primary analysis complete."
+
+    def fake_ffprobe(path: Path) -> dict:
+        ffprobe_calls.append(path)
+        return {
+            "streams": [
+                {"codec_type": "video", "codec_name": "h264"},
+                {"codec_type": "audio", "codec_name": "pcm_s16le"},
+            ],
+            "format": {"format_name": "mov,mp4,m4a,3gp,3g2,mj2"},
+        }
+
+    def fake_ffmpeg(command: list[str]) -> None:
+        ffmpeg_calls.append(command)
+        Path(command[-1]).write_bytes(b"browser-audio-preview")
+
+    monkeypatch.setattr(controller, "ingest_primary_video", fake_ingest)
+    monkeypatch.setattr(browser_server_module, "run_ffprobe_json", fake_ffprobe)
+    monkeypatch.setattr(browser_server_module, "run_ffmpeg", fake_ffmpeg)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(f"{server.url}api/import/primary", {"path": str(source_path)})
+
+        assert state["media"]["primary_available"] is True
+        assert state["media"]["primary_url"] == "/media/primary"
+        assert state["status"] == "Primary analysis complete."
+        assert ffprobe_calls == []
+        assert ffmpeg_calls == []
+
+        with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
+            assert response.read() == b"source-media"
+
+        with urllib.request.urlopen(f"{server.url}media/primary-audio", timeout=30) as response:
+            assert response.headers.get_content_type() == "audio/wav"
+            assert response.read() == b"browser-audio-preview"
+
+        with urllib.request.urlopen(f"{server.url}media/primary-audio", timeout=30) as response:
+            assert response.read() == b"browser-audio-preview"
+
+        with urllib.request.urlopen(f"{server.url}media/primary", timeout=30) as response:
+            assert response.read() == b"source-media"
+
+        assert len(ffprobe_calls) == 1
+        assert len(ffmpeg_calls) == 1
+        assert ffmpeg_calls[0][4:7] == ["-vn", "-c:a", "pcm_s16le"]
+
+        log_text = server.activity.path.read_text(encoding="utf-8")
+        assert "media.audio.compatibility.created" in log_text
+        assert "media.compatibility.created" not in log_text
     finally:
         server.shutdown()
 
