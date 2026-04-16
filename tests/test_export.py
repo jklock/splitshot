@@ -14,7 +14,7 @@ from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageS
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import OverlayRenderer
+from splitshot.overlay.render import OverlayRenderer, _auto_badge_size, _standard_badge_texts
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
 
@@ -240,14 +240,14 @@ def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_fact
 
     before_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms - 1)[0]
     after_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)[0]
-    expected_shot_badge = f"Shot 1 {draw_time_ms(project) / 1000.0:.2f}s"
+    expected_shot_badge = f"Shot 1 Draw {draw_time_ms(project) / 1000.0:.2f}s"
 
     assert any(badge.text.startswith("Draw ") for badge in before_first)
     assert not any(badge.text.startswith("Draw ") for badge in after_first)
     assert any(badge.text == expected_shot_badge for badge in after_first)
 
 
-def test_overlay_renderer_includes_reload_events_without_zeroing_the_following_shot() -> None:
+def test_overlay_renderer_folds_reload_intervals_into_the_following_shot_badge() -> None:
     project = Project(name="Timing Event Overlay")
     project.analysis.beep_time_ms_primary = 100
     project.analysis.shots = [
@@ -271,9 +271,40 @@ def test_overlay_renderer_includes_reload_events_without_zeroing_the_following_s
     badges, _score_marks = OverlayRenderer().build_badges(project, 500)
     texts = [badge.text for badge in badges]
 
-    assert "Shot 1 0.15s" in texts
-    assert "Reload" in texts
-    assert "Shot 2 0.23s" in texts
+    assert "Shot 1 Draw 0.15s" in texts
+    assert "Reload" not in texts
+    assert "Shot 2 Reload 0.23s" in texts
+
+
+def test_overlay_auto_badge_size_uses_longest_project_badge_text_with_fixed_padding() -> None:
+    class FakeMetrics:
+        def horizontalAdvance(self, text: str) -> int:
+            return len(text) * 8
+
+        def height(self) -> int:
+            return 18
+
+    project = Project(name="Auto Bubble")
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [ShotEvent(time_ms=index * 100) for index in range(1, 100)]
+    project.analysis.events = [
+        TimingEvent(
+            kind="reload",
+            label="Reload",
+            after_shot_id=project.analysis.shots[97].id,
+            before_shot_id=project.analysis.shots[98].id,
+        )
+    ]
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = True
+    project.overlay.show_score = False
+    project.overlay.font_size = 18
+
+    texts = _standard_badge_texts(project)
+
+    assert "Shot 99 Reload 0.10s" in texts
+    assert _auto_badge_size(texts, FakeMetrics()) == (len("Shot 99 Reload 0.10s") * 8 + 20, 28)
 
 
 def test_overlay_renderer_keeps_final_shot_visible_and_uses_final_label() -> None:

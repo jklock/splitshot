@@ -2,12 +2,14 @@ let state = null;
 let selectedShotId = null;
 let activeTool = "project";
 let overlayFrame = null;
+let overlayFrameMode = null;
 let waveformMode = "select";
 let draggingShotId = null;
 let pendingDragTimeMs = null;
 let waveformPanDrag = null;
 let waveformNavigatorDrag = null;
 let timingRowEdits = new Set();
+let scoringShotExpansion = new Map();
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -44,6 +46,11 @@ let exportLogLines = [];
 let activeColorPickerControl = null;
 let reviewStageRestoreFrame = null;
 let reviewStageRestoreSecondFrame = null;
+let primaryAudioPreviewPlayErrorKey = null;
+let primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
+let overlayBadgeMeasureCanvas = null;
+let overlayAutoBubbleCacheKey = null;
+let overlayAutoBubbleCache = { width: 0, height: 0 };
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
@@ -54,6 +61,9 @@ const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
+const PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS = 18;
+const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS = 60;
+const PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS = 750;
 
 const $ = (id) => document.getElementById(id);
 
@@ -71,6 +81,8 @@ const BADGE_FONT_SIZES = {
   L: 16,
   XL: 20,
 };
+const OVERLAY_BADGE_PADDING_X_PX = 10;
+const OVERLAY_BADGE_PADDING_Y_PX = 5;
 const CUSTOM_QUADRANT_VALUE = "custom";
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -263,8 +275,12 @@ function orderedShotsByTime() {
     .sort((left, right) => Number(left.time_ms || 0) - Number(right.time_ms || 0));
 }
 
+function splitRowForShot(shotId) {
+  return (state?.split_rows || []).find((row) => row.shot_id === shotId) || null;
+}
+
 function resolvedSplitMsForShot(shotId, shotNumber = null, absoluteTimeMs = null) {
-  const splitRow = (state?.split_rows || []).find((row) => row.shot_id === shotId);
+  const splitRow = splitRowForShot(shotId);
   const splitMs = numericMs(splitRow?.split_ms);
   if (splitMs !== null) return Math.max(0, splitMs);
 
@@ -364,8 +380,16 @@ function formatShotBadgeSuffix(shot) {
   return ` ${tokens.map((token) => `${token.text}${token.countText || ""}`).join(" ")}`;
 }
 
-function scoreBadgeContent(shot, shotNumber, splitText) {
-  const baseText = `Shot ${shotNumber} ${splitText}`;
+function shotBadgeBaseText(shotNumber, splitText, intervalLabel = "") {
+  const normalizedLabel = String(intervalLabel || "").trim();
+  if (!normalizedLabel || normalizedLabel === "Split") {
+    return `Shot ${shotNumber} ${splitText}`;
+  }
+  return `Shot ${shotNumber} ${normalizedLabel} ${splitText}`;
+}
+
+function scoreBadgeContent(shot, shotNumber, splitText, intervalLabel = "") {
+  const baseText = shotBadgeBaseText(shotNumber, splitText, intervalLabel);
   const tokens = scoreBadgeTokens(shot);
   if (tokens.length === 0) {
     return { text: baseText, runs: null };
@@ -1336,6 +1360,7 @@ function syncOverlayPreviewStateFromControls() {
   overlayStyleMode = overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(overlay.spacing ?? overlaySpacing);
   overlayMargin = Number(overlay.margin ?? overlayMargin);
+  syncOverlayBubbleSizeControls();
 }
 
 function previewOverlayControlChanges() {
@@ -1957,7 +1982,10 @@ function resetLocalProjectView() {
   window.localStorage.removeItem("splitshot.waveform.zoomX");
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
   resetMediaElement($("primary-video"));
+  resetMediaElement($("primary-audio"));
   resetMediaElement($("secondary-video"));
+  primaryAudioPreviewPlayErrorKey = null;
+  scoringShotExpansion.clear();
   const secondaryImage = $("secondary-image");
   if (secondaryImage) secondaryImage.hidden = true;
   const root = $("cockpit-root");
@@ -2043,10 +2071,11 @@ function resetLocalProjectView() {
 }
 
 function resetMediaElement(video) {
-  if (!video) return;
+  if (!(video instanceof HTMLMediaElement)) return;
   video.pause();
   video.removeAttribute("src");
   video.dataset.sourcePath = "";
+  video.dataset.mediaUrl = "";
   video.load();
 }
 
@@ -2146,6 +2175,112 @@ function ensurePrimaryVideoAudio(video) {
   video.defaultMuted = false;
   video.muted = false;
   video.volume = 1;
+}
+
+function primaryAudioPreviewNeeded(video) {
+  if (!(video instanceof HTMLVideoElement)) return false;
+  if (!state?.media?.primary_available || !state?.project?.primary_video?.path) return false;
+  return typeof video.mozHasAudio === "boolean" ? video.mozHasAudio === false : false;
+}
+
+function resetPrimaryAudioPreview() {
+  const audio = $("primary-audio");
+  if (!(audio instanceof HTMLAudioElement)) return;
+  primaryAudioPreviewPlayErrorKey = null;
+  primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
+  resetMediaElement(audio);
+}
+
+function mirrorPrimaryAudioPreviewState(video, audio) {
+  if (!(video instanceof HTMLVideoElement) || !(audio instanceof HTMLAudioElement)) return;
+  const playbackRate = Number.isFinite(video.playbackRate) ? video.playbackRate : 1;
+  const defaultPlaybackRate = Number.isFinite(video.defaultPlaybackRate) ? video.defaultPlaybackRate : playbackRate;
+  audio.playbackRate = playbackRate;
+  audio.defaultPlaybackRate = defaultPlaybackRate;
+  audio.defaultMuted = video.defaultMuted;
+  audio.muted = video.muted;
+  audio.volume = Number.isFinite(video.volume) ? video.volume : 1;
+}
+
+function setMediaElementTime(media, targetTime) {
+  if (!(media instanceof HTMLMediaElement) || !Number.isFinite(targetTime)) return;
+  const clampedTarget = Math.max(0, targetTime);
+  if (typeof media.fastSeek === "function") media.fastSeek(clampedTarget);
+  else media.currentTime = clampedTarget;
+}
+
+function primaryAudioPreviewDriftMs(targetTime, audio) {
+  if (!(audio instanceof HTMLAudioElement) || !Number.isFinite(targetTime)) return 0;
+  return Math.abs(((audio.currentTime || 0) - targetTime) * 1000);
+}
+
+function ensurePrimaryAudioPreview(video) {
+  const audio = $("primary-audio");
+  if (!(audio instanceof HTMLAudioElement)) return;
+  if (!primaryAudioPreviewNeeded(video)) {
+    resetPrimaryAudioPreview();
+    return;
+  }
+  const path = state?.project?.primary_video?.path || "";
+  const mediaUrl = buildMediaUrl("/media/primary-audio", path);
+  if (!mediaUrl) {
+    resetPrimaryAudioPreview();
+    return;
+  }
+  if (audio.dataset.sourcePath !== path || audio.dataset.mediaUrl !== mediaUrl) {
+    audio.dataset.sourcePath = path;
+    audio.dataset.mediaUrl = mediaUrl;
+    primaryAudioPreviewPlayErrorKey = null;
+    primaryAudioPreviewLastCorrectionAtMs = Number.NEGATIVE_INFINITY;
+    audio.src = mediaUrl;
+    audio.load();
+  }
+  mirrorPrimaryAudioPreviewState(video, audio);
+}
+
+function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {
+  const video = $("primary-video");
+  const audio = $("primary-audio");
+  if (!(video instanceof HTMLVideoElement) || !(audio instanceof HTMLAudioElement)) return;
+  if (!audio.dataset.mediaUrl) {
+    if (primaryAudioPreviewNeeded(video)) ensurePrimaryAudioPreview(video);
+    else return;
+  }
+  if (!audio.dataset.mediaUrl) return;
+  ensurePrimaryAudioPreview(video);
+  const targetTime = Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : 0;
+  const driftMs = primaryAudioPreviewDriftMs(targetTime, audio);
+  const nowMs = typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+  const shouldCorrectDrift = forceSeek
+    ? driftMs > PRIMARY_AUDIO_PREVIEW_FORCE_SEEK_THRESHOLD_MS
+    : allowDriftCorrection
+      && driftMs > PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_THRESHOLD_MS
+      && (nowMs - primaryAudioPreviewLastCorrectionAtMs) >= PRIMARY_AUDIO_PREVIEW_DRIFT_SEEK_COOLDOWN_MS;
+  if (audio.readyState >= HTMLMediaElement.HAVE_METADATA && shouldCorrectDrift) {
+    try {
+      setMediaElementTime(audio, targetTime);
+      primaryAudioPreviewLastCorrectionAtMs = nowMs;
+    } catch {
+      // Ignore early metadata seek failures.
+    }
+  }
+  if (video.paused) {
+    if (!audio.paused) audio.pause();
+    return;
+  }
+  if (forceSeek && primaryAudioPreviewPlayErrorKey) primaryAudioPreviewPlayErrorKey = null;
+  if (audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || primaryAudioPreviewPlayErrorKey) return;
+  if (audio.paused) {
+    audio.play().catch((error) => {
+      primaryAudioPreviewPlayErrorKey = `${error?.name || "Error"}:${error?.message || String(error || "Unknown error")}`;
+      activity("audio.primary.preview.play_error", {
+        name: error?.name || "Error",
+        error: error?.message || String(error || "Unknown error"),
+      });
+    });
+  }
 }
 
 function normalizedPractiScorePlaceValue(rawValue) {
@@ -2431,7 +2566,7 @@ function renderHeader() {
 
 function renderStats() {
   $("timing-summary").textContent = state.metrics.raw_time_ms
-    ? "Click Expand and Unlock to change shot values."
+    ? "Click Edit and Unlock to change shot values."
     : "No timing data.";
 }
 
@@ -2587,10 +2722,12 @@ function renderVideo() {
     video.dataset.mediaUrl = primaryMediaPath;
     video.src = primaryMediaPath;
     video.load();
+    resetPrimaryAudioPreview();
     logPrimaryVideoState("source.attach");
   }
   if (!state.media.primary_available) {
     resetMediaElement(video);
+    resetPrimaryAudioPreview();
   }
 
   const secondaryPath = state.project.secondary_video?.path || "";
@@ -3058,6 +3195,7 @@ function endWaveformNavigatorDrag(event) {
 
 function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
   selectedShotId = shotId;
+  if (!scoringShotExpansion.has(shotId)) scoringShotExpansion.set(shotId, true);
   if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = shotId;
   activity("shot.select", { shot_id: shotId });
   const shot = selectedShot();
@@ -3073,6 +3211,7 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
     } catch {
       // Some browsers reject seeks before metadata is ready.
     }
+    syncPrimaryAudioPreview({ forceSeek: true });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   }
@@ -3268,7 +3407,22 @@ function updateTimingRowField(shotId, field, value) {
 }
 
 function splitRowEntryLabel(row) {
-  return row.label || `${row.start_label || "Start"} -> ${row.end_label || (row.shot_number ? `Shot ${row.shot_number}` : "Entry")}`;
+  return row.label || (row.shot_number ? `Shot ${row.shot_number}` : row.end_label || "Entry");
+}
+
+function splitRowRangeLabel(row) {
+  return `${row.start_label || "Start"} -> ${row.end_label || (row.shot_number ? `Shot ${row.shot_number}` : "Entry")}`;
+}
+
+function splitRowIntervalLabel(row) {
+  const intervalLabel = String(row?.interval_label || "").trim();
+  if (intervalLabel) return intervalLabel;
+  if (Number(row?.shot_number || 0) === 1) return "Draw";
+  return "Split";
+}
+
+function splitRowSequenceTotalMs(row) {
+  return numericMs(row?.sequence_total_ms);
 }
 
 function splitRowActions(row) {
@@ -3277,6 +3431,25 @@ function splitRowActions(row) {
 
 function splitRowActionSummary(row) {
   return splitRowActions(row).map((action) => action.label).filter(Boolean).join(" • ");
+}
+
+function splitRowPrimaryAction(row) {
+  if (row?.event_id) {
+    return splitRowActions(row).find((action) => action.event_id === row.event_id) || null;
+  }
+  return splitRowActions(row).find((action) => action.event_id) || null;
+}
+
+function splitRowSecondaryActions(row) {
+  const primaryAction = splitRowPrimaryAction(row);
+  return splitRowActions(row).filter((action) => action !== primaryAction);
+}
+
+function splitRowPrimaryLabel(row) {
+  const primaryAction = splitRowPrimaryAction(row);
+  if (primaryAction?.label) return primaryAction.label;
+  const intervalLabel = splitRowIntervalLabel(row);
+  return intervalLabel && intervalLabel !== "Split" ? intervalLabel : "";
 }
 
 function splitRowSourceLabel(row) {
@@ -3292,41 +3465,73 @@ function splitRowConfidenceLabel(row) {
     : formatConfidenceValue(row.confidence);
 }
 
+function maximumSplitRowActionLabelLength() {
+  let longest = 8;
+  (state?.split_rows || []).forEach((row) => {
+    const labels = [];
+    const primaryLabel = splitRowPrimaryLabel(row);
+    if (primaryLabel) labels.push(primaryLabel);
+    splitRowSecondaryActions(row).forEach((action) => labels.push(action.label || action.kind || "Action"));
+    labels.forEach((label) => {
+      longest = Math.max(longest, String(label || "").trim().length);
+    });
+  });
+  return longest;
+}
+
 function buildSplitRowActionCell(row, expandedTable) {
   const cell = document.createElement("div");
   cell.className = "timeline-action-cell";
-  const actions = splitRowActions(row);
-  if (actions.length === 0) {
+  const primaryAction = splitRowPrimaryAction(row);
+  const primaryLabel = splitRowPrimaryLabel(row);
+  const secondaryActions = splitRowSecondaryActions(row);
+  if (!expandedTable) {
+    cell.textContent = splitRowActionSummary(row) || primaryLabel || "--";
+    return cell;
+  }
+
+  if (!primaryLabel && secondaryActions.length === 0) {
     cell.textContent = "--";
     return cell;
   }
-  if (!expandedTable) {
-    cell.textContent = splitRowActionSummary(row);
-    return cell;
-  }
+
   const list = document.createElement("div");
   list.className = "timeline-action-list";
-  actions.forEach((action) => {
+  const appendChip = (labelText, { synthetic = false, eventId = null } = {}) => {
     const chip = document.createElement("span");
-    chip.className = `timing-action-chip ${action.synthetic ? "synthetic" : "recorded"}`;
-    const label = document.createElement("span");
-    label.textContent = action.label || action.kind || "Action";
-    chip.appendChild(label);
-    if (action.event_id && !action.synthetic) {
+    chip.className = `timing-action-chip ${synthetic ? "synthetic" : "recorded"}`;
+    const chipLabel = document.createElement("span");
+    chipLabel.textContent = labelText;
+    chip.appendChild(chipLabel);
+    if (eventId) {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "timing-action-remove";
       remove.textContent = "×";
-      remove.title = `Remove ${action.label || action.kind || "timing event"}`;
-      remove.setAttribute("aria-label", `Remove timing event ${action.label || action.kind || "action"}`);
+      remove.title = `Remove ${labelText || "timing event"}`;
+      remove.setAttribute("aria-label", `Remove timing event ${labelText || "action"}`);
       remove.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        deleteTimingEvent(action.event_id);
+        deleteTimingEvent(eventId);
       });
       chip.appendChild(remove);
     }
     list.appendChild(chip);
+  };
+
+  if (primaryLabel) {
+    appendChip(primaryLabel, {
+      synthetic: !primaryAction?.event_id,
+      eventId: primaryAction?.event_id && !primaryAction.synthetic ? primaryAction.event_id : null,
+    });
+  }
+  secondaryActions.forEach((action) => {
+    const labelText = action.label || action.kind || "Action";
+    appendChip(labelText, {
+      synthetic: action.synthetic,
+      eventId: action.event_id && !action.synthetic ? action.event_id : null,
+    });
   });
   cell.appendChild(list);
   return cell;
@@ -3338,6 +3543,11 @@ function renderTimingTable(tableId = "timing-table") {
   table.innerHTML = "";
   const expandedTable = tableId === "timing-workbench-table";
   table.classList.toggle("interval-timeline-table", true);
+  if (expandedTable) {
+    table.style.setProperty("--timing-action-chip-chars", String(maximumSplitRowActionLabelLength()));
+  } else {
+    table.style.removeProperty("--timing-action-chip-chars");
+  }
   const defaultScore = defaultScoreLetter();
   const headers = expandedTable
     ? ["", "Segment", "Split", "Total", "Action", "Score", "Confidence", "Source"]
@@ -3403,10 +3613,13 @@ function renderTimingTable(tableId = "timing-table") {
     table.appendChild(splitCell);
 
     const totalCell = document.createElement("div");
-    totalCell.textContent = splitSeconds(numericMs(row.cumulative_ms));
+    totalCell.textContent = splitSeconds(splitRowSequenceTotalMs(row));
     table.appendChild(totalCell);
 
     const actionCell = buildSplitRowActionCell(row, expandedTable);
+    if (row.shot_id === selectedShotId) actionCell.classList.add("selected");
+    if (lowConfidence) actionCell.classList.add("low-confidence");
+    if (canEdit) actionCell.addEventListener("click", () => selectShot(row.shot_id));
     table.appendChild(actionCell);
 
     const scoreCell = document.createElement("div");
@@ -3441,9 +3654,13 @@ function renderSelection() {
   selectedShotId = state.project.ui_state.selected_shot_id || selectedShotId;
   const segment = (state.timing_segments || []).find((item) => item.shot_id === selectedShotId);
   const selectedLabel = segment ? `Shot ${segment.shot_number}` : "No shot selected";
+  const splitRow = segment ? splitRowForShot(segment.shot_id) : null;
   const selectedSplitMs = segment ? resolvedSplitMsForShot(segment.shot_id, segment.shot_number, segment.absolute_ms) : null;
+  const runMs = splitRowSequenceTotalMs(splitRow);
+  const stageMs = numericMs(splitRow?.cumulative_ms) ?? numericMs(segment?.cumulative_ms);
+  const intervalLabel = splitRowIntervalLabel(splitRow);
   $("selected-shot-copy").textContent = segment
-    ? `${selectedLabel}: ${seconds(selectedSplitMs)}s split, ${segment.cumulative_s || "--.--"}s from beep.`
+    ? `${selectedLabel}: ${intervalLabel} ${seconds(selectedSplitMs)}s, ${seconds(runMs)}s since last reset, ${seconds(stageMs)}s from beep.`
     : "No shot selected.";
   $("selected-timing-shot").textContent = selectedLabel;
 }
@@ -3480,6 +3697,17 @@ function renderScoreOptions(summary) {
   });
 }
 
+function isScoringShotExpanded(shotId, activeShotId = null) {
+  if (!shotId) return false;
+  if (scoringShotExpansion.has(shotId)) return Boolean(scoringShotExpansion.get(shotId));
+  return shotId === activeShotId;
+}
+
+function setScoringShotExpanded(shotId, expanded) {
+  if (!shotId) return;
+  scoringShotExpansion.set(shotId, Boolean(expanded));
+}
+
 function renderScoringShotList() {
   const list = $("scoring-shot-list");
   if (!list) return;
@@ -3488,28 +3716,51 @@ function renderScoringShotList() {
   const penaltyFields = state.scoring_summary?.penalty_fields || [];
   const defaultScore = scoreOptions[0] || "A";
   const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
+  const visibleShotIds = new Set((state.timing_segments || []).map((segment) => segment.shot_id));
+  [...scoringShotExpansion.keys()].forEach((shotId) => {
+    if (!visibleShotIds.has(shotId)) scoringShotExpansion.delete(shotId);
+  });
   (state.timing_segments || []).forEach((segment) => {
+    const expanded = isScoringShotExpanded(segment.shot_id, activeShotId);
     const row = document.createElement("div");
     row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
+    row.classList.toggle("collapsed", !expanded);
     if (isLowConfidence(segment.confidence)) row.classList.add("low-confidence");
+
+    const header = document.createElement("div");
+    header.className = "scoring-shot-header";
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "scoring-shot-button";
     const title = document.createElement("strong");
     title.textContent = `Shot ${segment.shot_number}`;
-    const meta = document.createElement("small");
-    meta.textContent = segment.card_meta || `${segment.card_value || "--.--"}s`;
-    button.append(title, meta);
+    button.append(title);
     button.title = segment.source === "manual"
       ? "Manual shot marker."
       : isLowConfidence(segment.confidence)
         ? `Low-confidence ShotML marker (${formatConfidenceValue(segment.confidence)}).`
         : "ShotML-detected shot.";
     button.addEventListener("click", () => selectShot(segment.shot_id));
+    header.appendChild(button);
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "scoring-shot-toggle";
+    toggle.textContent = expanded ? "v" : ">";
+    toggle.title = expanded ? "Hide score controls" : "Show score controls";
+    toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} score controls for shot ${segment.shot_number}`);
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setScoringShotExpanded(segment.shot_id, !expanded);
+      renderScoringShotList();
+    });
+    header.appendChild(toggle);
 
     const controls = document.createElement("div");
     controls.className = "scoring-shot-controls";
+    controls.hidden = !expanded;
 
     const select = document.createElement("select");
     select.className = "shot-score-select";
@@ -3572,7 +3823,7 @@ function renderScoringShotList() {
     restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
     controls.appendChild(restore);
 
-    row.append(button, controls);
+    row.append(header, controls);
     list.appendChild(row);
   });
 }
@@ -3771,8 +4022,10 @@ function buildMetricsRows() {
       shotId: row.shot_id,
       shotNumber: row.shot_number,
       label: splitRowEntryLabel(row),
+      intervalLabel: splitRowIntervalLabel(row),
       absoluteMs,
       splitMs: numericMs(row.split_ms),
+      sequenceTotalMs: splitRowSequenceTotalMs(row),
       cumulativeMs: numericMs(row.cumulative_ms) ?? cumulativeMs,
       actionSummary: splitRowActionSummary(row),
       scoreLetter: row.score_letter || segment?.score_letter || defaultScore,
@@ -3824,7 +4077,7 @@ function renderMetricsPanel() {
       const row = document.createElement("div");
       row.className = "metrics-row";
       const label = document.createElement("strong");
-      label.textContent = entry.label;
+      label.textContent = `${entry.label} • ${entry.intervalLabel}`;
       const meta = document.createElement("span");
       meta.textContent = entry.absoluteMs === null ? "Timing" : `At ${precise(entry.absoluteMs)}s`;
       const split = document.createElement("span");
@@ -3832,9 +4085,9 @@ function renderMetricsPanel() {
         ? "Split --.--"
         : `Split ${splitSeconds(entry.splitMs)}`;
       const cumulative = document.createElement("span");
-      cumulative.textContent = entry.cumulativeMs === null || entry.cumulativeMs === undefined
-        ? "Total --.--"
-        : `Total ${splitSeconds(entry.cumulativeMs)}`;
+      cumulative.textContent = entry.sequenceTotalMs === null || entry.sequenceTotalMs === undefined
+        ? "Run --.--"
+        : `Run ${splitSeconds(entry.sequenceTotalMs)}`;
       const detail = document.createElement("small");
       const sourceLabel = entry.source === "manual"
         ? "Manual"
@@ -3842,7 +4095,8 @@ function renderMetricsPanel() {
             ? entry.source
             : formatConfidenceValue(entry.confidence));
       const detailParts = [
-        entry.actionSummary,
+        entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
+        entry.actionSummary && entry.actionSummary !== entry.intervalLabel ? entry.actionSummary : "",
         entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
         entry.penaltyText,
         sourceLabel,
@@ -4029,8 +4283,7 @@ function renderControls() {
   syncControlValue($("draw-y"), state.project.overlay.draw_y ?? "");
   syncControlValue($("score-x"), state.project.overlay.score_x ?? "");
   syncControlValue($("score-y"), state.project.overlay.score_y ?? "");
-  syncControlValue($("bubble-width"), state.project.overlay.bubble_width);
-  syncControlValue($("bubble-height"), state.project.overlay.bubble_height);
+  syncOverlayBubbleSizeControls();
   syncControlValue($("overlay-font-family"), state.project.overlay.font_family);
   syncControlValue($("overlay-font-size"), state.project.overlay.font_size);
   syncControlChecked($("overlay-font-bold"), state.project.overlay.font_bold);
@@ -4339,6 +4592,126 @@ function textBiasForDirection(direction) {
   return "center";
 }
 
+function overlayBadgeContentText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) return content.map((part) => part?.text || "").join("");
+  return String(content?.text || "");
+}
+
+function overlayBadgeFontSizePx() {
+  const badgeSize = state?.project?.overlay?.badge_size || "M";
+  return Math.max(8, Number(state?.project?.overlay?.font_size || BADGE_FONT_SIZES[badgeSize] || BADGE_FONT_SIZES.M));
+}
+
+function overlayBadgeMeasureContext() {
+  if (!overlayBadgeMeasureCanvas) overlayBadgeMeasureCanvas = document.createElement("canvas");
+  return overlayBadgeMeasureCanvas.getContext("2d");
+}
+
+function overlayBadgeFontSpec() {
+  const overlay = state?.project?.overlay || {};
+  const fontStyle = overlay.font_italic ? "italic" : "normal";
+  const fontWeight = overlay.font_bold ? "700" : "400";
+  const fontSize = overlayBadgeFontSizePx();
+  const fontFamily = overlay.font_family || "Helvetica Neue";
+  return `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
+}
+
+function measureOverlayBadgeContent(content) {
+  const context = overlayBadgeMeasureContext();
+  const fallbackFontSize = overlayBadgeFontSizePx();
+  if (!context) {
+    return { width: 0, height: fallbackFontSize };
+  }
+  context.font = overlayBadgeFontSpec();
+  const lines = overlayBadgeContentText(content).split(/\r?\n/);
+  let maxWidth = 0;
+  let totalHeight = 0;
+  lines.forEach((line) => {
+    const metrics = context.measureText(line || " ");
+    const lineHeight = Math.max(
+      fallbackFontSize,
+      Math.ceil((metrics.actualBoundingBoxAscent || 0) + (metrics.actualBoundingBoxDescent || 0)),
+    );
+    maxWidth = Math.max(maxWidth, Math.ceil(metrics.width));
+    totalHeight += lineHeight;
+  });
+  return {
+    width: maxWidth,
+    height: Math.max(fallbackFontSize, totalHeight),
+  };
+}
+
+function overlayAutoSizedBadgeContents() {
+  if (!state?.project?.overlay) return [];
+  const overlay = state.project.overlay;
+  const contents = [];
+  if (overlay.show_timer) contents.push(`Timer ${seconds(state?.metrics?.raw_time_ms)}`);
+  if (overlay.show_draw && numericMs(state?.metrics?.draw_ms) !== null && Number(state.metrics.draw_ms) > 0) {
+    contents.push(`Draw ${seconds(state.metrics.draw_ms)}`);
+  }
+  if (overlay.show_shots) {
+    const shots = orderedShotsByTime();
+    const splitRowsByShotId = new Map((state?.split_rows || []).filter((row) => row.shot_id).map((row) => [row.shot_id, row]));
+    shots.forEach((shot, index) => {
+      const splitRow = splitRowsByShotId.get(shot.id) || null;
+      const splitMs = resolvedSplitMsForShot(shot.id, index + 1, shot.time_ms);
+      contents.push(scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)));
+    });
+  }
+  const summary = state?.scoring_summary || {};
+  if (overlay.show_score && state?.project?.scoring?.enabled && summary.display_value && summary.display_value !== "--") {
+    contents.push(`${summary.display_label} ${summary.display_value}`);
+  }
+  return contents;
+}
+
+function overlayAutoBubbleSize() {
+  const overlay = state?.project?.overlay;
+  if (!overlay) return { width: 0, height: 0 };
+  const texts = overlayAutoSizedBadgeContents().map((content) => overlayBadgeContentText(content)).filter(Boolean);
+  const cacheKey = [
+    overlay.font_family || "Helvetica Neue",
+    String(overlayBadgeFontSizePx()),
+    overlay.font_bold ? "700" : "400",
+    overlay.font_italic ? "italic" : "normal",
+    ...texts,
+  ].join("\u0001");
+  if (cacheKey === overlayAutoBubbleCacheKey) return overlayAutoBubbleCache;
+  let maxWidth = 0;
+  let maxHeight = 0;
+  texts.forEach((text) => {
+    const measurement = measureOverlayBadgeContent(text);
+    maxWidth = Math.max(maxWidth, measurement.width);
+    maxHeight = Math.max(maxHeight, measurement.height);
+  });
+  overlayAutoBubbleCacheKey = cacheKey;
+  overlayAutoBubbleCache = {
+    width: maxWidth > 0 ? Math.ceil(maxWidth + (OVERLAY_BADGE_PADDING_X_PX * 2)) : 0,
+    height: maxHeight > 0 ? Math.ceil(maxHeight + (OVERLAY_BADGE_PADDING_Y_PX * 2)) : 0,
+  };
+  return overlayAutoBubbleCache;
+}
+
+function syncOverlayBubbleSizeControls() {
+  const widthInput = $("bubble-width");
+  const heightInput = $("bubble-height");
+  const overlay = state?.project?.overlay;
+  const autoSize = overlayAutoBubbleSize();
+  if (widthInput) {
+    widthInput.placeholder = autoSize.width > 0 ? String(autoSize.width) : "auto";
+    if (!controlIsActive(widthInput)) {
+      widthInput.value = overlay?.bubble_width > 0 ? String(overlay.bubble_width) : "";
+    }
+  }
+  if (heightInput) {
+    heightInput.placeholder = autoSize.height > 0 ? String(autoSize.height) : "auto";
+    if (!controlIsActive(heightInput)) {
+      heightInput.value = overlay?.bubble_height > 0 ? String(overlay.bubble_height) : "";
+    }
+  }
+}
+
 function badgeElement(
   content,
   style,
@@ -4348,12 +4721,9 @@ function badgeElement(
   heightOverride = null,
   textBias = "center",
   scale = 1,
+  autoBubbleSize = null,
 ) {
-  const text = typeof content === "string"
-    ? content
-    : Array.isArray(content)
-      ? content.map((part) => part?.text || "").join("")
-      : String(content?.text || "");
+  const text = overlayBadgeContentText(content);
   const textRuns = Array.isArray(content) ? content : content?.runs || null;
   const badge = document.createElement("span");
   const role = text.startsWith("Timer")
@@ -4388,21 +4758,22 @@ function badgeElement(
   } else {
     badge.textContent = text;
   }
-  const fontSize = Number(state.project.overlay.font_size || 14);
-  const scaledPaddingY = scaledOverlayPixelValue(Math.max(4, fontSize * 0.45), scale, 0);
-  const scaledPaddingX = scaledOverlayPixelValue(Math.max(8, fontSize * 0.85), scale, 0);
+  const scaledPaddingY = scaledOverlayPixelValue(OVERLAY_BADGE_PADDING_Y_PX, scale, 0);
+  const scaledPaddingX = scaledOverlayPixelValue(OVERLAY_BADGE_PADDING_X_PX, scale, 0);
   badge.style.padding = `${scaledPaddingY}px ${scaledPaddingX}px`;
   badge.style.margin = "0";
-  const scaledWidth = widthOverride > 0
-    ? scaledOverlayPixelValue(widthOverride, scale, 1)
+  const resolvedWidth = widthOverride > 0
+    ? widthOverride
     : state.project.overlay.bubble_width > 0
-      ? scaledOverlayPixelValue(state.project.overlay.bubble_width, scale, 1)
-      : 0;
-  const scaledHeight = heightOverride > 0
-    ? scaledOverlayPixelValue(heightOverride, scale, 1)
+      ? state.project.overlay.bubble_width
+      : autoBubbleSize?.width || 0;
+  const resolvedHeight = heightOverride > 0
+    ? heightOverride
     : state.project.overlay.bubble_height > 0
-      ? scaledOverlayPixelValue(state.project.overlay.bubble_height, scale, 1)
-      : 0;
+      ? state.project.overlay.bubble_height
+      : autoBubbleSize?.height || 0;
+  const scaledWidth = resolvedWidth > 0 ? scaledOverlayPixelValue(resolvedWidth, scale, 1) : 0;
+  const scaledHeight = resolvedHeight > 0 ? scaledOverlayPixelValue(resolvedHeight, scale, 1) : 0;
   if (scaledWidth > 0) badge.style.width = `${scaledWidth}px`;
   if (scaledHeight > 0) badge.style.height = `${scaledHeight}px`;
   badge.style.fontFamily = state.project.overlay.font_family || "Helvetica Neue";
@@ -4943,7 +5314,12 @@ function endMergePreviewDrag(event) {
   mergePreviewDrag = null;
 }
 
-function renderLiveOverlay() {
+function overlayRenderPositionMs(video, mediaTimeS = null) {
+  if (Number.isFinite(mediaTimeS)) return Math.max(0, Math.floor(mediaTimeS * 1000));
+  return Math.max(0, Math.floor((video?.currentTime || 0) * 1000));
+}
+
+function renderLiveOverlay(positionMsOverride = null) {
   if (!state?.project) return;
   const overlay = $("live-overlay");
   const customOverlay = $("custom-overlay");
@@ -4974,7 +5350,9 @@ function renderLiveOverlay() {
   customOverlay.style.padding = "0";
   customOverlay.style.gap = "0";
 
-  const positionMs = Math.round((video.currentTime || 0) * 1000);
+  const positionMs = Number.isFinite(positionMsOverride)
+    ? Math.max(0, Math.floor(positionMsOverride))
+    : overlayRenderPositionMs(video);
   const beep = state.project.analysis.beep_time_ms_primary;
   let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
   const shots = orderedShotsByTime();
@@ -4988,15 +5366,18 @@ function renderLiveOverlay() {
   }
   const size = state.project.overlay.badge_size;
   const shotTextBias = textBiasForDirection(state.project.overlay.shot_direction || "right");
+  const autoBubbleSize = state.project.overlay.bubble_width > 0 && state.project.overlay.bubble_height > 0
+    ? null
+    : overlayAutoBubbleSize();
   const currentIndex = currentShotIndex(positionMs);
-  const visibleEvents = visibleTimingEventsByShot(currentIndex);
+  const splitRowsByShotId = new Map((state.split_rows || []).filter((row) => row.shot_id).map((row) => [row.shot_id, row]));
   const appendOverlayBadge = (badge, xValue = null, yValue = null) => {
     if (!placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
       overlay.appendChild(badge);
     }
   };
   if (state.project.overlay.show_timer) {
-    const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
+    const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     timerBadge.dataset.overlayDrag = "shots";
     appendOverlayBadge(timerBadge, state.project.overlay.timer_x, state.project.overlay.timer_y);
   }
@@ -5009,7 +5390,7 @@ function renderLiveOverlay() {
     && state.metrics.draw_ms !== undefined
     && Number(state.metrics.draw_ms) > 0
   ) {
-    const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale);
+    const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     drawBadge.dataset.overlayDrag = "shots";
     appendOverlayBadge(drawBadge, state.project.overlay.draw_x, state.project.overlay.draw_y);
   }
@@ -5020,17 +5401,13 @@ function renderLiveOverlay() {
     for (let index = start; index <= currentIndex; index += 1) {
       const shot = shots[index];
       if (!shot) continue;
-      (visibleEvents.beforeByShotId.get(shot.id) || []).forEach((event) => {
-        const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
-        eventBadge.dataset.overlayDrag = "shots";
-        overlay.appendChild(eventBadge);
-      });
+      const splitRow = splitRowsByShotId.get(shot.id) || null;
       const splitMs = resolvedSplitMsForShot(shot.id, index + 1, shot.time_ms);
       const style = index === currentIndex
         ? state.project.overlay.current_shot_badge
         : state.project.overlay.shot_badge;
       const shotBadge = badgeElement(
-        scoreBadgeContent(shot, index + 1, splitSeconds(splitMs)),
+        scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)),
         style,
         size,
         null,
@@ -5038,25 +5415,16 @@ function renderLiveOverlay() {
         null,
         shotTextBias,
         overlayScale,
+        autoBubbleSize,
       );
       shotBadge.dataset.overlayDrag = "shots";
       overlay.appendChild(shotBadge);
-      (visibleEvents.afterByShotId.get(shot.id) || []).forEach((event) => {
-        const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
-        eventBadge.dataset.overlayDrag = "shots";
-        overlay.appendChild(eventBadge);
-      });
     }
-    (visibleEvents.tailEvents || []).forEach((event) => {
-      const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
-      eventBadge.dataset.overlayDrag = "shots";
-      overlay.appendChild(eventBadge);
-    });
   }
 
   const summary = state.scoring_summary || {};
   if (finalShotReached && state.project.scoring.enabled && state.project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
-    const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale);
+    const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     scoreBadge.dataset.overlayDrag = "score";
     appendOverlayBadge(scoreBadge, state.project.overlay.score_x, state.project.overlay.score_y);
   }
@@ -5108,28 +5476,57 @@ function renderLiveOverlay() {
   customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
 }
 
+function requestOverlayFrame(video, tick) {
+  if (!(video instanceof HTMLVideoElement)) return;
+  if (typeof video.requestVideoFrameCallback === "function") {
+    overlayFrameMode = "video-frame";
+    overlayFrame = video.requestVideoFrameCallback(tick);
+    return;
+  }
+  overlayFrameMode = "animation-frame";
+  overlayFrame = requestAnimationFrame((now) => tick(now, null));
+}
+
+function cancelOverlayFrame(video) {
+  if (overlayFrame === null) return;
+  if (overlayFrameMode === "video-frame" && typeof video?.cancelVideoFrameCallback === "function") {
+    video.cancelVideoFrameCallback(overlayFrame);
+  } else {
+    cancelAnimationFrame(overlayFrame);
+  }
+  overlayFrame = null;
+  overlayFrameMode = null;
+}
+
 function startOverlayLoop() {
-  if (overlayFrame !== null) return;
-  activity("video.play", { current_time_s: $("primary-video").currentTime });
+  const video = $("primary-video");
+  if (!(video instanceof HTMLVideoElement) || overlayFrame !== null) return;
+  activity("video.play", { current_time_s: video.currentTime });
   scheduleSecondaryPreviewSync();
-  const tick = () => {
+  const tick = (_now, metadata = null) => {
+    overlayFrame = null;
+    overlayFrameMode = null;
+    const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;
     activity("frame.overlay", {
-      current_time_s: $("primary-video").currentTime,
+      current_time_s: mediaTimeS ?? video.currentTime,
+      frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",
       merge_sources: (state?.project?.merge_sources || []).length,
       selected_shot_id: selectedShotId || "",
     });
+    syncPrimaryAudioPreview({ allowDriftCorrection: true });
     scheduleSecondaryPreviewSync();
-    renderLiveOverlay();
-    overlayFrame = requestAnimationFrame(tick);
+    renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);
+    if (video.paused || video.ended) return;
+    requestOverlayFrame(video, tick);
   };
-  overlayFrame = requestAnimationFrame(tick);
+  requestOverlayFrame(video, tick);
 }
 
 function stopOverlayLoop() {
-  if (overlayFrame === null) return;
-  activity("video.pause", { current_time_s: $("primary-video").currentTime });
-  cancelAnimationFrame(overlayFrame);
-  overlayFrame = null;
+  const video = $("primary-video");
+  if (!(video instanceof HTMLVideoElement) || overlayFrame === null) return;
+  activity("video.pause", { current_time_s: video.currentTime });
+  cancelOverlayFrame(video);
   scheduleSecondaryPreviewSync();
   renderLiveOverlay();
 }
@@ -5779,6 +6176,8 @@ function wireEvents() {
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
       logPrimaryVideoState(eventName);
+      ensurePrimaryAudioPreview($("primary-video"));
+      syncPrimaryAudioPreview({ forceSeek: true });
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
@@ -5787,27 +6186,54 @@ function wireEvents() {
       renderLiveOverlay();
     });
   });
-  ["volumechange", "canplay", "error"].forEach((eventName) => {
-    $("primary-video").addEventListener(eventName, () => {
-      logPrimaryVideoState(eventName);
-    });
+  $("primary-video").addEventListener("volumechange", () => {
+    logPrimaryVideoState("volumechange");
+    ensurePrimaryAudioPreview($("primary-video"));
+  });
+  $("primary-video").addEventListener("canplay", () => {
+    logPrimaryVideoState("canplay");
+    ensurePrimaryAudioPreview($("primary-video"));
+  });
+  $("primary-video").addEventListener("error", () => {
+    logPrimaryVideoState("error");
+    resetPrimaryAudioPreview();
   });
   $("primary-video").addEventListener("play", () => {
     logPrimaryVideoState("play");
+    syncPrimaryAudioPreview({ forceSeek: true });
   });
   $("primary-video").addEventListener("pause", () => {
     logPrimaryVideoState("pause");
+    syncPrimaryAudioPreview({ forceSeek: true });
   });
+  $("primary-video").addEventListener("ratechange", () => syncPrimaryAudioPreview({ forceSeek: true }));
   $("primary-video").addEventListener("play", startOverlayLoop);
   $("primary-video").addEventListener("pause", stopOverlayLoop);
   $("primary-video").addEventListener("seeked", () => {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
+    syncPrimaryAudioPreview({ forceSeek: true });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   });
   $("primary-video").addEventListener("timeupdate", () => {
+    if (overlayFrame !== null) return;
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
+  });
+  ["loadedmetadata", "canplay"].forEach((eventName) => {
+    $("primary-audio").addEventListener(eventName, () => {
+      primaryAudioPreviewPlayErrorKey = null;
+      syncPrimaryAudioPreview({ forceSeek: true });
+    });
+  });
+  $("primary-audio").addEventListener("error", () => {
+    const audio = $("primary-audio");
+    primaryAudioPreviewPlayErrorKey = `audio-error:${audio?.error?.code || 0}`;
+    activity("audio.primary.preview.error", {
+      code: audio?.error?.code || null,
+      message: audio?.error?.message || "",
+      current_src: audio?.currentSrc || audio?.src || "",
+    });
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
     button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));

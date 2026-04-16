@@ -7,7 +7,7 @@ from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project, overlay_text_boxes_for_render
 from splitshot.scoring.logic import calculate_scoring_summary, format_imported_stage_overlay_text
-from splitshot.timeline.model import compute_split_rows, draw_time_ms, sort_shots
+from splitshot.timeline.model import compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
 
 
 @dataclass(slots=True)
@@ -28,6 +28,9 @@ _FONT_SIZE = {
     BadgeSize.L: 16,
     BadgeSize.XL: 20,
 }
+
+_BADGE_PADDING_X_PX = 10
+_BADGE_PADDING_Y_PX = 5
 
 _PENALTY_LABELS = {
     "procedural_errors": "PE",
@@ -50,8 +53,14 @@ def _score_token_color(project: Project, token: str) -> str | None:
     return project.overlay.scoring_colors.get(normalized_token)
 
 
-def _shot_score_badge_content(project: Project, shot: object, shot_number: int, split_text: str) -> tuple[str, tuple[tuple[str, str | None], ...] | None]:
-    base_text = f"Shot {shot_number} {split_text}"
+def _shot_badge_base_text(shot_number: int, split_text: str, interval_label: str | None) -> str:
+    normalized_label = str(interval_label or "").strip()
+    if not normalized_label or normalized_label == "Split":
+        return f"Shot {shot_number} {split_text}"
+    return f"Shot {shot_number} {normalized_label} {split_text}"
+
+
+def _shot_score_badge_content(project: Project, shot: object, base_text: str) -> tuple[str, tuple[tuple[str, str | None], ...] | None]:
     score = getattr(shot, "score", None)
     if not project.scoring.enabled or score is None:
         return base_text, None
@@ -99,32 +108,58 @@ def _format_penalty_counts(penalty_counts: dict[str, float]) -> str:
     return ", ".join(parts)
 
 
-def _default_event_label(kind: str, label: str) -> str:
-    return label.strip() or kind.replace("_", " ").title()
+def _standard_badge_texts(project: Project) -> tuple[str, ...]:
+    texts: list[str] = []
+    shots = sort_shots(project.analysis.shots)
+    split_row_by_shot_id = {
+        row.shot_id: row
+        for row in compute_split_rows(project)
+        if row.shot_id is not None
+    }
+
+    if project.overlay.show_timer:
+        texts.append(f"Timer {_format_elapsed_seconds(raw_time_ms(project))}")
+
+    draw_value = draw_time_ms(project)
+    if project.overlay.show_draw and draw_value is not None:
+        texts.append(f"Draw {_format_elapsed_seconds(draw_value)}")
+
+    if project.overlay.show_shots:
+        for index, shot in enumerate(shots, start=1):
+            split_row = split_row_by_shot_id.get(shot.id)
+            split_ms = None if split_row is None else split_row.split_ms
+            split_text = _format_split_seconds(max(0, split_ms or 0))
+            base_text = _shot_badge_base_text(
+                index,
+                split_text,
+                None if split_row is None else split_row.interval_label,
+            )
+            score_text, _score_runs = _shot_score_badge_content(project, shot, base_text)
+            texts.append(score_text)
+
+    if project.overlay.show_score and project.scoring.enabled:
+        summary = calculate_scoring_summary(project)
+        if summary["display_value"] != "--":
+            texts.append(f"{summary['display_label']} {summary['display_value']}")
+
+    return tuple(texts)
 
 
-def _visible_timing_events(
-    project: Project,
-    shots: list,
-    current_index: int,
-) -> tuple[dict[str, list[str]], dict[str, list[str]], list[str]]:
-    shot_index = {shot.id: index for index, shot in enumerate(shots)}
-    before_by_shot_id: dict[str, list[str]] = {}
-    after_by_shot_id: dict[str, list[str]] = {}
-    tail_events: list[str] = []
-    for event in project.analysis.events:
-        event_label = _default_event_label(event.kind, event.label)
-        before_index = shot_index.get(event.before_shot_id) if event.before_shot_id else None
-        after_index = shot_index.get(event.after_shot_id) if event.after_shot_id else None
-        if before_index is not None and before_index <= current_index:
-            before_by_shot_id.setdefault(event.before_shot_id, []).append(event_label)
-            continue
-        if after_index is not None and after_index < current_index:
-            after_by_shot_id.setdefault(event.after_shot_id, []).append(event_label)
-            continue
-        if after_index is not None and after_index == current_index == len(shots) - 1 and not event.before_shot_id:
-            tail_events.append(event_label)
-    return before_by_shot_id, after_by_shot_id, tail_events
+def _auto_badge_size(texts: tuple[str, ...], metrics) -> tuple[int, int] | None:
+    if not texts:
+        return None
+    text_width = 0
+    text_height = 0
+    for text in texts:
+        lines = str(text or "").splitlines() or [""]
+        text_width = max(text_width, max(metrics.horizontalAdvance(line or " ") for line in lines))
+        text_height = max(text_height, metrics.height() * max(1, len(lines)))
+    if text_width <= 0 or text_height <= 0:
+        return None
+    return (
+        text_width + (_BADGE_PADDING_X_PX * 2),
+        text_height + (_BADGE_PADDING_Y_PX * 2),
+    )
 
 
 class OverlayRenderer:
@@ -151,8 +186,8 @@ class OverlayRenderer:
         badges: list[Badge] = []
         positioned_badges: list[tuple[Badge, float, float]] = []
         split_rows = compute_split_rows(project)
-        split_ms_by_shot_id = {
-            row.shot_id: row.split_ms
+        split_row_by_shot_id = {
+            row.shot_id: row
             for row in split_rows
             if row.shot_id is not None
         }
@@ -190,29 +225,24 @@ class OverlayRenderer:
 
         final_shot_time = None if not shots else shots[-1].time_ms
         final_shot_reached = final_shot_time is not None and position_ms >= final_shot_time
-        before_events_by_shot_id: dict[str, list[str]] = {}
-        after_events_by_shot_id: dict[str, list[str]] = {}
-        tail_events: list[str] = []
-        if current_index is not None:
-            before_events_by_shot_id, after_events_by_shot_id, tail_events = _visible_timing_events(
-                project,
-                shots,
-                current_index,
-            )
 
         if project.overlay.show_shots and current_index is not None:
             max_visible = max(1, int(project.overlay.max_visible_shots))
             start = max(0, current_index - max_visible + 1)
             for index in range(start, current_index + 1):
                 shot = shots[index]
-                for event_label in before_events_by_shot_id.get(shot.id, []):
-                    badges.append(Badge(event_label, project.overlay.timer_badge))
-                split_ms = split_ms_by_shot_id.get(shot.id)
+                split_row = split_row_by_shot_id.get(shot.id)
+                split_ms = None if split_row is None else split_row.split_ms
                 split_text = _format_split_seconds(max(0, split_ms or 0))
                 style = (
                     project.overlay.current_shot_badge if index == current_index else project.overlay.shot_badge
                 )
-                score_text, score_runs = _shot_score_badge_content(project, shot, index + 1, split_text)
+                base_text = _shot_badge_base_text(
+                    index + 1,
+                    split_text,
+                    None if split_row is None else split_row.interval_label,
+                )
+                score_text, score_runs = _shot_score_badge_content(project, shot, base_text)
                 badges.append(
                     Badge(
                         score_text,
@@ -222,10 +252,6 @@ class OverlayRenderer:
                         text_runs=score_runs,
                     )
                 )
-                for event_label in after_events_by_shot_id.get(shot.id, []):
-                    badges.append(Badge(event_label, project.overlay.timer_badge))
-
-            badges.extend(Badge(event_label, project.overlay.timer_badge) for event_label in tail_events)
 
         if final_shot_reached and project.scoring.enabled and project.overlay.show_score:
             summary = calculate_scoring_summary(project)
@@ -262,8 +288,16 @@ class OverlayRenderer:
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
 
+        font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
+        font = QFont(project.overlay.font_family or "Helvetica Neue")
+        font.setPixelSize(max(1, int(font_size)))
+        font.setBold(project.overlay.font_bold)
+        font.setItalic(project.overlay.font_italic)
+        painter.setFont(font)
+        auto_badge_size = _auto_badge_size(_standard_badge_texts(project), painter.fontMetrics())
+
         badges, positioned_badges, score_marks = self._build_badges_with_positions(project, position_ms)
-        self._paint_badges(painter, badges, project, width, height)
+        self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
         for badge, x, y in positioned_badges:
             self._paint_badges(
                 painter,
@@ -274,6 +308,7 @@ class OverlayRenderer:
                 quadrant="custom",
                 custom_x=x,
                 custom_y=y,
+                auto_badge_size=auto_badge_size,
             )
         for text_box in overlay_text_boxes_for_render(project.overlay):
             text_value = self._text_box_text(
@@ -321,6 +356,7 @@ class OverlayRenderer:
         quadrant: str | None = None,
         custom_x: float | None = None,
         custom_y: float | None = None,
+        auto_badge_size: tuple[int, int] | None = None,
     ) -> None:
         if not badges:
             return
@@ -332,8 +368,8 @@ class OverlayRenderer:
         font.setBold(project.overlay.font_bold)
         font.setItalic(project.overlay.font_italic)
         painter.setFont(font)
-        padding_y = max(4, int(font_size * 0.45))
-        padding_x = max(8, int(font_size * 0.85))
+        padding_y = _BADGE_PADDING_Y_PX
+        padding_x = _BADGE_PADDING_X_PX
         gap = max(0, int(project.overlay.spacing))
         frame_padding = max(0, int(project.overlay.margin))
         quadrant_value = quadrant or project.overlay.shot_quadrant
@@ -360,8 +396,8 @@ class OverlayRenderer:
             text_height = metrics.height() * max(1, len(lines))
             explicit_width = int(badge.width or project.overlay.bubble_width or 0)
             explicit_height = int(badge.height or project.overlay.bubble_height or 0)
-            badge_width = explicit_width if explicit_width > 0 else text_width + (padding_x * 2)
-            badge_height = explicit_height if explicit_height > 0 else text_height + (padding_y * 2)
+            badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else text_width + (padding_x * 2))
+            badge_height = explicit_height if explicit_height > 0 else (auto_badge_size[1] if auto_badge_size else text_height + (padding_y * 2))
             if previous_rect is None:
                 if quadrant_value == "custom":
                     rect_x = (max(0.0, min(1.0, float(x_override))) * width) - (badge_width / 2)
