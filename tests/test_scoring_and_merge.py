@@ -140,6 +140,21 @@ def test_idpa_time_plus_uses_points_down_and_penalty_seconds() -> None:
     assert summary["final_time"] == 2.0 + 9 + 41
 
 
+def test_scoring_summary_exposes_token_text_colors() -> None:
+    project = Project()
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    summary = calculate_scoring_summary(project)
+    color_options = {item["key"]: item for item in summary["scoring_color_options"]}
+
+    assert "-0" in color_options
+    assert "PE" in color_options
+    assert color_options["PE"]["label"] == "PE"
+    assert color_options["PE"]["description"] == "Procedural Error"
+    assert "NT" in color_options
+    assert "-0|procedural_errors" not in color_options
+
+
 def test_imported_stage_summary_uses_official_aggregate_values() -> None:
     project = Project()
     project.scoring.enabled = True

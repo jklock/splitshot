@@ -20,7 +20,7 @@ This page records the current constraints that are visible in the source tree an
 
 - The browser server binds to `127.0.0.1` by default.
 - Native file picker support is platform dependent; the app falls back to platform-specific dialogs when it can.
-- Browser uploads are handled locally and are not cloud-backed.
+- Browser file imports are handled locally and are not cloud-backed.
 - The browser review page shows the primary video, an optional secondary angle, and merge media, but the authoritative state still lives in the shared controller.
 
 ## Analysis and Scoring
@@ -39,5 +39,5 @@ This page records the current constraints that are visible in the source tree an
 - The repository includes a root LICENSE file and uses the MIT License.
 - The docs/plans and docs/todos directories are implementation history and task tracking, not the primary user manual.
 
-**Last updated:** 2026-04-14
-**Referenced files last updated:** 2026-04-14
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

@@ -10,12 +10,13 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent, VideoAsset
+from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent, TimingEvent, VideoAsset
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import apply_scoring_preset
+from splitshot.timeline.model import draw_time_ms
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -187,18 +188,26 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     project.overlay.show_score = False
     project.overlay.max_visible_shots = 4
     project.overlay.scoring_colors["C"] = "#00ff00"
+    project.overlay.scoring_colors["PE"] = "#112233"
+    project.overlay.current_shot_badge.background_color = "#f97316"
+    project.overlay.current_shot_badge.text_color = "#000000"
+    project.overlay.shot_badge.background_color = "#f97316"
+    project.overlay.shot_badge.text_color = "#000000"
     project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1})
 
     badges, score_marks = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)
 
+    scored_badge = next(badge for badge in badges if badge.text.startswith("Shot 1 "))
+
     assert score_marks == []
-    assert any(
-        badge.text.startswith("Shot 1 ")
-        and " C" in badge.text
-        and "PE x1" in badge.text
-        and badge.text_color == "#00ff00"
-        for badge in badges
-    )
+    assert scored_badge.background_color is None
+    assert scored_badge.style.background_color == "#f97316"
+    assert scored_badge.text_color == "#000000"
+    assert " C" in scored_badge.text
+    assert "PE x1" in scored_badge.text
+    assert scored_badge.text_runs is not None
+    assert ("C", "#00ff00") in scored_badge.text_runs
+    assert ("PE", "#112233") in scored_badge.text_runs
 
 
 def test_overlay_renderer_formats_timer_and_draw_like_browser_preview() -> None:
@@ -231,10 +240,40 @@ def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_fact
 
     before_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms - 1)[0]
     after_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)[0]
+    expected_shot_badge = f"Shot 1 {draw_time_ms(project) / 1000.0:.2f}s"
 
     assert any(badge.text.startswith("Draw ") for badge in before_first)
     assert not any(badge.text.startswith("Draw ") for badge in after_first)
-    assert any("Shot 1" in badge.text and badge.text.endswith("s") for badge in after_first)
+    assert any(badge.text == expected_shot_badge for badge in after_first)
+
+
+def test_overlay_renderer_includes_reload_events_without_zeroing_the_following_shot() -> None:
+    project = Project(name="Timing Event Overlay")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [
+        ShotEvent(time_ms=250),
+        ShotEvent(time_ms=480),
+        ShotEvent(time_ms=720),
+    ]
+    project.analysis.events = [
+        TimingEvent(
+            kind="reload",
+            label="Reload",
+            after_shot_id=project.analysis.shots[0].id,
+            before_shot_id=project.analysis.shots[1].id,
+        )
+    ]
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = True
+    project.overlay.show_score = False
+
+    badges, _score_marks = OverlayRenderer().build_badges(project, 500)
+    texts = [badge.text for badge in badges]
+
+    assert "Shot 1 0.15s" in texts
+    assert "Reload" in texts
+    assert "Shot 2 0.23s" in texts
 
 
 def test_overlay_renderer_keeps_final_shot_visible_and_uses_final_label() -> None:

@@ -45,7 +45,7 @@ The repository uses `pytest` with `qt_api = pyside6`.
 
 - App settings live in `~/.splitshot/settings.json`.
 - Saved projects are `.ssproj` bundle directories containing `project.json` and copied media when needed.
-- Browser session uploads may be stored in temporary session directories while the browser server is running.
+- Browser-session imports may be stored in temporary session directories while the browser server is running.
 
 ## Change Discipline
 
@@ -53,5 +53,5 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Update both the project bundle load/save path and the browser state serialization when the project schema changes.
 - Use the technical docs in `src/splitshot/.../README.md` to locate the owning module before adding new behavior.
 
-**Last updated:** 2026-04-14
-**Referenced files last updated:** 2026-04-14
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

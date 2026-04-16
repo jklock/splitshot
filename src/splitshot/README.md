@@ -17,7 +17,7 @@ The default entry path is browser mode:
 2. `run_browser` creates a `ProjectController` and a `BrowserControlServer`.
 3. The browser server serves the static UI, exposes the JSON API, and writes an activity log.
 4. `--desktop` switches to the PySide6 window in `splitshot.app.run`.
-5. `--check` validates that FFmpeg, FFprobe, and the packaged browser assets are available.
+5. `--check` validates FFmpeg, FFprobe, the Qt export runtime, native file-dialog support, and the packaged browser assets.
 
 ## Notes
 
@@ -25,5 +25,5 @@ The default entry path is browser mode:
 - App settings are persisted in `~/.splitshot/settings.json` through `config.py`.
 - The package version is exported from `__init__.py` as `__version__`.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-11
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

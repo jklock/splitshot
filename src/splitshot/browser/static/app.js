@@ -5,6 +5,8 @@ let overlayFrame = null;
 let waveformMode = "select";
 let draggingShotId = null;
 let pendingDragTimeMs = null;
+let waveformPanDrag = null;
+let waveformNavigatorDrag = null;
 let timingRowEdits = new Set();
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
@@ -28,17 +30,30 @@ let overlayColorCommitTimer = null;
 let processingBarShowTimer = null;
 let processingBarHideTimer = null;
 let processingBarVisibleAtMs = 0;
+let processingProgressTimer = null;
+let processingProgressPercent = 0;
+let activeProcessingPath = null;
 let activityQueue = [];
 let activityFlushTimer = null;
+let activityCursor = 0;
+let activityPollTimer = null;
 let overlayBadgeDrag = null;
 let mergePreviewDrag = null;
+let textBoxDrag = null;
+let exportLogLines = [];
+let activeColorPickerControl = null;
+let reviewStageRestoreFrame = null;
+let reviewStageRestoreSecondFrame = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
+const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
+const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
+const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
 
 const $ = (id) => document.getElementById(id);
 
@@ -58,6 +73,23 @@ const BADGE_FONT_SIZES = {
 };
 const CUSTOM_QUADRANT_VALUE = "custom";
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
+const CUSTOM_COLOR_SWATCHES = [
+  "#111827",
+  "#1d4ed8",
+  "#dc2626",
+  "#047857",
+  "#7c3aed",
+  "#f59e0b",
+  "#22c55e",
+  "#0ea5e9",
+  "#f97316",
+  "#be123c",
+  "#ffffff",
+  "#d1d5db",
+  "#9ca3af",
+  "#4b5563",
+  "#000000",
+];
 
 function flushActivityQueue() {
   if (activityFlushTimer !== null) {
@@ -93,6 +125,71 @@ function queueActivity(event, detail = {}) {
 function activity(event, detail = {}) {
   console.info("[splitshot]", event, detail);
   queueActivity(event, detail);
+}
+
+function clearActivityPollTimer() {
+  if (activityPollTimer === null) return;
+  window.clearTimeout(activityPollTimer);
+  activityPollTimer = null;
+}
+
+function appendExportLogLine(line) {
+  const nextLine = String(line || "").trimEnd();
+  if (!nextLine) return;
+  exportLogLines.push(nextLine);
+  exportLogLines = exportLogLines.slice(-500);
+}
+
+function consumeActivityEntries(entries = []) {
+  let exportLogChanged = false;
+  entries.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    const seq = Number(entry.seq || 0);
+    if (seq > activityCursor) activityCursor = seq;
+    if (entry.event === "/api/activity/poll") return;
+    if (entry.event === "api.export.log") {
+      appendExportLogLine(entry.line);
+      exportLogChanged = true;
+      return;
+    }
+    if (entry.event === "api.export.progress") {
+      const nextProgress = Number(entry.progress);
+      if (Number.isFinite(nextProgress)) {
+        setProcessingProgress(nextProgress * 100);
+        exportLogChanged = true;
+      }
+      return;
+    }
+    if (entry.event === "api.export.complete") {
+      setProcessingProgress(100);
+      exportLogChanged = true;
+    }
+  });
+  if (exportLogChanged) renderExportLog();
+}
+
+async function runActivityPoll() {
+  clearActivityPollTimer();
+  try {
+    const response = await fetch(`/api/activity/poll?after=${activityCursor}`);
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+    consumeActivityEntries(Array.isArray(data.entries) ? data.entries : []);
+    activityCursor = Math.max(activityCursor, Number(data.cursor || 0));
+  } catch (error) {
+    console.warn("[splitshot] activity poll failed", error);
+  } finally {
+    activityPollTimer = window.setTimeout(runActivityPoll, ACTIVITY_POLL_INTERVAL_MS);
+  }
+}
+
+function startActivityPolling() {
+  if (activityPollTimer !== null) return;
+  activityPollTimer = window.setTimeout(runActivityPoll, 0);
+}
+
+function stopActivityPolling() {
+  clearActivityPollTimer();
 }
 
 function buttonDescriptor(button) {
@@ -239,12 +336,82 @@ function formatPenaltyCountsText(penaltyCounts) {
     .join(", ");
 }
 
+function scoreTokenColor(token) {
+  const normalizedToken = String(token || "").trim();
+  if (!normalizedToken) return null;
+  return state?.project?.overlay?.scoring_colors?.[normalizedToken] || null;
+}
+
+function scoreBadgeTokens(shot) {
+  if (!state?.project?.scoring?.enabled || !shot?.score) return [];
+  const tokens = [{ text: shot.score.letter, color: scoreTokenColor(shot.score.letter) }];
+  Object.entries(shot.score.penalty_counts || {})
+    .filter(([, value]) => Number(value || 0) > 0)
+    .forEach(([fieldId, value]) => {
+      const token = penaltyFieldLabel(fieldId);
+      tokens.push({
+        text: token,
+        color: scoreTokenColor(token),
+        countText: ` x${formatNumber(value, 1)}`,
+      });
+    });
+  return tokens;
+}
+
 function formatShotBadgeSuffix(shot) {
-  if (!state?.project?.scoring?.enabled || !shot?.score) return "";
-  const parts = [shot.score.letter];
-  const penaltyText = formatPenaltyCountsText(shot.score.penalty_counts);
-  if (penaltyText) parts.push(penaltyText);
-  return ` ${parts.join(" ")}`;
+  const tokens = scoreBadgeTokens(shot);
+  if (tokens.length === 0) return "";
+  return ` ${tokens.map((token) => `${token.text}${token.countText || ""}`).join(" ")}`;
+}
+
+function scoreBadgeContent(shot, shotNumber, splitText) {
+  const baseText = `Shot ${shotNumber} ${splitText}`;
+  const tokens = scoreBadgeTokens(shot);
+  if (tokens.length === 0) {
+    return { text: baseText, runs: null };
+  }
+  const runs = [
+    { text: baseText },
+    { text: " " },
+    { text: tokens[0].text, color: tokens[0].color },
+  ];
+  let text = `${baseText} ${tokens[0].text}`;
+  tokens.slice(1).forEach((token) => {
+    runs.push({ text: " " });
+    runs.push({ text: token.text, color: token.color });
+    runs.push({ text: token.countText || "" });
+    text += ` ${token.text}${token.countText || ""}`;
+  });
+  return { text, runs };
+}
+
+function scoringColorOptions() {
+  const options = Array.isArray(state?.scoring_summary?.scoring_color_options)
+    ? state.scoring_summary.scoring_color_options
+    : [];
+  if (options.length > 0) return options;
+  const fallback = [];
+  const seen = new Set();
+  (state?.scoring_summary?.score_options || []).forEach((token) => {
+    const key = String(token || "").trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    fallback.push({ key, label: key, description: "Score token" });
+  });
+  (state?.scoring_summary?.penalty_fields || []).forEach((field) => {
+    const key = penaltyFieldLabel(field.id, field.label);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    fallback.push({ key, label: key, description: field.label || key });
+  });
+  return fallback;
+}
+
+function defaultScoreLetter() {
+  const options = Array.isArray(state?.scoring_summary?.score_options)
+    ? state.scoring_summary.score_options
+    : [];
+  return options[0] || "A";
 }
 
 function formatConfidenceValue(confidence) {
@@ -303,8 +470,15 @@ function controlIsActive(control) {
 function syncControlValue(control, value) {
   if (!control || controlIsActive(control)) return;
   const nextValue = value === null || value === undefined ? "" : String(value);
+  if (isColorInput(control)) {
+    setColorControlValue(control, nextValue || "#000000");
+    syncOverlayHexControl(control);
+    if (colorControlButton(control) === activeColorPickerControl) {
+      syncColorPickerModal(nextValue || "#000000");
+    }
+    return;
+  }
   if (control.value !== nextValue) control.value = nextValue;
-  if (isColorInput(control)) syncOverlayHexControl(control);
 }
 
 function syncControlChecked(control, checked) {
@@ -314,14 +488,122 @@ function syncControlChecked(control, checked) {
 }
 
 function isColorInput(control) {
-  return control instanceof HTMLInputElement && control.type === "color";
+  return control instanceof HTMLButtonElement && control.classList.contains("color-swatch-button");
 }
 
 function fileName(path) {
-  if (!path) return "No video selected";
+  if (!path) return "No Video Selected";
   const normalized = path.split("\\").join("/");
   const base = normalized.split("/").filter(Boolean).pop() || path;
   return base.replace(/^[a-f0-9]{32}_/i, "");
+}
+
+function mediaCacheToken() {
+  return state?.media?.cache_token || "";
+}
+
+function buildMediaUrl(basePath, sourcePath = "") {
+  const params = new URLSearchParams();
+  if (sourcePath) params.set("v", sourcePath);
+  const token = mediaCacheToken();
+  if (token) params.set("mt", token);
+  const query = params.toString();
+  return query ? `${basePath}?${query}` : basePath;
+}
+
+function colorControlButton(control) {
+  if (isColorInput(control)) return control;
+  if (!(control instanceof Element)) return null;
+  return control.closest(".color-field")?.querySelector(".color-swatch-button") || null;
+}
+
+function colorControlLabel(control) {
+  const field = colorControlButton(control)?.closest(".color-field");
+  return field?.querySelector(".style-card-label, .score-color-label")?.textContent?.trim() || "Color";
+}
+
+function readColorControlValue(control) {
+  const button = colorControlButton(control);
+  return normalizeHexColor(button?.dataset.colorValue || "") || "#000000";
+}
+
+function setColorControlValue(control, value) {
+  const button = colorControlButton(control);
+  if (!button) return;
+  const normalized = normalizeHexColor(value) || "#000000";
+  button.dataset.colorValue = normalized;
+  button.style.setProperty("--swatch-color", normalized);
+  button.setAttribute("aria-label", `${button.dataset.colorLabel || colorControlLabel(button)} ${normalized.toUpperCase()}`);
+}
+
+function rgbToHex(red, green, blue) {
+  return `#${[red, green, blue].map((value) => Math.round(clampNumber(value, 0, 255)).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function rgbToHsl(red, green, blue) {
+  const r = clampNumber(red, 0, 255) / 255;
+  const g = clampNumber(green, 0, 255) / 255;
+  const b = clampNumber(blue, 0, 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const lightness = (max + min) / 2;
+  if (max === min) {
+    return { h: 0, s: 0, l: lightness * 100 };
+  }
+  const delta = max - min;
+  const saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+  let hue = 0;
+  switch (max) {
+    case r:
+      hue = ((g - b) / delta) + (g < b ? 6 : 0);
+      break;
+    case g:
+      hue = ((b - r) / delta) + 2;
+      break;
+    default:
+      hue = ((r - g) / delta) + 4;
+      break;
+  }
+  return {
+    h: (hue * 60) % 360,
+    s: saturation * 100,
+    l: lightness * 100,
+  };
+}
+
+function hexToHsl(hex) {
+  return rgbToHsl(...hexToRgb(hex));
+}
+
+function hueToRgb(channelA, channelB, hue) {
+  let nextHue = hue;
+  if (nextHue < 0) nextHue += 1;
+  if (nextHue > 1) nextHue -= 1;
+  if (nextHue < 1 / 6) return channelA + ((channelB - channelA) * 6 * nextHue);
+  if (nextHue < 1 / 2) return channelB;
+  if (nextHue < 2 / 3) return channelA + ((channelB - channelA) * ((2 / 3) - nextHue) * 6);
+  return channelA;
+}
+
+function hslToRgb(hue, saturation, lightness) {
+  const h = ((Number(hue) || 0) % 360 + 360) % 360 / 360;
+  const s = clampNumber(Number(saturation) || 0, 0, 100) / 100;
+  const l = clampNumber(Number(lightness) || 0, 0, 100) / 100;
+  if (s === 0) {
+    const grayscale = Math.round(l * 255);
+    return [grayscale, grayscale, grayscale];
+  }
+  const channelB = l < 0.5 ? l * (1 + s) : l + s - (l * s);
+  const channelA = 2 * l - channelB;
+  return [
+    Math.round(hueToRgb(channelA, channelB, h + (1 / 3)) * 255),
+    Math.round(hueToRgb(channelA, channelB, h) * 255),
+    Math.round(hueToRgb(channelA, channelB, h - (1 / 3)) * 255),
+  ];
+}
+
+function hslToHex(hue, saturation, lightness) {
+  return rgbToHex(...hslToRgb(hue, saturation, lightness));
 }
 
 function hexToRgb(hex) {
@@ -360,7 +642,7 @@ function syncOverlayHexControl(colorInput) {
   if (!isColorInput(colorInput)) return;
   const hexInput = overlayHexControlFor(colorInput);
   if (!(hexInput instanceof HTMLInputElement)) return;
-  const normalized = normalizeHexColor(colorInput.value) || "#000000";
+  const normalized = readColorControlValue(colorInput);
   if (!controlIsActive(hexInput) && hexInput.value !== normalized.toUpperCase()) {
     hexInput.value = normalized.toUpperCase();
   }
@@ -368,7 +650,7 @@ function syncOverlayHexControl(colorInput) {
 }
 
 function updateColorFromHexInput(hexInput, { commit = false } = {}) {
-  const colorInput = hexInput?.closest(".color-field")?.querySelector('input[type="color"]');
+  const colorInput = hexInput?.closest(".color-field")?.querySelector(".color-swatch-button");
   if (!isColorInput(colorInput) || !(hexInput instanceof HTMLInputElement)) return;
   const normalized = normalizeHexColor(hexInput.value);
   if (!normalized) {
@@ -377,17 +659,132 @@ function updateColorFromHexInput(hexInput, { commit = false } = {}) {
     return;
   }
   hexInput.classList.remove("invalid");
-  const changed = colorInput.value !== normalized;
-  colorInput.value = normalized;
+  const changed = readColorControlValue(colorInput) !== normalized;
+  setColorControlValue(colorInput, normalized);
   syncOverlayHexControl(colorInput);
   if (!changed) {
-    if (commit) flushOverlayColorCommit();
+    if (colorInput === activeColorPickerControl) syncColorPickerModal(normalized);
+    if (commit) scheduleOverlayColorCommit();
     return;
   }
-  previewOverlayControlChanges();
-  if (commit) {
-    queueOverlayColorCommit();
+  const textBoxCard = colorInput.closest(".text-box-card");
+  const textBoxField = colorInput.dataset.textBoxField || "";
+  if (textBoxCard?.dataset.boxId && textBoxField) {
+    setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });
+  } else {
+    previewOverlayControlChanges();
   }
+  if (colorInput === activeColorPickerControl) syncColorPickerModal(normalized);
+  if (commit) {
+    scheduleOverlayColorCommit();
+  }
+}
+
+function colorPickerModal() {
+  return $("color-picker-modal");
+}
+
+function syncColorPickerModal(hexValue = null) {
+  if (!activeColorPickerControl) return;
+  const normalized = normalizeHexColor(hexValue || readColorControlValue(activeColorPickerControl)) || "#000000";
+  const { h, s, l } = hexToHsl(normalized);
+  syncControlValue($("color-picker-hue"), Math.round(h));
+  syncControlValue($("color-picker-saturation"), Math.round(s));
+  syncControlValue($("color-picker-lightness"), Math.round(l));
+  const hexInput = $("color-picker-hex");
+  if (hexInput instanceof HTMLInputElement && !controlIsActive(hexInput)) {
+    hexInput.value = normalized.toUpperCase();
+    hexInput.classList.remove("invalid");
+  }
+  const preview = $("color-picker-preview");
+  if (preview) preview.style.setProperty("--picker-color", normalized);
+  const current = $("color-picker-current");
+  if (current) current.textContent = normalized.toUpperCase();
+  const target = $("color-picker-target");
+  if (target) target.textContent = colorControlLabel(activeColorPickerControl);
+}
+
+function applyColorControlValue(control, value, { queueCommit = false } = {}) {
+  const colorControl = colorControlButton(control);
+  const normalized = normalizeHexColor(value);
+  if (!colorControl || !normalized) return;
+  const changed = readColorControlValue(colorControl) !== normalized;
+  setColorControlValue(colorControl, normalized);
+  syncOverlayHexControl(colorControl);
+  const textBoxCard = colorControl.closest(".text-box-card");
+  const textBoxField = colorControl.dataset.textBoxField || "";
+  if (changed) {
+    if (textBoxCard?.dataset.boxId && textBoxField) {
+      setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });
+    } else {
+      previewOverlayControlChanges();
+    }
+  }
+  if (colorControl === activeColorPickerControl) syncColorPickerModal(normalized);
+  if (queueCommit) scheduleOverlayColorCommit();
+}
+
+function openColorPicker(control) {
+  const colorControl = colorControlButton(control);
+  const modal = colorPickerModal();
+  if (!colorControl || !modal) return;
+  activeColorPickerControl = colorControl;
+  modal.hidden = false;
+  renderColorPickerSwatches();
+  syncColorPickerModal(readColorControlValue(colorControl));
+}
+
+function closeColorPicker({ commit = true } = {}) {
+  const modal = colorPickerModal();
+  if (!modal || modal.hidden) {
+    activeColorPickerControl = null;
+    return;
+  }
+  if (commit) flushOverlayColorCommit();
+  modal.hidden = true;
+  activeColorPickerControl = null;
+}
+
+function updateColorPickerFromSliders({ commit = false } = {}) {
+  if (!activeColorPickerControl) return;
+  const hue = Number($("color-picker-hue")?.value || 0);
+  const saturation = Number($("color-picker-saturation")?.value || 0);
+  const lightness = Number($("color-picker-lightness")?.value || 0);
+  const normalized = hslToHex(hue, saturation, lightness);
+  applyColorControlValue(activeColorPickerControl, normalized, { queueCommit: true });
+  if (commit) flushOverlayColorCommit();
+}
+
+function updateColorPickerFromHexInput({ commit = false } = {}) {
+  if (!activeColorPickerControl) return;
+  const hexInput = $("color-picker-hex");
+  if (!(hexInput instanceof HTMLInputElement)) return;
+  const normalized = normalizeHexColor(hexInput.value);
+  if (!normalized) {
+    hexInput.classList.add("invalid");
+    return;
+  }
+  hexInput.classList.remove("invalid");
+  applyColorControlValue(activeColorPickerControl, normalized, { queueCommit: true });
+  if (commit) flushOverlayColorCommit();
+}
+
+function renderColorPickerSwatches() {
+  const container = $("color-picker-swatches");
+  if (!container || container.childElementCount > 0) return;
+  CUSTOM_COLOR_SWATCHES.forEach((hex) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "color-picker-swatch";
+    button.dataset.colorValue = hex;
+    button.style.setProperty("--picker-color", hex);
+    button.setAttribute("aria-label", `Use ${hex.toUpperCase()}`);
+    button.addEventListener("click", () => {
+      applyColorControlValue(activeColorPickerControl, hex, { queueCommit: true });
+      flushOverlayColorCommit();
+    });
+    container.appendChild(button);
+  });
 }
 
 function clampNumber(value, min, max) {
@@ -414,13 +811,62 @@ function clearProcessingBarHideTimer() {
   processingBarHideTimer = null;
 }
 
+function clearProcessingProgressTimer() {
+  if (processingProgressTimer === null) return;
+  window.clearInterval(processingProgressTimer);
+  processingProgressTimer = null;
+}
+
+function setProcessingProgress(percent, options = {}) {
+  const allowDecrease = Boolean(options.allowDecrease);
+  const nextPercent = clampNumber(Number(percent) || 0, 0, 100);
+  processingProgressPercent = allowDecrease
+    ? nextPercent
+    : Math.max(processingProgressPercent, nextPercent);
+  const fill = $("processing-progress-fill");
+  const label = $("processing-percent");
+  if (fill) fill.style.width = `${processingProgressPercent}%`;
+  if (label) label.textContent = `${Math.round(processingProgressPercent)}%`;
+}
+
+function progressProfileForPath(path) {
+  if (path === "/api/export") return { ceiling: 99, step: 4 };
+  if (path === "/api/files/practiscore" || path === "/api/project/practiscore") return { ceiling: 95, step: 15 };
+  if (path === "/api/project/save") return { ceiling: 92, step: 18 };
+  if (path === "/api/import/primary" || path === "/api/files/primary") return { ceiling: 95, step: 12 };
+  if (path === "/api/import/secondary" || path === "/api/import/merge" || path === "/api/files/merge") {
+    return { ceiling: 95, step: 16 };
+  }
+  return { ceiling: 90, step: 20 };
+}
+
+function startProcessingProgress(path) {
+  activeProcessingPath = path;
+  clearProcessingProgressTimer();
+  setProcessingProgress(0, { allowDecrease: true });
+  if (path === "/api/export") return;
+  const profile = progressProfileForPath(path);
+  processingProgressTimer = window.setInterval(() => {
+    const next = Math.min(profile.ceiling, processingProgressPercent + profile.step);
+    if (next !== processingProgressPercent) setProcessingProgress(next);
+  }, 1000);
+}
+
+function stopProcessingProgress(finalPercent = 100) {
+  clearProcessingProgressTimer();
+  activeProcessingPath = null;
+  setProcessingProgress(finalPercent, { allowDecrease: true });
+}
+
 function hideProcessingBarNow(finalMessage = "Ready.") {
   const bar = $("processing-bar");
   clearProcessingBarShowTimer();
   clearProcessingBarHideTimer();
+  clearProcessingProgressTimer();
   processingBarVisibleAtMs = 0;
   $("processing-message").textContent = finalMessage;
   $("processing-detail").textContent = "Ready";
+  setProcessingProgress(0, { allowDecrease: true });
   bar.hidden = true;
 }
 
@@ -461,19 +907,31 @@ function forceHideProcessingBar(finalMessage = "Ready.") {
 
 function setStatus(message) {
   $("status").textContent = message;
+  const statusCopy = $("status-copy");
+  if (statusCopy) statusCopy.textContent = message;
+  const inspectorStatusCopy = $("inspector-status-copy");
+  if (inspectorStatusCopy) inspectorStatusCopy.textContent = message;
   const processingMessage = $("processing-message");
   if (processingMessage) processingMessage.textContent = message;
   activity("ui.status", { message });
 }
 
-function beginProcessing(message, detail = "Working locally") {
+function beginProcessing(message, detail = "Working locally", path = null) {
   busyCount += 1;
+  if (path === "/api/export") {
+    exportLogLines = [];
+    renderExportLog();
+  }
+  if (busyCount === 1) startProcessingProgress(path);
   scheduleProcessingBarShow(message, detail);
   activity("ui.processing.start", { message, detail, busy_count: busyCount });
   return (finalMessage = "Ready.") => {
     busyCount = Math.max(0, busyCount - 1);
     activity("ui.processing.finish", { message: finalMessage, busy_count: busyCount });
-    if (busyCount === 0) scheduleProcessingBarHide(finalMessage);
+    if (busyCount === 0) {
+      stopProcessingProgress(100);
+      scheduleProcessingBarHide(finalMessage);
+    }
   };
 }
 
@@ -613,6 +1071,226 @@ function ensureShotQuadrantDefaults() {
   if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";
 }
 
+function createOverlayTextBoxId() {
+  const generated = window.crypto?.randomUUID?.();
+  if (generated) return generated.replace(/-/g, "");
+  return `textbox-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function normalizeOverlayTextBox(box = {}, index = 0) {
+  const normalizedX = normalizedCoordinateValue(box.x);
+  const normalizedY = normalizedCoordinateValue(box.y);
+  const source = box.source === "imported_summary" ? "imported_summary" : "manual";
+  const validQuadrants = new Set([
+    "top_left",
+    "top_middle",
+    "top_right",
+    "middle_left",
+    "middle_middle",
+    "middle_right",
+    "bottom_left",
+    "bottom_middle",
+    "bottom_right",
+    CUSTOM_QUADRANT_VALUE,
+  ]);
+  const fallbackQuadrant = source === "imported_summary" ? "top_right" : "top_left";
+  const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;
+  return {
+    id: box.id || createOverlayTextBoxId(),
+    enabled: Boolean(box.enabled ?? true),
+    source,
+    text: String(box.text || "").slice(0, 500),
+    quadrant: normalizedX !== null || normalizedY !== null ? CUSTOM_QUADRANT_VALUE : requestedQuadrant,
+    x: normalizedX,
+    y: normalizedY,
+    background_color: normalizeHexColor(box.background_color || "#000000") || "#000000",
+    text_color: normalizeHexColor(box.text_color || "#ffffff") || "#ffffff",
+    opacity: clamp(Number(box.opacity ?? 0.9), 0, 1),
+    width: Math.max(0, Number(box.width || 0)),
+    height: Math.max(0, Number(box.height || 0)),
+    order: Number(box.order ?? index),
+  };
+}
+
+function overlayTextBoxes() {
+  if (!state?.project?.overlay) return [];
+  const boxes = Array.isArray(state.project.overlay.text_boxes) ? state.project.overlay.text_boxes : [];
+  if (boxes.length > 0) {
+    return boxes.map((box, index) => normalizeOverlayTextBox(box, index));
+  }
+  const overlay = state.project.overlay;
+  const hasLegacyBox = Boolean(
+    overlay.custom_box_enabled
+      || (overlay.custom_box_mode || "manual") === "imported_summary"
+      || overlay.custom_box_text,
+  );
+  if (!hasLegacyBox) return [];
+  return [normalizeOverlayTextBox({
+    id: "legacy-custom-box",
+    enabled: overlay.custom_box_enabled,
+    source: overlay.custom_box_mode || "manual",
+    text: overlay.custom_box_text || "",
+    quadrant: overlay.custom_box_quadrant || "top_right",
+    x: overlay.custom_box_x,
+    y: overlay.custom_box_y,
+    background_color: overlay.custom_box_background_color || "#000000",
+    text_color: overlay.custom_box_text_color || "#ffffff",
+    opacity: overlay.custom_box_opacity ?? 0.9,
+    width: overlay.custom_box_width || 0,
+    height: overlay.custom_box_height || 0,
+  })];
+}
+
+function preferredLegacyTextBox(boxes) {
+  return boxes.find((box) => box.source === "imported_summary") || boxes[0] || null;
+}
+
+function syncLegacyOverlayBoxState(overlay, boxes = overlayTextBoxes()) {
+  const primary = preferredLegacyTextBox(boxes);
+  if (!primary) {
+    overlay.custom_box_enabled = false;
+    overlay.custom_box_mode = "manual";
+    overlay.custom_box_text = "";
+    return;
+  }
+  overlay.custom_box_enabled = Boolean(primary.enabled);
+  overlay.custom_box_mode = primary.source;
+  overlay.custom_box_text = primary.text;
+  overlay.custom_box_quadrant = primary.quadrant;
+  overlay.custom_box_x = primary.x;
+  overlay.custom_box_y = primary.y;
+  overlay.custom_box_background_color = primary.background_color;
+  overlay.custom_box_text_color = primary.text_color;
+  overlay.custom_box_opacity = primary.opacity;
+  overlay.custom_box_width = primary.width;
+  overlay.custom_box_height = primary.height;
+}
+
+function setLocalOverlayTextBoxes(boxes) {
+  if (!state?.project?.overlay) return;
+  const normalized = boxes.map((box, index) => normalizeOverlayTextBox(box, index));
+  state.project.overlay.text_boxes = normalized;
+  syncLegacyOverlayBoxState(state.project.overlay, normalized);
+}
+
+function buildOverlayTextBox(source = "manual") {
+  return normalizeOverlayTextBox({
+    id: createOverlayTextBoxId(),
+    enabled: true,
+    source,
+    text: "",
+    quadrant: source === "imported_summary" ? "top_right" : "top_left",
+    x: null,
+    y: null,
+    background_color: "#000000",
+    text_color: "#ffffff",
+    opacity: 0.9,
+    width: 0,
+    height: 0,
+  });
+}
+
+function overlayTextBoxLabel(box, index) {
+  if (box.source === "imported_summary") return `Imported Summary ${index + 1}`;
+  return `Custom Box ${index + 1}`;
+}
+
+function applyOverlayTextBoxUpdate(boxes, { commit = false, rerender = false } = {}) {
+  setLocalOverlayTextBoxes(boxes);
+  previewOverlayControlChanges();
+  if (rerender) renderTextBoxEditors();
+  if (commit) scheduleOverlayApply();
+}
+
+function updateOverlayTextBox(boxId, updater, options = {}) {
+  const boxes = overlayTextBoxes();
+  const index = boxes.findIndex((box) => box.id === boxId);
+  if (index === -1) return;
+  const nextBox = updater({ ...boxes[index] }, index, boxes);
+  if (!nextBox) return;
+  const nextBoxes = boxes.slice();
+  nextBoxes[index] = normalizeOverlayTextBox(nextBox, index);
+  applyOverlayTextBoxUpdate(nextBoxes, options);
+}
+
+function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
+  updateOverlayTextBox(boxId, (box) => {
+    if (field === "enabled") {
+      box.enabled = Boolean(rawValue);
+      return box;
+    }
+    if (field === "source") {
+      box.source = rawValue === "imported_summary" ? "imported_summary" : "manual";
+      return box;
+    }
+    if (field === "text") {
+      box.text = String(rawValue || "");
+      return box;
+    }
+    if (field === "quadrant") {
+      if (usesCustomQuadrant(rawValue)) {
+        box.quadrant = CUSTOM_QUADRANT_VALUE;
+        box.x = box.x ?? 0.5;
+        box.y = box.y ?? 0.5;
+      } else {
+        box.quadrant = rawValue;
+        box.x = null;
+        box.y = null;
+      }
+      return box;
+    }
+    if (field === "x") {
+      box.quadrant = CUSTOM_QUADRANT_VALUE;
+      box.x = normalizedCoordinateValue(rawValue);
+      box.y = box.y ?? 0.5;
+      return box;
+    }
+    if (field === "y") {
+      box.quadrant = CUSTOM_QUADRANT_VALUE;
+      box.x = box.x ?? 0.5;
+      box.y = normalizedCoordinateValue(rawValue);
+      return box;
+    }
+    if (field === "width" || field === "height") {
+      box[field] = Math.max(0, Number(rawValue || 0));
+      return box;
+    }
+    if (field === "background_color" || field === "text_color") {
+      box[field] = normalizeHexColor(rawValue) || box[field];
+      return box;
+    }
+    if (field === "opacity") {
+      box.opacity = clampNumber(Number(rawValue) || 0, 0, 1);
+      return box;
+    }
+    return box;
+  }, options);
+}
+
+function addOverlayTextBox(source = "manual") {
+  const boxes = overlayTextBoxes();
+  boxes.push(buildOverlayTextBox(source));
+  applyOverlayTextBoxUpdate(boxes, { commit: true, rerender: true });
+}
+
+function duplicateOverlayTextBox(boxId) {
+  const boxes = overlayTextBoxes();
+  const index = boxes.findIndex((box) => box.id === boxId);
+  if (index === -1) return;
+  const duplicate = normalizeOverlayTextBox({
+    ...boxes[index],
+    id: createOverlayTextBoxId(),
+  }, index + 1);
+  const nextBoxes = boxes.slice();
+  nextBoxes.splice(index + 1, 0, duplicate);
+  applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
+}
+
+function removeOverlayTextBox(boxId) {
+  const nextBoxes = overlayTextBoxes().filter((box) => box.id !== boxId);
+  applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
+}
+
 function syncOverlayPreviewStateFromControls() {
   if (!state?.project) return;
   const payload = readOverlayPayload();
@@ -642,20 +1320,8 @@ function syncOverlayPreviewStateFromControls() {
   overlay.show_draw = Boolean(payload.show_draw);
   overlay.show_shots = Boolean(payload.show_shots);
   overlay.show_score = Boolean(payload.show_score);
-  overlay.custom_box_enabled = Boolean(payload.custom_box_enabled);
-  overlay.custom_box_mode = payload.custom_box_mode || "manual";
-  overlay.custom_box_text = payload.custom_box_text || "";
-  overlay.custom_box_quadrant = payload.custom_box_quadrant;
-  overlay.custom_box_x = normalizedCoordinateValue(payload.custom_box_x);
-  overlay.custom_box_y = normalizedCoordinateValue(payload.custom_box_y);
-  if (overlay.custom_box_x !== null || overlay.custom_box_y !== null) {
-    overlay.custom_box_quadrant = CUSTOM_QUADRANT_VALUE;
-  }
-  overlay.custom_box_background_color = payload.custom_box_background_color;
-  overlay.custom_box_text_color = payload.custom_box_text_color;
-  overlay.custom_box_opacity = clamp(Number(payload.custom_box_opacity ?? overlay.custom_box_opacity ?? 0.9), 0, 1);
-  overlay.custom_box_width = Math.max(0, Number(payload.custom_box_width || 0));
-  overlay.custom_box_height = Math.max(0, Number(payload.custom_box_height || 0));
+  overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));
+  syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
   Object.entries(payload.styles).forEach(([badgeName, style]) => {
     const badge = overlay[badgeName];
     if (!badge) return;
@@ -715,15 +1381,13 @@ function bindOverlayColorInput(control) {
   if (!isColorInput(control) || control.dataset.overlayColorBound === "true") return;
   control.dataset.overlayColorBound = "true";
   const hexInput = overlayHexControlFor(control);
-  control.addEventListener("input", previewOverlayColorChanges);
-  control.addEventListener("input", () => syncOverlayHexControl(control));
-  control.addEventListener("change", () => {
-    syncOverlayHexControl(control);
-    queueOverlayColorCommit();
-  });
-  control.addEventListener("blur", () => {
-    syncOverlayHexControl(control);
-    flushOverlayColorCommit();
+  setColorControlValue(control, readColorControlValue(control));
+  syncOverlayHexControl(control);
+  control.addEventListener("click", () => openColorPicker(control));
+  control.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    openColorPicker(control);
   });
   if (hexInput instanceof HTMLInputElement && hexInput.dataset.overlayColorBound !== "true") {
     hexInput.dataset.overlayColorBound = "true";
@@ -785,34 +1449,168 @@ function syncOverlayCoordinateControlState() {
   });
 }
 
-function effectiveCustomBoxText() {
-  if (!state?.project?.overlay) return "";
-  if ((state.project.overlay.custom_box_mode || "manual") === "imported_summary") {
-    return state.scoring_summary?.imported_overlay_text || "";
+function overlayTextBoxDisplayText(box) {
+  if (box.source === "imported_summary") {
+    return state?.scoring_summary?.imported_overlay_text || "";
   }
-  return state.project.overlay.custom_box_text || "";
+  return box.text || "";
 }
 
-function syncCustomBoxModeState() {
-  const mode = $("custom-box-mode").value;
-  const textArea = $("custom-box-text");
-  const hint = $("custom-box-mode-hint");
+function overlayTextBoxHint(box) {
   const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
-  const usesImportedSummary = mode === "imported_summary";
+  if (box.source === "imported_summary") {
+    return importedReady
+      ? "Uses the imported PractiScore stage summary and appears after the final shot."
+      : "Import PractiScore results first. The summary box will populate after the final shot when imported data is available.";
+  }
+  return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
+}
 
-  textArea.disabled = usesImportedSummary;
-  textArea.placeholder = usesImportedSummary
-    ? "Uses the imported PractiScore stage summary after the last shot"
-    : "Text to show over the reviewed video";
-  textArea.title = usesImportedSummary
-    ? "This box auto-populates from the imported PractiScore stage and appears after the last shot."
-    : "Enter the text to show over the reviewed video.";
-  if (!hint) return;
-  hint.textContent = usesImportedSummary
-    ? importedReady
-      ? "Uses the imported PractiScore stage summary and appears only after the last shot. Clear Box X/Y to use the selected quadrant."
-      : "Import an IDPA CSV or USPSA/IPSC PractiScore results file first. The summary appears after the last shot. Clear Box X/Y to use the selected quadrant."
-    : "Uses the text below and follows the same box styling and placement as export. Clear Box X/Y to use the selected quadrant.";
+function buildTextBoxCard(box, index) {
+  const card = document.createElement("section");
+  card.className = "text-box-card";
+  card.dataset.boxId = box.id;
+  const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
+  card.innerHTML = `
+    <div class="text-box-card-header">
+      <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
+      <div class="text-box-card-actions">
+        <button type="button" data-text-box-action="duplicate">Duplicate</button>
+        <button type="button" data-text-box-action="remove">Remove</button>
+      </div>
+    </div>
+    <label>Content Source
+      <select data-text-box-field="source">
+        <option value="manual">Custom text</option>
+        <option value="imported_summary">Imported summary</option>
+      </select>
+    </label>
+    <p class="hint" data-text-box-hint="true"></p>
+    <label>Box text
+      <textarea data-text-box-field="text" rows="3"></textarea>
+    </label>
+    <div class="control-grid">
+      <label>Box placement
+        <select data-text-box-field="quadrant">
+          <option value="top_left">Top left</option>
+          <option value="top_middle">Top middle</option>
+          <option value="top_right">Top right</option>
+          <option value="middle_left">Middle left</option>
+          <option value="middle_middle">Middle middle</option>
+          <option value="middle_right">Middle right</option>
+          <option value="bottom_left">Bottom left</option>
+          <option value="bottom_middle">Bottom middle</option>
+          <option value="bottom_right">Bottom right</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <label>Box X (0 left, 1 right)
+        <input data-text-box-field="x" type="number" min="0" max="1" step="0.01" />
+      </label>
+      <label>Box Y (0 top, 1 bottom)
+        <input data-text-box-field="y" type="number" min="0" max="1" step="0.01" />
+      </label>
+    </div>
+    <div class="control-grid">
+      <label>Box width
+        <input data-text-box-field="width" type="number" min="0" max="1000" step="1" value="0" />
+      </label>
+      <label>Box height
+        <input data-text-box-field="height" type="number" min="0" max="1000" step="1" value="0" />
+      </label>
+    </div>
+    <div class="style-grid review-style-grid">
+      <section class="style-card custom-box-style-card">
+        <h4>Box Style</h4>
+        <label class="color-field"><span class="style-card-label">Background</span>
+          <span class="color-control-pair">
+            <button data-text-box-field="background_color" class="color-swatch-button" data-color-label="Text box background" type="button"></button>
+            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Text box background hex value" />
+          </span>
+        </label>
+        <label class="color-field"><span class="style-card-label">Text</span>
+          <span class="color-control-pair">
+            <button data-text-box-field="text_color" class="color-swatch-button" data-color-label="Text box text" type="button"></button>
+            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Text box text hex value" />
+          </span>
+        </label>
+        <label><span class="style-card-label">Opacity</span> <input data-text-box-field="opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
+      </section>
+    </div>
+  `;
+  syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
+  syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
+  syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
+  syncControlValue(card.querySelector('[data-text-box-field="x"]'), box.x ?? "");
+  syncControlValue(card.querySelector('[data-text-box-field="y"]'), box.y ?? "");
+  syncControlValue(card.querySelector('[data-text-box-field="width"]'), box.width || 0);
+  syncControlValue(card.querySelector('[data-text-box-field="height"]'), box.height || 0);
+  syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
+  syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
+  syncControlValue(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
+  const textArea = card.querySelector('[data-text-box-field="text"]');
+  textArea.value = box.text || "";
+  textArea.disabled = box.source === "imported_summary";
+  textArea.placeholder = box.source === "imported_summary"
+    ? "Uses the imported PractiScore stage summary after the final shot"
+    : "Text to show over the video";
+  const hint = card.querySelector('[data-text-box-hint="true"]');
+  if (hint) hint.textContent = overlayTextBoxHint(box);
+  const xInput = card.querySelector('[data-text-box-field="x"]');
+  const yInput = card.querySelector('[data-text-box-field="y"]');
+  [xInput, yInput].forEach((input) => {
+    input.disabled = !usesCustomPlacement;
+    input.placeholder = usesCustomPlacement ? "0.50" : "Custom only";
+  });
+  card.querySelectorAll("[data-text-box-field]").forEach((control) => {
+    const field = control.dataset.textBoxField || "";
+    if (!field) return;
+    if (isColorInput(control)) return;
+    const readValue = () => (control.type === "checkbox" ? control.checked : control.value);
+    if (control.tagName === "SELECT") {
+      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), {
+        commit: true,
+        rerender: field === "source" || field === "quadrant",
+      }));
+      return;
+    }
+    if (control.type === "checkbox") {
+      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
+      return;
+    }
+    if (control.type === "range") {
+      control.addEventListener("input", () => setOverlayTextBoxField(box.id, field, readValue(), { rerender: false }));
+      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
+      return;
+    }
+    control.addEventListener("input", () => setOverlayTextBoxField(box.id, field, readValue(), { rerender: false }));
+    control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
+    control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
+  });
+  card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", () => duplicateOverlayTextBox(box.id));
+  card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", () => removeOverlayTextBox(box.id));
+  bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
+  bindOverlayColorInput(card.querySelector('[data-text-box-field="text_color"]'));
+  return card;
+}
+
+function renderTextBoxEditors() {
+  const containers = [$("review-text-box-list")].filter(Boolean);
+  if (containers.length === 0) return;
+  const boxes = overlayTextBoxes();
+  containers.forEach((container) => {
+    container.innerHTML = "";
+    if (boxes.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
+      container.appendChild(empty);
+      return;
+    }
+    boxes.forEach((box, index) => {
+      container.appendChild(buildTextBoxCard(box, index));
+    });
+  });
 }
 
 function syncTimingEventLabelState() {
@@ -962,14 +1760,17 @@ function endLayoutResize(event) {
 function setActiveTool(tool) {
   if (!document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
   const changed = activeTool !== tool;
+  const root = $("cockpit-root");
+  const hadExpandedLayout = root?.classList.contains("waveform-expanded") || root?.classList.contains("timing-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
   if (changed) {
-    $("cockpit-root")?.classList.remove("waveform-expanded", "timing-expanded");
+    root?.classList.remove("waveform-expanded", "timing-expanded");
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
+    if (hadExpandedLayout) scheduleReviewStageRestore();
   }
-  $("cockpit-root").classList.toggle("scoring-active", tool === "scoring");
+  root.classList.toggle("scoring-active", tool === "scoring");
   const inspector = document.querySelector(".inspector");
   if (inspector) inspector.dataset.activeTool = tool;
   document.querySelectorAll(".tool-item").forEach((item) => {
@@ -990,7 +1791,7 @@ async function api(path, payload = null) {
   const processing = processingForPath(path);
   const finishProcessing = payload === null || processing === null
     ? null
-    : beginProcessing(processing.message, processing.detail);
+    : beginProcessing(processing.message, processing.detail, path);
   const options = payload === null
     ? {}
     : {
@@ -1047,7 +1848,7 @@ async function postFile(path, file) {
     : path === "/api/files/merge"
       ? { message: `Importing ${file.name}...`, detail: "Adding media to the list" }
       : { message: `Analyzing ${file.name}...`, detail: "Detecting beep and shots" };
-  const finishProcessing = beginProcessing(uploadState.message, uploadState.detail);
+  const finishProcessing = beginProcessing(uploadState.message, uploadState.detail, path);
   setStatus(uploadState.message);
   activity("file.selected", { path, name: file.name, size: file.size });
   try {
@@ -1147,6 +1948,7 @@ function resetLocalProjectView() {
   draggingShotId = null;
   pendingDragTimeMs = null;
   exportPathDraft = "";
+  exportLogLines = [];
   timingRowEdits.clear();
   waveformMode = "select";
   waveformZoomX = 1;
@@ -1199,7 +2001,7 @@ function resetLocalProjectView() {
     } else if (id === "practiscore-status") {
       element.textContent = "No results imported";
     } else if (id === "media-badge" || id === "current-file") {
-      element.textContent = "No video selected";
+      element.textContent = "No Video Selected";
     } else if (id === "timing-summary") {
       element.textContent = "No timing data.";
     } else if (id === "selected-shot-copy") {
@@ -1248,6 +2050,245 @@ function resetMediaElement(video) {
   video.load();
 }
 
+function restoreVideoElementFrame(video) {
+  if (!(video instanceof HTMLVideoElement)) return;
+  if (video.hidden || !video.isConnected || !video.currentSrc) return;
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+  video.style.willChange = "transform";
+  void video.getBoundingClientRect();
+  window.requestAnimationFrame(() => {
+    if (video.style.willChange === "transform") video.style.willChange = "";
+  });
+  if (!video.paused) return;
+  const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+  try {
+    if (typeof video.fastSeek === "function") video.fastSeek(currentTime);
+    else video.currentTime = currentTime;
+  } catch {
+    // Some browsers reject same-time seeks while the element is restoring.
+  }
+}
+
+function restoreReviewStage() {
+  if (!state?.project) return;
+  applyLayoutState();
+  renderVideo();
+  renderWaveform();
+  renderTimingTables();
+  renderSelection();
+  renderLiveOverlay();
+  scheduleSecondaryPreviewSync();
+  restoreVideoElementFrame($("primary-video"));
+  restoreVideoElementFrame($("secondary-video"));
+  document.querySelectorAll("#merge-preview-layer video").forEach((video) => restoreVideoElementFrame(video));
+}
+
+function scheduleReviewStageRestore() {
+  if (reviewStageRestoreFrame !== null) window.cancelAnimationFrame(reviewStageRestoreFrame);
+  if (reviewStageRestoreSecondFrame !== null) window.cancelAnimationFrame(reviewStageRestoreSecondFrame);
+  reviewStageRestoreFrame = window.requestAnimationFrame(() => {
+    reviewStageRestoreFrame = null;
+    restoreReviewStage();
+    reviewStageRestoreSecondFrame = window.requestAnimationFrame(() => {
+      reviewStageRestoreSecondFrame = null;
+      restoreReviewStage();
+    });
+  });
+}
+
+function handleStageFullscreenChange() {
+  scheduleReviewStageRestore();
+}
+
+function handleWindowVisibilityRestore() {
+  if (document.visibilityState && document.visibilityState !== "visible") return;
+  scheduleReviewStageRestore();
+}
+
+function primaryVideoStateSnapshot(video) {
+  if (!video) return {};
+  const volume = Number.isFinite(video.volume) ? Math.round(video.volume * 1000) / 1000 : null;
+  const currentTime = Number.isFinite(video.currentTime) ? Math.round(video.currentTime * 1000) / 1000 : null;
+  const duration = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) / 1000 : null;
+  const audioTrackCount = typeof video.audioTracks?.length === "number" ? video.audioTracks.length : null;
+  const webkitAudioDecodedByteCount = Number(video.webkitAudioDecodedByteCount);
+  return {
+    muted: video.muted,
+    default_muted: video.defaultMuted,
+    volume,
+    paused: video.paused,
+    ended: video.ended,
+    ready_state: video.readyState,
+    network_state: video.networkState,
+    current_time_s: currentTime,
+    duration_s: duration,
+    source_path: video.dataset.sourcePath || "",
+    current_src: video.currentSrc || video.src || "",
+    audio_tracks: audioTrackCount,
+    moz_has_audio: typeof video.mozHasAudio === "boolean" ? video.mozHasAudio : null,
+    webkit_audio_decoded_bytes: Number.isFinite(webkitAudioDecodedByteCount) ? webkitAudioDecodedByteCount : null,
+    error_code: video.error?.code || null,
+    error_message: video.error?.message || "",
+  };
+}
+
+function logPrimaryVideoState(eventName) {
+  const video = $("primary-video");
+  if (!video) return;
+  activity("video.primary.state", {
+    event: eventName,
+    ...primaryVideoStateSnapshot(video),
+  });
+}
+
+function ensurePrimaryVideoAudio(video) {
+  if (!video) return;
+  video.defaultMuted = false;
+  video.muted = false;
+  video.volume = 1;
+}
+
+function normalizedPractiScorePlaceValue(rawValue) {
+  if (rawValue === null || rawValue === undefined || String(rawValue).trim() === "") return null;
+  const numeric = Number(rawValue);
+  if (!Number.isFinite(numeric) || numeric < 1) return null;
+  return Math.trunc(numeric);
+}
+
+function practiScoreCompetitors() {
+  return Array.isArray(state?.practiscore_options?.competitors)
+    ? state.practiscore_options.competitors
+    : [];
+}
+
+function practiScoreStageValues() {
+  return [...new Set(
+    (Array.isArray(state?.practiscore_options?.stage_numbers) ? state.practiscore_options.stage_numbers : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean),
+  )];
+}
+
+function practiScoreNameValues() {
+  return [...new Set(practiScoreCompetitors().map((option) => String(option.name || "").trim()).filter(Boolean))];
+}
+
+function practiScorePlaceValues() {
+  return [...new Set(
+    practiScoreCompetitors()
+      .map((option) => normalizedPractiScorePlaceValue(option.place))
+      .filter((value) => value !== null),
+  )].map((value) => String(value));
+}
+
+function practiScoreSelectionValue(value) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function preferredPractiScoreSelection(explicitValue, controlId, fallbackValue) {
+  if (explicitValue !== undefined) return practiScoreSelectionValue(explicitValue);
+  const controlValue = practiScoreSelectionValue($(controlId)?.value);
+  if (controlValue) return controlValue;
+  return practiScoreSelectionValue(fallbackValue);
+}
+
+function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = "") {
+  const select = $(selectId);
+  if (!(select instanceof HTMLSelectElement)) return;
+  const optionValues = [...new Set((values || []).map((value) => practiScoreSelectionValue(value)).filter(Boolean))];
+  const desiredValue = practiScoreSelectionValue(selectedValue);
+  const activeValue = controlIsActive(select) ? practiScoreSelectionValue(select.value) : "";
+  const preservedValue = activeValue || desiredValue;
+  if (preservedValue && !optionValues.includes(preservedValue)) optionValues.unshift(preservedValue);
+  select.innerHTML = "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = emptyLabel;
+  select.appendChild(emptyOption);
+  optionValues.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    select.appendChild(option);
+  });
+  select.value = preservedValue && optionValues.includes(preservedValue) ? preservedValue : "";
+}
+
+function renderPractiScoreOptionLists(selectedValues = {}) {
+  renderPractiScoreSelect(
+    "match-stage-number",
+    practiScoreStageValues(),
+    "Select stage",
+    preferredPractiScoreSelection(selectedValues.stage_number, "match-stage-number", state?.project?.scoring?.stage_number),
+  );
+  renderPractiScoreSelect(
+    "match-competitor-name",
+    practiScoreNameValues(),
+    "Select competitor",
+    preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", state?.project?.scoring?.competitor_name),
+  );
+  renderPractiScoreSelect(
+    "match-competitor-place",
+    practiScorePlaceValues(),
+    "Select place",
+    preferredPractiScoreSelection(selectedValues.competitor_place, "match-competitor-place", state?.project?.scoring?.competitor_place),
+  );
+}
+
+function syncPractiScoreSelectionFields(changedField) {
+  const competitors = practiScoreCompetitors();
+  const stageSelect = $("match-stage-number");
+  const nameSelect = $("match-competitor-name");
+  const placeSelect = $("match-competitor-place");
+  if (!(nameSelect instanceof HTMLSelectElement) || !(placeSelect instanceof HTMLSelectElement)) {
+    renderPractiScoreOptionLists();
+    return;
+  }
+
+  if (competitors.length === 0) {
+    renderPractiScoreOptionLists({
+      stage_number: practiScoreSelectionValue(stageSelect?.value),
+      competitor_name: nameSelect.value,
+      competitor_place: placeSelect.value,
+    });
+    return;
+  }
+
+  const selectedName = nameSelect.value.trim();
+  const selectedPlace = normalizedPractiScorePlaceValue(placeSelect.value);
+  if (changedField === "name") {
+    const matches = competitors.filter((option) => option.name === selectedName);
+    if (!selectedName || matches.length === 0) {
+      placeSelect.value = "";
+    } else if (matches.length === 1 && matches[0].place !== null) {
+      placeSelect.value = String(matches[0].place);
+    } else if (selectedPlace !== null && !matches.some((option) => Number(option.place) === selectedPlace)) {
+      placeSelect.value = "";
+    }
+  }
+  if (changedField === "place") {
+    if (selectedPlace === null) {
+      nameSelect.value = "";
+    } else {
+      const matches = competitors.filter((option) => Number(option.place) === selectedPlace);
+      if (matches.length === 0) {
+        nameSelect.value = "";
+      } else if (matches.length === 1) {
+        nameSelect.value = matches[0].name;
+      } else if (selectedName && !matches.some((option) => option.name === selectedName)) {
+        nameSelect.value = "";
+      }
+    }
+  }
+
+  renderPractiScoreOptionLists({
+    stage_number: practiScoreSelectionValue(stageSelect?.value),
+    competitor_name: nameSelect.value,
+    competitor_place: placeSelect.value,
+  });
+}
+
 function durationMs() {
   return Math.max(1, state?.project?.primary_video?.duration_ms || 1);
 }
@@ -1262,6 +2303,87 @@ function waveformWindow() {
     end: waveformOffsetMs + visibleDuration,
     duration: visibleDuration,
   };
+}
+
+function persistWaveformViewport() {
+  window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
+  window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
+}
+
+function setWaveformOffset(nextOffsetMs, { persist = true } = {}) {
+  const visible = waveformWindow();
+  const maxOffset = Math.max(0, durationMs() - visible.duration);
+  const clampedOffset = clamp(nextOffsetMs, 0, maxOffset);
+  if (Math.abs(clampedOffset - waveformOffsetMs) < 0.5) return false;
+  waveformOffsetMs = clampedOffset;
+  if (persist) persistWaveformViewport();
+  return true;
+}
+
+function centerWaveformOnTime(timeMs, { persist = true } = {}) {
+  const visible = waveformWindow();
+  const maxOffset = Math.max(0, durationMs() - visible.duration);
+  if (maxOffset <= 0) return false;
+  return setWaveformOffset(timeMs - (visible.duration / 2), { persist });
+}
+
+function ensureWaveformTimeVisible(timeMs, { center = false, paddingRatio = 0.12, persist = true } = {}) {
+  const visible = waveformWindow();
+  const maxOffset = Math.max(0, durationMs() - visible.duration);
+  if (!Number.isFinite(timeMs) || maxOffset <= 0) return false;
+  if (center || timeMs < visible.start || timeMs > visible.end) {
+    return centerWaveformOnTime(timeMs, { persist });
+  }
+  const padding = Math.min(visible.duration / 2, Math.max(20, visible.duration * paddingRatio));
+  if (timeMs < visible.start + padding) return setWaveformOffset(timeMs - padding, { persist });
+  if (timeMs > visible.end - padding) return setWaveformOffset(timeMs - visible.duration + padding, { persist });
+  return false;
+}
+
+function waveformNavigatorMetrics(track = $("waveform-window-track")) {
+  if (!track) return null;
+  const visible = waveformWindow();
+  const totalDuration = Math.max(1, durationMs());
+  const rect = track.getBoundingClientRect();
+  const trackWidth = Math.max(1, rect.width || track.clientWidth || 1);
+  const maxOffset = Math.max(0, totalDuration - visible.duration);
+  const idealHandleWidth = trackWidth * (visible.duration / totalDuration);
+  const handleWidth = maxOffset <= 0
+    ? trackWidth
+    : clamp(Math.max(WAVEFORM_WINDOW_HANDLE_MIN_PX, idealHandleWidth), WAVEFORM_WINDOW_HANDLE_MIN_PX, trackWidth);
+  const maxLeft = Math.max(0, trackWidth - handleWidth);
+  const left = maxLeft <= 0 ? 0 : (waveformOffsetMs / maxOffset) * maxLeft;
+  return { track, rect, trackWidth, totalDuration, visible, maxOffset, handleWidth, maxLeft, left };
+}
+
+function renderWaveformNavigator() {
+  const nav = $("waveform-window");
+  const track = $("waveform-window-track");
+  const handle = $("waveform-window-handle");
+  const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
+  if (!nav || !track || !handle) return;
+  nav.hidden = !expanded || !state?.project;
+  if (nav.hidden) return;
+  const metrics = waveformNavigatorMetrics(track);
+  if (!metrics) return;
+  const canPan = metrics.maxOffset > 0;
+  nav.classList.toggle("interactive", canPan);
+  track.classList.toggle("interactive", canPan);
+  handle.classList.toggle("interactive", canPan);
+  handle.style.width = `${metrics.handleWidth}px`;
+  handle.style.transform = `translateX(${metrics.left}px)`;
+  const startLabel = `${(metrics.visible.start / 1000).toFixed(2)}s`;
+  const endLabel = `${(metrics.visible.end / 1000).toFixed(2)}s`;
+  track.title = canPan
+    ? `Drag to pan the zoomed waveform window (${startLabel} to ${endLabel}).`
+    : `Zoom in to pan the waveform window (${startLabel} to ${endLabel}).`;
+}
+
+function updateWaveformNavigator(clientX) {
+  const metrics = waveformNavigatorMetrics();
+  if (!metrics || metrics.maxOffset <= 0) return false;
+  const ratio = clamp((clientX - metrics.rect.left) / metrics.trackWidth, 0, 1);
+  return centerWaveformOnTime(ratio * metrics.totalDuration);
 }
 
 function waveformX(timeMs, width) {
@@ -1288,22 +2410,26 @@ function renderHeader() {
   $("project-title").textContent = projectName;
   $("rail-project").textContent = projectName;
   $("status").textContent = state.status;
-  const primaryName = state.media.primary_display_name || fileName(state.project.primary_video.path);
+  const primaryName = state.media.primary_available
+    ? (state.media.primary_display_name || fileName(state.project.primary_video.path))
+    : "No Video Selected";
   $("current-file").textContent = primaryName;
+  const statusCopy = $("status-copy");
+  if (statusCopy) statusCopy.textContent = state.status;
+  const inspectorFile = $("inspector-file");
+  if (inspectorFile) inspectorFile.textContent = primaryName;
+  const inspectorStatusCopy = $("inspector-status-copy");
+  if (inspectorStatusCopy) inspectorStatusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
   $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/project.ssproj`;
   syncControlValue($("project-path"), state.project.path || "");
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
-    : "No video selected";
+    : "No Video Selected";
 }
 
 function renderStats() {
-  $("draw").textContent = seconds(state.metrics.draw_ms);
-  $("raw-time").textContent = seconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms);
-  $("shot-count").textContent = state.metrics.total_shots;
-  $("avg-split").textContent = seconds(state.metrics.average_split_ms);
   $("timing-summary").textContent = state.metrics.raw_time_ms
     ? "Click Expand and Unlock to change shot values."
     : "No timing data.";
@@ -1351,7 +2477,9 @@ function ensureMergePreviewItem(layer, source) {
     item.innerHTML = "";
     media = document.createElement(asset.is_still_image ? "img" : "video");
     if (media instanceof HTMLVideoElement) {
-      media.muted = true;
+      media.defaultMuted = false;
+      media.muted = false;
+      media.volume = 1;
       media.playsInline = true;
       media.disablePictureInPicture = true;
       media.preload = "auto";
@@ -1364,14 +2492,16 @@ function ensureMergePreviewItem(layer, source) {
     }
     item.appendChild(media);
   }
-  const mediaPath = `/media/merge/${sourceId}?v=${encodeURIComponent(asset.path || "")}`;
+  const mediaPath = buildMediaUrl(`/media/merge/${sourceId}`, asset.path || "");
   if (media instanceof HTMLImageElement) {
-    if (media.dataset.sourcePath !== asset.path) {
+    if (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath) {
       media.dataset.sourcePath = asset.path;
+      media.dataset.mediaUrl = mediaPath;
       media.src = mediaPath;
     }
-  } else if (media instanceof HTMLVideoElement && media.dataset.sourcePath !== asset.path) {
+  } else if (media instanceof HTMLVideoElement && (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath)) {
     media.dataset.sourcePath = asset.path;
+    media.dataset.mediaUrl = mediaPath;
     media.src = mediaPath;
     media.load();
   }
@@ -1451,10 +2581,13 @@ function renderVideo() {
   const merge = state.project.merge;
   const mergeSources = state?.project?.merge_sources || [];
   const path = state.project.primary_video.path || "";
-  if (state.media.primary_available && video.dataset.sourcePath !== path) {
+  const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);
+  if (state.media.primary_available && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
     video.dataset.sourcePath = path;
-    video.src = `/media/primary?v=${encodeURIComponent(path)}`;
+    video.dataset.mediaUrl = primaryMediaPath;
+    video.src = primaryMediaPath;
     video.load();
+    logPrimaryVideoState("source.attach");
   }
   if (!state.media.primary_available) {
     resetMediaElement(video);
@@ -1462,16 +2595,20 @@ function renderVideo() {
 
   const secondaryPath = state.project.secondary_video?.path || "";
   const imageSecondary = isImagePath(secondaryPath);
+  const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);
   if (state.media.secondary_available && imageSecondary) {
-    if (secondaryImage.dataset.sourcePath !== secondaryPath) {
+    if (secondaryImage.dataset.sourcePath !== secondaryPath || secondaryImage.dataset.mediaUrl !== secondaryMediaPath) {
       secondaryImage.dataset.sourcePath = secondaryPath;
-      secondaryImage.src = `/media/secondary?v=${encodeURIComponent(secondaryPath)}`;
+      secondaryImage.dataset.mediaUrl = secondaryMediaPath;
+      secondaryImage.src = secondaryMediaPath;
     }
     resetMediaElement(secondary);
   } else if (state.media.secondary_available && !imageSecondary) {
-    if (secondary.dataset.sourcePath !== secondaryPath) {
+    if (secondary.dataset.sourcePath !== secondaryPath || secondary.dataset.mediaUrl !== secondaryMediaPath) {
       secondary.dataset.sourcePath = secondaryPath;
-      secondary.src = `/media/secondary?v=${encodeURIComponent(secondaryPath)}`;
+      secondary.dataset.mediaUrl = secondaryMediaPath;
+      secondary.src = secondaryMediaPath;
+      ensurePrimaryVideoAudio(secondary);
       secondary.load();
     }
     secondaryImage.removeAttribute("src");
@@ -1696,11 +2833,12 @@ function waveformCanvasDisplayHeight(canvas) {
   const panelHeight = panel.clientHeight || panel.getBoundingClientRect().height || 0;
   if (!panelHeight) return 0;
   const headerHeight = panel.querySelector(".waveform-header")?.getBoundingClientRect().height || 0;
+  const windowHeight = panel.querySelector(".waveform-window")?.getBoundingClientRect().height || 0;
   const footerHeight = panel.querySelector(".waveform-footer")?.getBoundingClientRect().height || 0;
   const shotList = panel.querySelector(".waveform-shot-list");
   const shotListVisible = shotList && window.getComputedStyle(shotList).display !== "none";
   const shotListHeight = shotListVisible ? shotList.getBoundingClientRect().height : 0;
-  return Math.max(1, Math.floor(panelHeight - headerHeight - footerHeight - shotListHeight));
+  return Math.max(1, Math.floor(panelHeight - headerHeight - windowHeight - footerHeight - shotListHeight));
 }
 
 function resizeCanvasToDisplay(canvas) {
@@ -1728,6 +2866,8 @@ function renderWaveform() {
   const ctx = canvas.getContext("2d");
   const waveform = state.project.analysis.waveform_primary || [];
   const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
+  canvas.classList.toggle("waveform-pannable", expanded && waveformZoomX > 1);
+  canvas.classList.toggle("waveform-panning", Boolean(waveformPanDrag));
   const visible = waveformWindow();
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#102033";
@@ -1770,6 +2910,7 @@ function renderWaveform() {
     );
   });
   renderWaveformShotList();
+  renderWaveformNavigator();
 }
 
 function drawOutlinedText(ctx, text, x, y, fillStyle, font, lineWidth = 3) {
@@ -1843,10 +2984,88 @@ function drawSelectedRegion(ctx, width, height) {
   ctx.fillRect(Math.max(0, x - 44), 0, 88, height);
 }
 
-function selectShot(shotId) {
+function startWaveformPanDrag(event) {
+  const canvas = $("waveform");
+  waveformPanDrag = {
+    target: canvas,
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startOffsetMs: waveformOffsetMs,
+    moved: false,
+  };
+  capturePointer(canvas, event.pointerId);
+  canvas.classList.add("waveform-panning");
+  activity("waveform.pan_drag.start", { offset_ms: waveformOffsetMs });
+  event.preventDefault();
+}
+
+function updateWaveformPanDrag(event) {
+  if (!waveformPanDrag) return;
+  if (event.pointerId !== undefined && waveformPanDrag.pointerId !== undefined && event.pointerId !== waveformPanDrag.pointerId) return;
+  const canvas = $("waveform");
+  const rect = canvas.getBoundingClientRect();
+  const visible = waveformWindow();
+  const deltaPx = event.clientX - waveformPanDrag.startClientX;
+  if (Math.abs(deltaPx) >= WAVEFORM_PAN_DRAG_THRESHOLD_PX) waveformPanDrag.moved = true;
+  if (!waveformPanDrag.moved) return;
+  const nextOffset = waveformPanDrag.startOffsetMs - ((deltaPx / Math.max(1, rect.width)) * visible.duration);
+  setWaveformOffset(nextOffset);
+  renderWaveform();
+}
+
+function finishWaveformPanDrag(event) {
+  if (!waveformPanDrag) return false;
+  if (event.pointerId !== undefined && waveformPanDrag.pointerId !== undefined && event.pointerId !== waveformPanDrag.pointerId) return true;
+  releasePointer(waveformPanDrag.target, waveformPanDrag.pointerId);
+  waveformPanDrag.target?.classList.remove("waveform-panning");
+  const moved = waveformPanDrag.moved;
+  waveformPanDrag = null;
+  if (moved) {
+    activity("waveform.pan_drag.commit", { offset_ms: waveformOffsetMs });
+    renderWaveform();
+  }
+  return moved;
+}
+
+function handleWaveformNavigatorPointerDown(event) {
+  if (event.button !== 0) return;
+  const track = $("waveform-window-track");
+  const metrics = waveformNavigatorMetrics(track);
+  if (!metrics || metrics.maxOffset <= 0) return;
+  waveformNavigatorDrag = {
+    target: track,
+    pointerId: event.pointerId,
+  };
+  capturePointer(track, event.pointerId);
+  updateWaveformNavigator(event.clientX);
+  renderWaveform();
+  event.preventDefault();
+}
+
+function moveWaveformNavigatorDrag(event) {
+  if (!waveformNavigatorDrag) return;
+  if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
+  updateWaveformNavigator(event.clientX);
+  renderWaveform();
+}
+
+function endWaveformNavigatorDrag(event) {
+  if (!waveformNavigatorDrag) return;
+  if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
+  releasePointer(waveformNavigatorDrag.target, waveformNavigatorDrag.pointerId);
+  waveformNavigatorDrag = null;
+}
+
+function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
   selectedShotId = shotId;
+  if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = shotId;
   activity("shot.select", { shot_id: shotId });
   const shot = selectedShot();
+  if (shot && revealInWaveform) {
+    if (ensureWaveformTimeVisible(shot.time_ms, { center: centerWaveform || !isWaveformVisible(shot.time_ms) })) {
+      renderWaveform();
+    }
+  }
   const primaryVideo = $("primary-video");
   if (shot && primaryVideo && state?.media?.primary_available) {
     try {
@@ -1905,15 +3124,17 @@ function renderWaveformShotList() {
     const meta = document.createElement("small");
     meta.textContent = segment.card_meta;
     item.append(title, meta);
-    item.addEventListener("click", () => selectShot(segment.shot_id));
+    item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
     list.appendChild(item);
   });
 }
 
 function shotLabelForEvent(shotId) {
-  const segment = (state.timing_segments || []).find((item) => item.shot_id === shotId);
-  if (!segment) return "Any shot";
-  return `${segment.label} ${segment.absolute_s}s`;
+  const shots = orderedShotsByTime();
+  const shotIndex = shots.findIndex((shot) => shot.id === shotId);
+  const shot = shotIndex >= 0 ? shots[shotIndex] : null;
+  if (!shot) return "Any shot";
+  return `Shot ${shotIndex + 1} ${seconds(shot.time_ms)}s`;
 }
 
 function deleteTimingEvent(eventId) {
@@ -1959,39 +3180,39 @@ function renderTimingEventList() {
 }
 
 function renderTimingEventEditor() {
-  const shotSegments = state.timing_segments || [];
+  const shots = orderedShotsByTime();
   const positionSelect = $("timing-event-position");
   const addButton = $("add-timing-event");
   if (!positionSelect || !addButton) return;
 
   const previousPosition = positionSelect.value;
   const selectedIndex = selectedShotId
-    ? shotSegments.findIndex((segment) => segment.shot_id === selectedShotId)
+    ? shots.findIndex((shot) => shot.id === selectedShotId)
     : -1;
 
   positionSelect.innerHTML = "";
-  shotSegments.forEach((segment, index) => {
+  shots.forEach((shot, index) => {
     const beforeOption = document.createElement("option");
-    beforeOption.value = `::${segment.shot_id}`;
-    beforeOption.textContent = `Before ${segment.label}`;
+    beforeOption.value = `::${shot.id}`;
+    beforeOption.textContent = `Before Shot ${index + 1}`;
     positionSelect.appendChild(beforeOption);
 
-    const nextSegment = shotSegments[index + 1];
+    const nextShot = shots[index + 1];
     const afterOption = document.createElement("option");
-    afterOption.value = `${segment.shot_id}::${nextSegment?.shot_id || ""}`;
-    afterOption.textContent = nextSegment
-      ? `Between ${segment.label} and ${nextSegment.label}`
-      : `After ${segment.label}`;
+    afterOption.value = `${shot.id}::${nextShot?.id || ""}`;
+    afterOption.textContent = nextShot
+      ? `Between Shot ${index + 1} and Shot ${index + 2}`
+      : `After Shot ${index + 1}`;
     positionSelect.appendChild(afterOption);
   });
 
   if (previousPosition && Array.from(positionSelect.options).some((option) => option.value === previousPosition)) {
     positionSelect.value = previousPosition;
   } else if (selectedIndex >= 0) {
-    positionSelect.value = `${shotSegments[selectedIndex].shot_id}::${shotSegments[selectedIndex + 1]?.shot_id || ""}`;
+    positionSelect.value = `${shots[selectedIndex].id}::${shots[selectedIndex + 1]?.id || ""}`;
   }
 
-  addButton.disabled = shotSegments.length === 0;
+  addButton.disabled = shots.length === 0;
   renderTimingEventList();
 }
 
@@ -2046,14 +3267,81 @@ function updateTimingRowField(shotId, field, value) {
   }
 }
 
+function splitRowEntryLabel(row) {
+  return row.label || `${row.start_label || "Start"} -> ${row.end_label || (row.shot_number ? `Shot ${row.shot_number}` : "Entry")}`;
+}
+
+function splitRowActions(row) {
+  return Array.isArray(row.actions) ? row.actions : [];
+}
+
+function splitRowActionSummary(row) {
+  return splitRowActions(row).map((action) => action.label).filter(Boolean).join(" • ");
+}
+
+function splitRowSourceLabel(row) {
+  const sourceValue = typeof row.source === "string" ? row.source.toLowerCase() : "";
+  if (sourceValue === "auto") return "ShotML";
+  if (sourceValue === "manual") return "Manual";
+  return row.source || "ShotML";
+}
+
+function splitRowConfidenceLabel(row) {
+  return row.confidence === null || row.confidence === undefined
+    ? "Manual"
+    : formatConfidenceValue(row.confidence);
+}
+
+function buildSplitRowActionCell(row, expandedTable) {
+  const cell = document.createElement("div");
+  cell.className = "timeline-action-cell";
+  const actions = splitRowActions(row);
+  if (actions.length === 0) {
+    cell.textContent = "--";
+    return cell;
+  }
+  if (!expandedTable) {
+    cell.textContent = splitRowActionSummary(row);
+    return cell;
+  }
+  const list = document.createElement("div");
+  list.className = "timeline-action-list";
+  actions.forEach((action) => {
+    const chip = document.createElement("span");
+    chip.className = `timing-action-chip ${action.synthetic ? "synthetic" : "recorded"}`;
+    const label = document.createElement("span");
+    label.textContent = action.label || action.kind || "Action";
+    chip.appendChild(label);
+    if (action.event_id && !action.synthetic) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "timing-action-remove";
+      remove.textContent = "×";
+      remove.title = `Remove ${action.label || action.kind || "timing event"}`;
+      remove.setAttribute("aria-label", `Remove timing event ${action.label || action.kind || "action"}`);
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        deleteTimingEvent(action.event_id);
+      });
+      chip.appendChild(remove);
+    }
+    list.appendChild(chip);
+  });
+  cell.appendChild(list);
+  return cell;
+}
+
 function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
   table.innerHTML = "";
   const expandedTable = tableId === "timing-workbench-table";
+  table.classList.toggle("interval-timeline-table", true);
+  const defaultScore = defaultScoreLetter();
   const headers = expandedTable
-    ? ["", "Shot", "Split", "Score", "Confidence", "Source"]
-    : ["Shot", "Split", "Score", "Confidence", "Source"];
+    ? ["", "Segment", "Split", "Total", "Action", "Score", "Confidence", "Source"]
+    : ["Segment", "Split", "Total", "Action", "Score"];
   headers.forEach((header) => {
     const cell = document.createElement("div");
     cell.className = "head";
@@ -2062,30 +3350,34 @@ function renderTimingTable(tableId = "timing-table") {
   });
 
   (state.split_rows || []).forEach((row) => {
-    const editing = expandedTable && timingRowEdits.has(row.shot_id);
+    const canEdit = Boolean(row.shot_id);
+    const editing = canEdit && expandedTable && timingRowEdits.has(row.shot_id);
     const lowConfidence = isLowConfidence(row.confidence);
     if (expandedTable) {
       const lockCell = document.createElement("div");
       lockCell.className = "lock-cell";
-      const lockButton = document.createElement("button");
-      lockButton.type = "button";
-      lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
-      lockButton.textContent = editing ? "Lock" : "Unlock";
-      lockButton.title = editing ? "Lock row" : "Unlock row";
-      lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
-      lockCell.appendChild(lockButton);
+      if (canEdit) {
+        const lockButton = document.createElement("button");
+        lockButton.type = "button";
+        lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
+        lockButton.textContent = editing ? "Lock" : "Unlock";
+        lockButton.title = editing ? "Lock row" : "Unlock row";
+        lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
+        lockCell.appendChild(lockButton);
+      }
       table.appendChild(lockCell);
     }
 
-    const shotCell = document.createElement("div");
-    shotCell.textContent = String(row.shot_number);
-  if (row.shot_id === selectedShotId) shotCell.classList.add("selected");
-  if (lowConfidence) shotCell.classList.add("low-confidence");
-    shotCell.addEventListener("click", () => selectShot(row.shot_id));
-    table.appendChild(shotCell);
+    const entryCell = document.createElement("div");
+    entryCell.classList.add("timeline-segment-cell");
+    entryCell.textContent = splitRowEntryLabel(row);
+    if (row.shot_id === selectedShotId) entryCell.classList.add("selected");
+    if (lowConfidence) entryCell.classList.add("low-confidence");
+    if (canEdit) entryCell.addEventListener("click", () => selectShot(row.shot_id));
+    table.appendChild(entryCell);
 
     const splitCell = document.createElement("div");
-    const splitMs = resolvedSplitMsForShot(row.shot_id, row.shot_number, row.absolute_time_ms);
+    const splitMs = numericMs(row.split_ms);
     if (editing) {
       const editor = document.createElement("span");
       editor.className = "timing-edit-control";
@@ -2095,7 +3387,7 @@ function renderTimingTable(tableId = "timing-table") {
       input.step = "0.001";
       input.className = "timing-split-input";
       input.value = precise(splitMs ?? row.absolute_time_ms);
-      input.setAttribute("aria-label", `Split for shot ${row.shot_number}`);
+      input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
       input.addEventListener("change", () => updateTimingRowField(row.shot_id, "split_ms", input.value));
       const restore = document.createElement("button");
       restore.type = "button";
@@ -2110,16 +3402,23 @@ function renderTimingTable(tableId = "timing-table") {
     }
     table.appendChild(splitCell);
 
+    const totalCell = document.createElement("div");
+    totalCell.textContent = splitSeconds(numericMs(row.cumulative_ms));
+    table.appendChild(totalCell);
+
+    const actionCell = buildSplitRowActionCell(row, expandedTable);
+    table.appendChild(actionCell);
+
     const scoreCell = document.createElement("div");
     if (lowConfidence) scoreCell.classList.add("low-confidence");
-    scoreCell.textContent = row.score_letter || "--";
-    scoreCell.addEventListener("click", () => selectShot(row.shot_id));
+    scoreCell.textContent = row.score_letter || defaultScore;
+    if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
     table.appendChild(scoreCell);
 
+    if (!expandedTable) return;
+
     const confidenceCell = document.createElement("div");
-    confidenceCell.textContent = row.confidence === null || row.confidence === undefined
-      ? "Manual"
-      : formatConfidenceValue(row.confidence);
+    confidenceCell.textContent = splitRowConfidenceLabel(row);
     if (lowConfidence) {
       confidenceCell.classList.add("low-confidence");
       confidenceCell.title = `Review this split manually: confidence ${formatConfidenceValue(row.confidence)}.`;
@@ -2127,8 +3426,7 @@ function renderTimingTable(tableId = "timing-table") {
     table.appendChild(confidenceCell);
 
     const sourceCell = document.createElement("div");
-    const sourceValue = typeof row.source === "string" ? row.source.toLowerCase() : "";
-    sourceCell.textContent = sourceValue === "auto" ? "ShotML" : sourceValue === "manual" ? "Manual" : row.source || "ShotML";
+    sourceCell.textContent = splitRowSourceLabel(row);
     table.appendChild(sourceCell);
   });
 }
@@ -2188,6 +3486,7 @@ function renderScoringShotList() {
   list.innerHTML = "";
   const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
   const penaltyFields = state.scoring_summary?.penalty_fields || [];
+  const defaultScore = scoreOptions[0] || "A";
   const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
   (state.timing_segments || []).forEach((segment) => {
     const row = document.createElement("div");
@@ -2199,7 +3498,9 @@ function renderScoringShotList() {
     button.className = "scoring-shot-button";
     const title = document.createElement("strong");
     title.textContent = `Shot ${segment.shot_number}`;
-    button.append(title);
+    const meta = document.createElement("small");
+    meta.textContent = segment.card_meta || `${segment.card_value || "--.--"}s`;
+    button.append(title, meta);
     button.title = segment.source === "manual"
       ? "Manual shot marker."
       : isLowConfidence(segment.confidence)
@@ -2213,10 +3514,6 @@ function renderScoringShotList() {
     const select = document.createElement("select");
     select.className = "shot-score-select";
     select.setAttribute("aria-label", `Score shot ${segment.shot_number}`);
-    const unsetOption = document.createElement("option");
-    unsetOption.value = "";
-    unsetOption.textContent = "--";
-    select.appendChild(unsetOption);
     scoreOptions.forEach((letter) => {
       const option = document.createElement("option");
       option.value = letter;
@@ -2225,13 +3522,13 @@ function renderScoringShotList() {
       option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
       select.appendChild(option);
     });
-    select.value = segment.score_letter || "";
+    select.value = segment.score_letter || defaultScore;
 
     const applyShotScoring = () => {
       selectedShotId = segment.shot_id;
       callApi("/api/scoring/score", {
         shot_id: segment.shot_id,
-        letter: select.value || null,
+        letter: select.value || defaultScore,
         penalty_counts: collectPenaltyCounts(controls),
       });
     };
@@ -2318,10 +3615,21 @@ function renderScoringPresetDescription() {
 
 function renderPractiScoreSummaries() {
   const imported = state.scoring_summary?.imported_stage;
+  const stagedSource = state?.practiscore_options?.source_name || "";
+  const stagedMatchType = state?.practiscore_options?.detected_match_type || "";
+  const stagedStages = Array.isArray(state?.practiscore_options?.stage_numbers)
+    ? state.practiscore_options.stage_numbers
+    : [];
+  const stagedCompetitorCount = practiScoreCompetitors().length;
   if (!imported) {
-    $("practiscore-status").textContent = "No results imported";
+    $("practiscore-status").textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
     $("scoring-imported-caption").textContent = "No PractiScore stage imported.";
-    renderDetailsList("practiscore-import-summary", []);
+    renderDetailsList("practiscore-import-summary", stagedSource ? [
+      ["Source", stagedSource],
+      ["Match", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
+      ["Stages", stagedStages.length > 0 ? stagedStages.join(", ") : ""],
+      ["Competitors", stagedCompetitorCount > 0 ? String(stagedCompetitorCount) : ""],
+    ] : []);
     renderDetailsList("scoring-imported-summary", []);
     return;
   }
@@ -2377,10 +3685,291 @@ function renderExportPresetOptions() {
 }
 
 function renderExportLog() {
-  const log = state.project.export.last_error
-    ? `ERROR: ${state.project.export.last_error}\n${state.project.export.last_log || ""}`
-    : state.project.export.last_log;
-  $("export-log").textContent = log || "No export log yet.";
+  const persistedLines = (state.project.export.last_log || "")
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const visibleLines = exportLogLines.length > 0 ? exportLogLines : persistedLines;
+  const output = $("export-log-output");
+  const summary = $("export-log-summary");
+  const errorBox = $("export-log-error");
+  const status = $("export-log-status");
+  const button = $("show-export-log");
+  const exportButton = $("export-export-log");
+  if (output) {
+    output.textContent = visibleLines.join("\n") || "No export log yet.";
+    if (activeProcessingPath === "/api/export") output.scrollTop = output.scrollHeight;
+  }
+  if (summary) {
+    summary.textContent = activeProcessingPath === "/api/export"
+      ? `Export in progress • ${Math.round(processingProgressPercent)}%`
+      : (visibleLines.length > 0 ? "Most recent local export output." : "No export activity yet.");
+  }
+  if (errorBox) {
+    errorBox.hidden = !state.project.export.last_error;
+    errorBox.textContent = state.project.export.last_error || "";
+  }
+  if (status) {
+    status.textContent = state.project.export.last_error
+      ? `Latest export failed: ${state.project.export.last_error}`
+      : activeProcessingPath === "/api/export"
+        ? `Export log is updating in real time. Current progress: ${Math.round(processingProgressPercent)}%.`
+        : (visibleLines.length > 0
+          ? "The last local export log is available in the modal window."
+          : "The live export log opens in a separate window so the output settings stay readable while rendering runs.");
+  }
+  if (button) {
+    button.textContent = activeProcessingPath === "/api/export"
+      ? `Show Log (${Math.round(processingProgressPercent)}%)`
+      : "Show Log";
+  }
+  if (exportButton) exportButton.disabled = visibleLines.length === 0;
+}
+
+function openExportLogModal() {
+  const modal = $("export-log-modal");
+  if (!modal) return;
+  modal.hidden = false;
+  renderExportLog();
+  const output = $("export-log-output");
+  if (output) output.scrollTop = output.scrollHeight;
+}
+
+function closeExportLogModal() {
+  const modal = $("export-log-modal");
+  if (!modal) return;
+  modal.hidden = true;
+}
+
+function downloadExportLog() {
+  const persistedLines = (state?.project?.export?.last_log || "")
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const visibleLines = exportLogLines.length > 0 ? exportLogLines : persistedLines;
+  if (visibleLines.length === 0) {
+    setStatus("No export log available yet.");
+    return;
+  }
+  downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
+  setStatus("Downloaded export log.");
+}
+
+function buildMetricsRows() {
+  const segmentsByShotId = new Map((state.timing_segments || []).map((segment) => [segment.shot_id, segment]));
+  const beepMs = numericMs(state?.metrics?.beep_ms);
+  const defaultScore = defaultScoreLetter();
+  return (state.split_rows || []).map((row) => {
+    const segment = row.shot_id ? (segmentsByShotId.get(row.shot_id) || null) : null;
+    const absoluteMs = numericMs(row.absolute_time_ms);
+    const cumulativeMs = numericMs(segment?.cumulative_ms) ?? (
+      absoluteMs === null
+        ? null
+        : (beepMs === null ? absoluteMs : Math.max(0, absoluteMs - beepMs))
+    );
+    return {
+      rowId: row.row_id,
+      rowType: row.row_type,
+      shotId: row.shot_id,
+      shotNumber: row.shot_number,
+      label: splitRowEntryLabel(row),
+      absoluteMs,
+      splitMs: numericMs(row.split_ms),
+      cumulativeMs: numericMs(row.cumulative_ms) ?? cumulativeMs,
+      actionSummary: splitRowActionSummary(row),
+      scoreLetter: row.score_letter || segment?.score_letter || defaultScore,
+      penaltyText: formatPenaltyCountsText(row.penalty_counts),
+      source: row.source || segment?.source || "",
+      confidence: row.confidence ?? segment?.confidence ?? null,
+    };
+  });
+}
+
+function renderMetricsPanel() {
+  const summaryGrid = $("metrics-summary-grid");
+  const trendList = $("metrics-trend-list");
+  const scoreStatus = $("metrics-score-status");
+  if (!summaryGrid || !trendList || !scoreStatus) return;
+
+  const summaryCards = [
+    ["Draw", splitSeconds(state.metrics.draw_ms), "First-shot timing"],
+    ["Raw", splitSeconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms), "Beep to final shot"],
+    ["Shots", String(state.metrics.total_shots || 0), "Detected shots"],
+    ["Avg Split", splitSeconds(state.metrics.average_split_ms), "Average split"],
+    ["Beep", splitSeconds(state.metrics.beep_ms), "Start marker"],
+    [state.scoring_summary?.display_label || "Result", state.scoring_summary?.display_value || "--", "Scoring summary"],
+  ];
+  summaryGrid.innerHTML = "";
+  summaryCards.forEach(([label, value, caption]) => {
+    const card = document.createElement("article");
+    card.className = "metric-card";
+    const eyebrow = document.createElement("small");
+    eyebrow.textContent = label;
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = caption;
+    card.append(eyebrow, strong, hint);
+    summaryGrid.appendChild(card);
+  });
+
+  trendList.innerHTML = "";
+  const rows = buildMetricsRows();
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No timing segments yet.";
+    trendList.appendChild(empty);
+  } else {
+    rows.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "metrics-row";
+      const label = document.createElement("strong");
+      label.textContent = entry.label;
+      const meta = document.createElement("span");
+      meta.textContent = entry.absoluteMs === null ? "Timing" : `At ${precise(entry.absoluteMs)}s`;
+      const split = document.createElement("span");
+      split.textContent = entry.splitMs === null || entry.splitMs === undefined
+        ? "Split --.--"
+        : `Split ${splitSeconds(entry.splitMs)}`;
+      const cumulative = document.createElement("span");
+      cumulative.textContent = entry.cumulativeMs === null || entry.cumulativeMs === undefined
+        ? "Total --.--"
+        : `Total ${splitSeconds(entry.cumulativeMs)}`;
+      const detail = document.createElement("small");
+      const sourceLabel = entry.source === "manual"
+        ? "Manual"
+        : (entry.confidence === null || entry.confidence === undefined || entry.confidence === ""
+            ? entry.source
+            : formatConfidenceValue(entry.confidence));
+      const detailParts = [
+        entry.actionSummary,
+        entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
+        entry.penaltyText,
+        sourceLabel,
+      ].filter(Boolean);
+      detail.textContent = detailParts.join(" • ") || "Timing";
+      row.append(label, meta, split, cumulative, detail);
+      trendList.appendChild(row);
+    });
+  }
+
+  const summary = state.scoring_summary || {};
+  scoreStatus.textContent = summary.enabled
+    ? `${summary.display_label || "Result"} ${summary.display_value || "--"}`
+    : "Scoring disabled.";
+  renderDetailsList("metrics-score-summary", [
+    ["Ruleset", summary.ruleset_name || ""],
+    [summary.display_label || "Result", summary.display_value || ""],
+    ["Shot Points", formatNumber(summary.shot_points, 2)],
+    [summary.penalty_label || "Penalties", formatNumber(summary.total_penalties, 2)],
+    ["Raw Time", summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : ""],
+    ["Imported", summary.imported_stage?.source_name || ""],
+  ]);
+}
+
+function metricsFileStem() {
+  const raw = state?.project?.name || fileName(state?.project?.primary_video?.path || "") || "splitshot";
+  return raw
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "splitshot";
+}
+
+function csvEscape(value) {
+  const text = value === null || value === undefined ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadTextFile(filename, text, mimeType = "text/plain") {
+  const blob = new Blob([text], { type: `${mimeType};charset=utf-8` });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function buildMetricsCsv() {
+  const summary = state.scoring_summary || {};
+  const rows = buildMetricsRows();
+  const headers = [
+    "project",
+    "primary_video",
+    "result_label",
+    "result_value",
+    "raw_time_s",
+    "shot_number",
+    "segment_label",
+    "source",
+    "absolute_s",
+    "split_s",
+    "cumulative_s",
+    "score_letter",
+    "penalties",
+    "confidence",
+  ];
+  const metricsRows = rows.map((entry) => [
+    state.project.name || "",
+    fileName(state.project.primary_video.path || ""),
+    summary.display_label || "Result",
+    summary.display_value || "",
+    summary.raw_seconds ?? "",
+    entry.shotNumber || "",
+    entry.label || "",
+    entry.source || "",
+    entry.absoluteMs === null ? "" : precise(entry.absoluteMs),
+    entry.splitMs === null || entry.splitMs === undefined ? "" : precise(entry.splitMs),
+    entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : precise(entry.cumulativeMs),
+    entry.scoreLetter || "",
+    entry.penaltyText || "",
+    entry.confidence ?? "",
+  ]);
+  return [headers.join(","), ...metricsRows.map((row) => row.map(csvEscape).join(","))].join("\n");
+}
+
+function buildMetricsText() {
+  const summary = state.scoring_summary || {};
+  const rows = buildMetricsRows();
+  const lines = [
+    state.project.name || "Untitled Project",
+    `Video: ${fileName(state.project.primary_video.path || "")}`,
+    `${summary.display_label || "Result"}: ${summary.display_value || "--"}`,
+    `Raw Time: ${summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : "--"}`,
+    `Shots: ${state.metrics.total_shots || 0}`,
+    "",
+    "Split Timeline",
+  ];
+  rows.forEach((entry) => {
+    const parts = [
+      entry.label || (entry.shotNumber ? `Shot ${entry.shotNumber}` : "Entry"),
+      entry.absoluteMs === null ? "Absolute --.--" : `Absolute ${precise(entry.absoluteMs)}s`,
+      entry.splitMs === null || entry.splitMs === undefined ? "Split --.--" : `Split ${splitSeconds(entry.splitMs)}`,
+      entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "Total --.--" : `Total ${splitSeconds(entry.cumulativeMs)}`,
+    ];
+    if (entry.scoreLetter) parts.push(`Score ${entry.scoreLetter}`);
+    if (entry.penaltyText) parts.push(entry.penaltyText);
+    if (entry.source === "manual") parts.push("Manual");
+    else if (entry.confidence !== null && entry.confidence !== undefined && entry.confidence !== "") {
+      parts.push(formatConfidenceValue(entry.confidence));
+    }
+    lines.push(`- ${parts.join(" | ")}`);
+  });
+  return lines.join("\n");
+}
+
+function exportMetrics(kind) {
+  if (!state?.project) return;
+  const stem = metricsFileStem();
+  if (kind === "csv") {
+    downloadTextFile(`${stem}-metrics.csv`, buildMetricsCsv(), "text/csv");
+    setStatus("Downloaded metrics CSV.");
+    return;
+  }
+  downloadTextFile(`${stem}-metrics.txt`, buildMetricsText(), "text/plain");
+  setStatus("Downloaded metrics summary.");
 }
 
 function syncExportPathControl() {
@@ -2406,9 +3995,11 @@ function renderControls() {
   syncControlValue($("project-name"), state.project.name || "Untitled Project");
   syncControlValue($("project-description"), state.project.description || "");
   syncControlValue($("match-type"), state.project.scoring.match_type || "");
-  syncControlValue($("match-stage-number"), state.project.scoring.stage_number ?? "");
-  syncControlValue($("match-competitor-name"), state.project.scoring.competitor_name || "");
-  syncControlValue($("match-competitor-place"), state.project.scoring.competitor_place ?? "");
+  renderPractiScoreOptionLists({
+    stage_number: state.project.scoring.stage_number ?? "",
+    competitor_name: state.project.scoring.competitor_name || "",
+    competitor_place: state.project.scoring.competitor_place ?? "",
+  });
   syncControlChecked($("merge-enabled"), state.project.merge.enabled);
   syncControlValue($("merge-layout"), state.project.merge.layout);
   const pipValue = Number(
@@ -2448,19 +4039,8 @@ function renderControls() {
   syncControlChecked($("show-draw"), state.project.overlay.show_draw);
   syncControlChecked($("show-shots"), state.project.overlay.show_shots);
   syncControlChecked($("show-score"), state.project.overlay.show_score);
-  syncControlChecked($("custom-box-enabled"), state.project.overlay.custom_box_enabled);
-  syncControlValue($("custom-box-mode"), state.project.overlay.custom_box_mode || "manual");
-  syncControlValue($("custom-box-text"), state.project.overlay.custom_box_text || "");
-  syncControlValue($("custom-box-quadrant"), state.project.overlay.custom_box_quadrant);
-  syncControlValue($("custom-box-x"), state.project.overlay.custom_box_x ?? "");
-  syncControlValue($("custom-box-y"), state.project.overlay.custom_box_y ?? "");
-  syncControlValue($("custom-box-width"), state.project.overlay.custom_box_width || 0);
-  syncControlValue($("custom-box-height"), state.project.overlay.custom_box_height || 0);
-  syncControlValue($("custom-box-opacity"), state.project.overlay.custom_box_opacity ?? 0.9);
-  syncControlValue($("custom-box-background-color"), state.project.overlay.custom_box_background_color || "#000000");
-  syncControlValue($("custom-box-text-color"), state.project.overlay.custom_box_text_color || "#ffffff");
   syncOverlayCoordinateControlState();
-  syncCustomBoxModeState();
+  renderTextBoxEditors();
   syncTimingEventLabelState();
   syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
   syncControlValue($("quality"), state.project.export.quality);
@@ -2481,6 +4061,7 @@ function renderControls() {
   renderPractiScoreSummaries();
   renderExportPresetOptions();
   renderExportLog();
+  renderMetricsPanel();
   renderStyleControls();
   renderMergeMediaList();
 }
@@ -2503,13 +4084,13 @@ function renderStyleControls() {
         <h4></h4>
         <label class="color-field"><span class="style-card-label">Background</span>
           <span class="color-control-pair">
-            <input type="color" data-field="background_color" />
+            <button type="button" class="color-swatch-button" data-color-label="Badge background" data-field="background_color"></button>
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Background hex value" placeholder="#111827" />
           </span>
         </label>
         <label class="color-field"><span class="style-card-label">Text</span>
           <span class="color-control-pair">
-            <input type="color" data-field="text_color" />
+            <button type="button" class="color-swatch-button" data-color-label="Badge text" data-field="text_color"></button>
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Text hex value" placeholder="#F9FAFB" />
           </span>
         </label>
@@ -2527,28 +4108,33 @@ function renderStyleControls() {
   });
 
   const scoreGrid = $("score-color-grid");
-  const scoreKeys = state.scoring_summary?.score_options || [];
-  const uniqueLetters = [...new Set(scoreKeys)];
-  const validLetters = new Set(uniqueLetters);
+  const scoreOptions = scoringColorOptions();
+  const scoreKeys = scoreOptions.map((option) => option.key);
+  const validLetters = new Set(scoreKeys);
   scoreGrid.querySelectorAll(".score-color-input[data-letter]").forEach((input) => {
     if (!validLetters.has(input.dataset.letter)) {
       input.closest("label")?.remove();
     }
   });
-  uniqueLetters.forEach((letter) => {
-    let input = scoreGrid.querySelector(`.score-color-input[data-letter="${letter}"]`);
+  scoreOptions.forEach((option) => {
+    const key = option.key;
+    const labelText = option.label || key;
+    let input = [...scoreGrid.querySelectorAll(".score-color-input[data-letter]")].find((candidate) => candidate.dataset.letter === key);
     if (!input) {
       const label = document.createElement("label");
       label.className = "color-field score-color-field";
+      label.title = option.description || labelText;
       const text = document.createElement("span");
-      text.textContent = letter;
+      text.className = "score-color-label";
+      text.textContent = labelText;
       label.appendChild(text);
       const pair = document.createElement("span");
       pair.className = "color-control-pair";
-      input = document.createElement("input");
-      input.type = "color";
-      input.className = "score-color-input";
-      input.dataset.letter = letter;
+      input = document.createElement("button");
+      input.type = "button";
+      input.className = "score-color-input color-swatch-button";
+      input.dataset.letter = key;
+      input.dataset.colorLabel = `${labelText} color`;
       const hex = document.createElement("input");
       hex.type = "text";
       hex.className = "color-hex-input";
@@ -2560,7 +4146,13 @@ function renderStyleControls() {
       scoreGrid.appendChild(label);
       bindOverlayColorInput(input);
     }
-    syncControlValue(input, state.project.overlay.scoring_colors[letter] || "#ffffff");
+    syncControlValue(
+      input,
+      state.project.overlay.scoring_colors[key]
+      || "#ffffff",
+    );
+    const label = input.closest("label");
+    if (label) label.title = option.description || labelText;
   });
 }
 
@@ -2716,6 +4308,7 @@ function visibleTimingEventsByShot(currentIndex) {
   const shotIndexById = new Map(shots.map((shot, index) => [shot.id, index]));
   const beforeByShotId = new Map();
   const afterByShotId = new Map();
+  const tailEvents = [];
   (state?.project?.analysis?.events || []).forEach((event) => {
     const eventLabel = event.label || defaultTimingEventLabel(event.kind);
     const eventPayload = { ...event, label: eventLabel };
@@ -2731,9 +4324,13 @@ function visibleTimingEventsByShot(currentIndex) {
       const existing = afterByShotId.get(event.after_shot_id) || [];
       existing.push(eventPayload);
       afterByShotId.set(event.after_shot_id, existing);
+      return;
+    }
+    if (afterIndex !== undefined && afterIndex === currentIndex && currentIndex === shots.length - 1 && !event.before_shot_id) {
+      tailEvents.push(eventPayload);
     }
   });
-  return { beforeByShotId, afterByShotId };
+  return { beforeByShotId, afterByShotId, tailEvents };
 }
 
 function textBiasForDirection(direction) {
@@ -2743,7 +4340,7 @@ function textBiasForDirection(direction) {
 }
 
 function badgeElement(
-  text,
+  content,
   style,
   size,
   badgeColorOverride = null,
@@ -2752,6 +4349,12 @@ function badgeElement(
   textBias = "center",
   scale = 1,
 ) {
+  const text = typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content.map((part) => part?.text || "").join("")
+      : String(content?.text || "");
+  const textRuns = Array.isArray(content) ? content : content?.runs || null;
   const badge = document.createElement("span");
   const role = text.startsWith("Timer")
     ? "timer-badge"
@@ -2774,8 +4377,20 @@ function badgeElement(
   badge.style.wordBreak = "normal";
   badge.style.overflowWrap = "normal";
   badge.style.lineHeight = "1";
-  const scaledPaddingY = scaledOverlayPixelValue(overlaySpacing, scale, 0);
-  const scaledPaddingX = scaledOverlayPixelValue(overlaySpacing * 1.5, scale, 0);
+  badge.textContent = "";
+  if (textRuns && textRuns.length > 0) {
+    textRuns.forEach((part) => {
+      const fragment = document.createElement("span");
+      fragment.textContent = part?.text || "";
+      if (part?.color) fragment.style.color = part.color;
+      badge.appendChild(fragment);
+    });
+  } else {
+    badge.textContent = text;
+  }
+  const fontSize = Number(state.project.overlay.font_size || 14);
+  const scaledPaddingY = scaledOverlayPixelValue(Math.max(4, fontSize * 0.45), scale, 0);
+  const scaledPaddingX = scaledOverlayPixelValue(Math.max(8, fontSize * 0.85), scale, 0);
   badge.style.padding = `${scaledPaddingY}px ${scaledPaddingX}px`;
   badge.style.margin = "0";
   const scaledWidth = widthOverride > 0
@@ -2980,9 +4595,10 @@ function positionOverlayContainer(overlay, quadrantValue = null, frameRect = nul
   overlay.style.width = "auto";
   overlay.style.height = "auto";
   overlay.style.boxSizing = "border-box";
+  const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
   const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
   overlay.style.padding = `${scaledMargin}px`;
-  overlay.style.gap = `${scaledMargin}px`;
+  overlay.style.gap = `${scaledGap}px`;
   overlay.style.maxWidth = frameRect ? `${Math.max(0, frameRect.width)}px` : "calc(100% - 12px)";
   overlay.style.maxHeight = frameRect ? `${Math.max(0, frameRect.height)}px` : "calc(100% - 12px)";
   overlay.style.overflow = "hidden";
@@ -3047,9 +4663,9 @@ function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
   overlay.style.transform = `translate(${-anchorOffsetX}px, ${-anchorOffsetY}px)`;
 }
 
-function positionCustomBadge(badge, frameRect) {
-  const customX = normalizedCoordinateValue(state.project.overlay.custom_box_x);
-  const customY = normalizedCoordinateValue(state.project.overlay.custom_box_y);
+function positionTextBoxBadge(badge, box, frameRect) {
+  const customX = normalizedCoordinateValue(box.x);
+  const customY = normalizedCoordinateValue(box.y);
   if (customX === null || customY === null) return false;
   badge.style.position = "absolute";
   badge.style.margin = "0";
@@ -3057,6 +4673,23 @@ function positionCustomBadge(badge, frameRect) {
   badge.style.top = `${clamp(customY * frameRect.height, 0, frameRect.height)}px`;
   badge.style.transform = "translate(-50%, -50%)";
   return true;
+}
+
+function configureTextBoxGroup(group, quadrant, frameRect, scale = 1) {
+  const [vertical = "top", horizontal = "left"] = String(quadrant || "top_left").split("_");
+  const horizontalLayout = vertical === "middle";
+  group.classList.remove("horizontal", "vertical");
+  group.classList.add(horizontalLayout ? "horizontal" : "vertical");
+  group.style.justifyContent = alignToEdge(vertical);
+  group.style.alignItems = alignToEdge(horizontal);
+  const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
+  const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
+  group.style.padding = `${scaledMargin}px`;
+  group.style.gap = `${scaledGap}px`;
+  group.style.left = `${frameRect.left}px`;
+  group.style.top = `${frameRect.top}px`;
+  group.style.width = `${frameRect.width}px`;
+  group.style.height = `${frameRect.height}px`;
 }
 
 function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
@@ -3072,19 +4705,19 @@ function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
   return true;
 }
 
-let customOverlayDrag = null;
-
-function beginCustomOverlayDrag(event) {
+function beginTextBoxDrag(event) {
   const customOverlay = $("custom-overlay");
   const customBadge = event.target instanceof Element
-    ? event.target.closest("[data-custom-box-drag]")
+    ? event.target.closest("[data-text-box-drag]")
     : null;
+  const boxId = customBadge?.dataset?.textBoxId || "";
+  const box = overlayTextBoxes().find((item) => item.id === boxId);
   if (
     event.button !== 0
     || !customOverlay
     || !customOverlay.classList.contains("has-badge")
-    || !state.project.overlay.custom_box_enabled
-    || !effectiveCustomBoxText().trim()
+    || !box
+    || !overlayTextBoxDisplayText(box).trim()
     || !(customBadge instanceof HTMLElement)
     || !customOverlay.contains(customBadge)
   ) return;
@@ -3094,7 +4727,8 @@ function beginCustomOverlayDrag(event) {
   const badgeRect = customBadge.getBoundingClientRect();
   const startX = clamp((badgeRect.left - frameRect.left + badgeRect.width / 2) / frameRect.width, 0, 1);
   const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);
-  customOverlayDrag = {
+  textBoxDrag = {
+    boxId,
     target: customOverlay,
     pointerId: event.pointerId,
     startClientX: event.clientX,
@@ -3104,43 +4738,45 @@ function beginCustomOverlayDrag(event) {
   };
   capturePointer(customOverlay, event.pointerId);
   customOverlay.classList.add("dragging");
-  activity("overlay.custom_box.drag.start", { x: startX, y: startY });
+  activity("overlay.text_box.drag.start", { box_id: boxId, x: startX, y: startY });
 }
 
-function moveCustomOverlayDrag(event) {
-  if (!customOverlayDrag) return;
-  if (event.pointerId !== undefined && customOverlayDrag.pointerId !== undefined && event.pointerId !== customOverlayDrag.pointerId) return;
+function moveTextBoxDrag(event) {
+  if (!textBoxDrag) return;
+  if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
   const stage = $("video-stage");
   if (!stage) return;
   const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
   const width = Math.max(1, frameRect.width || 0);
   const height = Math.max(1, frameRect.height || 0);
-  const { startClientX, startClientY, startX, startY } = customOverlayDrag;
+  const { startClientX, startClientY, startX, startY } = textBoxDrag;
   const deltaX = (event.clientX - startClientX) / width;
   const deltaY = (event.clientY - startClientY) / height;
   const newX = clamp(startX + deltaX, 0, 1);
   const newY = clamp(startY + deltaY, 0, 1);
-  $("custom-box-quadrant").value = CUSTOM_QUADRANT_VALUE;
-  $("custom-box-x").value = newX.toFixed(3);
-  $("custom-box-y").value = newY.toFixed(3);
+  const boxes = overlayTextBoxes().map((box) => box.id === textBoxDrag.boxId
+    ? normalizeOverlayTextBox({ ...box, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY })
+    : box);
+  setLocalOverlayTextBoxes(boxes);
   syncOverlayPreviewStateFromControls();
   renderLiveOverlay();
-  scheduleOverlayApply();
 }
 
-function endCustomOverlayDrag(event) {
-  if (!customOverlayDrag) return;
-  if (event.pointerId !== undefined && customOverlayDrag.pointerId !== undefined && event.pointerId !== customOverlayDrag.pointerId) return;
+function endTextBoxDrag(event) {
+  if (!textBoxDrag) return;
+  if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
   const customOverlay = $("custom-overlay");
-  releasePointer(customOverlayDrag.target || customOverlay, event.pointerId);
+  releasePointer(textBoxDrag.target || customOverlay, event.pointerId);
   customOverlay?.classList.remove("dragging");
-  activity("overlay.custom_box.drag.commit", {
-    x: normalizedCoordinateValue($("custom-box-x")?.value),
-    y: normalizedCoordinateValue($("custom-box-y")?.value),
+  const box = overlayTextBoxes().find((item) => item.id === textBoxDrag.boxId);
+  activity("overlay.text_box.drag.commit", {
+    box_id: textBoxDrag.boxId,
+    x: box?.x ?? null,
+    y: box?.y ?? null,
   });
   autoApplyOverlay.cancel();
   callApi("/api/overlay", readOverlayPayload());
-  customOverlayDrag = null;
+  textBoxDrag = null;
 }
 
 function overlayDragConfiguration(kind) {
@@ -3214,6 +4850,9 @@ function moveOverlayBadgeDrag(event) {
 
   if (config.quadrantId) {
     $(config.quadrantId).value = config.quadrantValue;
+    ["timer-x", "timer-y", "draw-x", "draw-y"].forEach((id) => {
+      if ($(id)) $(id).value = "";
+    });
     syncOverlayCoordinateControlState();
   }
   $(config.xId).value = nextX.toFixed(3);
@@ -3325,21 +4964,15 @@ function renderLiveOverlay() {
     x: state.project.overlay.custom_x,
     y: state.project.overlay.custom_y,
   }, overlayScale);
-  const customBoxHasCoordinates = normalizedCoordinateValue(state.project.overlay.custom_box_x) !== null
-    && normalizedCoordinateValue(state.project.overlay.custom_box_y) !== null;
-  if (customBoxHasCoordinates) {
-    customOverlay.style.left = `${frameRect.left}px`;
-    customOverlay.style.top = `${frameRect.top}px`;
-    customOverlay.style.width = `${frameRect.width}px`;
-    customOverlay.style.height = `${frameRect.height}px`;
-    customOverlay.style.transform = "";
-    customOverlay.style.justifyContent = "flex-start";
-    customOverlay.style.alignItems = "flex-start";
-    customOverlay.style.padding = "0";
-    customOverlay.style.gap = "0";
-  } else {
-    positionOverlayContainer(customOverlay, state.project.overlay.custom_box_quadrant, frameRect, null, overlayScale);
-  }
+  customOverlay.style.left = `${frameRect.left}px`;
+  customOverlay.style.top = `${frameRect.top}px`;
+  customOverlay.style.width = `${frameRect.width}px`;
+  customOverlay.style.height = `${frameRect.height}px`;
+  customOverlay.style.transform = "";
+  customOverlay.style.justifyContent = "flex-start";
+  customOverlay.style.alignItems = "flex-start";
+  customOverlay.style.padding = "0";
+  customOverlay.style.gap = "0";
 
   const positionMs = Math.round((video.currentTime || 0) * 1000);
   const beep = state.project.analysis.beep_time_ms_primary;
@@ -3364,7 +4997,7 @@ function renderLiveOverlay() {
   };
   if (state.project.overlay.show_timer) {
     const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
-    timerBadge.dataset.overlayDrag = "timer";
+    timerBadge.dataset.overlayDrag = "shots";
     appendOverlayBadge(timerBadge, state.project.overlay.timer_x, state.project.overlay.timer_y);
   }
   if (
@@ -3377,7 +5010,7 @@ function renderLiveOverlay() {
     && Number(state.metrics.draw_ms) > 0
   ) {
     const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale);
-    drawBadge.dataset.overlayDrag = "draw";
+    drawBadge.dataset.overlayDrag = "shots";
     appendOverlayBadge(drawBadge, state.project.overlay.draw_x, state.project.overlay.draw_y);
   }
 
@@ -3396,11 +5029,16 @@ function renderLiveOverlay() {
       const style = index === currentIndex
         ? state.project.overlay.current_shot_badge
         : state.project.overlay.shot_badge;
-      const badgeSuffix = formatShotBadgeSuffix(shot);
-      const scoreColor = state.project.scoring.enabled && shot.score
-        ? state.project.overlay.scoring_colors[shot.score.letter]
-        : null;
-      const shotBadge = badgeElement(`Shot ${index + 1} ${splitSeconds(splitMs)}${badgeSuffix}`, style, size, scoreColor, null, null, shotTextBias, overlayScale);
+      const shotBadge = badgeElement(
+        scoreBadgeContent(shot, index + 1, splitSeconds(splitMs)),
+        style,
+        size,
+        null,
+        null,
+        null,
+        shotTextBias,
+        overlayScale,
+      );
       shotBadge.dataset.overlayDrag = "shots";
       overlay.appendChild(shotBadge);
       (visibleEvents.afterByShotId.get(shot.id) || []).forEach((event) => {
@@ -3409,6 +5047,11 @@ function renderLiveOverlay() {
         overlay.appendChild(eventBadge);
       });
     }
+    (visibleEvents.tailEvents || []).forEach((event) => {
+      const eventBadge = badgeElement(event.label, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale);
+      eventBadge.dataset.overlayDrag = "shots";
+      overlay.appendChild(eventBadge);
+    });
   }
 
   const summary = state.scoring_summary || {};
@@ -3425,30 +5068,44 @@ function renderLiveOverlay() {
     });
   }
 
-  const customBoxText = effectiveCustomBoxText().trim();
-  const importedSummaryMode = (state.project.overlay.custom_box_mode || "manual") === "imported_summary";
-  if (state.project.overlay.custom_box_enabled && customBoxText && (!importedSummaryMode || finalShotReached)) {
+  const textBoxGroups = new Map();
+  overlayTextBoxes().forEach((box, index) => {
+    const textValue = overlayTextBoxDisplayText(box).trim();
+    if (!box.enabled || !textValue || (box.source === "imported_summary" && !finalShotReached)) return;
     const customBoxStyle = {
-      background_color: state.project.overlay.custom_box_background_color || state.project.overlay.hit_factor_badge.background_color,
-      text_color: state.project.overlay.custom_box_text_color || state.project.overlay.hit_factor_badge.text_color,
-      opacity: state.project.overlay.custom_box_opacity ?? state.project.overlay.hit_factor_badge.opacity,
+      background_color: box.background_color || state.project.overlay.hit_factor_badge.background_color,
+      text_color: box.text_color || state.project.overlay.hit_factor_badge.text_color,
+      opacity: box.opacity ?? state.project.overlay.hit_factor_badge.opacity,
     };
     const customBadge = badgeElement(
-      customBoxText,
+      textValue,
       customBoxStyle,
       size,
       null,
-      state.project.overlay.custom_box_width,
-      state.project.overlay.custom_box_height,
+      box.width,
+      box.height,
       "center",
       overlayScale,
     );
-    customBadge.dataset.customBoxDrag = "true";
-    customBadge.dataset.overlayDrag = "custom_box";
-    positionCustomBadge(customBadge, frameRect);
-    customOverlay.appendChild(customBadge);
-    customOverlay.classList.add("has-badge");
-  }
+    customBadge.dataset.textBoxDrag = "true";
+    customBadge.dataset.textBoxId = box.id;
+    customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
+    if (positionTextBoxBadge(customBadge, box, frameRect)) {
+      customOverlay.appendChild(customBadge);
+      return;
+    }
+    const quadrant = box.quadrant || "top_right";
+    let group = textBoxGroups.get(quadrant);
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "text-box-group";
+      configureTextBoxGroup(group, quadrant, frameRect, overlayScale);
+      textBoxGroups.set(quadrant, group);
+      customOverlay.appendChild(group);
+    }
+    group.appendChild(customBadge);
+  });
+  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
 }
 
 function startOverlayLoop() {
@@ -3528,7 +5185,7 @@ function setWaveformMode(mode) {
   if (mode === "add") {
     help.textContent = "Add Shot mode: click the waveform to add a manual shot.";
   } else {
-    help.textContent = "Select mode: click a shot marker, drag to move, arrows nudge.";
+    help.textContent = "Select mode: click a shot marker, drag a shot to move, drag empty space to pan, arrows nudge.";
   }
   activity("waveform.mode", { mode });
 }
@@ -3539,8 +5196,12 @@ function setWaveformExpanded(expanded) {
   root.classList.remove("timing-expanded");
   $("expand-waveform").textContent = expanded ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
-  renderWaveform();
-  window.requestAnimationFrame(() => renderWaveform());
+  if (expanded) {
+    renderWaveform();
+    window.requestAnimationFrame(() => renderWaveform());
+    return;
+  }
+  scheduleReviewStageRestore();
 }
 
 function setWaveformZoom(delta) {
@@ -3549,10 +5210,29 @@ function setWaveformZoom(delta) {
   waveformZoomX = clamp(waveformZoomX * delta, 1, 200);
   const newDuration = durationMs() / waveformZoomX;
   waveformOffsetMs = clamp(center - (newDuration / 2), 0, Math.max(0, durationMs() - newDuration));
-  window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
-  window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
+  persistWaveformViewport();
   activity("waveform.zoom_x", { zoom: waveformZoomX, offset_ms: waveformOffsetMs });
   renderWaveform();
+}
+
+function panWaveform(deltaMs) {
+  const visible = waveformWindow();
+  const maxOffset = Math.max(0, durationMs() - visible.duration);
+  if (maxOffset <= 0) return;
+  setWaveformOffset(waveformOffsetMs + deltaMs);
+  activity("waveform.pan", { offset_ms: waveformOffsetMs, delta_ms: deltaMs });
+  renderWaveform();
+}
+
+function handleWaveformWheel(event) {
+  if (waveformZoomX <= 1) return;
+  const horizontalDelta = Math.abs(event.deltaX) > 0 ? event.deltaX : (event.shiftKey ? event.deltaY : 0);
+  if (!horizontalDelta) return;
+  const canvas = $("waveform");
+  const width = Math.max(1, canvas.getBoundingClientRect().width || canvas.clientWidth || 1);
+  const visible = waveformWindow();
+  event.preventDefault();
+  panWaveform((horizontalDelta / width) * visible.duration);
 }
 
 function setWaveformAmplitude(delta) {
@@ -3583,7 +5263,11 @@ function setTimingExpanded(expanded) {
   root.classList.remove("waveform-expanded");
   $("expand-waveform").textContent = "Expand";
   activity("timing.expand", { expanded });
-  renderTimingTables();
+  if (expanded) {
+    renderTimingTables();
+    return;
+  }
+  scheduleReviewStageRestore();
 }
 
 function moveSelectedShot(deltaMs) {
@@ -3600,6 +5284,7 @@ function deleteSelectedShot() {
 }
 
 function handleWaveformPointerDown(event) {
+  if (event.button !== 0) return;
   $("waveform").focus();
   const time_ms = waveformTime(event);
   if (waveformMode === "add") {
@@ -3618,6 +5303,10 @@ function handleWaveformPointerDown(event) {
     renderWaveform();
     return;
   }
+  if (($("cockpit-root")?.classList.contains("waveform-expanded") ?? false) && waveformZoomX > 1) {
+    startWaveformPanDrag(event);
+    return;
+  }
   const video = $("primary-video");
   if (state?.media?.primary_available) {
     video.currentTime = time_ms / 1000;
@@ -3626,12 +5315,36 @@ function handleWaveformPointerDown(event) {
 }
 
 function handleWaveformPointerMove(event) {
+  if (waveformNavigatorDrag) {
+    moveWaveformNavigatorDrag(event);
+    return;
+  }
+  if (waveformPanDrag) {
+    updateWaveformPanDrag(event);
+    return;
+  }
   if (!draggingShotId) return;
   pendingDragTimeMs = waveformTime(event);
   renderWaveform();
 }
 
 function handleWaveformPointerUp(event) {
+  if (waveformNavigatorDrag) {
+    endWaveformNavigatorDrag(event);
+    return;
+  }
+  if (waveformPanDrag) {
+    const moved = finishWaveformPanDrag(event);
+    if (!moved) {
+      const time_ms = waveformTime(event);
+      const video = $("primary-video");
+      if (state?.media?.primary_available) {
+        video.currentTime = time_ms / 1000;
+        activity("waveform.seek", { time_ms });
+      }
+    }
+    return;
+  }
   if (!draggingShotId) return;
   const shotId = draggingShotId;
   const timeMs = pendingDragTimeMs ?? waveformTime(event);
@@ -3664,18 +5377,17 @@ function readOverlayPayload() {
     const badge = card.dataset.badge || "";
     if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;
     styles[badge] = {};
-    card.querySelectorAll("input[data-field]").forEach((input) => {
-      const value = input.type === "range" ? Number(input.value) : input.value;
+    card.querySelectorAll("[data-field]").forEach((input) => {
+      const value = input.type === "range" ? Number(input.value) : (isColorInput(input) ? readColorControlValue(input) : input.value);
       styles[badge][input.dataset.field] = value;
     });
   });
   const scoringColors = {};
   document.querySelectorAll(".score-color-input").forEach((input) => {
-    scoringColors[input.dataset.letter] = input.value;
+    scoringColors[input.dataset.letter] = readColorControlValue(input);
   });
-  const customBoxX = $("custom-box-x").value;
-  const customBoxY = $("custom-box-y").value;
-  const hasCustomBoxCoordinates = normalizedCoordinateValue(customBoxX) !== null || normalizedCoordinateValue(customBoxY) !== null;
+  const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));
+  const primaryTextBox = preferredLegacyTextBox(textBoxes);
   return {
     position: state.project.overlay.position,
     badge_size: $("badge-size").value,
@@ -3705,17 +5417,31 @@ function readOverlayPayload() {
     show_draw: $("show-draw").checked,
     show_shots: $("show-shots").checked,
     show_score: $("show-score").checked,
-    custom_box_enabled: $("custom-box-enabled").checked,
-    custom_box_mode: $("custom-box-mode").value,
-    custom_box_text: $("custom-box-text").value,
-    custom_box_quadrant: hasCustomBoxCoordinates ? CUSTOM_QUADRANT_VALUE : $("custom-box-quadrant").value,
-    custom_box_x: customBoxX,
-    custom_box_y: customBoxY,
-    custom_box_background_color: $("custom-box-background-color").value,
-    custom_box_text_color: $("custom-box-text-color").value,
-    custom_box_opacity: Number($("custom-box-opacity").value || 0.9),
-    custom_box_width: Number($("custom-box-width").value || 0),
-    custom_box_height: Number($("custom-box-height").value || 0),
+    text_boxes: textBoxes.map((box) => ({
+      id: box.id,
+      enabled: box.enabled,
+      source: box.source,
+      text: box.text,
+      quadrant: box.quadrant,
+      x: box.x,
+      y: box.y,
+      background_color: box.background_color,
+      text_color: box.text_color,
+      opacity: box.opacity,
+      width: box.width,
+      height: box.height,
+    })),
+    custom_box_enabled: Boolean(primaryTextBox?.enabled),
+    custom_box_mode: primaryTextBox?.source || "manual",
+    custom_box_text: primaryTextBox?.text || "",
+    custom_box_quadrant: primaryTextBox?.quadrant || "top_right",
+    custom_box_x: primaryTextBox?.x ?? "",
+    custom_box_y: primaryTextBox?.y ?? "",
+    custom_box_background_color: primaryTextBox?.background_color || "#000000",
+    custom_box_text_color: primaryTextBox?.text_color || "#ffffff",
+    custom_box_opacity: Number(primaryTextBox?.opacity ?? 0.9),
+    custom_box_width: Number(primaryTextBox?.width || 0),
+    custom_box_height: Number(primaryTextBox?.height || 0),
   };
 }
 
@@ -3731,7 +5457,7 @@ function readPractiScoreContextPayload() {
     match_type: $("match-type").value,
     stage_number: $("match-stage-number").value ? Number($("match-stage-number").value) : "",
     competitor_name: $("match-competitor-name").value.trim(),
-    competitor_place: $("match-competitor-place").value ? Number($("match-competitor-place").value) : "",
+    competitor_place: normalizedPractiScorePlaceValue($("match-competitor-place").value) ?? "",
   };
 }
 
@@ -4037,12 +5763,22 @@ function wireEvents() {
   ["project-name", "project-description"].forEach((id) => {
     $(id).addEventListener("input", scheduleProjectDetailsApply);
   });
-  ["match-type", "match-stage-number", "match-competitor-name", "match-competitor-place"].forEach((id) => {
-    $(id).addEventListener("input", schedulePractiScoreContextApply);
+  ["match-type", "match-stage-number"].forEach((id) => {
     $(id).addEventListener("change", schedulePractiScoreContextApply);
   });
+  $("match-competitor-name").addEventListener("change", () => {
+    syncPractiScoreSelectionFields("name");
+    schedulePractiScoreContextApply();
+  });
+  $("match-competitor-place").addEventListener("change", () => {
+    syncPractiScoreSelectionFields("place");
+    schedulePractiScoreContextApply();
+  });
+  document.addEventListener("fullscreenchange", handleStageFullscreenChange);
+  document.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
   ["loadedmetadata", "loadeddata"].forEach((eventName) => {
     $("primary-video").addEventListener(eventName, () => {
+      logPrimaryVideoState(eventName);
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
@@ -4050,6 +5786,17 @@ function wireEvents() {
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();
     });
+  });
+  ["volumechange", "canplay", "error"].forEach((eventName) => {
+    $("primary-video").addEventListener(eventName, () => {
+      logPrimaryVideoState(eventName);
+    });
+  });
+  $("primary-video").addEventListener("play", () => {
+    logPrimaryVideoState("play");
+  });
+  $("primary-video").addEventListener("pause", () => {
+    logPrimaryVideoState("pause");
   });
   $("primary-video").addEventListener("play", startOverlayLoop);
   $("primary-video").addEventListener("pause", stopOverlayLoop);
@@ -4079,12 +5826,17 @@ function wireEvents() {
   $("waveform").addEventListener("pointermove", handleWaveformPointerMove);
   $("waveform").addEventListener("pointerup", handleWaveformPointerUp);
   $("waveform").addEventListener("pointercancel", handleWaveformPointerUp);
+  $("waveform-window-track").addEventListener("pointerdown", handleWaveformNavigatorPointerDown);
+  $("waveform").addEventListener("wheel", handleWaveformWheel, { passive: false });
   document.addEventListener("pointermove", handleWaveformPointerMove);
   document.addEventListener("pointerup", handleWaveformPointerUp);
   document.addEventListener("pointercancel", handleWaveformPointerUp);
   document.addEventListener("lostpointercapture", handleWaveformPointerUp);
   document.addEventListener("keydown", handleKeyboardEdit);
+  document.addEventListener("visibilitychange", handleWindowVisibilityRestore);
   window.addEventListener("resize", handleViewportLayoutChange);
+  window.addEventListener("focus", handleWindowVisibilityRestore);
+  window.addEventListener("pageshow", handleWindowVisibilityRestore);
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
   window.visualViewport?.addEventListener("scroll", handleViewportLayoutChange);
   $("delete-selected").addEventListener("click", deleteSelectedShot);
@@ -4126,7 +5878,7 @@ function wireEvents() {
   $("add-timing-event").addEventListener("click", addTimingEvent);
   $("video-stage").addEventListener("pointerdown", beginOverlayBadgeDrag);
   $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
-  $("custom-overlay").addEventListener("pointerdown", beginCustomOverlayDrag);
+  $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
   ["badge-size"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncOverlayFontSizePreset();
@@ -4157,15 +5909,6 @@ function wireEvents() {
     "show-draw",
     "show-shots",
     "show-score",
-    "custom-box-enabled",
-    "custom-box-mode",
-    "custom-box-text",
-    "custom-box-quadrant",
-    "custom-box-x",
-    "custom-box-y",
-    "custom-box-width",
-    "custom-box-height",
-    "custom-box-opacity",
   ].forEach((id) => {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
@@ -4173,12 +5916,14 @@ function wireEvents() {
         syncOverlayCoordinateControlState();
         ensureShotQuadrantDefaults();
       }
-      if (id === "custom-box-mode") syncCustomBoxModeState();
       commitOverlayControlChanges();
     });
   });
-  ["custom-box-background-color", "custom-box-text-color"].forEach((id) => {
-    bindOverlayColorInput($(id));
+  [
+    ["review-add-text-box", "manual"],
+    ["review-add-imported-box", "imported_summary"],
+  ].forEach(([id, source]) => {
+    $(id)?.addEventListener("click", () => addOverlayTextBox(source));
   });
   $("badge-style-grid").addEventListener("input", (event) => {
     const target = event.target;
@@ -4218,10 +5963,10 @@ function wireEvents() {
   document.addEventListener("pointerup", endMergePreviewDrag);
   document.addEventListener("pointercancel", endMergePreviewDrag);
   document.addEventListener("lostpointercapture", endMergePreviewDrag);
-  document.addEventListener("pointermove", moveCustomOverlayDrag);
-  document.addEventListener("pointerup", endCustomOverlayDrag);
-  document.addEventListener("pointercancel", endCustomOverlayDrag);
-  document.addEventListener("lostpointercapture", endCustomOverlayDrag);
+  document.addEventListener("pointermove", moveTextBoxDrag);
+  document.addEventListener("pointerup", endTextBoxDrag);
+  document.addEventListener("pointercancel", endTextBoxDrag);
+  document.addEventListener("lostpointercapture", endTextBoxDrag);
   ["overlay-style"].forEach((id) => {
     $(id).addEventListener("change", () => {
       overlayStyleMode = $(id).value;
@@ -4275,10 +6020,43 @@ function wireEvents() {
     cancelPendingExportDrafts();
     await callApi("/api/export", buildExportPayload(path));
   });
+  $("show-export-log")?.addEventListener("click", openExportLogModal);
+  $("export-export-log")?.addEventListener("click", downloadExportLog);
+  $("close-export-log")?.addEventListener("click", closeExportLogModal);
+  $("close-color-picker")?.addEventListener("click", () => closeColorPicker({ commit: true }));
+  document.querySelectorAll("[data-close-color-picker]").forEach((element) => {
+    element.addEventListener("click", () => closeColorPicker({ commit: true }));
+  });
+  ["color-picker-hue", "color-picker-saturation", "color-picker-lightness"].forEach((id) => {
+    $(id)?.addEventListener("input", () => updateColorPickerFromSliders({ commit: false }));
+    $(id)?.addEventListener("change", () => updateColorPickerFromSliders({ commit: true }));
+  });
+  $("color-picker-hex")?.addEventListener("input", () => updateColorPickerFromHexInput({ commit: false }));
+  $("color-picker-hex")?.addEventListener("change", () => updateColorPickerFromHexInput({ commit: true }));
+  $("color-picker-hex")?.addEventListener("blur", () => updateColorPickerFromHexInput({ commit: true }));
+  document.querySelectorAll("[data-close-export-log]").forEach((element) => {
+    element.addEventListener("click", closeExportLogModal);
+  });
+  $("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));
+  $("metrics-export-text")?.addEventListener("click", () => exportMetrics("text"));
+  window.addEventListener("beforeunload", () => {
+    stopActivityPolling();
+    flushActivityQueue();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !$("color-picker-modal")?.hidden) {
+      closeColorPicker({ commit: true });
+      return;
+    }
+    if (event.key === "Escape" && !$("export-log-modal")?.hidden) {
+      closeExportLogModal();
+    }
+  });
 }
 
 applyLayoutState();
 setActiveTool(activeTool);
 wireGlobalActivityLogging();
 wireEvents();
+startActivityPolling();
 refresh();
