@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="220" />
+	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="420" />
 </p>
 
 # SplitShot
