@@ -9,10 +9,6 @@ log() {
   printf '[splitshot-setup] %s\n' "$*"
 }
 
-warn() {
-  printf '[splitshot-setup] warning: %s\n' "$*" >&2
-}
-
 fail() {
   printf '[splitshot-setup] error: %s\n' "$*" >&2
   exit 1
@@ -45,22 +41,10 @@ brew_install() {
   brew install "$formula"
 }
 
-brew_install_cask() {
-  local cask="$1"
-  if brew list --cask "$cask" >/dev/null 2>&1; then
-    return
-  fi
-  log "Installing $cask with Homebrew"
-  brew install --cask "$cask" || warn "Unable to install browser cask $cask automatically"
-}
-
 install_macos_dependencies() {
   have_cmd brew || fail "Homebrew is required on macOS. Install it from https://brew.sh and re-run this script."
-  brew_install git
   brew_install uv
   brew_install ffmpeg
-  brew_install_cask google-chrome
-  brew_install_cask firefox
 }
 
 linux_pkg_manager() {
@@ -80,7 +64,7 @@ linux_pkg_manager() {
     printf 'zypper'
     return
   fi
-  fail "No supported Linux package manager found. Install git, curl, ffmpeg, a browser, and uv manually."
+  fail "No supported Linux package manager found. Install curl, ffmpeg, and uv manually, then re-run this script."
 }
 
 install_linux_dependencies() {
@@ -90,19 +74,19 @@ install_linux_dependencies() {
     apt-get)
       log "Installing Linux prerequisites with apt-get"
       sudo apt-get update
-      sudo apt-get install -y git curl ffmpeg firefox chromium || sudo apt-get install -y git curl ffmpeg firefox
+      sudo apt-get install -y curl ffmpeg
       ;;
     dnf)
       log "Installing Linux prerequisites with dnf"
-      sudo dnf install -y git curl ffmpeg ffmpeg-libs firefox chromium || sudo dnf install -y git curl ffmpeg ffmpeg-libs firefox
+      sudo dnf install -y curl ffmpeg ffmpeg-libs
       ;;
     pacman)
       log "Installing Linux prerequisites with pacman"
-      sudo pacman -Sy --noconfirm git curl ffmpeg firefox chromium
+      sudo pacman -Sy --noconfirm curl ffmpeg
       ;;
     zypper)
       log "Installing Linux prerequisites with zypper"
-      sudo zypper install -y git curl ffmpeg MozillaFirefox chromium
+      sudo zypper install -y curl ffmpeg
       ;;
   esac
   install_uv_with_script
@@ -114,9 +98,7 @@ bootstrap_workspace() {
   log "Installing Python $PYTHON_VERSION through uv"
   uv python install "$PYTHON_VERSION"
   log "Syncing project dependencies"
-  uv sync --extra dev
-  log "Installing Playwright browser runtimes for validation"
-  uv run python -m playwright install chromium firefox webkit
+  uv sync
   log "Running SplitShot runtime check"
   uv run splitshot --check
 }
@@ -142,7 +124,6 @@ main() {
 [splitshot-setup] Ready.
 [splitshot-setup] Launch commands:
   uv run splitshot
-  uv run pytest
 
 EOF
 }
