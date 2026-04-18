@@ -687,6 +687,8 @@ def export_project(
     progress_callback: Callable[[float], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
 ) -> Path:
+    project.export.last_log = ""
+    project.export.last_error = None
     if not project.primary_video.path:
         raise ValueError("Primary video is required for export")
 
@@ -704,8 +706,6 @@ def export_project(
 
     output_target = _normalize_output_target(output_path)
     output_target.parent.mkdir(parents=True, exist_ok=True)
-    project.export.last_log = ""
-    project.export.last_error = None
     log_lines: list[str] = [
         f"Export target: {output_target}",
         f"Container: {output_target.suffix.lower()}",

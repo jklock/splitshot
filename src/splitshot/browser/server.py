@@ -772,11 +772,13 @@ class BrowserControlServer:
                     target = str(payload.get("path", "")).strip()
                     if not target:
                         raise ValueError("Project path is required")
-                    activity.log("api.project.probe.start", path=target)
-                    has_project_file = controller.project_folder_has_project_file(target)
+                    normalized_target = str(controller.normalize_project_folder_path(target))
+                    activity.log("api.project.probe.start", path=target, normalized_path=normalized_target)
+                    has_project_file = controller.project_folder_has_project_file(normalized_target)
                     activity.log(
                         "api.project.probe.success",
                         path=target,
+                        normalized_path=normalized_target,
                         has_project_file=has_project_file,
                     )
                     self._send_json({"path": target, "has_project_file": has_project_file})

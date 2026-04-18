@@ -1,71 +1,61 @@
 <p align="center">
-	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="240" />
+	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="220" />
 </p>
 
 # SplitShot
 
-![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0f766e)
-![Python](https://img.shields.io/badge/python-3.12-3776AB)
-![Workflow](https://img.shields.io/badge/workflow-local--first-166534)
-![UI](https://img.shields.io/badge/UI-browser--first-1d4ed8)
-![License](https://img.shields.io/badge/license-MIT-111827)
+SplitShot is a local-first browser app for competition shooting video analysis, split timing, scoring, PiP review, overlay tuning, metrics, and final video export.
 
-Local-first competition shooting video analysis, scoring, merge review, and FFmpeg export.
+<img src="docs/screenshots/ProjectPane.png" alt="SplitShot browser app showing the Project pane and video review workspace" width="1000">
 
-SplitShot runs as a local browser application. The browser shell is the product surface for ingest, timing review, PractiScore comparison, overlay tuning, metrics review, and export.
+## What SplitShot Does
 
-## Highlights
+- Import a local stage video without uploading it to the cloud.
+- Detect the timer beep and shot events from the video's audio.
+- Review and correct split timing in the waveform editor.
+- Score the run manually or load PractiScore context for the same stage.
+- Tune on-video shot badges, timer badges, score summaries, and review text boxes.
+- Add PiP media such as a second angle or still images.
+- Review derived metrics, then export CSV or text summaries.
+- Render a finished local video with FFmpeg.
 
-- Browser-first workflow with local-only processing and no cloud dependency.
-- Metrics dashboard built from derived timing and scoring state, with CSV and text export.
-- Shared overlay model for imported PractiScore summaries plus repeatable custom text boxes.
-- Real-time export log modal backed by the existing activity stream and FFmpeg pipeline callbacks.
-- Cross-platform browser workflow for macOS, Windows, and Linux using the same project model, controller, and export code.
+## Who It's For
 
-## Product Views
+- Shooters reviewing match footage and classifier runs.
+- Editors building stage recap videos with timing and scoring overlays.
+- Anyone who wants local processing instead of cloud upload workflows.
 
-### Browser shell
+## Install Requirements
 
-![SplitShot browser shell](docs/assets/browser-shell.png)
+- Python 3.12
+- `uv`
+- `ffmpeg` and `ffprobe`
+- A desktop browser
 
-## Getting Started
+## Install And Launch
 
-### Setup scripts
-
-Use the repository scripts when you want a workstation-ready setup for local launch, tests, and browser validation.
-
-- macOS and Linux: `scripts/setup/setup_splitshot.sh`
-- Windows PowerShell: `scripts/setup/setup_splitshot.ps1`
-
-Examples:
+### macOS and Linux
 
 ```bash
 bash scripts/setup/setup_splitshot.sh
 uv run splitshot
 ```
 
+### Windows PowerShell
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup\setup_splitshot.ps1
 uv run splitshot
 ```
 
-### Manual path
-
-If you prefer to install tools yourself, SplitShot needs:
-
-- `uv`
-- Python 3.12
-- `ffmpeg` and `ffprobe`
-- a local desktop browser for validation
-
-Then run:
+### Manual Setup
 
 ```bash
 uv sync --extra dev
 uv run splitshot
 ```
 
-## Launch Commands
+Useful launch commands:
 
 ```bash
 uv run splitshot
@@ -73,40 +63,37 @@ uv run splitshot --no-open
 uv run splitshot --check
 ```
 
-`uv run splitshot` is the normal entrypoint. The default browser path is quiet in the terminal unless you request log mirroring with `--log-level` or explicitly choose `--no-open`.
+Use `--no-open` when you want the local server without launching a browser window. Use `--check` when you want to validate the local toolchain before a session.
 
-## Export Pipeline
+## Basic Workflow
 
-SplitShot exports locally with FFmpeg. The app renders the selected stage view, overlays, scoring badges, and merge layout into frames, then encodes the final output on the same machine.
+1. Open SplitShot and create or reopen a project in the Project pane.
+2. Select the primary video, or paste a direct local path and press Enter for very large files.
+3. Wait for local analysis to detect the beep and shots.
+4. Fix timing in Splits before you score or style anything.
+5. Import PractiScore if you want official stage context.
+6. Use Score, Overlay, and Review to set the scoring and on-video presentation.
+7. Add PiP media if you want a second angle or supporting images.
+8. Export the final video and keep the project bundle for later revisions.
 
-Export controls cover:
+## App Guides
 
-- built-in presets plus custom settings
-- aspect ratio and crop center
-- output width and output height
-- H.264 or HEVC video encoding
-- bitrate, FFmpeg preset, and optional two-pass encoding
-- AAC audio sample rate and bitrate
-- real-time export logs stored on `project.export.last_log` and surfaced in the browser log modal
+- [Project](docs/userfacing/panes/project.md)
+- [Splits](docs/userfacing/panes/splits.md)
+- [Score](docs/userfacing/panes/score.md)
+- [PiP](docs/userfacing/panes/pip.md)
+- [Overlay](docs/userfacing/panes/overlay.md)
+- [Review](docs/userfacing/panes/review.md)
+- [Export](docs/userfacing/panes/export.md)
+- [Metrics](docs/userfacing/panes/metrics.md)
 
-## Documentation
+## More Documentation
 
-- Project documentation hub: [docs/README.md](docs/README.md)
-- Architecture and data flow: [docs/project/ARCHITECTURE.md](docs/project/ARCHITECTURE.md)
-- Development workflow: [docs/project/DEVELOPING.md](docs/project/DEVELOPING.md)
-- Known constraints: [docs/project/LIMITATIONS.md](docs/project/LIMITATIONS.md)
-- Browser audit: [docs/browser/LEFT_PANE_AUDIT.md](docs/browser/LEFT_PANE_AUDIT.md)
-- ShotML pipeline: [docs/analysis/SHOTML.md](docs/analysis/SHOTML.md)
-- End-user guide: [docs/userfacing/USER_GUIDE.md](docs/userfacing/USER_GUIDE.md)
-- Current work plan: [WORK_PLAN.md](WORK_PLAN.md)
-- Script catalog: [scripts/README.md](scripts/README.md)
-- Package-level technical docs live beside the source in `src/splitshot/.../README.md`.
-
-## Runtime Model
-
-SplitShot is a source-first `uv` project. The expected workflow is a real desktop session with local media files, a visible browser, and platform-native file dialogs. 
-
-`ffmpeg` and `ffprobe` are resolved from `PATH`, `SPLITSHOT_FFMPEG_DIR`, or vendored binaries under `src/splitshot/resources/ffmpeg/<platform>`.
+- [Full user guide](docs/userfacing/USER_GUIDE.md)
+- [Workflow guide](docs/userfacing/workflow.md)
+- [Troubleshooting](docs/userfacing/troubleshooting.md)
+- [Documentation hub](docs/README.md)
+- [Current limitations](docs/project/LIMITATIONS.md)
 
 ## License
 

@@ -11,8 +11,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260418a"' in html
-    assert 'src="/static/app.js?v=20260418a"' in html
+    assert 'href="/static/styles.css?v=20260418b"' in html
+    assert 'src="/static/app.js?v=20260418b"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -75,7 +75,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="split-card-grid"' not in html
     assert 'class="video-status"' not in html
     assert "No video open" not in html
-    assert "Apply Threshold" not in html
+    assert 'id="apply-threshold"' in html
+    assert '>Re-run ShotML<' in html
     assert "Apply Scoring" not in html
     assert 'id="apply-scoring"' not in html
     assert "Assign To Selected Shot" not in html
@@ -355,8 +356,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "saveProjectFlow" not in js
     assert "useProjectFolder" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
-    assert 'const currentPath = (state?.project?.path || "").trim();' in js
-    assert 'const hasProjectFile = await probeProjectFolder(targetPath);' in js
+    assert 'const currentPath = normalizeProjectFolderInput(state?.project?.path || "");' in js
+    assert 'const probeResult = await probeProjectFolder(targetPath);' in js
+    assert 'if (requestId !== projectFolderProbeRequestId)' in js
     assert 'if (targetId === "export-path") exportPathDraft = data.path;' in js
     assert '$("export-path").addEventListener("input", () => {' in js
     assert 'exportPathDraft = $("export-path").value;' in js
@@ -627,6 +629,10 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "gap: 0.5rem;" in css
     assert ".cockpit.waveform-expanded .review-grid" in css
     assert ".cockpit.waveform-expanded .video-stage" in css
+    assert ".cockpit.waveform-expanded .resize-handle-waveform" in css
+    assert "grid-template-rows: minmax(0, 1fr);" in css
+    assert "grid-template-rows: auto minmax(0, 2fr) auto auto minmax(0, 1fr);" in css
+    assert "max-height: none;" in css
     assert "display: none;" in css
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
@@ -880,6 +886,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "amp-waveform-out",
         "amp-waveform-in",
         "reset-waveform-view",
+        "apply-threshold",
         "collapse-timing",
         "add-timing-event",
         "delete-selected",
@@ -986,6 +993,7 @@ def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
 def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
 
+    assert 'async function applyThresholdNow() {' in js
     assert 'const autoApplyThreshold = debounce((payload) => {' in js
     assert 'const autoApplyProjectDetails = debounce((payload) => {' in js
     assert 'const autoApplyPractiScoreContext = debounce((payload) => {' in js
@@ -1006,6 +1014,8 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'autoApplyMerge(readMergePayload());' in js
     assert 'autoApplyExportLayout(readExportLayoutPayload());' in js
     assert 'autoApplyExportSettings(readExportSettingsPayload());' in js
+    assert '$("threshold").addEventListener("change", applyThresholdNow);' in js
+    assert '$("apply-threshold").addEventListener("click", applyThresholdNow);' in js
     assert '$("new-project").addEventListener("click", async () => {\n    await flushPendingProjectDrafts();' in js
     assert 'if (!shouldDelete) return;\n    await flushPendingProjectDrafts();\n    await callApi("/api/project/delete", {});' in js
 

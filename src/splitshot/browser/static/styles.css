@@ -1299,6 +1299,22 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.threshold-control {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.threshold-control-row {
+  align-items: center;
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.threshold-control-row > button {
+  white-space: nowrap;
+}
+
 .project-action-grid {
   align-items: start;
   display: grid;
@@ -2298,6 +2314,10 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 
+  .threshold-control-row {
+    grid-template-columns: 1fr;
+  }
+
   .timing-event-editor,
   .timing-event-row {
     grid-template-columns: 1fr;
@@ -2366,19 +2386,28 @@ button:disabled {
 }
 
 .cockpit.waveform-expanded .review-stack {
-  grid-template-rows: minmax(200px, 0.82fr) var(--resize-handle-size) minmax(260px, 1.18fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
-.cockpit.waveform-expanded .video-stage {
+.cockpit.waveform-expanded .video-stage,
+.cockpit.waveform-expanded .resize-handle-waveform {
+  display: none;
+}
+
+.cockpit.waveform-expanded .video-stage,
+.cockpit.waveform-expanded .waveform-panel {
   min-height: 0;
 }
 
 .cockpit.waveform-expanded .waveform-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 2fr) auto auto minmax(0, 1fr);
+  height: 100%;
 }
 
 .cockpit.waveform-expanded .waveform-shot-list {
   display: grid;
+  max-height: none;
+  min-height: 0;
 }
 
 .cockpit.timing-expanded .review-stack {

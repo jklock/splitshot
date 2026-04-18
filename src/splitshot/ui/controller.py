@@ -46,6 +46,7 @@ from splitshot.persistence.projects import (
     delete_project,
     ensure_project_suffix,
     load_project,
+    normalize_project_path,
     project_has_metadata,
     save_project,
 )
@@ -63,6 +64,11 @@ from splitshot.scoring.practiscore import (
     import_practiscore_stage,
     infer_practiscore_context,
     normalize_match_type,
+)
+from splitshot.timeline.model import (
+    normalize_project_timing_events,
+    normalized_timing_event_for_shots,
+    sort_shots,
 )
 
 
@@ -94,6 +100,14 @@ class _OriginalShotState:
     time_ms: int
     source: ShotSource
     score: ScoreMark | None
+
+
+@dataclass(slots=True)
+class _ShotSelectionContext:
+    shot_id: str
+    time_ms: int
+    index: int
+    fallback_mode: str = "time"
 
 
 def _pip_size_percent_from_enum(size: PipSize) -> int:
@@ -249,6 +263,90 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.ui_state.timing_edit_shot_ids = []
 
 
+def _shot_selection_context(
+    project: Project,
+    shot_id: str | None,
+    *,
+    fallback_mode: str = "time",
+) -> _ShotSelectionContext | None:
+    if shot_id is None:
+        return None
+    shots = sort_shots(project.analysis.shots)
+    for index, shot in enumerate(shots):
+        if shot.id == shot_id:
+            return _ShotSelectionContext(
+                shot_id=shot.id,
+                time_ms=shot.time_ms,
+                index=index,
+                fallback_mode=fallback_mode,
+            )
+    return None
+
+
+def _fallback_selected_shot_id(
+    project: Project,
+    context: _ShotSelectionContext | None,
+) -> str | None:
+    shots = sort_shots(project.analysis.shots)
+    if not shots or context is None:
+        return None
+    if any(shot.id == context.shot_id for shot in shots):
+        return context.shot_id
+    if context.fallback_mode == "index":
+        return shots[min(context.index, len(shots) - 1)].id
+    return min(
+        enumerate(shots),
+        key=lambda item: (abs(item[1].time_ms - context.time_ms), item[0]),
+    )[1].id
+
+
+def _revalidate_timing_ui_state(
+    project: Project,
+    fallback_context: _ShotSelectionContext | None = None,
+) -> bool:
+    valid_shot_ids = {shot.id for shot in project.analysis.shots}
+    ui_state = project.ui_state
+    changed = False
+
+    if ui_state.selected_shot_id and ui_state.selected_shot_id not in valid_shot_ids:
+        next_selected_shot_id = _fallback_selected_shot_id(project, fallback_context)
+        if ui_state.selected_shot_id != next_selected_shot_id:
+            ui_state.selected_shot_id = next_selected_shot_id
+            changed = True
+    elif fallback_context and ui_state.selected_shot_id is None:
+        next_selected_shot_id = _fallback_selected_shot_id(project, fallback_context)
+        if next_selected_shot_id is not None:
+            ui_state.selected_shot_id = next_selected_shot_id
+            changed = True
+
+    next_scoring_expansion = {
+        shot_id: expanded
+        for shot_id, expanded in ui_state.scoring_shot_expansion.items()
+        if shot_id in valid_shot_ids
+    }
+    if ui_state.scoring_shot_expansion != next_scoring_expansion:
+        ui_state.scoring_shot_expansion = next_scoring_expansion
+        changed = True
+
+    next_waveform_amplitudes = {
+        shot_id: amplitude
+        for shot_id, amplitude in ui_state.waveform_shot_amplitudes.items()
+        if shot_id in valid_shot_ids
+    }
+    if ui_state.waveform_shot_amplitudes != next_waveform_amplitudes:
+        ui_state.waveform_shot_amplitudes = next_waveform_amplitudes
+        changed = True
+
+    next_timing_edit_shot_ids = [
+        shot_id for shot_id in ui_state.timing_edit_shot_ids if shot_id in valid_shot_ids
+    ]
+    if ui_state.timing_edit_shot_ids != next_timing_edit_shot_ids:
+        ui_state.timing_edit_shot_ids = next_timing_edit_shot_ids
+        changed = True
+
+    return changed
+
+
 class ProjectController(QObject):
     project_changed = Signal()
     settings_changed = Signal()
@@ -296,6 +394,11 @@ class ProjectController(QObject):
     def analyze_primary(self) -> None:
         if not self.project.primary_video.path:
             return
+        selection_context = _shot_selection_context(
+            self.project,
+            self.project.ui_state.selected_shot_id,
+            fallback_mode="time",
+        )
         self._set_status("Analyzing primary video for beep and shot detections...")
         result = analyze_video_audio(
             self.project.primary_video.path,
@@ -305,6 +408,8 @@ class ProjectController(QObject):
         self.project.analysis.waveform_primary = result.waveform
         self.project.analysis.shots = result.shots
         ensure_default_shot_scores(self.project)
+        normalize_project_timing_events(self.project)
+        _revalidate_timing_ui_state(self.project, selection_context)
         self._remember_original_shots()
         self.update_hit_factor()
         self._set_status(
@@ -815,20 +920,22 @@ class ProjectController(QObject):
                     shot.confidence = None
                 break
         self.project.sort_shots()
+        normalize_project_timing_events(self.project)
+        _revalidate_timing_ui_state(self.project)
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
 
     def delete_shot(self, shot_id: str) -> None:
+        selection_context = (
+            _shot_selection_context(self.project, shot_id, fallback_mode="index")
+            if self.project.ui_state.selected_shot_id == shot_id
+            else None
+        )
         self.project.analysis.shots = [shot for shot in self.project.analysis.shots if shot.id != shot_id]
         self._forget_original_shot(shot_id)
-        if self.project.ui_state.selected_shot_id == shot_id:
-            self.project.ui_state.selected_shot_id = None
-        self.project.ui_state.scoring_shot_expansion.pop(shot_id, None)
-        self.project.ui_state.waveform_shot_amplitudes.pop(shot_id, None)
-        self.project.ui_state.timing_edit_shot_ids = [
-            value for value in self.project.ui_state.timing_edit_shot_ids if value != shot_id
-        ]
+        normalize_project_timing_events(self.project)
+        _revalidate_timing_ui_state(self.project, selection_context)
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
@@ -840,6 +947,8 @@ class ProjectController(QObject):
                 return
 
     def select_shot(self, shot_id: str | None) -> None:
+        if shot_id is not None and not any(shot.id == shot_id for shot in self.project.analysis.shots):
+            shot_id = None
         self.project.ui_state.selected_shot_id = shot_id
         self.project_changed.emit()
 
@@ -849,6 +958,10 @@ class ProjectController(QObject):
 
         if "selected_shot_id" in payload:
             next_shot_id = None if payload.get("selected_shot_id") in {None, ""} else str(payload["selected_shot_id"])
+            if next_shot_id is not None and not any(
+                shot.id == next_shot_id for shot in self.project.analysis.shots
+            ):
+                next_shot_id = None
             if ui_state.selected_shot_id != next_shot_id:
                 ui_state.selected_shot_id = next_shot_id
                 changed = True
@@ -939,9 +1052,10 @@ class ProjectController(QObject):
             next_timing_edit_ids: list[str] = []
             raw_timing_edit_ids = payload.get("timing_edit_shot_ids")
             if isinstance(raw_timing_edit_ids, list):
+                valid_shot_ids = {shot.id for shot in self.project.analysis.shots}
                 for value in raw_timing_edit_ids:
                     clean_value = str(value).strip()
-                    if clean_value:
+                    if clean_value and clean_value in valid_shot_ids:
                         next_timing_edit_ids.append(clean_value)
             if ui_state.timing_edit_shot_ids != next_timing_edit_ids:
                 ui_state.timing_edit_shot_ids = next_timing_edit_ids
@@ -1214,6 +1328,11 @@ class ProjectController(QObject):
                 )
                 if box.x is not None or box.y is not None:
                     box.quadrant = "custom"
+                if box.quadrant == "custom":
+                    if box.x is None:
+                        box.x = 0.5
+                    if box.y is None:
+                        box.y = 0.5
                 parsed_boxes.append(box)
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)
@@ -1341,15 +1460,20 @@ class ProjectController(QObject):
         from splitshot.domain.models import TimingEvent
 
         event_label = label or kind.replace("_", " ").title()
-        self.project.analysis.events.append(
-            TimingEvent(
-                kind=kind,
-                label=event_label,
-                after_shot_id=after_shot_id,
-                before_shot_id=before_shot_id,
-                note=note,
-            )
+        event = TimingEvent(
+            kind=kind,
+            label=event_label,
+            after_shot_id=after_shot_id,
+            before_shot_id=before_shot_id,
+            note=note,
         )
+        normalized_event = normalized_timing_event_for_shots(
+            event,
+            sort_shots(self.project.analysis.shots),
+        )
+        if normalized_event is None:
+            raise ValueError("Timing event anchor is invalid")
+        self.project.analysis.events.append(normalized_event)
         self.project.touch()
         self.project_changed.emit()
 
@@ -1622,7 +1746,10 @@ class ProjectController(QObject):
         )
 
     def project_folder_has_project_file(self, path: str | Path) -> bool:
-        return project_has_metadata(path)
+        return project_has_metadata(normalize_project_path(path))
+
+    def normalize_project_folder_path(self, path: str | Path) -> Path:
+        return normalize_project_path(path)
 
     def _new_project_with_settings_defaults(self) -> Project:
         project = Project()

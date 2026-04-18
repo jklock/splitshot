@@ -30,6 +30,7 @@ let timingColumnResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
 let projectDetailsDraft = { name: null, description: null };
+let projectFolderProbeRequestId = 0;
 let secondaryPreviewSyncFrame = null;
 let secondaryPreviewPlayErrorKey = null;
 let overlayColorCommitTimer = null;
@@ -63,6 +64,7 @@ let pendingMergeSourcePayloads = new Map();
 let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
 let pendingInteractionPreview = { video: false, waveform: false, overlay: false };
+let pendingSelectionFallback = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
@@ -259,6 +261,15 @@ function appendExportLogLine(line) {
   exportLogLines = exportLogLines.slice(-500);
 }
 
+function clearCurrentExportLogState() {
+  exportLogLines = [];
+  if (state?.project?.export) {
+    state.project.export.last_log = "";
+    state.project.export.last_error = null;
+  }
+  renderExportLog();
+}
+
 function consumeActivityEntries(entries = []) {
   let exportLogChanged = false;
   entries.forEach((entry) => {
@@ -380,6 +391,56 @@ function numericMs(value) {
 function orderedShotsByTime() {
   return [...(state?.project?.analysis?.shots || [])]
     .sort((left, right) => Number(left.time_ms || 0) - Number(right.time_ms || 0));
+}
+
+function orderedShotsByTimeFromState(nextState = state) {
+  return [...(nextState?.project?.analysis?.shots || [])]
+    .sort((left, right) => Number(left.time_ms || 0) - Number(right.time_ms || 0));
+}
+
+function shotSelectionContext(shotId = selectedShotId, nextState = state, fallbackMode = "time") {
+  if (!shotId) return null;
+  const shots = orderedShotsByTimeFromState(nextState);
+  const index = shots.findIndex((shot) => shot.id === shotId);
+  if (index < 0) return null;
+  return {
+    shotId,
+    timeMs: Number(shots[index].time_ms || 0),
+    index,
+    fallbackMode,
+  };
+}
+
+function fallbackSelectedShotId(nextState, context = null) {
+  const shots = orderedShotsByTimeFromState(nextState);
+  if (!shots.length || !context) return null;
+  if (stateHasShot(nextState, context.shotId)) return context.shotId;
+  if (context.fallbackMode === "index" && Number.isFinite(Number(context.index))) {
+    return shots[Math.min(Math.max(0, Number(context.index)), shots.length - 1)].id;
+  }
+  const targetTime = Number(context.timeMs);
+  if (!Number.isFinite(targetTime)) return shots[0].id;
+  return shots
+    .map((shot, index) => ({ shot, index }))
+    .sort((left, right) => {
+      const leftDistance = Math.abs(Number(left.shot.time_ms || 0) - targetTime);
+      const rightDistance = Math.abs(Number(right.shot.time_ms || 0) - targetTime);
+      return leftDistance - rightDistance || left.index - right.index;
+    })[0].shot.id;
+}
+
+function resolveSelectedShotId(nextState, requestedShotId = null, fallbackContext = null, alternateShotId = null) {
+  if (stateHasShot(nextState, requestedShotId)) return requestedShotId;
+  if (stateHasShot(nextState, alternateShotId)) return alternateShotId;
+  if (requestedShotId || fallbackContext) return fallbackSelectedShotId(nextState, fallbackContext);
+  return null;
+}
+
+function syncSelectedShotId(nextState = state, fallbackContext = null) {
+  const requestedShotId = selectedShotId || nextState?.project?.ui_state?.selected_shot_id || null;
+  selectedShotId = resolveSelectedShotId(nextState, requestedShotId, fallbackContext);
+  if (nextState?.project?.ui_state) nextState.project.ui_state.selected_shot_id = selectedShotId;
+  return selectedShotId;
 }
 
 function splitRowForShot(shotId) {
@@ -1208,8 +1269,7 @@ function setStatus(message) {
 function beginProcessing(message, detail = "Working locally", path = null) {
   busyCount += 1;
   if (path === "/api/export") {
-    exportLogLines = [];
-    renderExportLog();
+    clearCurrentExportLogState();
   }
   if (busyCount === 1) startProcessingProgress(path);
   scheduleProcessingBarShow(message, detail);
@@ -1542,6 +1602,15 @@ function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
   syncMergeSourceControls(sourceId, normalizedCoordinateValue(source.pip_x), normalizedCoordinateValue(source.pip_y), currentPipSizePercent(source), source.sync_offset_ms);
 }
 
+function mergeSourcePositionPayload(sourceId, source) {
+  return {
+    source_id: sourceId,
+    pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
+    pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
+    pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
+  };
+}
+
 function syncOverlayFontSizePreset() {
   const badgeSize = $("badge-size").value;
   const fontSize = BADGE_FONT_SIZES[badgeSize] || BADGE_FONT_SIZES.M;
@@ -1589,6 +1658,7 @@ function normalizeOverlayTextBox(box = {}, index = 0) {
   ]);
   const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";
   const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;
+  const usesExplicitCoordinates = requestedQuadrant === CUSTOM_QUADRANT_VALUE || normalizedX !== null || normalizedY !== null;
   let width = Math.max(0, Number(box.width || 0));
   let height = Math.max(0, Number(box.height || 0));
   if (source === "imported_summary" && (width <= 0 || height <= 0)) {
@@ -1601,9 +1671,9 @@ function normalizeOverlayTextBox(box = {}, index = 0) {
     enabled: Boolean(box.enabled ?? true),
     source,
     text: String(box.text || "").slice(0, 500),
-    quadrant: normalizedX !== null || normalizedY !== null ? CUSTOM_QUADRANT_VALUE : requestedQuadrant,
-    x: normalizedX,
-    y: normalizedY,
+    quadrant: usesExplicitCoordinates ? CUSTOM_QUADRANT_VALUE : requestedQuadrant,
+    x: usesExplicitCoordinates ? normalizedX ?? 0.5 : null,
+    y: usesExplicitCoordinates ? normalizedY ?? 0.5 : null,
     background_color: normalizeHexColor(box.background_color || "#000000") || "#000000",
     text_color: normalizeHexColor(box.text_color || "#ffffff") || "#ffffff",
     opacity: clamp(Number(box.opacity ?? 0.9), 0, 1),
@@ -2425,6 +2495,9 @@ function processingForPath(path) {
   if (path === "/api/import/primary") {
     return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
   }
+  if (path === "/api/analysis/threshold" && state?.project?.primary_video?.path) {
+    return { message: "Re-running ShotML...", detail: "Refreshing shot detections for the current threshold" };
+  }
   if (path === "/api/import/merge" || path === "/api/files/merge") {
     return { message: "Importing media...", detail: "Adding media to the list" };
   }
@@ -2516,14 +2589,25 @@ function applyRemoteState(nextState) {
   if (!hasCompleteProjectState(nextState)) {
     throw new Error("Received invalid project state from the local server.");
   }
+  const previousSelectionContext = pendingSelectionFallback
+    || shotSelectionContext(selectedShotId, state)
+    || shotSelectionContext(state?.project?.ui_state?.selected_shot_id, state);
+  pendingSelectionFallback = null;
   const nextProjectId = nextState?.project?.id || "";
   const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;
   if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
     resetLocalProjectView();
   }
+  const remoteSelectedShotId = nextState.project.ui_state.selected_shot_id;
   const nextUiState = isSameProject
     ? mergeProjectUiState(nextState.project.ui_state, readProjectUiStatePayload())
     : normalizeProjectUiState(nextState.project.ui_state);
+  nextUiState.selected_shot_id = resolveSelectedShotId(
+    nextState,
+    nextUiState.selected_shot_id,
+    previousSelectionContext,
+    remoteSelectedShotId,
+  );
   nextState.project.ui_state = nextUiState;
   if (isSameProject) mergeProjectDetailsDraft(nextState.project);
   currentProjectId = nextProjectId;
@@ -2532,6 +2616,7 @@ function applyRemoteState(nextState) {
   if (!stateHasShot(state, selectedShotId)) {
     selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;
   }
+  syncSelectedShotId(state, previousSelectionContext);
   syncLocalProjectUiState();
 }
 
@@ -3072,6 +3157,7 @@ function renderStats() {
   $("timing-summary").textContent = state.metrics.raw_time_ms
     ? "Click Edit and Unlock to change shot values."
     : "No timing data.";
+  $("apply-threshold").disabled = !state?.project?.primary_video?.path;
 }
 
 function mergeSourcePipRect(source, frameRect, pipSizeValue = null) {
@@ -3701,10 +3787,11 @@ function endWaveformNavigatorDrag(event) {
 }
 
 function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
-  selectedShotId = shotId;
-  if (!scoringShotExpansion.has(shotId)) scoringShotExpansion.set(shotId, true);
-  if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = shotId;
-  activity("shot.select", { shot_id: shotId });
+  const nextShotId = stateHasShot(state, shotId) ? shotId : null;
+  selectedShotId = nextShotId;
+  if (nextShotId && !scoringShotExpansion.has(nextShotId)) scoringShotExpansion.set(nextShotId, true);
+  if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = nextShotId;
+  activity("shot.select", { shot_id: nextShotId });
   const shot = selectedShot();
   if (shot && revealInWaveform) {
     if (ensureWaveformTimeVisible(shot.time_ms, { center: centerWaveform || !isWaveformVisible(shot.time_ms) })) {
@@ -3721,7 +3808,7 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
   }
-  callApi("/api/shots/select", { shot_id: shotId });
+  callApi("/api/shots/select", { shot_id: nextShotId });
 }
 
 function selectedShot() {
@@ -3829,6 +3916,7 @@ function renderTimingEventList() {
 }
 
 function renderTimingEventEditor() {
+  syncSelectedShotId();
   const shots = orderedShotsByTime();
   const positionSelect = $("timing-event-position");
   const addButton = $("add-timing-event");
@@ -3906,7 +3994,10 @@ function restoreOriginalScore(shotId) {
 
 function deleteShotById(shotId, source = "selected") {
   if (!shotId) return;
-  if (selectedShotId === shotId) selectedShotId = null;
+  if (selectedShotId === shotId) {
+    pendingSelectionFallback = shotSelectionContext(shotId, state, "index");
+    selectedShotId = null;
+  }
   timingRowEdits.delete(shotId);
   scoringShotExpansion.delete(shotId);
   if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
@@ -4071,6 +4162,7 @@ function buildSplitRowActionCell(row, expandedTable) {
 function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
+  syncSelectedShotId();
   withPreservedScrollState([table], () => {
     table.innerHTML = "";
     const expandedTable = tableId === "timing-workbench-table";
@@ -4232,7 +4324,7 @@ function renderTimingTables() {
 }
 
 function renderSelection() {
-  selectedShotId = state.project.ui_state.selected_shot_id || selectedShotId;
+  syncSelectedShotId();
   const segment = (state.timing_segments || []).find((item) => item.shot_id === selectedShotId);
   const selectedLabel = segment ? `Shot ${segment.shot_number}` : "No shot selected";
   const splitRow = segment ? splitRowForShot(segment.shot_id) : null;
@@ -4609,11 +4701,14 @@ function buildMetricsRows() {
   return (state.split_rows || []).map((row) => {
     const segment = row.shot_id ? (segmentsByShotId.get(row.shot_id) || null) : null;
     const absoluteMs = numericMs(row.absolute_time_ms);
-    const cumulativeMs = numericMs(segment?.cumulative_ms) ?? (
+    const fallbackCumulativeMs = numericMs(segment?.cumulative_ms) ?? (
       absoluteMs === null
         ? null
         : (beepMs === null ? absoluteMs : Math.max(0, absoluteMs - beepMs))
     );
+    const source = segment ? (segment.source || "") : (row.source || "");
+    const confidence = segment ? (segment.confidence ?? null) : (row.confidence ?? null);
+    const penaltyCounts = segment?.penalty_counts || row.penalty_counts;
     return {
       rowId: row.row_id,
       rowType: row.row_type,
@@ -4624,12 +4719,12 @@ function buildMetricsRows() {
       absoluteMs,
       splitMs: numericMs(row.split_ms),
       sequenceTotalMs: splitRowSequenceTotalMs(row),
-      cumulativeMs: numericMs(row.cumulative_ms) ?? cumulativeMs,
+      cumulativeMs: numericMs(row.cumulative_ms) ?? fallbackCumulativeMs,
       actionSummary: splitRowActionSummary(row),
-      scoreLetter: row.score_letter || segment?.score_letter || defaultScore,
-      penaltyText: formatPenaltyCountsText(row.penalty_counts),
-      source: row.source || segment?.source || "",
-      confidence: row.confidence ?? segment?.confidence ?? null,
+      scoreLetter: segment?.score_letter || row.score_letter || defaultScore,
+      penaltyText: formatPenaltyCountsText(penaltyCounts),
+      source,
+      confidence,
     };
   });
 }
@@ -4643,7 +4738,7 @@ function renderMetricsPanel() {
   const summaryCards = [
     ["Draw", splitSeconds(state.metrics.draw_ms), "First-shot timing"],
     ["Raw", splitSeconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms), "Beep to final shot"],
-    ["Shots", String(state.metrics.total_shots || 0), "Detected shots"],
+    ["Shots", String(state.metrics.total_shots || 0), "Current timeline shots"],
     ["Avg Split", splitSeconds(state.metrics.average_split_ms), "Average split"],
     ["Beep", splitSeconds(state.metrics.beep_ms), "Start marker"],
     [state.scoring_summary?.display_label || "Result", state.scoring_summary?.display_value || "--", "Scoring summary"],
@@ -4695,7 +4790,7 @@ function renderMetricsPanel() {
               : formatConfidenceValue(entry.confidence));
         const detailParts = [
           entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
-          entry.actionSummary && entry.actionSummary !== entry.intervalLabel ? entry.actionSummary : "",
+          entry.actionSummary,
           entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
           entry.penaltyText,
           sourceLabel,
@@ -4708,6 +4803,11 @@ function renderMetricsPanel() {
   });
 
   const summary = state.scoring_summary || {};
+  const imported = summary.imported_stage || {};
+  scoreStatus.dataset.importedSource = imported.source_name || "";
+  scoreStatus.dataset.importedStage = imported.stage_number ?? "";
+  scoreStatus.dataset.importedCompetitor = imported.competitor_name || "";
+  scoreStatus.dataset.importedPlace = imported.competitor_place ?? "";
   scoreStatus.textContent = summary.enabled
     ? `${summary.display_label || "Result"} ${summary.display_value || "--"}`
     : "Scoring disabled.";
@@ -4757,6 +4857,8 @@ function buildMetricsCsv() {
     "raw_time_s",
     "shot_number",
     "segment_label",
+    "interval_label",
+    "actions",
     "source",
     "absolute_s",
     "split_s",
@@ -4773,6 +4875,8 @@ function buildMetricsCsv() {
     summary.raw_seconds ?? "",
     entry.shotNumber || "",
     entry.label || "",
+    entry.intervalLabel || "",
+    entry.actionSummary || "",
     entry.source || "",
     entry.absoluteMs === null ? "" : precise(entry.absoluteMs),
     entry.splitMs === null || entry.splitMs === undefined ? "" : precise(entry.splitMs),
@@ -4799,10 +4903,12 @@ function buildMetricsText() {
   rows.forEach((entry) => {
     const parts = [
       entry.label || (entry.shotNumber ? `Shot ${entry.shotNumber}` : "Entry"),
+      entry.intervalLabel ? `Interval ${entry.intervalLabel}` : "",
       entry.absoluteMs === null ? "Absolute --.--" : `Absolute ${precise(entry.absoluteMs)}s`,
       entry.splitMs === null || entry.splitMs === undefined ? "Split --.--" : `Split ${splitSeconds(entry.splitMs)}`,
       entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "Total --.--" : `Total ${splitSeconds(entry.cumulativeMs)}`,
     ];
+    if (entry.actionSummary) parts.push(`Actions ${entry.actionSummary}`);
     if (entry.scoreLetter) parts.push(`Score ${entry.scoreLetter}`);
     if (entry.penaltyText) parts.push(entry.penaltyText);
     if (entry.source === "manual") parts.push("Manual");
@@ -5605,6 +5711,19 @@ function previewFrameGeometry(video, container) {
   };
 }
 
+function previewFrameClientRect(video, container) {
+  if (!container) return null;
+  const geometry = previewFrameGeometry(video, container);
+  if (!geometry?.frameRect) return container.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  return {
+    left: containerRect.left + geometry.frameRect.left,
+    top: containerRect.top + geometry.frameRect.top,
+    width: geometry.frameRect.width,
+    height: geometry.frameRect.height,
+  };
+}
+
 function overlayDisplayScale(video, frameRect, outputWidth = null) {
   if (!video || !frameRect) return 1;
   const sourceWidth = Number(outputWidth) || Number(video.videoWidth) || 0;
@@ -5870,7 +5989,7 @@ function beginTextBoxDrag(event) {
   ) return;
   event.preventDefault();
   const stage = $("video-stage");
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const badgeRect = customBadge.getBoundingClientRect();
   const startX = clamp((badgeRect.left - frameRect.left + badgeRect.width / 2) / frameRect.width, 0, 1);
   const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);
@@ -5893,7 +6012,7 @@ function moveTextBoxDrag(event) {
   if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
   const stage = $("video-stage");
   if (!stage) return;
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const width = Math.max(1, frameRect.width || 0);
   const height = Math.max(1, frameRect.height || 0);
   const { startClientX, startClientY, startX, startY } = textBoxDrag;
@@ -5913,7 +6032,7 @@ function endTextBoxDrag(event) {
   if (!textBoxDrag) return;
   if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
   const customOverlay = $("custom-overlay");
-  releasePointer(textBoxDrag.target || customOverlay, event.pointerId);
+  releasePointer(textBoxDrag.target || customOverlay, textBoxDrag.pointerId ?? event.pointerId);
   customOverlay?.classList.remove("dragging");
   const drag = textBoxDrag;
   const box = overlayTextBoxes().find((item) => item.id === drag.boxId);
@@ -5927,6 +6046,31 @@ function endTextBoxDrag(event) {
   flushInteractionPreviewRender();
   queueInspectorScrollRestore();
   callApi("/api/overlay", readOverlayPayload());
+  flushDeferredRender();
+}
+
+function cancelOverlayDragInteractions(reason = "interrupted") {
+  let cleared = false;
+  if (overlayBadgeDrag) {
+    const drag = overlayBadgeDrag;
+    releasePointer(drag.target, drag.pointerId);
+    drag.target?.classList?.remove("overlay-dragging");
+    overlayBadgeDrag = null;
+    activity("overlay.drag.cancel", { kind: drag.kind, reason });
+    cleared = true;
+  }
+  if (textBoxDrag) {
+    const drag = textBoxDrag;
+    const customOverlay = $("custom-overlay");
+    releasePointer(drag.target || customOverlay, drag.pointerId);
+    customOverlay?.classList.remove("dragging");
+    textBoxDrag = null;
+    activity("overlay.text_box.drag.cancel", { box_id: drag.boxId, reason });
+    cleared = true;
+  }
+  if (!cleared) return;
+  flushInteractionPreviewRender();
+  flushQueuedProjectUiStateApply();
   flushDeferredRender();
 }
 
@@ -5974,7 +6118,7 @@ function beginOverlayBadgeDrag(event) {
     syncOverlayPreviewStateFromControls();
   }
   const stage = $("video-stage");
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const anchor = overlayDragAnchor(kind, badge, frameRect);
   overlayBadgeDrag = {
     target: stage,
@@ -5997,7 +6141,7 @@ function moveOverlayBadgeDrag(event) {
   const config = overlayDragConfiguration(overlayBadgeDrag.kind);
   if (!config) return;
   const stage = $("video-stage");
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const width = Math.max(1, frameRect.width || 0);
   const height = Math.max(1, frameRect.height || 0);
   const deltaX = (event.clientX - overlayBadgeDrag.startClientX) / width;
@@ -6023,7 +6167,7 @@ function endOverlayBadgeDrag(event) {
   if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;
   const config = overlayDragConfiguration(overlayBadgeDrag.kind);
   const drag = overlayBadgeDrag;
-  releasePointer(drag.target, event.pointerId);
+  releasePointer(drag.target, drag.pointerId ?? event.pointerId);
   drag.target.classList.remove("overlay-dragging");
   overlayBadgeDrag = null;
   flushInteractionPreviewRender();
@@ -6046,7 +6190,7 @@ function beginMergePreviewDrag(event) {
   const source = mergeSourceById(sourceId);
   if (!source) return;
   const stage = $("video-stage");
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const itemRect = item.getBoundingClientRect();
   mergePreviewDrag = {
     item,
@@ -6073,7 +6217,7 @@ function moveMergePreviewDrag(event) {
   const source = mergeSourceById(mergePreviewDrag.sourceId);
   if (!source) return;
   const stage = $("video-stage");
-  const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const rect = mergeSourcePipRect(source, frameRect, currentPipSizePercent());
   const travelX = Math.max(0, frameRect.width - rect.width);
   const travelY = Math.max(0, frameRect.height - rect.height);
@@ -6100,11 +6244,7 @@ function endMergePreviewDrag(event) {
       pip_x: normalizedCoordinateValue(source.pip_x),
       pip_y: normalizedCoordinateValue(source.pip_y),
     });
-    callApi("/api/merge/source", {
-      source_id: drag.sourceId,
-      pip_x: normalizedCoordinateValue(source.pip_x) ?? 1,
-      pip_y: normalizedCoordinateValue(source.pip_y) ?? 1,
-    });
+    scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source));
   }
   flushDeferredRender();
 }
@@ -6343,6 +6483,7 @@ function stopOverlayLoop() {
 
 function render() {
   if (!state?.project) return;
+  syncSelectedShotId();
   withPreservedScrollState(scrollRenderTargets(), () => {
     applyLayoutState();
     renderHeader();
@@ -6872,18 +7013,48 @@ async function importTypedPath(targetId, apiPath, label) {
     setStatus(`${label} video path is required.`);
     return null;
   }
+  if (apiPath === "/api/import/primary") {
+    await flushPendingProjectDrafts();
+  }
   return callApi(apiPath, { path });
 }
 
+function normalizeProjectFolderInput(path) {
+  return String(path || "").trim();
+}
+
+function comparableProjectFolderPath(path) {
+  let normalized = normalizeProjectFolderInput(path).replace(/[\\/]+$/, "");
+  normalized = normalized.replace(/[\\/]project\.json$/i, "");
+  return normalized;
+}
+
+function sameProjectFolderPath(left, right) {
+  return comparableProjectFolderPath(left) === comparableProjectFolderPath(right);
+}
+
 async function probeProjectFolder(path) {
+  const targetPath = normalizeProjectFolderInput(path);
+  const requestId = ++projectFolderProbeRequestId;
   const response = await fetch("/api/project/probe", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path: targetPath }),
   });
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-  return Boolean(data.has_project_file);
+  if (requestId !== projectFolderProbeRequestId) {
+    throw new Error("Project folder selection changed. Try again.");
+  }
+  if (!sameProjectFolderPath(data.path || targetPath, targetPath)) {
+    throw new Error("Project folder probe returned a different path.");
+  }
+  return {
+    path: targetPath,
+    normalized_path: comparableProjectFolderPath(data.normalized_path || data.path || targetPath),
+    has_project_file: Boolean(data.has_project_file),
+    request_id: requestId,
+  };
 }
 
 async function browseProjectPath() {
@@ -6893,7 +7064,7 @@ async function browseProjectPath() {
 }
 
 async function useProjectFolder(path = $("project-path").value.trim()) {
-  const targetPath = path.trim();
+  const targetPath = normalizeProjectFolderInput(path);
   if (!targetPath) {
     return pickPath("project_folder", "project-path", async (selectedPath) => {
       await useProjectFolder(selectedPath);
@@ -6901,34 +7072,43 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
   }
 
   await flushPendingProjectDrafts();
-  const currentPath = (state?.project?.path || "").trim();
-  if (currentPath && currentPath === targetPath) {
+  const currentPath = normalizeProjectFolderInput(state?.project?.path || "");
+  if (currentPath && sameProjectFolderPath(currentPath, targetPath)) {
     const result = await callApi("/api/project/save", { path: targetPath });
     if (result) setActiveTool("project");
     return result;
   }
 
   try {
-    const hasProjectFile = await probeProjectFolder(targetPath);
-    if (!hasProjectFile) {
+    const probeResult = await probeProjectFolder(targetPath);
+    const projectPath = probeResult.normalized_path || targetPath;
+    if (!probeResult.has_project_file) {
       const shouldCreate = window.confirm(`No project.json found in:\n${targetPath}\n\nCreate this folder for the current project?`);
       if (!shouldCreate) {
         setStatus("Project folder selection cancelled.");
         return null;
       }
-      const result = await callApi("/api/project/save", { path: targetPath });
+      if (probeResult.request_id !== projectFolderProbeRequestId) {
+        setStatus("Project folder selection changed. Try again.");
+        return null;
+      }
+      const result = await callApi("/api/project/save", { path: projectPath });
       if (result) setActiveTool("project");
       return result;
     }
+
+    if (probeResult.request_id !== projectFolderProbeRequestId) {
+      setStatus("Project folder selection changed. Try again.");
+      return null;
+    }
+    const result = await callApi("/api/project/open", { path: projectPath });
+    if (result) setActiveTool("project");
+    return result;
   } catch (error) {
     setStatus(error.message);
     activity("api.error", { path: "/api/project/probe", error: error.message });
     return null;
   }
-
-  const result = await callApi("/api/project/open", { path: targetPath });
-  if (result) setActiveTool("project");
-  return result;
 }
 
 async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset").value) {
@@ -6984,7 +7164,14 @@ const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {
 }, 300);
 
 function scheduleThresholdApply() {
+  pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");
   autoApplyThreshold({ threshold: Number($("threshold").value) });
+}
+
+async function applyThresholdNow() {
+  pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");
+  autoApplyThreshold.cancel?.();
+  await callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
 }
 
 function scheduleProjectDetailsApply() {
@@ -7069,11 +7256,13 @@ function wireEvents() {
     scheduleExportSettingsApply();
   });
   $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
+    await flushPendingProjectDrafts();
     const result = await callApi("/api/import/primary", { path });
     if (result) setActiveTool("project");
   }));
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
+      await flushPendingProjectDrafts();
       const result = await callApi("/api/import/primary", { path });
       if (result) setActiveTool("project");
     }));
@@ -7082,6 +7271,7 @@ function wireEvents() {
     item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
   });
   $("primary-file-input").addEventListener("change", async (event) => {
+    await flushPendingProjectDrafts();
     const result = await postFile("/api/files/primary", event.target.files[0]);
     if (result) setActiveTool("project");
     event.target.value = "";
@@ -7197,9 +7387,15 @@ function wireEvents() {
   document.addEventListener("lostpointercapture", handleWaveformPointerUp);
   document.addEventListener("keydown", handleKeyboardEdit);
   document.addEventListener("visibilitychange", handleWindowVisibilityRestore);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState && document.visibilityState !== "visible") {
+      cancelOverlayDragInteractions("document.hidden");
+    }
+  });
   window.addEventListener("resize", handleViewportLayoutChange);
   window.addEventListener("focus", handleWindowVisibilityRestore);
   window.addEventListener("pageshow", handleWindowVisibilityRestore);
+  window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
   document.querySelector(".inspector")?.addEventListener("scroll", rememberInspectorScrollPosition, { passive: true });
   $("delete-selected").addEventListener("click", deleteSelectedShot);
@@ -7214,6 +7410,13 @@ function wireEvents() {
     });
   });
   $("threshold").addEventListener("input", scheduleThresholdApply);
+  $("threshold").addEventListener("change", applyThresholdNow);
+  $("threshold").addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyThresholdNow();
+  });
+  $("apply-threshold").addEventListener("click", applyThresholdNow);
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
@@ -7399,6 +7602,7 @@ function wireEvents() {
     const path = requireValue("export-path", "Output video path");
     exportPathDraft = path;
     cancelPendingExportDrafts();
+    await flushPendingMergeSourceCommits();
     await callApi("/api/export", buildExportPayload(path));
   });
   $("show-export-log")?.addEventListener("click", openExportLogModal);

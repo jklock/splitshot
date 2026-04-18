@@ -26,7 +26,6 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
-WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
 
 DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/details": ("test_browser_project_details_autosave_persists_after_reopen",),
@@ -113,6 +112,17 @@ def _get_json(url: str) -> dict:
 
 def _read_project_json(project_path: Path) -> dict:
     return json.loads((project_path / "project.json").read_text(encoding="utf-8"))
+
+
+def _changed_place_idpa_results(tmp_path: Path) -> Path:
+    source = (EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_text(encoding="utf-8")
+    source = source.replace(
+        "4,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,29.83,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+        "6,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,20.57,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+    )
+    path = tmp_path / "thursday-night.csv"
+    path.write_text(source, encoding="utf-8")
+    return path
 
 
 def _shot_from_project_json(project_payload: dict, shot_id: str) -> dict:
@@ -813,7 +823,7 @@ def test_browser_control_reimports_practiscore_from_staged_file_when_context_cha
         server.shutdown()
 
 
-def test_browser_control_loading_new_practiscore_csv_keeps_current_selection() -> None:
+def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(tmp_path: Path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     examples_dir = EXAMPLES_DIR / "IDPA"
@@ -840,7 +850,7 @@ def test_browser_control_loading_new_practiscore_csv_keeps_current_selection() -
             f"{server.url}api/files/practiscore",
             "file",
             "thursday-night.csv",
-            WORKSPACE_IDPA_RESULTS.read_bytes(),
+            _changed_place_idpa_results(tmp_path).read_bytes(),
         )
 
         assert state["practiscore_options"]["source_name"] == "thursday-night.csv"
@@ -963,6 +973,7 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
 
         state = _post_json(f"{server.url}api/shots/add", {"time_ms": 1750})
         assert len(state["project"]["analysis"]["shots"]) == shot_count + 1
+        first_shot_id = state["project"]["analysis"]["shots"][0]["id"]
         added_shot_id = next(
             shot["id"]
             for shot in state["project"]["analysis"]["shots"]

@@ -22,6 +22,7 @@ from splitshot.utils.time import seconds_to_ms
 BEEP_ONSET_FRACTION = 0.24
 SHOT_ONSET_FRACTION = 0.66
 SHOT_CONFIDENCE_MAX = 0.92
+MIN_SHOT_INTERVAL_MS = 100
 
 
 @dataclass(slots=True)
@@ -334,6 +335,40 @@ def _refine_shot_times(
     return refined
 
 
+def _shot_confidence_cluster_key(shot: ShotEvent) -> tuple[float, int]:
+    confidence = -1.0 if shot.confidence is None else float(shot.confidence)
+    return confidence, -shot.time_ms
+
+
+def _filter_false_positive_shots(
+    shots: list[ShotEvent],
+    beep_time_ms: int | None,
+    min_interval_ms: int = MIN_SHOT_INTERVAL_MS,
+) -> list[ShotEvent]:
+    if not shots:
+        return []
+
+    eligible = [
+        shot
+        for shot in sorted(shots, key=lambda item: item.time_ms)
+        if beep_time_ms is None or shot.time_ms - beep_time_ms >= min_interval_ms
+    ]
+    if not eligible:
+        return []
+
+    filtered: list[ShotEvent] = []
+    cluster: list[ShotEvent] = [eligible[0]]
+    for shot in eligible[1:]:
+        if shot.time_ms - cluster[-1].time_ms < min_interval_ms:
+            cluster.append(shot)
+            continue
+        filtered.append(max(cluster, key=_shot_confidence_cluster_key))
+        cluster = [shot]
+    filtered.append(max(cluster, key=_shot_confidence_cluster_key))
+    filtered.sort(key=lambda item: item.time_ms)
+    return filtered
+
+
 def _detect_beep_from_predictions(
     samples: np.ndarray,
     predictions: ModelPredictions,
@@ -435,7 +470,7 @@ def _detect_shots_from_predictions(
     classifier = _classifier()
     shot_scores = classifier.class_scores(predictions, "shot")
     cutoff = _shot_detection_cutoff(threshold)
-    earliest_ms = None if beep_time_ms is None else max(0, beep_time_ms + 45)
+    earliest_ms = None if beep_time_ms is None else max(0, beep_time_ms + MIN_SHOT_INTERVAL_MS)
     peaks = pick_event_peaks(
         shot_scores,
         centers_ms,
@@ -474,7 +509,8 @@ def detect_shots(
 ) -> list[ShotEvent]:
     predictions = _predict_audio_events(samples, sample_rate)
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
-    return _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
+    shots = _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
+    return _filter_false_positive_shots(shots, beep_time_ms)
 
 
 def _analyze_predictions(
@@ -495,6 +531,7 @@ def _analyze_predictions(
     )
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
     shots = _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
+    shots = _filter_false_positive_shots(shots, beep_time_ms)
     return DetectionResult(
         beep_time_ms=beep_time_ms,
         shots=shots,

@@ -293,6 +293,36 @@ def penalty_field_short_label(field_id: str, fallback_label: str = "") -> str:
     return PENALTY_FIELD_SHORT_LABELS.get(field_id, fallback_label or field_id.replace("_", " "))
 
 
+def normalize_score_letter_for_ruleset(ruleset: str, letter: str | ScoreLetter | None) -> str | None:
+    if letter in {None, ""}:
+        return None
+    preset = get_scoring_preset(ruleset)
+    normalized = str(letter)
+    if normalized in set(preset.score_options):
+        return normalized
+    return default_score_letter_for_ruleset(preset.id).value
+
+
+def normalize_penalty_counts_for_ruleset(
+    ruleset: str,
+    penalty_counts: dict[str, float] | None,
+) -> dict[str, float]:
+    preset = get_scoring_preset(ruleset)
+    valid_fields = {field.id for field in preset.penalty_fields}
+    normalized: dict[str, float] = {}
+    for key, value in (penalty_counts or {}).items():
+        field_id = str(key)
+        if field_id not in valid_fields:
+            continue
+        try:
+            numeric = max(0.0, float(value))
+        except (TypeError, ValueError):
+            continue
+        if numeric > 0:
+            normalized[field_id] = numeric
+    return normalized
+
+
 def scoring_color_key(
     letter: str,
     penalty_counts: dict[str, float] | None = None,
@@ -330,21 +360,29 @@ def apply_scoring_preset(project: Project, ruleset: str) -> None:
     preset = get_scoring_preset(ruleset)
     project.scoring.ruleset = preset.id
     project.scoring.point_map = dict(preset.point_map)
-    valid_fields = {field.id for field in preset.penalty_fields}
-    project.scoring.penalty_counts = {
-        key: value
-        for key, value in project.scoring.penalty_counts.items()
-        if key in valid_fields
-    }
+    project.scoring.penalty_counts = normalize_penalty_counts_for_ruleset(
+        preset.id,
+        project.scoring.penalty_counts,
+    )
     ensure_default_shot_scores(project)
+
+
+def _summary_score_letter(project: Project, shot: ShotEvent) -> str:
+    score = shot.score or default_score_mark_for_ruleset(project.scoring.ruleset)
+    normalized = normalize_score_letter_for_ruleset(project.scoring.ruleset, score.letter.value)
+    return normalized or default_score_letter_for_ruleset(project.scoring.ruleset).value
+
+
+def _summary_penalty_counts(project: Project, shot: ShotEvent) -> dict[str, float]:
+    score = shot.score or default_score_mark_for_ruleset(project.scoring.ruleset)
+    return normalize_penalty_counts_for_ruleset(project.scoring.ruleset, score.penalty_counts)
 
 
 def _shot_score_total(project: Project) -> float:
     if project.scoring.imported_stage is not None:
         return float(project.scoring.imported_stage.aggregate_points)
-    default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
     return sum(
-        project.scoring.point_map.get((shot.score or default_score).letter.value, 0)
+        project.scoring.point_map.get(_summary_score_letter(project, shot), 0)
         for shot in project.analysis.shots
     )
 
@@ -352,11 +390,10 @@ def _shot_score_total(project: Project) -> float:
 def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
     if project.scoring.imported_stage is not None:
         return float(project.scoring.imported_stage.shot_penalties)
-    default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
     return sum(
-        preset.score_penalty_map.get((shot.score or default_score).letter.value, 0)
+        preset.score_penalty_map.get(_summary_score_letter(project, shot), 0)
         + sum(
-            field.value * max(0.0, float((shot.score or default_score).penalty_counts.get(field.id, 0)))
+            field.value * _summary_penalty_counts(project, shot).get(field.id, 0.0)
             for field in preset.penalty_fields
         )
         for shot in project.analysis.shots
@@ -364,8 +401,9 @@ def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
 
 
 def _field_penalty_total(project: Project, preset: ScoringPreset) -> float:
+    penalty_counts = normalize_penalty_counts_for_ruleset(preset.id, project.scoring.penalty_counts)
     return sum(
-        max(0.0, float(project.scoring.penalty_counts.get(field.id, 0))) * field.value
+        penalty_counts.get(field.id, 0.0) * field.value
         for field in preset.penalty_fields
     )
 
@@ -518,7 +556,13 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         "score_values": dict(preset.point_map),
         "score_penalties": dict(preset.score_penalty_map),
         "penalty_fields": [
-            {**asdict(field), "count": project.scoring.penalty_counts.get(field.id, 0)}
+            {
+                **asdict(field),
+                "count": normalize_penalty_counts_for_ruleset(
+                    preset.id,
+                    project.scoring.penalty_counts,
+                ).get(field.id, 0),
+            }
             for field in preset.penalty_fields
         ],
         "raw_seconds": raw_seconds,
@@ -583,18 +627,16 @@ def ensure_default_shot_scores(project: Project) -> None:
     default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
     preset = get_scoring_preset(project.scoring.ruleset)
     valid_letters = {str(option) for option in preset.score_options}
-    valid_fields = {field.id for field in preset.penalty_fields}
     for shot in project.analysis.shots:
         if shot.score is None:
             shot.score = ScoreMark(letter=default_score.letter)
             continue
         if shot.score.letter.value not in valid_letters:
             shot.score.letter = default_score.letter
-        shot.score.penalty_counts = {
-            str(key): max(0.0, float(value))
-            for key, value in shot.score.penalty_counts.items()
-            if key in valid_fields and max(0.0, float(value)) > 0
-        }
+        shot.score.penalty_counts = normalize_penalty_counts_for_ruleset(
+            preset.id,
+            shot.score.penalty_counts,
+        )
 
 
 def set_score_position(shot: ShotEvent, x_norm: float, y_norm: float) -> None:
