@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from PySide6.QtCore import QObject, Signal
 
@@ -21,6 +22,7 @@ from splitshot.domain.models import (
     ExportVideoCodec,
     MergeLayout,
     OverlayPosition,
+    OverlayTextBox,
     PipSize,
     Project,
     MergeSource,
@@ -29,13 +31,33 @@ from splitshot.domain.models import (
     ShotEvent,
     ShotSource,
     VideoAsset,
+    legacy_custom_box_as_text_box,
+    overlay_text_boxes_for_render,
     project_to_dict,
+    sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
 from splitshot.media.probe import probe_video
-from splitshot.persistence.projects import delete_project, ensure_project_suffix, load_project, save_project
-from splitshot.scoring.logic import apply_scoring_preset, calculate_hit_factor
+from splitshot.persistence.projects import (
+    INPUT_DIRNAME,
+    PRACTISCORE_DIRNAME,
+    copy_path_to_project_subdir,
+    delete_project,
+    ensure_project_suffix,
+    load_project,
+    project_has_metadata,
+    save_project,
+)
+from splitshot.scoring.logic import (
+    apply_scoring_preset,
+    calculate_hit_factor,
+    default_score_mark_for_ruleset,
+    ensure_default_shot_scores,
+)
 from splitshot.scoring.practiscore import (
+    PractiScoreOptions,
+    _normalize_name,
+    describe_practiscore_file,
     default_ruleset_for_match_type,
     import_practiscore_stage,
     infer_practiscore_context,
@@ -49,6 +71,21 @@ VALID_OVERLAY_BADGE_NAMES = {
     "current_shot_badge",
     "hit_factor_badge",
 }
+
+_PRACTISCORE_FILE_SUFFIXES = {".csv", ".txt"}
+
+_VALID_BROWSER_UI_TOOLS = {
+    "project",
+    "scoring",
+    "timing",
+    "merge",
+    "overlay",
+    "review",
+    "export",
+    "metrics",
+}
+
+_VALID_WAVEFORM_MODES = {"select", "add"}
 
 
 @dataclass(slots=True)
@@ -74,6 +111,14 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
         BadgeSize.L: 16,
         BadgeSize.XL: 20,
     }[size]
+
+
+def _practiscore_name_matches(input_name: str, candidate_name: str) -> bool:
+    if _normalize_name(input_name) == _normalize_name(candidate_name):
+        return True
+    input_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", input_name.lower()) if part)
+    candidate_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part)
+    return bool(input_parts) and input_parts == candidate_parts
 
 
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
@@ -102,10 +147,16 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.merge.pip_y = 1.0
     project.merge.primary_is_left_or_top = True
     project.overlay.custom_box_text = ""
+    for text_box in project.overlay.text_boxes:
+        text_box.text = ""
+    sync_overlay_legacy_custom_box_fields(project.overlay)
     project.export.last_log = ""
     project.export.last_error = None
     project.ui_state.selected_shot_id = None
     project.ui_state.timeline_offset_ms = 0
+    project.ui_state.scoring_shot_expansion = {}
+    project.ui_state.waveform_shot_amplitudes = {}
+    project.ui_state.timing_edit_shot_ids = []
 
 
 class ProjectController(QObject):
@@ -119,14 +170,20 @@ class ProjectController(QObject):
         self.settings: AppSettings = load_settings()
         self.project = self._new_project_with_settings_defaults()
         self.project_path: Path | None = None
+        self._practiscore_source_path: Path | None = None
+        self._practiscore_source_name: str = ""
+        self._practiscore_options: PractiScoreOptions | None = None
         self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
         self._original_shot_state_by_id: dict[str, _OriginalShotState] = {}
+        self._autosave_in_progress = False
         self._remember_original_shots()
+        self.project_changed.connect(self._autosave_project_if_needed)
 
     def new_project(self) -> None:
         self.project = self._new_project_with_settings_defaults()
         self.project_path = None
+        self._clear_practiscore_source()
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_original_shots()
@@ -157,6 +214,7 @@ class ProjectController(QObject):
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
         self.project.analysis.shots = result.shots
+        ensure_default_shot_scores(self.project)
         self._remember_original_shots()
         self.update_hit_factor()
         self._set_status(
@@ -190,14 +248,14 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def ingest_primary_video(self, path: str) -> None:
+    def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
-        self.load_primary_video(path)
+        self.load_primary_video(self._stage_project_input_path(path, source_name=source_name))
         self.analyze_primary()
 
-    def ingest_secondary_video(self, path: str) -> None:
+    def ingest_secondary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing secondary video...")
-        self.load_secondary_video(path)
+        self.load_secondary_video(self._stage_project_input_path(path, source_name=source_name))
 
     def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
         if name is not None:
@@ -238,6 +296,12 @@ class ProjectController(QObject):
                 scoring.competitor_place = competitor_place
                 changed = True
         if changed:
+            if self._can_reimport_practiscore_source():
+                self._import_practiscore_source(
+                    str(self._practiscore_source_path),
+                    self._practiscore_source_name,
+                )
+                return
             scoring.imported_stage = None
             scoring.penalties = 0.0
             scoring.penalty_counts = {}
@@ -247,15 +311,191 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def import_practiscore_file(self, path: str, source_name: str | None = None) -> None:
+        path = self._stage_practiscore_source_path(path, source_name=source_name)
+        self._set_practiscore_source(path, source_name)
+        self._import_practiscore_source(path, source_name)
+
+    def practiscore_browser_state(self) -> dict[str, object]:
+        options = self._practiscore_options
+        competitors = [] if options is None else [
+            {"name": option.name, "place": option.place}
+            for option in options.competitors
+        ]
+        return {
+            "has_source": self._practiscore_source_path is not None,
+            "source_name": self._practiscore_source_name,
+            "detected_match_type": "" if options is None else options.match_type,
+            "stage_numbers": [] if options is None else list(options.stage_numbers),
+            "competitors": competitors,
+        }
+
+    def _clear_practiscore_source(self) -> None:
+        self._practiscore_source_path = None
+        self._practiscore_source_name = ""
+        self._practiscore_options = None
+        self.project.scoring.practiscore_source_path = ""
+        self.project.scoring.practiscore_source_name = ""
+
+    def _set_practiscore_source(self, path: str, source_name: str | None = None) -> None:
+        resolved_path = Path(path)
+        display_name = source_name or resolved_path.name
+        options = describe_practiscore_file(resolved_path, source_name=display_name)
+        self._practiscore_source_path = resolved_path
+        self._practiscore_source_name = display_name
+        self._practiscore_options = options
+        self.project.scoring.practiscore_source_path = str(resolved_path)
+        self.project.scoring.practiscore_source_name = display_name
+
+    def _project_practiscore_candidates(self) -> list[Path]:
+        if self.project_path is None:
+            return []
+        practiscore_dir = self.project_path / PRACTISCORE_DIRNAME
+        if not practiscore_dir.is_dir():
+            return []
+
+        candidates: list[Path] = []
+        for path in practiscore_dir.iterdir():
+            if not path.is_file() or path.suffix.lower() not in _PRACTISCORE_FILE_SUFFIXES:
+                continue
+            candidates.append(path.resolve())
+        candidates.sort(key=lambda item: (item.stat().st_mtime_ns, item.name.lower()), reverse=True)
+        return candidates
+
+    def _recover_practiscore_path_from_project_folder(
+        self,
+        stored_path: str,
+        stored_name: str | None,
+    ) -> tuple[Path | None, str | None, bool]:
+        candidates = self._project_practiscore_candidates()
+        if not candidates:
+            return None, stored_name, False
+
+        preferred_names = [
+            stored_name or "",
+            Path(stored_path).name if stored_path else "",
+        ]
+        imported_stage = self.project.scoring.imported_stage
+        if imported_stage is not None:
+            preferred_names.extend([
+                imported_stage.source_name or "",
+                Path(imported_stage.source_path).name if imported_stage.source_path else "",
+            ])
+
+        for preferred_name in preferred_names:
+            clean_name = preferred_name.strip()
+            if not clean_name:
+                continue
+            for candidate in candidates:
+                if candidate.name == clean_name:
+                    return candidate, clean_name, True
+
+        if stored_path or imported_stage is not None or len(candidates) != 1:
+            return None, stored_name, False
+        return candidates[0], stored_name or candidates[0].name, True
+
+    def _restore_practiscore_source_from_project(self, *, emit_change: bool = True) -> bool:
+        stored_path = self.project.scoring.practiscore_source_path.strip()
+        stored_name = self.project.scoring.practiscore_source_name.strip() or None
+        resolved_path = Path(stored_path) if stored_path else None
+        recovered_from_folder = False
+
+        if resolved_path is None or not resolved_path.exists():
+            recovered_path, recovered_name, recovered_from_folder = self._recover_practiscore_path_from_project_folder(
+                stored_path,
+                stored_name,
+            )
+            if recovered_path is not None:
+                resolved_path = recovered_path
+                stored_name = recovered_name or resolved_path.name
+
+        if resolved_path is None:
+            self._clear_practiscore_source()
+            return False
+
+        display_name = stored_name or resolved_path.name
+        changed = False
+        if self.project.scoring.practiscore_source_path != str(resolved_path):
+            self.project.scoring.practiscore_source_path = str(resolved_path)
+            changed = True
+        if self.project.scoring.practiscore_source_name != display_name:
+            self.project.scoring.practiscore_source_name = display_name
+            changed = True
+        if self.project.scoring.imported_stage is not None:
+            if self.project.scoring.imported_stage.source_path != str(resolved_path):
+                self.project.scoring.imported_stage.source_path = str(resolved_path)
+                changed = True
+            if self.project.scoring.imported_stage.source_name != display_name:
+                self.project.scoring.imported_stage.source_name = display_name
+                changed = True
+
+        try:
+            options = describe_practiscore_file(resolved_path, source_name=display_name)
+        except (OSError, ValueError):
+            self._practiscore_source_path = resolved_path
+            self._practiscore_source_name = display_name
+            self._practiscore_options = None
+            return changed or recovered_from_folder
+
+        self._practiscore_source_path = resolved_path
+        self._practiscore_source_name = display_name
+        self._practiscore_options = options
+        if self.project.scoring.imported_stage is None:
+            try:
+                self._import_practiscore_source(str(resolved_path), display_name, emit_change=emit_change)
+                return True
+            except ValueError:
+                return changed or recovered_from_folder
+        return changed or recovered_from_folder
+
+    def _current_practiscore_selection_matches_source(self) -> bool:
         scoring = self.project.scoring
-        previous_import = scoring.imported_stage
-        resolved = infer_practiscore_context(
-            path,
-            match_type=scoring.match_type or None,
-            stage_number=scoring.stage_number,
-            competitor_name=scoring.competitor_name or None,
-            competitor_place=scoring.competitor_place,
-        )
+        options = self._practiscore_options
+        if options is None:
+            return False
+        if not scoring.match_type or scoring.match_type != options.match_type:
+            return False
+        if scoring.stage_number is None or scoring.stage_number not in options.stage_numbers:
+            return False
+        competitor_name = scoring.competitor_name.strip()
+        if not competitor_name:
+            return False
+        normalized_competitor_name = _normalize_name(competitor_name)
+        matching_competitors = [
+            option for option in options.competitors
+            if _normalize_name(option.name) == normalized_competitor_name
+            or _practiscore_name_matches(competitor_name, option.name)
+        ]
+        if not matching_competitors:
+            return False
+        if scoring.competitor_place is None and len(matching_competitors) > 1:
+            return False
+        if scoring.competitor_place is None:
+            return True
+        if any(option.place == scoring.competitor_place for option in matching_competitors):
+            return True
+        return len(matching_competitors) == 1
+
+    def _can_reimport_practiscore_source(self) -> bool:
+        return self._practiscore_source_path is not None and self._current_practiscore_selection_matches_source()
+
+    def _import_practiscore_source(
+        self,
+        path: str,
+        source_name: str | None = None,
+        *,
+        emit_change: bool = True,
+    ) -> None:
+        scoring = self.project.scoring
+        try:
+            resolved = infer_practiscore_context(
+                path,
+                match_type=scoring.match_type or None,
+                stage_number=scoring.stage_number,
+                competitor_name=scoring.competitor_name or None,
+                competitor_place=scoring.competitor_place,
+            )
+        except ValueError:
+            resolved = infer_practiscore_context(path)
         imported = import_practiscore_stage(
             path,
             match_type=resolved.match_type,
@@ -273,16 +513,39 @@ class ProjectController(QObject):
         self.project.scoring.competitor_place = imported.imported_stage.competitor_place
         self.project.scoring.match_type = imported.imported_stage.match_type
         self.project.scoring.stage_number = imported.imported_stage.stage_number
-        if previous_import is None:
-            self.project.overlay.custom_box_enabled = True
-            self.project.overlay.custom_box_mode = "imported_summary"
+        imported_box = next(
+            (box for box in self.project.overlay.text_boxes if box.source == "imported_summary"),
+            None,
+        )
+        if imported_box is None:
+            boxes = list(overlay_text_boxes_for_render(self.project.overlay))
+            boxes.append(
+                OverlayTextBox(
+                    enabled=True,
+                    source="imported_summary",
+                    quadrant="above_final",
+                    x=None,
+                    y=None,
+                    background_color=self.project.overlay.custom_box_background_color,
+                    text_color=self.project.overlay.custom_box_text_color,
+                    opacity=self.project.overlay.custom_box_opacity,
+                    width=0,
+                    height=0,
+                )
+            )
+            self.project.overlay.text_boxes = boxes
+        else:
+            imported_box.enabled = True
+        sync_overlay_legacy_custom_box_fields(self.project.overlay)
         self.update_hit_factor()
         stage_label = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
         self._set_status(f"Imported PractiScore results for {stage_label}.")
-        self.project.touch()
-        self.project_changed.emit()
+        if emit_change:
+            self.project.touch()
+            self.project_changed.emit()
 
-    def add_merge_source(self, path: str) -> None:
+    def add_merge_source(self, path: str, source_name: str | None = None) -> None:
+        path = self._stage_project_input_path(path, source_name=source_name)
         asset = probe_video(path)
         self.project.merge_sources.append(
             MergeSource(
@@ -344,7 +607,12 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def add_shot(self, time_ms: int) -> None:
-        shot = ShotEvent(time_ms=time_ms, source=ShotSource.MANUAL, confidence=1.0)
+        shot = ShotEvent(
+            time_ms=time_ms,
+            source=ShotSource.MANUAL,
+            confidence=1.0,
+            score=default_score_mark_for_ruleset(self.project.scoring.ruleset),
+        )
         self.project.analysis.shots.append(shot)
         self.project.sort_shots()
         self._remember_original_shot(shot)
@@ -381,6 +649,114 @@ class ProjectController(QObject):
         self.project.ui_state.selected_shot_id = shot_id
         self.project_changed.emit()
 
+    def set_ui_state(self, payload: dict[str, object]) -> None:
+        ui_state = self.project.ui_state
+        changed = False
+
+        if "selected_shot_id" in payload:
+            next_shot_id = None if payload.get("selected_shot_id") in {None, ""} else str(payload["selected_shot_id"])
+            if ui_state.selected_shot_id != next_shot_id:
+                ui_state.selected_shot_id = next_shot_id
+                changed = True
+        if "timeline_zoom" in payload:
+            next_zoom = max(1.0, min(200.0, float(payload["timeline_zoom"])))
+            if ui_state.timeline_zoom != next_zoom:
+                ui_state.timeline_zoom = next_zoom
+                changed = True
+        if "timeline_offset_ms" in payload:
+            next_offset = max(0, int(payload["timeline_offset_ms"]))
+            if ui_state.timeline_offset_ms != next_offset:
+                ui_state.timeline_offset_ms = next_offset
+                changed = True
+        if "active_tool" in payload:
+            next_active_tool = str(payload["active_tool"])
+            if next_active_tool not in _VALID_BROWSER_UI_TOOLS:
+                next_active_tool = "project"
+            if ui_state.active_tool != next_active_tool:
+                ui_state.active_tool = next_active_tool
+                changed = True
+        if "waveform_mode" in payload:
+            next_waveform_mode = str(payload["waveform_mode"])
+            if next_waveform_mode not in _VALID_WAVEFORM_MODES:
+                next_waveform_mode = "select"
+            if ui_state.waveform_mode != next_waveform_mode:
+                ui_state.waveform_mode = next_waveform_mode
+                changed = True
+        if "waveform_expanded" in payload:
+            next_waveform_expanded = bool(payload["waveform_expanded"])
+            if ui_state.waveform_expanded != next_waveform_expanded:
+                ui_state.waveform_expanded = next_waveform_expanded
+                changed = True
+            if next_waveform_expanded and ui_state.timing_expanded:
+                ui_state.timing_expanded = False
+                changed = True
+        if "timing_expanded" in payload:
+            next_timing_expanded = bool(payload["timing_expanded"])
+            if ui_state.timing_expanded != next_timing_expanded:
+                ui_state.timing_expanded = next_timing_expanded
+                changed = True
+            if next_timing_expanded and ui_state.waveform_expanded:
+                ui_state.waveform_expanded = False
+                changed = True
+        if "layout_locked" in payload:
+            next_layout_locked = bool(payload["layout_locked"])
+            if ui_state.layout_locked != next_layout_locked:
+                ui_state.layout_locked = next_layout_locked
+                changed = True
+        for field_name, minimum, maximum in (
+            ("rail_width", 48, 72),
+            ("inspector_width", 320, 4096),
+            ("waveform_height", 112, 4096),
+        ):
+            if field_name not in payload:
+                continue
+            next_value = max(minimum, min(maximum, int(payload[field_name])))
+            if getattr(ui_state, field_name) != next_value:
+                setattr(ui_state, field_name, next_value)
+                changed = True
+        if "scoring_shot_expansion" in payload:
+            next_expansion: dict[str, bool] = {}
+            raw_expansion = payload.get("scoring_shot_expansion")
+            if isinstance(raw_expansion, dict):
+                for key, value in raw_expansion.items():
+                    clean_key = str(key).strip()
+                    if clean_key:
+                        next_expansion[clean_key] = bool(value)
+            if ui_state.scoring_shot_expansion != next_expansion:
+                ui_state.scoring_shot_expansion = next_expansion
+                changed = True
+        if "waveform_shot_amplitudes" in payload:
+            next_amplitudes: dict[str, float] = {}
+            raw_amplitudes = payload.get("waveform_shot_amplitudes")
+            if isinstance(raw_amplitudes, dict):
+                for key, value in raw_amplitudes.items():
+                    clean_key = str(key).strip()
+                    if not clean_key:
+                        continue
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    next_amplitudes[clean_key] = max(0.25, min(12.0, numeric))
+            if ui_state.waveform_shot_amplitudes != next_amplitudes:
+                ui_state.waveform_shot_amplitudes = next_amplitudes
+                changed = True
+        if "timing_edit_shot_ids" in payload:
+            next_timing_edit_ids: list[str] = []
+            raw_timing_edit_ids = payload.get("timing_edit_shot_ids")
+            if isinstance(raw_timing_edit_ids, list):
+                for value in raw_timing_edit_ids:
+                    clean_value = str(value).strip()
+                    if clean_value:
+                        next_timing_edit_ids.append(clean_value)
+            if ui_state.timing_edit_shot_ids != next_timing_edit_ids:
+                ui_state.timing_edit_shot_ids = next_timing_edit_ids
+                changed = True
+
+        if changed:
+            self.project.touch()
+            self.project_changed.emit()
+
     def assign_score(
         self,
         shot_id: str,
@@ -394,11 +770,8 @@ class ProjectController(QObject):
         }
         for shot in self.project.analysis.shots:
             if shot.id == shot_id:
-                if letter is None and normalized_penalty_counts == {}:
-                    shot.score = None
-                    break
                 if shot.score is None:
-                    shot.score = ScoreMark(letter=letter or ScoreLetter.A)
+                    shot.score = default_score_mark_for_ruleset(self.project.scoring.ruleset)
                 elif letter is not None:
                     shot.score.letter = letter
                 if normalized_penalty_counts is not None:
@@ -432,7 +805,11 @@ class ProjectController(QObject):
         for shot in self.project.analysis.shots:
             if shot.id != shot_id:
                 continue
-            shot.score = None if original.score is None else deepcopy(original.score)
+            shot.score = (
+                default_score_mark_for_ruleset(self.project.scoring.ruleset)
+                if original.score is None
+                else deepcopy(original.score)
+            )
             self.update_hit_factor()
             self._set_status("Restored original score.")
             self.project.touch()
@@ -505,6 +882,7 @@ class ProjectController(QObject):
     def set_overlay_display_options(self, payload: dict[str, object]) -> None:
         overlay = self.project.overlay
         valid_quadrants = {
+            "above_final",
             "top_left",
             "top_middle",
             "top_right",
@@ -584,6 +962,35 @@ class ProjectController(QObject):
             overlay.custom_box_width = max(0, int(payload["custom_box_width"]))
         if "custom_box_height" in payload:
             overlay.custom_box_height = max(0, int(payload["custom_box_height"]))
+        if "text_boxes" in payload:
+            parsed_boxes: list[OverlayTextBox] = []
+            for item in payload.get("text_boxes", []):
+                if not isinstance(item, dict):
+                    continue
+                source = str(item.get("source", "manual"))
+                quadrant = str(item.get("quadrant", "top_right"))
+                box = OverlayTextBox(
+                    id=str(item.get("id") or OverlayTextBox().id),
+                    enabled=bool(item.get("enabled", False)),
+                    source=source if source in valid_custom_box_modes else "manual",
+                    text=str(item.get("text", ""))[:500],
+                    quadrant=quadrant if quadrant in valid_custom_box_quadrants else "top_right",
+                    x=None if item.get("x") in {None, ""} else max(0.0, min(1.0, float(item["x"]))),
+                    y=None if item.get("y") in {None, ""} else max(0.0, min(1.0, float(item["y"]))),
+                    background_color=str(item.get("background_color", overlay.custom_box_background_color)),
+                    text_color=str(item.get("text_color", overlay.custom_box_text_color)),
+                    opacity=max(0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))),
+                    width=max(0, int(item.get("width", 0))),
+                    height=max(0, int(item.get("height", 0))),
+                )
+                if box.x is not None or box.y is not None:
+                    box.quadrant = "custom"
+                parsed_boxes.append(box)
+            overlay.text_boxes = parsed_boxes
+            sync_overlay_legacy_custom_box_fields(overlay)
+        else:
+            legacy_box = legacy_custom_box_as_text_box(overlay)
+            overlay.text_boxes = [] if legacy_box is None else [legacy_box]
         self.project.touch()
         self.project_changed.emit()
 
@@ -608,8 +1015,13 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def set_scoring_color(self, letter: ScoreLetter, color: str) -> None:
-        self.project.overlay.scoring_colors[letter.value] = color
+    def set_scoring_color(self, score_key: str, color: str) -> None:
+        normalized_key = str(score_key).strip()
+        if not normalized_key:
+            raise ValueError("score color key is required")
+        if "|" in normalized_key:
+            raise ValueError("score color keys must be individual tokens")
+        self.project.overlay.scoring_colors[normalized_key] = color
         self.project.touch()
         self.project_changed.emit()
 
@@ -742,6 +1154,23 @@ class ProjectController(QObject):
 
     def set_export_settings(self, payload: dict[str, object]) -> None:
         export = self.project.export
+        manual_override_keys = {
+            "quality",
+            "aspect_ratio",
+            "crop_center_x",
+            "crop_center_y",
+            "target_width",
+            "target_height",
+            "frame_rate",
+            "video_codec",
+            "video_bitrate_mbps",
+            "audio_codec",
+            "audio_sample_rate",
+            "audio_bitrate_kbps",
+            "color_space",
+            "two_pass",
+            "ffmpeg_preset",
+        }
         if "quality" in payload:
             export.quality = ExportQuality(str(payload["quality"]))
             self.settings.export_quality = export.quality
@@ -777,7 +1206,11 @@ class ProjectController(QObject):
             export.two_pass = bool(payload["two_pass"])
         if "ffmpeg_preset" in payload:
             export.ffmpeg_preset = str(payload["ffmpeg_preset"])
-        export.preset = ExportPreset.CUSTOM
+        if "output_path" in payload:
+            next_output_path = str(payload["output_path"]).strip()
+            export.output_path = None if not next_output_path else next_output_path
+        if manual_override_keys.intersection(payload):
+            export.preset = ExportPreset.CUSTOM
         self.project.touch()
         self.project_changed.emit()
 
@@ -826,21 +1259,32 @@ class ProjectController(QObject):
         if target_path is None:
             raise ValueError("Project path is required")
         self.project.touch()
-        self.project_path = save_project(self.project, target_path)
-        self.project = load_project(self.project_path)
+        self.project_path = ensure_project_suffix(target_path)
+        save_project(self.project, self.project_path)
+        self._restore_practiscore_source_from_project()
         self._saved_snapshot = project_to_dict(self.project)
+        self._remember_original_shots()
         self._remember_project(self.project_path)
-        self._set_status(f"Saved project to {self.project_path}.")
+        self._set_status(f"Project folder ready at {self.project_path}.")
         self.project_path_changed.emit(str(self.project_path))
         self.project_changed.emit()
 
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
         self.project_path = ensure_project_suffix(path)
-        self._saved_snapshot = project_to_dict(self.project)
+        loaded_snapshot = project_to_dict(self.project)
+        recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
+        if recovered_practiscore:
+            self.project.touch()
+        self._saved_snapshot = loaded_snapshot if recovered_practiscore else project_to_dict(self.project)
         self._remember_original_shots()
         self._remember_project(self.project_path)
-        self._set_status(f"Opened project from {self.project_path}.")
+        if recovered_practiscore and self._practiscore_source_name:
+            self._set_status(
+                f"Opened project folder {self.project_path} and restored PractiScore from {self._practiscore_source_name}."
+            )
+        else:
+            self._set_status(f"Opened project folder {self.project_path}.")
         self.project_path_changed.emit(str(self.project_path))
         self.project_changed.emit()
 
@@ -849,7 +1293,7 @@ class ProjectController(QObject):
             return
         delete_project(self.project_path)
         self.new_project()
-        self._set_status("Deleted the saved project bundle.")
+        self._set_status("Deleted the saved project folder.")
 
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
@@ -893,9 +1337,56 @@ class ProjectController(QObject):
 
     def _remember_project(self, path: Path) -> None:
         entries = [str(path), *[item for item in self.settings.recent_projects if item != str(path)]]
-        self.settings.recent_projects = entries[:10]
+        next_entries = entries[:10]
+        if self.settings.recent_projects == next_entries:
+            return
+        self.settings.recent_projects = next_entries
         save_settings(self.settings)
         self.settings_changed.emit()
+
+    def _autosave_project_if_needed(self) -> None:
+        if self._autosave_in_progress or self.project_path is None:
+            return
+        current_snapshot = project_to_dict(self.project)
+        if current_snapshot == self._saved_snapshot:
+            return
+        try:
+            self._autosave_in_progress = True
+            save_project(self.project, self.project_path)
+            if self.project.scoring.practiscore_source_path:
+                self._restore_practiscore_source_from_project()
+            self._saved_snapshot = project_to_dict(self.project)
+            self._remember_project(self.project_path)
+        except Exception as exc:  # noqa: BLE001
+            self._set_status(f"Project autosave failed: {exc}")
+        finally:
+            self._autosave_in_progress = False
+
+    def autosave_project_if_needed(self) -> None:
+        self._autosave_project_if_needed()
+
+    def _stage_project_input_path(self, path: str, source_name: str | None = None) -> str:
+        if self.project_path is None:
+            return path
+        return copy_path_to_project_subdir(
+            self.project_path,
+            path,
+            INPUT_DIRNAME,
+            preferred_name=source_name,
+        )
+
+    def _stage_practiscore_source_path(self, path: str, source_name: str | None = None) -> str:
+        if self.project_path is None:
+            return path
+        return copy_path_to_project_subdir(
+            self.project_path,
+            path,
+            PRACTISCORE_DIRNAME,
+            preferred_name=source_name,
+        )
+
+    def project_folder_has_project_file(self, path: str | Path) -> bool:
+        return project_has_metadata(path)
 
     def _new_project_with_settings_defaults(self) -> Project:
         project = Project()

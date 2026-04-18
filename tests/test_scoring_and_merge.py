@@ -49,6 +49,20 @@ def test_current_shot_tracks_playback_position() -> None:
     assert current_shot_index(project, 1600) == 2
 
 
+def test_current_shot_waits_for_first_source_frame_after_shot_time() -> None:
+    project = Project()
+    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.analysis.shots = [
+        ShotEvent(time_ms=150),
+        ShotEvent(time_ms=350),
+    ]
+
+    assert current_shot_index(project, 199) is None
+    assert current_shot_index(project, 200) == 0
+    assert current_shot_index(project, 399) == 0
+    assert current_shot_index(project, 400) == 1
+
+
 def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
     project = Project()
     project.scoring.enabled = True
@@ -138,6 +152,21 @@ def test_idpa_time_plus_uses_points_down_and_penalty_seconds() -> None:
     assert summary["shot_points"] == 9
     assert summary["field_penalties"] == 41
     assert summary["final_time"] == 2.0 + 9 + 41
+
+
+def test_scoring_summary_exposes_token_text_colors() -> None:
+    project = Project()
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    summary = calculate_scoring_summary(project)
+    color_options = {item["key"]: item for item in summary["scoring_color_options"]}
+
+    assert "-0" in color_options
+    assert "PE" in color_options
+    assert color_options["PE"]["label"] == "PE"
+    assert color_options["PE"]["description"] == "Procedural Error"
+    assert "NT" in color_options
+    assert "-0|procedural_errors" not in color_options
 
 
 def test_imported_stage_summary_uses_official_aggregate_values() -> None:

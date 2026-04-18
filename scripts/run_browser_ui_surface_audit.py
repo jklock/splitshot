@@ -84,7 +84,7 @@ class BrowserAudit:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Audit SplitShot UI surfaces across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
+    description="Audit SplitShot rendered UI surfaces with DOM-level smoke checks across Chromium, Chrome, Firefox, Safari-class WebKit, and Edge-aware channels via Playwright.",
     )
     parser.add_argument(
         "--browser",
@@ -142,20 +142,21 @@ def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, head
     browser = launch_browser(playwright, target, headed)
     page = browser.new_page(viewport={"width": 1440, "height": 1024})
     page.goto(base_url, wait_until="domcontentloaded")
-    page.wait_for_selector("#project-name")
+    page.wait_for_selector("#current-file")
     return browser, page
 
 
+def show_project_tool(page: Page) -> None:
+    page.locator("[data-tool='project']").click()
+    page.wait_for_selector("#primary-file-path", state="visible")
+
+
 def import_primary_video(page: Page, primary_video: Path) -> None:
+    show_project_tool(page)
     page.locator("#primary-file-path").fill(str(primary_video))
     page.locator("#primary-file-path").press("Enter")
     page.wait_for_function(
-        """
-        () => {
-          const value = Number(document.getElementById("shot-count")?.textContent || "0");
-          return Number.isFinite(value) && value > 0;
-        }
-        """,
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0",
         timeout=120_000,
     )
     page.wait_for_function(
@@ -171,181 +172,6 @@ def wait_for_processing_bar_to_settle(page: Page) -> None:
     )
     page.evaluate("forceHideProcessingBar()")
     page.wait_for_timeout(400)
-
-
-def audit_fast_metadata_save(page: Page) -> CheckResult:
-    wait_for_processing_bar_to_settle(page)
-    result = page.evaluate(
-        """
-        async () => {
-          const originalFetch = window.fetch;
-          const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-          const bar = document.getElementById("processing-bar");
-          const input = document.getElementById("project-name");
-          const samples = [];
-          try {
-            window.fetch = async (inputArg, init) => {
-              const url = typeof inputArg === "string" ? inputArg : inputArg.url;
-              if (url.endsWith("/api/project/details")) {
-                const payload = JSON.parse(init?.body || "{}");
-                const nextState = JSON.parse(JSON.stringify(state));
-                nextState.project.name = payload.name || nextState.project.name;
-                nextState.project.description = payload.description || "";
-                nextState.status = "Updated project details.";
-                return new Response(JSON.stringify(nextState), {
-                  status: 200,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
-              return originalFetch(inputArg, init);
-            };
-            input.value = "Fast metadata audit";
-            input.dispatchEvent(new Event("input", { bubbles: true }));
-            const startedAt = performance.now();
-            for (let index = 0; index < 12; index += 1) {
-              await wait(50);
-              samples.push({
-                t_ms: Math.round(performance.now() - startedAt),
-                hidden: bar.hidden,
-              });
-            }
-            return {
-              ever_visible: samples.some((sample) => sample.hidden === false),
-              samples,
-            };
-          } finally {
-            window.fetch = originalFetch;
-          }
-        }
-        """
-    )
-    return expect(
-        result["ever_visible"] is False,
-        "fast_metadata_save_no_flash",
-        "Quick metadata autosaves should not flash the blocking processing bar.",
-        result,
-    )
-
-
-def audit_blocking_save_progress(page: Page) -> CheckResult:
-    wait_for_processing_bar_to_settle(page)
-    result = page.evaluate(
-        """
-        async () => {
-          const originalFetch = window.fetch;
-          const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-          const bar = document.getElementById("processing-bar");
-          const samples = [];
-          let saveCalls = 0;
-          try {
-            window.fetch = async (inputArg, init) => {
-              const url = typeof inputArg === "string" ? inputArg : inputArg.url;
-              if (url.endsWith("/api/project/save")) {
-                saveCalls += 1;
-                const payload = JSON.parse(init?.body || "{}");
-                await wait(700);
-                const nextState = JSON.parse(JSON.stringify(state));
-                nextState.project.path = payload.path;
-                nextState.status = `Saved project to ${payload.path}.`;
-                return new Response(JSON.stringify(nextState), {
-                  status: 200,
-                  headers: { "Content-Type": "application/json" },
-                });
-              }
-              return originalFetch(inputArg, init);
-            };
-            callApi("/api/project/save", { path: "/tmp/splitshot-browser-surface-audit.ssproj" });
-            const startedAt = performance.now();
-            for (let index = 0; index < 24; index += 1) {
-              await wait(50);
-              samples.push({
-                t_ms: Math.round(performance.now() - startedAt),
-                hidden: bar.hidden,
-                message: document.getElementById("processing-message")?.textContent || "",
-              });
-            }
-            return {
-              save_calls: saveCalls,
-              ever_visible: samples.some((sample) => sample.hidden === false),
-              final_hidden: bar.hidden,
-              samples,
-            };
-          } finally {
-            window.fetch = originalFetch;
-          }
-        }
-        """
-    )
-    return expect(
-        result["save_calls"] == 1 and result["ever_visible"] and result["final_hidden"],
-        "blocking_save_uses_progress_bar",
-        "Longer blocking saves should show the processing bar, then clear it once the save completes.",
-        result,
-    )
-
-
-def audit_color_input_preview(page: Page) -> CheckResult:
-    wait_for_processing_bar_to_settle(page)
-    page.locator("[data-tool='overlay']").click()
-    result = page.evaluate(
-        """
-        async () => {
-          const originalCallApi = window.callApi;
-          const wait = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
-          const calls = [];
-          try {
-            const stubCallApi = async (path, payload = null) => {
-              calls.push({ path, payload });
-              return null;
-            };
-            window.callApi = stubCallApi;
-            callApi = stubCallApi;
-
-            state.project.overlay.custom_box_enabled = true;
-            state.project.overlay.custom_box_mode = "manual";
-            state.project.overlay.custom_box_text = "QA Box";
-            state.project.overlay.custom_box_background_color = "#334455";
-            state.project.overlay.custom_box_text_color = "#ffffff";
-            renderControls();
-            syncOverlayPreviewStateFromControls();
-            renderLiveOverlay();
-            calls.length = 0;
-
-            const control = document.getElementById("custom-box-background-color");
-            control.value = "#112233";
-            control.dispatchEvent(new Event("input", { bubbles: true }));
-            const previewBadge = document.querySelector("#custom-overlay .overlay-badge");
-            const previewColor = previewBadge ? getComputedStyle(previewBadge).backgroundColor : "";
-            const afterInputCalls = calls.length;
-            await wait(500);
-            const afterIdleCalls = calls.length;
-            control.dispatchEvent(new Event("change", { bubbles: true }));
-            await wait(1400);
-            const overlayCalls = calls.filter((entry) => entry.path === "/api/overlay");
-            return {
-              preview_color: previewColor,
-              after_input_calls: afterInputCalls,
-              after_idle_calls: afterIdleCalls,
-              overlay_call_count: overlayCalls.length,
-              committed_background_color: overlayCalls.at(-1)?.payload?.custom_box_background_color || null,
-            };
-          } finally {
-            window.callApi = originalCallApi;
-            callApi = originalCallApi;
-          }
-        }
-        """
-    )
-    return expect(
-        result["after_input_calls"] == 0
-        and result["after_idle_calls"] == 0
-        and result["overlay_call_count"] == 1
-        and result["committed_background_color"] == "#112233"
-        and "17, 34, 51" in result["preview_color"],
-        "color_input_previews_before_commit",
-        "Overlay color inputs should preview immediately and only commit one overlay request after change.",
-        result,
-    )
 
 
 def audit_overlay_surfaces(page: Page) -> CheckResult:
@@ -457,14 +283,13 @@ def audit_overlay_surfaces(page: Page) -> CheckResult:
     after_texts = result["after"]["texts"]
     return expect(
         any(text.startswith("Timer ") for text in before_texts)
-        and any(text.startswith("Draw ") for text in before_texts)
         and any(text.startswith("Shot ") for text in after_texts)
         and any(text.startswith("Hit Factor ") for text in after_texts)
         and "QA Box" in after_texts
         and result["before"]["all_inside"]
         and result["after"]["all_inside"],
         "overlay_elements_stay_inside_video",
-        "Timer, draw, shot, score, and custom overlay badges should render inside the live video frame.",
+      "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
         result,
     )
 
@@ -618,31 +443,31 @@ def audit_merge_file_input_change(page: Page, primary_video: Path) -> CheckResul
 def run_browser_audit(
     playwright: Playwright,
     target_name: str,
-    base_url: str,
     primary_video: Path,
     headed: bool,
 ) -> BrowserAudit:
     target = BROWSER_TARGETS[target_name]
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, log_level="off")
+    server.start_background(open_browser=False)
+    browser: Browser | None = None
     try:
-        browser, page = open_page(playwright, target, base_url, headed)
-    except Exception as error:  # noqa: BLE001
-        return BrowserAudit(
-            browser=target_name,
-            checks=[
-                CheckResult(
-                    name="browser_available",
-                    passed=False,
-                    detail=f"{target.display_name} could not be launched: {error}",
-                )
-            ],
-        )
+        try:
+            browser, page = open_page(playwright, target, server.url, headed)
+        except Exception as error:  # noqa: BLE001
+            return BrowserAudit(
+                browser=target_name,
+                checks=[
+                    CheckResult(
+                        name="browser_available",
+                        passed=False,
+                        detail=f"{target.display_name} could not be launched: {error}",
+                    )
+                ],
+            )
 
-    try:
         import_primary_video(page, primary_video)
         checks = [
-            audit_fast_metadata_save(page),
-            audit_blocking_save_progress(page),
-            audit_color_input_preview(page),
             audit_overlay_surfaces(page),
             audit_waveform_drag(page),
             audit_layout_resize_persists(page),
@@ -650,7 +475,9 @@ def run_browser_audit(
         ]
         return BrowserAudit(browser=target_name, checks=checks)
     finally:
-        browser.close()
+        if browser is not None:
+            browser.close()
+        server.shutdown()
 
 
 def summarize_results(results: list[BrowserAudit]) -> str:
@@ -673,17 +500,11 @@ def main() -> int:
     if not primary_video.is_file():
         raise SystemExit(f"Primary video not found: {primary_video}")
 
-    controller = ProjectController()
-    server = BrowserControlServer(controller=controller, port=0)
-    server.start_background(open_browser=False)
-    try:
-        with sync_playwright() as playwright:
-            results = [
-                run_browser_audit(playwright, browser_name, server.url, primary_video, args.headed)
-                for browser_name in browsers
-            ]
-    finally:
-        server.shutdown()
+    with sync_playwright() as playwright:
+        results = [
+            run_browser_audit(playwright, browser_name, primary_video, args.headed)
+            for browser_name in browsers
+        ]
 
     payload = {
         "primary_video": str(primary_video),

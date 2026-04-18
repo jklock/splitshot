@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 
 from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.timeline.model import raw_time_ms
@@ -52,6 +53,20 @@ GPA_PENALTIES = (
     PenaltyField("non_threats", "Non-Threat", 5, "seconds", "+5 seconds each."),
     PenaltyField("steel_not_down", "Steel Not Down", 10, "seconds", "+10 seconds each."),
 )
+
+
+PENALTY_FIELD_SHORT_LABELS = {
+    "procedural_errors": "PE",
+    "manual_no_shoots": "NS",
+    "manual_misses": "M",
+    "non_threats": "NT",
+    "flagrant_penalties": "FP",
+    "failures_to_do_right": "FTDR",
+    "finger_pe": "FPE",
+    "steel_misses": "PM",
+    "stop_plate_failures": "SPF",
+    "steel_not_down": "SND",
+}
 
 
 SCORING_PRESETS: dict[str, ScoringPreset] = {
@@ -259,6 +274,58 @@ def get_scoring_preset(ruleset: str) -> ScoringPreset:
     return SCORING_PRESETS.get(ruleset, SCORING_PRESETS["uspsa_minor"])
 
 
+def default_score_letter_for_ruleset(ruleset: str) -> ScoreLetter:
+    preset = get_scoring_preset(ruleset)
+    if preset.score_options:
+        first_option = preset.score_options[0]
+        try:
+            return ScoreLetter(first_option)
+        except ValueError:
+            pass
+    return ScoreLetter.A
+
+
+def default_score_mark_for_ruleset(ruleset: str) -> ScoreMark:
+    return ScoreMark(letter=default_score_letter_for_ruleset(ruleset))
+
+
+def penalty_field_short_label(field_id: str, fallback_label: str = "") -> str:
+    return PENALTY_FIELD_SHORT_LABELS.get(field_id, fallback_label or field_id.replace("_", " "))
+
+
+def scoring_color_key(
+    letter: str,
+    penalty_counts: dict[str, float] | None = None,
+    *,
+    penalty_field_ids: list[str] | tuple[str, ...] | None = None,
+) -> str:
+    return str(letter).strip()
+
+
+def _scoring_color_options(preset: ScoringPreset) -> list[dict[str, object]]:
+    options: list[dict[str, object]] = []
+    seen_tokens: set[str] = set()
+
+    def add_option(token: str, description: str = "") -> None:
+        normalized_token = str(token).strip()
+        if not normalized_token or normalized_token in seen_tokens:
+            return
+        seen_tokens.add(normalized_token)
+        options.append(
+            {
+                "key": normalized_token,
+                "label": normalized_token,
+                "description": description,
+            }
+        )
+
+    for letter in preset.score_options:
+        add_option(letter, "Score token")
+    for field in preset.penalty_fields:
+        add_option(penalty_field_short_label(field.id, field.label), field.label)
+    return options
+
+
 def apply_scoring_preset(project: Project, ruleset: str) -> None:
     preset = get_scoring_preset(ruleset)
     project.scoring.ruleset = preset.id
@@ -269,29 +336,30 @@ def apply_scoring_preset(project: Project, ruleset: str) -> None:
         for key, value in project.scoring.penalty_counts.items()
         if key in valid_fields
     }
+    ensure_default_shot_scores(project)
 
 
 def _shot_score_total(project: Project) -> float:
     if project.scoring.imported_stage is not None:
         return float(project.scoring.imported_stage.aggregate_points)
+    default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
     return sum(
-        project.scoring.point_map.get(shot.score.letter.value, 0)
+        project.scoring.point_map.get((shot.score or default_score).letter.value, 0)
         for shot in project.analysis.shots
-        if shot.score is not None
     )
 
 
 def _shot_penalty_total(project: Project, preset: ScoringPreset) -> float:
     if project.scoring.imported_stage is not None:
         return float(project.scoring.imported_stage.shot_penalties)
+    default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
     return sum(
-        preset.score_penalty_map.get(shot.score.letter.value, 0)
+        preset.score_penalty_map.get((shot.score or default_score).letter.value, 0)
         + sum(
-            field.value * max(0.0, float(shot.score.penalty_counts.get(field.id, 0)))
+            field.value * max(0.0, float((shot.score or default_score).penalty_counts.get(field.id, 0)))
             for field in preset.penalty_fields
         )
         for shot in project.analysis.shots
-        if shot.score is not None
     )
 
 
@@ -402,6 +470,7 @@ def calculate_scoring_summary(project: Project) -> dict[str, object]:
         "description": preset.description,
         "penalty_label": preset.penalty_label,
         "score_options": list(preset.score_options),
+        "scoring_color_options": _scoring_color_options(preset),
         "score_values": dict(preset.point_map),
         "score_penalties": dict(preset.score_penalty_map),
         "penalty_fields": [
@@ -456,6 +525,24 @@ def assign_score(
         }
 
 
+def ensure_default_shot_scores(project: Project) -> None:
+    default_score = default_score_mark_for_ruleset(project.scoring.ruleset)
+    preset = get_scoring_preset(project.scoring.ruleset)
+    valid_letters = {str(option) for option in preset.score_options}
+    valid_fields = {field.id for field in preset.penalty_fields}
+    for shot in project.analysis.shots:
+        if shot.score is None:
+            shot.score = ScoreMark(letter=default_score.letter)
+            continue
+        if shot.score.letter.value not in valid_letters:
+            shot.score.letter = default_score.letter
+        shot.score.penalty_counts = {
+            str(key): max(0.0, float(value))
+            for key, value in shot.score.penalty_counts.items()
+            if key in valid_fields and max(0.0, float(value)) > 0
+        }
+
+
 def set_score_position(shot: ShotEvent, x_norm: float, y_norm: float) -> None:
     if shot.score is None:
         shot.score = ScoreMark()
@@ -463,10 +550,21 @@ def set_score_position(shot: ShotEvent, x_norm: float, y_norm: float) -> None:
     shot.score.y_norm = y_norm
 
 
+def shot_display_time_ms(project: Project, shot_time_ms: int) -> int:
+    normalized_shot_time = max(0, int(shot_time_ms))
+    fps = float(getattr(project.primary_video, "fps", 0) or 0)
+    if fps <= 0:
+        return normalized_shot_time
+    frame_duration_ms = 1000.0 / fps
+    frame_index = math.ceil((normalized_shot_time / frame_duration_ms) - 1e-9)
+    frame_boundary_ms = math.ceil((frame_index * frame_duration_ms) - 1e-9)
+    return max(normalized_shot_time, int(frame_boundary_ms))
+
+
 def current_shot_index(project: Project, position_ms: int) -> int | None:
     current_index = None
     for index, shot in enumerate(project.analysis.shots):
-        if shot.time_ms <= position_ms:
+        if shot_display_time_ms(project, shot.time_ms) <= position_ms:
             current_index = index
         else:
             break

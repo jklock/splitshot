@@ -11,7 +11,12 @@ from splitshot.scoring.logic import calculate_scoring_summary, scoring_presets_f
 from splitshot.timeline.model import compute_split_rows
 
 
-def browser_state(project: Project, status_message: str) -> dict[str, Any]:
+def browser_state(
+    project: Project,
+    status_message: str,
+    practiscore_options: dict[str, Any] | None = None,
+    media_cache_token: str | None = None,
+) -> dict[str, Any]:
     rows = compute_split_rows(project)
     presentation = build_stage_presentation(project)
     primary_path = Path(project.primary_video.path) if project.primary_video.path else None
@@ -30,6 +35,13 @@ def browser_state(project: Project, status_message: str) -> dict[str, Any]:
         "split_rows": [asdict(row) for row in rows],
         "scoring_summary": calculate_scoring_summary(project),
         "scoring_presets": scoring_presets_for_api(),
+        "practiscore_options": practiscore_options or {
+            "has_source": False,
+            "source_name": "",
+            "detected_match_type": "",
+            "stage_numbers": [],
+            "competitors": [],
+        },
         "export_presets": export_presets_for_api(),
         "default_project_path": str(Path.home() / "splitshot"),
         "media": {
@@ -41,5 +53,6 @@ def browser_state(project: Project, status_message: str) -> dict[str, Any]:
                 if secondary_available
                 else None
             ),
+            "cache_token": media_cache_token or "",
         },
     }

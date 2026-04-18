@@ -22,6 +22,9 @@ from splitshot.domain.models import (
 from splitshot.persistence.projects import load_project, save_project
 
 
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
+
+
 def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project = Project(name="Round Trip")
     project.description = "Project details and merge media should persist."
@@ -51,6 +54,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
         )
     ]
+    selected_shot_id = project.analysis.shots[0].id
     project.scoring.enabled = True
     project.scoring.match_type = "idpa"
     project.scoring.stage_number = 2
@@ -115,6 +119,20 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.export.frame_rate = ExportFrameRate.FPS_60
     project.export.video_bitrate_mbps = 20.0
     project.export.last_log = "Encoder command: ffmpeg"
+    project.ui_state.selected_shot_id = selected_shot_id
+    project.ui_state.timeline_zoom = 12.5
+    project.ui_state.timeline_offset_ms = 275
+    project.ui_state.active_tool = "timing"
+    project.ui_state.waveform_mode = "add"
+    project.ui_state.waveform_expanded = True
+    project.ui_state.timing_expanded = False
+    project.ui_state.layout_locked = False
+    project.ui_state.rail_width = 68
+    project.ui_state.inspector_width = 520
+    project.ui_state.waveform_height = 288
+    project.ui_state.scoring_shot_expansion = {selected_shot_id: True}
+    project.ui_state.waveform_shot_amplitudes = {selected_shot_id: 1.75}
+    project.ui_state.timing_edit_shot_ids = [selected_shot_id]
 
     bundle = save_project(project, tmp_path / "round-trip.ssproj")
     loaded = load_project(bundle)
@@ -190,6 +208,20 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.export.frame_rate == ExportFrameRate.FPS_60
     assert loaded.export.video_bitrate_mbps == 20.0
     assert loaded.export.last_log == "Encoder command: ffmpeg"
+    assert loaded.ui_state.selected_shot_id == selected_shot_id
+    assert loaded.ui_state.timeline_zoom == 12.5
+    assert loaded.ui_state.timeline_offset_ms == 275
+    assert loaded.ui_state.active_tool == "timing"
+    assert loaded.ui_state.waveform_mode == "add"
+    assert loaded.ui_state.waveform_expanded is True
+    assert loaded.ui_state.timing_expanded is False
+    assert loaded.ui_state.layout_locked is False
+    assert loaded.ui_state.rail_width == 68
+    assert loaded.ui_state.inspector_width == 520
+    assert loaded.ui_state.waveform_height == 288
+    assert loaded.ui_state.scoring_shot_expansion == {selected_shot_id: True}
+    assert loaded.ui_state.waveform_shot_amplitudes == {selected_shot_id: 1.75}
+    assert loaded.ui_state.timing_edit_shot_ids == [selected_shot_id]
 
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:
@@ -220,7 +252,20 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert loaded.analysis.sync_offset_ms == 87
 
 
-def test_save_project_bundles_browser_session_media_into_project_bundle(tmp_path: Path) -> None:
+def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None:
+    project = Project(name="Score Colors")
+    project.overlay.scoring_colors["A|procedural_errors"] = "#112233"
+    project.overlay.scoring_colors["PE"] = "#445566"
+
+    bundle = save_project(project, tmp_path / "score-colors.ssproj")
+    loaded = load_project(bundle)
+
+    assert "A|procedural_errors" not in project_to_dict(project)["overlay"]["scoring_colors"]
+    assert "A|procedural_errors" not in loaded.overlay.scoring_colors
+    assert loaded.overlay.scoring_colors["PE"] == "#445566"
+
+
+def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_path: Path) -> None:
     session_dir = tmp_path / "splitshot-browser-session"
     session_dir.mkdir()
     primary_path = session_dir / "1234567890abcdef1234567890abcdef_primary.mp4"
@@ -237,13 +282,30 @@ def test_save_project_bundles_browser_session_media_into_project_bundle(tmp_path
     bundle = save_project(project, tmp_path / "bundled.ssproj")
     loaded = load_project(bundle)
 
-    assert project.primary_video.path == str(primary_path)
-    assert project.merge_sources[0].asset.path == str(merge_path)
+    assert Path(project.primary_video.path).parent == bundle / "Input"
+    assert Path(project.merge_sources[0].asset.path).parent == bundle / "Input"
     assert loaded.primary_video.path != str(primary_path)
     assert loaded.merge_sources[0].asset.path != str(merge_path)
-    assert Path(loaded.primary_video.path).parent == bundle / "media"
-    assert Path(loaded.merge_sources[0].asset.path).parent == bundle / "media"
+    assert Path(loaded.primary_video.path).parent == bundle / "Input"
+    assert Path(loaded.merge_sources[0].asset.path).parent == bundle / "Input"
+    assert Path(loaded.primary_video.path).name == "primary.mp4"
+    assert Path(loaded.merge_sources[0].asset.path).name == "merge.mp4"
     assert Path(loaded.primary_video.path).read_bytes() == b"primary-video"
     assert Path(loaded.merge_sources[0].asset.path).read_bytes() == b"merge-video"
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.path == loaded.merge_sources[0].asset.path
+
+
+def test_save_project_copies_practiscore_text_reports_into_csv_folder(tmp_path: Path) -> None:
+    project = Project(name="PractiScore Report")
+    report_path = EXAMPLES_DIR / "USPSA" / "report.txt"
+    project.scoring.practiscore_source_path = str(report_path)
+    project.scoring.practiscore_source_name = "report.txt"
+
+    bundle = save_project(project, tmp_path / "practiscore-project")
+    loaded = load_project(bundle)
+
+    assert Path(project.scoring.practiscore_source_path).parent == bundle / "CSV"
+    assert Path(project.scoring.practiscore_source_path).name == "report.txt"
+    assert Path(loaded.scoring.practiscore_source_path).parent == bundle / "CSV"
+    assert Path(loaded.scoring.practiscore_source_path).read_text() == report_path.read_text()
