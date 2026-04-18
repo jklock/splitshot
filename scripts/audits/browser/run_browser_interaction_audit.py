@@ -13,10 +13,11 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PRIMARY_VIDEO = ROOT / "Stage1.MP4"
-DEFAULT_MERGE_VIDEO = ROOT / "Stage2.MP4"
-DEFAULT_PRACTISCORE = ROOT / "IDPA.csv"
+ROOT = Path(__file__).resolve().parents[3]
+TEST_VIDEO_DIR = ROOT / "tests" / "artifacts" / "test_video"
+DEFAULT_PRIMARY_VIDEO = TEST_VIDEO_DIR / "TestVideo1.MP4"
+DEFAULT_MERGE_VIDEO = TEST_VIDEO_DIR / "TestVideo2.MP4"
+DEFAULT_PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,6 +505,63 @@ def import_practiscore_file(page: Page, server: BrowserControlServer, practiscor
         "Uploading a PractiScore file should hit the real upload route and populate imported scoring state plus the review summary box.",
         {"result": result, "activity_entries": entries},
     )
+
+
+def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
+        page.locator("[data-tool='scoring']").click()
+        page.wait_for_function(
+                """
+                () => Boolean(
+                    state?.scoring_summary?.imported_stage
+                    && document.querySelectorAll('#practiscore-import-summary dt').length >= 4
+                )
+                """,
+                timeout=30_000,
+        )
+        result = page.evaluate(
+                """
+                () => {
+                    const terms = Array.from(document.querySelectorAll('#practiscore-import-summary dt'));
+                    const values = Array.from(document.querySelectorAll('#practiscore-import-summary dd'));
+                    const details = Object.fromEntries(
+                        terms.map((term, index) => [
+                            term.textContent?.trim() || '',
+                            values[index]?.textContent?.trim() || '',
+                        ]),
+                    );
+                    const summary = state?.scoring_summary || {};
+                    const formatSeconds = (value) => (
+                        value === null || value === undefined || value === ''
+                            ? ''
+                            : `${formatNumber(value, 2)}s`
+                    );
+                    const expectedResultLabel = summary.display_label || 'Result';
+                    return {
+                        caption: document.getElementById('scoring-imported-caption')?.textContent?.trim() || '',
+                        details,
+                        expected: {
+                            official_raw: formatSeconds(summary.official_raw_seconds ?? summary.imported_stage?.raw_seconds),
+                            video_raw: formatSeconds(summary.raw_seconds),
+                            raw_delta: formatSeconds(summary.raw_delta_seconds),
+                            result_label: expectedResultLabel,
+                            result_value: summary.display_value || '',
+                        },
+                    };
+                }
+                """
+        )
+        details = result["details"]
+        expected = result["expected"]
+        return expect(
+                details.get("Official Raw") == expected["official_raw"]
+                and details.get("Video Raw") == expected["video_raw"]
+                and details.get("Raw Delta") == expected["raw_delta"]
+                and details.get(expected["result_label"]) == expected["result_value"]
+                and result["caption"].startswith("Imported "),
+                "scoring_raw_delta_summary_is_clear",
+                "The scoring pane should spell out Official Raw, Video Raw, and Raw Delta using the same values as the current scoring summary so stage-level mismatch is obvious.",
+                result,
+        )
 
 
 def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
@@ -1009,6 +1067,7 @@ def run_browser_audit(
             checks.extend(
                 [
                     import_practiscore_file(page, server, practiscore_path),
+                    audit_scoring_raw_delta_summary(page),
                     audit_imported_summary_default_anchor(page),
                     drag_imported_summary_box(page, server),
                     preserve_review_inspector_scroll(page, server),

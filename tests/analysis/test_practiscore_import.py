@@ -9,8 +9,9 @@ from splitshot.scoring.practiscore import (
 )
 
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
-WORKSPACE_IDPA_RESULTS = Path(__file__).resolve().parent.parent / "IDPA.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "example_data"
+WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
 
 
 def test_infer_practiscore_context_from_idpa_csv() -> None:

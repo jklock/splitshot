@@ -13,7 +13,7 @@ SplitShot is built as a local-first video analysis and export pipeline with a br
 | Presentation and scoring | [src/splitshot/timeline/](../src/splitshot/timeline), [src/splitshot/presentation/](../src/splitshot/presentation), [src/splitshot/scoring/](../src/splitshot/scoring) | Derive split rows, stage metrics, and scoring summaries |
 | Merge and export | [src/splitshot/merge/](../src/splitshot/merge), [src/splitshot/export/](../src/splitshot/export) | Build merge layouts and render final video output |
 | Persistence | [src/splitshot/persistence/projects.py](../src/splitshot/persistence/projects.py), [src/splitshot/config.py](../src/splitshot/config.py) | Save project bundles and app settings |
-| UI surfaces | [src/splitshot/browser/](../src/splitshot/browser), [src/splitshot/ui/](../src/splitshot/ui) | Render the browser shell and host the shared controller |
+| UI surfaces | [src/splitshot/browser/](../src/splitshot/browser), [src/splitshot/ui/](../src/splitshot/ui) | Serve the browser shell and host the shared controller |
 
 ## Runtime Flow
 
@@ -22,8 +22,8 @@ SplitShot is built as a local-first video analysis and export pipeline with a br
 3. The controller receives media paths, probes them through `probe_video`, and stores the resulting `VideoAsset` objects in the `Project`.
 4. `analyze_video_audio` extracts mono audio, runs the embedded classifier, and produces beep and shot events plus a normalized waveform.
 5. Timeline and scoring helpers derive split rows, stage metrics, and scoring summaries from the project state.
-6. The browser server serializes the current project with `browser_state` and serves it to the static frontend.
-7. Export renders a base frame plan with FFmpeg, draws overlays in Qt, crops to the selected aspect ratio, and encodes the final file locally.
+6. The browser server serializes the current project with `browser_state` and serves it to the browser shell.
+7. Export renders a base frame plan with FFmpeg, draws overlays, crops to the selected aspect ratio, and encodes the final file locally.
 
 ## Shared Project Model
 
@@ -48,7 +48,7 @@ The browser server in [src/splitshot/browser/server.py](../src/splitshot/browser
 - `POST /api/files/primary`, `POST /api/files/secondary`, and `POST /api/files/merge` for imports.
 - `POST /api/project/*`, `POST /api/shots/*`, `POST /api/scoring/*`, `POST /api/overlay`, `POST /api/merge`, and `POST /api/export` for edits and export.
 
-The browser frontend keeps its own view state, but all authoritative data still lives in the controller and `Project` model.
+The browser shell keeps its own view state, but all authoritative data still lives in the controller and `Project` model.
 
 ## Runtime Artifacts
 

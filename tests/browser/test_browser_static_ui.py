@@ -11,8 +11,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260417a"' in html
-    assert 'src="/static/app.js?v=20260417a"' in html
+    assert 'href="/static/styles.css?v=20260418a"' in html
+    assert 'src="/static/app.js?v=20260418a"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -116,6 +116,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="text-box-manager"' in html
     assert 'id="review-add-text-box"' in html
     assert 'id="review-add-imported-box"' in html
+    assert 'id="review-lock-to-stack"' in html
     assert 'id="review-text-box-list"' in html
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
@@ -217,12 +218,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="bubble-width" type="number" min="0" max="400" step="4" placeholder="auto"' in html
     assert 'id="bubble-height" type="number" min="0" max="220" step="4" placeholder="auto"' in html
     assert 'id="overlay-font-family"' in html
+    assert 'id="timer-lock-to-stack"' in html
+    assert 'id="draw-lock-to-stack"' in html
+    assert 'id="score-lock-to-stack"' in html
     assert 'id="show-timer"' in html
+    assert 'Lock review text boxes to the overlay stack' in html
     assert 'id="review-text-box-list"' in html
     assert 'Imported summary' in html
     assert 'Review Text Boxes' in html
     assert '<span class="style-card-label">Background</span>' in js
     assert '<span class="style-card-label">Opacity</span>' in js
+    assert 'data-opacity-percent="opacity"' in js
+    assert 'data-text-box-opacity-percent="opacity"' in js
     assert 'id="layout-threshold"' not in html
     assert 'id="scoring-preset"' in html
     assert 'id="scoring-imported-caption"' in html
@@ -355,8 +362,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'exportPathDraft = $("export-path").value;' in js
     assert 'const path = requireValue("export-path", "Output video path");' in js
     assert 'exportPathDraft = path;' in js
-    assert 'input.step = "0.001";' in js
+    assert 'input.step = "0.01";' in js
     assert 'Math.round((Number(value) || 0) * 1000)' in js
+    assert 'const TIMING_COLUMN_DEFAULTS = Object.freeze({' in js
+    assert 'timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },' in js
+    assert 'function beginTimingColumnResize(tableId, columnId, event) {' in js
+    assert 'function moveTimingColumnResize(event) {' in js
+    assert 'function endTimingColumnResize(event) {' in js
+    assert 'input.value = seconds(splitMs ?? row.absolute_time_ms);' in js
+    assert 'actions.className = "timing-edit-actions";' in js
+    assert 'handle.className = "timing-column-resize";' in js
     assert "openProjectWithDialog" not in js
     assert "resetMediaElement" in js
     assert '$("penalties").value = state.project.scoring.penalties' not in js
@@ -499,11 +514,24 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function maximumSplitRowActionLabelLength() {' in js
     assert 'const actionCell = buildSplitRowActionCell(row, expandedTable);' in js
     assert 'totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));' in js
+    assert 'function deleteShotById(shotId, source = "selected") {' in js
+    assert 'deleteShotById(row.shot_id, "timing_row")' in js
+    assert 'deleteShotById(segment.shot_id, "scoring_row")' in js
+    assert 'function refreshReviewMediaFrame() {' in js
+    assert 'if (result) refreshReviewMediaFrame();' in js
+    assert 'if (expanded) root.classList.remove("timing-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded");' in js
+    assert js.index('setActiveTool(normalized.active_tool, { persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
     assert '/media/primary-audio' not in js
     assert 'function primaryAudioPreviewNeeded(video) {' not in js
     assert 'function ensurePrimaryAudioPreview(video) {' not in js
     assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' not in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
+    assert 'const videoRawSeconds = state.scoring_summary?.raw_seconds;' in js
+    assert 'const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;' in js
+    assert '["Official Raw", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],' in js
+    assert '["Video Raw", videoRawSeconds !== null && videoRawSeconds !== undefined ? `${formatNumber(videoRawSeconds, 2)}s` : ""],' in js
+    assert '["Raw Delta", rawDeltaSeconds !== null && rawDeltaSeconds !== undefined ? `${formatNumber(rawDeltaSeconds, 2)}s` : ""],' in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
@@ -603,6 +631,10 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
     assert ".scoring-shot-toggle" in css
+    assert ".timing-edit-actions" in css
+    assert ".timing-column-resize" in css
+    assert "grid-template-columns: 72px 140px 196px 108px 220px 80px 108px 96px;" in css
+    assert "grid-template-columns: 140px 196px 108px 220px 80px;" in css
     assert ".scoring-shot-row.collapsed" in css
     assert ".timing-action-remove" in css
     assert "width: calc(var(--timing-action-chip-chars, 8) * 0.72ch + 3.2rem);" in css
@@ -991,7 +1023,7 @@ def test_browser_merge_file_uploads_treat_partial_success_as_success() -> None:
 
 
 def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> None:
-    script = Path("scripts/run_browser_ui_surface_audit.py").read_text()
+    script = Path("scripts/audits/browser/run_browser_ui_surface_audit.py").read_text()
 
     assert '"chromium": BrowserTarget(' in script
     assert '"chrome": BrowserTarget(' in script
@@ -1007,7 +1039,7 @@ def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> No
 
 
 def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> None:
-    script = Path("scripts/run_browser_interaction_audit.py").read_text()
+    script = Path("scripts/audits/browser/run_browser_interaction_audit.py").read_text()
 
     assert '"chromium": BrowserTarget(' in script
     assert '"firefox": BrowserTarget(' in script

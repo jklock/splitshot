@@ -25,8 +25,9 @@ from splitshot.ui.controller import ProjectController
 from splitshot.utils.time import seconds_to_ms
 
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
-WORKSPACE_IDPA_RESULTS = Path(__file__).resolve().parent.parent / "IDPA.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "example_data"
+WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
 
 
 def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
@@ -78,6 +79,7 @@ def test_model_backed_detection_emits_probability_confidence(synthetic_video_fac
     assert confidences
     assert all(confidence is not None for confidence in confidences)
     assert all(0.0 <= float(confidence) <= 1.0 for confidence in confidences)
+    assert max(float(confidence) for confidence in confidences) < 1.0
     assert max(float(confidence) for confidence in confidences) > 0.5
 
 
@@ -443,6 +445,55 @@ def test_open_project_reimports_practiscore_when_saved_context_exists_but_import
     assert reopened.project.scoring.imported_stage.final_time == 9.15
 
 
+def test_open_project_recovers_renamed_media_from_project_input_folder(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    primary_path = synthetic_video_factory(name="Stage1")
+    secondary_path = synthetic_video_factory(name="Stage2")
+
+    controller.ingest_primary_video(str(primary_path))
+    controller.add_merge_source(str(secondary_path))
+
+    project_path = tmp_path / "renamed-media.ssproj"
+    controller.save_project(str(project_path))
+
+    saved_primary = Path(controller.project.primary_video.path)
+    assert controller.project.secondary_video is not None
+    saved_secondary = Path(controller.project.secondary_video.path)
+    renamed_primary = saved_primary.with_name(f"01_{saved_primary.name}")
+    renamed_secondary = saved_secondary.with_name(f"02_{saved_secondary.name}")
+    saved_primary.rename(renamed_primary)
+    saved_secondary.rename(renamed_secondary)
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    assert Path(reopened.project.primary_video.path) == renamed_primary.resolve()
+    assert reopened.project.secondary_video is not None
+    assert Path(reopened.project.secondary_video.path) == renamed_secondary.resolve()
+    assert reopened.project.merge_sources
+    assert Path(reopened.project.merge_sources[0].asset.path) == renamed_secondary.resolve()
+    assert "restored renamed project media" in reopened.status_message.lower()
+
+
+def test_open_project_recovers_renamed_media_from_project_root_folder(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    primary_path = synthetic_video_factory(name="Stage2")
+
+    controller.ingest_primary_video(str(primary_path))
+    controller.save_project(str(tmp_path))
+
+    saved_primary = Path(controller.project.primary_video.path)
+    assert saved_primary.parent == tmp_path
+    renamed_primary = saved_primary.with_name("Stage02.MP4")
+    saved_primary.rename(renamed_primary)
+
+    reopened = ProjectController()
+    reopened.open_project(str(tmp_path))
+
+    assert Path(reopened.project.primary_video.path) == renamed_primary.resolve()
+    assert "restored renamed project media" in reopened.status_message.lower()
+
+
 def test_delete_timing_event_removes_matching_event() -> None:
     controller = ProjectController()
 
@@ -452,6 +503,31 @@ def test_delete_timing_event_removes_matching_event() -> None:
     controller.delete_timing_event(event_id)
 
     assert controller.project.analysis.events == []
+
+
+def test_delete_shot_clears_ui_state_references() -> None:
+    controller = ProjectController()
+    first_shot = ShotEvent(time_ms=250)
+    second_shot = ShotEvent(time_ms=480)
+    controller.project.analysis.shots = [first_shot, second_shot]
+    controller.project.ui_state.selected_shot_id = first_shot.id
+    controller.project.ui_state.scoring_shot_expansion = {
+        first_shot.id: True,
+        second_shot.id: False,
+    }
+    controller.project.ui_state.waveform_shot_amplitudes = {
+        first_shot.id: 1.5,
+        second_shot.id: 1.2,
+    }
+    controller.project.ui_state.timing_edit_shot_ids = [first_shot.id, second_shot.id]
+
+    controller.delete_shot(first_shot.id)
+
+    assert [shot.id for shot in controller.project.analysis.shots] == [second_shot.id]
+    assert controller.project.ui_state.selected_shot_id is None
+    assert controller.project.ui_state.scoring_shot_expansion == {second_shot.id: False}
+    assert controller.project.ui_state.waveform_shot_amplitudes == {second_shot.id: 1.2}
+    assert controller.project.ui_state.timing_edit_shot_ids == [second_shot.id]
 
 
 def test_practiscore_import_auto_enables_summary_only_after_file_import() -> None:

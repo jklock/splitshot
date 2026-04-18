@@ -183,6 +183,13 @@ def _auto_badge_size(texts: tuple[str, ...], metrics) -> tuple[int, int] | None:
     )
 
 
+def _badge_line_height(font: QFont, metrics) -> int:
+    pixel_size = font.pixelSize()
+    if pixel_size > 0:
+        return max(1, int(pixel_size))
+    return max(1, int(metrics.height()))
+
+
 class OverlayRenderer:
     def build_badges(
         self,
@@ -221,8 +228,8 @@ class OverlayRenderer:
         if project.overlay.show_timer:
             append_badge(
                 Badge(f"Timer {_format_elapsed_seconds(elapsed)}", project.overlay.timer_badge),
-                project.overlay.timer_x,
-                project.overlay.timer_y,
+                None if project.overlay.timer_lock_to_stack else project.overlay.timer_x,
+                None if project.overlay.timer_lock_to_stack else project.overlay.timer_y,
             )
 
         draw_value = draw_time_ms(project)
@@ -235,8 +242,8 @@ class OverlayRenderer:
         ):
             append_badge(
                 Badge(f"Draw {_format_elapsed_seconds(draw_value)}", project.overlay.shot_badge),
-                project.overlay.draw_x,
-                project.overlay.draw_y,
+                None if project.overlay.draw_lock_to_stack else project.overlay.draw_x,
+                None if project.overlay.draw_lock_to_stack else project.overlay.draw_y,
             )
 
         final_shot_time = None if not shots else shot_display_time_ms(project, shots[-1].time_ms)
@@ -278,8 +285,32 @@ class OverlayRenderer:
                         f"{summary['display_label']} {summary['display_value']}",
                         project.overlay.hit_factor_badge,
                     ),
-                    project.overlay.score_x,
-                    project.overlay.score_y,
+                    None if project.overlay.score_lock_to_stack else project.overlay.score_x,
+                    None if project.overlay.score_lock_to_stack else project.overlay.score_y,
+                )
+
+        if project.overlay.review_boxes_lock_to_stack:
+            for text_box in overlay_text_boxes_for_render(project.overlay):
+                text_value = self._text_box_text(
+                    project,
+                    position_ms,
+                    text_box.source,
+                    text_box.text,
+                    text_box.enabled,
+                )
+                if not text_value:
+                    continue
+                badges.append(
+                    Badge(
+                        text_value,
+                        BadgeStyle(
+                            background_color=text_box.background_color or project.overlay.hit_factor_badge.background_color,
+                            text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
+                            opacity=text_box.opacity,
+                        ),
+                        width=text_box.width or None,
+                        height=text_box.height or None,
+                    )
                 )
 
         score_marks: list[tuple[str, float, float, float]] = []
@@ -348,6 +379,8 @@ class OverlayRenderer:
             if has_final_score_badge and project.overlay.score_x is not None and project.overlay.score_y is not None and index == len(positioned_badges) - 1 and rects:
                 final_score_rect = rects[-1]
         for text_box in overlay_text_boxes_for_render(project.overlay):
+            if project.overlay.review_boxes_lock_to_stack:
+                continue
             text_value = self._text_box_text(
                 project,
                 position_ms,
@@ -410,6 +443,8 @@ class OverlayRenderer:
         font.setBold(project.overlay.font_bold)
         font.setItalic(project.overlay.font_italic)
         painter.setFont(font)
+        metrics = painter.fontMetrics()
+        line_height = _badge_line_height(font, metrics)
         padding_y = _BADGE_PADDING_Y_PX
         padding_x = _BADGE_PADDING_X_PX
         gap = max(0, int(project.overlay.spacing))
@@ -427,7 +462,6 @@ class OverlayRenderer:
         previous_rect: QRectF | None = None
         painted_rects: list[QRectF] = []
         for index, badge in enumerate(badges):
-            metrics = painter.fontMetrics()
             lines = badge.text.splitlines() or [""]
             if badge.text_runs:
                 text_width = sum(metrics.horizontalAdvance(segment_text) for segment_text, _segment_color in badge.text_runs)
@@ -436,7 +470,7 @@ class OverlayRenderer:
                     max(metrics.horizontalAdvance(line) for line in lines),
                     self._minimum_badge_text_width(metrics, badge.text),
                 )
-            text_height = metrics.height() * max(1, len(lines))
+            text_height = line_height * max(1, len(lines))
             explicit_width = int(badge.width or project.overlay.bubble_width or 0)
             explicit_height = int(badge.height or project.overlay.bubble_height or 0)
             badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else text_width + (padding_x * 2))
@@ -509,20 +543,37 @@ class OverlayRenderer:
                     cursor_x += metrics.horizontalAdvance(segment_text)
             else:
                 painter.setPen(QColor(badge.text_color or badge.style.text_color))
-                text_flags = Qt.AlignVCenter
-                if text_bias == "left":
-                    text_flags |= Qt.AlignLeft
-                elif text_bias == "right":
-                    text_flags |= Qt.AlignRight
+                if len(lines) > 1:
+                    total_text_height = line_height * len(lines)
+                    line_top = text_rect.top() + max(0.0, (text_rect.height() - total_text_height) / 2)
+                    baseline_offset = min(metrics.ascent(), line_height)
+                    painter.save()
+                    painter.setClipRect(text_rect)
+                    for line_index, line in enumerate(lines):
+                        line_text = line or " "
+                        line_width = metrics.horizontalAdvance(line_text)
+                        if text_bias == "left":
+                            line_x = text_rect.left()
+                        elif text_bias == "right":
+                            line_x = text_rect.right() - line_width
+                        else:
+                            line_x = text_rect.left() + max(0.0, (text_rect.width() - line_width) / 2)
+                        baseline_y = line_top + (line_index * line_height) + baseline_offset
+                        painter.drawText(QPointF(line_x, baseline_y), line)
+                    painter.restore()
                 else:
-                    text_flags |= Qt.AlignHCenter
-                if "\n" in badge.text:
-                    text_flags |= Qt.TextWordWrap
-                painter.drawText(
-                    text_rect,
-                    text_flags,
-                    badge.text,
-                )
+                    text_flags = Qt.AlignVCenter
+                    if text_bias == "left":
+                        text_flags |= Qt.AlignLeft
+                    elif text_bias == "right":
+                        text_flags |= Qt.AlignRight
+                    else:
+                        text_flags |= Qt.AlignHCenter
+                    painter.drawText(
+                        text_rect,
+                        text_flags,
+                        badge.text,
+                    )
         return painted_rects
 
     @staticmethod

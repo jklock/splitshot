@@ -24,7 +24,9 @@ from splitshot.domain.models import OverlayPosition, Project
 from splitshot.ui.controller import ProjectController
 
 
-WORKSPACE_IDPA_RESULTS = Path(__file__).resolve().parent.parent / "IDPA.csv"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "example_data"
+WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
 
 DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/details": ("test_browser_project_details_autosave_persists_after_reopen",),
@@ -314,6 +316,14 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
         state = _post_json(
             f"{server.url}api/overlay",
             {
+                "timer_lock_to_stack": False,
+                "draw_lock_to_stack": True,
+                "score_lock_to_stack": False,
+                "review_boxes_lock_to_stack": True,
+                "timer_x": 0.21,
+                "timer_y": 0.32,
+                "score_x": 0.74,
+                "score_y": 0.18,
                 "text_boxes": [
                     {
                         "id": "manual-box",
@@ -367,6 +377,14 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
         assert boxes[2]["quadrant"] == "custom"
         assert boxes[2]["x"] == pytest.approx(0.5)
         assert boxes[2]["y"] == pytest.approx(0.4)
+        assert state["project"]["overlay"]["timer_lock_to_stack"] is False
+        assert state["project"]["overlay"]["draw_lock_to_stack"] is True
+        assert state["project"]["overlay"]["score_lock_to_stack"] is False
+        assert state["project"]["overlay"]["review_boxes_lock_to_stack"] is True
+        assert state["project"]["overlay"]["timer_x"] == pytest.approx(0.21)
+        assert state["project"]["overlay"]["timer_y"] == pytest.approx(0.32)
+        assert state["project"]["overlay"]["score_x"] == pytest.approx(0.74)
+        assert state["project"]["overlay"]["score_y"] == pytest.approx(0.18)
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
     finally:
         server.shutdown()
@@ -447,6 +465,7 @@ def test_browser_control_api_restores_original_split_and_score(synthetic_video_f
         )
         moved_shot = next(shot for shot in state["project"]["analysis"]["shots"] if shot["id"] == shot_id)
         assert moved_shot["source"] == "manual"
+        assert moved_shot["confidence"] is None
 
         state = _post_json(
             f"{server.url}api/scoring/score",
@@ -655,7 +674,7 @@ def test_browser_primary_replacement_preserves_reusable_settings_and_clears_vide
 def test_browser_control_api_imports_practiscore_results() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "USPSA"
+    examples_dir = EXAMPLES_DIR / "USPSA"
     try:
         server.start_background(open_browser=False)
 
@@ -697,7 +716,7 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         )
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        assert state["scoring_summary"]["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
+        assert state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 23.24\nPoints 101\nHF 4.3460"
         assert state["scoring_summary"]["hit_factor"] == pytest.approx(101.0 / 23.24)
         assert state["scoring_summary"]["display_value"] == "4.35"
     finally:
@@ -707,7 +726,7 @@ def test_browser_control_api_imports_practiscore_results() -> None:
 def test_browser_control_api_infers_practiscore_results_without_manual_context() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "USPSA"
+    examples_dir = EXAMPLES_DIR / "USPSA"
     try:
         server.start_background(open_browser=False)
 
@@ -757,7 +776,7 @@ def test_browser_control_api_infers_practiscore_results_without_manual_context()
 def test_browser_control_reimports_practiscore_from_staged_file_when_context_changes() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "IDPA"
+    examples_dir = EXAMPLES_DIR / "IDPA"
     try:
         server.start_background(open_browser=False)
 
@@ -797,7 +816,7 @@ def test_browser_control_reimports_practiscore_from_staged_file_when_context_cha
 def test_browser_control_loading_new_practiscore_csv_keeps_current_selection() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "IDPA"
+    examples_dir = EXAMPLES_DIR / "IDPA"
     try:
         server.start_background(open_browser=False)
 
@@ -848,7 +867,7 @@ def test_browser_control_loading_new_practiscore_csv_keeps_current_selection() -
 def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "IDPA"
+    examples_dir = EXAMPLES_DIR / "IDPA"
     server.start_background(open_browser=False)
     try:
         project_path = tmp_path / "practiscore-reopen.ssproj"
@@ -1185,6 +1204,32 @@ def test_choose_local_path_macos_prompts_for_project_folder(monkeypatch) -> None
     assert "Choose SplitShot project folder" in script
 
 
+def test_choose_local_path_macos_falls_back_to_existing_parent_for_missing_media_path(monkeypatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    missing_media_path = tmp_path / "Stage2.MP4"
+
+    def fake_run(command, capture_output, text, check):
+        captured["command"] = command
+        captured["script"] = command[2]
+
+        class Result:
+            returncode = 0
+            stdout = f"{tmp_path / 'picked.mp4'}\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(browser_server_module.subprocess, "run", fake_run)
+
+    chosen = browser_server_module.choose_local_path_macos("secondary", str(missing_media_path))
+
+    assert chosen == str(tmp_path / "picked.mp4")
+    script = str(captured["script"])
+    assert "choose file with prompt" in script
+    assert "Choose secondary angle video" in script
+    assert str(tmp_path) in script
+
+
 def test_browser_control_api_layout_route_is_not_available(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -1228,6 +1273,32 @@ def test_browser_project_open_replaces_stale_media_state(synthetic_video_factory
         server.shutdown()
 
 
+def test_browser_project_open_recovers_renamed_project_root_media(synthetic_video_factory, tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        video_path = Path(synthetic_video_factory(name="Stage2"))
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(video_path)})
+        _post_json(f"{server.url}api/project/save", {"path": str(tmp_path)})
+
+        saved_primary = Path(controller.project.primary_video.path)
+        assert saved_primary.parent == tmp_path
+        renamed_primary = saved_primary.with_name("Stage02.MP4")
+        saved_primary.rename(renamed_primary)
+
+        _post_json(f"{server.url}api/project/new", {})
+        reopened = _post_json(f"{server.url}api/project/open", {"path": str(tmp_path)})
+
+        assert reopened["project"]["path"] == str(tmp_path)
+        assert reopened["media"]["primary_available"] is True
+        assert Path(reopened["project"]["primary_video"]["path"]) == renamed_primary.resolve()
+        assert "restored renamed project media" in reopened["status"].lower()
+    finally:
+        server.shutdown()
+
+
 def test_browser_project_open_restores_ui_state_and_export_output_path(
     synthetic_video_factory,
     tmp_path: Path,
@@ -1262,6 +1333,7 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
                 "scoring_shot_expansion": {selected_shot_id: True},
                 "waveform_shot_amplitudes": {selected_shot_id: 1.5},
                 "timing_edit_shot_ids": [selected_shot_id],
+                "timing_column_widths": {"segment": 128, "split": 224, "action": 244},
             },
         )
         assert ui_state["project"]["ui_state"]["active_tool"] == "timing"
@@ -1295,6 +1367,9 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
         assert reopened["project"]["ui_state"]["scoring_shot_expansion"] == {selected_shot_id: True}
         assert reopened["project"]["ui_state"]["waveform_shot_amplitudes"] == {selected_shot_id: 1.5}
         assert reopened["project"]["ui_state"]["timing_edit_shot_ids"] == [selected_shot_id]
+        assert reopened["project"]["ui_state"]["timing_column_widths"]["segment"] == 128
+        assert reopened["project"]["ui_state"]["timing_column_widths"]["split"] == 224
+        assert reopened["project"]["ui_state"]["timing_column_widths"]["action"] == 244
         assert reopened["project"]["export"]["output_path"] == str(output_path)
         assert reopened["project"]["export"]["preset"] == original_preset
     finally:
@@ -1423,6 +1498,7 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
                 "scoring_shot_expansion": {first_shot_id: True},
                 "waveform_shot_amplitudes": {first_shot_id: 1.5},
                 "timing_edit_shot_ids": [first_shot_id],
+                "timing_column_widths": {"segment": 128, "split": 224, "action": 244},
             },
         )
         saved = _read_project_json(project_path)
@@ -1440,12 +1516,16 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
         assert saved["ui_state"]["scoring_shot_expansion"] == {first_shot_id: True}
         assert saved["ui_state"]["waveform_shot_amplitudes"] == {first_shot_id: 1.5}
         assert saved["ui_state"]["timing_edit_shot_ids"] == [first_shot_id]
+        assert saved["ui_state"]["timing_column_widths"]["segment"] == 128
+        assert saved["ui_state"]["timing_column_widths"]["split"] == 224
+        assert saved["ui_state"]["timing_column_widths"]["action"] == 244
 
         _post_json(f"{server.url}api/shots/move", {"shot_id": first_shot_id, "time_ms": 830})
         saved = _read_project_json(project_path)
         moved_shot = _shot_from_project_json(saved, first_shot_id)
         assert moved_shot["time_ms"] == 830
         assert moved_shot["source"] == "manual"
+        assert moved_shot["confidence"] is None
 
         _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
         saved = _read_project_json(project_path)
@@ -1775,7 +1855,7 @@ def test_browser_autosave_persists_practiscore_routes_to_project_json(tmp_path: 
     ProjectController().save_project(str(project_path))
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
-    examples_dir = Path(__file__).resolve().parent.parent / "example_data" / "IDPA"
+    examples_dir = EXAMPLES_DIR / "IDPA"
     server.start_background(open_browser=False)
     try:
         _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
@@ -1817,7 +1897,7 @@ def test_browser_project_open_recovers_practiscore_from_project_csv_folder(tmp_p
     project_path = tmp_path / "recovered-practiscore.ssproj"
     controller.save_project(str(project_path))
     staged_csv = project_path / "CSV" / "IDPA.csv"
-    staged_csv.write_bytes((Path(__file__).resolve().parent.parent / "example_data" / "IDPA" / "IDPA.csv").read_bytes())
+    staged_csv.write_bytes((EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_bytes())
 
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)

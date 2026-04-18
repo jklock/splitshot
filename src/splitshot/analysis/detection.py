@@ -21,6 +21,7 @@ from splitshot.utils.time import seconds_to_ms
 
 BEEP_ONSET_FRACTION = 0.24
 SHOT_ONSET_FRACTION = 0.66
+SHOT_CONFIDENCE_MAX = 0.92
 
 
 @dataclass(slots=True)
@@ -31,6 +32,12 @@ class DetectionResult:
     sample_rate: int
 
 
+@dataclass(slots=True)
+class ThresholdDetectionResult:
+    threshold: float
+    detection: DetectionResult
+
+
 @lru_cache(maxsize=1)
 def _classifier() -> AudioEventClassifier:
     return AudioEventClassifier()
@@ -38,6 +45,10 @@ def _classifier() -> AudioEventClassifier:
 
 def _predict_audio_events(samples: np.ndarray, sample_rate: int) -> ModelPredictions:
     return _classifier().predict_audio(samples, sample_rate)
+
+
+def _shot_detection_cutoff(threshold: float) -> float:
+    return sensitivity_to_cutoff(threshold, base=0.18, span=0.62)
 
 
 def _nearest_probability(predictions: ModelPredictions, target_ms: int, label: str) -> float:
@@ -260,6 +271,7 @@ def _refine_shot_times(
     samples: np.ndarray,
     sample_rate: int,
     shots: list[ShotEvent],
+    cutoff: float,
 ) -> list[ShotEvent]:
     if samples.size == 0 or not shots:
         return shots
@@ -285,17 +297,35 @@ def _refine_shot_times(
 
         peak = float(np.max(envelope))
         if peak <= 0.0:
+            calibrated_confidence = None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, SHOT_CONFIDENCE_MAX))
             refined.append(shot)
+            refined[-1].confidence = calibrated_confidence
             continue
 
         candidates = np.where(envelope >= peak * SHOT_ONSET_FRACTION)[0]
         refined_time = rough_time if candidates.size == 0 else int(centers[int(candidates[0])])
+        baseline = float(np.percentile(envelope, 35))
+        onset_contrast = 0.0 if peak <= 0.0 else float(np.clip((peak - baseline) / peak, 0.0, 1.0))
+        if candidates.size > 0:
+            onset_width_ms = int(centers[int(candidates[-1])] - centers[int(candidates[0])])
+            width_factor = float(np.clip(1.0 - max(0.0, (onset_width_ms - 6) / 48.0), 0.0, 1.0))
+        else:
+            width_factor = 0.0
+        raw_confidence = 0.0 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
+        margin = float(np.clip((raw_confidence - cutoff) / max(1e-6, 1.0 - cutoff), 0.0, 1.0))
+        calibrated_confidence = float(
+            np.clip(
+                raw_confidence * (0.34 + (0.36 * margin) + (0.30 * onset_contrast * width_factor)),
+                0.0,
+                SHOT_CONFIDENCE_MAX,
+            )
+        )
         refined.append(
             ShotEvent(
                 id=shot.id,
                 time_ms=refined_time,
                 source=shot.source,
-                confidence=shot.confidence,
+                confidence=calibrated_confidence,
                 score=shot.score,
             )
         )
@@ -404,7 +434,7 @@ def _detect_shots_from_predictions(
 
     classifier = _classifier()
     shot_scores = classifier.class_scores(predictions, "shot")
-    cutoff = sensitivity_to_cutoff(threshold, base=0.18, span=0.62)
+    cutoff = _shot_detection_cutoff(threshold)
     earliest_ms = None if beep_time_ms is None else max(0, beep_time_ms + 45)
     peaks = pick_event_peaks(
         shot_scores,
@@ -444,19 +474,16 @@ def detect_shots(
 ) -> list[ShotEvent]:
     predictions = _predict_audio_events(samples, sample_rate)
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
-    return _refine_shot_times(samples, sample_rate, shots)
+    return _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
 
 
-def analyze_video_audio(video_path: str | Path, threshold: float = 0.5) -> DetectionResult:
-    with TemporaryDirectory(prefix="splitshot-audio-") as temp_dir:
-        wav_path = Path(temp_dir) / "analysis.wav"
-        extract_audio_wav(video_path, wav_path)
-        samples, sample_rate = read_wav_mono(wav_path)
-
-    audio_start_ms, media_duration_ms = _media_timeline_metadata(video_path)
-    samples = _align_samples_to_media_timeline(samples, sample_rate, audio_start_ms, media_duration_ms)
-
-    predictions = _predict_audio_events(samples, sample_rate)
+def _analyze_predictions(
+    samples: np.ndarray,
+    sample_rate: int,
+    threshold: float,
+    predictions: ModelPredictions,
+    waveform: list[float],
+) -> DetectionResult:
     provisional_shots = _detect_shots_from_predictions(predictions, threshold, None)
     first_shot_ms = None if not provisional_shots else provisional_shots[0].time_ms
     beep_time_ms = _detect_beep_from_predictions(
@@ -467,11 +494,48 @@ def analyze_video_audio(video_path: str | Path, threshold: float = 0.5) -> Detec
         first_shot_ms,
     )
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
-    shots = _refine_shot_times(samples, sample_rate, shots)
-    waveform = waveform_envelope(samples)
+    shots = _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
     return DetectionResult(
         beep_time_ms=beep_time_ms,
         shots=shots,
         waveform=waveform,
         sample_rate=sample_rate,
     )
+
+
+def analyze_video_audio_thresholds(
+    video_path: str | Path,
+    thresholds: list[float] | tuple[float, ...],
+) -> list[ThresholdDetectionResult]:
+    ordered_thresholds: list[float] = []
+    seen_thresholds: set[float] = set()
+    for threshold in thresholds:
+        normalized = float(threshold)
+        if normalized in seen_thresholds:
+            continue
+        seen_thresholds.add(normalized)
+        ordered_thresholds.append(normalized)
+    if not ordered_thresholds:
+        return []
+
+    with TemporaryDirectory(prefix="splitshot-audio-") as temp_dir:
+        wav_path = Path(temp_dir) / "analysis.wav"
+        extract_audio_wav(video_path, wav_path)
+        samples, sample_rate = read_wav_mono(wav_path)
+
+    audio_start_ms, media_duration_ms = _media_timeline_metadata(video_path)
+    samples = _align_samples_to_media_timeline(samples, sample_rate, audio_start_ms, media_duration_ms)
+    predictions = _predict_audio_events(samples, sample_rate)
+    waveform = waveform_envelope(samples)
+    return [
+        ThresholdDetectionResult(
+            threshold=threshold,
+            detection=_analyze_predictions(samples, sample_rate, threshold, predictions, waveform),
+        )
+        for threshold in ordered_thresholds
+    ]
+
+
+def analyze_video_audio(video_path: str | Path, threshold: float = 0.5) -> DetectionResult:
+    results = analyze_video_audio_thresholds(video_path, [threshold])
+    return results[0].detection

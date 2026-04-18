@@ -25,6 +25,8 @@ let layoutSizes = {
   waveformHeight: savedNumber("splitshot.layout.waveformHeight", 206),
 };
 let activeResize = null;
+let timingColumnWidths = {};
+let timingColumnResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
 let projectDetailsDraft = { name: null, description: null };
@@ -51,6 +53,10 @@ let reviewStageRestoreSecondFrame = null;
 let overlayBadgeMeasureCanvas = null;
 let overlayAutoBubbleCacheKey = null;
 let overlayAutoBubbleCache = { width: 0, height: 0 };
+let customOverlayRenderKey = "";
+let pendingInspectorScrollTop = null;
+let lastInspectorUserScrollTop = 0;
+let lastInspectorUserScrollTs = 0;
 let renderDeferredForInteraction = false;
 let pendingProjectUiStatePayload = null;
 let pendingMergeSourcePayloads = new Map();
@@ -67,6 +73,31 @@ const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
+const TIMING_COLUMN_DEFAULTS = Object.freeze({
+  lock: 72,
+  segment: 140,
+  split: 196,
+  total: 108,
+  action: 220,
+  score: 80,
+  confidence: 108,
+  source: 96,
+});
+const TIMING_COLUMN_MIN_WIDTHS = Object.freeze({
+  lock: 60,
+  segment: 104,
+  split: 144,
+  total: 88,
+  action: 140,
+  score: 68,
+  confidence: 92,
+  source: 84,
+});
+const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
+  "timing-table": ["segment", "split", "total", "action", "score"],
+  "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "source"],
+});
+const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "source"]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,6 +107,11 @@ const badgeControls = [
   ["current_shot_badge", "Current Shot Badge"],
   ["hit_factor_badge", "Score Badge"],
 ];
+const OVERLAY_STACK_LOCK_CONTROLS = Object.freeze({
+  timer: { lockId: "timer-lock-to-stack", xId: "timer-x", yId: "timer-y", label: "Timer badge" },
+  draw: { lockId: "draw-lock-to-stack", xId: "draw-x", yId: "draw-y", label: "Draw badge" },
+  score: { lockId: "score-lock-to-stack", xId: "score-x", yId: "score-y", label: "Score badge" },
+});
 const VALID_OVERLAY_BADGE_NAMES = new Set(badgeControls.map(([badgeName]) => badgeName));
 const BADGE_FONT_SIZES = {
   XS: 10,
@@ -123,6 +159,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   scoring_shot_expansion: {},
   waveform_shot_amplitudes: {},
   timing_edit_shot_ids: [],
+  timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },
 });
 
 function normalizeProjectNameValue(value) {
@@ -513,11 +550,12 @@ function formatConfidenceValue(confidence) {
   if (confidence === null || confidence === undefined || confidence === "") return "Manual";
   const numeric = Number(confidence);
   if (!Number.isFinite(numeric)) return String(confidence);
-  if (numeric <= 1) return `${Math.round(numeric * 100)}%`;
-  return `${Math.round(numeric)}%`;
+  if (numeric <= 1) return `~${Math.max(0, Math.min(99, Math.round(numeric * 100)))}%`;
+  return `~${Math.max(0, Math.min(99, Math.round(numeric)))}%`;
 }
 
-function isLowConfidence(confidence) {
+function isLowConfidence(confidence, source = "") {
+  if (String(source || "").toLowerCase() === "manual") return false;
   const numeric = Number(confidence);
   if (!Number.isFinite(numeric)) return false;
   return numeric <= 1 ? numeric < 0.9 : numeric < 90;
@@ -597,9 +635,38 @@ function scrollRenderTargets() {
   ].filter((element) => element instanceof HTMLElement);
 }
 
+function rememberInspectorScrollPosition() {
+  const inspector = document.querySelector(".inspector");
+  if (!(inspector instanceof HTMLElement)) return;
+  lastInspectorUserScrollTop = inspector.scrollTop;
+  lastInspectorUserScrollTs = Date.now();
+}
+
+function queueInspectorScrollRestore() {
+  const inspector = document.querySelector(".inspector");
+  if (!(inspector instanceof HTMLElement)) return;
+  const currentScrollTop = inspector.scrollTop;
+  const hasRecentScroll = (Date.now() - lastInspectorUserScrollTs) <= 2000;
+  if (hasRecentScroll && lastInspectorUserScrollTop > currentScrollTop + 24) {
+    pendingInspectorScrollTop = lastInspectorUserScrollTop;
+    return;
+  }
+  pendingInspectorScrollTop = currentScrollTop;
+}
+
+function flushPendingInspectorScrollRestore() {
+  if (pendingInspectorScrollTop === null) return;
+  const inspector = document.querySelector(".inspector");
+  if (inspector instanceof HTMLElement) {
+    inspector.scrollTop = pendingInspectorScrollTop;
+  }
+  pendingInspectorScrollTop = null;
+}
+
 function hasActivePointerInteraction() {
   return Boolean(
     activeResize
+      || timingColumnResize
       || overlayBadgeDrag
       || mergePreviewDrag
       || textBoxDrag
@@ -666,6 +733,47 @@ function syncControlChecked(control, checked) {
   if (!control || controlIsActive(control)) return;
   const nextChecked = Boolean(checked);
   if (control.checked !== nextChecked) control.checked = nextChecked;
+}
+
+function opacityPercentValue(value) {
+  return clampNumber(Math.round(clampNumber(Number(value) || 0, 0, 1) * 100), 0, 100);
+}
+
+function opacityValueFromPercent(value) {
+  return clampNumber((clampNumber(Number(value) || 0, 0, 100)) / 100, 0, 1);
+}
+
+function syncOpacityPercentControl(control, opacity) {
+  if (!(control instanceof HTMLInputElement) || controlIsActive(control)) return;
+  const nextValue = String(opacityPercentValue(opacity));
+  if (control.value !== nextValue) control.value = nextValue;
+}
+
+function bindOpacityPercentPair(rangeInput, percentInput) {
+  if (!(rangeInput instanceof HTMLInputElement) || !(percentInput instanceof HTMLInputElement)) return;
+  if (percentInput.dataset.opacityPairBound === "true") return;
+  percentInput.dataset.opacityPairBound = "true";
+  rangeInput.dataset.opacityPairBound = "true";
+  const syncPercent = () => syncOpacityPercentControl(percentInput, rangeInput.value);
+  rangeInput.addEventListener("input", syncPercent);
+  rangeInput.addEventListener("change", syncPercent);
+  const syncRange = () => {
+    rangeInput.value = opacityValueFromPercent(percentInput.value).toFixed(2);
+  };
+  percentInput.addEventListener("input", syncRange);
+  percentInput.addEventListener("change", syncRange);
+  percentInput.addEventListener("blur", syncPercent);
+  syncPercent();
+}
+
+function roundedRect(rect) {
+  if (!rect) return null;
+  return {
+    left: Math.round(rect.left || 0),
+    top: Math.round(rect.top || 0),
+    width: Math.max(1, Math.round(rect.width || 0)),
+    height: Math.max(1, Math.round(rect.height || 0)),
+  };
 }
 
 function isColorInput(control) {
@@ -1174,6 +1282,81 @@ function normalizedUiStringList(data) {
     .filter(Boolean);
 }
 
+function resolvedTimingColumnWidths(data = {}) {
+  const resolved = {};
+  Object.entries(TIMING_COLUMN_DEFAULTS).forEach(([columnId, defaultWidth]) => {
+    const requestedWidth = Number(data?.[columnId]);
+    const minimumWidth = TIMING_COLUMN_MIN_WIDTHS[columnId] || 72;
+    resolved[columnId] = Number.isFinite(requestedWidth)
+      ? Math.max(minimumWidth, Math.round(requestedWidth))
+      : defaultWidth;
+  });
+  return resolved;
+}
+
+function timingGridTemplate(tableId) {
+  const columns = TIMING_TABLE_COLUMN_ORDER[tableId] || [];
+  const widths = resolvedTimingColumnWidths(timingColumnWidths);
+  return columns.map((columnId) => `${widths[columnId] || TIMING_COLUMN_DEFAULTS[columnId] || 96}px`).join(" ");
+}
+
+function applyTimingTableColumns(table) {
+  if (!table) return;
+  if (window.innerWidth <= 680) {
+    table.style.removeProperty("grid-template-columns");
+    return;
+  }
+  const template = timingGridTemplate(table.id);
+  if (template) table.style.gridTemplateColumns = template;
+}
+
+function syncTimingTableColumns() {
+  applyTimingTableColumns($("timing-table"));
+  applyTimingTableColumns($("timing-workbench-table"));
+}
+
+function beginTimingColumnResize(tableId, columnId, event) {
+  if (!TIMING_RESIZABLE_COLUMNS.has(columnId)) return;
+  timingColumnResize = {
+    tableId,
+    columnId,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startWidth: resolvedTimingColumnWidths(timingColumnWidths)[columnId] || TIMING_COLUMN_DEFAULTS[columnId] || 96,
+    target: event.currentTarget,
+  };
+  capturePointer(timingColumnResize.target, event.pointerId);
+  document.body.classList.add("resizing-layout");
+  activity("timing.column.resize.start", { table_id: tableId, column_id: columnId });
+}
+
+function moveTimingColumnResize(event) {
+  if (!timingColumnResize) return;
+  if (event.pointerId !== undefined && timingColumnResize.pointerId !== undefined && event.pointerId !== timingColumnResize.pointerId) return;
+  const minimumWidth = TIMING_COLUMN_MIN_WIDTHS[timingColumnResize.columnId] || 72;
+  const nextWidth = Math.max(minimumWidth, Math.round(timingColumnResize.startWidth + (event.clientX - timingColumnResize.startX)));
+  timingColumnWidths = {
+    ...resolvedTimingColumnWidths(timingColumnWidths),
+    [timingColumnResize.columnId]: nextWidth,
+  };
+  syncTimingTableColumns();
+}
+
+function endTimingColumnResize(event) {
+  if (!timingColumnResize) return;
+  if (event.pointerId !== undefined && timingColumnResize.pointerId !== undefined && event.pointerId !== timingColumnResize.pointerId) return;
+  releasePointer(timingColumnResize.target, timingColumnResize.pointerId);
+  activity("timing.column.resize.commit", {
+    table_id: timingColumnResize.tableId,
+    column_id: timingColumnResize.columnId,
+    width: timingColumnWidths[timingColumnResize.columnId],
+  });
+  timingColumnResize = null;
+  document.body.classList.remove("resizing-layout");
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+}
+
 function normalizeProjectUiState(uiState = {}) {
   const normalizedActiveTool = VALID_TOOL_IDS.has(String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool))
     ? String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool)
@@ -1199,6 +1382,7 @@ function normalizeProjectUiState(uiState = {}) {
     scoring_shot_expansion: normalizedUiBooleanMap(uiState.scoring_shot_expansion),
     waveform_shot_amplitudes: normalizedUiFloatMap(uiState.waveform_shot_amplitudes, 0.25),
     timing_edit_shot_ids: normalizedUiStringList(uiState.timing_edit_shot_ids),
+    timing_column_widths: resolvedTimingColumnWidths(normalizedUiFloatMap(uiState.timing_column_widths, 48)),
   };
 }
 
@@ -1228,6 +1412,7 @@ function readProjectUiStatePayload() {
     ),
     waveform_shot_amplitudes: { ...waveformShotAmplitudeById },
     timing_edit_shot_ids: [...timingRowEdits].filter(Boolean),
+    timing_column_widths: { ...resolvedTimingColumnWidths(timingColumnWidths) },
   });
 }
 
@@ -1257,10 +1442,11 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
   scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
+  timingColumnWidths = resolvedTimingColumnWidths(normalized.timing_column_widths);
+  setActiveTool(normalized.active_tool, { persistUiState: false });
   setWaveformMode(normalized.waveform_mode, { persistUiState: false });
   setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });
   setTimingExpanded(normalized.timing_expanded, { persistUiState: false });
-  setActiveTool(normalized.active_tool, { persistUiState: false });
   if (state?.project) state.project.ui_state = normalized;
   return normalized;
 }
@@ -1645,6 +1831,10 @@ function syncOverlayPreviewStateFromControls() {
   overlay.show_draw = Boolean(payload.show_draw);
   overlay.show_shots = Boolean(payload.show_shots);
   overlay.show_score = Boolean(payload.show_score);
+  overlay.timer_lock_to_stack = Boolean(payload.timer_lock_to_stack);
+  overlay.draw_lock_to_stack = Boolean(payload.draw_lock_to_stack);
+  overlay.score_lock_to_stack = Boolean(payload.score_lock_to_stack);
+  overlay.review_boxes_lock_to_stack = Boolean(payload.review_boxes_lock_to_stack);
   overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));
   syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
   Object.entries(payload.styles).forEach(([badgeName, style]) => {
@@ -1775,6 +1965,31 @@ function syncOverlayCoordinateControlState() {
   });
 }
 
+function overlayBadgeLockedToStack(kind, overlay = state?.project?.overlay) {
+  if (!overlay || !(kind in OVERLAY_STACK_LOCK_CONTROLS)) return false;
+  return Boolean(overlay[`${kind}_lock_to_stack`] ?? true);
+}
+
+function reviewBoxesLockedToOverlayStack(overlay = state?.project?.overlay) {
+  return Boolean(overlay?.review_boxes_lock_to_stack);
+}
+
+function syncOverlayBubbleLockControlState() {
+  Object.values(OVERLAY_STACK_LOCK_CONTROLS).forEach(({ lockId, xId, yId, label }) => {
+    const lockControl = $(lockId);
+    const isLocked = Boolean(lockControl?.checked);
+    [[xId, "X"], [yId, "Y"]].forEach(([id, axis]) => {
+      const input = $(id);
+      if (!input) return;
+      input.disabled = isLocked;
+      input.placeholder = isLocked ? "Stack locked" : "auto";
+      input.title = isLocked
+        ? `${label} follows the shot stack while locked.`
+        : `${label} ${axis} uses a normalized coordinate from 0 to 1. Leave it blank to follow the stack.`;
+    });
+  });
+}
+
 function overlayTextBoxDisplayText(box) {
   if (box.source === "imported_summary") {
     return state?.scoring_summary?.imported_overlay_text || "";
@@ -1783,6 +1998,9 @@ function overlayTextBoxDisplayText(box) {
 }
 
 function overlayTextBoxHint(box) {
+  if (reviewBoxesLockedToOverlayStack()) {
+    return "Locked to the overlay stack. Unlock Review text boxes to edit placement or use the Above Final anchor.";
+  }
   const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
   if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
     return box.source === "imported_summary"
@@ -1802,6 +2020,7 @@ function buildTextBoxCard(box, index) {
   card.className = "text-box-card";
   card.dataset.boxId = box.id;
   const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
+  const reviewBoxesLocked = reviewBoxesLockedToOverlayStack();
   card.innerHTML = `
     <div class="text-box-card-header">
       <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
@@ -1866,7 +2085,15 @@ function buildTextBoxCard(box, index) {
             <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Text box text hex value" />
           </span>
         </label>
-        <label><span class="style-card-label">Opacity</span> <input data-text-box-field="opacity" type="range" min="0" max="1" step="0.05" value="0.9" /></label>
+        <label class="opacity-field"><span class="style-card-label">Opacity</span>
+          <span class="opacity-control-pair">
+            <input data-text-box-field="opacity" type="range" min="0" max="1" step="0.01" value="0.9" />
+            <span class="opacity-percent-field">
+              <input class="opacity-percent-input" data-text-box-opacity-percent="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
+              <span class="opacity-percent-suffix">%</span>
+            </span>
+          </span>
+        </label>
       </section>
     </div>
   `;
@@ -1880,6 +2107,7 @@ function buildTextBoxCard(box, index) {
   syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
   syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
   syncControlValue(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
+  syncOpacityPercentControl(card.querySelector('[data-text-box-opacity-percent="opacity"]'), box.opacity ?? 0.9);
   const textArea = card.querySelector('[data-text-box-field="text"]');
   textArea.value = box.text || "";
   textArea.disabled = box.source === "imported_summary";
@@ -1888,11 +2116,13 @@ function buildTextBoxCard(box, index) {
     : "Text to show over the video";
   const hint = card.querySelector('[data-text-box-hint="true"]');
   if (hint) hint.textContent = overlayTextBoxHint(box);
+  const quadrantInput = card.querySelector('[data-text-box-field="quadrant"]');
+  quadrantInput.disabled = reviewBoxesLocked;
   const xInput = card.querySelector('[data-text-box-field="x"]');
   const yInput = card.querySelector('[data-text-box-field="y"]');
   [xInput, yInput].forEach((input) => {
-    input.disabled = !usesCustomPlacement;
-    input.placeholder = usesCustomPlacement ? "0.50" : "Custom only";
+    input.disabled = reviewBoxesLocked || !usesCustomPlacement;
+    input.placeholder = reviewBoxesLocked ? "Stack locked" : usesCustomPlacement ? "0.50" : "Custom only";
   });
   card.querySelectorAll("[data-text-box-field]").forEach((control) => {
     const field = control.dataset.textBoxField || "";
@@ -1919,6 +2149,20 @@ function buildTextBoxCard(box, index) {
     control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
     control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
   });
+  const opacityRange = card.querySelector('[data-text-box-field="opacity"]');
+  const opacityPercent = card.querySelector('[data-text-box-opacity-percent="opacity"]');
+  bindOpacityPercentPair(opacityRange, opacityPercent);
+  if (opacityPercent instanceof HTMLInputElement) {
+    const applyOpacity = (commit = false) => {
+      const nextOpacity = opacityValueFromPercent(opacityPercent.value);
+      syncControlValue(opacityRange, nextOpacity.toFixed(2));
+      setOverlayTextBoxField(box.id, "opacity", nextOpacity, { commit, rerender: false });
+      syncOpacityPercentControl(opacityPercent, nextOpacity);
+    };
+    opacityPercent.addEventListener("input", () => applyOpacity(false));
+    opacityPercent.addEventListener("change", () => applyOpacity(true));
+    opacityPercent.addEventListener("blur", () => applyOpacity(true));
+  }
   card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", () => duplicateOverlayTextBox(box.id));
   card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", () => removeOverlayTextBox(box.id));
   bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
@@ -1931,7 +2175,7 @@ function renderTextBoxEditors() {
   if (containers.length === 0) return;
   const boxes = overlayTextBoxes();
   containers.forEach((container) => {
-    withPreservedScrollState([container], () => {
+    withPreservedScrollState([container, document.querySelector(".inspector")].filter(Boolean), () => {
       container.innerHTML = "";
       if (boxes.length === 0) {
         const empty = document.createElement("div");
@@ -2430,6 +2674,13 @@ function restoreVideoElementFrame(video) {
   } catch {
     // Some browsers reject same-time seeks while the element is restoring.
   }
+}
+
+function refreshReviewMediaFrame() {
+  renderLiveOverlay();
+  scheduleSecondaryPreviewSync();
+  restoreVideoElementFrame($("primary-video"));
+  restoreVideoElementFrame($("secondary-video"));
 }
 
 function restoreReviewStage() {
@@ -3510,9 +3761,9 @@ function renderWaveformShotList() {
       const item = document.createElement("button");
       item.type = "button";
       if (segment.shot_id === selectedShotId) item.classList.add("selected");
-      if (isLowConfidence(segment.confidence)) {
+      if (isLowConfidence(segment.confidence, segment.source)) {
         item.classList.add("low-confidence");
-        item.title = `Review this split manually: confidence ${formatConfidenceValue(segment.confidence)}.`;
+        item.title = `Review this split manually: estimated confidence ${formatConfidenceValue(segment.confidence)}.`;
       }
       const title = document.createElement("strong");
       title.textContent = segment.card_title;
@@ -3653,6 +3904,16 @@ function restoreOriginalScore(shotId) {
   callApi("/api/scoring/restore", { shot_id: shotId });
 }
 
+function deleteShotById(shotId, source = "selected") {
+  if (!shotId) return;
+  if (selectedShotId === shotId) selectedShotId = null;
+  timingRowEdits.delete(shotId);
+  scoringShotExpansion.delete(shotId);
+  if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
+  activity(source === "selected" ? "shot.delete_selected" : "shot.delete_row", { shot_id: shotId, source });
+  callApi("/api/shots/delete", { shot_id: shotId });
+}
+
 function updateTimingRowField(shotId, field, value) {
   if (field === "split_ms") {
     const rows = state.split_rows || [];
@@ -3730,7 +3991,7 @@ function splitRowSourceLabel(row) {
 }
 
 function splitRowConfidenceLabel(row) {
-  return row.confidence === null || row.confidence === undefined
+  return String(row?.source || "").toLowerCase() === "manual" || row.confidence === null || row.confidence === undefined
     ? "Manual"
     : formatConfidenceValue(row.confidence);
 }
@@ -3814,6 +4075,8 @@ function renderTimingTable(tableId = "timing-table") {
     table.innerHTML = "";
     const expandedTable = tableId === "timing-workbench-table";
     table.classList.toggle("interval-timeline-table", true);
+    table.classList.toggle("timing-resizable-table", true);
+    applyTimingTableColumns(table);
     if (expandedTable) {
       table.style.setProperty("--timing-action-chip-chars", String(maximumSplitRowActionLabelLength()));
     } else {
@@ -3821,19 +4084,51 @@ function renderTimingTable(tableId = "timing-table") {
     }
     const defaultScore = defaultScoreLetter();
     const headers = expandedTable
-      ? ["", "Segment", "Split", "Total", "Action", "Score", "Confidence", "Source"]
-      : ["Segment", "Split", "Total", "Action", "Score"];
+      ? [
+        { label: "", columnId: "lock", resizable: false },
+        { label: "Segment", columnId: "segment", resizable: true },
+        { label: "Split", columnId: "split", resizable: true },
+        { label: "Total", columnId: "total", resizable: true },
+        { label: "Action", columnId: "action", resizable: true },
+        { label: "Score", columnId: "score", resizable: true },
+        { label: "Confidence", columnId: "confidence", resizable: true },
+        { label: "Source", columnId: "source", resizable: true },
+      ]
+      : [
+        { label: "Segment", columnId: "segment", resizable: true },
+        { label: "Split", columnId: "split", resizable: true },
+        { label: "Total", columnId: "total", resizable: true },
+        { label: "Action", columnId: "action", resizable: true },
+        { label: "Score", columnId: "score", resizable: true },
+      ];
     headers.forEach((header) => {
       const cell = document.createElement("div");
       cell.className = "head";
-      cell.textContent = header;
+      cell.dataset.timingColumn = header.columnId;
+      const label = document.createElement("span");
+      label.className = "timing-header-label";
+      label.textContent = header.label;
+      cell.appendChild(label);
+      if (header.resizable && window.innerWidth > 680) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "timing-column-resize";
+        handle.setAttribute("aria-label", `Resize ${header.label} column`);
+        handle.title = `Resize ${header.label} column`;
+        handle.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          beginTimingColumnResize(tableId, header.columnId, event);
+        });
+        cell.appendChild(handle);
+      }
       table.appendChild(cell);
     });
 
     (state.split_rows || []).forEach((row) => {
       const canEdit = Boolean(row.shot_id);
       const editing = canEdit && expandedTable && timingRowEdits.has(row.shot_id);
-      const lowConfidence = isLowConfidence(row.confidence);
+      const lowConfidence = isLowConfidence(row.confidence, row.source);
       if (expandedTable) {
         const lockCell = document.createElement("div");
         lockCell.className = "lock-cell";
@@ -3864,19 +4159,30 @@ function renderTimingTable(tableId = "timing-table") {
         editor.className = "timing-edit-control";
         const input = document.createElement("input");
         input.type = "number";
+        input.inputMode = "decimal";
         input.min = "0";
-        input.step = "0.001";
+        input.step = "0.01";
         input.className = "timing-split-input";
-        input.value = precise(splitMs ?? row.absolute_time_ms);
+        input.value = seconds(splitMs ?? row.absolute_time_ms);
         input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
+        input.title = "Edit the split in seconds using 0.00 format.";
         input.addEventListener("change", () => updateTimingRowField(row.shot_id, "split_ms", input.value));
+        const actions = document.createElement("span");
+        actions.className = "timing-edit-actions";
         const restore = document.createElement("button");
         restore.type = "button";
         restore.className = "restore-button";
         restore.textContent = "Restore";
         restore.title = "Restore this split to its original timing.";
         restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
-        editor.append(input, restore);
+        const deleteShot = document.createElement("button");
+        deleteShot.type = "button";
+        deleteShot.className = "danger-button restore-button";
+        deleteShot.textContent = "Delete";
+        deleteShot.title = "Delete this shot from the run.";
+        deleteShot.addEventListener("click", () => deleteShotById(row.shot_id, "timing_row"));
+        actions.append(restore, deleteShot);
+        editor.append(input, actions);
         splitCell.appendChild(editor);
       } else {
         splitCell.textContent = splitSeconds(splitMs);
@@ -3905,7 +4211,9 @@ function renderTimingTable(tableId = "timing-table") {
       confidenceCell.textContent = splitRowConfidenceLabel(row);
       if (lowConfidence) {
         confidenceCell.classList.add("low-confidence");
-        confidenceCell.title = `Review this split manually: confidence ${formatConfidenceValue(row.confidence)}.`;
+        confidenceCell.title = row.confidence === null || row.confidence === undefined
+          ? "Manual timing edit."
+          : `Review this split manually: estimated confidence ${formatConfidenceValue(row.confidence)}.`;
       }
       table.appendChild(confidenceCell);
 
@@ -3914,6 +4222,7 @@ function renderTimingTable(tableId = "timing-table") {
       table.appendChild(sourceCell);
     });
   });
+  applyTimingTableColumns(table);
 }
 
 function renderTimingTables() {
@@ -4000,7 +4309,7 @@ function renderScoringShotList() {
       const row = document.createElement("div");
       row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
       row.classList.toggle("collapsed", !expanded);
-      if (isLowConfidence(segment.confidence)) row.classList.add("low-confidence");
+      if (isLowConfidence(segment.confidence, segment.source)) row.classList.add("low-confidence");
 
       const header = document.createElement("div");
       header.className = "scoring-shot-header";
@@ -4013,7 +4322,7 @@ function renderScoringShotList() {
       button.append(title);
       button.title = segment.source === "manual"
         ? "Manual shot marker."
-        : isLowConfidence(segment.confidence)
+        : isLowConfidence(segment.confidence, segment.source)
           ? `Low-confidence ShotML marker (${formatConfidenceValue(segment.confidence)}).`
           : "ShotML-detected shot.";
       button.addEventListener("click", () => selectShot(segment.shot_id));
@@ -4050,13 +4359,14 @@ function renderScoringShotList() {
       });
       select.value = segment.score_letter || defaultScore;
 
-      const applyShotScoring = () => {
+      const applyShotScoring = async () => {
         selectedShotId = segment.shot_id;
-        callApi("/api/scoring/score", {
+        const result = await callApi("/api/scoring/score", {
           shot_id: segment.shot_id,
           letter: select.value || defaultScore,
           penalty_counts: collectPenaltyCounts(controls),
         });
+        if (result) refreshReviewMediaFrame();
       };
       select.addEventListener("change", applyShotScoring);
 
@@ -4097,6 +4407,14 @@ function renderScoringShotList() {
       restore.title = "Restore this shot score and penalties to their original values.";
       restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
       controls.appendChild(restore);
+
+      const deleteShot = document.createElement("button");
+      deleteShot.type = "button";
+      deleteShot.className = "danger-button restore-button";
+      deleteShot.textContent = "Delete";
+      deleteShot.title = "Delete this shot from the run.";
+      deleteShot.addEventListener("click", () => deleteShotById(segment.shot_id, "scoring_row"));
+      controls.appendChild(deleteShot);
 
       row.append(header, controls);
       list.appendChild(row);
@@ -4168,6 +4486,8 @@ function renderPractiScoreSummaries() {
     .join(" / ");
   const countsLabel = formatImportedCounts(imported.score_counts);
   const resultLabel = state.scoring_summary?.display_label || "Result";
+  const videoRawSeconds = state.scoring_summary?.raw_seconds;
+  const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;
   $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
   $("scoring-imported-caption").textContent = `Imported ${formatMatchType(imported.match_type)} data for ${imported.competitor_name}.`;
   renderDetailsList("practiscore-import-summary", [
@@ -4177,7 +4497,9 @@ function renderPractiScoreSummaries() {
     ["Competitor", imported.competitor_name],
     ["Place", imported.competitor_place ? `#${imported.competitor_place}` : ""],
     ["Division", divisionLabel],
-    ["Raw Time", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],
+    ["Official Raw", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],
+    ["Video Raw", videoRawSeconds !== null && videoRawSeconds !== undefined ? `${formatNumber(videoRawSeconds, 2)}s` : ""],
+    ["Raw Delta", rawDeltaSeconds !== null && rawDeltaSeconds !== undefined ? `${formatNumber(rawDeltaSeconds, 2)}s` : ""],
     [resultLabel, state.scoring_summary?.display_value || ""],
   ]);
   renderDetailsList("scoring-imported-summary", [
@@ -4563,6 +4885,9 @@ function renderControls() {
   syncControlValue($("draw-y"), state.project.overlay.draw_y ?? "");
   syncControlValue($("score-x"), state.project.overlay.score_x ?? "");
   syncControlValue($("score-y"), state.project.overlay.score_y ?? "");
+  syncControlChecked($("timer-lock-to-stack"), overlayBadgeLockedToStack("timer", state.project.overlay));
+  syncControlChecked($("draw-lock-to-stack"), overlayBadgeLockedToStack("draw", state.project.overlay));
+  syncControlChecked($("score-lock-to-stack"), overlayBadgeLockedToStack("score", state.project.overlay));
   syncOverlayBubbleSizeControls();
   syncControlValue($("overlay-font-family"), state.project.overlay.font_family);
   syncControlValue($("overlay-font-size"), state.project.overlay.font_size);
@@ -4572,7 +4897,9 @@ function renderControls() {
   syncControlChecked($("show-draw"), state.project.overlay.show_draw);
   syncControlChecked($("show-shots"), state.project.overlay.show_shots);
   syncControlChecked($("show-score"), state.project.overlay.show_score);
+  syncControlChecked($("review-lock-to-stack"), reviewBoxesLockedToOverlayStack(state.project.overlay));
   syncOverlayCoordinateControlState();
+  syncOverlayBubbleLockControlState();
   renderTextBoxEditors();
   syncTimingEventLabelState();
   syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
@@ -4627,10 +4954,19 @@ function renderStyleControls() {
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Text hex value" placeholder="#F9FAFB" />
           </span>
         </label>
-        <label><span class="style-card-label">Opacity</span> <input type="range" data-field="opacity" min="0" max="1" step="0.05" /></label>
+        <label class="opacity-field"><span class="style-card-label">Opacity</span>
+          <span class="opacity-control-pair">
+            <input type="range" data-field="opacity" min="0" max="1" step="0.01" />
+            <span class="opacity-percent-field">
+              <input type="number" class="opacity-percent-input" data-opacity-percent="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
+              <span class="opacity-percent-suffix">%</span>
+            </span>
+          </span>
+        </label>
       `;
       bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
       bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
+      bindOpacityPercentPair(card.querySelector('[data-field="opacity"]'), card.querySelector('[data-opacity-percent="opacity"]'));
       grid.appendChild(card);
     }
     const heading = card.querySelector("h4");
@@ -4638,6 +4974,7 @@ function renderStyleControls() {
     syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
     syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
     syncControlValue(card.querySelector('[data-field="opacity"]'), style.opacity);
+    syncOpacityPercentControl(card.querySelector('[data-opacity-percent="opacity"]'), style.opacity);
   });
 
   const scoreGrid = $("score-color-grid");
@@ -5426,6 +5763,95 @@ function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
   return true;
 }
 
+function visibleOverlayTextBoxEntries(finalShotReached) {
+  return overlayTextBoxes()
+    .map((box, index) => {
+      const textValue = overlayTextBoxDisplayText(box).trim();
+      if (!box.enabled || !textValue || (box.source === "imported_summary" && !finalShotReached)) return null;
+      return { box, index, textValue };
+    })
+    .filter(Boolean);
+}
+
+function overlayTextBoxStyle(box) {
+  return {
+    background_color: box.background_color || state.project.overlay.hit_factor_badge.background_color,
+    text_color: box.text_color || state.project.overlay.hit_factor_badge.text_color,
+    opacity: box.opacity ?? state.project.overlay.hit_factor_badge.opacity,
+  };
+}
+
+function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge) {
+  const overlayState = state?.project?.overlay || {};
+  const finalScoreRect = finalScoreBadge?.getBoundingClientRect();
+  return JSON.stringify({
+    frame: roundedRect(frameRect),
+    scale: Math.round(overlayScale * 1000) / 1000,
+    spacing: overlaySpacing,
+    margin: overlayMargin,
+    style_type: overlayStyleMode,
+    badge_size: overlayState.badge_size,
+    bubble_width: overlayState.bubble_width,
+    bubble_height: overlayState.bubble_height,
+    font_family: overlayState.font_family,
+    font_size: overlayState.font_size,
+    font_bold: overlayState.font_bold,
+    font_italic: overlayState.font_italic,
+    final_score: roundedRect(finalScoreRect),
+    entries: entries.map(({ box, textValue }) => ({
+      id: box.id,
+      source: box.source,
+      text: textValue,
+      quadrant: box.quadrant,
+      x: box.x,
+      y: box.y,
+      width: box.width,
+      height: box.height,
+      background_color: box.background_color,
+      text_color: box.text_color,
+      opacity: box.opacity,
+    })),
+  });
+}
+
+function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge) {
+  customOverlay.innerHTML = "";
+  const textBoxGroups = new Map();
+  entries.forEach(({ box, index, textValue }) => {
+    const customBadge = badgeElement(
+      textValue,
+      overlayTextBoxStyle(box),
+      size,
+      null,
+      box.width,
+      box.height,
+      "center",
+      overlayScale,
+    );
+    customBadge.dataset.textBoxDrag = "true";
+    customBadge.dataset.textBoxId = box.id;
+    customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
+    customOverlay.appendChild(customBadge);
+    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, scale: overlayScale })) {
+      return;
+    }
+    customBadge.remove();
+    const quadrant = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
+      ? "top_middle"
+      : (box.quadrant || "top_right");
+    let group = textBoxGroups.get(quadrant);
+    if (!group) {
+      group = document.createElement("div");
+      group.className = "text-box-group";
+      configureTextBoxGroup(group, quadrant, frameRect, overlayScale);
+      textBoxGroups.set(quadrant, group);
+      customOverlay.appendChild(group);
+    }
+    group.appendChild(customBadge);
+  });
+  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
+}
+
 function beginTextBoxDrag(event) {
   const customOverlay = $("custom-overlay");
   const customBadge = event.target instanceof Element
@@ -5499,15 +5925,16 @@ function endTextBoxDrag(event) {
   autoApplyOverlay.cancel();
   textBoxDrag = null;
   flushInteractionPreviewRender();
+  queueInspectorScrollRestore();
   callApi("/api/overlay", readOverlayPayload());
   flushDeferredRender();
 }
 
 function overlayDragConfiguration(kind) {
   return {
-    timer: { xId: "timer-x", yId: "timer-y" },
-    draw: { xId: "draw-x", yId: "draw-y" },
-    score: { xId: "score-x", yId: "score-y" },
+    timer: { lockId: "timer-lock-to-stack", xId: "timer-x", yId: "timer-y" },
+    draw: { lockId: "draw-lock-to-stack", xId: "draw-x", yId: "draw-y" },
+    score: { lockId: "score-lock-to-stack", xId: "score-x", yId: "score-y" },
     shots: {
       xId: "overlay-custom-x",
       yId: "overlay-custom-y",
@@ -5541,6 +5968,11 @@ function beginOverlayBadgeDrag(event) {
   const kind = badge.dataset.overlayDrag || "";
   const config = overlayDragConfiguration(kind);
   if (!config || !state?.project) return;
+  if (config.lockId && $(config.lockId)?.checked) {
+    $(config.lockId).checked = false;
+    syncOverlayBubbleLockControlState();
+    syncOverlayPreviewStateFromControls();
+  }
   const stage = $("video-stage");
   const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();
   const anchor = overlayDragAnchor(kind, badge, frameRect);
@@ -5691,13 +6123,17 @@ function renderLiveOverlay(positionMsOverride = null) {
   overlay.className = `live-overlay overlay-${position}`;
   customOverlay.className = `live-overlay overlay-${position}`;
   overlay.innerHTML = "";
-  customOverlay.innerHTML = "";
   scoreLayer.innerHTML = "";
-  if (position === "none" || !state.media.primary_available) return;
+  if (position === "none" || !state.media.primary_available) {
+    customOverlay.innerHTML = "";
+    customOverlay.classList.remove("has-badge");
+    customOverlayRenderKey = "";
+    return;
+  }
   const stage = $("video-stage");
   const video = $("primary-video");
   const frameGeometry = previewFrameGeometry(video, stage);
-  const frameRect = frameGeometry?.frameRect || stage.getBoundingClientRect();
+  const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
   const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
   positionOverlayContainer(overlay, state.project.overlay.shot_quadrant, frameRect, {
     x: state.project.overlay.custom_x,
@@ -5734,15 +6170,23 @@ function renderLiveOverlay(positionMsOverride = null) {
     : overlayAutoBubbleSize();
   const currentIndex = currentShotIndex(positionMs);
   const splitRowsByShotId = new Map((state.split_rows || []).filter((row) => row.shot_id).map((row) => [row.shot_id, row]));
-  const appendOverlayBadge = (badge, xValue = null, yValue = null) => {
-    if (!placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
-      overlay.appendChild(badge);
+  const appendOverlayBadge = (badge, kind = "", xValue = null, yValue = null) => {
+    if (!overlayBadgeLockedToStack(kind) && placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
+      return;
     }
+    if (kind === "" && placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
+      return;
+    }
+    if (kind === "shots") {
+      overlay.appendChild(badge);
+      return;
+    }
+    overlay.appendChild(badge);
   };
   if (state.project.overlay.show_timer) {
     const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     timerBadge.dataset.overlayDrag = "timer";
-    appendOverlayBadge(timerBadge, state.project.overlay.timer_x, state.project.overlay.timer_y);
+    appendOverlayBadge(timerBadge, "timer", state.project.overlay.timer_x, state.project.overlay.timer_y);
   }
   if (
     state.project.overlay.show_draw
@@ -5755,7 +6199,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   ) {
     const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     drawBadge.dataset.overlayDrag = "draw";
-    appendOverlayBadge(drawBadge, state.project.overlay.draw_x, state.project.overlay.draw_y);
+    appendOverlayBadge(drawBadge, "draw", state.project.overlay.draw_x, state.project.overlay.draw_y);
   }
 
   if (state.project.overlay.show_shots && currentIndex >= 0) {
@@ -5781,7 +6225,7 @@ function renderLiveOverlay(positionMsOverride = null) {
         autoBubbleSize,
       );
       shotBadge.dataset.overlayDrag = "shots";
-      overlay.appendChild(shotBadge);
+      appendOverlayBadge(shotBadge, "shots");
     }
   }
 
@@ -5790,7 +6234,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   if (finalShotReached && state.project.scoring.enabled && state.project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
     const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     scoreBadge.dataset.overlayDrag = "score";
-    appendOverlayBadge(scoreBadge, state.project.overlay.score_x, state.project.overlay.score_y);
+    appendOverlayBadge(scoreBadge, "score", state.project.overlay.score_x, state.project.overlay.score_y);
     finalScoreBadge = scoreBadge;
   }
 
@@ -5801,47 +6245,46 @@ function renderLiveOverlay(positionMsOverride = null) {
     });
   }
 
-  const textBoxGroups = new Map();
-  overlayTextBoxes().forEach((box, index) => {
-    const textValue = overlayTextBoxDisplayText(box).trim();
-    if (!box.enabled || !textValue || (box.source === "imported_summary" && !finalShotReached)) return;
-    const customBoxStyle = {
-      background_color: box.background_color || state.project.overlay.hit_factor_badge.background_color,
-      text_color: box.text_color || state.project.overlay.hit_factor_badge.text_color,
-      opacity: box.opacity ?? state.project.overlay.hit_factor_badge.opacity,
-    };
-    const customBadge = badgeElement(
-      textValue,
-      customBoxStyle,
-      size,
-      null,
-      box.width,
-      box.height,
-      "center",
-      overlayScale,
-    );
-    customBadge.dataset.textBoxDrag = "true";
-    customBadge.dataset.textBoxId = box.id;
-    customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
-    customOverlay.appendChild(customBadge);
-    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, scale: overlayScale })) {
-      return;
+  const textBoxEntries = visibleOverlayTextBoxEntries(finalShotReached);
+  if (reviewBoxesLockedToOverlayStack()) {
+    textBoxEntries.forEach(({ box, textValue }) => {
+      overlay.appendChild(
+        badgeElement(
+          textValue,
+          overlayTextBoxStyle(box),
+          size,
+          null,
+          box.width,
+          box.height,
+          "center",
+          overlayScale,
+        )
+      );
+    });
+    if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
+      customOverlay.innerHTML = "";
+      customOverlay.classList.remove("has-badge");
+      customOverlayRenderKey = "";
     }
-    customBadge.remove();
-    const quadrant = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
-      ? "top_middle"
-      : (box.quadrant || "top_right");
-    let group = textBoxGroups.get(quadrant);
-    if (!group) {
-      group = document.createElement("div");
-      group.className = "text-box-group";
-      configureTextBoxGroup(group, quadrant, frameRect, overlayScale);
-      textBoxGroups.set(quadrant, group);
-      customOverlay.appendChild(group);
+    return;
+  }
+
+  const nextCustomOverlayKey = textBoxEntries.length === 0
+    ? ""
+    : customOverlayKey(textBoxEntries, frameRect, overlayScale, finalScoreBadge);
+  if (!nextCustomOverlayKey) {
+    if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
+      customOverlay.innerHTML = "";
+      customOverlay.classList.remove("has-badge");
+      customOverlayRenderKey = "";
     }
-    group.appendChild(customBadge);
-  });
-  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
+    return;
+  }
+  // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
+  if (nextCustomOverlayKey !== customOverlayRenderKey) {
+    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge);
+    customOverlayRenderKey = nextCustomOverlayKey;
+  }
 }
 
 function requestOverlayFrame(video, tick) {
@@ -5912,6 +6355,7 @@ function render() {
     renderLiveOverlay();
     setActiveTool(activeTool, { persistUiState: false });
   });
+  flushPendingInspectorScrollRestore();
 }
 
 function renderViewportLayout() {
@@ -5922,6 +6366,7 @@ function renderViewportLayout() {
     renderWaveform();
     renderLiveOverlay();
   });
+  flushPendingInspectorScrollRestore();
 }
 
 function waveformTime(event) {
@@ -5972,8 +6417,8 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
 function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
-  root.classList.remove("timing-expanded");
-  $("expand-waveform").textContent = expanded ? "Collapse" : "Expand";
+  if (expanded) root.classList.remove("timing-expanded");
+  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
   syncLocalProjectUiState();
   if (persistUiState) scheduleProjectUiStateApply();
@@ -6045,8 +6490,8 @@ function resetWaveformView() {
 function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("timing-expanded", expanded);
-  root.classList.remove("waveform-expanded");
-  $("expand-waveform").textContent = "Expand";
+  if (expanded) root.classList.remove("waveform-expanded");
+  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("timing.expand", { expanded });
   syncLocalProjectUiState();
   if (persistUiState) scheduleProjectUiStateApply();
@@ -6065,9 +6510,7 @@ function moveSelectedShot(deltaMs) {
 }
 
 function deleteSelectedShot() {
-  if (!selectedShotId) return;
-  activity("shot.delete_selected", { shot_id: selectedShotId });
-  callApi("/api/shots/delete", { shot_id: selectedShotId });
+  deleteShotById(selectedShotId, "selected");
 }
 
 function handleWaveformPointerDown(event) {
@@ -6209,6 +6652,10 @@ function readOverlayPayload() {
     show_draw: $("show-draw").checked,
     show_shots: $("show-shots").checked,
     show_score: $("show-score").checked,
+    timer_lock_to_stack: $("timer-lock-to-stack").checked,
+    draw_lock_to_stack: $("draw-lock-to-stack").checked,
+    score_lock_to_stack: $("score-lock-to-stack").checked,
+    review_boxes_lock_to_stack: $("review-lock-to-stack").checked,
     text_boxes: textBoxes.map((box) => ({
       id: box.id,
       enabled: box.enabled,
@@ -6568,6 +7015,7 @@ function flushQueuedProjectUiStateApply() {
 }
 
 function scheduleOverlayApply() {
+  queueInspectorScrollRestore();
   autoApplyOverlay(readOverlayPayload());
 }
 
@@ -6592,6 +7040,7 @@ function scheduleScoringApply() {
 
 const handleViewportLayoutChange = debounce(() => {
   renderViewportLayout();
+  syncTimingTableColumns();
 }, 120);
 
 function wireEvents() {
@@ -6752,6 +7201,7 @@ function wireEvents() {
   window.addEventListener("focus", handleWindowVisibilityRestore);
   window.addEventListener("pageshow", handleWindowVisibilityRestore);
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
+  document.querySelector(".inspector")?.addEventListener("scroll", rememberInspectorScrollPosition, { passive: true });
   $("delete-selected").addEventListener("click", deleteSelectedShot);
   document.querySelectorAll("[data-nudge]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -6806,10 +7256,13 @@ function wireEvents() {
     "shot-direction",
     "overlay-custom-x",
     "overlay-custom-y",
+    "timer-lock-to-stack",
     "timer-x",
     "timer-y",
+    "draw-lock-to-stack",
     "draw-x",
     "draw-y",
+    "score-lock-to-stack",
     "score-x",
     "score-y",
     "bubble-width",
@@ -6822,12 +7275,23 @@ function wireEvents() {
     "show-draw",
     "show-shots",
     "show-score",
+    "review-lock-to-stack",
   ].forEach((id) => {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
       if (id === "shot-quadrant") {
         syncOverlayCoordinateControlState();
         ensureShotQuadrantDefaults();
+      }
+      if (id.endsWith("-lock-to-stack")) {
+        syncOverlayBubbleLockControlState();
+        if (id === "review-lock-to-stack") {
+          syncOverlayPreviewStateFromControls();
+          renderTextBoxEditors();
+          scheduleInteractionPreviewRender({ overlay: true });
+          scheduleOverlayApply();
+          return;
+        }
       }
       commitOverlayControlChanges();
     });
@@ -6868,6 +7332,10 @@ function wireEvents() {
   document.addEventListener("pointerup", endLayoutResize);
   document.addEventListener("pointercancel", endLayoutResize);
   document.addEventListener("lostpointercapture", endLayoutResize);
+  document.addEventListener("pointermove", moveTimingColumnResize);
+  document.addEventListener("pointerup", endTimingColumnResize);
+  document.addEventListener("pointercancel", endTimingColumnResize);
+  document.addEventListener("lostpointercapture", endTimingColumnResize);
   document.addEventListener("pointermove", moveOverlayBadgeDrag);
   document.addEventListener("pointerup", endOverlayBadgeDrag);
   document.addEventListener("pointercancel", endOverlayBadgeDrag);

@@ -280,6 +280,10 @@ class OverlaySettings:
     show_draw: bool = True
     show_shots: bool = True
     show_score: bool = True
+    timer_lock_to_stack: bool = True
+    draw_lock_to_stack: bool = True
+    score_lock_to_stack: bool = True
+    review_boxes_lock_to_stack: bool = False
     custom_box_enabled: bool = False
     custom_box_mode: str = "manual"
     custom_box_text: str = ""
@@ -398,6 +402,7 @@ class UIState:
     scoring_shot_expansion: dict[str, bool] = field(default_factory=dict)
     waveform_shot_amplitudes: dict[str, float] = field(default_factory=dict)
     timing_edit_shot_ids: list[str] = field(default_factory=list)
+    timing_column_widths: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -893,6 +898,25 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             show_draw=bool(overlay_data.get("show_draw", True)),
             show_shots=bool(overlay_data.get("show_shots", True)),
             show_score=bool(overlay_data.get("show_score", True)),
+            timer_lock_to_stack=bool(
+                overlay_data.get(
+                    "timer_lock_to_stack",
+                    overlay_data.get("timer_x") in {None, ""} and overlay_data.get("timer_y") in {None, ""},
+                )
+            ),
+            draw_lock_to_stack=bool(
+                overlay_data.get(
+                    "draw_lock_to_stack",
+                    overlay_data.get("draw_x") in {None, ""} and overlay_data.get("draw_y") in {None, ""},
+                )
+            ),
+            score_lock_to_stack=bool(
+                overlay_data.get(
+                    "score_lock_to_stack",
+                    overlay_data.get("score_x") in {None, ""} and overlay_data.get("score_y") in {None, ""},
+                )
+            ),
+            review_boxes_lock_to_stack=bool(overlay_data.get("review_boxes_lock_to_stack", False)),
             custom_box_enabled=bool(overlay_data.get("custom_box_enabled", False)),
             custom_box_mode=(
                 str(overlay_data.get("custom_box_mode", "manual"))
@@ -980,6 +1004,10 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 minimum=0.25,
             ),
             timing_edit_shot_ids=_ui_state_string_list(ui_data.get("timing_edit_shot_ids")),
+            timing_column_widths=_ui_state_float_map(
+                ui_data.get("timing_column_widths"),
+                minimum=72,
+            ),
         ),
         schema_version=int(data.get("schema_version", 1)),
     )

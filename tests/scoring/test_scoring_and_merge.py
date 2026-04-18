@@ -199,7 +199,7 @@ def test_imported_stage_summary_uses_official_aggregate_values() -> None:
     assert summary["total_penalties"] == 12.0
     assert summary["hit_factor"] == 101.0 / 23.24
     assert summary["imported_stage"]["stage_place"] == 1
-    assert summary["imported_overlay_text"] == "Official\nRaw 23.24\nPoints 101\nHF 4.3460"
+    assert summary["imported_overlay_text"] == "Imported\nRaw 23.24\nPoints 101\nHF 4.3460"
 
 
 def test_imported_stage_hit_factor_uses_official_total_points_and_raw_time() -> None:
@@ -238,7 +238,34 @@ def test_imported_stage_overlay_text_uses_idpa_official_fields() -> None:
     apply_scoring_preset(project, "idpa_time_plus")
     summary = calculate_scoring_summary(project)
 
-    assert summary["imported_overlay_text"] == "Official\nRaw 29.83\nPD 5\nFinal 39.83"
+    assert summary["imported_overlay_text"] == "Imported\nRaw 29.83\nPD 5\nFinal 34.83"
+
+
+def test_imported_time_plus_overlay_reconciles_to_video_raw_time() -> None:
+    project = Project()
+    project.scoring.enabled = True
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [
+        ShotEvent(time_ms=30000, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+    ]
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        competitor_name="Match Shooter",
+        stage_number=2,
+        raw_seconds=29.83,
+        aggregate_points=5.0,
+        final_time=39.83,
+    )
+
+    apply_scoring_preset(project, "idpa_time_plus")
+    summary = calculate_scoring_summary(project)
+
+    assert summary["raw_seconds"] == 30.0
+    assert summary["official_raw_seconds"] == 29.83
+    assert round(float(summary["raw_delta_seconds"]), 2) == 0.17
+    assert summary["final_time"] == 35.0
+    assert summary["display_value"] == "35.00"
+    assert summary["imported_overlay_text"] == "Imported\nRaw 30.00\nPD 5\nFinal 35.00"
 
 
 def test_steel_and_gpa_time_plus_presets_are_explicit() -> None:

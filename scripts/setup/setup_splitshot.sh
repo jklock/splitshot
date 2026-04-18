@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PYTHON_VERSION="${SPLITSHOT_PYTHON_VERSION:-3.12}"
 
 log() {
@@ -131,7 +131,7 @@ main() {
       install_linux_dependencies
       ;;
     *)
-      fail "This script supports macOS and Linux. Use scripts/setup_splitshot.ps1 on Windows."
+      fail "This script supports macOS and Linux. Use scripts/setup/setup_splitshot.ps1 on Windows."
       ;;
   esac
 

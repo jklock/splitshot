@@ -1,12 +1,12 @@
 # Browser
 
-The browser package serves the primary SplitShot experience: a local HTTP server, JSON API, activity logging, and the browser-first frontend assets.
+The browser package serves the primary SplitShot experience: a local HTTP server, JSON API, activity logging, and the browser shell assets.
 
 ## Files
 
 - [cli.py](cli.py) exposes the browser entry point used by `splitshot-web`.
 - [server.py](server.py) runs the HTTP server, serves the static UI, and handles all browser API routes.
-- [state.py](state.py) converts the shared `Project` into the JSON payload consumed by the frontend.
+- [state.py](state.py) converts the shared `Project` into the JSON payload consumed by the browser shell.
 - [activity.py](activity.py) writes per-run JSONL activity logs.
 - [static/](static) contains `index.html`, `app.js`, `styles.css`, and the branding image.
 
@@ -14,7 +14,7 @@ The browser package serves the primary SplitShot experience: a local HTTP server
 
 `BrowserControlServer` handles:
 
-- static file serving for the frontend shell
+- static file serving for the browser shell
 - `/api/state` serialization
 - `/media/primary` and `/media/secondary` playback URLs
 - project, analysis, scoring, merge, overlay, sync, and export POST routes

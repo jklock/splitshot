@@ -66,7 +66,7 @@ def test_splitshot_check_validates_runtime(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert "SplitShot runtime check" in output
     assert "- ffmpeg: /fake/ffmpeg" in output
-    assert "- qt: PySide6 6.9.0" in output
+    assert "- pyside6: 6.9.0" in output
     assert "- browser:index.html: present" in output
 
 

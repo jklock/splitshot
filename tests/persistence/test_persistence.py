@@ -22,7 +22,8 @@ from splitshot.domain.models import (
 from splitshot.persistence.projects import load_project, save_project
 
 
-EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "example_data"
 
 
 def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
@@ -50,7 +51,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
         ShotEvent(
             time_ms=800,
             source=ShotSource.MANUAL,
-            confidence=1.0,
+            confidence=None,
             score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
         )
     ]
@@ -133,6 +134,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.scoring_shot_expansion = {selected_shot_id: True}
     project.ui_state.waveform_shot_amplitudes = {selected_shot_id: 1.75}
     project.ui_state.timing_edit_shot_ids = [selected_shot_id]
+    project.ui_state.timing_column_widths = {"segment": 128, "split": 224, "action": 244}
 
     bundle = save_project(project, tmp_path / "round-trip.ssproj")
     loaded = load_project(bundle)
@@ -222,6 +224,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.ui_state.scoring_shot_expansion == {selected_shot_id: True}
     assert loaded.ui_state.waveform_shot_amplitudes == {selected_shot_id: 1.75}
     assert loaded.ui_state.timing_edit_shot_ids == [selected_shot_id]
+    assert loaded.ui_state.timing_column_widths["segment"] == 128
+    assert loaded.ui_state.timing_column_widths["split"] == 224
+    assert loaded.ui_state.timing_column_widths["action"] == 244
 
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:

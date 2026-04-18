@@ -132,7 +132,7 @@ def run_check() -> int:
             failures.append(f"{tool}: {exc}")
 
     try:
-        print(f"- qt: PySide6 {_check_qt_runtime()}")
+        print(f"- pyside6: {_check_qt_runtime()}")
     except Exception as exc:  # noqa: BLE001
         failures.append(f"qt: {exc}")
 

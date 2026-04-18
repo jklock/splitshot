@@ -12,8 +12,9 @@ from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PRIMARY_VIDEO = ROOT / "Stage1.MP4"
+ROOT = Path(__file__).resolve().parents[3]
+TEST_VIDEO_DIR = ROOT / "tests" / "artifacts" / "test_video"
+DEFAULT_PRIMARY_VIDEO = TEST_VIDEO_DIR / "TestVideo1.MP4"
 
 
 @dataclass(frozen=True, slots=True)

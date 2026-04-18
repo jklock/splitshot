@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$RootDir = Split-Path -Parent $PSScriptRoot
+$RootDir = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $PythonVersion = if ($env:SPLITSHOT_PYTHON_VERSION) { $env:SPLITSHOT_PYTHON_VERSION } else { '3.12' }
 
 function Write-Setup([string]$Message) {

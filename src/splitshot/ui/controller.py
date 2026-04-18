@@ -37,6 +37,7 @@ from splitshot.domain.models import (
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
+from splitshot.media.ffmpeg import MediaError
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
@@ -119,6 +120,95 @@ def _practiscore_name_matches(input_name: str, candidate_name: str) -> bool:
     input_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", input_name.lower()) if part)
     candidate_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part)
     return bool(input_parts) and input_parts == candidate_parts
+
+
+def _normalize_media_name_fragment(value: str) -> str:
+    return re.sub(r"\d+", lambda match: str(int(match.group(0))), value.lower())
+
+
+def _media_name_tokens(path: str | Path) -> set[str]:
+    stem = _normalize_media_name_fragment(Path(path).stem)
+    return {token for token in re.split(r"[^a-z0-9]+", stem) if token}
+
+
+def _project_media_recovery_score(
+    expected_path: str,
+    expected_asset: VideoAsset,
+    candidate_path: Path,
+    candidate_asset: VideoAsset,
+) -> int:
+    if expected_asset.is_still_image != candidate_asset.is_still_image:
+        return -1
+    if expected_asset.width and candidate_asset.width and expected_asset.width != candidate_asset.width:
+        return -1
+    if expected_asset.height and candidate_asset.height and expected_asset.height != candidate_asset.height:
+        return -1
+    if expected_asset.rotation != candidate_asset.rotation:
+        return -1
+    if expected_asset.duration_ms and candidate_asset.duration_ms:
+        duration_delta = abs(expected_asset.duration_ms - candidate_asset.duration_ms)
+        if duration_delta > 2000:
+            return -1
+    else:
+        duration_delta = None
+    fps_delta = abs(expected_asset.fps - candidate_asset.fps)
+    if expected_asset.fps and candidate_asset.fps and fps_delta > 1.0:
+        return -1
+
+    expected_name = Path(expected_path).name.lower()
+    expected_stem = Path(expected_path).stem.lower()
+    expected_name_normalized = _normalize_media_name_fragment(Path(expected_path).name)
+    expected_stem_normalized = _normalize_media_name_fragment(Path(expected_path).stem)
+    candidate_name = candidate_path.name.lower()
+    candidate_stem = candidate_path.stem.lower()
+    candidate_name_normalized = _normalize_media_name_fragment(candidate_path.name)
+    candidate_stem_normalized = _normalize_media_name_fragment(candidate_path.stem)
+    score = 0
+
+    if expected_name and candidate_name == expected_name:
+        score += 1000
+    elif expected_name_normalized and candidate_name_normalized == expected_name_normalized:
+        score += 950
+    elif expected_stem and candidate_stem == expected_stem:
+        score += 900
+    elif expected_stem_normalized and candidate_stem_normalized == expected_stem_normalized:
+        score += 850
+    elif expected_stem and (expected_stem in candidate_stem or candidate_stem in expected_stem):
+        score += 700
+    elif expected_stem_normalized and (
+        expected_stem_normalized in candidate_stem_normalized
+        or candidate_stem_normalized in expected_stem_normalized
+    ):
+        score += 650
+    else:
+        score += 120 * len(_media_name_tokens(expected_path).intersection(_media_name_tokens(candidate_path)))
+
+    if Path(expected_path).suffix.lower() == candidate_path.suffix.lower():
+        score += 20
+    if expected_asset.width and candidate_asset.width == expected_asset.width:
+        score += 150
+    if expected_asset.height and candidate_asset.height == expected_asset.height:
+        score += 150
+    if duration_delta is not None:
+        if duration_delta <= 50:
+            score += 200
+        elif duration_delta <= 250:
+            score += 150
+        elif duration_delta <= 1000:
+            score += 100
+        else:
+            score += 50
+    if expected_asset.fps and candidate_asset.fps:
+        if fps_delta <= 0.01:
+            score += 60
+        elif fps_delta <= 0.1:
+            score += 40
+        else:
+            score += 10
+    if expected_asset.audio_sample_rate and candidate_asset.audio_sample_rate == expected_asset.audio_sample_rate:
+        score += 25
+    score += 10
+    return score
 
 
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
@@ -447,6 +537,102 @@ class ProjectController(QObject):
                 return changed or recovered_from_folder
         return changed or recovered_from_folder
 
+    def _project_input_candidates(self) -> list[tuple[Path, VideoAsset]]:
+        if self.project_path is None:
+            return []
+
+        candidates: list[tuple[Path, VideoAsset]] = []
+        seen_paths: set[Path] = set()
+        candidate_dirs = [self.project_path]
+        input_dir = self.project_path / INPUT_DIRNAME
+        if input_dir.is_dir():
+            candidate_dirs.insert(0, input_dir)
+
+        for directory in candidate_dirs:
+            for path in directory.iterdir():
+                if not path.is_file():
+                    continue
+                resolved_path = path.resolve()
+                if resolved_path in seen_paths:
+                    continue
+                seen_paths.add(resolved_path)
+                try:
+                    candidates.append((resolved_path, probe_video(resolved_path)))
+                except (MediaError, OSError, ValueError):
+                    continue
+        candidates.sort(key=lambda item: item[0].name.lower())
+        return candidates
+
+    def _recover_media_asset_from_project_folder(
+        self,
+        asset: VideoAsset,
+        candidates: list[tuple[Path, VideoAsset]],
+        used_paths: set[Path],
+    ) -> VideoAsset | None:
+        stored_path = asset.path.strip()
+        if not stored_path:
+            return None
+
+        resolved_path = Path(stored_path)
+        if resolved_path.exists():
+            used_paths.add(resolved_path.resolve())
+            return None
+
+        scored_candidates: list[tuple[int, Path, VideoAsset]] = []
+        for candidate_path, candidate_asset in candidates:
+            if candidate_path in used_paths:
+                continue
+            score = _project_media_recovery_score(stored_path, asset, candidate_path, candidate_asset)
+            if score <= 0:
+                continue
+            scored_candidates.append((score, candidate_path, candidate_asset))
+        if not scored_candidates:
+            return None
+
+        scored_candidates.sort(key=lambda item: (-item[0], item[1].name.lower()))
+        if len(scored_candidates) > 1 and scored_candidates[0][0] == scored_candidates[1][0]:
+            return None
+
+        best_score, best_path, best_asset = scored_candidates[0]
+        if best_score < 350:
+            return None
+        used_paths.add(best_path)
+        return best_asset
+
+    def _restore_media_sources_from_project(self) -> bool:
+        candidates = self._project_input_candidates()
+        if not candidates:
+            return False
+
+        used_paths: set[Path] = set()
+        changed = False
+
+        recovered_primary = self._recover_media_asset_from_project_folder(self.project.primary_video, candidates, used_paths)
+        if recovered_primary is not None:
+            self.project.primary_video = recovered_primary
+            changed = True
+
+        for source in self.project.merge_sources:
+            recovered_asset = self._recover_media_asset_from_project_folder(source.asset, candidates, used_paths)
+            if recovered_asset is None:
+                continue
+            source.asset = recovered_asset
+            changed = True
+
+        if self.project.merge_sources:
+            _sync_secondary_video_from_merge_sources(self.project)
+        elif self.project.secondary_video is not None:
+            recovered_secondary = self._recover_media_asset_from_project_folder(
+                self.project.secondary_video,
+                candidates,
+                used_paths,
+            )
+            if recovered_secondary is not None:
+                self.project.secondary_video = recovered_secondary
+                changed = True
+
+        return changed
+
     def _current_practiscore_selection_matches_source(self) -> bool:
         scoring = self.project.scoring
         options = self._practiscore_options
@@ -610,7 +796,7 @@ class ProjectController(QObject):
         shot = ShotEvent(
             time_ms=time_ms,
             source=ShotSource.MANUAL,
-            confidence=1.0,
+            confidence=None,
             score=default_score_mark_for_ruleset(self.project.scoring.ruleset),
         )
         self.project.analysis.shots.append(shot)
@@ -626,6 +812,7 @@ class ProjectController(QObject):
                 shot.time_ms = max(0, time_ms)
                 if shot.source == ShotSource.AUTO:
                     shot.source = ShotSource.MANUAL
+                    shot.confidence = None
                 break
         self.project.sort_shots()
         self.update_hit_factor()
@@ -635,6 +822,13 @@ class ProjectController(QObject):
     def delete_shot(self, shot_id: str) -> None:
         self.project.analysis.shots = [shot for shot in self.project.analysis.shots if shot.id != shot_id]
         self._forget_original_shot(shot_id)
+        if self.project.ui_state.selected_shot_id == shot_id:
+            self.project.ui_state.selected_shot_id = None
+        self.project.ui_state.scoring_shot_expansion.pop(shot_id, None)
+        self.project.ui_state.waveform_shot_amplitudes.pop(shot_id, None)
+        self.project.ui_state.timing_edit_shot_ids = [
+            value for value in self.project.ui_state.timing_edit_shot_ids if value != shot_id
+        ]
         self.update_hit_factor()
         self.project.touch()
         self.project_changed.emit()
@@ -751,6 +945,32 @@ class ProjectController(QObject):
                         next_timing_edit_ids.append(clean_value)
             if ui_state.timing_edit_shot_ids != next_timing_edit_ids:
                 ui_state.timing_edit_shot_ids = next_timing_edit_ids
+                changed = True
+        if "timing_column_widths" in payload:
+            next_timing_column_widths: dict[str, float] = {}
+            raw_timing_column_widths = payload.get("timing_column_widths")
+            if isinstance(raw_timing_column_widths, dict):
+                minimums = {
+                    "lock": 60,
+                    "segment": 104,
+                    "split": 144,
+                    "total": 88,
+                    "action": 140,
+                    "score": 68,
+                    "confidence": 92,
+                    "source": 84,
+                }
+                for key, value in raw_timing_column_widths.items():
+                    clean_key = str(key).strip()
+                    if clean_key not in minimums:
+                        continue
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    next_timing_column_widths[clean_key] = max(minimums[clean_key], round(numeric))
+            if ui_state.timing_column_widths != next_timing_column_widths:
+                ui_state.timing_column_widths = next_timing_column_widths
                 changed = True
 
         if changed:
@@ -931,7 +1151,16 @@ class ProjectController(QObject):
             overlay.font_bold = bool(payload["font_bold"])
         if "font_italic" in payload:
             overlay.font_italic = bool(payload["font_italic"])
-        for field_name in ("show_timer", "show_draw", "show_shots", "show_score"):
+        for field_name in (
+            "show_timer",
+            "show_draw",
+            "show_shots",
+            "show_score",
+            "timer_lock_to_stack",
+            "draw_lock_to_stack",
+            "score_lock_to_stack",
+            "review_boxes_lock_to_stack",
+        ):
             if field_name in payload:
                 setattr(overlay, field_name, bool(payload[field_name]))
         if "custom_box_enabled" in payload:
@@ -1273,13 +1502,20 @@ class ProjectController(QObject):
         self.project = load_project(path)
         self.project_path = ensure_project_suffix(path)
         loaded_snapshot = project_to_dict(self.project)
+        recovered_media = self._restore_media_sources_from_project()
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
-        if recovered_practiscore:
+        if recovered_media or recovered_practiscore:
             self.project.touch()
-        self._saved_snapshot = loaded_snapshot if recovered_practiscore else project_to_dict(self.project)
+        self._saved_snapshot = loaded_snapshot if (recovered_media or recovered_practiscore) else project_to_dict(self.project)
         self._remember_original_shots()
         self._remember_project(self.project_path)
-        if recovered_practiscore and self._practiscore_source_name:
+        if recovered_media and recovered_practiscore and self._practiscore_source_name:
+            self._set_status(
+                f"Opened project folder {self.project_path} and restored renamed project media and PractiScore from {self._practiscore_source_name}."
+            )
+        elif recovered_media:
+            self._set_status(f"Opened project folder {self.project_path} and restored renamed project media.")
+        elif recovered_practiscore and self._practiscore_source_name:
             self._set_status(
                 f"Opened project folder {self.project_path} and restored PractiScore from {self._practiscore_source_name}."
             )

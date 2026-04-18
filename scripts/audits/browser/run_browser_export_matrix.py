@@ -15,13 +15,9 @@ from splitshot.media.ffmpeg import resolve_media_binary
 from splitshot.ui.controller import ProjectController
 
 
-ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_STAGE_VIDEOS = [
-    ROOT / "Stage1.MP4",
-    ROOT / "Stage2.MP4",
-    ROOT / "Stage3.MP4",
-    ROOT / "Stage4.MP4",
-]
+ROOT = Path(__file__).resolve().parents[3]
+TEST_VIDEO_DIR = ROOT / "tests" / "artifacts" / "test_video"
+DEFAULT_STAGE_VIDEOS = sorted(TEST_VIDEO_DIR.glob("*.MP4"))
 
 BUILTIN_PRESETS = [
     "source_mp4",
@@ -312,6 +308,7 @@ def _write_markdown(
     artifact_dir: Path,
     server_log_path: Path,
     case_results: list[dict[str, Any]],
+    stage_videos: list[Path],
     clip_seconds: float | None,
 ) -> None:
     successes = [result for result in case_results if result["success"]]
@@ -320,6 +317,7 @@ def _write_markdown(
     clip_line = "- Source inputs: full-length stage videos"
     if clip_seconds is not None:
         clip_line = f"- Source inputs: clipped stage videos ({clip_seconds:g}s per source)"
+    primary_video_line = "- Primary videos: " + ", ".join(video.name for video in stage_videos)
     lines = [
         "# Browser Export Matrix",
         "",
@@ -329,7 +327,7 @@ def _write_markdown(
         "",
         "## Coverage",
         "",
-        "- Primary videos: Stage1.MP4, Stage2.MP4, Stage3.MP4, Stage4.MP4",
+        primary_video_line,
         clip_line,
         "- Built-in presets: source_mp4, universal_vertical, short_form_vertical, youtube_long_1080p, youtube_long_4k",
         "- Custom containers/profiles: .m4v, .mov, .mkv",
@@ -426,6 +424,9 @@ def main() -> int:
     logs_dir.mkdir(parents=True, exist_ok=True)
     exports_dir.mkdir(parents=True, exist_ok=True)
 
+    if not DEFAULT_STAGE_VIDEOS:
+        raise SystemExit(f"No bundled test videos were found under {TEST_VIDEO_DIR}.")
+
     missing = [path for path in DEFAULT_STAGE_VIDEOS if not path.exists()]
     if missing:
         raise SystemExit(f"Missing stage videos: {', '.join(str(path) for path in missing)}")
@@ -478,6 +479,7 @@ def main() -> int:
         artifact_dir,
         server.activity.path,
         case_results,
+        stage_videos,
         args.clip_seconds,
     )
 

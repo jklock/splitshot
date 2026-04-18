@@ -515,6 +515,87 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     assert orange_bottom < green_top
 
 
+def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
+    project = Project(name="Imported Summary Browser Line Height")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100)]
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.style_type = "square"
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.font_size = 14
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            source="imported_summary",
+            quadrant="top_left",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            opacity=1.0,
+        )
+    ]
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="uspsa",
+        raw_seconds=23.24,
+        aggregate_points=101.0,
+        total_points=101.0,
+        hit_factor=4.3460,
+    )
+
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 1200, 320, 180)
+    painter.end()
+
+    red_pixels: list[tuple[int, int]] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                red_pixels.append((x, y))
+
+    assert red_pixels
+    min_y = min(y for _x, y in red_pixels)
+    max_y = max(y for _x, y in red_pixels)
+
+    assert 64 <= (max_y - min_y + 1) <= 68
+
+
+def test_overlay_renderer_can_lock_review_boxes_to_overlay_stack() -> None:
+    project = Project(name="Review Box Stack Lock")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.review_boxes_lock_to_stack = True
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            source="manual",
+            text="Review Box",
+            quadrant="bottom_right",
+            background_color="#ff0000",
+            text_color="#ffffff",
+            opacity=1.0,
+            width=160,
+            height=48,
+        )
+    ]
+
+    badges, _score_marks = OverlayRenderer().build_badges(project, 0)
+
+    review_badge = next(badge for badge in badges if badge.text == "Review Box")
+
+    assert review_badge.style.background_color == "#ff0000"
+    assert review_badge.style.text_color == "#ffffff"
+    assert review_badge.width == 160
+    assert review_badge.height == 48
+
+
 def test_export_burns_manual_custom_box_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
     video_path = synthetic_video_factory(name="custom-box-export")
     project = Project(name="Manual Custom Box Export")

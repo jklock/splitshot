@@ -262,6 +262,25 @@ def is_expected_disconnect_error(exc: BaseException | None) -> bool:
     return isinstance(exc, EXPECTED_DISCONNECT_ERRORS)
 
 
+def _existing_dialog_directory(current: str | None, *, project_path: bool = False) -> Path:
+    if not current:
+        return Path.home()
+
+    candidate = resolve_project_path(current) if project_path else Path(current)
+    candidate = candidate.expanduser()
+    if candidate.exists():
+        return candidate.resolve() if candidate.is_dir() else candidate.resolve().parent
+
+    probe = candidate.parent
+    while True:
+        if probe.exists() and probe.is_dir():
+            return probe.resolve()
+        if probe.parent == probe:
+            break
+        probe = probe.parent
+    return Path.home()
+
+
 def choose_local_path(kind: str, current: str | None = None) -> str | None:
     if sys.platform == "darwin":
         return choose_local_path_macos(kind, current)
@@ -272,8 +291,12 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError("Native file browser is not available in this Python environment.") from exc
 
-    current_path = resolve_project_path(current) if current else None
-    initial_dir = str(current_path if current_path else Path.home())
+    initial_dir = str(
+        _existing_dialog_directory(
+            current,
+            project_path=kind in {"project", "project_save", "project_open", "project_folder"},
+        )
+    )
     root = tk.Tk()
     root.withdraw()
     try:
@@ -309,8 +332,10 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
 
 
 def choose_local_path_macos(kind: str, current: str | None = None) -> str | None:
-    current_path = resolve_project_path(current) if current else None
-    default_dir = (current_path if current_path else Path.home()).resolve()
+    default_dir = _existing_dialog_directory(
+        current,
+        project_path=kind in {"project", "project_save", "project_open", "project_folder"},
+    )
     default_name = "output.mp4"
     if kind in {"primary", "secondary"}:
         prompt = "Choose stage video" if kind == "primary" else "Choose secondary angle video"
