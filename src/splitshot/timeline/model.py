@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from splitshot.domain.models import Project, ShotEvent, TimingEvent
 
@@ -72,6 +72,57 @@ def split_reset_shot_ids(project: Project) -> set[str]:
     return reset_ids
 
 
+def normalized_timing_event_for_shots(
+    event: TimingEvent,
+    shots: list[ShotEvent],
+) -> TimingEvent | None:
+    """Return an event with only valid shot anchors, or None if it cannot attach."""
+    if not shots:
+        return None if event.after_shot_id or event.before_shot_id else event
+
+    shot_index = {shot.id: index for index, shot in enumerate(shots)}
+    had_anchor = bool(event.after_shot_id or event.before_shot_id)
+    after_shot_id = event.after_shot_id if event.after_shot_id in shot_index else None
+    before_shot_id = event.before_shot_id if event.before_shot_id in shot_index else None
+
+    if had_anchor and after_shot_id is None and before_shot_id is None:
+        return None
+
+    if after_shot_id and before_shot_id:
+        after_index = shot_index[after_shot_id]
+        before_index = shot_index[before_shot_id]
+        if before_index != after_index + 1:
+            if before_index > after_index:
+                after_shot_id = None
+            else:
+                before_shot_id = None
+
+    if after_shot_id == event.after_shot_id and before_shot_id == event.before_shot_id:
+        return event
+    return replace(event, after_shot_id=after_shot_id, before_shot_id=before_shot_id)
+
+
+def normalized_timing_events_for_shots(
+    events: list[TimingEvent],
+    shots: list[ShotEvent],
+) -> list[TimingEvent]:
+    normalized_events: list[TimingEvent] = []
+    for event in events:
+        normalized = normalized_timing_event_for_shots(event, shots)
+        if normalized is not None:
+            normalized_events.append(normalized)
+    return normalized_events
+
+
+def normalize_project_timing_events(project: Project) -> bool:
+    shots = sort_shots(project.analysis.shots)
+    normalized_events = normalized_timing_events_for_shots(project.analysis.events, shots)
+    if normalized_events == project.analysis.events:
+        return False
+    project.analysis.events = normalized_events
+    return True
+
+
 def _default_event_label(event: TimingEvent) -> str:
     label = event.label.strip()
     return label or event.kind.replace("_", " ").title()
@@ -114,7 +165,7 @@ def _events_grouped_by_anchor(
     shot_index = {shot.id: index for index, shot in enumerate(shots)}
     events_by_shot_id = {shot.id: [] for shot in shots}
     tail_events: list[TimingEvent] = []
-    for event in project.analysis.events:
+    for event in normalized_timing_events_for_shots(project.analysis.events, shots):
         if event.before_shot_id and event.before_shot_id in shot_index:
             events_by_shot_id[event.before_shot_id].append(event)
             continue

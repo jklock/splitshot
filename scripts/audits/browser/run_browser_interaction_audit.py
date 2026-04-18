@@ -416,8 +416,16 @@ def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:
           renderLiveOverlay();
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
           const badge = document.querySelector('#score-layer [data-overlay-drag="timer"], #live-overlay [data-overlay-drag="timer"]');
+                    const stageRect = stage.getBoundingClientRect();
           const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
-          const frameRect = frameGeometry?.frameRect;
+                    const frameRect = frameGeometry?.frameRect
+                        ? {
+                                left: stageRect.left + frameGeometry.frameRect.left,
+                                top: stageRect.top + frameGeometry.frameRect.top,
+                                width: frameGeometry.frameRect.width,
+                                height: frameGeometry.frameRect.height,
+                            }
+                        : null;
           if (!(badge instanceof HTMLElement) || !frameRect) {
             return { error: 'timer badge is not visible for drag validation' };
           }
@@ -613,8 +621,16 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
                     renderLiveOverlay();
           await new Promise((resolve) => requestAnimationFrame(() => resolve()));
           const badge = document.querySelector('#custom-overlay [data-text-box-drag="true"]');
+                    const stageRect = stage.getBoundingClientRect();
                     const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
-          const frameRect = frameGeometry?.frameRect;
+                    const frameRect = frameGeometry?.frameRect
+                        ? {
+                                left: stageRect.left + frameGeometry.frameRect.left,
+                                top: stageRect.top + frameGeometry.frameRect.top,
+                                width: frameGeometry.frameRect.width,
+                                height: frameGeometry.frameRect.height,
+                            }
+                        : null;
           if (!(badge instanceof HTMLElement) || !frameRect) {
             return { error: 'imported summary badge is not visible after the final shot' };
           }
@@ -825,8 +841,16 @@ def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_
           const stage = document.getElementById('video-stage');
           const media = document.getElementById('primary-video');
           if (!(item instanceof HTMLElement) || !(stage instanceof HTMLElement) || !(media instanceof HTMLVideoElement)) return null;
+                    const stageRect = stage.getBoundingClientRect();
           const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
-          const frameRect = frameGeometry?.frameRect;
+                    const frameRect = frameGeometry?.frameRect
+                        ? {
+                                left: stageRect.left + frameGeometry.frameRect.left,
+                                top: stageRect.top + frameGeometry.frameRect.top,
+                                width: frameGeometry.frameRect.width,
+                                height: frameGeometry.frameRect.height,
+                            }
+                        : null;
           if (!frameRect) return null;
           const itemRect = item.getBoundingClientRect();
           const centerX = itemRect.left + (itemRect.width / 2);

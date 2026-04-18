@@ -11,7 +11,21 @@ from splitshot.scoring.practiscore import (
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
-WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
+
+
+def _changed_place_idpa_results(tmp_path: Path) -> Path:
+    source = (EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_text(encoding="utf-8")
+    source = source.replace(
+        "4,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,29.83,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+        "6,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,20.57,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+    )
+    source = source.replace(
+        "8,PCC,NV,Brown,Ben,A598326,,1,1,0,,88.21,15,,,,,,19.21,7,,,,,,,32.95,4,,,,,,,15.32,2,,,,,,,20.73,2,,,,,,",
+        ",PCC,NV,Brown,Ben,A598326,,1,0,1,,88.21,15,,,,,,19.21,7,,,,,,,32.95,4,,,,,,,15.32,2,,,,,,,20.73,2,,,,,,",
+    )
+    path = tmp_path / "thursday-night.csv"
+    path.write_text(source, encoding="utf-8")
+    return path
 
 
 def test_infer_practiscore_context_from_idpa_csv() -> None:
@@ -127,8 +141,8 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
     assert result.imported_stage.score_counts == {"A": 15.0, "C": 8.0, "D": 2.0}
 
 
-def test_describe_practiscore_file_handles_idpa_dnf_place_rows() -> None:
-    result = describe_practiscore_file(WORKSPACE_IDPA_RESULTS, source_name="thursday-night.csv")
+def test_describe_practiscore_file_handles_idpa_dnf_place_rows(tmp_path: Path) -> None:
+    result = describe_practiscore_file(_changed_place_idpa_results(tmp_path), source_name="thursday-night.csv")
 
     assert result.source_name == "thursday-night.csv"
     assert result.match_type == "idpa"
@@ -137,9 +151,9 @@ def test_describe_practiscore_file_handles_idpa_dnf_place_rows() -> None:
     assert any(option.name == "Ben Brown" and option.place is None for option in result.competitors)
 
 
-def test_infer_practiscore_context_falls_back_to_name_when_place_changes() -> None:
+def test_infer_practiscore_context_falls_back_to_name_when_place_changes(tmp_path: Path) -> None:
     result = infer_practiscore_context(
-        WORKSPACE_IDPA_RESULTS,
+        _changed_place_idpa_results(tmp_path),
         match_type="idpa",
         stage_number=2,
         competitor_name="John Klockenkemper",

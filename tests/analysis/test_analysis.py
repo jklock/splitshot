@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from splitshot.analysis.detection import DetectionResult, analyze_video_audio
+from splitshot.analysis.detection import DetectionResult, _filter_false_positive_shots, analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.domain.models import (
     BadgeSize,
@@ -27,7 +27,17 @@ from splitshot.utils.time import seconds_to_ms
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
-WORKSPACE_IDPA_RESULTS = REPO_ROOT / "IDPA.csv"
+
+
+def _changed_place_idpa_results(tmp_path: Path) -> Path:
+    source = (EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_text(encoding="utf-8")
+    source = source.replace(
+        "4,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,29.83,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+        "6,CO,UN,Klockenkemper,John,A1035577,,1,1,0,,83.01,11,1,1,,,,14.55,1,,,,,,,20.57,5,1,,,,,,18.62,5,,,,,,,20.01,,,1,,,,",
+    )
+    path = tmp_path / "thursday-night.csv"
+    path.write_text(source, encoding="utf-8")
+    return path
 
 
 def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
@@ -69,6 +79,20 @@ def test_threshold_changes_shot_detection_sensitivity(synthetic_video_factory) -
     high = analyze_video_audio(video_path, threshold=0.9)
 
     assert len(low.shots) >= len(high.shots)
+
+
+def test_false_positive_filter_rejects_sub_tenth_second_shots() -> None:
+    shots = [
+        ShotEvent(time_ms=165, source=ShotSource.AUTO, confidence=0.95),
+        ShotEvent(time_ms=280, source=ShotSource.AUTO, confidence=0.61),
+        ShotEvent(time_ms=345, source=ShotSource.AUTO, confidence=0.88),
+        ShotEvent(time_ms=520, source=ShotSource.AUTO, confidence=0.74),
+    ]
+
+    filtered = _filter_false_positive_shots(shots, beep_time_ms=100)
+
+    assert [shot.time_ms for shot in filtered] == [345, 520]
+    assert [shot.confidence for shot in filtered] == [0.88, 0.74]
 
 
 def test_model_backed_detection_emits_probability_confidence(synthetic_video_factory) -> None:
@@ -207,6 +231,7 @@ def test_primary_replacement_preserves_reusable_settings_and_resets_video_state(
 
     controller.set_project_details(name="Classifier Template", description="Carry these settings forward")
     controller.set_detection_threshold(0.35)
+    first_shot_id = controller.project.analysis.shots[0].id
     controller.set_overlay_position(OverlayPosition.TOP)
     controller.set_overlay_display_options(
         {
@@ -505,7 +530,7 @@ def test_delete_timing_event_removes_matching_event() -> None:
     assert controller.project.analysis.events == []
 
 
-def test_delete_shot_clears_ui_state_references() -> None:
+def test_delete_shot_revalidates_ui_state_references() -> None:
     controller = ProjectController()
     first_shot = ShotEvent(time_ms=250)
     second_shot = ShotEvent(time_ms=480)
@@ -524,7 +549,7 @@ def test_delete_shot_clears_ui_state_references() -> None:
     controller.delete_shot(first_shot.id)
 
     assert [shot.id for shot in controller.project.analysis.shots] == [second_shot.id]
-    assert controller.project.ui_state.selected_shot_id is None
+    assert controller.project.ui_state.selected_shot_id == second_shot.id
     assert controller.project.ui_state.scoring_shot_expansion == {second_shot.id: False}
     assert controller.project.ui_state.waveform_shot_amplitudes == {second_shot.id: 1.2}
     assert controller.project.ui_state.timing_edit_shot_ids == [second_shot.id]
@@ -555,7 +580,7 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
     assert imported_box.height == 0
 
 
-def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes() -> None:
+def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes(tmp_path: Path) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -565,7 +590,7 @@ def test_importing_new_practiscore_csv_preserves_current_selection_when_place_ch
     )
     controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv")
 
-    controller.import_practiscore_file(str(WORKSPACE_IDPA_RESULTS), source_name="thursday-night.csv")
+    controller.import_practiscore_file(str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv")
 
     assert controller.project.scoring.match_type == "idpa"
     assert controller.project.scoring.stage_number == 2
@@ -577,7 +602,7 @@ def test_importing_new_practiscore_csv_preserves_current_selection_when_place_ch
     assert controller.project.scoring.imported_stage.final_time == 20.57
 
 
-def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing() -> None:
+def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing(tmp_path: Path) -> None:
     controller = ProjectController()
     controller.set_practiscore_context(
         match_type="idpa",
@@ -591,7 +616,7 @@ def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missin
     controller.project.overlay.custom_box_enabled = False
     controller.project.overlay.custom_box_mode = "manual"
 
-    controller.import_practiscore_file(str(WORKSPACE_IDPA_RESULTS), source_name="thursday-night.csv")
+    controller.import_practiscore_file(str(_changed_place_idpa_results(tmp_path)), source_name="thursday-night.csv")
 
     assert any(
         box.source == "imported_summary" and box.enabled

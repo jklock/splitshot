@@ -22,6 +22,10 @@ def resolve_project_path(path: str | Path) -> Path:
     return project_path
 
 
+def normalize_project_path(path: str | Path) -> Path:
+    return resolve_project_path(path).expanduser().resolve(strict=False)
+
+
 def ensure_project_suffix(path: str | Path) -> Path:
     return resolve_project_path(path)
 

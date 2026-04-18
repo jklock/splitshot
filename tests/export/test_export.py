@@ -596,6 +596,51 @@ def test_overlay_renderer_can_lock_review_boxes_to_overlay_stack() -> None:
     assert review_badge.height == 48
 
 
+def test_overlay_renderer_uses_unlocked_review_box_custom_coordinates() -> None:
+    project = Project(name="Review Box Custom Coordinates")
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.review_boxes_lock_to_stack = False
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            source="manual",
+            text="Review Box",
+            quadrant="custom",
+            x=0.75,
+            y=0.25,
+            background_color="#ff0000",
+            text_color="#ffffff",
+            opacity=1.0,
+            width=80,
+            height=40,
+        )
+    ]
+
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 320, 180)
+    painter.end()
+
+    red_pixels: list[tuple[int, int]] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                red_pixels.append((x, y))
+
+    assert red_pixels
+    center_x = (min(x for x, _y in red_pixels) + max(x for x, _y in red_pixels)) / 2
+    center_y = (min(y for _x, y in red_pixels) + max(y for _x, y in red_pixels)) / 2
+
+    assert center_x == pytest.approx(320 * 0.75, abs=3)
+    assert center_y == pytest.approx(180 * 0.25, abs=3)
+
+
 def test_export_burns_manual_custom_box_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:
     video_path = synthetic_video_factory(name="custom-box-export")
     project = Project(name="Manual Custom Box Export")

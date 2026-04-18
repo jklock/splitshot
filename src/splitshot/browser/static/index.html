@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260418a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260418b" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -195,9 +195,13 @@
                 <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
               </section>
               <div id="timing-table" class="data-table"></div>
-              <label>Detection threshold
-                <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
-              </label>
+              <div class="threshold-control">
+                <label for="threshold">Detection threshold</label>
+                <div class="threshold-control-row">
+                  <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
+                  <button id="apply-threshold" type="button">Re-run ShotML</button>
+                </div>
+              </div>
               <p class="hint">Start near 0.50. Lower the threshold if quiet shots are being missed, and raise it if background noise is being marked as a shot. Each change re-analyzes the local audio for this stage.</p>
             </section>
 
@@ -604,6 +608,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260418a"></script>
+    <script src="/static/app.js?v=20260418b"></script>
   </body>
 </html>
