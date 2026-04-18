@@ -4,9 +4,15 @@ import json
 import subprocess
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-from splitshot.analysis.detection import DetectionResult, _filter_false_positive_shots, analyze_video_audio
+from splitshot.analysis.detection import (
+    DetectionResult,
+    _filter_false_positive_shots,
+    _refine_shot_times,
+    analyze_video_audio,
+)
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.domain.models import (
     BadgeSize,
@@ -103,8 +109,19 @@ def test_model_backed_detection_emits_probability_confidence(synthetic_video_fac
     assert confidences
     assert all(confidence is not None for confidence in confidences)
     assert all(0.0 <= float(confidence) <= 1.0 for confidence in confidences)
-    assert max(float(confidence) for confidence in confidences) < 1.0
+    assert max(float(confidence) for confidence in confidences) <= 1.0
     assert max(float(confidence) for confidence in confidences) > 0.5
+
+
+def test_refine_shot_times_preserves_raw_model_confidence() -> None:
+    samples = np.zeros(400, dtype=np.float32)
+    samples[198:202] = np.asarray([0.4, 1.0, 0.7, 0.2], dtype=np.float32)
+    shots = [ShotEvent(time_ms=200, source=ShotSource.AUTO, confidence=0.9734)]
+
+    refined = _refine_shot_times(samples, sample_rate=1000, shots=shots)
+
+    assert len(refined) == 1
+    assert refined[0].confidence == pytest.approx(0.9734)
 
 
 def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None:

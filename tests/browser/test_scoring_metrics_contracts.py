@@ -118,6 +118,9 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
 
     assert js.count("const rows = buildMetricsRows();") == 3
     assert "const confidence = segment ? (segment.confidence ?? null) : (row.confidence ?? null);" in js
+    assert 'return `${clamped.toFixed(1)}%`;' in js
+    assert "estimated confidence" not in js
+    assert "model confidence ${formatConfidenceValue(row.confidence)}." in js
     assert "scoreStatus.dataset.importedSource = imported.source_name || \"\";" in js
     assert "scoreStatus.dataset.importedStage = imported.stage_number ?? \"\";" in js
     assert "scoreStatus.dataset.importedCompetitor = imported.competitor_name || \"\";" in js

@@ -21,7 +21,6 @@ from splitshot.utils.time import seconds_to_ms
 
 BEEP_ONSET_FRACTION = 0.24
 SHOT_ONSET_FRACTION = 0.66
-SHOT_CONFIDENCE_MAX = 0.92
 MIN_SHOT_INTERVAL_MS = 100
 
 
@@ -272,7 +271,6 @@ def _refine_shot_times(
     samples: np.ndarray,
     sample_rate: int,
     shots: list[ShotEvent],
-    cutoff: float,
 ) -> list[ShotEvent]:
     if samples.size == 0 or not shots:
         return shots
@@ -298,35 +296,17 @@ def _refine_shot_times(
 
         peak = float(np.max(envelope))
         if peak <= 0.0:
-            calibrated_confidence = None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, SHOT_CONFIDENCE_MAX))
             refined.append(shot)
-            refined[-1].confidence = calibrated_confidence
             continue
 
         candidates = np.where(envelope >= peak * SHOT_ONSET_FRACTION)[0]
         refined_time = rough_time if candidates.size == 0 else int(centers[int(candidates[0])])
-        baseline = float(np.percentile(envelope, 35))
-        onset_contrast = 0.0 if peak <= 0.0 else float(np.clip((peak - baseline) / peak, 0.0, 1.0))
-        if candidates.size > 0:
-            onset_width_ms = int(centers[int(candidates[-1])] - centers[int(candidates[0])])
-            width_factor = float(np.clip(1.0 - max(0.0, (onset_width_ms - 6) / 48.0), 0.0, 1.0))
-        else:
-            width_factor = 0.0
-        raw_confidence = 0.0 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
-        margin = float(np.clip((raw_confidence - cutoff) / max(1e-6, 1.0 - cutoff), 0.0, 1.0))
-        calibrated_confidence = float(
-            np.clip(
-                raw_confidence * (0.34 + (0.36 * margin) + (0.30 * onset_contrast * width_factor)),
-                0.0,
-                SHOT_CONFIDENCE_MAX,
-            )
-        )
         refined.append(
             ShotEvent(
                 id=shot.id,
                 time_ms=refined_time,
                 source=shot.source,
-                confidence=calibrated_confidence,
+                confidence=None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0)),
                 score=shot.score,
             )
         )
@@ -509,7 +489,7 @@ def detect_shots(
 ) -> list[ShotEvent]:
     predictions = _predict_audio_events(samples, sample_rate)
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
-    shots = _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
+    shots = _refine_shot_times(samples, sample_rate, shots)
     return _filter_false_positive_shots(shots, beep_time_ms)
 
 
@@ -530,7 +510,7 @@ def _analyze_predictions(
         first_shot_ms,
     )
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
-    shots = _refine_shot_times(samples, sample_rate, shots, _shot_detection_cutoff(threshold))
+    shots = _refine_shot_times(samples, sample_rate, shots)
     shots = _filter_false_positive_shots(shots, beep_time_ms)
     return DetectionResult(
         beep_time_ms=beep_time_ms,

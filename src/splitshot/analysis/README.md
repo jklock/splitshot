@@ -2,7 +2,7 @@
 
 The analysis package extracts audio features, runs the embedded model, and turns the results into beep and shot detections.
 
-For the implementation-level walkthrough of ShotML, confidence derivation, threshold sweeps, and timeline reconciliation, see [docs/analysis/SHOTML.md](../../../docs/analysis/SHOTML.md).
+For the implementation-level walkthrough of ShotML, raw model confidence, threshold sweeps, and timeline reconciliation, see [docs/analysis/SHOTML.md](../../../docs/analysis/SHOTML.md).
 
 ## Files
 

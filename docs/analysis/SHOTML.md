@@ -176,23 +176,17 @@ This step is what turns a coarse model frame into a tighter event time that bett
 
 ## 7. Confidence Derivation
 
-The confidence shown by the UI is not a claim that the stage is correct end to end.
+The confidence shown by the UI is the model's raw per-shot probability for the `shot` class, expressed on a `0%` to `100%` scale.
 
-For auto-detected shots, SplitShot starts with the raw model probability and then recalibrates it during refinement using:
+Shot-time refinement still moves the event timestamp to a stronger local onset in the waveform, but it does not rewrite the confidence into a separate heuristic estimate.
 
-- margin over the active cutoff
-- onset contrast relative to the local waveform baseline
-- onset width stability
-
-The refined confidence is clipped to `SHOT_CONFIDENCE_MAX = 0.92`.
-
-That cap exists because even a very clean local onset is still only local evidence. It is not proof that:
+That number is still only local evidence. It is not proof that:
 
 - no shot was missed elsewhere
 - no non-shot transient was counted
 - the final accumulated stage time is perfectly reconciled to outside reference data
 
-Manual timings are different. Once a shot is added or manually moved, it is no longer an ML confidence problem. The app should treat it as a manual edit, not as a 100% model prediction.
+Manual timings are different. Once a shot is added or manually moved, it is no longer an ML confidence problem. The app should treat it as a manual edit, not as a `100%` model prediction.
 
 ## 8. Threshold Sweeps And Preflight Analysis
 
@@ -224,7 +218,7 @@ In practice, this means one bad shot time can ripple into:
 
 ## 10. What Confidence Does Not Mean
 
-A high confidence value means the local model-plus-waveform evidence for that one detected shot was strong.
+A high confidence value means the model assigned a high probability to the `shot` class at the selected detection peak.
 
 It does not mean:
 

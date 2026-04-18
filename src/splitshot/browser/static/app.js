@@ -611,8 +611,9 @@ function formatConfidenceValue(confidence) {
   if (confidence === null || confidence === undefined || confidence === "") return "Manual";
   const numeric = Number(confidence);
   if (!Number.isFinite(numeric)) return String(confidence);
-  if (numeric <= 1) return `~${Math.max(0, Math.min(99, Math.round(numeric * 100)))}%`;
-  return `~${Math.max(0, Math.min(99, Math.round(numeric)))}%`;
+  const percent = numeric <= 1 ? numeric * 100 : numeric;
+  const clamped = Math.max(0, Math.min(100, percent));
+  return `${clamped.toFixed(1)}%`;
 }
 
 function isLowConfidence(confidence, source = "") {
@@ -3850,7 +3851,7 @@ function renderWaveformShotList() {
       if (segment.shot_id === selectedShotId) item.classList.add("selected");
       if (isLowConfidence(segment.confidence, segment.source)) {
         item.classList.add("low-confidence");
-        item.title = `Review this split manually: estimated confidence ${formatConfidenceValue(segment.confidence)}.`;
+        item.title = `Review this split manually: model confidence ${formatConfidenceValue(segment.confidence)}.`;
       }
       const title = document.createElement("strong");
       title.textContent = segment.card_title;
@@ -4305,7 +4306,7 @@ function renderTimingTable(tableId = "timing-table") {
         confidenceCell.classList.add("low-confidence");
         confidenceCell.title = row.confidence === null || row.confidence === undefined
           ? "Manual timing edit."
-          : `Review this split manually: estimated confidence ${formatConfidenceValue(row.confidence)}.`;
+          : `Review this split manually: model confidence ${formatConfidenceValue(row.confidence)}.`;
       }
       table.appendChild(confidenceCell);
 
