@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="640" />
+	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="800" />
 </p>
 
 # SplitShot
@@ -10,14 +10,14 @@ SplitShot is a local-first browser app for competition shooting video analysis, 
 
 ## What SplitShot Does
 
-- Import a local stage video without uploading it to the cloud.
-- Detect the timer beep and shot events from the video's audio.
-- Review and correct split timing in the waveform editor.
-- Score the run manually or load PractiScore context for the same stage.
-- Tune on-video shot badges, timer badges, score summaries, and review text boxes.
-- Add PiP media such as a second angle or still images.
-- Review derived metrics, then export CSV or text summaries.
-- Render a finished local video with FFmpeg.
+- Imports a local stage video and keep the whole workflow on your machine. SplitShot works directly from files on disk, so you can load match footage, reopen saved projects, and keep your training and match videos out of the cloud.
+- Detects the timer beep and shot events from the video's audio with a local analysis pass. SplitShot builds an initial shooting timeline for you instead of making you mark every shot by hand from scratch.
+- Reviews and correct split timing in the waveform editor. You can inspect the detected events, adjust bad markers, add missing timing events, remove false positives, and make the timeline match what actually happened on the run.
+- Score sthe run manually or load PractiScore context for the same stage. That gives you a fast path whether you are doing ad hoc review, building a stage breakdown from memory, or aligning the video with official stage and competitor context.
+- Tunes on-video shot badges, timer badges, score summaries, and review text boxes with live preview feedback. You can control what appears on the video, how it is styled, and how much analysis detail the finished clip should surface to the viewer.
+- Adds PiP, SbS, and UaB media such as a second angle or still images. SplitShot lets you bring in supporting visuals, place them where they belong, and use them to clarify positions, transitions, makeup shots, or stage design details.
+- Reviews derived metrics, then export CSV or text summaries. The app turns the corrected timeline and scoring data into usable output for post-stage review, coaching notes, spreadsheets, or sharing outside the app.
+- Renders a finished local video with FFmpeg. Your final export can include the corrected timing, overlays, review annotations, PiP media, and presentation choices you made during analysis.
 
 ## Install SplitShot
 
