@@ -10,7 +10,7 @@ from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, Project, ScoreLetter, ScoreMark, ShotEvent, TimingEvent, VideoAsset
+from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageScore, MergeLayout, MergeSource, OverlayPosition, OverlayTextBox, Project, ScoreLetter, ScoreMark, ShotEvent, TimingEvent, VideoAsset
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
@@ -203,11 +203,34 @@ def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory
     assert scored_badge.background_color is None
     assert scored_badge.style.background_color == "#f97316"
     assert scored_badge.text_color == "#000000"
-    assert " C" in scored_badge.text
+    assert "  C" in scored_badge.text
     assert "PE x1" in scored_badge.text
     assert scored_badge.text_runs is not None
     assert ("C", "#00ff00") in scored_badge.text_runs
     assert ("PE", "#112233") in scored_badge.text_runs
+
+
+def test_overlay_renderer_paint_handles_scored_badge_runs_without_crashing(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name="Scored Paint")
+    project.primary_video = probe_video(video_path)
+    analysis = analyze_video_audio(video_path, threshold=0.35)
+    project.analysis.beep_time_ms_primary = analysis.beep_time_ms
+    project.analysis.shots = analysis.shots
+    project.scoring.enabled = True
+    project.overlay.show_score = False
+    project.overlay.show_shots = True
+    project.analysis.shots[0].score = ScoreMark(letter=ScoreLetter.C, penalty_counts={"procedural_errors": 1})
+
+    image = QImage(320, 180, QImage.Format_ARGB32)
+    image.fill(QColor("black"))
+    painter = QPainter(image)
+    try:
+        OverlayRenderer().paint(painter, project, project.analysis.shots[0].time_ms + 50, 320, 180)
+    finally:
+        painter.end()
+
+    assert not image.isNull()
 
 
 def test_overlay_renderer_formats_timer_and_draw_like_browser_preview() -> None:
@@ -245,6 +268,25 @@ def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_fact
     assert any(badge.text.startswith("Draw ") for badge in before_first)
     assert not any(badge.text.startswith("Draw ") for badge in after_first)
     assert any(badge.text == expected_shot_badge for badge in after_first)
+
+
+def test_overlay_renderer_reveals_shot_badges_on_frame_boundaries() -> None:
+    project = Project(name="Frame Safe Overlay")
+    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.analysis.beep_time_ms_primary = 0
+    project.analysis.shots = [ShotEvent(time_ms=150)]
+    project.overlay.show_timer = False
+    project.overlay.show_draw = True
+    project.overlay.show_shots = True
+    project.overlay.show_score = False
+
+    before_boundary, _score_marks = OverlayRenderer().build_badges(project, 199)
+    on_boundary, _score_marks = OverlayRenderer().build_badges(project, 200)
+
+    assert any(badge.text.startswith("Draw ") for badge in before_boundary)
+    assert not any(badge.text.startswith("Shot 1 ") for badge in before_boundary)
+    assert not any(badge.text.startswith("Draw ") for badge in on_boundary)
+    assert any(badge.text.startswith("Shot 1 ") for badge in on_boundary)
 
 
 def test_overlay_renderer_folds_reload_intervals_into_the_following_shot_badge() -> None:
@@ -415,6 +457,62 @@ def test_overlay_renderer_respects_fixed_custom_box_dimensions() -> None:
 
     assert 116 <= (max_x - min_x + 1) <= 122
     assert 36 <= (max_y - min_y + 1) <= 42
+
+
+def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
+    project = Project(name="Summary Above Final")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100, score=ScoreMark(letter=ScoreLetter.DOWN_0))]
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = True
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            source="imported_summary",
+            quadrant="above_final",
+            background_color="#ff7b22",
+            text_color="#ffffff",
+            opacity=1.0,
+        )
+    ]
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=13.05,
+        final_time=17.05,
+        score_counts={"PD": 4},
+    )
+
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 1200, 320, 180)
+    painter.end()
+
+    orange_pixels: list[tuple[int, int]] = []
+    green_pixels: list[tuple[int, int]] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() > 180 and color.green() > 70 and color.blue() < 80:
+                orange_pixels.append((x, y))
+            if color.green() > 90 and color.green() > color.red() + 20 and color.green() > color.blue() + 20:
+                green_pixels.append((x, y))
+
+    assert orange_pixels
+    assert green_pixels
+
+    orange_center_x = (min(x for x, _y in orange_pixels) + max(x for x, _y in orange_pixels)) / 2
+    green_center_x = (min(x for x, _y in green_pixels) + max(x for x, _y in green_pixels)) / 2
+    orange_bottom = max(y for _x, y in orange_pixels)
+    green_top = min(y for _x, y in green_pixels)
+
+    assert abs(orange_center_x - green_center_x) <= 3
+    assert orange_bottom < green_top
 
 
 def test_export_burns_manual_custom_box_into_output_video(synthetic_video_factory, tmp_path: Path) -> None:

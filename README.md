@@ -10,9 +10,9 @@
 ![UI](https://img.shields.io/badge/UI-browser--first-1d4ed8)
 ![License](https://img.shields.io/badge/license-MIT-111827)
 
-Local-first competition shooting video analysis, scoring, merge review, and FFmpeg export for desktop operating systems.
+Local-first competition shooting video analysis, scoring, merge review, and FFmpeg export.
 
-SplitShot runs a local browser application by default. The browser shell is the primary product surface for ingest, timing review, PractiScore comparison, overlay tuning, metrics review, and export. The PySide6 window remains in the repo as a desktop validation surface for checking local media loading, native dialogs, FFmpeg and FFprobe availability, and cross-platform tooling behavior against the same controller and export pipeline.
+SplitShot runs as a local browser application. The browser shell is the product surface for ingest, timing review, PractiScore comparison, overlay tuning, metrics review, and export.
 
 ## Highlights
 
@@ -20,7 +20,7 @@ SplitShot runs a local browser application by default. The browser shell is the 
 - Metrics dashboard built from derived timing and scoring state, with CSV and text export.
 - Shared overlay model for imported PractiScore summaries plus repeatable custom text boxes.
 - Real-time export log modal backed by the existing activity stream and FFmpeg pipeline callbacks.
-- Cross-platform validation path for macOS, Windows, and Linux using the same project model, controller, and export code.
+- Cross-platform browser workflow for macOS, Windows, and Linux using the same project model, controller, and export code.
 
 ## Product Views
 
@@ -28,16 +28,11 @@ SplitShot runs a local browser application by default. The browser shell is the 
 
 ![SplitShot browser shell](docs/assets/browser-shell.png)
 
-### Desktop validation surface
-
-![SplitShot desktop validation surface](docs/assets/desktop-validation.png)
-
 ## Support Matrix
 
 | Surface | Supported OS | Validation browsers | Purpose |
 | --- | --- | --- | --- |
 | Browser shell | macOS, Windows, Linux | Chromium-class, Firefox, Safari-class WebKit | Primary workflow for media import, timing review, scoring, metrics, overlays, merge, and export |
-| Desktop validation window | macOS, Windows, Linux | N/A | Local validation for native dialogs, media loading, FFmpeg and FFprobe checks, and export pipeline smoke tests |
 
 ## Getting Started
 
@@ -80,27 +75,27 @@ uv run splitshot
 
 ```bash
 uv run splitshot
-uv run splitshot --desktop
 uv run splitshot --no-open
 uv run splitshot --check
 uv run splitshot-web
-uv run splitshot-desktop
 ```
 
 `uv run splitshot` is the normal entrypoint. The default browser path is quiet in the terminal unless you request log mirroring with `--log-level` or explicitly choose `--no-open`.
 
 ## Validation Workflow
 
-Use the commands below to validate the local runtime, browser shell, and desktop surface.
+Use the commands below to validate the local runtime and browser shell.
 
 ```bash
 uv run splitshot --check
 uv run pytest
 uv run python -m playwright install chromium firefox webkit
 uv run python scripts/run_browser_ui_surface_audit.py
+uv run python scripts/run_browser_av_audit.py
+uv run python scripts/run_browser_interaction_audit.py --primary-video /path/to/Stage1.MP4 --merge-video /path/to/Stage2.MP4 --practiscore /path/to/IDPA.csv
 ```
 
-The browser shell should be validated in real desktop browsers. Chromium, Firefox, and Safari-class WebKit checks are expected; the VS Code integrated browser is useful for debugging, but it is not a Safari substitute.
+The browser shell should be validated in real desktop browsers. Chromium, Firefox, and Safari-class WebKit checks are expected; the VS Code integrated browser is useful for debugging, but it is not a Safari substitute. Use the interaction audit when you need route-backed drag, scroll, PractiScore, and PiP coverage with actual media files.
 
 ## Export Pipeline
 
@@ -136,5 +131,5 @@ SplitShot is a source-first `uv` project. The expected workflow is a real deskto
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-04-17
+**Referenced files last updated:** 2026-04-17

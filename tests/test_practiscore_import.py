@@ -10,6 +10,7 @@ from splitshot.scoring.practiscore import (
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
+WORKSPACE_IDPA_RESULTS = Path(__file__).resolve().parent.parent / "IDPA.csv"
 
 
 def test_infer_practiscore_context_from_idpa_csv() -> None:
@@ -123,3 +124,28 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
     assert result.imported_stage.stage_points == 125.0
     assert result.imported_stage.stage_place == 1
     assert result.imported_stage.score_counts == {"A": 15.0, "C": 8.0, "D": 2.0}
+
+
+def test_describe_practiscore_file_handles_idpa_dnf_place_rows() -> None:
+    result = describe_practiscore_file(WORKSPACE_IDPA_RESULTS, source_name="thursday-night.csv")
+
+    assert result.source_name == "thursday-night.csv"
+    assert result.match_type == "idpa"
+    assert result.stage_numbers == [1, 2, 3, 4]
+    assert any(option.name == "John Klockenkemper" and option.place == 6 for option in result.competitors)
+    assert any(option.name == "Ben Brown" and option.place is None for option in result.competitors)
+
+
+def test_infer_practiscore_context_falls_back_to_name_when_place_changes() -> None:
+    result = infer_practiscore_context(
+        WORKSPACE_IDPA_RESULTS,
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+
+    assert result.match_type == "idpa"
+    assert result.stage_number == 2
+    assert result.competitor_name == "John Klockenkemper"
+    assert result.competitor_place == 6

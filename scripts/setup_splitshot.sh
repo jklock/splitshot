@@ -142,7 +142,6 @@ main() {
 [splitshot-setup] Ready.
 [splitshot-setup] Launch commands:
   uv run splitshot
-  uv run splitshot --desktop
   uv run pytest
 
 EOF

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import math
 
 from splitshot.domain.models import ImportedStageScore, Project, ScoreLetter, ScoreMark, ShotEvent
 from splitshot.timeline.model import raw_time_ms
@@ -549,10 +550,21 @@ def set_score_position(shot: ShotEvent, x_norm: float, y_norm: float) -> None:
     shot.score.y_norm = y_norm
 
 
+def shot_display_time_ms(project: Project, shot_time_ms: int) -> int:
+    normalized_shot_time = max(0, int(shot_time_ms))
+    fps = float(getattr(project.primary_video, "fps", 0) or 0)
+    if fps <= 0:
+        return normalized_shot_time
+    frame_duration_ms = 1000.0 / fps
+    frame_index = math.ceil((normalized_shot_time / frame_duration_ms) - 1e-9)
+    frame_boundary_ms = math.ceil((frame_index * frame_duration_ms) - 1e-9)
+    return max(normalized_shot_time, int(frame_boundary_ms))
+
+
 def current_shot_index(project: Project, position_ms: int) -> int | None:
     current_index = None
     for index, shot in enumerate(project.analysis.shots):
-        if shot.time_ms <= position_ms:
+        if shot_display_time_ms(project, shot.time_ms) <= position_ms:
             current_index = index
         else:
             break

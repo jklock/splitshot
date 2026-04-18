@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260416c" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260417a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -387,7 +387,7 @@
               <p id="export-preset-description" class="hint">Choose an export preset.</p>
               <div class="ffmpeg-help">
                 <strong>FFmpeg Renderer</strong>
-                <p>SplitShot renders locally with FFmpeg on this machine. The output settings below affect the same local pipeline used by browser and desktop validation runs.</p>
+                <p>SplitShot renders locally with FFmpeg on this machine. The output settings below affect the same local pipeline used by the browser workflow and export pipeline.</p>
               </div>
               <h3>Frame</h3>
               <label>Quality
@@ -524,7 +524,7 @@
                   </select>
                 </label>
               </div>
-              <button id="import-practiscore" type="button">Select PractiScore Results</button>
+              <button id="import-practiscore" type="button">Select PractiScore File</button>
               <dl id="practiscore-import-summary" class="details"></dl>
               <div class="project-path-row">
                 <label>Primary Video
@@ -534,15 +534,13 @@
                   <button id="browse-primary-path" class="primary-button" type="button">Select Primary Video</button>
                 </div>
               </div>
-              <label>Project bundle path
+              <label>Project folder
                 <div class="path-row">
-                  <input id="project-path" placeholder="~/splitshot/project.ssproj" />
+                  <input id="project-path" placeholder="~/splitshot/My Match" readonly />
                   <button id="browse-project-path" type="button">Choose Project</button>
                 </div>
               </label>
               <div class="project-action-grid">
-                <button id="save-project" type="button">Save Project</button>
-                <button id="open-project" type="button">Open Project</button>
                 <button id="new-project" type="button">New Project</button>
                 <button id="delete-project" class="danger-button project-delete-button" type="button">Delete Project</button>
               </div>
@@ -602,6 +600,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260416c"></script>
+    <script src="/static/app.js?v=20260417a"></script>
   </body>
 </html>

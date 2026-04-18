@@ -1,10 +1,11 @@
 let state = null;
 let selectedShotId = null;
-let activeTool = "project";
+let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
 let draggingShotId = null;
+let draggingShotPointerId = null;
 let pendingDragTimeMs = null;
 let waveformPanDrag = null;
 let waveformNavigatorDrag = null;
@@ -26,6 +27,7 @@ let layoutSizes = {
 let activeResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
+let projectDetailsDraft = { name: null, description: null };
 let secondaryPreviewSyncFrame = null;
 let secondaryPreviewPlayErrorKey = null;
 let overlayColorCommitTimer = null;
@@ -49,6 +51,12 @@ let reviewStageRestoreSecondFrame = null;
 let overlayBadgeMeasureCanvas = null;
 let overlayAutoBubbleCacheKey = null;
 let overlayAutoBubbleCache = { width: 0, height: 0 };
+let renderDeferredForInteraction = false;
+let pendingProjectUiStatePayload = null;
+let pendingMergeSourcePayloads = new Map();
+let mergeSourceCommitTimers = new Map();
+let interactionPreviewFrame = null;
+let pendingInteractionPreview = { video: false, waveform: false, overlay: false };
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
@@ -78,7 +86,10 @@ const BADGE_FONT_SIZES = {
 };
 const OVERLAY_BADGE_PADDING_X_PX = 10;
 const OVERLAY_BADGE_PADDING_Y_PX = 5;
+const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";
 const CUSTOM_QUADRANT_VALUE = "custom";
+const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "merge", "overlay", "review", "export", "metrics"]);
+const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
   "#111827",
@@ -97,6 +108,70 @@ const CUSTOM_COLOR_SWATCHES = [
   "#4b5563",
   "#000000",
 ];
+const DEFAULT_PROJECT_UI_STATE = Object.freeze({
+  selected_shot_id: null,
+  timeline_zoom: waveformZoomX,
+  timeline_offset_ms: Math.round(waveformOffsetMs),
+  active_tool: activeTool,
+  waveform_mode: waveformMode,
+  waveform_expanded: false,
+  timing_expanded: false,
+  layout_locked: layoutLocked,
+  rail_width: Math.round(layoutSizes.railWidth),
+  inspector_width: Math.round(layoutSizes.inspectorWidth),
+  waveform_height: Math.round(layoutSizes.waveformHeight),
+  scoring_shot_expansion: {},
+  waveform_shot_amplitudes: {},
+  timing_edit_shot_ids: [],
+});
+
+function normalizeProjectNameValue(value) {
+  return String(value ?? "").trim() || "Untitled Project";
+}
+
+function projectDetailValue(field, project = state?.project) {
+  const savedValue = field === "name"
+    ? normalizeProjectNameValue(project?.name)
+    : String(project?.description || "");
+  const draftValue = projectDetailsDraft[field];
+  return draftValue === null ? savedValue : draftValue;
+}
+
+function applyProjectDetailsDraft(payload = {}) {
+  const project = state?.project;
+  if (Object.prototype.hasOwnProperty.call(payload, "name")) {
+    const nextNameDraft = String(payload.name ?? "");
+    const savedName = normalizeProjectNameValue(project?.name);
+    projectDetailsDraft.name = normalizeProjectNameValue(nextNameDraft) === savedName ? null : nextNameDraft;
+    if (project) project.name = normalizeProjectNameValue(nextNameDraft);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "description")) {
+    const nextDescriptionDraft = String(payload.description ?? "");
+    const savedDescription = String(project?.description || "");
+    projectDetailsDraft.description = nextDescriptionDraft === savedDescription ? null : nextDescriptionDraft;
+    if (project) project.description = nextDescriptionDraft;
+  }
+}
+
+function mergeProjectDetailsDraft(project) {
+  if (!project) return;
+  if (projectDetailsDraft.name !== null) {
+    const draftName = String(projectDetailsDraft.name);
+    if (normalizeProjectNameValue(draftName) === normalizeProjectNameValue(project.name)) {
+      projectDetailsDraft.name = null;
+    } else {
+      project.name = normalizeProjectNameValue(draftName);
+    }
+  }
+  if (projectDetailsDraft.description !== null) {
+    const draftDescription = String(projectDetailsDraft.description);
+    if (draftDescription === String(project.description || "")) {
+      projectDetailsDraft.description = null;
+    } else {
+      project.description = draftDescription;
+    }
+  }
+}
 
 function flushActivityQueue() {
   if (activityFlushTimer !== null) {
@@ -389,12 +464,13 @@ function scoreBadgeContent(shot, shotNumber, splitText, intervalLabel = "") {
   if (tokens.length === 0) {
     return { text: baseText, runs: null };
   }
+  const firstTokenGap = "  ";
   const runs = [
     { text: baseText },
-    { text: " " },
+    { text: firstTokenGap },
     { text: tokens[0].text, color: tokens[0].color },
   ];
-  let text = `${baseText} ${tokens[0].text}`;
+  let text = `${baseText}${firstTokenGap}${tokens[0].text}`;
   tokens.slice(1).forEach((token) => {
     runs.push({ text: " " });
     runs.push({ text: token.text, color: token.color });
@@ -463,17 +539,19 @@ function collectPenaltyCounts(scope, selector = ".shot-penalty-input[data-penalt
 function renderDetailsList(id, rows) {
   const list = $(id);
   if (!list) return;
-  list.innerHTML = "";
-  rows
-    .filter(([, value]) => value !== "" && value !== null && value !== undefined)
-    .forEach(([label, value]) => {
-      const title = document.createElement("dt");
-      title.textContent = label;
-      const detail = document.createElement("dd");
-      detail.textContent = String(value);
-      list.appendChild(title);
-      list.appendChild(detail);
-    });
+  withPreservedScrollState([list], () => {
+    list.innerHTML = "";
+    rows
+      .filter(([, value]) => value !== "" && value !== null && value !== undefined)
+      .forEach(([label, value]) => {
+        const title = document.createElement("dt");
+        title.textContent = label;
+        const detail = document.createElement("dd");
+        detail.textContent = String(value);
+        list.appendChild(title);
+        list.appendChild(detail);
+      });
+  });
 }
 
 function requireValue(id, label) {
@@ -484,6 +562,90 @@ function requireValue(id, label) {
 
 function controlIsActive(control) {
   return !!control && document.activeElement === control;
+}
+
+function captureScrollState(elements = []) {
+  return elements
+    .filter((element) => element instanceof HTMLElement)
+    .map((element) => ({
+      element,
+      scrollTop: element.scrollTop,
+      scrollLeft: element.scrollLeft,
+    }));
+}
+
+function restoreScrollState(states = []) {
+  states.forEach(({ element, scrollTop, scrollLeft }) => {
+    if (!(element instanceof HTMLElement)) return;
+    element.scrollTop = scrollTop;
+    element.scrollLeft = scrollLeft;
+  });
+}
+
+function withPreservedScrollState(elements, callback) {
+  const targets = Array.isArray(elements) ? elements : [elements];
+  const scrollState = captureScrollState(targets);
+  const result = callback();
+  restoreScrollState(scrollState);
+  return result;
+}
+
+function scrollRenderTargets() {
+  return [
+    document.querySelector(".tool-nav"),
+    document.querySelector(".inspector"),
+  ].filter((element) => element instanceof HTMLElement);
+}
+
+function hasActivePointerInteraction() {
+  return Boolean(
+    activeResize
+      || overlayBadgeDrag
+      || mergePreviewDrag
+      || textBoxDrag
+      || draggingShotId
+      || waveformPanDrag
+      || waveformNavigatorDrag,
+  );
+}
+
+function requestRender() {
+  if (hasActivePointerInteraction()) {
+    renderDeferredForInteraction = true;
+    return;
+  }
+  renderDeferredForInteraction = false;
+  render();
+}
+
+function flushDeferredRender() {
+  if (!renderDeferredForInteraction || hasActivePointerInteraction()) return;
+  renderDeferredForInteraction = false;
+  render();
+}
+
+function scheduleInteractionPreviewRender({ video = false, waveform = false, overlay = false } = {}) {
+  pendingInteractionPreview.video = pendingInteractionPreview.video || Boolean(video);
+  pendingInteractionPreview.waveform = pendingInteractionPreview.waveform || Boolean(waveform);
+  pendingInteractionPreview.overlay = pendingInteractionPreview.overlay || Boolean(overlay);
+  if (interactionPreviewFrame !== null) return;
+  interactionPreviewFrame = window.requestAnimationFrame(() => {
+    interactionPreviewFrame = null;
+    flushInteractionPreviewRender();
+  });
+}
+
+function flushInteractionPreviewRender() {
+  if (interactionPreviewFrame !== null) {
+    window.cancelAnimationFrame(interactionPreviewFrame);
+    interactionPreviewFrame = null;
+  }
+  const pending = pendingInteractionPreview;
+  pendingInteractionPreview = { video: false, waveform: false, overlay: false };
+  if (!pending.video && !pending.waveform && !pending.overlay) return;
+  if (pending.video) renderVideo();
+  if (pending.waveform) renderWaveform();
+  if (pending.overlay) renderLiveOverlay();
 }
 
 function syncControlValue(control, value) {
@@ -987,6 +1149,122 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function normalizedUiBooleanMap(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+  return Object.fromEntries(
+    Object.entries(data)
+      .map(([key, value]) => [String(key || "").trim(), Boolean(value)])
+      .filter(([key]) => Boolean(key)),
+  );
+}
+
+function normalizedUiFloatMap(data, minimum = 0) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+  return Object.fromEntries(
+    Object.entries(data)
+      .map(([key, value]) => [String(key || "").trim(), Number(value)])
+      .filter(([key, value]) => Boolean(key) && Number.isFinite(value) && value >= minimum),
+  );
+}
+
+function normalizedUiStringList(data) {
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((value) => String(value || "").trim())
+    .filter(Boolean);
+}
+
+function normalizeProjectUiState(uiState = {}) {
+  const normalizedActiveTool = VALID_TOOL_IDS.has(String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool))
+    ? String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool)
+    : DEFAULT_PROJECT_UI_STATE.active_tool;
+  const normalizedWaveformMode = VALID_WAVEFORM_MODES.has(String(uiState.waveform_mode || DEFAULT_PROJECT_UI_STATE.waveform_mode))
+    ? String(uiState.waveform_mode || DEFAULT_PROJECT_UI_STATE.waveform_mode)
+    : DEFAULT_PROJECT_UI_STATE.waveform_mode;
+  const rawSelectedShotId = uiState.selected_shot_id;
+  return {
+    selected_shot_id: rawSelectedShotId === null || rawSelectedShotId === undefined || String(rawSelectedShotId).trim() === ""
+      ? null
+      : String(rawSelectedShotId),
+    timeline_zoom: clamp(Number(uiState.timeline_zoom ?? DEFAULT_PROJECT_UI_STATE.timeline_zoom) || DEFAULT_PROJECT_UI_STATE.timeline_zoom, 1, 200),
+    timeline_offset_ms: Math.max(0, Math.round(Number(uiState.timeline_offset_ms ?? DEFAULT_PROJECT_UI_STATE.timeline_offset_ms) || 0)),
+    active_tool: normalizedActiveTool,
+    waveform_mode: normalizedWaveformMode,
+    waveform_expanded: Boolean(uiState.waveform_expanded ?? DEFAULT_PROJECT_UI_STATE.waveform_expanded),
+    timing_expanded: Boolean(uiState.timing_expanded ?? DEFAULT_PROJECT_UI_STATE.timing_expanded),
+    layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
+    rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 48, 72),
+    inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
+    waveform_height: Math.max(112, Math.round(Number(uiState.waveform_height ?? DEFAULT_PROJECT_UI_STATE.waveform_height) || DEFAULT_PROJECT_UI_STATE.waveform_height)),
+    scoring_shot_expansion: normalizedUiBooleanMap(uiState.scoring_shot_expansion),
+    waveform_shot_amplitudes: normalizedUiFloatMap(uiState.waveform_shot_amplitudes, 0.25),
+    timing_edit_shot_ids: normalizedUiStringList(uiState.timing_edit_shot_ids),
+  };
+}
+
+function mergeProjectUiState(remoteUiState = {}, localUiState = {}) {
+  return normalizeProjectUiState({
+    ...normalizeProjectUiState(remoteUiState),
+    ...normalizeProjectUiState(localUiState),
+  });
+}
+
+function readProjectUiStatePayload() {
+  const root = $("cockpit-root");
+  return normalizeProjectUiState({
+    selected_shot_id: selectedShotId,
+    timeline_zoom: waveformZoomX,
+    timeline_offset_ms: Math.round(waveformOffsetMs),
+    active_tool: activeTool,
+    waveform_mode: waveformMode,
+    waveform_expanded: Boolean(root?.classList.contains("waveform-expanded")),
+    timing_expanded: Boolean(root?.classList.contains("timing-expanded")),
+    layout_locked: layoutLocked,
+    rail_width: Math.round(layoutSizes.railWidth),
+    inspector_width: Math.round(layoutSizes.inspectorWidth),
+    waveform_height: Math.round(layoutSizes.waveformHeight),
+    scoring_shot_expansion: Object.fromEntries(
+      [...scoringShotExpansion.entries()].filter(([shotId]) => Boolean(String(shotId || "").trim())),
+    ),
+    waveform_shot_amplitudes: { ...waveformShotAmplitudeById },
+    timing_edit_shot_ids: [...timingRowEdits].filter(Boolean),
+  });
+}
+
+function syncLocalProjectUiState(payload = readProjectUiStatePayload()) {
+  const normalized = normalizeProjectUiState(payload);
+  if (state?.project) state.project.ui_state = normalized;
+  return normalized;
+}
+
+function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
+  const normalized = normalizeProjectUiState(uiState);
+  selectedShotId = normalized.selected_shot_id;
+  waveformZoomX = normalized.timeline_zoom;
+  waveformOffsetMs = normalized.timeline_offset_ms;
+  layoutLocked = normalized.layout_locked;
+  layoutSizes = {
+    railWidth: normalized.rail_width,
+    inspectorWidth: normalized.inspector_width,
+    waveformHeight: normalized.waveform_height,
+  };
+  window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
+  window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
+  window.localStorage.setItem("splitshot.layoutLocked", String(layoutLocked));
+  window.localStorage.setItem("splitshot.layout.railWidth", String(layoutSizes.railWidth));
+  window.localStorage.setItem("splitshot.layout.inspectorWidth", String(layoutSizes.inspectorWidth));
+  window.localStorage.setItem("splitshot.layout.waveformHeight", String(layoutSizes.waveformHeight));
+  waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
+  scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
+  timingRowEdits = new Set(normalized.timing_edit_shot_ids);
+  setWaveformMode(normalized.waveform_mode, { persistUiState: false });
+  setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });
+  setTimingExpanded(normalized.timing_expanded, { persistUiState: false });
+  setActiveTool(normalized.active_tool, { persistUiState: false });
+  if (state?.project) state.project.ui_state = normalized;
+  return normalized;
+}
+
 function normalizedCoordinateValue(value) {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -1096,11 +1374,22 @@ function createOverlayTextBoxId() {
   return `textbox-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function overlayTextBoxAutoSize(box) {
+  const text = overlayTextBoxDisplayText(box).trim();
+  if (!text) return { width: 0, height: 0 };
+  const measurement = measureOverlayBadgeContent(text);
+  return {
+    width: Math.ceil(measurement.width + (OVERLAY_BADGE_PADDING_X_PX * 2)),
+    height: Math.ceil(measurement.height + (OVERLAY_BADGE_PADDING_Y_PX * 2)),
+  };
+}
+
 function normalizeOverlayTextBox(box = {}, index = 0) {
   const normalizedX = normalizedCoordinateValue(box.x);
   const normalizedY = normalizedCoordinateValue(box.y);
   const source = box.source === "imported_summary" ? "imported_summary" : "manual";
   const validQuadrants = new Set([
+    ABOVE_FINAL_TEXT_BOX_VALUE,
     "top_left",
     "top_middle",
     "top_right",
@@ -1112,8 +1401,15 @@ function normalizeOverlayTextBox(box = {}, index = 0) {
     "bottom_right",
     CUSTOM_QUADRANT_VALUE,
   ]);
-  const fallbackQuadrant = source === "imported_summary" ? "top_right" : "top_left";
+  const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";
   const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;
+  let width = Math.max(0, Number(box.width || 0));
+  let height = Math.max(0, Number(box.height || 0));
+  if (source === "imported_summary" && (width <= 0 || height <= 0)) {
+    const autoSize = overlayTextBoxAutoSize({ ...box, source, text: String(box.text || "") });
+    if (width <= 0 && autoSize.width > 0) width = autoSize.width;
+    if (height <= 0 && autoSize.height > 0) height = autoSize.height;
+  }
   return {
     id: box.id || createOverlayTextBoxId(),
     enabled: Boolean(box.enabled ?? true),
@@ -1125,8 +1421,8 @@ function normalizeOverlayTextBox(box = {}, index = 0) {
     background_color: normalizeHexColor(box.background_color || "#000000") || "#000000",
     text_color: normalizeHexColor(box.text_color || "#ffffff") || "#ffffff",
     opacity: clamp(Number(box.opacity ?? 0.9), 0, 1),
-    width: Math.max(0, Number(box.width || 0)),
-    height: Math.max(0, Number(box.height || 0)),
+    width,
+    height,
     order: Number(box.order ?? index),
   };
 }
@@ -1198,7 +1494,7 @@ function buildOverlayTextBox(source = "manual") {
     enabled: true,
     source,
     text: "",
-    quadrant: source === "imported_summary" ? "top_right" : "top_left",
+    quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",
     x: null,
     y: null,
     background_color: "#000000",
@@ -1240,6 +1536,16 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
     }
     if (field === "source") {
       box.source = rawValue === "imported_summary" ? "imported_summary" : "manual";
+      if (box.source === "imported_summary") {
+        if (!usesCustomQuadrant(box.quadrant)) {
+          box.quadrant = ABOVE_FINAL_TEXT_BOX_VALUE;
+          box.x = null;
+          box.y = null;
+        }
+        const autoSize = overlayTextBoxAutoSize(box);
+        if (!(Number(box.width) > 0) && autoSize.width > 0) box.width = autoSize.width;
+        if (!(Number(box.height) > 0) && autoSize.height > 0) box.height = autoSize.height;
+      }
       return box;
     }
     if (field === "text") {
@@ -1360,7 +1666,7 @@ function syncOverlayPreviewStateFromControls() {
 
 function previewOverlayControlChanges() {
   syncOverlayPreviewStateFromControls();
-  renderLiveOverlay();
+  scheduleInteractionPreviewRender({ overlay: true });
 }
 
 function commitOverlayControlChanges() {
@@ -1478,6 +1784,11 @@ function overlayTextBoxDisplayText(box) {
 
 function overlayTextBoxHint(box) {
   const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
+  if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
+    return box.source === "imported_summary"
+      ? "Keeps the imported summary centered above the final score badge once it appears."
+      : "Keeps this box centered above the final score badge once it appears.";
+  }
   if (box.source === "imported_summary") {
     return importedReady
       ? "Uses the imported PractiScore stage summary and appears after the final shot."
@@ -1512,6 +1823,7 @@ function buildTextBoxCard(box, index) {
     <div class="control-grid">
       <label>Box placement
         <select data-text-box-field="quadrant">
+          <option value="above_final">Above Final Box</option>
           <option value="top_left">Top left</option>
           <option value="top_middle">Top middle</option>
           <option value="top_right">Top right</option>
@@ -1619,16 +1931,18 @@ function renderTextBoxEditors() {
   if (containers.length === 0) return;
   const boxes = overlayTextBoxes();
   containers.forEach((container) => {
-    container.innerHTML = "";
-    if (boxes.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
-      container.appendChild(empty);
-      return;
-    }
-    boxes.forEach((box, index) => {
-      container.appendChild(buildTextBoxCard(box, index));
+    withPreservedScrollState([container], () => {
+      container.innerHTML = "";
+      if (boxes.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "hint";
+        empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
+        container.appendChild(empty);
+        return;
+      }
+      boxes.forEach((box, index) => {
+        container.appendChild(buildTextBoxCard(box, index));
+      });
     });
   });
 }
@@ -1705,7 +2019,7 @@ function applyLayoutState() {
   });
 }
 
-function persistLayoutSize(key, value) {
+function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {
   layoutSizes[key] = value;
   const storageKey = {
     railWidth: "splitshot.layout.railWidth",
@@ -1714,7 +2028,15 @@ function persistLayoutSize(key, value) {
   }[key];
   window.localStorage.setItem(storageKey, String(Math.round(value)));
   applyLayoutState();
-  if (state) renderWaveform();
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+  if (state && renderWaveformNow) renderWaveform();
+}
+
+function previewLayoutSize(key, value) {
+  layoutSizes[key] = value;
+  applyLayoutState();
+  scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
 }
 
 function toggleLayoutLock() {
@@ -1722,6 +2044,8 @@ function toggleLayoutLock() {
   window.localStorage.setItem("splitshot.layoutLocked", String(layoutLocked));
   activity("layout.lock.toggle", { locked: layoutLocked });
   applyLayoutState();
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
 }
 
 function resetLayout() {
@@ -1731,6 +2055,8 @@ function resetLayout() {
   });
   activity("layout.reset", layoutSizes);
   applyLayoutState();
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
   if (state) renderWaveform();
 }
 
@@ -1752,16 +2078,16 @@ function moveLayoutResize(event) {
   if (event.pointerId !== undefined && activeResize.pointerId !== undefined && event.pointerId !== activeResize.pointerId) return;
   const kind = activeResize.kind;
   if (kind === "railWidth") {
-    persistLayoutSize("railWidth", clamp(event.clientX, 48, 72));
+    previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));
   } else if (kind === "inspectorWidth") {
     const grid = document.querySelector(".review-grid");
     const right = grid?.getBoundingClientRect().right || window.innerWidth;
-    persistLayoutSize("inspectorWidth", clamp(right - event.clientX, 320, Math.max(320, window.innerWidth * 0.48)));
+    previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 320, Math.max(320, window.innerWidth * 0.48)));
   } else if (kind === "waveformHeight") {
     const stack = document.querySelector(".review-stack");
     const rect = stack?.getBoundingClientRect();
     if (rect) {
-      persistLayoutSize("waveformHeight", clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48)));
+      previewLayoutSize("waveformHeight", clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48)));
     }
   }
 }
@@ -1770,15 +2096,23 @@ function endLayoutResize(event) {
   if (!activeResize) return;
   if (event.pointerId !== undefined && activeResize.pointerId !== undefined && event.pointerId !== activeResize.pointerId) return;
   const kind = activeResize.kind;
+  const sizeKey = {
+    railWidth: "railWidth",
+    inspectorWidth: "inspectorWidth",
+    waveformHeight: "waveformHeight",
+  }[kind];
   releasePointer(activeResize.target, activeResize.pointerId);
   activeResize = null;
   document.body.classList.remove("resizing-layout");
+  if (sizeKey) persistLayoutSize(sizeKey, layoutSizes[sizeKey], { renderWaveformNow: false });
   activity("layout.resize.commit", { kind, sizes: layoutSizes });
-  applyLayoutState();
+  flushInteractionPreviewRender();
+  flushQueuedProjectUiStateApply();
+  flushDeferredRender();
 }
 
-function setActiveTool(tool) {
-  if (!document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
+function setActiveTool(tool, { persistUiState = true } = {}) {
+  if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
   const hadExpandedLayout = root?.classList.contains("waveform-expanded") || root?.classList.contains("timing-expanded");
@@ -1803,6 +2137,8 @@ function setActiveTool(tool) {
     $("add-merge-media")?.focus();
   }
   if (changed) activity("ui.tool.active", { tool });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
   renderLiveOverlay();
 }
 
@@ -1823,7 +2159,7 @@ async function api(path, payload = null) {
   const data = await response.json();
   if (!response.ok || data.error) throw new Error(data.error || response.statusText);
   applyRemoteState(data);
-  render();
+  requestRender();
   activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
   if (finishProcessing) finishProcessing(data.status || "Ready.");
   return data;
@@ -1853,8 +2189,9 @@ function processingForPath(path) {
   }
   if (path === "/api/project/details") return { message: "Updating project details...", detail: "Saving metadata locally" };
   if (path === "/api/project/practiscore") return { message: "Updating match import settings...", detail: "Saving stage and competitor details" };
-  if (path === "/api/project/save") return { message: "Saving project...", detail: "Updating project bundle" };
-  if (path === "/api/project/delete") return { message: "Deleting project...", detail: "Removing project bundle" };
+  if (path === "/api/project/open") return { message: "Opening project folder...", detail: "Loading project.json and local assets" };
+  if (path === "/api/project/save") return { message: "Updating project folder...", detail: "Writing project.json and organizing local assets" };
+  if (path === "/api/project/delete") return { message: "Deleting project folder...", detail: "Removing the project folder from disk" };
   if (path === "/api/project/new") return { message: "Creating new project...", detail: "Resetting project state" };
   return null;
 }
@@ -1864,7 +2201,7 @@ async function postFile(path, file) {
   const form = new FormData();
   form.append("file", file, file.name);
   const uploadState = path === "/api/files/practiscore"
-    ? { message: `Importing ${file.name}...`, detail: "Parsing PractiScore stage results" }
+    ? { message: `Importing ${file.name}...`, detail: "Parsing PractiScore results and staging a local copy" }
     : path === "/api/files/merge"
       ? { message: `Importing ${file.name}...`, detail: "Adding media to the list" }
       : { message: `Analyzing ${file.name}...`, detail: "Detecting beep and shots" };
@@ -1876,7 +2213,7 @@ async function postFile(path, file) {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
-    render();
+    requestRender();
     activity("file.ingested", { path, name: file.name, shots: data.metrics?.total_shots });
     finishProcessing(data.status || "Analysis complete.");
     return data;
@@ -1924,7 +2261,7 @@ async function refresh() {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
-    render();
+    requestRender();
   } catch (error) {
     setStatus(error.message);
     activity("api.error", { path: "/api/state", error: error.message });
@@ -1936,14 +2273,22 @@ function applyRemoteState(nextState) {
     throw new Error("Received invalid project state from the local server.");
   }
   const nextProjectId = nextState?.project?.id || "";
-  const remoteSelectedShotId = nextState.project.ui_state?.selected_shot_id || null;
+  const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;
   if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
     resetLocalProjectView();
   }
+  const nextUiState = isSameProject
+    ? mergeProjectUiState(nextState.project.ui_state, readProjectUiStatePayload())
+    : normalizeProjectUiState(nextState.project.ui_state);
+  nextState.project.ui_state = nextUiState;
+  if (isSameProject) mergeProjectDetailsDraft(nextState.project);
   currentProjectId = nextProjectId;
   state = nextState;
-  if (stateHasShot(state, selectedShotId)) return;
-  selectedShotId = stateHasShot(state, remoteSelectedShotId) ? remoteSelectedShotId : null;
+  applyProjectUiState(nextUiState);
+  if (!stateHasShot(state, selectedShotId)) {
+    selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;
+  }
+  syncLocalProjectUiState();
 }
 
 function hasCompleteProjectState(nextState) {
@@ -1966,34 +2311,30 @@ function stateHasShot(nextState, shotId) {
 function resetLocalProjectView() {
   selectedShotId = null;
   draggingShotId = null;
+  draggingShotPointerId = null;
   pendingDragTimeMs = null;
   exportPathDraft = "";
+  projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
-  timingRowEdits.clear();
-  waveformMode = "select";
-  waveformZoomX = 1;
-  waveformShotAmplitudeById = {};
-  waveformOffsetMs = 0;
+  timingRowEdits = new Set();
+  scoringShotExpansion = new Map();
+  applyProjectUiState({
+    ...DEFAULT_PROJECT_UI_STATE,
+    active_tool: "project",
+    waveform_mode: "select",
+    timeline_zoom: 1,
+    timeline_offset_ms: 0,
+    layout_locked: true,
+    rail_width: 64,
+    inspector_width: 440,
+    waveform_height: 206,
+  });
   window.localStorage.removeItem("splitshot.waveform.zoomX");
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
   resetMediaElement($("primary-video"));
   resetMediaElement($("secondary-video"));
-  scoringShotExpansion.clear();
   const secondaryImage = $("secondary-image");
   if (secondaryImage) secondaryImage.hidden = true;
-  const root = $("cockpit-root");
-  if (root) {
-    root.classList.remove("waveform-expanded", "timing-expanded");
-  }
-  const expandWaveform = $("expand-waveform");
-  if (expandWaveform) expandWaveform.textContent = "Expand";
-  document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.waveformMode === waveformMode);
-  });
-  const waveformHelp = $("waveform-help");
-  if (waveformHelp) {
-    waveformHelp.textContent = "Select mode: click a shot marker, drag to move, arrows nudge.";
-  }
   [
     "project-title",
     "rail-project",
@@ -2330,6 +2671,8 @@ function waveformWindow() {
 function persistWaveformViewport() {
   window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
   window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
 }
 
 function setWaveformOffset(nextOffsetMs, { persist = true } = {}) {
@@ -2418,17 +2761,40 @@ function isWaveformVisible(timeMs) {
   return timeMs >= window.start && timeMs <= window.end;
 }
 
+function primaryFrameDurationMs() {
+  const fps = Number(state?.project?.primary_video?.fps || 0);
+  return fps > 0 ? 1000 / fps : 0;
+}
+
+function browserShotPresentationLagFrames(video = $("primary-video")) {
+  if (!(video instanceof HTMLVideoElement)) return 0;
+  // Firefox can surface the next media time before the corresponding frame is visibly painted.
+  return "mozPaintedFrames" in video ? 1 : 0;
+}
+
+function shotDisplayTimeMs(shotTimeMs, video = $("primary-video")) {
+  const normalizedShotTimeMs = Math.max(0, Math.floor(Number(shotTimeMs) || 0));
+  const frameDurationMs = primaryFrameDurationMs();
+  if (!(frameDurationMs > 0)) return normalizedShotTimeMs;
+  const frameIndex = Math.ceil((normalizedShotTimeMs / frameDurationMs) - Number.EPSILON);
+  const displayFrameIndex = frameIndex + browserShotPresentationLagFrames(video);
+  return Math.max(
+    normalizedShotTimeMs,
+    Math.ceil((displayFrameIndex * frameDurationMs) - Number.EPSILON),
+  );
+}
+
 function currentShotIndex(positionMs) {
   const shots = orderedShotsByTime();
   let index = -1;
   shots.forEach((shot, shotIndex) => {
-    if (shot.time_ms <= positionMs) index = shotIndex;
+    if (shotDisplayTimeMs(shot.time_ms) <= positionMs) index = shotIndex;
   });
   return index;
 }
 
 function renderHeader() {
-  const projectName = state.project.name;
+  const projectName = normalizeProjectNameValue(state.project.name);
   $("project-title").textContent = projectName;
   $("rail-project").textContent = projectName;
   $("status").textContent = state.status;
@@ -2444,7 +2810,7 @@ function renderHeader() {
   if (inspectorStatusCopy) inspectorStatusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
-  $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/project.ssproj`;
+  $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/My Match`;
   syncControlValue($("project-path"), state.project.path || "");
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
@@ -3032,7 +3398,7 @@ function updateWaveformPanDrag(event) {
   if (!waveformPanDrag.moved) return;
   const nextOffset = waveformPanDrag.startOffsetMs - ((deltaPx / Math.max(1, rect.width)) * visible.duration);
   setWaveformOffset(nextOffset);
-  renderWaveform();
+  scheduleInteractionPreviewRender({ waveform: true });
 }
 
 function finishWaveformPanDrag(event) {
@@ -3044,8 +3410,10 @@ function finishWaveformPanDrag(event) {
   waveformPanDrag = null;
   if (moved) {
     activity("waveform.pan_drag.commit", { offset_ms: waveformOffsetMs });
-    renderWaveform();
+    flushInteractionPreviewRender();
   }
+  flushQueuedProjectUiStateApply();
+  flushDeferredRender();
   return moved;
 }
 
@@ -3060,7 +3428,7 @@ function handleWaveformNavigatorPointerDown(event) {
   };
   capturePointer(track, event.pointerId);
   updateWaveformNavigator(event.clientX);
-  renderWaveform();
+  scheduleInteractionPreviewRender({ waveform: true });
   event.preventDefault();
 }
 
@@ -3068,7 +3436,7 @@ function moveWaveformNavigatorDrag(event) {
   if (!waveformNavigatorDrag) return;
   if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
   updateWaveformNavigator(event.clientX);
-  renderWaveform();
+  scheduleInteractionPreviewRender({ waveform: true });
 }
 
 function endWaveformNavigatorDrag(event) {
@@ -3076,6 +3444,9 @@ function endWaveformNavigatorDrag(event) {
   if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
   releasePointer(waveformNavigatorDrag.target, waveformNavigatorDrag.pointerId);
   waveformNavigatorDrag = null;
+  flushInteractionPreviewRender();
+  flushQueuedProjectUiStateApply();
+  flushDeferredRender();
 }
 
 function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
@@ -3133,22 +3504,24 @@ function waveformAmplitudeForTime(timeMs) {
 function renderWaveformShotList() {
   const list = $("waveform-shot-list");
   if (!list) return;
-  list.innerHTML = "";
-  (state.timing_segments || []).forEach((segment) => {
-    const item = document.createElement("button");
-    item.type = "button";
-    if (segment.shot_id === selectedShotId) item.classList.add("selected");
-    if (isLowConfidence(segment.confidence)) {
-      item.classList.add("low-confidence");
-      item.title = `Review this split manually: confidence ${formatConfidenceValue(segment.confidence)}.`;
-    }
-    const title = document.createElement("strong");
-    title.textContent = segment.card_title;
-    const meta = document.createElement("small");
-    meta.textContent = segment.card_meta;
-    item.append(title, meta);
-    item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
-    list.appendChild(item);
+  withPreservedScrollState([list], () => {
+    list.innerHTML = "";
+    (state.timing_segments || []).forEach((segment) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      if (segment.shot_id === selectedShotId) item.classList.add("selected");
+      if (isLowConfidence(segment.confidence)) {
+        item.classList.add("low-confidence");
+        item.title = `Review this split manually: confidence ${formatConfidenceValue(segment.confidence)}.`;
+      }
+      const title = document.createElement("strong");
+      title.textContent = segment.card_title;
+      const meta = document.createElement("small");
+      meta.textContent = segment.card_meta;
+      item.append(title, meta);
+      item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
+      list.appendChild(item);
+    });
   });
 }
 
@@ -3168,37 +3541,39 @@ function deleteTimingEvent(eventId) {
 function renderTimingEventList() {
   const list = $("timing-event-list");
   if (!list) return;
-  list.innerHTML = "";
-  const events = state.project.analysis.events || [];
-  if (events.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "hint";
-    empty.textContent = "No timing events yet.";
-    list.appendChild(empty);
-    return;
-  }
+  withPreservedScrollState([list], () => {
+    list.innerHTML = "";
+    const events = state.project.analysis.events || [];
+    if (events.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No timing events yet.";
+      list.appendChild(empty);
+      return;
+    }
 
-  events.forEach((event) => {
-    const row = document.createElement("div");
-    row.className = "timing-event-row";
+    events.forEach((event) => {
+      const row = document.createElement("div");
+      row.className = "timing-event-row";
 
-    const label = document.createElement("strong");
-    label.textContent = event.label || defaultTimingEventLabel(event.kind);
+      const label = document.createElement("strong");
+      label.textContent = event.label || defaultTimingEventLabel(event.kind);
 
-    const kind = document.createElement("span");
-    kind.textContent = timingEventKindLabel(event.kind);
+      const kind = document.createElement("span");
+      kind.textContent = timingEventKindLabel(event.kind);
 
-    const placement = document.createElement("span");
-    placement.textContent = timingEventPlacementText(event);
+      const placement = document.createElement("span");
+      placement.textContent = timingEventPlacementText(event);
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.setAttribute("aria-label", `Remove timing event ${event.label || defaultTimingEventLabel(event.kind)}`);
-    remove.addEventListener("click", () => deleteTimingEvent(event.id));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.setAttribute("aria-label", `Remove timing event ${event.label || defaultTimingEventLabel(event.kind)}`);
+      remove.addEventListener("click", () => deleteTimingEvent(event.id));
 
-    row.append(label, kind, placement, remove);
-    list.appendChild(row);
+      row.append(label, kind, placement, remove);
+      list.appendChild(row);
+    });
   });
 }
 
@@ -3263,6 +3638,8 @@ function toggleTimingRowEdit(shotId) {
   } else {
     timingRowEdits.add(shotId);
   }
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
   renderTimingTables();
 }
 
@@ -3307,6 +3684,15 @@ function splitRowIntervalLabel(row) {
 
 function splitRowSequenceTotalMs(row) {
   return numericMs(row?.sequence_total_ms);
+}
+
+function splitRowCumulativeMs(row) {
+  const cumulativeMs = numericMs(row?.cumulative_ms);
+  if (cumulativeMs !== null && cumulativeMs !== undefined) return cumulativeMs;
+  const absoluteMs = numericMs(row?.absolute_time_ms);
+  const beepMs = numericMs(state?.metrics?.beep_ms);
+  if (absoluteMs === null || absoluteMs === undefined) return null;
+  return beepMs === null || beepMs === undefined ? absoluteMs : Math.max(0, absoluteMs - beepMs);
 }
 
 function splitRowActions(row) {
@@ -3424,107 +3810,109 @@ function buildSplitRowActionCell(row, expandedTable) {
 function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
-  table.innerHTML = "";
-  const expandedTable = tableId === "timing-workbench-table";
-  table.classList.toggle("interval-timeline-table", true);
-  if (expandedTable) {
-    table.style.setProperty("--timing-action-chip-chars", String(maximumSplitRowActionLabelLength()));
-  } else {
-    table.style.removeProperty("--timing-action-chip-chars");
-  }
-  const defaultScore = defaultScoreLetter();
-  const headers = expandedTable
-    ? ["", "Segment", "Split", "Total", "Action", "Score", "Confidence", "Source"]
-    : ["Segment", "Split", "Total", "Action", "Score"];
-  headers.forEach((header) => {
-    const cell = document.createElement("div");
-    cell.className = "head";
-    cell.textContent = header;
-    table.appendChild(cell);
-  });
-
-  (state.split_rows || []).forEach((row) => {
-    const canEdit = Boolean(row.shot_id);
-    const editing = canEdit && expandedTable && timingRowEdits.has(row.shot_id);
-    const lowConfidence = isLowConfidence(row.confidence);
+  withPreservedScrollState([table], () => {
+    table.innerHTML = "";
+    const expandedTable = tableId === "timing-workbench-table";
+    table.classList.toggle("interval-timeline-table", true);
     if (expandedTable) {
-      const lockCell = document.createElement("div");
-      lockCell.className = "lock-cell";
-      if (canEdit) {
-        const lockButton = document.createElement("button");
-        lockButton.type = "button";
-        lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
-        lockButton.textContent = editing ? "Lock" : "Unlock";
-        lockButton.title = editing ? "Lock row" : "Unlock row";
-        lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
-        lockCell.appendChild(lockButton);
-      }
-      table.appendChild(lockCell);
-    }
-
-    const entryCell = document.createElement("div");
-    entryCell.classList.add("timeline-segment-cell");
-    entryCell.textContent = splitRowEntryLabel(row);
-    if (row.shot_id === selectedShotId) entryCell.classList.add("selected");
-    if (lowConfidence) entryCell.classList.add("low-confidence");
-    if (canEdit) entryCell.addEventListener("click", () => selectShot(row.shot_id));
-    table.appendChild(entryCell);
-
-    const splitCell = document.createElement("div");
-    const splitMs = numericMs(row.split_ms);
-    if (editing) {
-      const editor = document.createElement("span");
-      editor.className = "timing-edit-control";
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = "0";
-      input.step = "0.001";
-      input.className = "timing-split-input";
-      input.value = precise(splitMs ?? row.absolute_time_ms);
-      input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
-      input.addEventListener("change", () => updateTimingRowField(row.shot_id, "split_ms", input.value));
-      const restore = document.createElement("button");
-      restore.type = "button";
-      restore.className = "restore-button";
-      restore.textContent = "Restore";
-      restore.title = "Restore this split to its original timing.";
-      restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
-      editor.append(input, restore);
-      splitCell.appendChild(editor);
+      table.style.setProperty("--timing-action-chip-chars", String(maximumSplitRowActionLabelLength()));
     } else {
-      splitCell.textContent = splitSeconds(splitMs);
+      table.style.removeProperty("--timing-action-chip-chars");
     }
-    table.appendChild(splitCell);
+    const defaultScore = defaultScoreLetter();
+    const headers = expandedTable
+      ? ["", "Segment", "Split", "Total", "Action", "Score", "Confidence", "Source"]
+      : ["Segment", "Split", "Total", "Action", "Score"];
+    headers.forEach((header) => {
+      const cell = document.createElement("div");
+      cell.className = "head";
+      cell.textContent = header;
+      table.appendChild(cell);
+    });
 
-    const totalCell = document.createElement("div");
-    totalCell.textContent = splitSeconds(splitRowSequenceTotalMs(row));
-    table.appendChild(totalCell);
+    (state.split_rows || []).forEach((row) => {
+      const canEdit = Boolean(row.shot_id);
+      const editing = canEdit && expandedTable && timingRowEdits.has(row.shot_id);
+      const lowConfidence = isLowConfidence(row.confidence);
+      if (expandedTable) {
+        const lockCell = document.createElement("div");
+        lockCell.className = "lock-cell";
+        if (canEdit) {
+          const lockButton = document.createElement("button");
+          lockButton.type = "button";
+          lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
+          lockButton.textContent = editing ? "Lock" : "Unlock";
+          lockButton.title = editing ? "Lock row" : "Unlock row";
+          lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
+          lockCell.appendChild(lockButton);
+        }
+        table.appendChild(lockCell);
+      }
 
-    const actionCell = buildSplitRowActionCell(row, expandedTable);
-    if (row.shot_id === selectedShotId) actionCell.classList.add("selected");
-    if (lowConfidence) actionCell.classList.add("low-confidence");
-    if (canEdit) actionCell.addEventListener("click", () => selectShot(row.shot_id));
-    table.appendChild(actionCell);
+      const entryCell = document.createElement("div");
+      entryCell.classList.add("timeline-segment-cell");
+      entryCell.textContent = splitRowEntryLabel(row);
+      if (row.shot_id === selectedShotId) entryCell.classList.add("selected");
+      if (lowConfidence) entryCell.classList.add("low-confidence");
+      if (canEdit) entryCell.addEventListener("click", () => selectShot(row.shot_id));
+      table.appendChild(entryCell);
 
-    const scoreCell = document.createElement("div");
-    if (lowConfidence) scoreCell.classList.add("low-confidence");
-    scoreCell.textContent = row.score_letter || defaultScore;
-    if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
-    table.appendChild(scoreCell);
+      const splitCell = document.createElement("div");
+      const splitMs = numericMs(row.split_ms);
+      if (editing) {
+        const editor = document.createElement("span");
+        editor.className = "timing-edit-control";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "0";
+        input.step = "0.001";
+        input.className = "timing-split-input";
+        input.value = precise(splitMs ?? row.absolute_time_ms);
+        input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
+        input.addEventListener("change", () => updateTimingRowField(row.shot_id, "split_ms", input.value));
+        const restore = document.createElement("button");
+        restore.type = "button";
+        restore.className = "restore-button";
+        restore.textContent = "Restore";
+        restore.title = "Restore this split to its original timing.";
+        restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
+        editor.append(input, restore);
+        splitCell.appendChild(editor);
+      } else {
+        splitCell.textContent = splitSeconds(splitMs);
+      }
+      table.appendChild(splitCell);
 
-    if (!expandedTable) return;
+      const totalCell = document.createElement("div");
+      totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));
+      table.appendChild(totalCell);
 
-    const confidenceCell = document.createElement("div");
-    confidenceCell.textContent = splitRowConfidenceLabel(row);
-    if (lowConfidence) {
-      confidenceCell.classList.add("low-confidence");
-      confidenceCell.title = `Review this split manually: confidence ${formatConfidenceValue(row.confidence)}.`;
-    }
-    table.appendChild(confidenceCell);
+      const actionCell = buildSplitRowActionCell(row, expandedTable);
+      if (row.shot_id === selectedShotId) actionCell.classList.add("selected");
+      if (lowConfidence) actionCell.classList.add("low-confidence");
+      if (canEdit) actionCell.addEventListener("click", () => selectShot(row.shot_id));
+      table.appendChild(actionCell);
 
-    const sourceCell = document.createElement("div");
-    sourceCell.textContent = splitRowSourceLabel(row);
-    table.appendChild(sourceCell);
+      const scoreCell = document.createElement("div");
+      if (lowConfidence) scoreCell.classList.add("low-confidence");
+      scoreCell.textContent = row.score_letter || defaultScore;
+      if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
+      table.appendChild(scoreCell);
+
+      if (!expandedTable) return;
+
+      const confidenceCell = document.createElement("div");
+      confidenceCell.textContent = splitRowConfidenceLabel(row);
+      if (lowConfidence) {
+        confidenceCell.classList.add("low-confidence");
+        confidenceCell.title = `Review this split manually: confidence ${formatConfidenceValue(row.confidence)}.`;
+      }
+      table.appendChild(confidenceCell);
+
+      const sourceCell = document.createElement("div");
+      sourceCell.textContent = splitRowSourceLabel(row);
+      table.appendChild(sourceCell);
+    });
   });
 }
 
@@ -3590,125 +3978,129 @@ function isScoringShotExpanded(shotId, activeShotId = null) {
 function setScoringShotExpanded(shotId, expanded) {
   if (!shotId) return;
   scoringShotExpansion.set(shotId, Boolean(expanded));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
 }
 
 function renderScoringShotList() {
   const list = $("scoring-shot-list");
   if (!list) return;
-  list.innerHTML = "";
-  const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
-  const penaltyFields = state.scoring_summary?.penalty_fields || [];
-  const defaultScore = scoreOptions[0] || "A";
-  const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
-  const visibleShotIds = new Set((state.timing_segments || []).map((segment) => segment.shot_id));
-  [...scoringShotExpansion.keys()].forEach((shotId) => {
-    if (!visibleShotIds.has(shotId)) scoringShotExpansion.delete(shotId);
-  });
-  (state.timing_segments || []).forEach((segment) => {
-    const expanded = isScoringShotExpanded(segment.shot_id, activeShotId);
-    const row = document.createElement("div");
-    row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
-    row.classList.toggle("collapsed", !expanded);
-    if (isLowConfidence(segment.confidence)) row.classList.add("low-confidence");
-
-    const header = document.createElement("div");
-    header.className = "scoring-shot-header";
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "scoring-shot-button";
-    const title = document.createElement("strong");
-    title.textContent = `Shot ${segment.shot_number}`;
-    button.append(title);
-    button.title = segment.source === "manual"
-      ? "Manual shot marker."
-      : isLowConfidence(segment.confidence)
-        ? `Low-confidence ShotML marker (${formatConfidenceValue(segment.confidence)}).`
-        : "ShotML-detected shot.";
-    button.addEventListener("click", () => selectShot(segment.shot_id));
-    header.appendChild(button);
-
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "scoring-shot-toggle";
-    toggle.textContent = expanded ? "v" : ">";
-    toggle.title = expanded ? "Hide score controls" : "Show score controls";
-    toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} score controls for shot ${segment.shot_number}`);
-    toggle.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setScoringShotExpanded(segment.shot_id, !expanded);
-      renderScoringShotList();
+  withPreservedScrollState([list], () => {
+    list.innerHTML = "";
+    const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
+    const penaltyFields = state.scoring_summary?.penalty_fields || [];
+    const defaultScore = scoreOptions[0] || "A";
+    const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
+    const visibleShotIds = new Set((state.timing_segments || []).map((segment) => segment.shot_id));
+    [...scoringShotExpansion.keys()].forEach((shotId) => {
+      if (!visibleShotIds.has(shotId)) scoringShotExpansion.delete(shotId);
     });
-    header.appendChild(toggle);
+    (state.timing_segments || []).forEach((segment) => {
+      const expanded = isScoringShotExpanded(segment.shot_id, activeShotId);
+      const row = document.createElement("div");
+      row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
+      row.classList.toggle("collapsed", !expanded);
+      if (isLowConfidence(segment.confidence)) row.classList.add("low-confidence");
 
-    const controls = document.createElement("div");
-    controls.className = "scoring-shot-controls";
-    controls.hidden = !expanded;
+      const header = document.createElement("div");
+      header.className = "scoring-shot-header";
 
-    const select = document.createElement("select");
-    select.className = "shot-score-select";
-    select.setAttribute("aria-label", `Score shot ${segment.shot_number}`);
-    scoreOptions.forEach((letter) => {
-      const option = document.createElement("option");
-      option.value = letter;
-      const value = state.scoring_summary?.score_values?.[letter] ?? 0;
-      const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
-      option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
-      select.appendChild(option);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "scoring-shot-button";
+      const title = document.createElement("strong");
+      title.textContent = `Shot ${segment.shot_number}`;
+      button.append(title);
+      button.title = segment.source === "manual"
+        ? "Manual shot marker."
+        : isLowConfidence(segment.confidence)
+          ? `Low-confidence ShotML marker (${formatConfidenceValue(segment.confidence)}).`
+          : "ShotML-detected shot.";
+      button.addEventListener("click", () => selectShot(segment.shot_id));
+      header.appendChild(button);
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "scoring-shot-toggle";
+      toggle.textContent = expanded ? "v" : ">";
+      toggle.title = expanded ? "Hide score controls" : "Show score controls";
+      toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} score controls for shot ${segment.shot_number}`);
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setScoringShotExpanded(segment.shot_id, !expanded);
+        renderScoringShotList();
+      });
+      header.appendChild(toggle);
+
+      const controls = document.createElement("div");
+      controls.className = "scoring-shot-controls";
+      controls.hidden = !expanded;
+
+      const select = document.createElement("select");
+      select.className = "shot-score-select";
+      select.setAttribute("aria-label", `Score shot ${segment.shot_number}`);
+      scoreOptions.forEach((letter) => {
+        const option = document.createElement("option");
+        option.value = letter;
+        const value = state.scoring_summary?.score_values?.[letter] ?? 0;
+        const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
+        option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
+        select.appendChild(option);
+      });
+      select.value = segment.score_letter || defaultScore;
+
+      const applyShotScoring = () => {
+        selectedShotId = segment.shot_id;
+        callApi("/api/scoring/score", {
+          shot_id: segment.shot_id,
+          letter: select.value || defaultScore,
+          penalty_counts: collectPenaltyCounts(controls),
+        });
+      };
+      select.addEventListener("change", applyShotScoring);
+
+      const scoreField = document.createElement("div");
+      scoreField.className = "shot-score-field";
+      scoreField.appendChild(select);
+      controls.appendChild(scoreField);
+
+      if (penaltyFields.length > 0) {
+        const penaltyGrid = document.createElement("div");
+        penaltyGrid.className = "shot-penalty-fields";
+        penaltyFields.forEach((field) => {
+          const label = document.createElement("label");
+          label.className = "shot-penalty-field";
+          label.title = [field.label, field.description].filter(Boolean).join(" - ");
+          const text = document.createElement("span");
+          text.textContent = penaltyFieldLabel(field.id, field.label);
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0";
+          input.step = "1";
+          input.value = segment.penalty_counts?.[field.id] ?? 0;
+          input.dataset.penaltyId = field.id;
+          input.className = "shot-penalty-input";
+          input.setAttribute("aria-label", `${field.label} for shot ${segment.shot_number}`);
+          input.title = label.title;
+          input.addEventListener("change", applyShotScoring);
+          label.append(text, input);
+          penaltyGrid.appendChild(label);
+        });
+        controls.appendChild(penaltyGrid);
+      }
+
+      const restore = document.createElement("button");
+      restore.type = "button";
+      restore.className = "restore-button";
+      restore.textContent = "Restore";
+      restore.title = "Restore this shot score and penalties to their original values.";
+      restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
+      controls.appendChild(restore);
+
+      row.append(header, controls);
+      list.appendChild(row);
     });
-    select.value = segment.score_letter || defaultScore;
-
-    const applyShotScoring = () => {
-      selectedShotId = segment.shot_id;
-      callApi("/api/scoring/score", {
-        shot_id: segment.shot_id,
-        letter: select.value || defaultScore,
-        penalty_counts: collectPenaltyCounts(controls),
-      });
-    };
-    select.addEventListener("change", applyShotScoring);
-
-    const scoreField = document.createElement("div");
-    scoreField.className = "shot-score-field";
-    scoreField.appendChild(select);
-    controls.appendChild(scoreField);
-
-    if (penaltyFields.length > 0) {
-      const penaltyGrid = document.createElement("div");
-      penaltyGrid.className = "shot-penalty-fields";
-      penaltyFields.forEach((field) => {
-        const label = document.createElement("label");
-        label.className = "shot-penalty-field";
-        label.title = [field.label, field.description].filter(Boolean).join(" - ");
-        const text = document.createElement("span");
-        text.textContent = penaltyFieldLabel(field.id, field.label);
-        const input = document.createElement("input");
-        input.type = "number";
-        input.min = "0";
-        input.step = "1";
-        input.value = segment.penalty_counts?.[field.id] ?? 0;
-        input.dataset.penaltyId = field.id;
-        input.className = "shot-penalty-input";
-        input.setAttribute("aria-label", `${field.label} for shot ${segment.shot_number}`);
-        input.title = label.title;
-        input.addEventListener("change", applyShotScoring);
-        label.append(text, input);
-        penaltyGrid.appendChild(label);
-      });
-      controls.appendChild(penaltyGrid);
-    }
-
-    const restore = document.createElement("button");
-    restore.type = "button";
-    restore.className = "restore-button";
-    restore.textContent = "Restore";
-    restore.title = "Restore this shot score and penalties to their original values.";
-    restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
-    controls.appendChild(restore);
-
-    row.append(header, controls);
-    list.appendChild(row);
   });
 }
 
@@ -3949,47 +4341,49 @@ function renderMetricsPanel() {
     summaryGrid.appendChild(card);
   });
 
-  trendList.innerHTML = "";
-  const rows = buildMetricsRows();
-  if (rows.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "hint";
-    empty.textContent = "No timing segments yet.";
-    trendList.appendChild(empty);
-  } else {
-    rows.forEach((entry) => {
-      const row = document.createElement("div");
-      row.className = "metrics-row";
-      const label = document.createElement("strong");
-      label.textContent = `${entry.label} • ${entry.intervalLabel}`;
-      const meta = document.createElement("span");
-      meta.textContent = entry.absoluteMs === null ? "Timing" : `At ${precise(entry.absoluteMs)}s`;
-      const split = document.createElement("span");
-      split.textContent = entry.splitMs === null || entry.splitMs === undefined
-        ? "Split --.--"
-        : `Split ${splitSeconds(entry.splitMs)}`;
-      const cumulative = document.createElement("span");
-      cumulative.textContent = entry.sequenceTotalMs === null || entry.sequenceTotalMs === undefined
-        ? "Run --.--"
-        : `Run ${splitSeconds(entry.sequenceTotalMs)}`;
-      const detail = document.createElement("small");
-      const sourceLabel = entry.source === "manual"
-        ? "Manual"
-        : (entry.confidence === null || entry.confidence === undefined || entry.confidence === ""
-            ? entry.source
-            : formatConfidenceValue(entry.confidence));
-      const detailParts = [
-        entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
-        entry.actionSummary && entry.actionSummary !== entry.intervalLabel ? entry.actionSummary : "",
-        entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
-        entry.penaltyText,
-        sourceLabel,
-      ].filter(Boolean);
-      detail.textContent = detailParts.join(" • ") || "Timing";
-      row.append(label, meta, split, cumulative, detail);
-      trendList.appendChild(row);
-    });
-  }
+  withPreservedScrollState([trendList], () => {
+    trendList.innerHTML = "";
+    const rows = buildMetricsRows();
+    if (rows.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No timing segments yet.";
+      trendList.appendChild(empty);
+    } else {
+      rows.forEach((entry) => {
+        const row = document.createElement("div");
+        row.className = "metrics-row";
+        const label = document.createElement("strong");
+        label.textContent = `${entry.label} • ${entry.intervalLabel}`;
+        const meta = document.createElement("span");
+        meta.textContent = entry.absoluteMs === null ? "Timing" : `At ${precise(entry.absoluteMs)}s`;
+        const split = document.createElement("span");
+        split.textContent = entry.splitMs === null || entry.splitMs === undefined
+          ? "Split --.--"
+          : `Split ${splitSeconds(entry.splitMs)}`;
+        const cumulative = document.createElement("span");
+        cumulative.textContent = entry.sequenceTotalMs === null || entry.sequenceTotalMs === undefined
+          ? "Run --.--"
+          : `Run ${splitSeconds(entry.sequenceTotalMs)}`;
+        const detail = document.createElement("small");
+        const sourceLabel = entry.source === "manual"
+          ? "Manual"
+          : (entry.confidence === null || entry.confidence === undefined || entry.confidence === ""
+              ? entry.source
+              : formatConfidenceValue(entry.confidence));
+        const detailParts = [
+          entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
+          entry.actionSummary && entry.actionSummary !== entry.intervalLabel ? entry.actionSummary : "",
+          entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
+          entry.penaltyText,
+          sourceLabel,
+        ].filter(Boolean);
+        detail.textContent = detailParts.join(" • ") || "Timing";
+        row.append(label, meta, split, cumulative, detail);
+        trendList.appendChild(row);
+      });
+    }
+  });
 
   const summary = state.scoring_summary || {};
   scoreStatus.textContent = summary.enabled
@@ -4114,7 +4508,9 @@ function syncExportPathControl() {
   const input = $("export-path");
   if (!input) return;
   const savedPath = state.project.export.output_path || "";
-  const defaultPath = `${state.default_project_path || "~/splitshot"}/output.mp4`;
+  const defaultPath = state.project.path
+    ? `${state.project.path}/Output/output.mp4`
+    : `${state.default_project_path || "~/splitshot"}/output.mp4`;
   const draftPath = exportPathDraft.trim();
   const hasUnsavedDraft = draftPath && draftPath !== savedPath;
   const nextValue = hasUnsavedDraft ? exportPathDraft : savedPath || draftPath || input.value || defaultPath;
@@ -4130,8 +4526,8 @@ function renderControls() {
     : mergeSources.length === 1
       ? formatSyncOffsetLabel(currentSourceSyncOffsetMs(mergeSources[0]))
       : "Per-source sync";
-  syncControlValue($("project-name"), state.project.name || "Untitled Project");
-  syncControlValue($("project-description"), state.project.description || "");
+  syncControlValue($("project-name"), projectDetailValue("name"));
+  syncControlValue($("project-description"), projectDetailValue("description"));
   syncControlValue($("match-type"), state.project.scoring.match_type || "");
   renderPractiScoreOptionLists({
     stage_number: state.project.scoring.stage_number ?? "",
@@ -4293,150 +4689,196 @@ function renderStyleControls() {
   });
 }
 
+function clearMergeSourceCommitTimers({ clearPayloads = false } = {}) {
+  mergeSourceCommitTimers.forEach((timerId) => window.clearTimeout(timerId));
+  mergeSourceCommitTimers.clear();
+  if (clearPayloads) pendingMergeSourcePayloads.clear();
+}
+
+function scheduleMergeSourceCommit(payload) {
+  const sourceId = String(payload?.source_id || "").trim();
+  if (!sourceId) return;
+  pendingMergeSourcePayloads.set(sourceId, payload);
+  const existingTimer = mergeSourceCommitTimers.get(sourceId);
+  if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+  const timerId = window.setTimeout(() => {
+    mergeSourceCommitTimers.delete(sourceId);
+    const nextPayload = pendingMergeSourcePayloads.get(sourceId);
+    pendingMergeSourcePayloads.delete(sourceId);
+    if (nextPayload) callApi("/api/merge/source", nextPayload);
+  }, 120);
+  mergeSourceCommitTimers.set(sourceId, timerId);
+}
+
+async function flushPendingMergeSourceCommits({ keepalive = false } = {}) {
+  if (pendingMergeSourcePayloads.size === 0) return;
+  clearMergeSourceCommitTimers();
+  const payloads = [...pendingMergeSourcePayloads.values()];
+  pendingMergeSourcePayloads.clear();
+  if (keepalive) {
+    payloads.forEach((payload) => sendKeepaliveJson("/api/merge/source", payload));
+    return;
+  }
+  for (const payload of payloads) {
+    await callApi("/api/merge/source", payload);
+  }
+}
+
 function renderMergeMediaList() {
   const list = $("merge-media-list");
   if (!list) return;
   const mergeSources = state?.project?.merge_sources || [];
-  list.innerHTML = "";
-  if (mergeSources.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "hint";
-    empty.textContent = "No PiP media added yet.";
-    list.appendChild(empty);
-    return;
-  }
+  withPreservedScrollState([list], () => {
+    list.innerHTML = "";
+    if (mergeSources.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No PiP media added yet.";
+      list.appendChild(empty);
+      return;
+    }
 
-  mergeSources.forEach((source, index) => {
-    const asset = source.asset || source;
-    const sourceId = sourceIdentifier(source, String(index));
-    const card = document.createElement("div");
-    card.className = "merge-media-card";
+    mergeSources.forEach((source, index) => {
+      const asset = source.asset || source;
+      const sourceId = sourceIdentifier(source, String(index));
+      const card = document.createElement("div");
+      card.className = "merge-media-card";
 
-    const header = document.createElement("div");
-    header.className = "merge-media-card-header";
-    const title = document.createElement("strong");
-    title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
+      const header = document.createElement("div");
+      header.className = "merge-media-card-header";
+      const title = document.createElement("strong");
+      title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
 
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "Remove";
-    remove.dataset.mergeSourceRemove = sourceId;
-    remove.addEventListener("click", () => {
-      activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
-      callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
-    });
-
-    header.append(title, remove);
-
-    const meta = document.createElement("small");
-    meta.className = "merge-media-card-meta";
-    const mediaType = asset.is_still_image ? "Image" : "Video";
-    const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
-    meta.textContent = `${mediaType}${dimensions}`;
-
-    const controls = document.createElement("div");
-    controls.className = "merge-source-controls";
-    const syncRow = document.createElement("div");
-    syncRow.className = "merge-source-sync-row";
-
-    const updateSource = () => {
-      const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 10, 95);
-      const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
-      const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
-      updateLocalMergeSourcePosition(sourceId, nextX, nextY, nextSize);
-      renderVideo();
-      callApi("/api/merge/source", {
-        source_id: sourceId,
-        pip_size_percent: nextSize,
-        pip_x: nextX,
-        pip_y: nextY,
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+      remove.dataset.mergeSourceRemove = sourceId;
+      remove.addEventListener("click", () => {
+        activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
+        callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
       });
-    };
 
-    const buildSourceNumberInput = (labelText, field, value, min, max, step, titleText) => {
-      const label = document.createElement("label");
-      label.className = "merge-source-field";
-      const text = document.createElement("span");
-      text.textContent = labelText;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = String(min);
-      input.max = String(max);
-      input.step = String(step);
-      input.value = value;
-      input.dataset.mergeSourceField = field;
-      input.dataset.sourceId = sourceId;
-      input.title = titleText;
-      input.addEventListener("input", updateSource);
-      label.append(text, input);
-      return label;
-    };
+      header.append(title, remove);
 
-    const sizeField = document.createElement("label");
-    sizeField.className = "merge-source-field merge-source-size-field";
-    const sizeText = document.createElement("span");
-    sizeText.textContent = "PiP size";
-    const sizeControl = document.createElement("span");
-    sizeControl.className = "pip-size-control";
-    const sizeInput = document.createElement("input");
-    sizeInput.type = "range";
-    sizeInput.min = "10";
-    sizeInput.max = "95";
-    sizeInput.step = "1";
-    sizeInput.value = String(currentPipSizePercent(source, currentPipSizePercent()));
-    sizeInput.dataset.mergeSourceField = "size";
-    sizeInput.dataset.sourceId = sourceId;
-    sizeInput.title = "10 is smallest, 95 is largest.";
-    sizeInput.addEventListener("input", () => {
-      const output = sizeField.querySelector('[data-merge-source-output="size"]');
-      if (output) output.textContent = `${sizeInput.value}%`;
-      updateSource();
-    });
-    const sizeOutput = document.createElement("output");
-    sizeOutput.dataset.mergeSourceOutput = "size";
-    sizeOutput.dataset.sourceId = sourceId;
-    sizeOutput.textContent = `${sizeInput.value}%`;
-    sizeControl.append(sizeInput, sizeOutput);
-    sizeField.append(sizeText, sizeControl);
+      const meta = document.createElement("small");
+      meta.className = "merge-media-card-meta";
+      const mediaType = asset.is_still_image ? "Image" : "Video";
+      const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
+      meta.textContent = `${mediaType}${dimensions}`;
 
-    const syncLabel = document.createElement("small");
-    syncLabel.className = "merge-source-sync-label";
-    syncLabel.dataset.mergeSourceSyncLabel = "true";
-    syncLabel.dataset.sourceId = sourceId;
-    syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
+      const controls = document.createElement("div");
+      controls.className = "merge-source-controls";
+      const syncRow = document.createElement("div");
+      syncRow.className = "merge-source-sync-row";
 
-    const syncButtons = document.createElement("div");
-    syncButtons.className = "button-grid compact merge-source-sync-buttons";
-    [-10, -1, 1, 10].forEach((deltaMs) => {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs} ms`;
-      button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
-      button.addEventListener("click", () => {
-        const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
-        updateLocalMergeSourceSyncOffset(sourceId, nextOffset);
-        renderVideo();
-        callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
+      const readSourcePayload = () => {
+        const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 10, 95);
+        const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
+        const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
+        return {
+          source_id: sourceId,
+          pip_size_percent: nextSize,
+          pip_x: nextX,
+          pip_y: nextY,
+        };
+      };
+
+      const previewSourceUpdate = () => {
+        const payload = readSourcePayload();
+        updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent);
+        scheduleInteractionPreviewRender({ video: true });
+        return payload;
+      };
+
+      const buildSourceNumberInput = (labelText, field, value, min, max, step, titleText) => {
+        const label = document.createElement("label");
+        label.className = "merge-source-field";
+        const text = document.createElement("span");
+        text.textContent = labelText;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = String(min);
+        input.max = String(max);
+        input.step = String(step);
+        input.value = value;
+        input.dataset.mergeSourceField = field;
+        input.dataset.sourceId = sourceId;
+        input.title = titleText;
+        input.addEventListener("input", previewSourceUpdate);
+        input.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+        input.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
+        label.append(text, input);
+        return label;
+      };
+
+      const sizeField = document.createElement("label");
+      sizeField.className = "merge-source-field merge-source-size-field";
+      const sizeText = document.createElement("span");
+      sizeText.textContent = "PiP size";
+      const sizeControl = document.createElement("span");
+      sizeControl.className = "pip-size-control";
+      const sizeInput = document.createElement("input");
+      sizeInput.type = "range";
+      sizeInput.min = "10";
+      sizeInput.max = "95";
+      sizeInput.step = "1";
+      sizeInput.value = String(currentPipSizePercent(source, currentPipSizePercent()));
+      sizeInput.dataset.mergeSourceField = "size";
+      sizeInput.dataset.sourceId = sourceId;
+      sizeInput.title = "10 is smallest, 95 is largest.";
+      sizeInput.addEventListener("input", () => {
+        const output = sizeField.querySelector('[data-merge-source-output="size"]');
+        if (output) output.textContent = `${sizeInput.value}%`;
+        previewSourceUpdate();
       });
-      syncButtons.appendChild(button);
+      sizeInput.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+      sizeInput.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
+      const sizeOutput = document.createElement("output");
+      sizeOutput.dataset.mergeSourceOutput = "size";
+      sizeOutput.dataset.sourceId = sourceId;
+      sizeOutput.textContent = `${sizeInput.value}%`;
+      sizeControl.append(sizeInput, sizeOutput);
+      sizeField.append(sizeText, sizeControl);
+
+      const syncLabel = document.createElement("small");
+      syncLabel.className = "merge-source-sync-label";
+      syncLabel.dataset.mergeSourceSyncLabel = "true";
+      syncLabel.dataset.sourceId = sourceId;
+      syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
+
+      const syncButtons = document.createElement("div");
+      syncButtons.className = "button-grid compact merge-source-sync-buttons";
+      [-10, -1, 1, 10].forEach((deltaMs) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs} ms`;
+        button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
+        button.addEventListener("click", () => {
+          const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
+          updateLocalMergeSourceSyncOffset(sourceId, nextOffset);
+          renderVideo();
+          callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
+        });
+        syncButtons.appendChild(button);
+      });
+
+      controls.append(
+        sizeField,
+        buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
+        buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+      );
+
+      const syncHint = document.createElement("small");
+      syncHint.className = "merge-source-sync-hint";
+      syncHint.textContent = state.project.merge.layout === "pip"
+        ? "Use these nudges or drag the preview to match the primary video exactly."
+        : "These values are saved per item and take effect in PiP layout and export timing.";
+      syncRow.append(syncLabel, syncButtons, syncHint);
+
+      card.append(header, meta, controls, syncRow);
+      syncMergeSourceControls(sourceId, normalizedCoordinateValue(source.pip_x), normalizedCoordinateValue(source.pip_y), currentPipSizePercent(source), currentSourceSyncOffsetMs(source));
+      list.appendChild(card);
     });
-
-    controls.append(
-      sizeField,
-      buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-      buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
-    );
-
-    const syncHint = document.createElement("small");
-    syncHint.className = "merge-source-sync-hint";
-    syncHint.textContent = state.project.merge.layout === "pip"
-      ? "Use these nudges or drag the preview to match the primary video exactly."
-      : "These values are saved per item and take effect in PiP layout and export timing.";
-    syncRow.append(syncLabel, syncButtons, syncHint);
-
-    card.append(header, meta, controls, syncRow);
-    syncMergeSourceControls(sourceId, normalizedCoordinateValue(source.pip_x), normalizedCoordinateValue(source.pip_y), currentPipSizePercent(source), currentSourceSyncOffsetMs(source));
-    list.appendChild(card);
   });
 }
 
@@ -4637,6 +5079,7 @@ function badgeElement(
       const fragment = document.createElement("span");
       fragment.textContent = part?.text || "";
       if (part?.color) fragment.style.color = part.color;
+      fragment.style.whiteSpace = "pre";
       badge.appendChild(fragment);
     });
   } else {
@@ -4918,7 +5361,30 @@ function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
   overlay.style.transform = `translate(${-anchorOffsetX}px, ${-anchorOffsetY}px)`;
 }
 
-function positionTextBoxBadge(badge, box, frameRect) {
+function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, scale = 1 } = {}) {
+  if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
+    if (!(anchorBadge instanceof HTMLElement)) return false;
+    const anchorRect = anchorBadge.getBoundingClientRect();
+    const badgeRect = badge.getBoundingClientRect();
+    const gap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
+    const halfWidth = Math.max(0, badgeRect.width / 2);
+    const centerX = clamp(
+      (anchorRect.left - frameRect.left) + (anchorRect.width / 2),
+      halfWidth,
+      Math.max(halfWidth, frameRect.width - halfWidth),
+    );
+    const top = clamp(
+      (anchorRect.top - frameRect.top) - gap,
+      Math.max(0, badgeRect.height),
+      Math.max(0, frameRect.height),
+    );
+    badge.style.position = "absolute";
+    badge.style.margin = "0";
+    badge.style.left = `${centerX}px`;
+    badge.style.top = `${top}px`;
+    badge.style.transform = "translate(-50%, -100%)";
+    return true;
+  }
   const customX = normalizedCoordinateValue(box.x);
   const customY = normalizedCoordinateValue(box.y);
   if (customX === null || customY === null) return false;
@@ -4941,10 +5407,10 @@ function configureTextBoxGroup(group, quadrant, frameRect, scale = 1) {
   const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
   group.style.padding = `${scaledMargin}px`;
   group.style.gap = `${scaledGap}px`;
-  group.style.left = `${frameRect.left}px`;
-  group.style.top = `${frameRect.top}px`;
-  group.style.width = `${frameRect.width}px`;
-  group.style.height = `${frameRect.height}px`;
+  group.style.left = "0px";
+  group.style.top = "0px";
+  group.style.width = "100%";
+  group.style.height = "100%";
 }
 
 function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
@@ -5014,7 +5480,7 @@ function moveTextBoxDrag(event) {
     : box);
   setLocalOverlayTextBoxes(boxes);
   syncOverlayPreviewStateFromControls();
-  renderLiveOverlay();
+  scheduleInteractionPreviewRender({ overlay: true });
 }
 
 function endTextBoxDrag(event) {
@@ -5023,15 +5489,18 @@ function endTextBoxDrag(event) {
   const customOverlay = $("custom-overlay");
   releasePointer(textBoxDrag.target || customOverlay, event.pointerId);
   customOverlay?.classList.remove("dragging");
-  const box = overlayTextBoxes().find((item) => item.id === textBoxDrag.boxId);
+  const drag = textBoxDrag;
+  const box = overlayTextBoxes().find((item) => item.id === drag.boxId);
   activity("overlay.text_box.drag.commit", {
-    box_id: textBoxDrag.boxId,
+    box_id: drag.boxId,
     x: box?.x ?? null,
     y: box?.y ?? null,
   });
   autoApplyOverlay.cancel();
-  callApi("/api/overlay", readOverlayPayload());
   textBoxDrag = null;
+  flushInteractionPreviewRender();
+  callApi("/api/overlay", readOverlayPayload());
+  flushDeferredRender();
 }
 
 function overlayDragConfiguration(kind) {
@@ -5092,6 +5561,7 @@ function beginOverlayBadgeDrag(event) {
 
 function moveOverlayBadgeDrag(event) {
   if (!overlayBadgeDrag || !state?.project) return;
+  if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;
   const config = overlayDragConfiguration(overlayBadgeDrag.kind);
   if (!config) return;
   const stage = $("video-stage");
@@ -5113,23 +5583,27 @@ function moveOverlayBadgeDrag(event) {
   $(config.xId).value = nextX.toFixed(3);
   $(config.yId).value = nextY.toFixed(3);
   syncOverlayPreviewStateFromControls();
-  renderLiveOverlay();
+  scheduleInteractionPreviewRender({ overlay: true });
 }
 
 function endOverlayBadgeDrag(event) {
   if (!overlayBadgeDrag) return;
+  if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;
   const config = overlayDragConfiguration(overlayBadgeDrag.kind);
-  releasePointer(overlayBadgeDrag.target, event.pointerId);
-  overlayBadgeDrag.target.classList.remove("overlay-dragging");
+  const drag = overlayBadgeDrag;
+  releasePointer(drag.target, event.pointerId);
+  drag.target.classList.remove("overlay-dragging");
+  overlayBadgeDrag = null;
+  flushInteractionPreviewRender();
   if (config) {
     activity("overlay.drag.commit", {
-      kind: overlayBadgeDrag.kind,
+      kind: drag.kind,
       x: normalizedCoordinateValue($(config.xId)?.value),
       y: normalizedCoordinateValue($(config.yId)?.value),
     });
     scheduleOverlayApply();
   }
-  overlayBadgeDrag = null;
+  flushDeferredRender();
 }
 
 function beginMergePreviewDrag(event) {
@@ -5163,6 +5637,7 @@ function beginMergePreviewDrag(event) {
 
 function moveMergePreviewDrag(event) {
   if (!mergePreviewDrag || !state?.project) return;
+  if (event.pointerId !== undefined && mergePreviewDrag.pointerId !== undefined && event.pointerId !== mergePreviewDrag.pointerId) return;
   const source = mergeSourceById(mergePreviewDrag.sourceId);
   if (!source) return;
   const stage = $("video-stage");
@@ -5175,27 +5650,31 @@ function moveMergePreviewDrag(event) {
   const nextX = travelX === 0 ? 0 : nextLeft / travelX;
   const nextY = travelY === 0 ? 0 : nextTop / travelY;
   updateLocalMergeSourcePosition(mergePreviewDrag.sourceId, nextX, nextY);
-  renderVideo();
+  scheduleInteractionPreviewRender({ video: true });
 }
 
 function endMergePreviewDrag(event) {
   if (!mergePreviewDrag) return;
-  releasePointer(mergePreviewDrag.item, event.pointerId);
-  mergePreviewDrag.item.classList.remove("dragging");
-  const source = mergeSourceById(mergePreviewDrag.sourceId);
+  if (event.pointerId !== undefined && mergePreviewDrag.pointerId !== undefined && event.pointerId !== mergePreviewDrag.pointerId) return;
+  const drag = mergePreviewDrag;
+  releasePointer(drag.item, event.pointerId);
+  drag.item.classList.remove("dragging");
+  const source = mergeSourceById(drag.sourceId);
+  mergePreviewDrag = null;
+  flushInteractionPreviewRender();
   if (source) {
     activity("merge.preview.drag.commit", {
-      source_id: mergePreviewDrag.sourceId,
+      source_id: drag.sourceId,
       pip_x: normalizedCoordinateValue(source.pip_x),
       pip_y: normalizedCoordinateValue(source.pip_y),
     });
     callApi("/api/merge/source", {
-      source_id: mergePreviewDrag.sourceId,
+      source_id: drag.sourceId,
       pip_x: normalizedCoordinateValue(source.pip_x) ?? 1,
       pip_y: normalizedCoordinateValue(source.pip_y) ?? 1,
     });
   }
-  mergePreviewDrag = null;
+  flushDeferredRender();
 }
 
 function overlayRenderPositionMs(video, mediaTimeS = null) {
@@ -5240,9 +5719,9 @@ function renderLiveOverlay(positionMsOverride = null) {
   const beep = state.project.analysis.beep_time_ms_primary;
   let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
   const shots = orderedShotsByTime();
-  const firstShotTime = shots.length > 0 ? shots[0].time_ms : null;
+  const firstShotTime = shots.length > 0 ? shotDisplayTimeMs(shots[0].time_ms) : null;
   const finalShotIndex = shots.length - 1;
-  const finalShotTime = finalShotIndex >= 0 ? shots[finalShotIndex].time_ms : null;
+  const finalShotTime = finalShotIndex >= 0 ? shotDisplayTimeMs(shots[finalShotIndex].time_ms) : null;
   const finalShotReached = finalShotTime !== null && finalShotTime !== undefined && positionMs >= finalShotTime;
   if (beep !== null && beep !== undefined && shots.length > 0) {
     const lastShotMs = shots[shots.length - 1].time_ms;
@@ -5262,7 +5741,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   };
   if (state.project.overlay.show_timer) {
     const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
-    timerBadge.dataset.overlayDrag = "shots";
+    timerBadge.dataset.overlayDrag = "timer";
     appendOverlayBadge(timerBadge, state.project.overlay.timer_x, state.project.overlay.timer_y);
   }
   if (
@@ -5275,7 +5754,7 @@ function renderLiveOverlay(positionMsOverride = null) {
     && Number(state.metrics.draw_ms) > 0
   ) {
     const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
-    drawBadge.dataset.overlayDrag = "shots";
+    drawBadge.dataset.overlayDrag = "draw";
     appendOverlayBadge(drawBadge, state.project.overlay.draw_x, state.project.overlay.draw_y);
   }
 
@@ -5307,10 +5786,12 @@ function renderLiveOverlay(positionMsOverride = null) {
   }
 
   const summary = state.scoring_summary || {};
+  let finalScoreBadge = null;
   if (finalShotReached && state.project.scoring.enabled && state.project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
     const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
     scoreBadge.dataset.overlayDrag = "score";
     appendOverlayBadge(scoreBadge, state.project.overlay.score_x, state.project.overlay.score_y);
+    finalScoreBadge = scoreBadge;
   }
 
   if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {
@@ -5342,11 +5823,14 @@ function renderLiveOverlay(positionMsOverride = null) {
     customBadge.dataset.textBoxDrag = "true";
     customBadge.dataset.textBoxId = box.id;
     customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
-    if (positionTextBoxBadge(customBadge, box, frameRect)) {
-      customOverlay.appendChild(customBadge);
+    customOverlay.appendChild(customBadge);
+    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, scale: overlayScale })) {
       return;
     }
-    const quadrant = box.quadrant || "top_right";
+    customBadge.remove();
+    const quadrant = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
+      ? "top_middle"
+      : (box.quadrant || "top_right");
     let group = textBoxGroups.get(quadrant);
     if (!group) {
       group = document.createElement("div");
@@ -5416,16 +5900,28 @@ function stopOverlayLoop() {
 
 function render() {
   if (!state?.project) return;
-  applyLayoutState();
-  renderHeader();
-  renderStats();
-  renderVideo();
-  renderWaveform();
-  renderTimingTables();
-  renderControls();
-  renderSelection();
-  renderLiveOverlay();
-  setActiveTool(activeTool);
+  withPreservedScrollState(scrollRenderTargets(), () => {
+    applyLayoutState();
+    renderHeader();
+    renderStats();
+    renderVideo();
+    renderWaveform();
+    renderTimingTables();
+    renderControls();
+    renderSelection();
+    renderLiveOverlay();
+    setActiveTool(activeTool, { persistUiState: false });
+  });
+}
+
+function renderViewportLayout() {
+  if (!state?.project) return;
+  withPreservedScrollState(scrollRenderTargets(), () => {
+    applyLayoutState();
+    renderVideo();
+    renderWaveform();
+    renderLiveOverlay();
+  });
 }
 
 function waveformTime(event) {
@@ -5456,7 +5952,8 @@ function nearestShot(event) {
   return nearestDistance <= 28 ? nearest : null;
 }
 
-function setWaveformMode(mode) {
+function setWaveformMode(mode, { persistUiState = true } = {}) {
+  if (!VALID_WAVEFORM_MODES.has(mode)) mode = "select";
   waveformMode = mode;
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
     button.classList.toggle("active", button.dataset.waveformMode === mode);
@@ -5468,14 +5965,18 @@ function setWaveformMode(mode) {
     help.textContent = "Select mode: click a shot marker, drag a shot to move, drag empty space to pan, arrows nudge.";
   }
   activity("waveform.mode", { mode });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
 }
 
-function setWaveformExpanded(expanded) {
+function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
   root.classList.remove("timing-expanded");
   $("expand-waveform").textContent = expanded ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
   if (expanded) {
     renderWaveform();
     window.requestAnimationFrame(() => renderWaveform());
@@ -5524,6 +6025,8 @@ function setWaveformAmplitude(delta) {
   const nextZoom = clamp(currentZoom * delta, 0.25, 12);
   waveformShotAmplitudeById[selectedShotId] = nextZoom;
   activity("waveform.shot_amplitude", { shot_id: selectedShotId, zoom: nextZoom });
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
   renderWaveform();
 }
 
@@ -5534,15 +6037,19 @@ function resetWaveformView() {
   window.localStorage.removeItem("splitshot.waveform.zoomX");
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
   activity("waveform.zoom_reset", {});
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
   renderWaveform();
 }
 
-function setTimingExpanded(expanded) {
+function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("timing-expanded", expanded);
   root.classList.remove("waveform-expanded");
   $("expand-waveform").textContent = "Expand";
   activity("timing.expand", { expanded });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
   if (expanded) {
     renderTimingTables();
     return;
@@ -5576,6 +6083,7 @@ function handleWaveformPointerDown(event) {
   if (shot) {
     selectedShotId = shot.id;
     draggingShotId = shot.id;
+    draggingShotPointerId = event.pointerId;
     pendingDragTimeMs = shot.time_ms;
     capturePointer($("waveform"), event.pointerId);
     activity("waveform.drag_start", { shot_id: shot.id, time_ms: shot.time_ms });
@@ -5604,8 +6112,9 @@ function handleWaveformPointerMove(event) {
     return;
   }
   if (!draggingShotId) return;
+  if (event.pointerId !== undefined && draggingShotPointerId !== undefined && event.pointerId !== draggingShotPointerId) return;
   pendingDragTimeMs = waveformTime(event);
-  renderWaveform();
+  scheduleInteractionPreviewRender({ waveform: true });
 }
 
 function handleWaveformPointerUp(event) {
@@ -5626,9 +6135,12 @@ function handleWaveformPointerUp(event) {
     return;
   }
   if (!draggingShotId) return;
+  if (event.pointerId !== undefined && draggingShotPointerId !== undefined && event.pointerId !== draggingShotPointerId) return;
   const shotId = draggingShotId;
   const timeMs = pendingDragTimeMs ?? waveformTime(event);
+  flushInteractionPreviewRender();
   draggingShotId = null;
+  draggingShotPointerId = null;
   pendingDragTimeMs = null;
   releasePointer($("waveform"), event.pointerId);
   activity("waveform.drag_commit", { shot_id: shotId, time_ms: timeMs });
@@ -5727,8 +6239,8 @@ function readOverlayPayload() {
 
 function readProjectDetailsPayload() {
   return {
-    name: $("project-name").value,
-    description: $("project-description").value,
+    name: $("project-name")?.value ?? projectDetailValue("name"),
+    description: $("project-description")?.value ?? projectDetailValue("description"),
   };
 }
 
@@ -5797,7 +6309,9 @@ function readScoringPayload() {
 }
 
 function readExportSettingsPayload() {
+  const outputPath = $("export-path")?.value.trim() || exportPathDraft.trim() || state?.project?.export?.output_path || "";
   return {
+    output_path: outputPath,
     target_width: $("target-width").value ? Number($("target-width").value) : "",
     target_height: $("target-height").value ? Number($("target-height").value) : "",
     frame_rate: $("frame-rate").value,
@@ -5838,11 +6352,71 @@ function buildExportPayload(path) {
 
 function cancelPendingExportDrafts() {
   clearOverlayColorCommitTimer();
+  clearMergeSourceCommitTimers();
+  autoApplyThreshold.cancel?.();
+  autoApplyProjectDetails.cancel?.();
+  autoApplyPractiScoreContext.cancel?.();
+  autoApplyProjectUiState.cancel?.();
   autoApplyOverlay.cancel?.();
   autoApplyMerge.cancel?.();
   autoApplyScoring.cancel?.();
   autoApplyExportLayout.cancel?.();
   autoApplyExportSettings.cancel?.();
+}
+
+async function flushPendingProjectDrafts() {
+  if (!state?.project) return;
+  cancelPendingExportDrafts();
+  await callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+  await callApi("/api/project/details", readProjectDetailsPayload());
+  await callApi("/api/project/practiscore", readPractiScoreContextPayload());
+  await callApi("/api/project/ui-state", readProjectUiStatePayload());
+  await callApi("/api/overlay", readOverlayPayload());
+  await callApi("/api/merge", readMergePayload());
+  await flushPendingMergeSourceCommits();
+  await callApi("/api/export/settings", readExportLayoutPayload());
+  await callApi("/api/export/settings", readExportSettingsPayload());
+  await callApi("/api/scoring/profile", { ruleset: $("scoring-preset").value });
+  await callApi("/api/scoring", readScoringPayload());
+}
+
+function sendKeepaliveJson(path, payload) {
+  const body = JSON.stringify(payload);
+  try {
+    if (navigator.sendBeacon) {
+      const sent = navigator.sendBeacon(path, new Blob([body], { type: "application/json" }));
+      if (sent) return true;
+    }
+  } catch {
+    // Ignore keepalive failures during shutdown.
+  }
+  try {
+    fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+      keepalive: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function flushPendingProjectDraftsKeepalive() {
+  if (!state?.project) return;
+  cancelPendingExportDrafts();
+  sendKeepaliveJson("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+  sendKeepaliveJson("/api/project/details", readProjectDetailsPayload());
+  sendKeepaliveJson("/api/project/practiscore", readPractiScoreContextPayload());
+  sendKeepaliveJson("/api/project/ui-state", readProjectUiStatePayload());
+  sendKeepaliveJson("/api/overlay", readOverlayPayload());
+  sendKeepaliveJson("/api/merge", readMergePayload());
+  flushPendingMergeSourceCommits({ keepalive: true });
+  sendKeepaliveJson("/api/export/settings", readExportLayoutPayload());
+  sendKeepaliveJson("/api/export/settings", readExportSettingsPayload());
+  sendKeepaliveJson("/api/scoring/profile", { ruleset: $("scoring-preset").value });
+  sendKeepaliveJson("/api/scoring", readScoringPayload());
 }
 
 async function importTypedPath(targetId, apiPath, label) {
@@ -5854,35 +6428,60 @@ async function importTypedPath(targetId, apiPath, label) {
   return callApi(apiPath, { path });
 }
 
-async function openProjectWithDialog() {
-  const path = $("project-path").value.trim();
-  if (path) {
-    const result = await callApi("/api/project/open", { path });
-    if (result) setActiveTool("project");
-    return result;
-  }
-  return pickPath("project_open", "project-path", async (path) => {
-    const result = await callApi("/api/project/open", { path });
-    if (result) setActiveTool("project");
+async function probeProjectFolder(path) {
+  const response = await fetch("/api/project/probe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
   });
+  const data = await response.json();
+  if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+  return Boolean(data.has_project_file);
 }
 
 async function browseProjectPath() {
-  return pickPath("project_open", "project-path", async (path) => {
-    const result = await callApi("/api/project/open", { path });
-    if (result) setActiveTool("project");
+  return pickPath("project_folder", "project-path", async (selectedPath) => {
+    await useProjectFolder(selectedPath);
   });
 }
 
-async function saveProjectFlow() {
-  const existingPath = $("project-path").value.trim();
-  await callApi("/api/project/details", readProjectDetailsPayload());
-  if (existingPath) {
-    return callApi("/api/project/save", { path: existingPath });
+async function useProjectFolder(path = $("project-path").value.trim()) {
+  const targetPath = path.trim();
+  if (!targetPath) {
+    return pickPath("project_folder", "project-path", async (selectedPath) => {
+      await useProjectFolder(selectedPath);
+    });
   }
-  return pickPath("project_save", "project-path", async (path) => {
-    await callApi("/api/project/save", { path });
-  });
+
+  await flushPendingProjectDrafts();
+  const currentPath = (state?.project?.path || "").trim();
+  if (currentPath && currentPath === targetPath) {
+    const result = await callApi("/api/project/save", { path: targetPath });
+    if (result) setActiveTool("project");
+    return result;
+  }
+
+  try {
+    const hasProjectFile = await probeProjectFolder(targetPath);
+    if (!hasProjectFile) {
+      const shouldCreate = window.confirm(`No project.json found in:\n${targetPath}\n\nCreate this folder for the current project?`);
+      if (!shouldCreate) {
+        setStatus("Project folder selection cancelled.");
+        return null;
+      }
+      const result = await callApi("/api/project/save", { path: targetPath });
+      if (result) setActiveTool("project");
+      return result;
+    }
+  } catch (error) {
+    setStatus(error.message);
+    activity("api.error", { path: "/api/project/probe", error: error.message });
+    return null;
+  }
+
+  const result = await callApi("/api/project/open", { path: targetPath });
+  if (result) setActiveTool("project");
+  return result;
 }
 
 async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset").value) {
@@ -5905,6 +6504,11 @@ const autoApplyProjectDetails = debounce((payload) => {
 const autoApplyPractiScoreContext = debounce((payload) => {
   activity("auto_apply.practiscore_context", {});
   callApi("/api/project/practiscore", payload);
+}, 300);
+
+const autoApplyProjectUiState = debounce((payload) => {
+  activity("auto_apply.project_ui_state", {});
+  callApi("/api/project/ui-state", payload);
 }, 300);
 
 const autoApplyOverlay = debounce((payload) => {
@@ -5937,11 +6541,30 @@ function scheduleThresholdApply() {
 }
 
 function scheduleProjectDetailsApply() {
+  applyProjectDetailsDraft(readProjectDetailsPayload());
+  renderHeader();
   autoApplyProjectDetails(readProjectDetailsPayload());
 }
 
 function schedulePractiScoreContextApply() {
   autoApplyPractiScoreContext(readPractiScoreContextPayload());
+}
+
+function scheduleProjectUiStateApply() {
+  const payload = readProjectUiStatePayload();
+  if (hasActivePointerInteraction()) {
+    pendingProjectUiStatePayload = payload;
+    return;
+  }
+  pendingProjectUiStatePayload = null;
+  autoApplyProjectUiState(payload);
+}
+
+function flushQueuedProjectUiStateApply() {
+  if (!pendingProjectUiStatePayload) return;
+  const payload = pendingProjectUiStatePayload;
+  pendingProjectUiStatePayload = null;
+  autoApplyProjectUiState(payload);
 }
 
 function scheduleOverlayApply() {
@@ -5968,8 +6591,7 @@ function scheduleScoringApply() {
 }
 
 const handleViewportLayoutChange = debounce(() => {
-  applyLayoutState();
-  if (state?.project) render();
+  renderViewportLayout();
 }, 120);
 
 function wireEvents() {
@@ -5980,7 +6602,7 @@ function wireEvents() {
     });
   });
   $("new-project").addEventListener("click", async () => {
-    resetLocalProjectView();
+    await flushPendingProjectDrafts();
     await callApi("/api/project/new", {});
   });
   $("primary-file-path").addEventListener("keydown", async (event) => {
@@ -5990,9 +6612,12 @@ function wireEvents() {
     if (result) setActiveTool("project");
   });
   $("browse-project-path").addEventListener("click", browseProjectPath);
-  $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path"));
+  $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
+    scheduleExportSettingsApply();
+  }));
   $("export-path").addEventListener("input", () => {
     exportPathDraft = $("export-path").value;
+    scheduleExportSettingsApply();
   });
   $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
     const result = await callApi("/api/import/primary", { path });
@@ -6019,7 +6644,7 @@ function wireEvents() {
     event.target.value = "";
   });
   $("import-practiscore").addEventListener("click", () => {
-    setStatus("Select a PractiScore results file.");
+    setStatus("Select a PractiScore results file (.csv or .txt).");
     openHiddenFileInput("practiscore-file-input");
   });
   $("practiscore-file-input").addEventListener("change", async (event) => {
@@ -6034,12 +6659,16 @@ function wireEvents() {
       return;
     }
     const result = await postFile("/api/files/practiscore", event.target.files[0]);
-    if (result) setActiveTool("scoring");
     event.target.value = "";
   });
-  $("save-project").addEventListener("click", saveProjectFlow);
-  $("open-project").addEventListener("click", openProjectWithDialog);
-  $("delete-project").addEventListener("click", () => callApi("/api/project/delete", {}));
+  $("delete-project").addEventListener("click", async () => {
+    const projectPath = (state?.project?.path || "").trim();
+    if (!projectPath) return;
+    const shouldDelete = window.confirm(`Delete this project folder from disk?\n\n${projectPath}`);
+    if (!shouldDelete) return;
+    await flushPendingProjectDrafts();
+    await callApi("/api/project/delete", {});
+  });
   ["project-name", "project-description"].forEach((id) => {
     $(id).addEventListener("input", scheduleProjectDetailsApply);
   });
@@ -6123,7 +6752,6 @@ function wireEvents() {
   window.addEventListener("focus", handleWindowVisibilityRestore);
   window.addEventListener("pageshow", handleWindowVisibilityRestore);
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
-  window.visualViewport?.addEventListener("scroll", handleViewportLayoutChange);
   $("delete-selected").addEventListener("click", deleteSelectedShot);
   document.querySelectorAll("[data-nudge]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -6139,20 +6767,20 @@ function wireEvents() {
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
-      renderVideo();
+      scheduleInteractionPreviewRender({ video: true });
       scheduleMergeApply();
     });
   });
   $("pip-size").addEventListener("input", () => {
     $("pip-size-label").textContent = `${$("pip-size").value}%`;
     syncMergePreviewStateFromControls();
-    renderVideo();
+    scheduleInteractionPreviewRender({ video: true });
     scheduleMergeApply();
   });
   ["pip-x", "pip-y"].forEach((id) => {
     $(id).addEventListener("input", () => {
       syncMergePreviewStateFromControls();
-      renderVideo();
+      scheduleInteractionPreviewRender({ video: true });
       scheduleMergeApply();
     });
   });
@@ -6326,7 +6954,11 @@ function wireEvents() {
   $("metrics-export-text")?.addEventListener("click", () => exportMetrics("text"));
   window.addEventListener("beforeunload", () => {
     stopActivityPolling();
+    flushPendingProjectDraftsKeepalive();
     flushActivityQueue();
+  });
+  window.addEventListener("pagehide", () => {
+    flushPendingProjectDraftsKeepalive();
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !$("color-picker-modal")?.hidden) {
@@ -6340,7 +6972,7 @@ function wireEvents() {
 }
 
 applyLayoutState();
-setActiveTool(activeTool);
+setActiveTool(activeTool, { persistUiState: false });
 wireGlobalActivityLogging();
 wireEvents();
 startActivityPolling();

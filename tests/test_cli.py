@@ -56,21 +56,6 @@ def test_splitshot_log_level_dispatches_to_browser(monkeypatch) -> None:
     assert calls == {"log_level": "debug"}
 
 
-def test_splitshot_desktop_flag_dispatches_to_desktop(monkeypatch, tmp_path: Path) -> None:
-    calls: dict[str, object] = {}
-    project_path = tmp_path / "demo.ssproj"
-
-    def fake_desktop(project_path: Path | None = None) -> int:
-        calls["mode"] = "desktop"
-        calls["project_path"] = project_path
-        return 0
-
-    monkeypatch.setattr(cli, "run_desktop", fake_desktop)
-
-    assert cli.main(["--desktop", "--project", str(project_path)]) == 0
-    assert calls == {"mode": "desktop", "project_path": project_path}
-
-
 def test_splitshot_check_validates_runtime(monkeypatch, capsys) -> None:
     monkeypatch.setattr(cli, "_check_media_tool", lambda tool: f"/fake/{tool}")
     monkeypatch.setattr(cli, "_check_qt_runtime", lambda: "6.9.0")
@@ -88,8 +73,8 @@ def test_splitshot_check_validates_runtime(monkeypatch, capsys) -> None:
 def test_cli_help_documents_browser_default() -> None:
     help_text = cli.build_parser().format_help()
 
-    assert "Browser control is the default mode" in help_text
-    assert "--desktop" in help_text
+    assert "SplitShot local stage video analyzer." in help_text
+    assert "--desktop" not in help_text
     assert "--log-level" in help_text
 
 
@@ -167,15 +152,9 @@ def test_cli_alias_entrypoints_preserve_parser_behavior(monkeypatch, tmp_path: P
         }))
         return 0
 
-    def fake_desktop(project_path: Path | None = None) -> int:
-        calls.append(("desktop", {"project_path": project_path}))
-        return 0
-
     monkeypatch.setattr(cli, "run_browser", fake_browser)
-    monkeypatch.setattr(cli, "run_desktop", fake_desktop)
 
     assert cli.web_main(["--no-open", "--port", "9000", "--project", str(project_path), "--log-level", "warning"]) == 0
-    assert cli.desktop_main(["--project", str(project_path)]) == 0
     assert calls == [
         ("web", {
             "host": "127.0.0.1",
@@ -184,5 +163,4 @@ def test_cli_alias_entrypoints_preserve_parser_behavior(monkeypatch, tmp_path: P
             "project_path": project_path,
             "log_level": "warning",
         }),
-        ("desktop", {"project_path": project_path}),
     ]
