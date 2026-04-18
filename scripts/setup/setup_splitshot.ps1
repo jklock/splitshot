@@ -8,14 +8,6 @@ function Write-Setup([string]$Message) {
     Write-Host "[splitshot-setup] $Message"
 }
 
-function Get-CommandPath([string]$Name) {
-    $command = Get-Command $Name -ErrorAction SilentlyContinue
-    if ($null -eq $command) {
-        return $null
-    }
-    return $command.Source
-}
-
 function Require-Winget {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw 'winget is required on Windows. Install App Installer from Microsoft Store and re-run this script.'
@@ -40,11 +32,8 @@ function Ensure-Uv {
 
 function Ensure-WindowsDependencies {
     Require-Winget
-    Install-WingetPackage 'Git.Git'
     Ensure-Uv
     Install-WingetPackage 'Gyan.FFmpeg'
-    Install-WingetPackage 'Google.Chrome'
-    Install-WingetPackage 'Mozilla.Firefox'
 }
 
 function Bootstrap-Workspace {
@@ -52,9 +41,7 @@ function Bootstrap-Workspace {
     Write-Setup "Installing Python $PythonVersion through uv"
     uv python install $PythonVersion
     Write-Setup 'Syncing project dependencies'
-    uv sync --extra dev
-    Write-Setup 'Installing Playwright browser runtimes for validation'
-    uv run python -m playwright install chromium firefox webkit
+    uv sync
     Write-Setup 'Running SplitShot runtime check'
     uv run splitshot --check
 }
@@ -66,4 +53,3 @@ Write-Host ''
 Write-Host '[splitshot-setup] Ready.'
 Write-Host '[splitshot-setup] Launch commands:'
 Write-Host '  uv run splitshot'
-Write-Host '  uv run pytest'
