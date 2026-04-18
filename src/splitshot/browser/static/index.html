@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260417a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260418a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -136,6 +136,7 @@
               <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
               <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
               <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
+              <label class="check-row"><input id="review-lock-to-stack" type="checkbox" /> Lock review text boxes to the overlay stack</label>
               <section class="text-box-manager">
                 <div class="section-header sub-section-header">
                   <h3>Review Text Boxes</h3>
@@ -145,7 +146,7 @@
                   <button id="review-add-text-box" type="button">Add Custom Box</button>
                   <button id="review-add-imported-box" type="button">Add Summary Box</button>
                 </div>
-                <p class="hint">Each box keeps its own enable state, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position.</p>
+                <p class="hint">Each box keeps its own enable state, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position, or lock the review boxes to keep them flowing with the live overlay stack.</p>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
             </section>
@@ -294,6 +295,7 @@
                   <input id="timer-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                 </label>
               </div>
+              <label class="check-row"><input id="timer-lock-to-stack" type="checkbox" checked /> Lock timer badge to the shot stack</label>
               <div class="control-grid">
                 <label>Draw X (0 left, 1 right)
                   <input id="draw-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
@@ -302,6 +304,7 @@
                   <input id="draw-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                 </label>
               </div>
+              <label class="check-row"><input id="draw-lock-to-stack" type="checkbox" checked /> Lock draw badge to the shot stack</label>
               <div class="control-grid">
                 <label>Score X (0 left, 1 right)
                   <input id="score-x" type="number" min="0" max="1" step="0.01" placeholder="auto" />
@@ -310,6 +313,7 @@
                   <input id="score-y" type="number" min="0" max="1" step="0.01" placeholder="auto" />
                 </label>
               </div>
+              <label class="check-row"><input id="score-lock-to-stack" type="checkbox" checked /> Lock score badge to the shot stack</label>
               <div class="control-grid">
                 <label>Bubble width
                   <input id="bubble-width" type="number" min="0" max="400" step="4" placeholder="auto" />
@@ -600,6 +604,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260417a"></script>
+    <script src="/static/app.js?v=20260418a"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-# Browser Static Frontend
+# Browser Static Assets
 
 This directory contains the browser-first SplitShot shell that talks to the local API.
 
@@ -47,7 +47,7 @@ The main loop is:
 4. Mirror user actions into `/api/activity`.
 5. Poll `/api/activity/poll` so export progress and log output can update in real time.
 
-## Frontend Behavior
+## Shell Behavior
 
 - Layout sizing uses CSS variables such as `--app-height`, `--rail-width`, `--inspector-width`, and `--waveform-height`.
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
@@ -57,7 +57,7 @@ The main loop is:
 
 ## Editing Notes
 
-- The frontend depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
+- The browser shell depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 
 **Last updated:** 2026-04-15

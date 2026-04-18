@@ -28,30 +28,24 @@ SplitShot runs as a local browser application. The browser shell is the product 
 
 ![SplitShot browser shell](docs/assets/browser-shell.png)
 
-## Support Matrix
-
-| Surface | Supported OS | Validation browsers | Purpose |
-| --- | --- | --- | --- |
-| Browser shell | macOS, Windows, Linux | Chromium-class, Firefox, Safari-class WebKit | Primary workflow for media import, timing review, scoring, metrics, overlays, merge, and export |
-
 ## Getting Started
 
 ### Setup scripts
 
 Use the repository scripts when you want a workstation-ready setup for local launch, tests, and browser validation.
 
-- macOS and Linux: `scripts/setup_splitshot.sh`
-- Windows PowerShell: `scripts/setup_splitshot.ps1`
+- macOS and Linux: `scripts/setup/setup_splitshot.sh`
+- Windows PowerShell: `scripts/setup/setup_splitshot.ps1`
 
 Examples:
 
 ```bash
-bash scripts/setup_splitshot.sh
+bash scripts/setup/setup_splitshot.sh
 uv run splitshot
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\setup_splitshot.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\setup\setup_splitshot.ps1
 uv run splitshot
 ```
 
@@ -77,25 +71,9 @@ uv run splitshot
 uv run splitshot
 uv run splitshot --no-open
 uv run splitshot --check
-uv run splitshot-web
 ```
 
 `uv run splitshot` is the normal entrypoint. The default browser path is quiet in the terminal unless you request log mirroring with `--log-level` or explicitly choose `--no-open`.
-
-## Validation Workflow
-
-Use the commands below to validate the local runtime and browser shell.
-
-```bash
-uv run splitshot --check
-uv run pytest
-uv run python -m playwright install chromium firefox webkit
-uv run python scripts/run_browser_ui_surface_audit.py
-uv run python scripts/run_browser_av_audit.py
-uv run python scripts/run_browser_interaction_audit.py --primary-video /path/to/Stage1.MP4 --merge-video /path/to/Stage2.MP4 --practiscore /path/to/IDPA.csv
-```
-
-The browser shell should be validated in real desktop browsers. Chromium, Firefox, and Safari-class WebKit checks are expected; the VS Code integrated browser is useful for debugging, but it is not a Safari substitute. Use the interaction audit when you need route-backed drag, scroll, PractiScore, and PiP coverage with actual media files.
 
 ## Export Pipeline
 
@@ -114,16 +92,19 @@ Export controls cover:
 ## Documentation
 
 - Project documentation hub: [docs/README.md](docs/README.md)
-- Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Development workflow: [docs/DEVELOPING.md](docs/DEVELOPING.md)
-- Known constraints: [docs/LIMITATIONS.md](docs/LIMITATIONS.md)
-- End-user guide: [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
-- Markdown inventory: [docs/MARKDOWN_INDEX.md](docs/MARKDOWN_INDEX.md)
+- Architecture and data flow: [docs/project/ARCHITECTURE.md](docs/project/ARCHITECTURE.md)
+- Development workflow: [docs/project/DEVELOPING.md](docs/project/DEVELOPING.md)
+- Known constraints: [docs/project/LIMITATIONS.md](docs/project/LIMITATIONS.md)
+- Browser audit: [docs/browser/LEFT_PANE_AUDIT.md](docs/browser/LEFT_PANE_AUDIT.md)
+- ShotML pipeline: [docs/analysis/SHOTML.md](docs/analysis/SHOTML.md)
+- End-user guide: [docs/userfacing/USER_GUIDE.md](docs/userfacing/USER_GUIDE.md)
+- Current work plan: [WORK_PLAN.md](WORK_PLAN.md)
+- Script catalog: [scripts/README.md](scripts/README.md)
 - Package-level technical docs live beside the source in `src/splitshot/.../README.md`.
 
 ## Runtime Model
 
-SplitShot is a source-first `uv` project. The expected workflow is a real desktop session with local media files, a visible browser, and platform-native file dialogs. Native `.dmg` or `.exe` packaging is intentionally out of scope for this repository.
+SplitShot is a source-first `uv` project. The expected workflow is a real desktop session with local media files, a visible browser, and platform-native file dialogs. 
 
 `ffmpeg` and `ffprobe` are resolved from `PATH`, `SPLITSHOT_FFMPEG_DIR`, or vendored binaries under `src/splitshot/resources/ffmpeg/<platform>`.
 
@@ -131,5 +112,5 @@ SplitShot is a source-first `uv` project. The expected workflow is a real deskto
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 
-**Last updated:** 2026-04-17
-**Referenced files last updated:** 2026-04-17
+**Last updated:** 2026-04-18
+**Referenced files last updated:** 2026-04-18

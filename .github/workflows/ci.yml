@@ -50,7 +50,7 @@ jobs:
         run: uv run splitshot --check
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 
   browser-audit:
     runs-on: ubuntu-latest
@@ -79,4 +79,4 @@ jobs:
         run: uv run python -m playwright install chromium firefox webkit
 
       - name: Run browser UI audit
-        run: uv run python scripts/run_browser_ui_surface_audit.py
+        run: uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
