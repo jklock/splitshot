@@ -15,6 +15,8 @@ from splitshot.analysis.ml_runtime import (
 )
 from splitshot.domain.models import ShotEvent, ShotSource
 from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
+from splitshot.media.ffmpeg import run_ffprobe_json
+from splitshot.utils.time import seconds_to_ms
 
 
 BEEP_ONSET_FRACTION = 0.24
@@ -120,6 +122,51 @@ def _sample_to_ms(sample_index: float, sample_rate: int) -> int:
 
 def _ms_to_sample(time_ms: int | float, sample_rate: int) -> int:
     return int(round((float(time_ms) / 1000.0) * sample_rate))
+
+
+def _float_metadata_value(value: object, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _media_timeline_metadata(video_path: str | Path) -> tuple[int, int]:
+    metadata = run_ffprobe_json(Path(video_path))
+    streams = metadata.get("streams", [])
+    video_stream = next((item for item in streams if item.get("codec_type") == "video"), {})
+    audio_stream = next((item for item in streams if item.get("codec_type") == "audio"), {})
+    format_info = metadata.get("format", {})
+    audio_start_ms = seconds_to_ms(_float_metadata_value(audio_stream.get("start_time"), 0.0))
+    duration_seconds = _float_metadata_value(
+        video_stream.get("duration") or format_info.get("duration"),
+        0.0,
+    )
+    return audio_start_ms, seconds_to_ms(duration_seconds)
+
+
+def _align_samples_to_media_timeline(
+    samples: np.ndarray,
+    sample_rate: int,
+    audio_start_ms: int,
+    media_duration_ms: int,
+) -> np.ndarray:
+    aligned = samples.astype(np.float32, copy=False)
+    if audio_start_ms > 0:
+        padding = np.zeros(_ms_to_sample(audio_start_ms, sample_rate), dtype=np.float32)
+        aligned = np.concatenate((padding, aligned))
+    elif audio_start_ms < 0:
+        trim_samples = min(aligned.size, _ms_to_sample(abs(audio_start_ms), sample_rate))
+        aligned = aligned[trim_samples:]
+
+    if media_duration_ms > 0:
+        target_samples = max(0, _ms_to_sample(media_duration_ms, sample_rate))
+        if aligned.size > target_samples:
+            aligned = aligned[:target_samples]
+        elif aligned.size < target_samples:
+            aligned = np.pad(aligned, (0, target_samples - aligned.size))
+
+    return aligned.astype(np.float32, copy=False)
 
 
 def _rms_series(
@@ -405,6 +452,9 @@ def analyze_video_audio(video_path: str | Path, threshold: float = 0.5) -> Detec
         wav_path = Path(temp_dir) / "analysis.wav"
         extract_audio_wav(video_path, wav_path)
         samples, sample_rate = read_wav_mono(wav_path)
+
+    audio_start_ms, media_duration_ms = _media_timeline_metadata(video_path)
+    samples = _align_samples_to_media_timeline(samples, sample_rate, audio_start_ms, media_duration_ms)
 
     predictions = _predict_audio_events(samples, sample_rate)
     provisional_shots = _detect_shots_from_predictions(predictions, threshold, None)

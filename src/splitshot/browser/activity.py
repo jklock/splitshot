@@ -40,6 +40,8 @@ class ActivityLogger:
         self.path = root / f"splitshot-browser-{stamp}-{uuid4().hex[:8]}.log"
         self._lock = threading.Lock()
         self._console_level = self.normalize_level(console_level)
+        self._sequence = 0
+        self._recent_records: list[dict[str, object]] = []
 
     @classmethod
     def normalize_level(cls, value: str) -> str:
@@ -65,16 +67,30 @@ class ActivityLogger:
 
     def log(self, event: str, *, level: str | None = None, **fields: object) -> None:
         record_level = self.normalize_level(level or self.level_for_event(event))
-        record = {
-            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
-            "event": event,
-            "level": record_level,
-            **fields,
-        }
-        line = json.dumps(record, default=str, sort_keys=True)
         with self._lock:
+            self._sequence += 1
+            record = {
+                "seq": self._sequence,
+                "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
+                "event": event,
+                "level": record_level,
+                **fields,
+            }
+            self._recent_records.append(record)
+            self._recent_records = self._recent_records[-1000:]
+            line = json.dumps(record, default=str, sort_keys=True)
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(f"{line}\n")
         if self._should_echo(record_level):
             print(f"[splitshot:{record_level}] {line}", flush=True)
+
+    def snapshot(self, after_seq: int = 0, limit: int = 250) -> dict[str, object]:
+        with self._lock:
+            entries = [record for record in self._recent_records if int(record.get("seq", 0)) > after_seq]
+            if limit > 0:
+                entries = entries[-limit:]
+            return {
+                "cursor": self._sequence,
+                "entries": entries,
+            }

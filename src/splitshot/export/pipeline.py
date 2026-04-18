@@ -717,6 +717,13 @@ def export_project(
         f"Decoder command: {shlex.join(plan.command)}",
     ]
 
+    def sync_export_log(line: str) -> None:
+        project.export.last_log = "\n".join(log_lines[-400:])
+        if log_callback is not None:
+            log_callback(line)
+
+    project.export.last_log = "\n".join(log_lines[-400:])
+
     try:
         crop_box = (crop_left, crop_top, crop_width, crop_height)
         if project.export.two_pass:
@@ -744,6 +751,7 @@ def export_project(
                 )
                 log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
                 log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
+                project.export.last_log = "\n".join(log_lines[-400:])
                 _render_pass(
                     project,
                     plan,
@@ -752,7 +760,7 @@ def export_project(
                     output_height,
                     pass_one_command,
                     log_lines,
-                    log_callback,
+                    sync_export_log,
                     progress_callback,
                     0.0,
                     0.5,
@@ -765,7 +773,7 @@ def export_project(
                     output_height,
                     pass_two_command,
                     log_lines,
-                    log_callback,
+                    sync_export_log,
                     progress_callback,
                     0.5,
                     0.5,
@@ -773,6 +781,7 @@ def export_project(
         else:
             encoder_command = _encoder_command(project, output_width, output_height, plan.fps, output_target)
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
+            project.export.last_log = "\n".join(log_lines[-400:])
             _render_pass(
                 project,
                 plan,
@@ -781,7 +790,7 @@ def export_project(
                 output_height,
                 encoder_command,
                 log_lines,
-                log_callback,
+                sync_export_log,
                 progress_callback,
                 0.0,
                 1.0,

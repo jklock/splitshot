@@ -55,13 +55,13 @@ These explain how to use the application from import to export.
 
 A generated inventory of every tracked Markdown file lives at [MARKDOWN_INDEX.md](MARKDOWN_INDEX.md).
 
-## Existing Planning Artifacts
+## Archived Planning Notes
 
-The repository also keeps implementation plans and task lists under [plans/](plans) and [todos/](todos). Those files are execution history and feature worklogs, not the primary user guide.
+Historical planning directories are not part of the active repository documentation set. Use the current docs in this folder, the package-level technical READMEs, and the browser audit scripts in `scripts/` as the maintained sources of truth.
 
 ## Governance Note
 
 The repository includes [LICENSE](../LICENSE) and uses the MIT License.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-17
+**Referenced files last updated:** 2026-04-17

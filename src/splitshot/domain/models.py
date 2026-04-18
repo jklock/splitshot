@@ -177,7 +177,7 @@ class ShotEvent:
     time_ms: int = 0
     source: ShotSource = ShotSource.AUTO
     confidence: float | None = None
-    score: ScoreMark | None = None
+    score: ScoreMark | None = field(default_factory=ScoreMark)
 
 
 @dataclass(slots=True)
@@ -233,6 +233,8 @@ class ScoringState:
     stage_number: int | None = None
     competitor_name: str = ""
     competitor_place: int | None = None
+    practiscore_source_path: str = ""
+    practiscore_source_name: str = ""
     penalties: float = 0.0
     point_map: dict[str, float] = field(
         default_factory=lambda: {
@@ -289,6 +291,7 @@ class OverlaySettings:
     custom_box_opacity: float = 0.9
     custom_box_width: int = 0
     custom_box_height: int = 0
+    text_boxes: list["OverlayTextBox"] = field(default_factory=list)
     timer_badge: BadgeStyle = field(default_factory=BadgeStyle)
     shot_badge: BadgeStyle = field(
         default_factory=lambda: BadgeStyle(background_color="#1D4ED8")
@@ -311,6 +314,14 @@ class OverlaySettings:
             ScoreLetter.DOWN_0.value: "#22C55E",
             ScoreLetter.DOWN_1.value: "#F59E0B",
             ScoreLetter.DOWN_3.value: "#FB7185",
+            "PE": "#EF4444",
+            "NT": "#F59E0B",
+            "FP": "#DC2626",
+            "FTDR": "#EA580C",
+            "FPE": "#BE123C",
+            "PM": "#EF4444",
+            "SPF": "#EF4444",
+            "SND": "#F59E0B",
             ScoreLetter.GPA_0.value: "#22C55E",
             ScoreLetter.GPA_1.value: "#F59E0B",
             ScoreLetter.GPA_3.value: "#FB7185",
@@ -330,6 +341,22 @@ class MergeSettings:
     pip_x: float = 1.0
     pip_y: float = 1.0
     primary_is_left_or_top: bool = True
+
+
+@dataclass(slots=True)
+class OverlayTextBox:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    enabled: bool = False
+    source: str = "manual"
+    text: str = ""
+    quadrant: str = "top_right"
+    x: float | None = None
+    y: float | None = None
+    background_color: str = "#000000"
+    text_color: str = "#ffffff"
+    opacity: float = 0.9
+    width: int = 0
+    height: int = 0
 
 
 @dataclass(slots=True)
@@ -360,6 +387,17 @@ class UIState:
     selected_shot_id: str | None = None
     timeline_zoom: float = 1.0
     timeline_offset_ms: int = 0
+    active_tool: str = "project"
+    waveform_mode: str = "select"
+    waveform_expanded: bool = False
+    timing_expanded: bool = False
+    layout_locked: bool = True
+    rail_width: int = 64
+    inspector_width: int = 440
+    waveform_height: int = 206
+    scoring_shot_expansion: dict[str, bool] = field(default_factory=dict)
+    waveform_shot_amplitudes: dict[str, float] = field(default_factory=dict)
+    timing_edit_shot_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -404,7 +442,11 @@ def _serialize(value: Any) -> Any:
 
 
 def project_to_dict(project: Project) -> dict[str, Any]:
-    return _serialize(project)
+    data = _serialize(project)
+    overlay = data.get("overlay")
+    if isinstance(overlay, dict):
+        overlay["scoring_colors"] = _normalize_scoring_color_map(overlay.get("scoring_colors", {}))
+    return data
 
 
 def _parse_enum(enum_type: type[StrEnum], value: str | None, default: StrEnum) -> StrEnum:
@@ -422,9 +464,183 @@ def _badge_style_from_dict(data: dict[str, Any] | None) -> BadgeStyle:
     )
 
 
-def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark | None:
-    if not data:
+def _normalize_scoring_color_map(data: dict[str, Any] | None) -> dict[str, str]:
+    normalized: dict[str, str] = {}
+    for key, value in (data or {}).items():
+        normalized_key = str(key).strip()
+        if not normalized_key or "|" in normalized_key:
+            continue
+        normalized[normalized_key] = str(value)
+    return normalized
+
+
+_TEXT_BOX_SOURCES = {"manual", "imported_summary"}
+_TEXT_BOX_QUADRANTS = {
+    "above_final",
+    "top_left",
+    "top_middle",
+    "top_right",
+    "middle_left",
+    "middle_middle",
+    "middle_right",
+    "bottom_left",
+    "bottom_middle",
+    "bottom_right",
+    "custom",
+}
+
+_UI_STATE_ACTIVE_TOOLS = {
+    "project",
+    "scoring",
+    "timing",
+    "merge",
+    "overlay",
+    "review",
+    "export",
+    "metrics",
+}
+
+_UI_STATE_WAVEFORM_MODES = {"select", "add"}
+
+def _normalize_text_box_source(value: str | None) -> str:
+    normalized = str(value or "manual")
+    return normalized if normalized in _TEXT_BOX_SOURCES else "manual"
+
+
+def _normalize_text_box_quadrant(value: str | None) -> str:
+    normalized = str(value or "top_right")
+    return normalized if normalized in _TEXT_BOX_QUADRANTS else "top_right"
+
+
+def _normalize_ui_state_active_tool(value: Any) -> str:
+    normalized = str(value or "project")
+    return normalized if normalized in _UI_STATE_ACTIVE_TOOLS else "project"
+
+
+def _normalize_ui_state_waveform_mode(value: Any) -> str:
+    normalized = str(value or "select")
+    return normalized if normalized in _UI_STATE_WAVEFORM_MODES else "select"
+
+
+def _ui_state_bool_map(data: Any) -> dict[str, bool]:
+    if not isinstance(data, dict):
+        return {}
+    normalized: dict[str, bool] = {}
+    for key, value in data.items():
+        clean_key = str(key).strip()
+        if clean_key:
+            normalized[clean_key] = bool(value)
+    return normalized
+
+
+def _ui_state_float_map(data: Any, *, minimum: float = 0.0) -> dict[str, float]:
+    if not isinstance(data, dict):
+        return {}
+    normalized: dict[str, float] = {}
+    for key, value in data.items():
+        clean_key = str(key).strip()
+        if not clean_key:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric < minimum:
+            continue
+        normalized[clean_key] = numeric
+    return normalized
+
+
+def _ui_state_string_list(data: Any) -> list[str]:
+    if not isinstance(data, list):
+        return []
+    normalized: list[str] = []
+    for value in data:
+        clean_value = str(value).strip()
+        if clean_value:
+            normalized.append(clean_value)
+    return normalized
+
+
+def _overlay_text_box_from_dict(data: dict[str, Any]) -> OverlayTextBox:
+    box = OverlayTextBox(
+        id=str(data.get("id") or uuid4().hex),
+        enabled=bool(data.get("enabled", False)),
+        source=_normalize_text_box_source(data.get("source")),
+        text=str(data.get("text", ""))[:500],
+        quadrant=_normalize_text_box_quadrant(data.get("quadrant")),
+        x=None if data.get("x") in {None, ""} else float(data["x"]),
+        y=None if data.get("y") in {None, ""} else float(data["y"]),
+        background_color=str(data.get("background_color", "#000000")),
+        text_color=str(data.get("text_color", "#ffffff")),
+        opacity=float(data.get("opacity", 0.9)),
+        width=int(data.get("width", 0)),
+        height=int(data.get("height", 0)),
+    )
+    if box.x is not None or box.y is not None:
+        box.quadrant = "custom"
+    return box
+
+
+def legacy_custom_box_as_text_box(overlay: OverlaySettings) -> OverlayTextBox | None:
+    has_legacy_box = (
+        overlay.custom_box_enabled
+        or overlay.custom_box_mode == "imported_summary"
+        or bool(overlay.custom_box_text.strip())
+    )
+    if not has_legacy_box:
         return None
+    box = OverlayTextBox(
+        enabled=overlay.custom_box_enabled,
+        source=_normalize_text_box_source(overlay.custom_box_mode),
+        text=overlay.custom_box_text,
+        quadrant=_normalize_text_box_quadrant(overlay.custom_box_quadrant),
+        x=overlay.custom_box_x,
+        y=overlay.custom_box_y,
+        background_color=overlay.custom_box_background_color,
+        text_color=overlay.custom_box_text_color,
+        opacity=float(overlay.custom_box_opacity),
+        width=int(overlay.custom_box_width),
+        height=int(overlay.custom_box_height),
+    )
+    if box.x is not None or box.y is not None:
+        box.quadrant = "custom"
+    return box
+
+
+def overlay_text_boxes_for_render(overlay: OverlaySettings) -> list[OverlayTextBox]:
+    if overlay.text_boxes:
+        return overlay.text_boxes
+    legacy_box = legacy_custom_box_as_text_box(overlay)
+    return [] if legacy_box is None else [legacy_box]
+
+
+def sync_overlay_legacy_custom_box_fields(overlay: OverlaySettings) -> None:
+    boxes = overlay.text_boxes
+    if not boxes:
+        overlay.custom_box_enabled = False
+        overlay.custom_box_mode = "manual"
+        overlay.custom_box_text = ""
+        return
+    primary = next((box for box in boxes if box.source == "imported_summary"), boxes[0])
+    overlay.custom_box_enabled = bool(primary.enabled)
+    overlay.custom_box_mode = _normalize_text_box_source(primary.source)
+    overlay.custom_box_text = primary.text[:500]
+    overlay.custom_box_quadrant = _normalize_text_box_quadrant(primary.quadrant)
+    overlay.custom_box_x = primary.x
+    overlay.custom_box_y = primary.y
+    overlay.custom_box_background_color = primary.background_color
+    overlay.custom_box_text_color = primary.text_color
+    overlay.custom_box_opacity = float(primary.opacity)
+    overlay.custom_box_width = int(primary.width)
+    overlay.custom_box_height = int(primary.height)
+    if overlay.custom_box_x is not None or overlay.custom_box_y is not None:
+        overlay.custom_box_quadrant = "custom"
+
+
+def _score_mark_from_dict(data: dict[str, Any] | None) -> ScoreMark:
+    if not data:
+        return ScoreMark()
     return ScoreMark(
         letter=ScoreLetter(data.get("letter", ScoreLetter.A.value)),
         x_norm=float(data.get("x_norm", 0.5)),
@@ -618,6 +834,8 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 if scoring_data.get("competitor_place") in {None, ""}
                 else int(scoring_data.get("competitor_place"))
             ),
+            practiscore_source_path=str(scoring_data.get("practiscore_source_path", "")),
+            practiscore_source_name=str(scoring_data.get("practiscore_source_name", "")),
             penalties=float(scoring_data.get("penalties", 0)),
             point_map={
                 str(key): float(value)
@@ -694,16 +912,18 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             custom_box_opacity=float(overlay_data.get("custom_box_opacity", 0.9)),
             custom_box_width=int(overlay_data.get("custom_box_width", 0)),
             custom_box_height=int(overlay_data.get("custom_box_height", 0)),
+            text_boxes=[
+                _overlay_text_box_from_dict(item)
+                for item in overlay_data.get("text_boxes", [])
+                if isinstance(item, dict)
+            ],
             timer_badge=_badge_style_from_dict(overlay_data.get("timer_badge")),
             shot_badge=_badge_style_from_dict(overlay_data.get("shot_badge")),
             current_shot_badge=_badge_style_from_dict(overlay_data.get("current_shot_badge")),
             hit_factor_badge=_badge_style_from_dict(overlay_data.get("hit_factor_badge")),
             scoring_colors={
                 **OverlaySettings().scoring_colors,
-                **{
-                    str(key): str(value)
-                    for key, value in overlay_data.get("scoring_colors", {}).items()
-                },
+                **_normalize_scoring_color_map(overlay_data.get("scoring_colors", {})),
             },
         ),
         merge=MergeSettings(
@@ -746,6 +966,20 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             selected_shot_id=ui_data.get("selected_shot_id"),
             timeline_zoom=float(ui_data.get("timeline_zoom", 1.0)),
             timeline_offset_ms=int(ui_data.get("timeline_offset_ms", 0)),
+            active_tool=_normalize_ui_state_active_tool(ui_data.get("active_tool")),
+            waveform_mode=_normalize_ui_state_waveform_mode(ui_data.get("waveform_mode")),
+            waveform_expanded=bool(ui_data.get("waveform_expanded", False)),
+            timing_expanded=bool(ui_data.get("timing_expanded", False)),
+            layout_locked=bool(ui_data.get("layout_locked", True)),
+            rail_width=int(ui_data.get("rail_width", 64)),
+            inspector_width=int(ui_data.get("inspector_width", 440)),
+            waveform_height=int(ui_data.get("waveform_height", 206)),
+            scoring_shot_expansion=_ui_state_bool_map(ui_data.get("scoring_shot_expansion")),
+            waveform_shot_amplitudes=_ui_state_float_map(
+                ui_data.get("waveform_shot_amplitudes"),
+                minimum=0.25,
+            ),
+            timing_edit_shot_ids=_ui_state_string_list(ui_data.get("timing_edit_shot_ids")),
         ),
         schema_version=int(data.get("schema_version", 1)),
     )
@@ -753,7 +987,16 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         project.secondary_video = project.merge_sources[0].asset
         if len(project.merge_sources) == 1:
             project.analysis.sync_offset_ms = int(project.merge_sources[0].sync_offset_ms)
-    if project.overlay.custom_box_x is not None or project.overlay.custom_box_y is not None:
-        project.overlay.custom_box_quadrant = "custom"
+    if not project.overlay.text_boxes:
+        legacy_box = legacy_custom_box_as_text_box(project.overlay)
+        if legacy_box is not None:
+            project.overlay.text_boxes = [legacy_box]
+    for text_box in project.overlay.text_boxes:
+        if text_box.x is not None or text_box.y is not None:
+            text_box.quadrant = "custom"
+    from splitshot.scoring.logic import ensure_default_shot_scores
+
+    ensure_default_shot_scores(project)
+    sync_overlay_legacy_custom_box_fields(project.overlay)
     project.sort_shots()
     return project

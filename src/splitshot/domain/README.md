@@ -1,6 +1,6 @@
 # Domain
 
-The domain package defines the project schema, enums, and serialization helpers shared by the browser UI, desktop UI, analysis code, and export pipeline.
+The domain package defines the project schema, enums, and serialization helpers shared by the browser UI, analysis code, and export pipeline.
 
 ## Files
 

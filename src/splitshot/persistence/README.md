@@ -16,7 +16,7 @@ The persistence package stores and restores SplitShot project bundles.
 
 ## Media Copying Rules
 
-`_copy_project_media_if_needed` clones the project and copies media into the bundle when the source path belongs to a browser session directory. That keeps temporary uploads alive after the browser session ends.
+`_copy_project_media_if_needed` clones the project and copies media into the bundle when the source path belongs to a browser session directory. That keeps temporary imported files alive after the browser session ends.
 
 ## Notes
 
@@ -24,5 +24,5 @@ The persistence package stores and restores SplitShot project bundles.
 - The saved bundle is a directory, not a single archive file.
 - The controller tracks recently opened bundles in app settings.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-04-15
+**Referenced files last updated:** 2026-04-15

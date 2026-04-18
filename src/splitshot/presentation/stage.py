@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from splitshot.domain.models import Project, ShotSource
-from splitshot.timeline.model import average_split_ms, draw_time_ms, raw_time_ms, sort_shots, split_reset_shot_ids
-from splitshot.utils.time import format_time_ms
+from splitshot.domain.models import Project
+from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
 
 
 def format_seconds_short(time_ms: int | None) -> str:
@@ -35,16 +34,21 @@ class TimingSegment:
     shot_id: str
     shot_number: int
     label: str
+    interval_kind: str
+    interval_label: str
     segment_ms: int | None
     segment_s: str
     cumulative_ms: int | None
     cumulative_s: str
+    sequence_total_ms: int | None
+    sequence_total_s: str
     absolute_ms: int
     absolute_s: str
     confidence: float | None
     source: str
     score_letter: str | None
     penalty_counts: dict[str, float]
+    resets_sequence: bool
     card_title: str
     card_value: str
     card_subtitle: str
@@ -59,7 +63,7 @@ class StagePresentation:
 
 def build_stage_presentation(project: Project) -> StagePresentation:
     shots = sort_shots(project.analysis.shots)
-    reset_ids = split_reset_shot_ids(project)
+    split_rows = compute_split_rows(project)
     beep_ms = project.analysis.beep_time_ms_primary
     raw_ms = raw_time_ms(project)
     metrics = StageMetrics(
@@ -73,23 +77,16 @@ def build_stage_presentation(project: Project) -> StagePresentation:
     )
 
     segments: list[TimingSegment] = []
-    previous_time_ms: int | None = beep_ms
-    for index, shot in enumerate(shots, start=1):
-        if index == 1:
-            label = "Draw"
-            segment_ms = None if beep_ms is None else shot.time_ms - beep_ms
-        elif shot.id in reset_ids:
-            label = f"Shot {index}"
-            segment_ms = 0
-        else:
-            label = f"Shot {index}"
-            segment_ms = None if previous_time_ms is None else shot.time_ms - previous_time_ms
-
-        cumulative_ms = None if beep_ms is None else shot.time_ms - beep_ms
-        confidence = shot.confidence
-        score_letter = None if shot.score is None else shot.score.letter.value
-        penalty_counts = {} if shot.score is None else dict(shot.score.penalty_counts)
-        if shot.source == ShotSource.MANUAL:
+    for row in split_rows:
+        label = row.label or f"Shot {row.shot_number}"
+        segment_ms = row.split_ms
+        cumulative_ms = row.cumulative_ms
+        sequence_total_ms = row.sequence_total_ms
+        confidence = row.confidence
+        score_letter = row.score_letter
+        penalty_counts = dict(row.penalty_counts)
+        source_value = str(row.source or "")
+        if source_value == "manual":
             subtitle = "Manual"
             source_label = "Manual"
         elif confidence is None:
@@ -100,8 +97,12 @@ def build_stage_presentation(project: Project) -> StagePresentation:
             source_label = "ShotML"
 
         meta_parts = []
+        if segment_ms is not None:
+            meta_parts.append(f"{row.interval_label or 'Split'} {format_seconds_short(segment_ms)}s")
+        if sequence_total_ms is not None:
+            meta_parts.append(f"Run {format_seconds_short(sequence_total_ms)}s")
         if cumulative_ms is not None:
-            meta_parts.append(f"Split {format_seconds_short(cumulative_ms)}s")
+            meta_parts.append(f"Stage {format_seconds_short(cumulative_ms)}s")
         meta_parts.append(source_label)
         if score_letter is not None:
             meta_parts.append(f"Score {score_letter}")
@@ -115,25 +116,29 @@ def build_stage_presentation(project: Project) -> StagePresentation:
 
         segments.append(
             TimingSegment(
-                shot_id=shot.id,
-                shot_number=index,
+                shot_id=row.shot_id or "",
+                shot_number=row.shot_number or 0,
                 label=label,
+                interval_kind=row.interval_kind,
+                interval_label=row.interval_label,
                 segment_ms=segment_ms,
                 segment_s=format_seconds_precise(segment_ms),
                 cumulative_ms=cumulative_ms,
                 cumulative_s=format_seconds_precise(cumulative_ms),
-                absolute_ms=shot.time_ms,
-                absolute_s=format_seconds_precise(shot.time_ms),
+                sequence_total_ms=sequence_total_ms,
+                sequence_total_s=format_seconds_precise(sequence_total_ms),
+                absolute_ms=row.absolute_time_ms,
+                absolute_s=format_seconds_precise(row.absolute_time_ms),
                 confidence=confidence,
-                source=shot.source.value,
+                source=source_value,
                 score_letter=score_letter,
                 penalty_counts=penalty_counts,
+                resets_sequence=row.resets_sequence,
                 card_title=label,
                 card_value=format_seconds_short(segment_ms),
                 card_subtitle=subtitle,
                 card_meta=" | ".join(meta_parts),
             )
         )
-        previous_time_ms = shot.time_ms
 
     return StagePresentation(metrics=metrics, timing_segments=segments)
