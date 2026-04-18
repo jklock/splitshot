@@ -14,18 +14,12 @@ from splitshot.media.ffmpeg import MediaError, resolve_media_binary
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="splitshot",
-        description="SplitShot local stage video analyzer. Browser control is the default mode.",
+        description="SplitShot local stage video analyzer.",
     )
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument(
+    parser.add_argument(
         "--web",
         action="store_true",
         help="Launch the local browser control interface. This is the default.",
-    )
-    mode.add_argument(
-        "--desktop",
-        action="store_true",
-        help="Launch the secondary PySide desktop interface.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="Browser bind host.")
     parser.add_argument("--port", type=int, default=8765, help="Browser bind port.")
@@ -69,25 +63,11 @@ def run_browser(
     return 0
 
 
-def run_desktop(project_path: Path | None = None) -> int:
-    try:
-        run_desktop_app = _desktop_runtime()
-    except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"SplitShot desktop runtime is unavailable: {exc}") from exc
-    return run_desktop_app(project_path=project_path)
-
-
 def _browser_runtime():
     from splitshot.browser.server import BrowserControlServer
     from splitshot.ui.controller import ProjectController
 
     return BrowserControlServer, ProjectController
-
-
-def _desktop_runtime():
-    from splitshot.app import run as run_desktop_app
-
-    return run_desktop_app
 
 
 def _platform_label() -> str:
@@ -181,8 +161,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.check:
         return run_check()
-    if args.desktop:
-        return run_desktop(project_path=args.project)
     return run_browser(
         host=args.host,
         port=args.port,
@@ -190,12 +168,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         project_path=args.project,
         log_level=args.log_level,
     )
-
-
-def desktop_main(argv: Sequence[str] | None = None) -> int:
-    forwarded = list(sys.argv[1:] if argv is None else argv)
-    args = build_parser().parse_args(["--desktop", *forwarded])
-    return run_desktop(project_path=args.project)
 
 
 def web_main(argv: Sequence[str] | None = None) -> int:

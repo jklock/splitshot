@@ -1,143 +1,49 @@
 # Markdown Inventory
 
-This inventory covers the 129 tracked Markdown files in the repository. It excludes vendor and cache trees such as `.venv/` and `.pytest_cache/`.
+This inventory covers the 29 tracked Markdown files that currently exist in the repository. Historical `docs/plans/` and `docs/todos/` references were removed from this inventory because those directories are not present in the active workspace.
 
-The `Last updated` column records when this inventory was regenerated. The `Referenced files last updated` column records the latest date among explicit local file links found in the document.
+## Repository Root
 
-| Markdown file | Last updated | Referenced files last updated | Linked files |
-| --- | --- | --- | ---: |
-| [.github/PULL_REQUEST_TEMPLATE.md](../.github/PULL_REQUEST_TEMPLATE.md) | 2026-04-13 | n/a | 0 |
-| [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) | 2026-04-13 | n/a | 0 |
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | 2026-04-13 | 2026-04-13 | 2 |
-| [README.md](../README.md) | 2026-04-13 | 2026-04-13 | 6 |
-| [SECURITY.md](../SECURITY.md) | 2026-04-13 | n/a | 0 |
-| [docs/ARCHITECTURE.md](ARCHITECTURE.md) | 2026-04-13 | 2026-04-13 | 10 |
-| [docs/DEVELOPING.md](DEVELOPING.md) | 2026-04-13 | 2026-04-13 | 2 |
-| [docs/Directions.md](Directions.md) | 2026-04-13 | n/a | 0 |
-| [docs/LIMITATIONS.md](LIMITATIONS.md) | 2026-04-13 | n/a | 0 |
-| [docs/MARKDOWN_INDEX.md](MARKDOWN_INDEX.md) | 2026-04-13 | 2026-04-13 | 130 |
-| [docs/README.md](README.md) | 2026-04-13 | 2026-04-13 | 29 |
-| [docs/USER_GUIDE.md](USER_GUIDE.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-button-activity-qa-audit.md](plans/browser-button-activity-qa-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-compact-tool-ui-final-audit.md](plans/browser-compact-tool-ui-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-compact-tool-ui-gap-analysis.md](plans/browser-compact-tool-ui-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-compact-tool-ui-plan.md](plans/browser-compact-tool-ui-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-dynamic-layout-scoring-final-audit.md](plans/browser-dynamic-layout-scoring-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-dynamic-layout-scoring-gap-analysis.md](plans/browser-dynamic-layout-scoring-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-dynamic-layout-scoring-plan.md](plans/browser-dynamic-layout-scoring-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-functional-button-trace-final-audit.md](plans/browser-functional-button-trace-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-functional-button-trace-gap-analysis.md](plans/browser-functional-button-trace-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-functional-button-trace-plan.md](plans/browser-functional-button-trace-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-layout-popout-qa-final-audit.md](plans/browser-layout-popout-qa-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-layout-popout-qa-gap-analysis.md](plans/browser-layout-popout-qa-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-layout-popout-qa-plan.md](plans/browser-layout-popout-qa-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-live-control-redesign-final-audit.md](plans/browser-live-control-redesign-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-live-control-redesign-gap-analysis.md](plans/browser-live-control-redesign-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-live-control-redesign-plan.md](plans/browser-live-control-redesign-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-logo-single-window-final-audit.md](plans/browser-logo-single-window-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-logo-single-window-gap-analysis.md](plans/browser-logo-single-window-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-logo-single-window-plan.md](plans/browser-logo-single-window-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-overlay-score-cleanup-final-audit.md](plans/browser-overlay-score-cleanup-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-overlay-score-cleanup-gap-analysis.md](plans/browser-overlay-score-cleanup-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-overlay-score-cleanup-plan.md](plans/browser-overlay-score-cleanup-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-project-waveform-flow-final-audit.md](plans/browser-project-waveform-flow-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-project-waveform-flow-gap-analysis.md](plans/browser-project-waveform-flow-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-project-waveform-flow-plan.md](plans/browser-project-waveform-flow-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-regression-compatibility-audit.md](plans/browser-regression-compatibility-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-review-cockpit-final-audit.md](plans/browser-review-cockpit-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-review-cockpit-gap-analysis.md](plans/browser-review-cockpit-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-review-cockpit-plan.md](plans/browser-review-cockpit-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-server-terminal-hygiene-final-audit.md](plans/browser-server-terminal-hygiene-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-server-terminal-hygiene-gap-analysis.md](plans/browser-server-terminal-hygiene-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-server-terminal-hygiene-plan.md](plans/browser-server-terminal-hygiene-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-ui-sharp-correction-final-audit.md](plans/browser-ui-sharp-correction-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-ui-sharp-correction-gap-analysis.md](plans/browser-ui-sharp-correction-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-ui-sharp-correction-plan.md](plans/browser-ui-sharp-correction-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-usability-logging-waveform-final-audit.md](plans/browser-usability-logging-waveform-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-usability-logging-waveform-gap-analysis.md](plans/browser-usability-logging-waveform-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-usability-logging-waveform-plan.md](plans/browser-usability-logging-waveform-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-video-waveform-priority-final-audit.md](plans/browser-video-waveform-priority-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-video-waveform-priority-gap-analysis.md](plans/browser-video-waveform-priority-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-video-waveform-priority-plan.md](plans/browser-video-waveform-priority-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-waterfall-workflow-repair-final-audit.md](plans/browser-waterfall-workflow-repair-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-waterfall-workflow-repair-gap-analysis.md](plans/browser-waterfall-workflow-repair-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-waterfall-workflow-repair-plan.md](plans/browser-waterfall-workflow-repair-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-workflow-polish-autoapply-final-audit.md](plans/browser-workflow-polish-autoapply-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-workflow-polish-autoapply-gap-analysis.md](plans/browser-workflow-polish-autoapply-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/browser-workflow-polish-autoapply-plan.md](plans/browser-workflow-polish-autoapply-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/feature-plan.md](plans/feature-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/final-audit.md](plans/final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/gap-analysis.md](plans/gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ml-detection-final-audit.md](plans/ml-detection-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ml-detection-gap-analysis.md](plans/ml-detection-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ml-detection-parity-plan.md](plans/ml-detection-parity-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/scoring-export-presets-final-audit.md](plans/scoring-export-presets-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/scoring-export-presets-gap-analysis.md](plans/scoring-export-presets-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/scoring-export-presets-plan.md](plans/scoring-export-presets-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/source-launcher-packaging-final-audit.md](plans/source-launcher-packaging-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/source-launcher-packaging-gap-analysis.md](plans/source-launcher-packaging-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/source-launcher-packaging-plan.md](plans/source-launcher-packaging-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage-suite-browser-packaging-final-audit.md](plans/stage-suite-browser-packaging-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage-suite-browser-packaging-gap-analysis.md](plans/stage-suite-browser-packaging-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage-suite-browser-packaging-plan.md](plans/stage-suite-browser-packaging-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage1-benchmark-final-audit.md](plans/stage1-benchmark-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage1-benchmark-gap-analysis.md](plans/stage1-benchmark-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/stage1-benchmark-plan.md](plans/stage1-benchmark-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/testing-plan.md](plans/testing-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-exposure-ui-parity-final-audit.md](plans/timing-exposure-ui-parity-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-exposure-ui-parity-gap-analysis.md](plans/timing-exposure-ui-parity-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-exposure-ui-parity-plan.md](plans/timing-exposure-ui-parity-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-precision-final-audit.md](plans/timing-precision-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-precision-gap-analysis.md](plans/timing-precision-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/timing-precision-plan.md](plans/timing-precision-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ui-plan.md](plans/ui-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ux-automation-final-audit.md](plans/ux-automation-final-audit.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ux-automation-gap-analysis.md](plans/ux-automation-gap-analysis.md) | 2026-04-13 | n/a | 0 |
-| [docs/plans/ux-automation-refresh-plan.md](plans/ux-automation-refresh-plan.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-compact-tool-ui.md](todos/browser-compact-tool-ui.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-dynamic-layout-scoring.md](todos/browser-dynamic-layout-scoring.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-functional-button-trace.md](todos/browser-functional-button-trace.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-layout-popout-qa.md](todos/browser-layout-popout-qa.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-live-control-redesign.md](todos/browser-live-control-redesign.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-logo-single-window.md](todos/browser-logo-single-window.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-overlay-score-cleanup.md](todos/browser-overlay-score-cleanup.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-project-waveform-flow.md](todos/browser-project-waveform-flow.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-review-cockpit.md](todos/browser-review-cockpit.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-server-terminal-hygiene.md](todos/browser-server-terminal-hygiene.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-ui-sharp-correction.md](todos/browser-ui-sharp-correction.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-usability-logging-waveform.md](todos/browser-usability-logging-waveform.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-video-waveform-priority.md](todos/browser-video-waveform-priority.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-waterfall-workflow-repair.md](todos/browser-waterfall-workflow-repair.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/browser-workflow-polish-autoapply.md](todos/browser-workflow-polish-autoapply.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/features.md](todos/features.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/foundation.md](todos/foundation.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/ml-detection-parity.md](todos/ml-detection-parity.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/qa.md](todos/qa.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/scoring-export-presets.md](todos/scoring-export-presets.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/source-launcher-packaging.md](todos/source-launcher-packaging.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/stage-suite-browser-packaging.md](todos/stage-suite-browser-packaging.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/stage1-benchmark-parity.md](todos/stage1-benchmark-parity.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/timing-exposure-ui-parity.md](todos/timing-exposure-ui-parity.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/timing-precision.md](todos/timing-precision.md) | 2026-04-13 | n/a | 0 |
-| [docs/todos/ux-automation-refresh.md](todos/ux-automation-refresh.md) | 2026-04-13 | n/a | 0 |
-| [src/splitshot/README.md](../src/splitshot/README.md) | 2026-04-13 | 2026-04-11 | 4 |
-| [src/splitshot/analysis/README.md](../src/splitshot/analysis/README.md) | 2026-04-13 | 2026-04-10 | 5 |
-| [src/splitshot/benchmarks/README.md](../src/splitshot/benchmarks/README.md) | 2026-04-13 | 2026-04-10 | 2 |
-| [src/splitshot/browser/README.md](../src/splitshot/browser/README.md) | 2026-04-13 | 2026-04-13 | 4 |
-| [src/splitshot/browser/static/README.md](../src/splitshot/browser/static/README.md) | 2026-04-13 | 2026-04-13 | 4 |
-| [src/splitshot/domain/README.md](../src/splitshot/domain/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/export/README.md](../src/splitshot/export/README.md) | 2026-04-13 | 2026-04-13 | 2 |
-| [src/splitshot/media/README.md](../src/splitshot/media/README.md) | 2026-04-13 | 2026-04-13 | 4 |
-| [src/splitshot/merge/README.md](../src/splitshot/merge/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/overlay/README.md](../src/splitshot/overlay/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/persistence/README.md](../src/splitshot/persistence/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/presentation/README.md](../src/splitshot/presentation/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/scoring/README.md](../src/splitshot/scoring/README.md) | 2026-04-13 | 2026-04-13 | 1 |
-| [src/splitshot/timeline/README.md](../src/splitshot/timeline/README.md) | 2026-04-13 | 2026-04-11 | 1 |
-| [src/splitshot/ui/README.md](../src/splitshot/ui/README.md) | 2026-04-13 | 2026-04-13 | 2 |
-| [src/splitshot/utils/README.md](../src/splitshot/utils/README.md) | 2026-04-13 | 2026-04-10 | 1 |
+- [../.github/PULL_REQUEST_TEMPLATE.md](../.github/PULL_REQUEST_TEMPLATE.md)
+- [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
+- [../CONTRIBUTING.md](../CONTRIBUTING.md)
+- [../README.md](../README.md)
+- [../SECURITY.md](../SECURITY.md)
+- [../implementation_prompt.md](../implementation_prompt.md)
 
-Every tracked Markdown file also carries the same two-line footer at the end of the document.
+## Docs Directory
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [BROWSER_AV_HARDENING_PLAN.md](BROWSER_AV_HARDENING_PLAN.md)
+- [DEVELOPING.md](DEVELOPING.md)
+- [LIMITATIONS.md](LIMITATIONS.md)
+- [MARKDOWN_INDEX.md](MARKDOWN_INDEX.md)
+- [README.md](README.md)
+- [USER_GUIDE.md](USER_GUIDE.md)
+
+## Package-Level Technical Docs
+
+- [../src/splitshot/README.md](../src/splitshot/README.md)
+- [../src/splitshot/analysis/README.md](../src/splitshot/analysis/README.md)
+- [../src/splitshot/benchmarks/README.md](../src/splitshot/benchmarks/README.md)
+- [../src/splitshot/browser/README.md](../src/splitshot/browser/README.md)
+- [../src/splitshot/browser/static/README.md](../src/splitshot/browser/static/README.md)
+- [../src/splitshot/domain/README.md](../src/splitshot/domain/README.md)
+- [../src/splitshot/export/README.md](../src/splitshot/export/README.md)
+- [../src/splitshot/media/README.md](../src/splitshot/media/README.md)
+- [../src/splitshot/merge/README.md](../src/splitshot/merge/README.md)
+- [../src/splitshot/overlay/README.md](../src/splitshot/overlay/README.md)
+- [../src/splitshot/persistence/README.md](../src/splitshot/persistence/README.md)
+- [../src/splitshot/presentation/README.md](../src/splitshot/presentation/README.md)
+- [../src/splitshot/scoring/README.md](../src/splitshot/scoring/README.md)
+- [../src/splitshot/timeline/README.md](../src/splitshot/timeline/README.md)
+- [../src/splitshot/ui/README.md](../src/splitshot/ui/README.md)
+- [../src/splitshot/utils/README.md](../src/splitshot/utils/README.md)
+
+## Notes
+
+- Browser workflow validation lives in the audit scripts under `scripts/`, not in archived planning directories.
+- The maintained user-facing docs are [README.md](README.md), [USER_GUIDE.md](USER_GUIDE.md), [DEVELOPING.md](DEVELOPING.md), and [LIMITATIONS.md](LIMITATIONS.md).
+
+**Last updated:** 2026-04-17
+**Referenced files last updated:** 2026-04-17

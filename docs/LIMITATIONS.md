@@ -21,6 +21,7 @@ This page records the current constraints that are visible in the source tree an
 - The browser server binds to `127.0.0.1` by default.
 - Native file picker support is platform dependent; the app falls back to platform-specific dialogs when it can.
 - Browser file imports are handled locally and are not cloud-backed.
+- Browser-uploaded media larger than 8 GiB are rejected; use the direct path import workflow for larger local files.
 - The browser review page shows the primary video, an optional secondary angle, and merge media, but the authoritative state still lives in the shared controller.
 
 ## Analysis and Scoring
@@ -37,7 +38,8 @@ This page records the current constraints that are visible in the source tree an
 ## Governance
 
 - The repository includes a root LICENSE file and uses the MIT License.
-- The docs/plans and docs/todos directories are implementation history and task tracking, not the primary user manual.
+- Historical planning directories are not part of the active documentation set.
+- Current product guidance lives in this `docs/` directory, the package-level `src/splitshot/.../README.md` files, and the browser audit scripts under `scripts/`.
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-04-17
+**Referenced files last updated:** 2026-04-17

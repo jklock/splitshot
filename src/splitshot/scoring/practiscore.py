@@ -123,6 +123,7 @@ def infer_practiscore_context(
             place_key="Place",
             first_name_key="First Name",
             last_name_key="Last Name",
+            allow_place_fallback=True,
         )
         if resolved_stage_number is None:
             resolved_stage_number = _infer_idpa_stage_number(competitor_row, rows)
@@ -142,6 +143,7 @@ def infer_practiscore_context(
         first_name_key="FirstName",
         last_name_key="LastName",
         reentry_key="Reentry",
+        allow_place_fallback=True,
     )
     if resolved_stage_number is None:
         resolved_stage_number = _infer_hit_factor_stage_number(report, competitor_row)
@@ -227,6 +229,7 @@ def _select_competitor_row(
     first_name_key: str,
     last_name_key: str,
     reentry_key: str | None = None,
+    allow_place_fallback: bool = False,
 ) -> dict[str, str]:
     clean_name = (competitor_name or "").strip()
     if clean_name:
@@ -237,6 +240,8 @@ def _select_competitor_row(
             place_key=place_key,
             first_name_key=first_name_key,
             last_name_key=last_name_key,
+            reentry_key=reentry_key,
+            allow_place_fallback=allow_place_fallback,
         )
     if competitor_place is not None:
         candidates = [row for row in rows if _int_or_none(row.get(place_key)) == competitor_place]
@@ -546,6 +551,8 @@ def _find_competitor_row(
     place_key: str,
     first_name_key: str,
     last_name_key: str,
+    reentry_key: str | None = None,
+    allow_place_fallback: bool = False,
 ) -> dict[str, str]:
     candidates = [
         row
@@ -557,6 +564,16 @@ def _find_competitor_row(
         if placed:
             candidates = placed
         elif candidates:
+            if allow_place_fallback:
+                non_reentries = [
+                    row
+                    for row in candidates
+                    if reentry_key is None or str(row.get(reentry_key, "No")).strip().lower() != "yes"
+                ]
+                if len(non_reentries) == 1:
+                    return non_reentries[0]
+                if len(candidates) == 1:
+                    return candidates[0]
             raise ValueError(
                 f"Found {competitor_name} in the results, but not with place {competitor_place}."
             )
@@ -564,7 +581,11 @@ def _find_competitor_row(
         raise ValueError(f"Could not find {competitor_name} in the results file.")
     if len(candidates) == 1:
         return candidates[0]
-    non_reentries = [row for row in candidates if str(row.get("Reentry", "No")).strip().lower() != "yes"]
+    non_reentries = [
+        row
+        for row in candidates
+        if reentry_key is None or str(row.get(reentry_key, "No")).strip().lower() != "yes"
+    ]
     if len(non_reentries) == 1:
         return non_reentries[0]
     raise ValueError(
@@ -642,7 +663,10 @@ def _float_or_zero(value: str | None) -> float:
 def _float_or_none(value: str | None) -> float | None:
     if value in {None, ""}:
         return None
-    return float(str(value).strip().replace(",", ""))
+    try:
+        return float(str(value).strip().replace(",", ""))
+    except ValueError:
+        return None
 
 
 def _required_float(value: str | None, label: str) -> float:

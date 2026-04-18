@@ -1,6 +1,6 @@
 # Presentation
 
-The presentation package builds the stage summary objects consumed by the browser dashboard and the desktop UI.
+The presentation package builds the stage summary objects consumed by the browser dashboard.
 
 ## Files
 
@@ -21,7 +21,6 @@ The presentation package builds the stage summary objects consumed by the browse
 ## Consumers
 
 - `browser.state.browser_state` serializes the presentation data into the JSON API response.
-- `ui.main_window.MainWindow` uses the same presentation data to populate the desktop dashboard.
 
 **Last updated:** 2026-04-13
 **Referenced files last updated:** 2026-04-13

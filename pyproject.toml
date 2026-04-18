@@ -20,7 +20,6 @@ dev = [
 splitshot = "splitshot.cli:main"
 splitshot-benchmark-csv = "splitshot.benchmarks.cli:main"
 splitshot-web = "splitshot.browser.cli:main"
-splitshot-desktop = "splitshot.cli:desktop_main"
 
 [build-system]
 requires = ["hatchling>=1.27"]

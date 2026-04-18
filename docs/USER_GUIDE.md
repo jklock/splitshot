@@ -1,6 +1,23 @@
 # User Guide
 
-SplitShot is a local-first stage review tool. The browser interface is the default way to use it, and it walks through the whole flow from source video to export. The desktop window remains available as a local validation surface for native dialogs, media loading, and toolchain checks.
+SplitShot is a local-first stage review tool. The browser interface walks through the whole flow from source video to export.
+
+## Quick Start Tonight
+
+1. Launch the app with `uv run splitshot`.
+2. On Project, import your main video. Use Select Primary Video for normal files, or paste a full local path into the Primary Video field and press Enter for larger files.
+3. Wait for the status bar to report the detected shot count and beep time.
+4. Open Splits and fix any obvious shot timing problems before you touch scoring or overlays.
+5. Import PractiScore only after the timing pass looks correct.
+6. Use Review to scrub near the final shot and verify the imported summary, badge positions, and any custom text boxes.
+7. Add PiP media only after the main angle is stable, then set sync and size in PiP.
+8. On Export, start with `source_mp4` or `youtube_long_1080p`, keep AAC audio, and leave two-pass off if you need a faster first render tonight.
+
+## Audio Compatibility
+
+- Chromium-class browsers are the fastest path when you need a dependable preview session.
+- Firefox and Safari-class WebKit can require a browser-safe preview proxy when the source file carries PCM audio inside MP4 or MOV containers.
+- SplitShot builds that compatibility preview automatically when it can. If preview audio is still missing, try Chromium first or re-encode the source audio to AAC before export.
 
 ## Normal Workflow
 
@@ -43,7 +60,7 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 | --- | --- |
 | Project name | Changes the saved project name |
 | Project description | Stores notes with the project bundle |
-| Primary Video | Shows the current primary video path |
+| Primary Video | Shows the current primary video path and accepts a pasted local path when you press Enter |
 | Select Primary Video | Opens a local file picker for the source stage video |
 | Project bundle path | Sets the `.ssproj` bundle directory |
 | Choose Project | Opens a native file picker for the bundle's `project.json` file and loads the project |
@@ -53,6 +70,8 @@ The video stage, waveform panel, and inspector each have a lock button and resiz
 | Delete Project | Deletes the current saved bundle directory |
 
 Loading a new primary video immediately starts automatic analysis and resets media-bound state from the previous project.
+
+If the source file is very large, use the pasted path workflow instead of the browser upload path so the app can read the file directly from disk.
 
 PractiScore import can start with the fields blank. After you choose a CSV or TXT results file, SplitShot stages that file locally, infers the match type, and fills dropdown suggestions for stage number, competitor name, and place. Changing those fields to another valid option from the same file automatically refreshes the imported stage.
 
@@ -213,9 +232,5 @@ The waveform editor also switches between Select and Add Shot mode. Select mode 
 - Use New Project to clear the current session and start over.
 - Use Delete Project only when you want to remove the saved bundle from disk.
 
-## Desktop App
-
-SplitShot also includes a PySide6 desktop window. It uses the same project model and the same analysis and export pipeline, but it is intentionally framed as a local validation surface rather than the primary end-user workflow.
-
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-04-17
+**Referenced files last updated:** 2026-04-17

@@ -6,7 +6,12 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project, overlay_text_boxes_for_render
-from splitshot.scoring.logic import calculate_scoring_summary, format_imported_stage_overlay_text
+from splitshot.scoring.logic import (
+    calculate_scoring_summary,
+    current_shot_index,
+    format_imported_stage_overlay_text,
+    shot_display_time_ms,
+)
 from splitshot.timeline.model import compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
 
 
@@ -19,6 +24,7 @@ class Badge:
     width: int | None = None
     height: int | None = None
     text_runs: tuple[tuple[str, str | None], ...] | None = None
+    text_bias: str = "center"
 
 
 _FONT_SIZE = {
@@ -31,6 +37,7 @@ _FONT_SIZE = {
 
 _BADGE_PADDING_X_PX = 10
 _BADGE_PADDING_Y_PX = 5
+_FIRST_SCORE_TOKEN_GAP = "  "
 
 _PENALTY_LABELS = {
     "procedural_errors": "PE",
@@ -44,6 +51,8 @@ _PENALTY_LABELS = {
     "stop_plate_failures": "SPF",
     "steel_not_down": "SND",
 }
+
+_ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
 
 def _score_token_color(project: Project, token: str) -> str | None:
@@ -65,8 +74,12 @@ def _shot_score_badge_content(project: Project, shot: object, base_text: str) ->
     if not project.scoring.enabled or score is None:
         return base_text, None
 
-    text_parts: list[tuple[str, str | None]] = [(base_text, None), (" ", None), (score.letter.value, _score_token_color(project, score.letter.value))]
-    plain_text = f"{base_text} {score.letter.value}"
+    text_parts: list[tuple[str, str | None]] = [
+        (base_text, None),
+        (_FIRST_SCORE_TOKEN_GAP, None),
+        (score.letter.value, _score_token_color(project, score.letter.value)),
+    ]
+    plain_text = f"{base_text}{_FIRST_SCORE_TOKEN_GAP}{score.letter.value}"
     for field_id, value in score.penalty_counts.items():
         numeric = max(0.0, float(value))
         if numeric <= 0:
@@ -106,6 +119,14 @@ def _format_penalty_counts(penalty_counts: dict[str, float]) -> str:
         label = _PENALTY_LABELS.get(field_id, field_id.replace("_", " "))
         parts.append(f"{label} x{_format_penalty_count(numeric)}")
     return ", ".join(parts)
+
+
+def _text_bias_for_direction(direction: str | None) -> str:
+    if direction == "left":
+        return "right"
+    if direction == "right":
+        return "left"
+    return "center"
 
 
 def _standard_badge_texts(project: Project) -> tuple[str, ...]:
@@ -177,12 +198,7 @@ class OverlayRenderer:
         position_ms: int,
     ) -> tuple[list[Badge], list[tuple[Badge, float, float]], list[tuple[str, float, float, float]]]:
         shots = sort_shots(project.analysis.shots)
-        current_index = None
-        for index, shot in enumerate(shots):
-            if shot.time_ms <= position_ms:
-                current_index = index
-            else:
-                break
+        current_index = current_shot_index(project, position_ms)
         badges: list[Badge] = []
         positioned_badges: list[tuple[Badge, float, float]] = []
         split_rows = compute_split_rows(project)
@@ -210,7 +226,7 @@ class OverlayRenderer:
             )
 
         draw_value = draw_time_ms(project)
-        first_shot_time = None if not shots else shots[0].time_ms
+        first_shot_time = None if not shots else shot_display_time_ms(project, shots[0].time_ms)
         if (
             project.overlay.show_draw
             and draw_value is not None
@@ -223,7 +239,7 @@ class OverlayRenderer:
                 project.overlay.draw_y,
             )
 
-        final_shot_time = None if not shots else shots[-1].time_ms
+        final_shot_time = None if not shots else shot_display_time_ms(project, shots[-1].time_ms)
         final_shot_reached = final_shot_time is not None and position_ms >= final_shot_time
 
         if project.overlay.show_shots and current_index is not None:
@@ -250,6 +266,7 @@ class OverlayRenderer:
                         style.text_color,
                         None,
                         text_runs=score_runs,
+                        text_bias=_text_bias_for_direction(project.overlay.shot_direction),
                     )
                 )
 
@@ -274,7 +291,11 @@ class OverlayRenderer:
         if not enabled:
             return ""
         if source == "imported_summary":
-            final_shot_time = project.analysis.shots[-1].time_ms if project.analysis.shots else None
+            final_shot_time = (
+                shot_display_time_ms(project, project.analysis.shots[-1].time_ms)
+                if project.analysis.shots
+                else None
+            )
             if final_shot_time is None or position_ms < final_shot_time:
                 return ""
             return format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
@@ -297,9 +318,23 @@ class OverlayRenderer:
         auto_badge_size = _auto_badge_size(_standard_badge_texts(project), painter.fontMetrics())
 
         badges, positioned_badges, score_marks = self._build_badges_with_positions(project, position_ms)
-        self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
-        for badge, x, y in positioned_badges:
-            self._paint_badges(
+        final_shot_time = None if not project.analysis.shots else shot_display_time_ms(project, project.analysis.shots[-1].time_ms)
+        final_shot_reached = final_shot_time is not None and position_ms >= final_shot_time
+        score_summary = calculate_scoring_summary(project) if project.scoring.enabled else None
+        has_final_score_badge = (
+            final_shot_reached
+            and project.overlay.show_score
+            and project.scoring.enabled
+            and score_summary is not None
+            and score_summary["display_value"] != "--"
+        )
+
+        final_score_rect: QRectF | None = None
+        badge_rects = self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
+        if has_final_score_badge and project.overlay.score_x is None and project.overlay.score_y is None and badge_rects:
+            final_score_rect = badge_rects[-1]
+        for index, (badge, x, y) in enumerate(positioned_badges):
+            rects = self._paint_badges(
                 painter,
                 [badge],
                 project,
@@ -310,6 +345,8 @@ class OverlayRenderer:
                 custom_y=y,
                 auto_badge_size=auto_badge_size,
             )
+            if has_final_score_badge and project.overlay.score_x is not None and project.overlay.score_y is not None and index == len(positioned_badges) - 1 and rects:
+                final_score_rect = rects[-1]
         for text_box in overlay_text_boxes_for_render(project.overlay):
             text_value = self._text_box_text(
                 project,
@@ -325,6 +362,9 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
+            text_box_quadrant = text_box.quadrant
+            if text_box_quadrant == _ABOVE_FINAL_TEXT_BOX_QUADRANT and final_score_rect is None:
+                text_box_quadrant = "top_middle"
             self._paint_badges(
                 painter,
                 [
@@ -338,9 +378,10 @@ class OverlayRenderer:
                 project,
                 width,
                 height,
-                quadrant=text_box.quadrant,
+                quadrant=text_box_quadrant,
                 custom_x=text_box.x,
                 custom_y=text_box.y,
+                anchor_rect=final_score_rect,
             )
         self._paint_scores(painter, project, score_marks, width, height)
 
@@ -357,9 +398,10 @@ class OverlayRenderer:
         custom_x: float | None = None,
         custom_y: float | None = None,
         auto_badge_size: tuple[int, int] | None = None,
-    ) -> None:
+        anchor_rect: QRectF | None = None,
+    ) -> list[QRectF]:
         if not badges:
-            return
+            return []
 
         position = project.overlay.position
         font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
@@ -383,6 +425,7 @@ class OverlayRenderer:
                 y_override = 0.5
 
         previous_rect: QRectF | None = None
+        painted_rects: list[QRectF] = []
         for index, badge in enumerate(badges):
             metrics = painter.fontMetrics()
             lines = badge.text.splitlines() or [""]
@@ -402,6 +445,9 @@ class OverlayRenderer:
                 if quadrant_value == "custom":
                     rect_x = (max(0.0, min(1.0, float(x_override))) * width) - (badge_width / 2)
                     rect_y = (max(0.0, min(1.0, float(y_override))) * height) - (badge_height / 2)
+                elif quadrant_value == _ABOVE_FINAL_TEXT_BOX_QUADRANT and anchor_rect is not None:
+                    rect_x = anchor_rect.center().x() - (badge_width / 2)
+                    rect_y = anchor_rect.top() - gap - badge_height
                 else:
                     rect_x, rect_y = self._first_badge_position(
                         width,
@@ -426,6 +472,8 @@ class OverlayRenderer:
                     rect_y = previous_rect.y() + previous_rect.height() + gap
             rect = QRectF(rect_x, rect_y, badge_width, badge_height)
             previous_rect = rect
+            painted_rects.append(rect)
+            text_bias = badge.text_bias or "center"
 
             background = QColor(badge.background_color or badge.style.background_color)
             background.setAlphaF(badge.style.opacity)
@@ -461,7 +509,13 @@ class OverlayRenderer:
                     cursor_x += metrics.horizontalAdvance(segment_text)
             else:
                 painter.setPen(QColor(badge.text_color or badge.style.text_color))
-                text_flags = Qt.AlignCenter
+                text_flags = Qt.AlignVCenter
+                if text_bias == "left":
+                    text_flags |= Qt.AlignLeft
+                elif text_bias == "right":
+                    text_flags |= Qt.AlignRight
+                else:
+                    text_flags |= Qt.AlignHCenter
                 if "\n" in badge.text:
                     text_flags |= Qt.TextWordWrap
                 painter.drawText(
@@ -469,6 +523,7 @@ class OverlayRenderer:
                     text_flags,
                     badge.text,
                 )
+        return painted_rects
 
     @staticmethod
     def _first_badge_position(

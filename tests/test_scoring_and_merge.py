@@ -49,6 +49,20 @@ def test_current_shot_tracks_playback_position() -> None:
     assert current_shot_index(project, 1600) == 2
 
 
+def test_current_shot_waits_for_first_source_frame_after_shot_time() -> None:
+    project = Project()
+    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.analysis.shots = [
+        ShotEvent(time_ms=150),
+        ShotEvent(time_ms=350),
+    ]
+
+    assert current_shot_index(project, 199) is None
+    assert current_shot_index(project, 200) == 0
+    assert current_shot_index(project, 399) == 0
+    assert current_shot_index(project, 400) == 1
+
+
 def test_scoring_presets_cover_hit_factor_and_time_plus() -> None:
     project = Project()
     project.scoring.enabled = True

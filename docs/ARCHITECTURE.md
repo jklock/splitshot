@@ -1,24 +1,24 @@
 # Architecture
 
-SplitShot is built as a local-first video analysis and export pipeline with two user interfaces that share one project model and one controller layer.
+SplitShot is built as a local-first video analysis and export pipeline with a browser user interface backed by one project model and one controller layer.
 
 ## System Layers
 
 | Layer | Main code | Responsibility |
 | --- | --- | --- |
-| Entry points | [src/splitshot/cli.py](../src/splitshot/cli.py), [src/splitshot/__main__.py](../src/splitshot/__main__.py), [src/splitshot/browser/cli.py](../src/splitshot/browser/cli.py), [src/splitshot/app.py](../src/splitshot/app.py) | Choose browser mode, desktop mode, or runtime checks |
+| Entry points | [src/splitshot/cli.py](../src/splitshot/cli.py), [src/splitshot/__main__.py](../src/splitshot/__main__.py), [src/splitshot/browser/cli.py](../src/splitshot/browser/cli.py) | Choose browser mode or runtime checks |
 | Controller | [src/splitshot/ui/controller.py](../src/splitshot/ui/controller.py) | Owns the mutable `Project`, settings, and save/load actions |
 | Core data | [src/splitshot/domain/models.py](../src/splitshot/domain/models.py) | Defines `Project` and the nested dataclasses and enums |
 | Media and analysis | [src/splitshot/media/](../src/splitshot/media), [src/splitshot/analysis/](../src/splitshot/analysis) | Probe media, extract audio, detect beep and shot events |
 | Presentation and scoring | [src/splitshot/timeline/](../src/splitshot/timeline), [src/splitshot/presentation/](../src/splitshot/presentation), [src/splitshot/scoring/](../src/splitshot/scoring) | Derive split rows, stage metrics, and scoring summaries |
 | Merge and export | [src/splitshot/merge/](../src/splitshot/merge), [src/splitshot/export/](../src/splitshot/export) | Build merge layouts and render final video output |
 | Persistence | [src/splitshot/persistence/projects.py](../src/splitshot/persistence/projects.py), [src/splitshot/config.py](../src/splitshot/config.py) | Save project bundles and app settings |
-| UI surfaces | [src/splitshot/browser/](../src/splitshot/browser), [src/splitshot/ui/](../src/splitshot/ui) | Render the browser shell and the PySide6 desktop window |
+| UI surfaces | [src/splitshot/browser/](../src/splitshot/browser), [src/splitshot/ui/](../src/splitshot/ui) | Render the browser shell and host the shared controller |
 
 ## Runtime Flow
 
 1. A user launches `splitshot`.
-2. `splitshot.cli` selects the browser server by default, or the desktop window when `--desktop` is provided.
+2. `splitshot.cli` starts the browser server by default.
 3. The controller receives media paths, probes them through `probe_video`, and stores the resulting `VideoAsset` objects in the `Project`.
 4. `analyze_video_audio` extracts mono audio, runs the embedded classifier, and produces beep and shot events plus a normalized waveform.
 5. Timeline and scoring helpers derive split rows, stage metrics, and scoring summaries from the project state.
@@ -35,7 +35,7 @@ SplitShot is built as a local-first video analysis and export pipeline with two 
 - `overlay` for badge appearance, badge position, and custom review box settings.
 - `merge` for layout, PiP sizing, and alignment offsets.
 - `export` for output format, codec, crop, quality, and log capture.
-- `ui_state` for browser/desktop selection state.
+- `ui_state` for browser selection state.
 
 The persistence layer writes a bundle directory that contains `project.json` plus copied media when browser-session paths need to be preserved.
 
@@ -49,10 +49,6 @@ The browser server in [src/splitshot/browser/server.py](../src/splitshot/browser
 - `POST /api/project/*`, `POST /api/shots/*`, `POST /api/scoring/*`, `POST /api/overlay`, `POST /api/merge`, and `POST /api/export` for edits and export.
 
 The browser frontend keeps its own view state, but all authoritative data still lives in the controller and `Project` model.
-
-## Desktop Surface
-
-The PySide6 desktop app in [src/splitshot/ui/main_window.py](../src/splitshot/ui/main_window.py) uses the same controller and the same project data. It provides a richer native window for local review, but it is still driven by the same analysis, merge, scoring, and export services.
 
 ## Runtime Artifacts
 

@@ -387,6 +387,17 @@ class UIState:
     selected_shot_id: str | None = None
     timeline_zoom: float = 1.0
     timeline_offset_ms: int = 0
+    active_tool: str = "project"
+    waveform_mode: str = "select"
+    waveform_expanded: bool = False
+    timing_expanded: bool = False
+    layout_locked: bool = True
+    rail_width: int = 64
+    inspector_width: int = 440
+    waveform_height: int = 206
+    scoring_shot_expansion: dict[str, bool] = field(default_factory=dict)
+    waveform_shot_amplitudes: dict[str, float] = field(default_factory=dict)
+    timing_edit_shot_ids: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -465,6 +476,7 @@ def _normalize_scoring_color_map(data: dict[str, Any] | None) -> dict[str, str]:
 
 _TEXT_BOX_SOURCES = {"manual", "imported_summary"}
 _TEXT_BOX_QUADRANTS = {
+    "above_final",
     "top_left",
     "top_middle",
     "top_right",
@@ -477,6 +489,18 @@ _TEXT_BOX_QUADRANTS = {
     "custom",
 }
 
+_UI_STATE_ACTIVE_TOOLS = {
+    "project",
+    "scoring",
+    "timing",
+    "merge",
+    "overlay",
+    "review",
+    "export",
+    "metrics",
+}
+
+_UI_STATE_WAVEFORM_MODES = {"select", "add"}
 
 def _normalize_text_box_source(value: str | None) -> str:
     normalized = str(value or "manual")
@@ -486,6 +510,56 @@ def _normalize_text_box_source(value: str | None) -> str:
 def _normalize_text_box_quadrant(value: str | None) -> str:
     normalized = str(value or "top_right")
     return normalized if normalized in _TEXT_BOX_QUADRANTS else "top_right"
+
+
+def _normalize_ui_state_active_tool(value: Any) -> str:
+    normalized = str(value or "project")
+    return normalized if normalized in _UI_STATE_ACTIVE_TOOLS else "project"
+
+
+def _normalize_ui_state_waveform_mode(value: Any) -> str:
+    normalized = str(value or "select")
+    return normalized if normalized in _UI_STATE_WAVEFORM_MODES else "select"
+
+
+def _ui_state_bool_map(data: Any) -> dict[str, bool]:
+    if not isinstance(data, dict):
+        return {}
+    normalized: dict[str, bool] = {}
+    for key, value in data.items():
+        clean_key = str(key).strip()
+        if clean_key:
+            normalized[clean_key] = bool(value)
+    return normalized
+
+
+def _ui_state_float_map(data: Any, *, minimum: float = 0.0) -> dict[str, float]:
+    if not isinstance(data, dict):
+        return {}
+    normalized: dict[str, float] = {}
+    for key, value in data.items():
+        clean_key = str(key).strip()
+        if not clean_key:
+            continue
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            continue
+        if numeric < minimum:
+            continue
+        normalized[clean_key] = numeric
+    return normalized
+
+
+def _ui_state_string_list(data: Any) -> list[str]:
+    if not isinstance(data, list):
+        return []
+    normalized: list[str] = []
+    for value in data:
+        clean_value = str(value).strip()
+        if clean_value:
+            normalized.append(clean_value)
+    return normalized
 
 
 def _overlay_text_box_from_dict(data: dict[str, Any]) -> OverlayTextBox:
@@ -892,6 +966,20 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             selected_shot_id=ui_data.get("selected_shot_id"),
             timeline_zoom=float(ui_data.get("timeline_zoom", 1.0)),
             timeline_offset_ms=int(ui_data.get("timeline_offset_ms", 0)),
+            active_tool=_normalize_ui_state_active_tool(ui_data.get("active_tool")),
+            waveform_mode=_normalize_ui_state_waveform_mode(ui_data.get("waveform_mode")),
+            waveform_expanded=bool(ui_data.get("waveform_expanded", False)),
+            timing_expanded=bool(ui_data.get("timing_expanded", False)),
+            layout_locked=bool(ui_data.get("layout_locked", True)),
+            rail_width=int(ui_data.get("rail_width", 64)),
+            inspector_width=int(ui_data.get("inspector_width", 440)),
+            waveform_height=int(ui_data.get("waveform_height", 206)),
+            scoring_shot_expansion=_ui_state_bool_map(ui_data.get("scoring_shot_expansion")),
+            waveform_shot_amplitudes=_ui_state_float_map(
+                ui_data.get("waveform_shot_amplitudes"),
+                minimum=0.25,
+            ),
+            timing_edit_shot_ids=_ui_state_string_list(ui_data.get("timing_edit_shot_ids")),
         ),
         schema_version=int(data.get("schema_version", 1)),
     )

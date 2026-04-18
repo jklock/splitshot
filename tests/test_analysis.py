@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from splitshot.utils.time import seconds_to_ms
 
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "example_data"
+WORKSPACE_IDPA_RESULTS = Path(__file__).resolve().parent.parent / "IDPA.csv"
 
 
 def test_analysis_detects_beep_and_shots(synthetic_video_factory) -> None:
@@ -119,8 +121,10 @@ def test_timing_events_attach_to_the_interval_without_zeroing_the_shot_split() -
     assert [row.label for row in rows] == ["Shot 1", "Shot 2", "Shot 3"]
     assert [row.interval_label for row in rows] == ["Draw", "Reload", "Split"]
     assert rows[1].split_ms == 230
+    assert rows[1].cumulative_ms == 380
     assert [action.label for action in rows[1].actions] == ["Reload"]
     assert rows[1].sequence_total_ms == 230
+    assert rows[2].cumulative_ms == 620
     assert rows[2].sequence_total_ms == 470
     assert rows[2].split_ms == 240
 
@@ -383,6 +387,62 @@ def test_open_project_restores_practiscore_source_for_stage_switch(tmp_path: Pat
     assert reopened.project.scoring.imported_stage.stage_number == 3
 
 
+def test_open_project_recovers_practiscore_from_project_csv_folder_when_metadata_missing(tmp_path: Path) -> None:
+    controller = ProjectController()
+    project_path = tmp_path / "recovered-practiscore.ssproj"
+    controller.save_project(str(project_path))
+
+    staged_csv = project_path / "CSV" / "IDPA.csv"
+    staged_csv.write_bytes((EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_bytes())
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    browser_state = reopened.practiscore_browser_state()
+    assert browser_state["has_source"] is True
+    assert browser_state["source_name"] == "IDPA.csv"
+    assert browser_state["detected_match_type"] == "idpa"
+    assert browser_state["stage_numbers"] == [1, 2, 3, 4]
+    assert reopened.project.scoring.practiscore_source_path == str(staged_csv.resolve())
+    assert reopened.project.scoring.enabled is True
+    assert reopened.project.scoring.ruleset == "idpa_time_plus"
+    assert reopened.project.scoring.match_type == "idpa"
+    assert reopened.project.scoring.stage_number == 1
+    assert reopened.project.scoring.competitor_name == "Jeff Graff"
+    assert reopened.project.scoring.competitor_place == 1
+    assert reopened.project.scoring.imported_stage is not None
+    assert reopened.project.scoring.imported_stage.source_name == "IDPA.csv"
+    assert reopened.project.scoring.imported_stage.stage_number == 1
+    assert reopened.project.scoring.imported_stage.competitor_name == "Jeff Graff"
+    assert reopened.project.scoring.imported_stage.competitor_place == 1
+
+
+def test_open_project_reimports_practiscore_when_saved_context_exists_but_imported_stage_is_missing(tmp_path: Path) -> None:
+    controller = ProjectController()
+    project_path = tmp_path / "recovered-practiscore-selection.ssproj"
+    controller.save_project(str(project_path))
+
+    staged_csv = project_path / "CSV" / "IDPA.csv"
+    staged_csv.write_bytes((EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_bytes())
+
+    metadata_path = project_path / "project.json"
+    payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+    payload["scoring"]["match_type"] = "idpa"
+    payload["scoring"]["stage_number"] = 1
+    payload["scoring"]["competitor_name"] = "Jeff Graff"
+    payload["scoring"]["competitor_place"] = 1
+    metadata_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    reopened = ProjectController()
+    reopened.open_project(str(project_path))
+
+    assert reopened.project.scoring.imported_stage is not None
+    assert reopened.project.scoring.imported_stage.source_name == "IDPA.csv"
+    assert reopened.project.scoring.imported_stage.stage_number == 1
+    assert reopened.project.scoring.imported_stage.competitor_name == "Jeff Graff"
+    assert reopened.project.scoring.imported_stage.final_time == 9.15
+
+
 def test_delete_timing_event_removes_matching_event() -> None:
     controller = ProjectController()
 
@@ -409,6 +469,62 @@ def test_practiscore_import_auto_enables_summary_only_after_file_import() -> Non
 
     controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="IDPA.csv")
 
+    assert controller.project.overlay.custom_box_enabled is True
+    assert controller.project.overlay.custom_box_mode == "imported_summary"
+    imported_box = next(box for box in controller.project.overlay.text_boxes if box.source == "imported_summary")
+    assert imported_box.quadrant == "above_final"
+    assert imported_box.x is None
+    assert imported_box.y is None
+    assert imported_box.width == 0
+    assert imported_box.height == 0
+
+
+def test_importing_new_practiscore_csv_preserves_current_selection_when_place_changes() -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv")
+
+    controller.import_practiscore_file(str(WORKSPACE_IDPA_RESULTS), source_name="thursday-night.csv")
+
+    assert controller.project.scoring.match_type == "idpa"
+    assert controller.project.scoring.stage_number == 2
+    assert controller.project.scoring.competitor_name == "John Klockenkemper"
+    assert controller.project.scoring.competitor_place == 6
+    assert controller.project.scoring.imported_stage is not None
+    assert controller.project.scoring.imported_stage.source_name == "thursday-night.csv"
+    assert controller.project.scoring.imported_stage.stage_number == 2
+    assert controller.project.scoring.imported_stage.final_time == 20.57
+
+
+def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing() -> None:
+    controller = ProjectController()
+    controller.set_practiscore_context(
+        match_type="idpa",
+        stage_number=2,
+        competitor_name="John Klockenkemper",
+        competitor_place=4,
+    )
+    controller.import_practiscore_file(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"), source_name="old-results.csv")
+
+    controller.project.overlay.text_boxes = []
+    controller.project.overlay.custom_box_enabled = False
+    controller.project.overlay.custom_box_mode = "manual"
+
+    controller.import_practiscore_file(str(WORKSPACE_IDPA_RESULTS), source_name="thursday-night.csv")
+
+    assert any(
+        box.source == "imported_summary" and box.enabled
+        for box in controller.project.overlay.text_boxes
+    )
+    imported_box = next(box for box in controller.project.overlay.text_boxes if box.source == "imported_summary")
+    assert imported_box.quadrant == "above_final"
+    assert imported_box.width == 0
+    assert imported_box.height == 0
     assert controller.project.overlay.custom_box_enabled is True
     assert controller.project.overlay.custom_box_mode == "imported_summary"
 
