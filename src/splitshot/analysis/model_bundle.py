@@ -2,7 +2,7 @@ from __future__ import annotations
 
 MODEL_METADATA = {"version": "audio-event-ml-v1", "sample_rate": 22050, "train_accuracy": 1.000000, "validation_accuracy": 1.000000}
 CLASS_LABELS = ['background', 'beep', 'shot']
-FEATURE_NAMES = ['log_rms', 'peak_abs', 'crest_factor', 'zero_crossing_rate', 'attack_ratio', 'sustain_ratio', 'log_attack_peak', 'spectral_centroid', 'spectral_bandwidth', 'spectral_rolloff', 'spectral_flatness', 'band_0', 'band_1', 'band_2', 'band_3', 'band_4', 'band_5', 'band_6', 'band_7']
+FEATURE_NAMES = ['log_rms', 'peak_abs', 'crest_factor', 'zero_crossing_rate', 'attack_ratio', 'sustain_ratio', 'log_attack_peak', 'spectral_centroid', 'spectral_bandwidth', 'spectral_rolloff', 'spectral_flatness', 'band_0', 'band_1', 'band_2', 'band_3', 'band_4', 'band_5', 'band_6', 'band_7', 'band_8']
 WINDOW_SIZE = 2048
 HOP_SIZE = 128
 STANDARDIZATION_MEAN = [-2.698701858520508, 0.5346977710723877, 6.671657562255859, 0.2408570796251297, 0.8628062009811401, 1.383327603340149, -2.0161612033843994, 0.2857351303100586, 0.18743324279785156, 0.4918198585510254, 0.2274547517299652, 0.0611058808863163, 0.07778896391391754, 0.13738885521888733, 0.049821555614471436, 0.10101047903299332, 0.2936885952949524, 0.07384920120239258, 0.09897032380104065, 0.10598945617675781]

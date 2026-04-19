@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from splitshot.analysis.detection import ThresholdDetectionResult, analyze_video_audio_thresholds
@@ -218,6 +218,33 @@ def render_table(summaries: list[ThresholdSummary], recommendation: float, reaso
     return "\n".join(lines)
 
 
+def render_review_suggestions(suggestions: list[dict[str, object]]) -> list[str]:
+    if not suggestions:
+        return ["", "Review Suggestions", "none"]
+    lines = [
+        "",
+        "Review Suggestions",
+        "shot | time      | kind                | confidence | support | action",
+        "-----+-----------+---------------------+------------+---------+--------",
+    ]
+    for suggestion in suggestions:
+        confidence = suggestion.get("confidence")
+        support = suggestion.get("support_confidence")
+        lines.append(
+            " | ".join(
+                [
+                    str(suggestion.get("shot_number") or "--").rjust(4),
+                    format_time_ms(suggestion.get("shot_time_ms")).rjust(9),
+                    str(suggestion.get("kind") or "").ljust(19),
+                    ("--" if confidence is None else f"{float(confidence) * 100.0:5.1f}%").rjust(10),
+                    ("--" if support is None else f"{float(support) * 100.0:5.1f}%").rjust(7),
+                    str(suggestion.get("suggested_action") or ""),
+                ]
+            )
+        )
+    return lines
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -233,6 +260,7 @@ def main() -> int:
     selected_threshold = recommended_threshold if args.threshold is None else args.threshold
     detail_result = selected_detection(results, selected_threshold)
     detail_rows = detailed_shot_rows(detail_result)
+    review_suggestions = [asdict(suggestion) for suggestion in detail_result.detection.review_suggestions]
 
     payload = {
         "video": str(video_path),
@@ -253,12 +281,14 @@ def main() -> int:
             for summary in summaries
         ],
         "shots": detail_rows,
+        "review_suggestions": review_suggestions,
     }
 
     if args.format == "json":
         rendered = json.dumps(payload, indent=2)
     else:
         rendered = render_table(summaries, selected_threshold, reason, detail_rows)
+        rendered += "\n" + "\n".join(render_review_suggestions(review_suggestions))
     print(rendered)
 
     if args.json_output is not None:

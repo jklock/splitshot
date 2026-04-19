@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 import re
 
@@ -407,6 +407,9 @@ class ProjectController(QObject):
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
         self.project.analysis.shots = result.shots
+        self.project.analysis.detection_review_suggestions = [
+            asdict(suggestion) for suggestion in result.review_suggestions
+        ]
         ensure_default_shot_scores(self.project)
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project, selection_context)

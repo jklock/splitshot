@@ -37,12 +37,17 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 2
-    assert payload["summary"]["total_runs"] == 2
+    assert payload["summary"]["planned"] == 7
+    assert payload["summary"]["total_runs"] == 7
     assert {run["status"] for run in payload["runs"]} == {"planned"}
     assert {tuple(run["targets"]) for run in payload["runs"]} == {
         ("tests/browser/test_browser_control.py",),
         ("tests/browser/test_browser_static_ui.py",),
+        ("tests/browser/test_merge_export_contracts.py",),
+        ("tests/browser/test_overlay_review_contracts.py",),
+        ("tests/browser/test_project_lifecycle_contracts.py",),
+        ("tests/browser/test_scoring_metrics_contracts.py",),
+        ("tests/browser/test_timing_waveform_contracts.py",),
     }
 
 

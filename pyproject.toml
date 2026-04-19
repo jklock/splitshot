@@ -37,6 +37,7 @@ packages = ["src/splitshot"]
 minversion = "8.0"
 testpaths = ["tests"]
 qt_api = "pyside6"
+addopts = ["--import-mode=importlib"]
 
 [tool.uv]
 link-mode = "copy"

@@ -39,6 +39,7 @@ def test_analyze_video_shots_emits_json_sweep_and_shot_details(synthetic_video_f
     assert payload["selected_threshold"] == 0.35
     assert len(payload["sweep"]) == 2
     assert payload["shots"]
+    assert "review_suggestions" in payload
     assert payload["shots"][0]["shot_number"] == 1
     assert payload["shots"][0]["confidence_percent"] is not None
 
@@ -61,6 +62,7 @@ def test_analyze_video_shots_writes_json_report_and_table_output(tmp_path: Path,
     assert "Recommended threshold:" in result.stdout
     assert "Threshold Sweep" in result.stdout
     assert "Shot Details At" in result.stdout
+    assert "Review Suggestions" in result.stdout
     payload = json.loads(json_output.read_text(encoding="utf-8"))
     assert payload["recommended_threshold"] in {0.35, 0.5}
     assert len(payload["shots"]) >= 1
