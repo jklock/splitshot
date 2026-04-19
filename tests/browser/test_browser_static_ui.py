@@ -779,7 +779,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'media.dataset.mediaUrl = mediaPath;' in js
     assert 'video.dataset.mediaUrl = primaryMediaPath;' in js
     assert 'const { startClientX, startClientY, startX, startY } = textBoxDrag;' in js
-    assert 'const frameRect = previewFrameGeometry($("primary-video"), stage)?.frameRect || stage.getBoundingClientRect();' in js
+    assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in js
     assert 'video.style.objectFit = "cover";' in js
     assert 'video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;' in js
     assert 'positionOverlayContainer(overlay, state.project.overlay.shot_quadrant, frameRect, {' in js

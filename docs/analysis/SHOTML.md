@@ -243,6 +243,8 @@ ShotML will struggle more when:
 
 Those are review cases, not proof that the model is useless. But they are exactly the cases where the UI should avoid sounding certain.
 
+Echo is usually handled as a near-duplicate onset problem, not as a fresh shot. The corpus layer records `echo_like_onset_count` for unmatched onsets that sit close to an accepted shot, and the review queue subtracts that count from the unmatched-onset penalty so reflections stay visible without dominating review priority.
+
 ## 12. Recommended Reading And Debug Path
 
 For the implementation details, start here:

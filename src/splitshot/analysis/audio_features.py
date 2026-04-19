@@ -26,6 +26,7 @@ FEATURE_NAMES = [
     "band_5",
     "band_6",
     "band_7",
+    "band_8",
 ]
 
 

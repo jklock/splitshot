@@ -9,8 +9,11 @@ import pytest
 
 from splitshot.analysis.detection import (
     DetectionResult,
+    _apply_refinement_confidence,
     _filter_false_positive_shots,
     _refine_shot_times,
+    _sound_profile_outlier_mask,
+    _suggest_timing_review_actions,
     analyze_video_audio,
 )
 from splitshot.analysis.sync import compute_sync_offset
@@ -101,6 +104,44 @@ def test_false_positive_filter_rejects_sub_tenth_second_shots() -> None:
     assert [shot.confidence for shot in filtered] == [0.88, 0.74]
 
 
+def test_false_positive_filter_prefers_stronger_onset_support_over_louder_echo() -> None:
+    samples = np.zeros(900, dtype=np.float32)
+    samples[495:505] = np.asarray([0.05, 0.1, 0.3, 0.8, 1.0, 0.7, 0.4, 0.2, 0.1, 0.05], dtype=np.float32)
+    samples[560:700] = 0.65
+    shots = [
+        ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.72),
+        ShotEvent(time_ms=620, source=ShotSource.AUTO, confidence=0.98),
+    ]
+
+    filtered = _filter_false_positive_shots(
+        shots,
+        beep_time_ms=100,
+        samples=samples,
+        sample_rate=1000,
+    )
+
+    assert [shot.time_ms for shot in filtered] == [500]
+    assert [shot.confidence for shot in filtered] == [0.72]
+
+
+def test_sound_profile_outlier_mask_rejects_far_terminal_clap() -> None:
+    feature_vectors = [
+        np.full(20, 0.10, dtype=np.float32),
+        np.full(20, 0.14, dtype=np.float32),
+        np.full(20, 0.12, dtype=np.float32),
+        np.full(20, 0.11, dtype=np.float32),
+        np.full(20, 0.15, dtype=np.float32),
+        np.full(20, 0.16, dtype=np.float32),
+        np.full(20, 0.13, dtype=np.float32),
+        np.full(20, 6.50, dtype=np.float32),
+    ]
+    shot_probabilities = [0.99, 0.98, 0.97, 0.99, 0.98, 0.94, 0.995, 0.983]
+
+    mask = _sound_profile_outlier_mask(feature_vectors, shot_probabilities)
+
+    assert mask == [False, False, False, False, False, False, False, True]
+
+
 def test_model_backed_detection_emits_probability_confidence(synthetic_video_factory) -> None:
     video_path = synthetic_video_factory()
     result = analyze_video_audio(video_path, threshold=0.35)
@@ -111,6 +152,45 @@ def test_model_backed_detection_emits_probability_confidence(synthetic_video_fac
     assert all(0.0 <= float(confidence) <= 1.0 for confidence in confidences)
     assert max(float(confidence) for confidence in confidences) <= 1.0
     assert max(float(confidence) for confidence in confidences) > 0.5
+
+
+def test_refinement_confidence_scores_existing_shots_without_moving_timestamps() -> None:
+    samples = np.zeros(2000, dtype=np.float32)
+    samples[795:805] = np.asarray([0.1, 0.3, 0.6, 1.0, 0.9, 0.6, 0.4, 0.2, 0.1, 0.05], dtype=np.float32)
+    shots = [ShotEvent(time_ms=800, source=ShotSource.AUTO, confidence=0.50)]
+
+    refined = _apply_refinement_confidence(samples, sample_rate=1000, shots=shots)
+
+    assert [shot.time_ms for shot in refined] == [800]
+    assert refined[0].confidence is not None
+    assert refined[0].confidence > 0.50
+
+
+def test_refinement_confidence_never_lowers_original_detector_confidence() -> None:
+    samples = np.zeros(2000, dtype=np.float32)
+    samples[1200:1205] = np.asarray([0.05, 0.1, 0.2, 0.1, 0.05], dtype=np.float32)
+    shots = [ShotEvent(time_ms=800, source=ShotSource.AUTO, confidence=0.99)]
+
+    refined = _apply_refinement_confidence(samples, sample_rate=1000, shots=shots)
+
+    assert [shot.time_ms for shot in refined] == [800]
+    assert refined[0].confidence == pytest.approx(0.99)
+
+
+def test_refinement_suggests_review_without_changing_timeline() -> None:
+    samples = np.zeros(1200, dtype=np.float32)
+    samples[498:504] = np.asarray([0.1, 0.4, 1.0, 0.7, 0.3, 0.1], dtype=np.float32)
+    samples[610:710] = 0.05
+    shots = [
+        ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.99),
+        ShotEvent(time_ms=640, source=ShotSource.AUTO, confidence=0.92),
+    ]
+
+    suggestions = _suggest_timing_review_actions(samples, sample_rate=1000, shots=shots)
+
+    assert [shot.time_ms for shot in shots] == [500, 640]
+    assert {suggestion.kind for suggestion in suggestions} >= {"weak_onset_support", "near_cutoff_spacing"}
+    assert all(suggestion.suggested_action.startswith("review") for suggestion in suggestions)
 
 
 def test_refine_shot_times_preserves_raw_model_confidence() -> None:

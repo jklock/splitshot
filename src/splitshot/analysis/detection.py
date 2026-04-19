@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,6 +13,7 @@ from splitshot.analysis.ml_runtime import (
     pick_event_peaks,
     sensitivity_to_cutoff,
 )
+from splitshot.analysis.audio_features import extract_window_features
 from splitshot.domain.models import ShotEvent, ShotSource
 from splitshot.media.audio import extract_audio_wav, read_wav_mono, waveform_envelope
 from splitshot.media.ffmpeg import run_ffprobe_json
@@ -22,6 +23,25 @@ from splitshot.utils.time import seconds_to_ms
 BEEP_ONSET_FRACTION = 0.24
 SHOT_ONSET_FRACTION = 0.66
 MIN_SHOT_INTERVAL_MS = 100
+REFINEMENT_CONFIDENCE_WEIGHT = 0.35
+WEAK_ONSET_SUPPORT_THRESHOLD = 0.35
+NEAR_CUTOFF_INTERVAL_MS = 150
+SOUND_PROFILE_SEARCH_RADIUS_MS = 120
+SOUND_PROFILE_DISTANCE_LIMIT = 5.0
+SOUND_PROFILE_HIGH_CONFIDENCE_LIMIT = 0.995
+
+
+@dataclass(slots=True)
+class TimingReviewSuggestion:
+    kind: str
+    severity: str
+    message: str
+    suggested_action: str
+    shot_number: int | None = None
+    shot_time_ms: int | None = None
+    confidence: float | None = None
+    support_confidence: float | None = None
+    interval_ms: int | None = None
 
 
 @dataclass(slots=True)
@@ -30,6 +50,7 @@ class DetectionResult:
     shots: list[ShotEvent]
     waveform: list[float]
     sample_rate: int
+    review_suggestions: list[TimingReviewSuggestion] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -48,7 +69,7 @@ def _predict_audio_events(samples: np.ndarray, sample_rate: int) -> ModelPredict
 
 
 def _shot_detection_cutoff(threshold: float) -> float:
-    return sensitivity_to_cutoff(threshold, base=0.18, span=0.62)
+    return sensitivity_to_cutoff(threshold, base=0.42, span=0.28)
 
 
 def _nearest_probability(predictions: ModelPredictions, target_ms: int, label: str) -> float:
@@ -59,6 +80,136 @@ def _nearest_probability(predictions: ModelPredictions, target_ms: int, label: s
     index = int(np.searchsorted(predictions.centers_ms, target_ms))
     index = max(0, min(label_scores.size - 1, index))
     return float(label_scores[index])
+
+
+def _window_from_center(samples: np.ndarray, sample_rate: int, center_ms: int, window_size: int | None = None) -> np.ndarray:
+    classifier = _classifier()
+    window_size = classifier.window_size if window_size is None else window_size
+    center_sample = _ms_to_sample(center_ms, sample_rate)
+    half_window = window_size // 2
+    start = center_sample - half_window
+    end = start + window_size
+
+    if start < 0:
+        window = np.pad(samples[: max(0, end)], (abs(start), 0))
+    elif end > samples.size:
+        window = np.pad(samples[start:], (0, end - samples.size))
+    else:
+        window = samples[start:end]
+
+    if window.size < window_size:
+        window = np.pad(window, (0, window_size - window.size))
+    return window.astype(np.float32, copy=False)
+
+
+def _best_sound_window_index(
+    predictions: ModelPredictions,
+    target_ms: int,
+    shot_scores: np.ndarray,
+) -> int | None:
+    centers_ms = predictions.centers_ms
+    if centers_ms.size == 0:
+        return None
+
+    search_mask = np.abs(centers_ms - target_ms) <= SOUND_PROFILE_SEARCH_RADIUS_MS
+    if not np.any(search_mask):
+        index = int(np.searchsorted(centers_ms, target_ms))
+        return max(0, min(shot_scores.size - 1, index))
+
+    candidate_indices = np.flatnonzero(search_mask)
+    candidate_scores = shot_scores[search_mask]
+    best_local_index = int(np.argmax(candidate_scores))
+    return int(candidate_indices[best_local_index])
+
+
+def _shot_sound_profile_metrics(
+    samples: np.ndarray,
+    sample_rate: int,
+    predictions: ModelPredictions,
+    shots: list[ShotEvent],
+) -> tuple[list[np.ndarray | None], list[float | None]]:
+    if predictions.centers_ms.size == 0 or not shots:
+        return [], []
+
+    classifier = _classifier()
+    shot_scores = classifier.shot_confidence_scores(predictions)
+
+    feature_vectors: list[np.ndarray | None] = []
+    shot_probabilities: list[float | None] = []
+    for shot in shots:
+        best_index = _best_sound_window_index(
+            predictions,
+            shot.time_ms,
+            shot_scores,
+        )
+        if best_index is None:
+            feature_vectors.append(None)
+            shot_probabilities.append(None)
+            continue
+
+        best_center_ms = int(predictions.centers_ms[best_index])
+        window = _window_from_center(samples, sample_rate, best_center_ms)
+        feature_vectors.append(extract_window_features(window, sample_rate))
+        shot_probabilities.append(float(shot_scores[best_index]))
+
+    return feature_vectors, shot_probabilities
+
+
+def _sound_profile_distances(feature_vectors: list[np.ndarray | None]) -> list[float | None]:
+    valid_feature_vectors = [vector for vector in feature_vectors if vector is not None]
+    if len(valid_feature_vectors) < 2:
+        return [None for _ in feature_vectors]
+
+    profile = np.median(np.stack(valid_feature_vectors), axis=0)
+    return [None if vector is None else float(np.linalg.norm(vector - profile)) for vector in feature_vectors]
+
+
+def _sound_profile_outlier_mask(
+    feature_vectors: list[np.ndarray | None],
+    shot_probabilities: list[float | None],
+    *,
+    distance_limit: float = SOUND_PROFILE_DISTANCE_LIMIT,
+    shot_probability_limit: float = SOUND_PROFILE_HIGH_CONFIDENCE_LIMIT,
+) -> list[bool]:
+    distances = _sound_profile_distances(feature_vectors)
+    return [
+        distance is not None
+        and shot_probability is not None
+        and distance > distance_limit
+        and shot_probability < shot_probability_limit
+        for distance, shot_probability in zip(distances, shot_probabilities, strict=True)
+    ]
+
+
+def _sound_profile_review_suggestions(
+    shots: list[ShotEvent],
+    feature_vectors: list[np.ndarray | None],
+    shot_probabilities: list[float | None],
+) -> list[TimingReviewSuggestion]:
+    distances = _sound_profile_distances(feature_vectors)
+    suggestions: list[TimingReviewSuggestion] = []
+    for index, (shot, distance, shot_probability) in enumerate(zip(shots, distances, shot_probabilities, strict=True)):
+        if distance is None or shot_probability is None:
+            continue
+        if distance <= SOUND_PROFILE_DISTANCE_LIMIT or shot_probability >= SOUND_PROFILE_HIGH_CONFIDENCE_LIMIT:
+            continue
+
+        suggestions.append(
+            TimingReviewSuggestion(
+                kind="sound_profile_outlier",
+                severity="review",
+                message=(
+                    f"Shot {index + 1} is a sound-profile outlier ({distance:.2f} feature distance from the stage shot profile); review it before keeping it."
+                ),
+                suggested_action="review_shot",
+                shot_number=index + 1,
+                shot_time_ms=shot.time_ms,
+                confidence=float(np.clip(shot_probability, 0.0, 1.0)),
+                support_confidence=float(np.clip(max(0.0, 1.0 - min(distance / SOUND_PROFILE_DISTANCE_LIMIT, 1.0)), 0.0, 1.0)),
+            )
+        )
+
+    return suggestions
 
 
 def _fallback_beep_from_model(
@@ -315,14 +466,24 @@ def _refine_shot_times(
     return refined
 
 
-def _shot_confidence_cluster_key(shot: ShotEvent) -> tuple[float, int]:
-    confidence = -1.0 if shot.confidence is None else float(shot.confidence)
-    return confidence, -shot.time_ms
+def _shot_selection_score(
+    shot: ShotEvent,
+    support_confidence: float | None = None,
+) -> tuple[float, float, float, float]:
+    confidence = 0.5 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
+    support = 0.0 if support_confidence is None else float(np.clip(support_confidence, 0.0, 1.0))
+    combined = (confidence * 0.55) + (support * 0.45)
+    if support_confidence is not None and support < WEAK_ONSET_SUPPORT_THRESHOLD:
+        combined -= 0.08
+    return combined, support, confidence, -float(shot.time_ms)
 
 
 def _filter_false_positive_shots(
     shots: list[ShotEvent],
     beep_time_ms: int | None,
+    samples: np.ndarray | None = None,
+    sample_rate: int | None = None,
+    predictions: ModelPredictions | None = None,
     min_interval_ms: int = MIN_SHOT_INTERVAL_MS,
 ) -> list[ShotEvent]:
     if not shots:
@@ -336,17 +497,197 @@ def _filter_false_positive_shots(
     if not eligible:
         return []
 
+    support_confidences: list[float | None] | None = None
+    if samples is not None and sample_rate is not None and samples.size > 0:
+        support_confidences = _shot_support_confidences(samples, sample_rate, eligible)
+
     filtered: list[ShotEvent] = []
-    cluster: list[ShotEvent] = [eligible[0]]
-    for shot in eligible[1:]:
-        if shot.time_ms - cluster[-1].time_ms < min_interval_ms:
-            cluster.append(shot)
+    cluster: list[tuple[ShotEvent, float | None]] = [
+        (eligible[0], None if support_confidences is None else support_confidences[0])
+    ]
+    for index, shot in enumerate(eligible[1:], start=1):
+        support_confidence = None if support_confidences is None else support_confidences[index]
+        if shot.time_ms - cluster[-1][0].time_ms < min_interval_ms:
+            cluster.append((shot, support_confidence))
             continue
-        filtered.append(max(cluster, key=_shot_confidence_cluster_key))
-        cluster = [shot]
-    filtered.append(max(cluster, key=_shot_confidence_cluster_key))
-    filtered.sort(key=lambda item: item.time_ms)
-    return filtered
+        filtered.append(max(cluster, key=lambda item: _shot_selection_score(item[0], item[1]))[0])
+        cluster = [(shot, support_confidence)]
+    filtered.append(max(cluster, key=lambda item: _shot_selection_score(item[0], item[1]))[0])
+
+    if support_confidences is None or samples is None or sample_rate is None or len(filtered) <= 1:
+        filtered.sort(key=lambda item: item.time_ms)
+        return filtered
+
+    corrected: list[ShotEvent] = []
+    filtered_support_confidences = _shot_support_confidences(samples, sample_rate, filtered)
+    for index, shot in enumerate(filtered):
+        support_confidence = filtered_support_confidences[index]
+        previous_support = filtered_support_confidences[index - 1] if index > 0 else None
+        next_support = filtered_support_confidences[index + 1] if index < len(filtered) - 1 else None
+        previous_gap_ms = shot.time_ms - filtered[index - 1].time_ms if index > 0 else None
+        next_gap_ms = filtered[index + 1].time_ms - shot.time_ms if index < len(filtered) - 1 else None
+
+        should_suppress = False
+        if support_confidence is not None and support_confidence < WEAK_ONSET_SUPPORT_THRESHOLD:
+            if previous_gap_ms is not None and previous_gap_ms < NEAR_CUTOFF_INTERVAL_MS:
+                should_suppress = previous_support is None or previous_support >= support_confidence
+            elif next_gap_ms is not None and next_gap_ms < NEAR_CUTOFF_INTERVAL_MS:
+                should_suppress = next_support is not None and next_support > support_confidence
+
+        if should_suppress:
+            continue
+        corrected.append(shot)
+
+    corrected.sort(key=lambda item: item.time_ms)
+    if predictions is None:
+        return corrected
+
+    sound_feature_vectors, sound_probabilities = _shot_sound_profile_metrics(
+        samples,
+        sample_rate,
+        predictions,
+        corrected,
+    )
+    sound_outlier_mask = _sound_profile_outlier_mask(sound_feature_vectors, sound_probabilities)
+    if not any(sound_outlier_mask):
+        return corrected
+    return [shot for shot, is_outlier in zip(corrected, sound_outlier_mask, strict=True) if not is_outlier]
+
+
+def _shot_onset_support(
+    samples: np.ndarray,
+    sample_rate: int,
+    shot_time_ms: int,
+) -> float | None:
+    if samples.size == 0:
+        return None
+    centers, envelope = _rms_series(
+        samples,
+        sample_rate,
+        max(0, shot_time_ms - 45),
+        shot_time_ms + 80,
+        window_ms=3,
+        hop_ms=1,
+    )
+    if envelope.size == 0:
+        return None
+
+    peak_index = int(np.argmax(envelope))
+    peak = float(envelope[peak_index])
+    if peak <= 0.0:
+        return None
+    baseline = float(np.percentile(envelope, 20))
+    contrast = max(0.0, peak - baseline) / (peak + 1e-6)
+    alignment_penalty = min(abs(int(centers[peak_index]) - shot_time_ms) / 45.0, 1.0) * 0.25
+    return float(np.clip(contrast * (1.0 - alignment_penalty), 0.0, 1.0))
+
+
+def _apply_refinement_confidence(
+    samples: np.ndarray,
+    sample_rate: int,
+    shots: list[ShotEvent],
+) -> list[ShotEvent]:
+    if samples.size == 0 or not shots:
+        return shots
+
+    supports = [_shot_onset_support(samples, sample_rate, shot.time_ms) for shot in shots]
+    max_support = max((support for support in supports if support is not None), default=0.0)
+    if max_support <= 0.0:
+        return shots
+
+    refined: list[ShotEvent] = []
+    for shot, support in zip(shots, supports, strict=True):
+        base_confidence = 0.5 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
+        support_confidence = base_confidence if support is None else float(np.clip(support / max_support, 0.0, 1.0))
+        supported_confidence = (
+            (base_confidence * (1.0 - REFINEMENT_CONFIDENCE_WEIGHT))
+            + (support_confidence * REFINEMENT_CONFIDENCE_WEIGHT)
+        )
+        confidence = max(base_confidence, supported_confidence)
+        refined.append(
+            ShotEvent(
+                id=shot.id,
+                time_ms=shot.time_ms,
+                source=shot.source,
+                confidence=float(np.clip(confidence, 0.0, 1.0)),
+                score=shot.score,
+            )
+        )
+    return refined
+
+
+def _shot_support_confidences(
+    samples: np.ndarray,
+    sample_rate: int,
+    shots: list[ShotEvent],
+) -> list[float | None]:
+    supports = [_shot_onset_support(samples, sample_rate, shot.time_ms) for shot in shots]
+    max_support = max((support for support in supports if support is not None), default=0.0)
+    if max_support <= 0.0:
+        return [None for _ in shots]
+    return [None if support is None else float(np.clip(support / max_support, 0.0, 1.0)) for support in supports]
+
+
+def _suggest_timing_review_actions(
+    samples: np.ndarray,
+    sample_rate: int,
+    shots: list[ShotEvent],
+) -> list[TimingReviewSuggestion]:
+    if not shots:
+        return []
+
+    support_confidences = _shot_support_confidences(samples, sample_rate, shots)
+    suggestions: list[TimingReviewSuggestion] = []
+    for index, (shot, support_confidence) in enumerate(zip(shots, support_confidences, strict=True)):
+        shot_number = index + 1
+        confidence = None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
+        if support_confidence is not None and support_confidence < WEAK_ONSET_SUPPORT_THRESHOLD:
+            suggestions.append(
+                TimingReviewSuggestion(
+                    kind="weak_onset_support",
+                    severity="review",
+                    message=(
+                        f"Shot {shot_number} has weak local onset support; review before keeping or using it as the stage end."
+                    ),
+                    suggested_action="review_shot",
+                    shot_number=shot_number,
+                    shot_time_ms=shot.time_ms,
+                    confidence=confidence,
+                    support_confidence=round(float(support_confidence), 4),
+                )
+            )
+
+        if index == 0:
+            continue
+        previous = shots[index - 1]
+        interval_ms = shot.time_ms - previous.time_ms
+        if MIN_SHOT_INTERVAL_MS <= interval_ms < NEAR_CUTOFF_INTERVAL_MS:
+            previous_support = support_confidences[index - 1]
+            suggested_shot_number = shot_number
+            suggested_time_ms = shot.time_ms
+            suggested_confidence = confidence
+            suggested_support = support_confidence
+            if previous_support is not None and support_confidence is not None and previous_support < support_confidence:
+                suggested_shot_number = shot_number - 1
+                suggested_time_ms = previous.time_ms
+                suggested_confidence = None if previous.confidence is None else float(np.clip(previous.confidence, 0.0, 1.0))
+                suggested_support = previous_support
+            suggestions.append(
+                TimingReviewSuggestion(
+                    kind="near_cutoff_spacing",
+                    severity="review",
+                    message=(
+                        f"Shots {shot_number - 1} and {shot_number} are {interval_ms} ms apart, near the cutoff; review whether one is an echo or duplicate."
+                    ),
+                    suggested_action="review_close_pair",
+                    shot_number=suggested_shot_number,
+                    shot_time_ms=suggested_time_ms,
+                    confidence=suggested_confidence,
+                    support_confidence=None if suggested_support is None else round(float(suggested_support), 4),
+                    interval_ms=interval_ms,
+                )
+            )
+    return suggestions
 
 
 def _detect_beep_from_predictions(
@@ -448,7 +789,7 @@ def _detect_shots_from_predictions(
         return []
 
     classifier = _classifier()
-    shot_scores = classifier.class_scores(predictions, "shot")
+    shot_scores = classifier.shot_confidence_scores(predictions)
     cutoff = _shot_detection_cutoff(threshold)
     earliest_ms = None if beep_time_ms is None else max(0, beep_time_ms + MIN_SHOT_INTERVAL_MS)
     peaks = pick_event_peaks(
@@ -490,7 +831,8 @@ def detect_shots(
     predictions = _predict_audio_events(samples, sample_rate)
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
     shots = _refine_shot_times(samples, sample_rate, shots)
-    return _filter_false_positive_shots(shots, beep_time_ms)
+    shots = _filter_false_positive_shots(shots, beep_time_ms, samples=samples, sample_rate=sample_rate, predictions=predictions)
+    return _apply_refinement_confidence(samples, sample_rate, shots)
 
 
 def _analyze_predictions(
@@ -511,12 +853,25 @@ def _analyze_predictions(
     )
     shots = _detect_shots_from_predictions(predictions, threshold, beep_time_ms)
     shots = _refine_shot_times(samples, sample_rate, shots)
-    shots = _filter_false_positive_shots(shots, beep_time_ms)
+    sound_review_suggestions = _sound_profile_review_suggestions(
+        shots,
+        *_shot_sound_profile_metrics(samples, sample_rate, predictions, shots),
+    )
+    shots = _filter_false_positive_shots(
+        shots,
+        beep_time_ms,
+        samples=samples,
+        sample_rate=sample_rate,
+        predictions=predictions,
+    )
+    shots = _apply_refinement_confidence(samples, sample_rate, shots)
+    review_suggestions = sound_review_suggestions + _suggest_timing_review_actions(samples, sample_rate, shots)
     return DetectionResult(
         beep_time_ms=beep_time_ms,
         shots=shots,
         waveform=waveform,
         sample_rate=sample_rate,
+        review_suggestions=review_suggestions,
     )
 
 

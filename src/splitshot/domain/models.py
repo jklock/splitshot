@@ -200,6 +200,7 @@ class AnalysisState:
     waveform_secondary: list[float] = field(default_factory=list)
     shots: list[ShotEvent] = field(default_factory=list)
     events: list[TimingEvent] = field(default_factory=list)
+    detection_review_suggestions: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(slots=True)

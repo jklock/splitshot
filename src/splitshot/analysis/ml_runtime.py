@@ -61,6 +61,12 @@ class AudioEventClassifier:
         index = self._label_to_index[label]
         return predictions.probabilities[:, index]
 
+    def shot_confidence_scores(self, predictions: ModelPredictions) -> np.ndarray:
+        shot_scores = self.class_scores(predictions, "shot")
+        background_scores = self.class_scores(predictions, "background")
+        beep_scores = self.class_scores(predictions, "beep")
+        return np.clip(shot_scores - np.maximum(background_scores, beep_scores), 0.0, 1.0)
+
 
 def sensitivity_to_cutoff(threshold: float, base: float, span: float) -> float:
     clamped = min(0.95, max(0.05, float(threshold)))
