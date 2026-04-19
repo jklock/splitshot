@@ -1,0 +1,440 @@
+{
+  "dataset_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-dataset-auto.npz",
+  "output_bundle": "/Volumes/Storage/GitHub/splitshot/artifacts/model_bundle_candidate_auto_h32_a085.py",
+  "sample_count": 401,
+  "feature_count": 20,
+  "split_mode": "source",
+  "validation_clean_only": true,
+  "clean_sample_count": 401,
+  "augmented_sample_count": 0,
+  "train_sample_count": 358,
+  "validation_sample_count": 43,
+  "validation_sources": [
+    "/Volumes/Storage/GitHub/splitshot/.training/Clip2.MP4"
+  ],
+  "validation_source_names": [
+    "Clip2.MP4"
+  ],
+  "class_weighting": "balanced",
+  "class_weight_alpha": 0.85,
+  "class_weights": {
+    "background": 0.2472718358039856,
+    "beep": 2.4845244884490967,
+    "shot": 0.2682037353515625
+  },
+  "label_source_counts": {
+    "auto_consensus": 401
+  },
+  "train_label_source_counts": {
+    "auto_consensus": 358
+  },
+  "validation_label_source_counts": {
+    "auto_consensus": 43
+  },
+  "best_epoch": 12,
+  "train_accuracy": 0.9692737430167597,
+  "validation_accuracy": 0.9767441860465116,
+  "validation_macro_recall": 0.9861111111111112,
+  "validation_class_recall": {
+    "background": 0.9583333333333334,
+    "beep": 1.0,
+    "shot": 1.0
+  },
+  "validation_confusion_counts": {
+    "background": {
+      "background": 23,
+      "beep": 1,
+      "shot": 0
+    },
+    "beep": {
+      "background": 0,
+      "beep": 1,
+      "shot": 0
+    },
+    "shot": {
+      "background": 0,
+      "beep": 0,
+      "shot": 18
+    }
+  },
+  "deployment_validation_accuracy": 0.9767441860465116,
+  "deployment_validation_macro_recall": 0.9861111111111112,
+  "deployment_validation_class_recall": {
+    "background": 0.9583333333333334,
+    "beep": 1.0,
+    "shot": 1.0
+  },
+  "deployment_validation_confusion_counts": {
+    "background": {
+      "background": 23,
+      "beep": 1,
+      "shot": 0
+    },
+    "beep": {
+      "background": 0,
+      "beep": 1,
+      "shot": 0
+    },
+    "shot": {
+      "background": 0,
+      "beep": 0,
+      "shot": 18
+    }
+  },
+  "robustness_leave_one_source_out": {
+    "available": true,
+    "source_count": 9,
+    "fold_count": 9,
+    "sample_count": 401,
+    "accuracy": 0.9476309226932669,
+    "macro_recall": 0.7539281705948372,
+    "class_recall": {
+      "background": 0.9398148148148148,
+      "beep": 0.3333333333333333,
+      "shot": 0.9886363636363636
+    },
+    "mean_source_accuracy": 0.94766318391192,
+    "mean_source_macro_recall": 0.7541887125220459,
+    "confusion_counts": {
+      "background": {
+        "background": 203,
+        "beep": 13,
+        "shot": 0
+      },
+      "beep": {
+        "background": 6,
+        "beep": 3,
+        "shot": 0
+      },
+      "shot": {
+        "background": 0,
+        "beep": 2,
+        "shot": 174
+      }
+    },
+    "folds": [
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/20251116_103457.MP4",
+        "source_name": "20251116_103457.MP4",
+        "sample_count": 48,
+        "train_sample_count": 353,
+        "best_epoch": 11,
+        "accuracy": 0.9166666666666666,
+        "macro_recall": 0.625,
+        "class_recall": {
+          "background": 0.875,
+          "beep": 0.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 21,
+            "beep": 3,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 23
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 48
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/20251116_110444.MP4",
+        "source_name": "20251116_110444.MP4",
+        "sample_count": 46,
+        "train_sample_count": 355,
+        "best_epoch": 3,
+        "accuracy": 0.9347826086956522,
+        "macro_recall": 0.6349206349206349,
+        "class_recall": {
+          "background": 1.0,
+          "beep": 0.0,
+          "shot": 0.9047619047619048
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 24,
+            "beep": 0,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 2,
+            "shot": 19
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 46
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip1.MP4",
+        "source_name": "Clip1.MP4",
+        "sample_count": 43,
+        "train_sample_count": 358,
+        "best_epoch": 34,
+        "accuracy": 0.9767441860465116,
+        "macro_recall": 0.6666666666666666,
+        "class_recall": {
+          "background": 1.0,
+          "beep": 0.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 24,
+            "beep": 0,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 18
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 43
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip2.MP4",
+        "source_name": "Clip2.MP4",
+        "sample_count": 43,
+        "train_sample_count": 358,
+        "best_epoch": 10,
+        "accuracy": 0.9069767441860465,
+        "macro_recall": 0.9444444444444445,
+        "class_recall": {
+          "background": 0.8333333333333334,
+          "beep": 1.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 20,
+            "beep": 4,
+            "shot": 0
+          },
+          "beep": {
+            "background": 0,
+            "beep": 1,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 18
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 43
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip3.MP4",
+        "source_name": "Clip3.MP4",
+        "sample_count": 45,
+        "train_sample_count": 356,
+        "best_epoch": 23,
+        "accuracy": 0.9333333333333333,
+        "macro_recall": 0.6388888888888888,
+        "class_recall": {
+          "background": 0.9166666666666666,
+          "beep": 0.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 22,
+            "beep": 2,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 20
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 45
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip4.MP4",
+        "source_name": "Clip4.MP4",
+        "sample_count": 43,
+        "train_sample_count": 358,
+        "best_epoch": 5,
+        "accuracy": 0.9534883720930233,
+        "macro_recall": 0.6527777777777778,
+        "class_recall": {
+          "background": 0.9583333333333334,
+          "beep": 0.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 23,
+            "beep": 1,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 18
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 43
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip5.MP4",
+        "source_name": "Clip5.MP4",
+        "sample_count": 47,
+        "train_sample_count": 354,
+        "best_epoch": 120,
+        "accuracy": 1.0,
+        "macro_recall": 1.0,
+        "class_recall": {
+          "background": 1.0,
+          "beep": 1.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 24,
+            "beep": 0,
+            "shot": 0
+          },
+          "beep": {
+            "background": 0,
+            "beep": 1,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 22
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 47
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage3 2.MP4",
+        "source_name": "Stage3 2.MP4",
+        "sample_count": 43,
+        "train_sample_count": 358,
+        "best_epoch": 15,
+        "accuracy": 0.9767441860465116,
+        "macro_recall": 0.9861111111111112,
+        "class_recall": {
+          "background": 0.9583333333333334,
+          "beep": 1.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 23,
+            "beep": 1,
+            "shot": 0
+          },
+          "beep": {
+            "background": 0,
+            "beep": 1,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 18
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 43
+        }
+      },
+      {
+        "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage3.MP4",
+        "source_name": "Stage3.MP4",
+        "sample_count": 43,
+        "train_sample_count": 358,
+        "best_epoch": 11,
+        "accuracy": 0.9302325581395349,
+        "macro_recall": 0.6388888888888888,
+        "class_recall": {
+          "background": 0.9166666666666666,
+          "beep": 0.0,
+          "shot": 1.0
+        },
+        "confusion_counts": {
+          "background": {
+            "background": 22,
+            "beep": 2,
+            "shot": 0
+          },
+          "beep": {
+            "background": 1,
+            "beep": 0,
+            "shot": 0
+          },
+          "shot": {
+            "background": 0,
+            "beep": 0,
+            "shot": 18
+          }
+        },
+        "label_source_counts": {
+          "auto_consensus": 43
+        }
+      }
+    ]
+  },
+  "actual_metrics_available": false,
+  "verified_validation_sample_count": 0,
+  "verified_validation_accuracy": null,
+  "verified_validation_macro_recall": null,
+  "verified_validation_class_recall": null,
+  "warnings": [
+    "Dataset contains no verified labels; validation metrics are automated or exploratory metrics, not manual actuals.",
+    "Auto-consensus labels are present; they are stronger than raw detector drafts but still not manual verified labels."
+  ],
+  "class_counts": {
+    "background": 216,
+    "beep": 9,
+    "shot": 176
+  },
+  "hidden_units": 32,
+  "epochs": 120
+}

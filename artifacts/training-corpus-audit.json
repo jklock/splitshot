@@ -1,0 +1,1332 @@
+{
+  "input": "/Volumes/Storage/GitHub/splitshot/.training",
+  "video_count": 16,
+  "threshold_grid": [
+    0.25,
+    0.35,
+    0.45,
+    0.55,
+    0.65
+  ],
+  "reference_threshold": 0.35,
+  "duplicate_groups": [
+    {
+      "group_key": "stage1",
+      "members": [
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage1 2.MP4",
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage1.MP4"
+      ],
+      "shot_counts": [
+        17,
+        18
+      ],
+      "shot_count_span": 1,
+      "beep_families": [
+        "timer_high",
+        "timer_low"
+      ],
+      "consistent_shot_count": false,
+      "consistent_beep_family": false,
+      "review_required": true
+    },
+    {
+      "group_key": "stage2",
+      "members": [
+        "/Volumes/Storage/GitHub/splitshot/.training/stage2 2.MP4",
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage2.MP4"
+      ],
+      "shot_counts": [
+        18,
+        19
+      ],
+      "shot_count_span": 1,
+      "beep_families": [
+        "timer_high"
+      ],
+      "consistent_shot_count": false,
+      "consistent_beep_family": true,
+      "review_required": true
+    },
+    {
+      "group_key": "stage3",
+      "members": [
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage3 2.MP4",
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage3.MP4"
+      ],
+      "shot_counts": [
+        18,
+        18
+      ],
+      "shot_count_span": 0,
+      "beep_families": [
+        "timer_high",
+        "timer_low"
+      ],
+      "consistent_shot_count": true,
+      "consistent_beep_family": false,
+      "review_required": false
+    },
+    {
+      "group_key": "stage4",
+      "members": [
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage4.mov",
+        "/Volumes/Storage/GitHub/splitshot/.training/Stage4.MP4"
+      ],
+      "shot_counts": [
+        19,
+        18
+      ],
+      "shot_count_span": 1,
+      "beep_families": [
+        "timer_high",
+        "timer_low"
+      ],
+      "consistent_shot_count": false,
+      "consistent_beep_family": false,
+      "review_required": true
+    }
+  ],
+  "videos": [
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_095437.MP4",
+      "duration_seconds": 65.0,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 19,
+      "reference_beep_time_ms": 1706,
+      "shot_median_confidence": 0.9991797804832458,
+      "shot_mean_confidence": 0.9764570468350461,
+      "shot_confidence_spread": 0.0039479732513427734,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          19,
+          19,
+          19,
+          19,
+          18
+        ],
+        "beep_times_ms": [
+          1706,
+          1706,
+          1706,
+          1706,
+          15065
+        ],
+        "shot_count_span": 1,
+        "beep_time_span_ms": 13359,
+        "stable_shot_count": false,
+        "stable_beep_time": false
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1462.5,
+        "beep_centroid_hz": 1606.6801283101283,
+        "shot_peak_hz": 614.0867875647667,
+        "shot_centroid_hz": 901.9282416207967,
+        "shot_high_frequency_ratio": 0.025576563061669555,
+        "overall_clip_ratio": 2.7908599337170766e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 1706,
+        "tone_beep_time_ms": 1706,
+        "model_beep_time_ms": 5211,
+        "tone_model_gap_ms": 3505,
+        "final_tone_gap_ms": 0,
+        "final_model_gap_ms": 3505,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 19,
+        "onset_shot_count": 20,
+        "matched_shots": 19,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 1,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 5,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "shot_count_instability",
+        "beep_instability",
+        "beep_multipass_disagreement",
+        "shot_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_103457.MP4",
+      "duration_seconds": 49.5,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 23,
+      "reference_beep_time_ms": 3742,
+      "shot_median_confidence": 0.9995383024215698,
+      "shot_mean_confidence": 0.9979487450226493,
+      "shot_confidence_spread": 0.0013574242591858354,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          23,
+          23,
+          23,
+          23,
+          23
+        ],
+        "beep_times_ms": [
+          3742,
+          3742,
+          3742,
+          3742,
+          3742
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1362.5,
+        "beep_centroid_hz": 1672.1023418842708,
+        "shot_peak_hz": 357.02720207253884,
+        "shot_centroid_hz": 784.090194024785,
+        "shot_high_frequency_ratio": 0.02775643564524538,
+        "overall_clip_ratio": 9.161913923818685e-07,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 3742,
+        "tone_beep_time_ms": 2423,
+        "model_beep_time_ms": 6303,
+        "tone_model_gap_ms": 3880,
+        "final_tone_gap_ms": 1319,
+        "final_model_gap_ms": 2561,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 23,
+        "onset_shot_count": 23,
+        "matched_shots": 23,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_110444.MP4",
+      "duration_seconds": 42.5,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 21,
+      "reference_beep_time_ms": 248,
+      "shot_median_confidence": 0.999477207660675,
+      "shot_mean_confidence": 0.9906627677735829,
+      "shot_confidence_spread": 0.002880692481994629,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          21,
+          21,
+          21,
+          21,
+          21
+        ],
+        "beep_times_ms": [
+          248,
+          248,
+          248,
+          248,
+          248
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1425.0,
+        "beep_centroid_hz": 1764.4169925264837,
+        "shot_peak_hz": 414.15155440414503,
+        "shot_centroid_hz": 867.5828791655676,
+        "shot_high_frequency_ratio": 0.028604726285579304,
+        "overall_clip_ratio": 2.134187008136588e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 248,
+        "tone_beep_time_ms": 44,
+        "model_beep_time_ms": 382,
+        "tone_model_gap_ms": 338,
+        "final_tone_gap_ms": 204,
+        "final_model_gap_ms": 134,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 21,
+        "onset_shot_count": 21,
+        "matched_shots": 21,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip1.MP4",
+      "duration_seconds": 36.532,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 1841,
+      "shot_median_confidence": 0.9990820586681366,
+      "shot_mean_confidence": 0.9976803362369537,
+      "shot_confidence_spread": 0.0030885279178618497,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          1841,
+          1841,
+          1841,
+          1841,
+          1841
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 1909.672130425992,
+        "shot_peak_hz": 871.1463730569947,
+        "shot_centroid_hz": 896.4253038840263,
+        "shot_high_frequency_ratio": 0.027580702747927677,
+        "overall_clip_ratio": 1.2414171521642245e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 1841,
+        "tone_beep_time_ms": 3775,
+        "model_beep_time_ms": 1841,
+        "tone_model_gap_ms": 1934,
+        "final_tone_gap_ms": 1934,
+        "final_model_gap_ms": 0,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip2.MP4",
+      "duration_seconds": 38.432,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 1733,
+      "shot_median_confidence": 0.9997392296791077,
+      "shot_mean_confidence": 0.9996656245655484,
+      "shot_confidence_spread": 0.0005841612815856712,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          1733,
+          1733,
+          1733,
+          1733,
+          1733
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 1954.0412825265043,
+        "shot_peak_hz": 200.04637003286223,
+        "shot_centroid_hz": 837.8705399476123,
+        "shot_high_frequency_ratio": 0.02825312196893976,
+        "overall_clip_ratio": 0.0,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 1733,
+        "tone_beep_time_ms": 4289,
+        "model_beep_time_ms": 4434,
+        "tone_model_gap_ms": 145,
+        "final_tone_gap_ms": 2556,
+        "final_model_gap_ms": 2701,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip3.MP4",
+      "duration_seconds": 41.636,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 20,
+      "reference_beep_time_ms": 1640,
+      "shot_median_confidence": 0.9994195699691772,
+      "shot_mean_confidence": 0.985931271314621,
+      "shot_confidence_spread": 0.002154392004013017,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          20,
+          20,
+          20,
+          20,
+          20
+        ],
+        "beep_times_ms": [
+          1640,
+          1640,
+          1640,
+          1640,
+          1640
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 1851.8722870279507,
+        "shot_peak_hz": 628.3678756476684,
+        "shot_centroid_hz": 873.4884732283326,
+        "shot_high_frequency_ratio": 0.028847219982101407,
+        "overall_clip_ratio": 4.356947261331875e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 1640,
+        "tone_beep_time_ms": 3685,
+        "model_beep_time_ms": 3708,
+        "tone_model_gap_ms": 23,
+        "final_tone_gap_ms": 2045,
+        "final_model_gap_ms": 2068,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 20,
+        "onset_shot_count": 20,
+        "matched_shots": 20,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 2,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip4.MP4",
+      "duration_seconds": 37.0,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 1164,
+      "shot_median_confidence": 0.9996180236339569,
+      "shot_mean_confidence": 0.9995561606354184,
+      "shot_confidence_spread": 0.000682514905929521,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          1164,
+          1164,
+          1164,
+          1164,
+          1164
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 2028.2936326881527,
+        "shot_peak_hz": 456.9948186528497,
+        "shot_centroid_hz": 802.9782631832808,
+        "shot_high_frequency_ratio": 0.02491012432886094,
+        "overall_clip_ratio": 8.58000858000858e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 1164,
+        "tone_beep_time_ms": 2808,
+        "model_beep_time_ms": 2831,
+        "tone_model_gap_ms": 23,
+        "final_tone_gap_ms": 1644,
+        "final_model_gap_ms": 1667,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip5.MP4",
+      "duration_seconds": 49.299,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 22,
+      "reference_beep_time_ms": 4230,
+      "shot_median_confidence": 0.9996660947799683,
+      "shot_mean_confidence": 0.9995892318812284,
+      "shot_confidence_spread": 0.0005959570407867432,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          22,
+          22,
+          22,
+          22,
+          22
+        ],
+        "beep_times_ms": [
+          4230,
+          4230,
+          4230,
+          4230,
+          4230
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 2236.129442928344,
+        "shot_peak_hz": 414.373828148626,
+        "shot_centroid_hz": 727.6771771846423,
+        "shot_high_frequency_ratio": 0.023399421752903465,
+        "overall_clip_ratio": 5.519560863737681e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 4230,
+        "tone_beep_time_ms": 6896,
+        "model_beep_time_ms": 4230,
+        "tone_model_gap_ms": 2666,
+        "final_tone_gap_ms": 2666,
+        "final_model_gap_ms": 0,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 22,
+        "onset_shot_count": 22,
+        "matched_shots": 22,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 17,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage1 2.MP4",
+      "duration_seconds": 45.28,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 17,
+      "reference_beep_time_ms": 10539,
+      "shot_median_confidence": 0.9995574355125427,
+      "shot_mean_confidence": 0.999331979190602,
+      "shot_confidence_spread": 0.0012938737869262473,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          17,
+          17,
+          17,
+          17,
+          17
+        ],
+        "beep_times_ms": [
+          10539,
+          10539,
+          10539,
+          10539,
+          10539
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 3012.5,
+        "beep_centroid_hz": 2810.0630086374604,
+        "shot_peak_hz": 342.98691054615836,
+        "shot_centroid_hz": 866.0156040191615,
+        "shot_high_frequency_ratio": 0.0500353388089395,
+        "overall_clip_ratio": 0.0,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_high",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 10539,
+        "tone_beep_time_ms": 13521,
+        "model_beep_time_ms": 13542,
+        "tone_model_gap_ms": 21,
+        "final_tone_gap_ms": 2982,
+        "final_model_gap_ms": 3003,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 17,
+        "onset_shot_count": 17,
+        "matched_shots": 17,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage1",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage1.MP4",
+      "duration_seconds": 31.425,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 9434,
+      "shot_median_confidence": 0.999813437461853,
+      "shot_mean_confidence": 0.9997907645172543,
+      "shot_confidence_spread": 0.00025786161422736154,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          9434,
+          9434,
+          9434,
+          9434,
+          9434
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 1861.993079067292,
+        "shot_peak_hz": 500.20853914235596,
+        "shot_centroid_hz": 912.6581755106952,
+        "shot_high_frequency_ratio": 0.030325929769619037,
+        "overall_clip_ratio": 0.0,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 9434,
+        "tone_beep_time_ms": 11278,
+        "model_beep_time_ms": 11278,
+        "tone_model_gap_ms": 0,
+        "final_tone_gap_ms": 1844,
+        "final_model_gap_ms": 1844,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage1",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/stage2 2.MP4",
+      "duration_seconds": 50.055,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 17258,
+      "shot_median_confidence": 0.998631626367569,
+      "shot_mean_confidence": 0.994884173075358,
+      "shot_confidence_spread": 0.013043326139450029,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          17258,
+          17258,
+          17258,
+          17258,
+          17258
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 3012.5,
+        "beep_centroid_hz": 2503.7572975137123,
+        "shot_peak_hz": 471.2759067357513,
+        "shot_centroid_hz": 903.7681448738136,
+        "shot_high_frequency_ratio": 0.050269083657527726,
+        "overall_clip_ratio": 0.0,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_high",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 17258,
+        "tone_beep_time_ms": 19470,
+        "model_beep_time_ms": 19492,
+        "tone_model_gap_ms": 22,
+        "final_tone_gap_ms": 2212,
+        "final_model_gap_ms": 2234,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage2",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage2.MP4",
+      "duration_seconds": 30.063,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 19,
+      "reference_beep_time_ms": 2096,
+      "shot_median_confidence": 0.9990515112876892,
+      "shot_mean_confidence": 0.9851159327908566,
+      "shot_confidence_spread": 0.0017771959304809792,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          19,
+          19,
+          19,
+          19,
+          19
+        ],
+        "beep_times_ms": [
+          2096,
+          2096,
+          2096,
+          2096,
+          2096
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 3012.5,
+        "beep_centroid_hz": 2296.1665235305077,
+        "shot_peak_hz": 828.8217475454123,
+        "shot_centroid_hz": 897.9390209246725,
+        "shot_high_frequency_ratio": 0.025583445363405538,
+        "overall_clip_ratio": 3.0170963766181065e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_high",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 2096,
+        "tone_beep_time_ms": 3741,
+        "model_beep_time_ms": 3766,
+        "tone_model_gap_ms": 25,
+        "final_tone_gap_ms": 1645,
+        "final_model_gap_ms": 1670,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 19,
+        "onset_shot_count": 30,
+        "matched_shots": 19,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 11,
+        "echo_like_onset_count": 11,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 89,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage2",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage3 2.MP4",
+      "duration_seconds": 57.459,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 26419,
+      "shot_median_confidence": 0.9992508590221405,
+      "shot_mean_confidence": 0.9992478920353783,
+      "shot_confidence_spread": 0.0011437654495239924,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          26419,
+          26419,
+          26419,
+          26419,
+          26419
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1500.0,
+        "beep_centroid_hz": 2040.7106053573966,
+        "shot_peak_hz": 556.9624352331606,
+        "shot_centroid_hz": 877.0870364770558,
+        "shot_high_frequency_ratio": 0.025650555497643876,
+        "overall_clip_ratio": 0.0,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 26419,
+        "tone_beep_time_ms": 25036,
+        "model_beep_time_ms": 26419,
+        "tone_model_gap_ms": 1383,
+        "final_tone_gap_ms": 1383,
+        "final_model_gap_ms": 0,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage3",
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage3.MP4",
+      "duration_seconds": 28.534,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 7892,
+      "shot_median_confidence": 0.9993600249290466,
+      "shot_mean_confidence": 0.9992280470000373,
+      "shot_confidence_spread": 0.000990414619445823,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          7892,
+          7892,
+          7892,
+          7892,
+          7892
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 3012.5,
+        "beep_centroid_hz": 2303.6742899407814,
+        "shot_peak_hz": 414.44791939678635,
+        "shot_centroid_hz": 862.44990640928,
+        "shot_high_frequency_ratio": 0.03078299496788208,
+        "overall_clip_ratio": 3.1787658441610046e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_high",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 7892,
+        "tone_beep_time_ms": 9180,
+        "model_beep_time_ms": 9200,
+        "tone_model_gap_ms": 20,
+        "final_tone_gap_ms": 1288,
+        "final_model_gap_ms": 1308,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 2,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage3",
+      "duplicate_group_review_required": false,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.mov",
+      "duration_seconds": 43.75,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 19,
+      "reference_beep_time_ms": 622,
+      "shot_median_confidence": 0.9995658993721008,
+      "shot_mean_confidence": 0.9949121286994532,
+      "shot_confidence_spread": 0.0016782164573669878,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          19,
+          19,
+          19,
+          19,
+          19
+        ],
+        "beep_times_ms": [
+          622,
+          622,
+          622,
+          622,
+          622
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 1512.5,
+        "beep_centroid_hz": 1586.2345747443926,
+        "shot_peak_hz": 257.05958549222794,
+        "shot_centroid_hz": 873.1114957655452,
+        "shot_high_frequency_ratio": 0.040139210845283546,
+        "overall_clip_ratio": 1.0366045809629643e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_low",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 622,
+        "tone_beep_time_ms": 404,
+        "model_beep_time_ms": 3772,
+        "tone_model_gap_ms": 3368,
+        "final_tone_gap_ms": 218,
+        "final_model_gap_ms": 3150,
+        "passes_agree": false,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 19,
+        "onset_shot_count": 19,
+        "matched_shots": 19,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 1,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage4",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    },
+    {
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.MP4",
+      "duration_seconds": 28.283,
+      "reference_threshold": 0.35,
+      "reference_shot_count": 18,
+      "reference_beep_time_ms": 3447,
+      "shot_median_confidence": 0.9991195201873779,
+      "shot_mean_confidence": 0.9986925290690528,
+      "shot_confidence_spread": 0.001585823297500566,
+      "consistency": {
+        "thresholds": [
+          0.25,
+          0.35,
+          0.45,
+          0.55,
+          0.65
+        ],
+        "shot_counts": [
+          18,
+          18,
+          18,
+          18,
+          18
+        ],
+        "beep_times_ms": [
+          3447,
+          3447,
+          3447,
+          3447,
+          3447
+        ],
+        "shot_count_span": 0,
+        "beep_time_span_ms": 0,
+        "stable_shot_count": true,
+        "stable_beep_time": true
+      },
+      "fingerprint": {
+        "beep_peak_hz": 3012.5,
+        "beep_centroid_hz": 2607.544610400134,
+        "shot_peak_hz": 942.5518134715024,
+        "shot_centroid_hz": 887.390329974082,
+        "shot_high_frequency_ratio": 0.022802861098662718,
+        "overall_clip_ratio": 4.810467577448528e-06,
+        "shot_clip_ratio": 0.0,
+        "beep_family": "timer_high",
+        "possible_lowpass": false,
+        "possible_clipping": false
+      },
+      "beep_multipass": {
+        "final_beep_time_ms": 3447,
+        "tone_beep_time_ms": 4909,
+        "model_beep_time_ms": 4933,
+        "tone_model_gap_ms": 24,
+        "final_tone_gap_ms": 1462,
+        "final_model_gap_ms": 1486,
+        "passes_agree": true,
+        "review_required": true
+      },
+      "shot_multipass": {
+        "final_shot_count": 18,
+        "onset_shot_count": 18,
+        "matched_shots": 18,
+        "unmatched_final_count": 0,
+        "unmatched_onset_count": 0,
+        "echo_like_onset_count": 0,
+        "median_match_gap_ms": 0.0,
+        "max_match_gap_ms": 5,
+        "passes_agree": true,
+        "review_required": false
+      },
+      "duplicate_group_key": "stage4",
+      "duplicate_group_review_required": true,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ]
+    }
+  ]
+}

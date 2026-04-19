@@ -1,0 +1,923 @@
+{
+  "input": "/Volumes/Storage/GitHub/splitshot/.training",
+  "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+  "autolabel_summary_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-autolabel-summary.json",
+  "dataset_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-dataset-auto.npz",
+  "dataset_summary_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-dataset-auto-summary.json",
+  "output_bundle": "/Volumes/Storage/GitHub/splitshot/artifacts/model_bundle_candidate_auto.py",
+  "training_summary_path": "/Volumes/Storage/GitHub/splitshot/artifacts/model-training-auto-summary.json",
+  "autolabel_summary": {
+    "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+    "video_count": 16,
+    "preserved_verified_count": 0,
+    "auto_labeled_count": 16,
+    "demoted_to_needs_review_count": 0,
+    "skipped_reason_counts": {},
+    "status_counts": {
+      "auto_labeled": 16
+    },
+    "entries": [
+      {
+        "relative_path": "20251116_095437.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.85,
+        "auto_label_method": "final_pair_consensus",
+        "auto_label_reasons": [
+          "beep_pair_agreement:final+tone"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "20251116_103457.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "20251116_110444.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 1.0,
+        "auto_label_method": "final_pair_consensus",
+        "auto_label_reasons": [
+          "beep_pair_agreement:final+model"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Clip1.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_pair_consensus",
+        "auto_label_reasons": [
+          "beep_pair_agreement:final+model"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Clip2.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Clip3.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Clip4.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Clip5.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_pair_consensus",
+        "auto_label_reasons": [
+          "beep_pair_agreement:final+model"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage1 2.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage1.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "stage2 2.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage2.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage3 2.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_pair_consensus",
+        "auto_label_reasons": [
+          "beep_pair_agreement:final+model"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage3.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage4.mov",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      },
+      {
+        "relative_path": "Stage4.MP4",
+        "previous_status": "auto_labeled",
+        "new_status": "auto_labeled",
+        "auto_label_score": 0.95,
+        "auto_label_method": "final_detector_preferred",
+        "auto_label_reasons": [
+          "beep_final_detector_preferred"
+        ],
+        "skip_reason": null
+      }
+    ]
+  },
+  "dataset_summary": {
+    "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+    "video_count": 16,
+    "included_video_count": 16,
+    "skipped_video_count": 0,
+    "class_counts": {
+      "background": 384,
+      "beep": 16,
+      "shot": 304
+    },
+    "class_counts_by_label_source": {
+      "verified": {
+        "background": 0,
+        "beep": 0,
+        "shot": 0
+      },
+      "auto_consensus": {
+        "background": 384,
+        "beep": 16,
+        "shot": 304
+      },
+      "detector_draft": {
+        "background": 0,
+        "beep": 0,
+        "shot": 0
+      }
+    },
+    "label_source_counts": {
+      "verified": 0,
+      "auto_consensus": 704,
+      "detector_draft": 0
+    },
+    "included_video_counts_by_label_source": {
+      "verified": 0,
+      "auto_consensus": 16,
+      "detector_draft": 0
+    },
+    "skipped_video_reasons": {},
+    "feature_count": 20,
+    "clean_sample_count": 704,
+    "augmented_sample_count": 0,
+    "use_detector_drafts": false,
+    "augment_replicas_per_event": 0,
+    "detector_draft_policy": "review-clean"
+  },
+  "training_summary": {
+    "dataset_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-dataset-auto.npz",
+    "output_bundle": "/Volumes/Storage/GitHub/splitshot/artifacts/model_bundle_candidate_auto.py",
+    "sample_count": 704,
+    "feature_count": 20,
+    "split_mode": "source",
+    "validation_clean_only": true,
+    "clean_sample_count": 704,
+    "augmented_sample_count": 0,
+    "train_sample_count": 618,
+    "validation_sample_count": 86,
+    "validation_sources": [
+      "/Volumes/Storage/GitHub/splitshot/.training/Clip4.MP4",
+      "/Volumes/Storage/GitHub/splitshot/.training/stage2 2.MP4"
+    ],
+    "validation_source_names": [
+      "Clip4.MP4",
+      "stage2 2.MP4"
+    ],
+    "class_weighting": "balanced",
+    "class_weight_alpha": 0.85,
+    "class_weights": {
+      "background": 0.24712902307510376,
+      "beep": 2.4810972213745117,
+      "shot": 0.27177369594573975
+    },
+    "label_source_counts": {
+      "auto_consensus": 704
+    },
+    "train_label_source_counts": {
+      "auto_consensus": 618
+    },
+    "validation_label_source_counts": {
+      "auto_consensus": 86
+    },
+    "best_epoch": 114,
+    "train_accuracy": 0.9983818770226537,
+    "validation_accuracy": 1.0,
+    "validation_macro_recall": 1.0,
+    "validation_class_recall": {
+      "background": 1.0,
+      "beep": 1.0,
+      "shot": 1.0
+    },
+    "validation_confusion_counts": {
+      "background": {
+        "background": 48,
+        "beep": 0,
+        "shot": 0
+      },
+      "beep": {
+        "background": 0,
+        "beep": 2,
+        "shot": 0
+      },
+      "shot": {
+        "background": 0,
+        "beep": 0,
+        "shot": 36
+      }
+    },
+    "deployment_validation_accuracy": 1.0,
+    "deployment_validation_macro_recall": 1.0,
+    "deployment_validation_class_recall": {
+      "background": 1.0,
+      "beep": 1.0,
+      "shot": 1.0
+    },
+    "deployment_validation_confusion_counts": {
+      "background": {
+        "background": 48,
+        "beep": 0,
+        "shot": 0
+      },
+      "beep": {
+        "background": 0,
+        "beep": 2,
+        "shot": 0
+      },
+      "shot": {
+        "background": 0,
+        "beep": 0,
+        "shot": 36
+      }
+    },
+    "robustness_leave_one_source_out": {
+      "available": true,
+      "source_count": 16,
+      "fold_count": 16,
+      "sample_count": 704,
+      "accuracy": 0.9772727272727273,
+      "macro_recall": 0.9259868421052632,
+      "class_recall": {
+        "background": 0.96875,
+        "beep": 0.8125,
+        "shot": 0.9967105263157895
+      },
+      "mean_source_accuracy": 0.9778705677222171,
+      "mean_source_macro_recall": 0.9259868421052632,
+      "confusion_counts": {
+        "background": {
+          "background": 372,
+          "beep": 11,
+          "shot": 1
+        },
+        "beep": {
+          "background": 3,
+          "beep": 13,
+          "shot": 0
+        },
+        "shot": {
+          "background": 1,
+          "beep": 0,
+          "shot": 303
+        }
+      },
+      "folds": [
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/20251116_095437.MP4",
+          "source_name": "20251116_095437.MP4",
+          "sample_count": 44,
+          "train_sample_count": 660,
+          "best_epoch": 47,
+          "accuracy": 0.9772727272727273,
+          "macro_recall": 0.9861111111111112,
+          "class_recall": {
+            "background": 0.9583333333333334,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 23,
+              "beep": 1,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 19
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 44
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/20251116_103457.MP4",
+          "source_name": "20251116_103457.MP4",
+          "sample_count": 48,
+          "train_sample_count": 656,
+          "best_epoch": 45,
+          "accuracy": 0.9375,
+          "macro_recall": 0.6388888888888888,
+          "class_recall": {
+            "background": 0.9166666666666666,
+            "beep": 0.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 22,
+              "beep": 2,
+              "shot": 0
+            },
+            "beep": {
+              "background": 1,
+              "beep": 0,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 23
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 48
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/20251116_110444.MP4",
+          "source_name": "20251116_110444.MP4",
+          "sample_count": 46,
+          "train_sample_count": 658,
+          "best_epoch": 5,
+          "accuracy": 0.8913043478260869,
+          "macro_recall": 0.6111111111111112,
+          "class_recall": {
+            "background": 0.8333333333333334,
+            "beep": 0.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 20,
+              "beep": 4,
+              "shot": 0
+            },
+            "beep": {
+              "background": 1,
+              "beep": 0,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 21
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 46
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip1.MP4",
+          "source_name": "Clip1.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 117,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip2.MP4",
+          "source_name": "Clip2.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 67,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip3.MP4",
+          "source_name": "Clip3.MP4",
+          "sample_count": 45,
+          "train_sample_count": 659,
+          "best_epoch": 114,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 20
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 45
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip4.MP4",
+          "source_name": "Clip4.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 114,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Clip5.MP4",
+          "source_name": "Clip5.MP4",
+          "sample_count": 47,
+          "train_sample_count": 657,
+          "best_epoch": 118,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 22
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 47
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage1 2.MP4",
+          "source_name": "Stage1 2.MP4",
+          "sample_count": 42,
+          "train_sample_count": 662,
+          "best_epoch": 117,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 17
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 42
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage1.MP4",
+          "source_name": "Stage1.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 46,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage2.MP4",
+          "source_name": "Stage2.MP4",
+          "sample_count": 44,
+          "train_sample_count": 660,
+          "best_epoch": 11,
+          "accuracy": 0.9318181818181818,
+          "macro_recall": 0.9546783625730993,
+          "class_recall": {
+            "background": 0.9166666666666666,
+            "beep": 1.0,
+            "shot": 0.9473684210526315
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 22,
+              "beep": 1,
+              "shot": 1
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 1,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 44
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage3 2.MP4",
+          "source_name": "Stage3 2.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 120,
+          "accuracy": 0.9767441860465116,
+          "macro_recall": 0.9861111111111112,
+          "class_recall": {
+            "background": 0.9583333333333334,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 23,
+              "beep": 1,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage3.MP4",
+          "source_name": "Stage3.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 67,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.MP4",
+          "source_name": "Stage4.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 104,
+          "accuracy": 0.9767441860465116,
+          "macro_recall": 0.9861111111111112,
+          "class_recall": {
+            "background": 0.9583333333333334,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 23,
+              "beep": 1,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.mov",
+          "source_name": "Stage4.mov",
+          "sample_count": 44,
+          "train_sample_count": 660,
+          "best_epoch": 14,
+          "accuracy": 0.9545454545454546,
+          "macro_recall": 0.6527777777777778,
+          "class_recall": {
+            "background": 0.9583333333333334,
+            "beep": 0.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 23,
+              "beep": 1,
+              "shot": 0
+            },
+            "beep": {
+              "background": 1,
+              "beep": 0,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 19
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 44
+          }
+        },
+        {
+          "source": "/Volumes/Storage/GitHub/splitshot/.training/stage2 2.MP4",
+          "source_name": "stage2 2.MP4",
+          "sample_count": 43,
+          "train_sample_count": 661,
+          "best_epoch": 117,
+          "accuracy": 1.0,
+          "macro_recall": 1.0,
+          "class_recall": {
+            "background": 1.0,
+            "beep": 1.0,
+            "shot": 1.0
+          },
+          "confusion_counts": {
+            "background": {
+              "background": 24,
+              "beep": 0,
+              "shot": 0
+            },
+            "beep": {
+              "background": 0,
+              "beep": 1,
+              "shot": 0
+            },
+            "shot": {
+              "background": 0,
+              "beep": 0,
+              "shot": 18
+            }
+          },
+          "label_source_counts": {
+            "auto_consensus": 43
+          }
+        }
+      ]
+    },
+    "actual_metrics_available": false,
+    "verified_validation_sample_count": 0,
+    "verified_validation_accuracy": null,
+    "verified_validation_macro_recall": null,
+    "verified_validation_class_recall": null,
+    "warnings": [
+      "Dataset contains no verified labels; validation metrics are automated or exploratory metrics, not manual actuals.",
+      "Auto-consensus labels are present; they are stronger than raw detector drafts but still not manual verified labels."
+    ],
+    "class_counts": {
+      "background": 384,
+      "beep": 16,
+      "shot": 304
+    },
+    "hidden_units": 12,
+    "epochs": 120
+  }
+}

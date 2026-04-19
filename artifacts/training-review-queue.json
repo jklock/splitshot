@@ -1,0 +1,448 @@
+{
+  "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+  "video_count": 16,
+  "queued_video_count": 16,
+  "included_statuses": [
+    "needs_review"
+  ],
+  "status_counts": {
+    "needs_review": 16
+  },
+  "action_counts": {
+    "blocked": 1,
+    "defer_duplicate": 3,
+    "review_duplicate_representative": 3,
+    "review_now": 9
+  },
+  "beep_family_counts": {
+    "timer_high": 5,
+    "timer_low": 11
+  },
+  "entries": [
+    {
+      "rank": 1,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_110444.MP4",
+      "relative_path": "20251116_110444.MP4",
+      "status": "needs_review",
+      "priority_score": 141.71,
+      "recommended_action": "review_now",
+      "priority_reasons": [
+        "family_coverage_anchor:timer_low"
+      ],
+      "duration_seconds": 42.5,
+      "beep_family": "timer_low",
+      "detector_shot_count": 21,
+      "detector_beep_time_ms": 248,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 338,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 2,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage3.MP4",
+      "relative_path": "Stage3.MP4",
+      "status": "needs_review",
+      "priority_score": 137.53,
+      "recommended_action": "review_now",
+      "priority_reasons": [
+        "family_coverage_anchor:timer_high"
+      ],
+      "duration_seconds": 28.534,
+      "beep_family": "timer_high",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 7892,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": "stage3",
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 1308,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 3,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip4.MP4",
+      "relative_path": "Clip4.MP4",
+      "status": "needs_review",
+      "priority_score": 130.39,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 37.0,
+      "beep_family": "timer_low",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 1164,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 1667,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 4,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip1.MP4",
+      "relative_path": "Clip1.MP4",
+      "status": "needs_review",
+      "priority_score": 129.74,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 36.532,
+      "beep_family": "timer_low",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 1841,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 1934,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 5,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip3.MP4",
+      "relative_path": "Clip3.MP4",
+      "status": "needs_review",
+      "priority_score": 128.68,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 41.636,
+      "beep_family": "timer_low",
+      "detector_shot_count": 20,
+      "detector_beep_time_ms": 1640,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 2068,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 6,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip2.MP4",
+      "relative_path": "Clip2.MP4",
+      "status": "needs_review",
+      "priority_score": 127.07,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 38.432,
+      "beep_family": "timer_low",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 1733,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 2701,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 7,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Clip5.MP4",
+      "relative_path": "Clip5.MP4",
+      "status": "needs_review",
+      "priority_score": 125.66,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 49.299,
+      "beep_family": "timer_low",
+      "detector_shot_count": 22,
+      "detector_beep_time_ms": 4230,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 2666,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 8,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_103457.MP4",
+      "relative_path": "20251116_103457.MP4",
+      "status": "needs_review",
+      "priority_score": 122.44,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 49.5,
+      "beep_family": "timer_low",
+      "detector_shot_count": 23,
+      "detector_beep_time_ms": 3742,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 3880,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 9,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage3 2.MP4",
+      "relative_path": "Stage3 2.MP4",
+      "status": "needs_review",
+      "priority_score": 122.08,
+      "recommended_action": "review_now",
+      "priority_reasons": [],
+      "duration_seconds": 57.459,
+      "beep_family": "timer_low",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 26419,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation"
+      ],
+      "duplicate_group_key": "stage3",
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 1383,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 10,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.MP4",
+      "relative_path": "Stage4.MP4",
+      "status": "needs_review",
+      "priority_score": 119.08,
+      "recommended_action": "review_duplicate_representative",
+      "priority_reasons": [
+        "best_duplicate_representative"
+      ],
+      "duration_seconds": 28.283,
+      "beep_family": "timer_high",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 3447,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage4",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": true,
+      "beep_gap_ms": 1486,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 11,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage2.MP4",
+      "relative_path": "Stage2.MP4",
+      "status": "needs_review",
+      "priority_score": 118.41,
+      "recommended_action": "review_duplicate_representative",
+      "priority_reasons": [
+        "best_duplicate_representative"
+      ],
+      "duration_seconds": 30.063,
+      "beep_family": "timer_high",
+      "detector_shot_count": 19,
+      "detector_beep_time_ms": 2096,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage2",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": true,
+      "beep_gap_ms": 1670,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 11,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 12,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage1.MP4",
+      "relative_path": "Stage1.MP4",
+      "status": "needs_review",
+      "priority_score": 117.28,
+      "recommended_action": "review_duplicate_representative",
+      "priority_reasons": [
+        "best_duplicate_representative"
+      ],
+      "duration_seconds": 31.425,
+      "beep_family": "timer_low",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 9434,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage1",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": true,
+      "beep_gap_ms": 1844,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 13,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/stage2 2.MP4",
+      "relative_path": "stage2 2.MP4",
+      "status": "needs_review",
+      "priority_score": 81.5,
+      "recommended_action": "defer_duplicate",
+      "priority_reasons": [
+        "defer_duplicate_until_representative_reviewed"
+      ],
+      "duration_seconds": 50.055,
+      "beep_family": "timer_high",
+      "detector_shot_count": 18,
+      "detector_beep_time_ms": 17258,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage2",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": false,
+      "beep_gap_ms": 2234,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 14,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage1 2.MP4",
+      "relative_path": "Stage1 2.MP4",
+      "status": "needs_review",
+      "priority_score": 80.2,
+      "recommended_action": "defer_duplicate",
+      "priority_reasons": [
+        "defer_duplicate_until_representative_reviewed"
+      ],
+      "duration_seconds": 45.28,
+      "beep_family": "timer_high",
+      "detector_shot_count": 17,
+      "detector_beep_time_ms": 10539,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage1",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": false,
+      "beep_gap_ms": 3003,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 15,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/Stage4.mov",
+      "relative_path": "Stage4.mov",
+      "status": "needs_review",
+      "priority_score": 80.14,
+      "recommended_action": "defer_duplicate",
+      "priority_reasons": [
+        "defer_duplicate_until_representative_reviewed"
+      ],
+      "duration_seconds": 43.75,
+      "beep_family": "timer_low",
+      "detector_shot_count": 19,
+      "detector_beep_time_ms": 622,
+      "review_flags": [
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "duplicate_stage_inconsistency"
+      ],
+      "duplicate_group_key": "stage4",
+      "duplicate_group_review_required": true,
+      "duplicate_representative": false,
+      "beep_gap_ms": 3368,
+      "shot_effective_unmatched_count": 0,
+      "shot_echo_like_count": 0,
+      "shot_review_required": false,
+      "beep_review_required": true
+    },
+    {
+      "rank": 16,
+      "path": "/Volumes/Storage/GitHub/splitshot/.training/20251116_095437.MP4",
+      "relative_path": "20251116_095437.MP4",
+      "status": "needs_review",
+      "priority_score": 24.44,
+      "recommended_action": "blocked",
+      "priority_reasons": [],
+      "duration_seconds": 65.0,
+      "beep_family": "timer_low",
+      "detector_shot_count": 19,
+      "detector_beep_time_ms": 1706,
+      "review_flags": [
+        "beep_instability",
+        "beep_multipass_disagreement",
+        "confidence_saturation",
+        "shot_count_instability",
+        "shot_multipass_disagreement"
+      ],
+      "duplicate_group_key": null,
+      "duplicate_group_review_required": false,
+      "duplicate_representative": false,
+      "beep_gap_ms": 3505,
+      "shot_effective_unmatched_count": 1,
+      "shot_echo_like_count": 0,
+      "shot_review_required": true,
+      "beep_review_required": true
+    }
+  ]
+}

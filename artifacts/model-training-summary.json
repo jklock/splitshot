@@ -1,0 +1,47 @@
+{
+  "dataset_path": "/Volumes/Storage/GitHub/splitshot/artifacts/training-dataset.npz",
+  "output_bundle": "/Volumes/Storage/GitHub/splitshot/artifacts/model_bundle_candidate.py",
+  "sample_count": 771,
+  "feature_count": 20,
+  "split_mode": "source",
+  "class_weighting": "balanced",
+  "class_weights": {
+    "background": 0.31897708773612976,
+    "beep": 2.551816701889038,
+    "shot": 0.12920591235160828
+  },
+  "label_source_counts": {
+    "detector_draft": 771
+  },
+  "train_label_source_counts": {
+    "detector_draft": 690
+  },
+  "validation_label_source_counts": {
+    "detector_draft": 81
+  },
+  "best_epoch": 119,
+  "train_accuracy": 1.0,
+  "validation_accuracy": 1.0,
+  "validation_macro_recall": 1.0,
+  "validation_class_recall": {
+    "background": 1.0,
+    "beep": 1.0,
+    "shot": 1.0
+  },
+  "actual_metrics_available": false,
+  "verified_validation_sample_count": 0,
+  "verified_validation_accuracy": null,
+  "verified_validation_macro_recall": null,
+  "verified_validation_class_recall": null,
+  "warnings": [
+    "Dataset contains no verified labels; validation metrics are exploratory detector-draft metrics, not actuals.",
+    "Detector-draft labels are present; use verified_validation_* metrics for actual comparisons."
+  ],
+  "class_counts": {
+    "background": 216,
+    "beep": 27,
+    "shot": 528
+  },
+  "hidden_units": 24,
+  "epochs": 120
+}

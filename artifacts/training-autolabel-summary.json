@@ -1,0 +1,189 @@
+{
+  "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+  "video_count": 16,
+  "preserved_verified_count": 0,
+  "auto_labeled_count": 16,
+  "demoted_to_needs_review_count": 0,
+  "skipped_reason_counts": {},
+  "status_counts": {
+    "auto_labeled": 16
+  },
+  "entries": [
+    {
+      "relative_path": "20251116_095437.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.85,
+      "auto_label_method": "primary_detector_pair_consensus",
+      "auto_label_reasons": [
+        "beep_pair_agreement:primary_detector+tone"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "20251116_103457.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "20251116_110444.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 1.0,
+      "auto_label_method": "primary_detector_pair_consensus",
+      "auto_label_reasons": [
+        "beep_pair_agreement:primary_detector+model"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Clip1.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_pair_consensus",
+      "auto_label_reasons": [
+        "beep_pair_agreement:primary_detector+model"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Clip2.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Clip3.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Clip4.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Clip5.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_pair_consensus",
+      "auto_label_reasons": [
+        "beep_pair_agreement:primary_detector+model"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage1 2.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage1.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "stage2 2.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage2.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage3 2.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_pair_consensus",
+      "auto_label_reasons": [
+        "beep_pair_agreement:primary_detector+model"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage3.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage4.mov",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    },
+    {
+      "relative_path": "Stage4.MP4",
+      "previous_status": "auto_labeled",
+      "new_status": "auto_labeled",
+      "auto_label_score": 0.95,
+      "auto_label_method": "primary_detector_preferred",
+      "auto_label_reasons": [
+        "beep_primary_detector_preferred"
+      ],
+      "skip_reason": null
+    }
+  ]
+}

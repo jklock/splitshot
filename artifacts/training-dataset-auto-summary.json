@@ -1,0 +1,45 @@
+{
+  "manifest_path": "/Volumes/Storage/GitHub/splitshot/.training/shotml-label-manifest.json",
+  "video_count": 16,
+  "included_video_count": 16,
+  "skipped_video_count": 0,
+  "class_counts": {
+    "background": 384,
+    "beep": 16,
+    "shot": 304
+  },
+  "class_counts_by_label_source": {
+    "verified": {
+      "background": 0,
+      "beep": 0,
+      "shot": 0
+    },
+    "auto_consensus": {
+      "background": 384,
+      "beep": 16,
+      "shot": 304
+    },
+    "detector_draft": {
+      "background": 0,
+      "beep": 0,
+      "shot": 0
+    }
+  },
+  "label_source_counts": {
+    "verified": 0,
+    "auto_consensus": 704,
+    "detector_draft": 0
+  },
+  "included_video_counts_by_label_source": {
+    "verified": 0,
+    "auto_consensus": 16,
+    "detector_draft": 0
+  },
+  "skipped_video_reasons": {},
+  "feature_count": 20,
+  "clean_sample_count": 704,
+  "augmented_sample_count": 0,
+  "use_detector_drafts": false,
+  "augment_replicas_per_event": 0,
+  "detector_draft_policy": "review-clean"
+}

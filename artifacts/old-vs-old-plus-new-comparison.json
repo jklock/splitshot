@@ -1,0 +1,91 @@
+{
+  "basis": "threshold 0.35 against accepted manifest labels; labels are auto-consensus unless manual verified labels exist",
+  "old": {
+    "video_count": 16,
+    "shot_count": 304,
+    "missed_shots": 0,
+    "extra_shots": 0,
+    "beep_error": {
+      "count": 16,
+      "mean_abs_ms": 4.188,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "matched_shot_error": {
+      "count": 304,
+      "mean_abs_ms": 0,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 0
+    },
+    "split_error": {
+      "count": 304,
+      "mean_abs_ms": 0.22,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "last_shot_error": {
+      "count": 16,
+      "mean_abs_ms": 0,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 0
+    },
+    "stage_time_error": {
+      "count": 16,
+      "mean_abs_ms": 4.188,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "mean_shot_confidence": 0.994821,
+    "median_shot_confidence": 0.999442,
+    "min_shot_confidence": 0.572622,
+    "max_shot_confidence": 0.999966,
+    "review_suggestion_count": 0
+  },
+  "old_plus_new": {
+    "video_count": 16,
+    "shot_count": 304,
+    "missed_shots": 0,
+    "extra_shots": 0,
+    "beep_error": {
+      "count": 16,
+      "mean_abs_ms": 4.188,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "matched_shot_error": {
+      "count": 304,
+      "mean_abs_ms": 0,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 0
+    },
+    "split_error": {
+      "count": 304,
+      "mean_abs_ms": 0.22,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "last_shot_error": {
+      "count": 16,
+      "mean_abs_ms": 0,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 0
+    },
+    "stage_time_error": {
+      "count": 16,
+      "mean_abs_ms": 4.188,
+      "median_abs_ms": 0.0,
+      "max_abs_ms": 67
+    },
+    "mean_shot_confidence": 0.996254,
+    "median_shot_confidence": 0.999462,
+    "min_shot_confidence": 0.721795,
+    "max_shot_confidence": 0.999966,
+    "review_suggestion_count": 1
+  },
+  "timestamp_changed_video_count": 0,
+  "timestamp_changed_videos": [],
+  "mean_confidence_delta": 0.001433,
+  "median_confidence_delta": 0.0,
+  "min_confidence_delta": 0.0,
+  "max_confidence_delta": 0.149174
+}

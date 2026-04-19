@@ -1,0 +1,301 @@
+{
+  "video": "/Volumes/Storage/GitHub/splitshot/.training/Stage02test.MP4",
+  "recommended_threshold": 0.45,
+  "selected_threshold": 0.35,
+  "recommendation_reason": "Shot count stays stable at 19 from 0.25 to 0.65.",
+  "sweep": [
+    {
+      "threshold": 0.25,
+      "shot_count": 19,
+      "beep_time_ms": 3962,
+      "draw_ms": 2223,
+      "final_shot_ms": 21585,
+      "average_split_ms": 856,
+      "median_confidence": 0.9995508790016174,
+      "mean_confidence": 0.9951597221587832
+    },
+    {
+      "threshold": 0.35,
+      "shot_count": 19,
+      "beep_time_ms": 3962,
+      "draw_ms": 2223,
+      "final_shot_ms": 21585,
+      "average_split_ms": 856,
+      "median_confidence": 0.9995508790016174,
+      "mean_confidence": 0.9951597221587832
+    },
+    {
+      "threshold": 0.45,
+      "shot_count": 19,
+      "beep_time_ms": 3962,
+      "draw_ms": 2223,
+      "final_shot_ms": 21585,
+      "average_split_ms": 856,
+      "median_confidence": 0.9995508790016174,
+      "mean_confidence": 0.9951597221587832
+    },
+    {
+      "threshold": 0.55,
+      "shot_count": 19,
+      "beep_time_ms": 3962,
+      "draw_ms": 2223,
+      "final_shot_ms": 21585,
+      "average_split_ms": 856,
+      "median_confidence": 0.9995508790016174,
+      "mean_confidence": 0.9951597221587832
+    },
+    {
+      "threshold": 0.65,
+      "shot_count": 19,
+      "beep_time_ms": 3962,
+      "draw_ms": 2223,
+      "final_shot_ms": 21585,
+      "average_split_ms": 856,
+      "median_confidence": 0.9995508790016174,
+      "mean_confidence": 0.9951597221587832
+    }
+  ],
+  "shots": [
+    {
+      "shot_number": 1,
+      "absolute_ms": 6185,
+      "absolute_time": "00:06.185",
+      "split_ms": 2223,
+      "split_time": "00:02.223",
+      "sequence_total_ms": 2223,
+      "sequence_total_time": "00:02.223",
+      "confidence": 0.9995537400245667,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 2,
+      "absolute_ms": 6468,
+      "absolute_time": "00:06.468",
+      "split_ms": 283,
+      "split_time": "00:00.283",
+      "sequence_total_ms": 2506,
+      "sequence_total_time": "00:02.506",
+      "confidence": 0.9996384382247925,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 3,
+      "absolute_ms": 7075,
+      "absolute_time": "00:07.075",
+      "split_ms": 607,
+      "split_time": "00:00.607",
+      "sequence_total_ms": 3113,
+      "sequence_total_time": "00:03.113",
+      "confidence": 0.9995191097259521,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 4,
+      "absolute_ms": 7371,
+      "absolute_time": "00:07.371",
+      "split_ms": 296,
+      "split_time": "00:00.296",
+      "sequence_total_ms": 3409,
+      "sequence_total_time": "00:03.409",
+      "confidence": 0.9995508790016174,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 5,
+      "absolute_ms": 7882,
+      "absolute_time": "00:07.882",
+      "split_ms": 511,
+      "split_time": "00:00.511",
+      "sequence_total_ms": 3920,
+      "sequence_total_time": "00:03.920",
+      "confidence": 0.9988062381744385,
+      "confidence_percent": 99.9,
+      "source": "auto"
+    },
+    {
+      "shot_number": 6,
+      "absolute_ms": 8077,
+      "absolute_time": "00:08.077",
+      "split_ms": 195,
+      "split_time": "00:00.195",
+      "sequence_total_ms": 4115,
+      "sequence_total_time": "00:04.115",
+      "confidence": 0.9993243217468262,
+      "confidence_percent": 99.9,
+      "source": "auto"
+    },
+    {
+      "shot_number": 7,
+      "absolute_ms": 10617,
+      "absolute_time": "00:10.617",
+      "split_ms": 2540,
+      "split_time": "00:02.540",
+      "sequence_total_ms": 6655,
+      "sequence_total_time": "00:06.655",
+      "confidence": 0.9997994303703308,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 8,
+      "absolute_ms": 11334,
+      "absolute_time": "00:11.334",
+      "split_ms": 717,
+      "split_time": "00:00.717",
+      "sequence_total_ms": 7372,
+      "sequence_total_time": "00:07.372",
+      "confidence": 0.9990094900131226,
+      "confidence_percent": 99.9,
+      "source": "auto"
+    },
+    {
+      "shot_number": 9,
+      "absolute_ms": 11807,
+      "absolute_time": "00:11.807",
+      "split_ms": 473,
+      "split_time": "00:00.473",
+      "sequence_total_ms": 7845,
+      "sequence_total_time": "00:07.845",
+      "confidence": 0.9996733665466309,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 10,
+      "absolute_ms": 13022,
+      "absolute_time": "00:13.022",
+      "split_ms": 1215,
+      "split_time": "00:01.215",
+      "sequence_total_ms": 9060,
+      "sequence_total_time": "00:09.060",
+      "confidence": 0.9994922876358032,
+      "confidence_percent": 99.9,
+      "source": "auto"
+    },
+    {
+      "shot_number": 11,
+      "absolute_ms": 15993,
+      "absolute_time": "00:15.993",
+      "split_ms": 2971,
+      "split_time": "00:02.971",
+      "sequence_total_ms": 12031,
+      "sequence_total_time": "00:12.031",
+      "confidence": 0.9996654987335205,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 12,
+      "absolute_ms": 16225,
+      "absolute_time": "00:16.225",
+      "split_ms": 232,
+      "split_time": "00:00.232",
+      "sequence_total_ms": 12263,
+      "sequence_total_time": "00:12.263",
+      "confidence": 0.9995051622390747,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 13,
+      "absolute_ms": 18211,
+      "absolute_time": "00:18.211",
+      "split_ms": 1986,
+      "split_time": "00:01.986",
+      "sequence_total_ms": 14249,
+      "sequence_total_time": "00:14.249",
+      "confidence": 0.9998223185539246,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 14,
+      "absolute_ms": 18551,
+      "absolute_time": "00:18.551",
+      "split_ms": 340,
+      "split_time": "00:00.340",
+      "sequence_total_ms": 14589,
+      "sequence_total_time": "00:14.589",
+      "confidence": 0.9577817320823669,
+      "confidence_percent": 95.8,
+      "source": "auto"
+    },
+    {
+      "shot_number": 15,
+      "absolute_ms": 19119,
+      "absolute_time": "00:19.119",
+      "split_ms": 568,
+      "split_time": "00:00.568",
+      "sequence_total_ms": 15157,
+      "sequence_total_time": "00:15.157",
+      "confidence": 0.9584365278482437,
+      "confidence_percent": 95.8,
+      "source": "auto"
+    },
+    {
+      "shot_number": 16,
+      "absolute_ms": 19580,
+      "absolute_time": "00:19.580",
+      "split_ms": 461,
+      "split_time": "00:00.461",
+      "sequence_total_ms": 15618,
+      "sequence_total_time": "00:15.618",
+      "confidence": 0.9996040463447571,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 17,
+      "absolute_ms": 20505,
+      "absolute_time": "00:20.505",
+      "split_ms": 925,
+      "split_time": "00:00.925",
+      "sequence_total_ms": 16543,
+      "sequence_total_time": "00:16.543",
+      "confidence": 0.9997344613075256,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 18,
+      "absolute_ms": 21341,
+      "absolute_time": "00:21.341",
+      "split_ms": 836,
+      "split_time": "00:00.836",
+      "sequence_total_ms": 17379,
+      "sequence_total_time": "00:17.379",
+      "confidence": 0.9998530149459839,
+      "confidence_percent": 100.0,
+      "source": "auto"
+    },
+    {
+      "shot_number": 19,
+      "absolute_ms": 21585,
+      "absolute_time": "00:21.585",
+      "split_ms": 244,
+      "split_time": "00:00.244",
+      "sequence_total_ms": 17623,
+      "sequence_total_time": "00:17.623",
+      "confidence": 0.999264657497406,
+      "confidence_percent": 99.9,
+      "source": "auto"
+    }
+  ],
+  "review_suggestions": [
+    {
+      "kind": "sound_profile_outlier",
+      "severity": "review",
+      "message": "Shot 22 is a sound-profile outlier (6.48 feature distance from the stage shot profile); review it before keeping it.",
+      "suggested_action": "review_shot",
+      "shot_number": 22,
+      "shot_time_ms": 28894,
+      "confidence": 0.9902819395065308,
+      "support_confidence": 0.0,
+      "interval_ms": null
+    }
+  ]
+}
