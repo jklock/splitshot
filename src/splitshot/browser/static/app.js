@@ -1635,8 +1635,9 @@ function syncOverlayFontSizePreset() {
 
 function ensureShotQuadrantDefaults() {
   if (!usesCustomQuadrant($("shot-quadrant").value)) return;
-  if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";
-  if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";
+  const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };
+  if (!$("overlay-custom-x").value) syncControlValue($("overlay-custom-x"), seededCoordinates.x);
+  if (!$("overlay-custom-y").value) syncControlValue($("overlay-custom-y"), seededCoordinates.y);
 }
 
 function createOverlayTextBoxId() {
@@ -1822,6 +1823,13 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
       if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
         return unlockedOverlayTextBox(box);
       }
+      if (locked && !box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
+        const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box);
+        if (renderedCoordinates) {
+          box.x = renderedCoordinates.x;
+          box.y = renderedCoordinates.y;
+        }
+      }
       box.lock_to_stack = locked;
       return box;
     }
@@ -1842,9 +1850,13 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
     }
     if (field === "quadrant") {
       if (usesCustomQuadrant(rawValue)) {
+        const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {
+          x: normalizedCoordinateValue(box.x) ?? 0.5,
+          y: normalizedCoordinateValue(box.y) ?? 0.5,
+        };
         box.quadrant = CUSTOM_QUADRANT_VALUE;
-        box.x = box.x ?? 0.5;
-        box.y = box.y ?? 0.5;
+        box.x = renderedCoordinates.x;
+        box.y = renderedCoordinates.y;
       } else {
         box.quadrant = rawValue;
         box.x = null;
@@ -2066,6 +2078,80 @@ function syncOverlayCoordinateControlState() {
     input.title = customEnabled
       ? `Set custom ${axis.toLowerCase()} position from 0 to 1.`
       : "Enable the Custom quadrant to edit coordinates.";
+  });
+}
+
+function previewFrameRectForOverlayPlacement() {
+  const stage = $("video-stage");
+  if (!stage) return null;
+  return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+}
+
+function overlayBadgeElement(kind) {
+  if (kind === "shots") {
+    const overlay = $("live-overlay");
+    return overlay?.querySelector('[data-overlay-drag="shots"]') || overlay?.firstElementChild || null;
+  }
+  return [...document.querySelectorAll(`[data-overlay-drag="${kind}"]`)].find(
+    (element) => element instanceof HTMLElement,
+  ) || null;
+}
+
+function overlayBadgeCoordinateFallback(kind) {
+  if (kind === "shots") {
+    const fallbackX = normalizedCoordinateValue($("overlay-custom-x")?.value);
+    const fallbackY = normalizedCoordinateValue($("overlay-custom-y")?.value);
+    if (fallbackX === null || fallbackY === null) return null;
+    return { x: fallbackX, y: fallbackY };
+  }
+  const config = OVERLAY_STACK_LOCK_CONTROLS[kind];
+  if (!config) return null;
+  const fallbackX = normalizedCoordinateValue($(config.xId)?.value ?? state?.project?.overlay?.[`${kind}_x`]);
+  const fallbackY = normalizedCoordinateValue($(config.yId)?.value ?? state?.project?.overlay?.[`${kind}_y`]);
+  if (fallbackX === null || fallbackY === null) return null;
+  return { x: fallbackX, y: fallbackY };
+}
+
+function resolveRenderedOverlayBadgeCoordinates(kind) {
+  const frameRect = previewFrameRectForOverlayPlacement();
+  const badge = overlayBadgeElement(kind);
+  if (frameRect && badge instanceof HTMLElement) {
+    return kind === "shots"
+      ? overlayDragAnchor(kind, badge, frameRect)
+      : resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect);
+  }
+  return overlayBadgeCoordinateFallback(kind);
+}
+
+function resetOverlayPlacementBaseline(controlId) {
+  if (controlId === "shot-quadrant") {
+    if (usesCustomQuadrant($("shot-quadrant").value)) {
+      const coords = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };
+      syncControlValue($("overlay-custom-x"), coords.x);
+      syncControlValue($("overlay-custom-y"), coords.y);
+      return;
+    }
+    syncControlValue($("overlay-custom-x"), "");
+    syncControlValue($("overlay-custom-y"), "");
+    return;
+  }
+
+  const entry = Object.entries(OVERLAY_STACK_LOCK_CONTROLS).find(([_kind, config]) => config.lockId === controlId);
+  if (!entry) return;
+  const [kind, config] = entry;
+  const coords = resolveRenderedOverlayBadgeCoordinates(kind);
+  if (!coords) return;
+  syncControlValue($(config.xId), coords.x);
+  syncControlValue($(config.yId), coords.y);
+}
+
+function syncOverlayBadgeCoordinateControlValues() {
+  Object.entries(OVERLAY_STACK_LOCK_CONTROLS).forEach(([kind, config]) => {
+    if (!$(config.lockId)?.checked) return;
+    const coords = resolveRenderedOverlayBadgeCoordinates(kind);
+    if (!coords) return;
+    if ($(config.xId)?.disabled) syncControlValue($(config.xId), coords.x);
+    if ($(config.yId)?.disabled) syncControlValue($(config.yId), coords.y);
   });
 }
 
@@ -6340,7 +6426,7 @@ function positionStackLockedTextBoxBadge(badge, frameRect, { terminalRect = null
   return nextRect;
 }
 
-function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, anchorRect = null, terminalRect = null) {
+function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect = null, terminalRect = null) {
   customOverlay.innerHTML = "";
   const textBoxGroups = new Map();
   const nextRenderedPositions = new Map();
@@ -6371,7 +6457,14 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
       if (coordinates) nextRenderedPositions.set(box.id, coordinates);
       return;
     }
-    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, anchorRect, scale: overlayScale })) {
+    const aboveFinalAnchorRect = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
+      ? (!(finalScoreBadge instanceof HTMLElement) && box.source === "imported_summary" ? stackAnchorRect : null)
+      : stackAnchorRect;
+    if (positionTextBoxBadge(customBadge, box, frameRect, {
+      anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,
+      anchorRect: aboveFinalAnchorRect,
+      scale: overlayScale,
+    })) {
       const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
       if (coordinates) nextRenderedPositions.set(box.id, coordinates);
       return;
@@ -6547,14 +6640,16 @@ function beginOverlayBadgeDrag(event) {
   const kind = badge.dataset.overlayDrag || "";
   const config = overlayDragConfiguration(kind);
   if (!config || !state?.project) return;
-  if (config.lockId && $(config.lockId)?.checked) {
-    $(config.lockId).checked = false;
-    syncOverlayBubbleLockControlState();
-    syncOverlayPreviewStateFromControls();
-  }
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const anchor = overlayDragAnchor(kind, badge, frameRect);
+  if (config.lockId && $(config.lockId)?.checked) {
+    $(config.lockId).checked = false;
+    syncControlValue($(config.xId), anchor.x);
+    syncControlValue($(config.yId), anchor.y);
+    syncOverlayBubbleLockControlState();
+    syncOverlayPreviewStateFromControls();
+  }
   overlayBadgeDrag = {
     target: stage,
     kind,
@@ -6586,9 +6681,6 @@ function moveOverlayBadgeDrag(event) {
 
   if (config.quadrantId) {
     $(config.quadrantId).value = config.quadrantValue;
-    ["timer-x", "timer-y", "draw-x", "draw-y"].forEach((id) => {
-      if ($(id)) $(id).value = "";
-    });
     syncOverlayCoordinateControlState();
   }
   $(config.xId).value = nextX.toFixed(3);
@@ -6834,6 +6926,7 @@ function renderLiveOverlay(positionMsOverride = null) {
       customOverlayRenderKey = "";
     }
     textBoxRenderedPositionById = new Map();
+    syncOverlayBadgeCoordinateControlValues();
     return;
   }
   // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
@@ -6841,6 +6934,7 @@ function renderLiveOverlay(positionMsOverride = null) {
     renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
     customOverlayRenderKey = nextCustomOverlayKey;
   }
+  syncOverlayBadgeCoordinateControlValues();
   syncLockedTextBoxEditorCoordinates();
 }
 
@@ -7951,10 +8045,12 @@ function wireEvents() {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
       if (id === "shot-quadrant") {
+        resetOverlayPlacementBaseline(id);
         syncOverlayCoordinateControlState();
         ensureShotQuadrantDefaults();
       }
       if (id.endsWith("-lock-to-stack")) {
+        resetOverlayPlacementBaseline(id);
         syncOverlayBubbleLockControlState();
       }
       commitOverlayControlChanges();

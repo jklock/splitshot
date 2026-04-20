@@ -515,8 +515,8 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     assert orange_bottom < green_top
 
 
-def test_overlay_renderer_keeps_locked_imported_summary_above_badge_stack() -> None:
-    project = Project(name="Locked Summary Above Stack")
+def test_overlay_renderer_prefers_final_score_anchor_over_badge_stack_for_imported_summary() -> None:
+    project = Project(name="Imported Summary Above Final Score")
     project.analysis.beep_time_ms_primary = 100
     project.analysis.shots = [
         ShotEvent(time_ms=900, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
@@ -529,6 +529,14 @@ def test_overlay_renderer_keeps_locked_imported_summary_above_badge_stack() -> N
     project.overlay.show_draw = False
     project.overlay.show_shots = True
     project.overlay.show_score = True
+    project.overlay.score_x = 0.78
+    project.overlay.score_y = 0.22
+    project.overlay.shot_badge.background_color = "#1d8f3a"
+    project.overlay.shot_badge.text_color = "#ffffff"
+    project.overlay.current_shot_badge.background_color = "#1d8f3a"
+    project.overlay.current_shot_badge.text_color = "#ffffff"
+    project.overlay.hit_factor_badge.background_color = "#1d4dff"
+    project.overlay.hit_factor_badge.text_color = "#ffffff"
     project.overlay.text_boxes = [
         OverlayTextBox(
             enabled=True,
@@ -548,47 +556,37 @@ def test_overlay_renderer_keeps_locked_imported_summary_above_badge_stack() -> N
         score_counts={"PD": 4},
     )
 
+    class AnchorSpyOverlayRenderer(OverlayRenderer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.stack_anchor_rect = None
+            self.final_score_rect = None
+            self.summary_anchor_rect = None
+
+        def _paint_badges(self, painter, badges, project, width, height, **kwargs):
+            rects = super()._paint_badges(painter, badges, project, width, height, **kwargs)
+            quadrant = kwargs.get("quadrant")
+            if quadrant is None and len(rects) >= 2 and self.stack_anchor_rect is None:
+                self.stack_anchor_rect = _combined_rect(rects)
+                self.final_score_rect = rects[-1]
+            if quadrant == "custom" and rects:
+                self.final_score_rect = rects[-1]
+            if quadrant == "above_final":
+                self.summary_anchor_rect = kwargs.get("anchor_rect")
+            return rects
+
     image = QImage(420, 220, QImage.Format.Format_ARGB32)
     image.fill(QColor("#000000"))
     painter = QPainter(image)
-    font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
-    font = QFont(project.overlay.font_family or "Helvetica Neue")
-    font.setPixelSize(max(1, int(font_size)))
-    font.setBold(project.overlay.font_bold)
-    font.setItalic(project.overlay.font_italic)
-    painter.setFont(font)
-
-    renderer = OverlayRenderer()
-    auto_badge_size = _auto_badge_size(_standard_badge_texts(project), painter.fontMetrics())
-    badges, _positioned_badges, _score_marks = renderer._build_badges_with_positions(project, 1400)
-    badge_rects = renderer._paint_badges(painter, badges, project, 420, 220, auto_badge_size=auto_badge_size)
-    stack_anchor_rect = _combined_rect(badge_rects)
-    summary_text = renderer._text_box_text(project, 1400, "imported_summary", "", True)
-    summary_rects = renderer._paint_badges(
-        painter,
-        [
-            Badge(
-                summary_text,
-                BadgeStyle(background_color="#ff7b22", text_color="#ffffff", opacity=1.0),
-                width=180,
-                height=54,
-            )
-        ],
-        project,
-        420,
-        220,
-        quadrant="above_final",
-        auto_badge_size=auto_badge_size,
-        anchor_rect=stack_anchor_rect,
-    )
+    renderer = AnchorSpyOverlayRenderer()
+    renderer.paint(painter, project, 1400, 420, 220)
     painter.end()
 
-    assert stack_anchor_rect is not None
-    assert summary_rects
-
-    summary_rect = summary_rects[0]
-    assert abs(summary_rect.center().x() - stack_anchor_rect.center().x()) <= 1
-    assert summary_rect.bottom() < stack_anchor_rect.top()
+    assert renderer.stack_anchor_rect is not None
+    assert renderer.final_score_rect is not None
+    assert renderer.summary_anchor_rect is not None
+    assert abs(renderer.summary_anchor_rect.center().x() - renderer.final_score_rect.center().x()) <= 1
+    assert abs(renderer.summary_anchor_rect.center().x() - renderer.stack_anchor_rect.center().x()) > 20
 
 
 def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot() -> None:

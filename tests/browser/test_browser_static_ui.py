@@ -477,8 +477,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'Switch to Custom placement to edit X and Y directly.' in js
     assert 'Keeps the imported summary centered above the final score badge once it appears.' in js
     assert 'syncOverlayFontSizePreset();' in js
-    assert 'if (!$("overlay-custom-x").value) $("overlay-custom-x").value = "0.5";' in js
-    assert 'if (!$("overlay-custom-y").value) $("overlay-custom-y").value = "0.5";' in js
+    assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
+    assert 'if (!$("overlay-custom-y").value) syncControlValue($("overlay-custom-y"), seededCoordinates.y);' in js
     assert 'function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {' in js
     assert 'if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {' in js
     assert 'const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);' in js
@@ -508,7 +508,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const customBadge = event.target instanceof Element' in js
     assert 'customBadge.dataset.textBoxDrag = "true";' in js
     assert 'customBadge.dataset.textBoxId = box.id;' in js
-    assert 'positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, anchorRect, scale: overlayScale })' in js
+    assert 'if (positionTextBoxBadge(customBadge, box, frameRect, {' in js
+    assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
     assert 'if (result) setActiveTool("scoring");' not in js
     assert 'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));' in js
     assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in js

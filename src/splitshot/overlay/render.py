@@ -55,10 +55,6 @@ _PENALTY_LABELS = {
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
 
-def _should_anchor_imported_summary_above_stack(text_box) -> bool:
-    return getattr(text_box, "source", "") == "imported_summary" and getattr(text_box, "quadrant", "") == _ABOVE_FINAL_TEXT_BOX_QUADRANT
-
-
 def _combined_rect(rects: list[QRectF]) -> QRectF | None:
     if not rects:
         return None
@@ -357,7 +353,7 @@ class OverlayRenderer:
         badge_rects = self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
         stack_anchor_rect = _combined_rect(badge_rects)
         stack_terminal_rect = badge_rects[-1] if badge_rects else None
-        if has_final_score_badge and project.overlay.score_x is None and project.overlay.score_y is None and badge_rects:
+        if has_final_score_badge and project.overlay.score_lock_to_stack and badge_rects:
             final_score_rect = badge_rects[-1]
         for index, (badge, x, y) in enumerate(positioned_badges):
             rects = self._paint_badges(
@@ -371,10 +367,9 @@ class OverlayRenderer:
                 custom_y=y,
                 auto_badge_size=auto_badge_size,
             )
-            if has_final_score_badge and project.overlay.score_x is not None and project.overlay.score_y is not None and index == len(positioned_badges) - 1 and rects:
+            if has_final_score_badge and not project.overlay.score_lock_to_stack and index == len(positioned_badges) - 1 and rects:
                 final_score_rect = rects[-1]
         for text_box in overlay_text_boxes_for_render(project.overlay):
-            anchored_imported_summary = _should_anchor_imported_summary_above_stack(text_box)
             text_value = self._text_box_text(
                 project,
                 position_ms,
@@ -389,7 +384,7 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
-            if text_box.lock_to_stack and not anchored_imported_summary:
+            if text_box.lock_to_stack and text_box.quadrant != _ABOVE_FINAL_TEXT_BOX_QUADRANT:
                 rects = self._paint_badges(
                     painter,
                     [
@@ -411,7 +406,13 @@ class OverlayRenderer:
                     stack_terminal_rect = rects[-1]
                 continue
             text_box_quadrant = text_box.quadrant
-            anchor_rect = (stack_anchor_rect or final_score_rect) if anchored_imported_summary else final_score_rect
+            anchor_rect = final_score_rect
+            if (
+                text_box_quadrant == _ABOVE_FINAL_TEXT_BOX_QUADRANT
+                and anchor_rect is None
+                and getattr(text_box, "source", "") == "imported_summary"
+            ):
+                anchor_rect = stack_anchor_rect
             if text_box_quadrant == _ABOVE_FINAL_TEXT_BOX_QUADRANT and anchor_rect is None:
                 text_box_quadrant = "top_middle"
             self._paint_badges(
