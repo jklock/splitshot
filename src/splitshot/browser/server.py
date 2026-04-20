@@ -710,6 +710,7 @@ class BrowserControlServer:
                     "/api/merge/remove": self._remove_merge_source,
                     "/api/merge/source": self._set_merge_source,
                     "/api/overlay": self._set_overlay,
+                    "/api/popups": self._set_popups,
                     "/api/merge": self._set_merge,
                     "/api/sync": self._set_sync,
                     "/api/swap": self._swap_videos,
@@ -1268,10 +1269,17 @@ class BrowserControlServer:
                 controller.add_shot(int(payload["time_ms"]))
 
             def _move_shot(self, payload: dict[str, Any]) -> None:
-                controller.move_shot(str(payload["shot_id"]), int(payload["time_ms"]))
+                controller.move_shot(
+                    str(payload["shot_id"]),
+                    int(payload["time_ms"]),
+                    preserve_following_splits=bool(payload.get("preserve_following_splits")),
+                )
 
             def _restore_shot(self, payload: dict[str, Any]) -> None:
-                controller.restore_original_shot_timing(str(payload["shot_id"]))
+                controller.restore_original_shot_timing(
+                    str(payload["shot_id"]),
+                    preserve_following_splits=bool(payload.get("preserve_following_splits")),
+                )
 
             def _delete_shot(self, payload: dict[str, Any]) -> None:
                 controller.delete_shot(str(payload["shot_id"]))
@@ -1347,6 +1355,9 @@ class BrowserControlServer:
                     )
                 for letter, color in payload.get("scoring_colors", {}).items():
                     controller.set_scoring_color(str(letter), str(color))
+
+            def _set_popups(self, payload: dict[str, Any]) -> None:
+                controller.set_popups(payload)
 
             def _set_merge(self, payload: dict[str, Any]) -> None:
                 if "enabled" in payload:

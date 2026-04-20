@@ -24,6 +24,7 @@ from splitshot.domain.models import (
     MergeLayout,
     OverlayPosition,
     OverlayTextBox,
+    PopupBubble,
     PipSize,
     Project,
     MergeSource,
@@ -94,6 +95,7 @@ _VALID_BROWSER_UI_TOOLS = {
     "merge",
     "overlay",
     "review",
+    "popup",
     "export",
     "metrics",
 }
@@ -105,6 +107,7 @@ _VALID_WAVEFORM_MODES = {"select", "add"}
 class _OriginalShotState:
     time_ms: int
     source: ShotSource
+    confidence: float | None
     score: ScoreMark | None
 
 
@@ -262,6 +265,7 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     for text_box in project.overlay.text_boxes:
         text_box.text = ""
     sync_overlay_legacy_custom_box_fields(project.overlay)
+    project.popups = []
     project.export.last_log = ""
     project.export.last_error = None
     project.ui_state.selected_shot_id = None
@@ -269,6 +273,7 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.ui_state.scoring_shot_expansion = {}
     project.ui_state.waveform_shot_amplitudes = {}
     project.ui_state.timing_edit_shot_ids = []
+    project.ui_state.review_text_box_expansion = {}
 
 
 def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
@@ -359,6 +364,16 @@ def _revalidate_timing_ui_state(
         ui_state.timing_edit_shot_ids = next_timing_edit_shot_ids
         changed = True
 
+    valid_text_box_ids = {box.id for box in project.overlay.text_boxes}
+    next_review_text_box_expansion = {
+        box_id: expanded
+        for box_id, expanded in ui_state.review_text_box_expansion.items()
+        if box_id in valid_text_box_ids
+    }
+    if ui_state.review_text_box_expansion != next_review_text_box_expansion:
+        ui_state.review_text_box_expansion = next_review_text_box_expansion
+        changed = True
+
     return changed
 
 
@@ -368,7 +383,14 @@ def _merge_reanalyzed_shots(
     settings: ShotMLSettings,
 ) -> list[ShotEvent]:
     merged_shots = [deepcopy(shot) for shot in detected_shots]
-    manual_shots = [deepcopy(shot) for shot in previous_shots if shot.source == ShotSource.MANUAL]
+    for shot in merged_shots:
+        shot.shotml_time_ms = shot.time_ms
+        shot.shotml_confidence = shot.confidence
+    manual_shots = [
+        deepcopy(shot)
+        for shot in previous_shots
+        if shot.source == ShotSource.MANUAL and shot.user_added
+    ]
     if not manual_shots:
         return sort_shots(merged_shots)
 
@@ -1183,9 +1205,11 @@ class ProjectController(QObject):
     def add_shot(self, time_ms: int) -> None:
         shot = ShotEvent(
             time_ms=time_ms,
+            shotml_time_ms=time_ms,
             source=ShotSource.MANUAL,
             confidence=None,
             score=default_score_mark_for_ruleset(self.project.scoring.ruleset),
+            user_added=True,
         )
         self.project.analysis.shots.append(shot)
         self.project.sort_shots()
@@ -1194,14 +1218,48 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def move_shot(self, shot_id: str, time_ms: int) -> None:
-        for shot in self.project.analysis.shots:
-            if shot.id == shot_id:
-                shot.time_ms = max(0, time_ms)
-                if shot.source == ShotSource.AUTO:
-                    shot.source = ShotSource.MANUAL
-                    shot.confidence = None
-                break
+    def move_shot(self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False) -> None:
+        if preserve_following_splits:
+            shots = sort_shots(self.project.analysis.shots)
+            shot_index = next((index for index, shot in enumerate(shots) if shot.id == shot_id), None)
+            if shot_index is None:
+                raise ValueError("Shot not found")
+            shot = shots[shot_index]
+            if shot.shotml_time_ms is None:
+                shot.shotml_time_ms = shot.time_ms
+            if shot.shotml_confidence is None:
+                original = self._original_shot_state_by_id.get(shot.id)
+                shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+            lower_bound_ms = (
+                self.project.analysis.beep_time_ms_primary
+                if shot_index == 0 and self.project.analysis.beep_time_ms_primary is not None
+                else (shots[shot_index - 1].time_ms if shot_index > 0 else 0)
+            )
+            target_time_ms = max(lower_bound_ms, time_ms)
+            delta_ms = target_time_ms - shot.time_ms
+            if delta_ms:
+                for shifted_shot in shots[shot_index:]:
+                    if shifted_shot.shotml_time_ms is None:
+                        shifted_shot.shotml_time_ms = shifted_shot.time_ms
+                    if shifted_shot.shotml_confidence is None:
+                        original = self._original_shot_state_by_id.get(shifted_shot.id)
+                        shifted_shot.shotml_confidence = (
+                            original.confidence if original is not None else shifted_shot.confidence
+                        )
+                    shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
+        else:
+            for shot in self.project.analysis.shots:
+                if shot.id == shot_id:
+                    if shot.shotml_time_ms is None:
+                        shot.shotml_time_ms = shot.time_ms
+                    if shot.shotml_confidence is None:
+                        original = self._original_shot_state_by_id.get(shot.id)
+                        shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+                    shot.time_ms = max(0, time_ms)
+                    if shot.source == ShotSource.AUTO:
+                        shot.source = ShotSource.MANUAL
+                        shot.confidence = None
+                    break
         self.project.sort_shots()
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project)
@@ -1288,6 +1346,20 @@ class ProjectController(QObject):
             if next_timing_expanded and ui_state.waveform_expanded:
                 ui_state.waveform_expanded = False
                 changed = True
+            if next_timing_expanded and ui_state.metrics_expanded:
+                ui_state.metrics_expanded = False
+                changed = True
+        if "metrics_expanded" in payload:
+            next_metrics_expanded = bool(payload["metrics_expanded"])
+            if ui_state.metrics_expanded != next_metrics_expanded:
+                ui_state.metrics_expanded = next_metrics_expanded
+                changed = True
+            if next_metrics_expanded and ui_state.waveform_expanded:
+                ui_state.waveform_expanded = False
+                changed = True
+            if next_metrics_expanded and ui_state.timing_expanded:
+                ui_state.timing_expanded = False
+                changed = True
         if "layout_locked" in payload:
             next_layout_locked = bool(payload["layout_locked"])
             if ui_state.layout_locked != next_layout_locked:
@@ -1350,12 +1422,15 @@ class ProjectController(QObject):
                 minimums = {
                     "lock": 60,
                     "segment": 104,
-                    "split": 144,
+                    "split": 92,
                     "total": 88,
                     "action": 140,
                     "score": 68,
                     "confidence": 92,
-                    "source": 84,
+                    "adjustment": 112,
+                    "final": 88,
+                    "delete": 76,
+                    "restore": 88,
                 }
                 for key, value in raw_timing_column_widths.items():
                     clean_key = str(key).strip()
@@ -1368,6 +1443,18 @@ class ProjectController(QObject):
                     next_timing_column_widths[clean_key] = max(minimums[clean_key], round(numeric))
             if ui_state.timing_column_widths != next_timing_column_widths:
                 ui_state.timing_column_widths = next_timing_column_widths
+                changed = True
+        if "review_text_box_expansion" in payload:
+            next_expansion: dict[str, bool] = {}
+            raw_expansion = payload.get("review_text_box_expansion")
+            if isinstance(raw_expansion, dict):
+                valid_box_ids = {box.id for box in self.project.overlay.text_boxes}
+                for key, value in raw_expansion.items():
+                    clean_key = str(key).strip()
+                    if clean_key and clean_key in valid_box_ids:
+                        next_expansion[clean_key] = bool(value)
+            if ui_state.review_text_box_expansion != next_expansion:
+                ui_state.review_text_box_expansion = next_expansion
                 changed = True
 
         if changed:
@@ -1398,15 +1485,31 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def restore_original_shot_timing(self, shot_id: str) -> None:
+    def restore_original_shot_timing(self, shot_id: str, *, preserve_following_splits: bool = False) -> None:
         original = self._original_shot_state_by_id.get(shot_id)
         if original is None:
             raise ValueError("Original split not found")
-        for shot in self.project.analysis.shots:
+        shots = sort_shots(self.project.analysis.shots)
+        for shot_index, shot in enumerate(shots):
             if shot.id != shot_id:
                 continue
-            shot.time_ms = max(0, original.time_ms)
+            restored_time_ms = max(0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms)
+            if preserve_following_splits:
+                delta_ms = restored_time_ms - shot.time_ms
+                if delta_ms:
+                    for shifted_shot in shots[shot_index:]:
+                        if shifted_shot.shotml_time_ms is None:
+                            shifted_shot.shotml_time_ms = shifted_shot.time_ms
+                        if shifted_shot.shotml_confidence is None:
+                            original_shifted = self._original_shot_state_by_id.get(shifted_shot.id)
+                            shifted_shot.shotml_confidence = (
+                                original_shifted.confidence if original_shifted is not None else shifted_shot.confidence
+                            )
+                        shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
+            else:
+                shot.time_ms = restored_time_ms
             shot.source = original.source
+            shot.confidence = shot.shotml_confidence if shot.shotml_confidence is not None else original.confidence
             self.project.sort_shots()
             self.update_hit_factor()
             self._set_status("Restored original split.")
@@ -1622,6 +1725,31 @@ class ProjectController(QObject):
         else:
             legacy_box = legacy_custom_box_as_text_box(overlay)
             overlay.text_boxes = [] if legacy_box is None else [legacy_box]
+        self.project.touch()
+        self.project_changed.emit()
+
+    def set_popups(self, payload: dict[str, object]) -> None:
+        parsed_popups: list[PopupBubble] = []
+        for item in payload.get("popups", []):
+            if not isinstance(item, dict):
+                continue
+            parsed_popups.append(
+                PopupBubble(
+                    id=str(item.get("id") or PopupBubble().id),
+                    enabled=bool(item.get("enabled", True)),
+                    text=str(item.get("text", ""))[:500],
+                    time_ms=max(0, int(item.get("time_ms", 0) or 0)),
+                    duration_ms=max(1, int(item.get("duration_ms", 1000) or 1000)),
+                    x=max(0.0, min(1.0, float(item.get("x", 0.5) or 0.5))),
+                    y=max(0.0, min(1.0, float(item.get("y", 0.5) or 0.5))),
+                    background_color=str(item.get("background_color", "#000000")),
+                    text_color=str(item.get("text_color", "#ffffff")),
+                    opacity=max(0.0, min(1.0, float(item.get("opacity", 0.9)))),
+                    width=max(0, int(item.get("width", 0) or 0)),
+                    height=max(0, int(item.get("height", 0) or 0)),
+                )
+            )
+        self.project.popups = parsed_popups
         self.project.touch()
         self.project_changed.emit()
 
@@ -1968,8 +2096,9 @@ class ProjectController(QObject):
     def _remember_original_shots(self) -> None:
         self._original_shot_state_by_id = {
             shot.id: _OriginalShotState(
-                time_ms=shot.time_ms,
+                time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
                 source=shot.source,
+                confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
                 score=None if shot.score is None else deepcopy(shot.score),
             )
             for shot in self.project.analysis.shots
@@ -1977,8 +2106,9 @@ class ProjectController(QObject):
 
     def _remember_original_shot(self, shot: ShotEvent) -> None:
         self._original_shot_state_by_id[shot.id] = _OriginalShotState(
-            time_ms=shot.time_ms,
+            time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
             source=shot.source,
+            confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
             score=None if shot.score is None else deepcopy(shot.score),
         )
 

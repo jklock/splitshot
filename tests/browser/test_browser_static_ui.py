@@ -385,8 +385,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function beginTimingColumnResize(tableId, columnId, event) {' in js
     assert 'function moveTimingColumnResize(event) {' in js
     assert 'function endTimingColumnResize(event) {' in js
-    assert 'timingSplitDrafts.get(row.shot_id) ?? seconds(splitMs ?? row.absolute_time_ms)' in js
-    assert 'actions.className = "timing-edit-actions";' in js
+    assert 'timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs)' in js
+    assert 'function buildTimingRowControlCell(row, editing) {' in js
+    assert 'preserve_following_splits: true' in js
     assert 'handle.className = "timing-column-resize";' in js
     assert "openProjectWithDialog" not in js
     assert "resetMediaElement" in js
@@ -524,20 +525,24 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const unsetOption = document.createElement("option");' not in js
     assert 'select.value = segment.score_letter || defaultScore;' in js
     assert 'scoreCell.textContent = row.score_letter || defaultScore;' in js
+    assert '{ label: "ShotML Confidence %", columnId: "confidence", resizable: true }' in js
+    assert '"timing-table": ["segment", "split", "total", "action"],' in js
     assert 'function splitRowActionSummary(row) {' in js
     assert 'function splitRowIntervalLabel(row) {' in js
     assert 'function splitRowCumulativeMs(row) {' in js
     assert 'function buildSplitRowActionCell(row, expandedTable) {' in js
     assert 'function maximumSplitRowActionLabelLength() {' in js
     assert 'const actionCell = buildSplitRowActionCell(row, expandedTable);' in js
-    assert 'totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));' in js
+    assert 'totalCell.textContent = splitSeconds(splitRowShotMLCumulativeMs(row));' in js
+    assert 'finalCell.textContent = splitSeconds(splitRowFinalTimeMs(row));' in js
     assert 'function deleteShotById(shotId, source = "selected") {' in js
     assert 'deleteShotById(row.shot_id, "timing_row")' in js
     assert 'deleteShotById(segment.shot_id, "scoring_row")' in js
     assert 'function refreshReviewMediaFrame() {' in js
     assert 'if (result) refreshReviewMediaFrame();' in js
-    assert 'if (expanded) root.classList.remove("timing-expanded");' in js
-    assert 'if (expanded) root.classList.remove("waveform-expanded");' in js
+    assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");' in js
+    assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
     assert js.index('setActiveTool(normalized.active_tool, { persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
     assert '/media/primary-audio' not in js
     assert 'function primaryAudioPreviewNeeded(video) {' not in js
@@ -573,10 +578,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (penaltyFields.length > 0) {' in js
     assert 'penalty_counts: collectPenaltyCounts(controls),' in js
     assert 'updateTimingRowField(row.shot_id, "score_letter", select.value)' not in js
-    assert 'let timingSplitDrafts = new Map();' in js
-    assert 'timingSplitDrafts.set(shotId, seconds(numericMs(row.split_ms) ?? row.absolute_time_ms));' in js
-    assert 'timingSplitDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
-    assert 'updateTimingRowField(shotId, "split_ms", draftValue);' in js
+    assert 'let timingAdjustmentDrafts = new Map();' in js
+    assert 'timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));' in js
+    assert 'timingAdjustmentDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
+    assert 'updateTimingRowField(shotId, "adjustment_ms", draftValue);' in js
     assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72)' in js
     assert 'previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
@@ -664,10 +669,10 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".scoring-shot-toggle" in css
     assert ".scoring-shot-controls[hidden] {\n  display: none !important;" in css
     assert ".scoring-shot-actions" in css
-    assert ".timing-edit-actions" in css
+    assert ".timing-adjustment-input" in css
     assert ".timing-column-resize" in css
-    assert "grid-template-columns: 72px 140px 196px 108px 220px 80px 108px 96px;" in css
-    assert "grid-template-columns: 140px 196px 108px 220px 80px;" in css
+    assert "grid-template-columns: minmax(0, 0.45fr) minmax(0, 1.15fr) minmax(0, 0.62fr) minmax(0, 0.62fr) minmax(0, 1.55fr) minmax(0, 0.5fr) minmax(0, 1.05fr) minmax(0, 0.9fr) minmax(0, 0.72fr) minmax(0, 0.52fr) minmax(0, 0.6fr);" in css
+    assert "grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.62fr) minmax(0, 0.62fr) minmax(0, 1.55fr);" in css
     assert ".scoring-shot-row.collapsed" in css
     assert ".timing-action-remove" in css
     assert "width: calc(var(--timing-action-chip-chars, 8) * 0.72ch + 3.2rem);" in css
@@ -915,6 +920,9 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "reset-waveform-view",
         "apply-threshold",
         "collapse-timing",
+        "collapse-metrics",
+        "expand-metrics",
+        "popup-add-bubble",
         "add-timing-event",
         "delete-selected",
         "expand-timing",

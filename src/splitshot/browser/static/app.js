@@ -10,8 +10,9 @@ let pendingDragTimeMs = null;
 let waveformPanDrag = null;
 let waveformNavigatorDrag = null;
 let timingRowEdits = new Set();
-let timingSplitDrafts = new Map();
+let timingAdjustmentDrafts = new Map();
 let scoringShotExpansion = new Map();
+let reviewTextBoxExpansion = new Map();
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -48,6 +49,7 @@ let activityPollTimer = null;
 let overlayBadgeDrag = null;
 let mergePreviewDrag = null;
 let textBoxDrag = null;
+let popupBubbleDrag = null;
 let exportLogLines = [];
 let activeColorPickerControl = null;
 let reviewStageRestoreFrame = null;
@@ -79,29 +81,44 @@ const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
 const TIMING_COLUMN_DEFAULTS = Object.freeze({
   lock: 72,
-  segment: 140,
-  split: 196,
+  segment: 160,
+  split: 112,
   total: 108,
-  action: 220,
+  action: 240,
   score: 80,
-  confidence: 108,
-  source: 96,
+  confidence: 148,
+  adjustment: 132,
+  final: 108,
+  delete: 92,
+  restore: 104,
 });
 const TIMING_COLUMN_MIN_WIDTHS = Object.freeze({
   lock: 60,
   segment: 104,
-  split: 144,
+  split: 92,
   total: 88,
   action: 140,
   score: 68,
-  confidence: 92,
-  source: 84,
+  confidence: 128,
+  adjustment: 112,
+  final: 88,
+  delete: 76,
+  restore: 88,
 });
 const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
-  "timing-table": ["segment", "split", "total", "action", "score"],
-  "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "source"],
+  "timing-table": ["segment", "split", "total", "action"],
+  "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "adjustment", "final", "delete", "restore"],
 });
-const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "source"]);
+const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "adjustment", "final"]);
+const METRICS_TABLE_COLUMNS = Object.freeze([
+  ["Segment", "segment"],
+  ["ShotML Split", "shotmlSplit"],
+  ["Adjustment", "adjustment"],
+  ["Final Split", "finalSplit"],
+  ["Final Time", "finalTime"],
+  ["Score", "score"],
+  ["PractiScore", "practiscore"],
+]);
 
 const $ = (id) => document.getElementById(id);
 
@@ -128,7 +145,7 @@ const OVERLAY_BADGE_PADDING_X_PX = 10;
 const OVERLAY_BADGE_PADDING_Y_PX = 5;
 const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";
 const CUSTOM_QUADRANT_VALUE = "custom";
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "shotml", "merge", "overlay", "review", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "shotml", "merge", "overlay", "review", "popup", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -156,6 +173,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   waveform_mode: waveformMode,
   waveform_expanded: false,
   timing_expanded: false,
+  metrics_expanded: false,
   layout_locked: layoutLocked,
   rail_width: Math.round(layoutSizes.railWidth),
   inspector_width: Math.round(layoutSizes.inspectorWidth),
@@ -164,6 +182,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   waveform_shot_amplitudes: {},
   timing_edit_shot_ids: [],
   timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },
+  review_text_box_expansion: {},
 });
 
 function normalizeProjectNameValue(value) {
@@ -1355,8 +1374,20 @@ function resolvedTimingColumnWidths(data = {}) {
 
 function timingGridTemplate(tableId) {
   const columns = TIMING_TABLE_COLUMN_ORDER[tableId] || [];
-  const widths = resolvedTimingColumnWidths(timingColumnWidths);
-  return columns.map((columnId) => `${widths[columnId] || TIMING_COLUMN_DEFAULTS[columnId] || 96}px`).join(" ");
+  const flex = {
+    lock: 0.45,
+    segment: 1.15,
+    split: 0.62,
+    total: 0.62,
+    action: 1.55,
+    score: 0.5,
+    confidence: 1.05,
+    adjustment: 0.9,
+    final: 0.72,
+    delete: 0.52,
+    restore: 0.6,
+  };
+  return columns.map((columnId) => `minmax(0, ${flex[columnId] || 1}fr)`).join(" ");
 }
 
 function applyTimingTableColumns(table) {
@@ -1434,6 +1465,7 @@ function normalizeProjectUiState(uiState = {}) {
     waveform_mode: normalizedWaveformMode,
     waveform_expanded: Boolean(uiState.waveform_expanded ?? DEFAULT_PROJECT_UI_STATE.waveform_expanded),
     timing_expanded: Boolean(uiState.timing_expanded ?? DEFAULT_PROJECT_UI_STATE.timing_expanded),
+    metrics_expanded: Boolean(uiState.metrics_expanded ?? DEFAULT_PROJECT_UI_STATE.metrics_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 48, 72),
     inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
@@ -1442,6 +1474,7 @@ function normalizeProjectUiState(uiState = {}) {
     waveform_shot_amplitudes: normalizedUiFloatMap(uiState.waveform_shot_amplitudes, 0.25),
     timing_edit_shot_ids: normalizedUiStringList(uiState.timing_edit_shot_ids),
     timing_column_widths: resolvedTimingColumnWidths(normalizedUiFloatMap(uiState.timing_column_widths, 48)),
+    review_text_box_expansion: normalizedUiBooleanMap(uiState.review_text_box_expansion),
   };
 }
 
@@ -1462,6 +1495,7 @@ function readProjectUiStatePayload() {
     waveform_mode: waveformMode,
     waveform_expanded: Boolean(root?.classList.contains("waveform-expanded")),
     timing_expanded: Boolean(root?.classList.contains("timing-expanded")),
+    metrics_expanded: Boolean(root?.classList.contains("metrics-expanded")),
     layout_locked: layoutLocked,
     rail_width: Math.round(layoutSizes.railWidth),
     inspector_width: Math.round(layoutSizes.inspectorWidth),
@@ -1472,6 +1506,9 @@ function readProjectUiStatePayload() {
     waveform_shot_amplitudes: { ...waveformShotAmplitudeById },
     timing_edit_shot_ids: [...timingRowEdits].filter(Boolean),
     timing_column_widths: { ...resolvedTimingColumnWidths(timingColumnWidths) },
+    review_text_box_expansion: Object.fromEntries(
+      [...reviewTextBoxExpansion.entries()].filter(([boxId]) => Boolean(String(boxId || "").trim())),
+    ),
   });
 }
 
@@ -1500,15 +1537,17 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   window.localStorage.setItem("splitshot.layout.waveformHeight", String(layoutSizes.waveformHeight));
   waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
   scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
+  reviewTextBoxExpansion = new Map(Object.entries(normalized.review_text_box_expansion));
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
-  timingSplitDrafts = new Map(
-    [...timingSplitDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
+  timingAdjustmentDrafts = new Map(
+    [...timingAdjustmentDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
   );
   timingColumnWidths = resolvedTimingColumnWidths(normalized.timing_column_widths);
   setActiveTool(normalized.active_tool, { persistUiState: false });
   setWaveformMode(normalized.waveform_mode, { persistUiState: false });
   setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });
   setTimingExpanded(normalized.timing_expanded, { persistUiState: false });
+  setMetricsExpanded(normalized.metrics_expanded, { persistUiState: false });
   if (state?.project) state.project.ui_state = normalized;
   return normalized;
 }
@@ -2205,10 +2244,25 @@ function overlayTextBoxHint(box) {
   return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
 }
 
+function isReviewTextBoxExpanded(boxId) {
+  if (!boxId) return true;
+  if (reviewTextBoxExpansion.has(boxId)) return Boolean(reviewTextBoxExpansion.get(boxId));
+  return true;
+}
+
+function setReviewTextBoxExpanded(boxId, expanded) {
+  if (!boxId) return;
+  reviewTextBoxExpansion.set(boxId, Boolean(expanded));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+}
+
 function buildTextBoxCard(box, index) {
   const card = document.createElement("section");
   card.className = "text-box-card";
   card.dataset.boxId = box.id;
+  const expanded = isReviewTextBoxExpanded(box.id);
+  card.classList.toggle("collapsed", !expanded);
   const boxLockedToStack = Boolean(box.lock_to_stack);
   const displayedCoordinates = boxLockedToStack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE
     ? resolveRenderedTextBoxCoordinates(box.id, box)
@@ -2218,76 +2272,79 @@ function buildTextBoxCard(box, index) {
     <div class="text-box-card-header">
       <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
       <div class="text-box-card-actions">
+        <button type="button" data-text-box-action="toggle">${expanded ? "Hide" : "Show"}</button>
         <button type="button" data-text-box-action="duplicate">Duplicate</button>
         <button type="button" data-text-box-action="remove">Remove</button>
       </div>
     </div>
-    <label>Content Source
-      <select data-text-box-field="source">
-        <option value="manual">Custom text</option>
-        <option value="imported_summary">Imported summary</option>
-      </select>
-    </label>
-    <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
-    <p class="hint" data-text-box-hint="true"></p>
-    <label>Box text
-      <textarea data-text-box-field="text" rows="3"></textarea>
-    </label>
-    <div class="control-grid">
-      <label>Box placement
-        <select data-text-box-field="quadrant">
-          <option value="above_final">Above Final Box</option>
-          <option value="top_left">Top left</option>
-          <option value="top_middle">Top middle</option>
-          <option value="top_right">Top right</option>
-          <option value="middle_left">Middle left</option>
-          <option value="middle_middle">Middle middle</option>
-          <option value="middle_right">Middle right</option>
-          <option value="bottom_left">Bottom left</option>
-          <option value="bottom_middle">Bottom middle</option>
-          <option value="bottom_right">Bottom right</option>
-          <option value="custom">Custom</option>
+    <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
+      <label>Content Source
+        <select data-text-box-field="source">
+          <option value="manual">Custom text</option>
+          <option value="imported_summary">Imported summary</option>
         </select>
       </label>
-      <label>Box X (0 left, 1 right)
-        <input data-text-box-field="x" type="number" min="0" max="1" step="0.01" />
+      <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
+      <p class="hint" data-text-box-hint="true"></p>
+      <label>Box text
+        <textarea data-text-box-field="text" rows="3"></textarea>
       </label>
-      <label>Box Y (0 top, 1 bottom)
-        <input data-text-box-field="y" type="number" min="0" max="1" step="0.01" />
-      </label>
-    </div>
-    <div class="control-grid">
-      <label>Box width
-        <input data-text-box-field="width" type="number" min="0" max="1000" step="1" value="0" />
-      </label>
-      <label>Box height
-        <input data-text-box-field="height" type="number" min="0" max="1000" step="1" value="0" />
-      </label>
-    </div>
-    <div class="style-grid review-style-grid">
-      <section class="style-card custom-box-style-card">
-        <h4>Box Style</h4>
-        <label class="color-field"><span class="style-card-label">Background</span>
-          <span class="color-control-pair">
-            <button data-text-box-field="background_color" class="color-swatch-button" data-color-label="Text box background" type="button"></button>
-            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Text box background hex value" />
-          </span>
+      <div class="control-grid">
+        <label>Box placement
+          <select data-text-box-field="quadrant">
+            <option value="above_final">Above Final Box</option>
+            <option value="top_left">Top left</option>
+            <option value="top_middle">Top middle</option>
+            <option value="top_right">Top right</option>
+            <option value="middle_left">Middle left</option>
+            <option value="middle_middle">Middle middle</option>
+            <option value="middle_right">Middle right</option>
+            <option value="bottom_left">Bottom left</option>
+            <option value="bottom_middle">Bottom middle</option>
+            <option value="bottom_right">Bottom right</option>
+            <option value="custom">Custom</option>
+          </select>
         </label>
-        <label class="color-field"><span class="style-card-label">Text</span>
-          <span class="color-control-pair">
-            <button data-text-box-field="text_color" class="color-swatch-button" data-color-label="Text box text" type="button"></button>
-            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Text box text hex value" />
-          </span>
+        <label>Box X (0 left, 1 right)
+          <input data-text-box-field="x" type="number" min="0" max="1" step="0.01" />
         </label>
-        <label class="opacity-field"><span class="style-card-label">Opacity</span>
-          <span class="opacity-control-pair">
-            <span class="opacity-percent-field">
-              <input class="opacity-percent-input" data-text-box-field="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
-              <span class="opacity-percent-suffix">%</span>
+        <label>Box Y (0 top, 1 bottom)
+          <input data-text-box-field="y" type="number" min="0" max="1" step="0.01" />
+        </label>
+      </div>
+      <div class="control-grid">
+        <label>Box width
+          <input data-text-box-field="width" type="number" min="0" max="1000" step="1" value="0" />
+        </label>
+        <label>Box height
+          <input data-text-box-field="height" type="number" min="0" max="1000" step="1" value="0" />
+        </label>
+      </div>
+      <div class="style-grid review-style-grid">
+        <section class="style-card custom-box-style-card">
+          <h4>Box Style</h4>
+          <label class="color-field"><span class="style-card-label">Background</span>
+            <span class="color-control-pair">
+              <button data-text-box-field="background_color" class="color-swatch-button" data-color-label="Text box background" type="button"></button>
+              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Text box background hex value" />
             </span>
-          </span>
-        </label>
-      </section>
+          </label>
+          <label class="color-field"><span class="style-card-label">Text</span>
+            <span class="color-control-pair">
+              <button data-text-box-field="text_color" class="color-swatch-button" data-color-label="Text box text" type="button"></button>
+              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Text box text hex value" />
+            </span>
+          </label>
+          <label class="opacity-field"><span class="style-card-label">Opacity</span>
+            <span class="opacity-control-pair">
+              <span class="opacity-percent-field">
+                <input class="opacity-percent-input" data-text-box-field="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
+                <span class="opacity-percent-suffix">%</span>
+              </span>
+            </span>
+          </label>
+        </section>
+      </div>
     </div>
   `;
   syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
@@ -2353,6 +2410,10 @@ function buildTextBoxCard(box, index) {
     control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
     control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
   });
+  card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", () => {
+    setReviewTextBoxExpanded(box.id, !expanded);
+    renderTextBoxEditors();
+  });
   card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", () => duplicateOverlayTextBox(box.id));
   card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", () => removeOverlayTextBox(box.id));
   bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
@@ -2364,6 +2425,10 @@ function renderTextBoxEditors() {
   const containers = [$("review-text-box-list")].filter(Boolean);
   if (containers.length === 0) return;
   const boxes = overlayTextBoxes();
+  const validBoxIds = new Set(boxes.map((box) => box.id));
+  [...reviewTextBoxExpansion.keys()].forEach((boxId) => {
+    if (!validBoxIds.has(boxId)) reviewTextBoxExpansion.delete(boxId);
+  });
   containers.forEach((container) => {
     withPreservedScrollState([container, document.querySelector(".inspector")].filter(Boolean), () => {
       container.innerHTML = "";
@@ -2378,6 +2443,177 @@ function renderTextBoxEditors() {
         container.appendChild(buildTextBoxCard(box, index));
       });
     });
+  });
+}
+
+function createPopupBubbleId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
+  return `popup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function normalizePopupBubble(bubble = {}) {
+  return {
+    id: String(bubble.id || createPopupBubbleId()),
+    enabled: Boolean(bubble.enabled ?? true),
+    text: String(bubble.text || "").slice(0, 500),
+    time_ms: Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0)),
+    duration_ms: Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000)),
+    x: clamp(Number(bubble.x ?? 0.5) || 0.5, 0, 1),
+    y: clamp(Number(bubble.y ?? 0.5) || 0.5, 0, 1),
+    background_color: String(bubble.background_color || "#000000"),
+    text_color: String(bubble.text_color || "#ffffff"),
+    opacity: clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0, 1),
+    width: Math.max(0, Math.round(Number(bubble.width ?? 0) || 0)),
+    height: Math.max(0, Math.round(Number(bubble.height ?? 0) || 0)),
+  };
+}
+
+function popupBubbles() {
+  const bubbles = Array.isArray(state?.project?.popups) ? state.project.popups : [];
+  return bubbles.map((bubble) => normalizePopupBubble(bubble));
+}
+
+function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
+  if (!state?.project) return;
+  state.project.popups = bubbles.map((bubble) => normalizePopupBubble(bubble));
+  if (rerender) {
+    renderPopupEditors();
+  }
+  renderLiveOverlay();
+  if (commit) callApi("/api/popups", { popups: state.project.popups });
+}
+
+function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
+  const nextBubbles = popupBubbles().map((bubble) => {
+    if (bubble.id !== bubbleId) return bubble;
+    return normalizePopupBubble({ ...bubble, [field]: rawValue });
+  });
+  setPopupBubbles(nextBubbles, options);
+}
+
+function addPopupBubble() {
+  const video = $("primary-video");
+  const timeMs = Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+  const nextBubble = normalizePopupBubble({
+    text: "-0",
+    time_ms: timeMs,
+    duration_ms: 1000,
+    x: 0.5,
+    y: 0.5,
+  });
+  setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
+}
+
+function removePopupBubble(bubbleId) {
+  setPopupBubbles(popupBubbles().filter((bubble) => bubble.id !== bubbleId), { commit: true, rerender: true });
+}
+
+function duplicatePopupBubble(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return;
+  setPopupBubbles([...popupBubbles(), normalizePopupBubble({ ...bubble, id: createPopupBubbleId(), x: clamp(bubble.x + 0.04, 0, 1), y: clamp(bubble.y + 0.04, 0, 1) })], { commit: true, rerender: true });
+}
+
+function buildPopupBubbleCard(bubble, index) {
+  const card = document.createElement("section");
+  card.className = "text-box-card popup-bubble-card";
+  card.dataset.popupId = bubble.id;
+  card.innerHTML = `
+    <div class="text-box-card-header">
+      <label class="check-row"><input type="checkbox" data-popup-field="enabled" /> <strong>Bubble ${index + 1}</strong></label>
+      <div class="text-box-card-actions">
+        <button type="button" data-popup-action="duplicate">Duplicate</button>
+        <button type="button" data-popup-action="remove">Remove</button>
+      </div>
+    </div>
+    <label>Text
+      <input data-popup-field="text" type="text" maxlength="500" placeholder="-0" />
+    </label>
+    <div class="control-grid">
+      <label>Start (seconds)
+        <input data-popup-field="time_s" type="number" min="0" step="0.001" />
+      </label>
+      <label>Duration (seconds)
+        <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
+      </label>
+    </div>
+    <div class="control-grid">
+      <label>X
+        <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
+      </label>
+      <label>Y
+        <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
+      </label>
+    </div>
+    <div class="control-grid">
+      <label>Width
+        <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
+      </label>
+      <label>Height
+        <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
+      </label>
+    </div>
+    <div class="control-grid">
+      <label>Background
+        <input data-popup-field="background_color" type="text" inputmode="text" spellcheck="false" />
+      </label>
+      <label>Text color
+        <input data-popup-field="text_color" type="text" inputmode="text" spellcheck="false" />
+      </label>
+    </div>
+    <label>Opacity %
+      <input data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" />
+    </label>
+  `;
+  syncControlChecked(card.querySelector('[data-popup-field="enabled"]'), bubble.enabled);
+  syncControlValue(card.querySelector('[data-popup-field="text"]'), bubble.text);
+  syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(bubble.time_ms));
+  syncControlValue(card.querySelector('[data-popup-field="duration_s"]'), precise(bubble.duration_ms));
+  syncControlValue(card.querySelector('[data-popup-field="x"]'), bubble.x);
+  syncControlValue(card.querySelector('[data-popup-field="y"]'), bubble.y);
+  syncControlValue(card.querySelector('[data-popup-field="width"]'), bubble.width);
+  syncControlValue(card.querySelector('[data-popup-field="height"]'), bubble.height);
+  syncControlValue(card.querySelector('[data-popup-field="background_color"]'), bubble.background_color);
+  syncControlValue(card.querySelector('[data-popup-field="text_color"]'), bubble.text_color);
+  syncControlValue(card.querySelector('[data-popup-field="opacity_percent"]'), Math.round((bubble.opacity ?? 0.9) * 100));
+  card.querySelectorAll("[data-popup-field]").forEach((control) => {
+    const field = control.dataset.popupField || "";
+    const readValue = () => {
+      if (control.type === "checkbox") return control.checked;
+      if (field === "time_s") return Math.round((Number(control.value) || 0) * 1000);
+      if (field === "duration_s") return Math.round((Number(control.value) || 0) * 1000);
+      if (field === "opacity_percent") return (Number(control.value) || 0) / 100;
+      return control.value;
+    };
+    const targetField = {
+      time_s: "time_ms",
+      duration_s: "duration_ms",
+      opacity_percent: "opacity",
+    }[field] || field;
+    const eventName = control.type === "checkbox" ? "change" : "input";
+    control.addEventListener(eventName, () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false }));
+    control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+    control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+  });
+  card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
+  card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
+  return card;
+}
+
+function renderPopupEditors() {
+  const list = $("popup-bubble-list");
+  if (!list) return;
+  const bubbles = popupBubbles();
+  withPreservedScrollState([list, document.querySelector(".inspector")].filter(Boolean), () => {
+    list.innerHTML = "";
+    if (bubbles.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No popup bubbles yet.";
+      list.appendChild(empty);
+      return;
+    }
+    bubbles.forEach((bubble, index) => list.appendChild(buildPopupBubbleCard(bubble, index)));
   });
 }
 
@@ -2549,11 +2785,13 @@ function setActiveTool(tool, { persistUiState = true } = {}) {
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
-  const hadExpandedLayout = root?.classList.contains("waveform-expanded") || root?.classList.contains("timing-expanded");
+  const hadExpandedLayout = root?.classList.contains("waveform-expanded")
+    || root?.classList.contains("timing-expanded")
+    || root?.classList.contains("metrics-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
   if (changed) {
-    root?.classList.remove("waveform-expanded", "timing-expanded");
+    root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
     if (hadExpandedLayout) scheduleReviewStageRestore();
@@ -2769,7 +3007,7 @@ function resetLocalProjectView() {
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
   timingRowEdits = new Set();
-  timingSplitDrafts = new Map();
+  timingAdjustmentDrafts = new Map();
   scoringShotExpansion = new Map();
   applyProjectUiState({
     ...DEFAULT_PROJECT_UI_STATE,
@@ -3747,12 +3985,17 @@ function renderWaveform() {
 
   const beep = state.project.analysis.beep_time_ms_primary;
   if (beep !== null && beep !== undefined) drawMarker(ctx, beep, "#ff7b22", "BEEP", "rgba(226, 232, 240, 0.88)", width, height);
+  const draggedShotIndex = draggingShotId
+    ? state.project.analysis.shots.findIndex((shot) => shot.id === draggingShotId)
+    : -1;
+  const draggedShot = draggedShotIndex >= 0 ? state.project.analysis.shots[draggedShotIndex] : null;
+  const dragDeltaMs = draggedShot && pendingDragTimeMs !== null ? pendingDragTimeMs - draggedShot.time_ms : 0;
   state.project.analysis.shots.forEach((shot, index) => {
     const selected = shot.id === selectedShotId;
-    const label = expanded ? `${index + 1} ${seconds(shot.time_ms)}` : "";
-    const timeMs = shot.id === draggingShotId && pendingDragTimeMs !== null
-      ? pendingDragTimeMs
+    const timeMs = draggedShotIndex >= 0 && index >= draggedShotIndex
+      ? shot.time_ms + dragDeltaMs
       : shot.time_ms;
+    const label = expanded ? `${index + 1} ${seconds(timeMs)}` : "";
     drawMarker(
       ctx,
       timeMs,
@@ -4130,16 +4373,16 @@ function formatTimingValue(value) {
 function toggleTimingRowEdit(shotId) {
   const row = (state?.split_rows || []).find((entry) => entry.shot_id === shotId) || null;
   if (timingRowEdits.has(shotId)) {
-    const draftValue = String(timingSplitDrafts.get(shotId) ?? "").trim();
-    const currentValue = row ? seconds(numericMs(row.split_ms) ?? row.absolute_time_ms) : "";
+    const draftValue = String(timingAdjustmentDrafts.get(shotId) ?? "").trim();
+    const currentValue = row ? signedSeconds(numericMs(row.adjustment_ms) ?? 0) : "";
     if (draftValue && draftValue !== currentValue) {
-      updateTimingRowField(shotId, "split_ms", draftValue);
+      updateTimingRowField(shotId, "adjustment_ms", draftValue);
     }
-    timingSplitDrafts.delete(shotId);
+    timingAdjustmentDrafts.delete(shotId);
     timingRowEdits.delete(shotId);
   } else {
     if (row) {
-      timingSplitDrafts.set(shotId, seconds(numericMs(row.split_ms) ?? row.absolute_time_ms));
+      timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));
     }
     timingRowEdits.add(shotId);
   }
@@ -4150,8 +4393,8 @@ function toggleTimingRowEdit(shotId) {
 
 function restoreOriginalSplit(shotId) {
   selectedShotId = shotId;
-  timingSplitDrafts.delete(shotId);
-  callApi("/api/shots/restore", { shot_id: shotId });
+  timingAdjustmentDrafts.delete(shotId);
+  callApi("/api/shots/restore", { shot_id: shotId, preserve_following_splits: true });
 }
 
 function restoreOriginalScore(shotId) {
@@ -4165,7 +4408,7 @@ function deleteShotById(shotId, source = "selected") {
     pendingSelectionFallback = shotSelectionContext(shotId, state, "index");
     selectedShotId = null;
   }
-  timingSplitDrafts.delete(shotId);
+  timingAdjustmentDrafts.delete(shotId);
   timingRowEdits.delete(shotId);
   scoringShotExpansion.delete(shotId);
   if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
@@ -4174,17 +4417,32 @@ function deleteShotById(shotId, source = "selected") {
 }
 
 function updateTimingRowField(shotId, field, value) {
-  if (field === "split_ms") {
+  if (field === "adjustment_ms") {
     const rows = state.split_rows || [];
     const rowIndex = rows.findIndex((row) => row.shot_id === shotId);
     if (rowIndex < 0) return;
-    const splitMs = Math.max(0, Math.round((Number(value) || 0) * 1000));
+    const row = rows[rowIndex];
+    const shotmlSplitMs = numericMs(row.shotml_split_ms) ?? numericMs(row.split_ms);
+    if (shotmlSplitMs === null || shotmlSplitMs === undefined) return;
+    const adjustmentMs = Math.round((Number(value) || 0) * 1000);
+    const splitMs = Math.max(0, shotmlSplitMs + adjustmentMs);
     const baseTimeMs = rowIndex === 0
       ? Math.max(0, Number(state?.project?.analysis?.beep_time_ms_primary ?? 0))
       : Number(rows[rowIndex - 1]?.absolute_time_ms || 0);
-    callApi("/api/shots/move", { shot_id: shotId, time_ms: baseTimeMs + splitMs });
+    callApi("/api/shots/move", {
+      shot_id: shotId,
+      time_ms: baseTimeMs + splitMs,
+      preserve_following_splits: true,
+    });
     return;
   }
+}
+
+function signedSeconds(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value === 0) return "0.00";
+  const prefix = value > 0 ? "+" : "-";
+  return `${prefix}${(Math.abs(value) / 1000).toFixed(2)}`;
 }
 
 function splitRowEntryLabel(row) {
@@ -4242,17 +4500,31 @@ function splitRowPrimaryLabel(row) {
   return intervalLabel && intervalLabel !== "Split" ? intervalLabel : "";
 }
 
-function splitRowSourceLabel(row) {
-  const sourceValue = typeof row.source === "string" ? row.source.toLowerCase() : "";
-  if (sourceValue === "auto") return "ShotML";
-  if (sourceValue === "manual") return "Manual";
-  return row.source || "ShotML";
+function splitRowConfidenceLabel(row) {
+  const confidence = splitRowShotMLConfidence(row);
+  return confidence === null ? "--" : formatConfidenceValue(confidence);
 }
 
-function splitRowConfidenceLabel(row) {
-  return String(row?.source || "").toLowerCase() === "manual" || row.confidence === null || row.confidence === undefined
-    ? "Manual"
-    : formatConfidenceValue(row.confidence);
+function splitRowShotMLConfidence(row) {
+  if (row?.shotml_confidence === null || row?.shotml_confidence === undefined || row?.shotml_confidence === "") return null;
+  const confidence = Number(row?.shotml_confidence);
+  return Number.isFinite(confidence) ? confidence : null;
+}
+
+function splitRowShotMLSplitMs(row) {
+  return numericMs(row?.shotml_split_ms) ?? numericMs(row?.split_ms);
+}
+
+function splitRowShotMLCumulativeMs(row) {
+  return numericMs(row?.shotml_cumulative_ms) ?? splitRowCumulativeMs(row);
+}
+
+function splitRowAdjustmentMs(row) {
+  return numericMs(row?.adjustment_ms) ?? 0;
+}
+
+function splitRowFinalTimeMs(row) {
+  return numericMs(row?.final_time_ms) ?? splitRowCumulativeMs(row);
 }
 
 function maximumSplitRowActionLabelLength() {
@@ -4327,6 +4599,48 @@ function buildSplitRowActionCell(row, expandedTable) {
   return cell;
 }
 
+function buildTimingRowControlCell(row, editing) {
+  const cell = document.createElement("div");
+  cell.className = "timing-lock-cell";
+  if (!row.shot_id) return cell;
+  const lockButton = document.createElement("button");
+  lockButton.type = "button";
+  lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
+  lockButton.textContent = editing ? "Lock" : "Unlock";
+  lockButton.title = editing ? "Lock row" : "Unlock row";
+  lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
+  cell.appendChild(lockButton);
+  return cell;
+}
+
+function buildTimingDeleteCell(row) {
+  const cell = document.createElement("div");
+  cell.className = "timing-row-button-cell";
+  if (!row.shot_id) return cell;
+  const deleteShot = document.createElement("button");
+  deleteShot.type = "button";
+  deleteShot.className = "danger-button restore-button";
+  deleteShot.textContent = "Delete";
+  deleteShot.title = "Delete this shot from the run.";
+  deleteShot.addEventListener("click", () => deleteShotById(row.shot_id, "timing_row"));
+  cell.appendChild(deleteShot);
+  return cell;
+}
+
+function buildTimingRestoreCell(row) {
+  const cell = document.createElement("div");
+  cell.className = "timing-row-button-cell";
+  if (!row.shot_id) return cell;
+  const restore = document.createElement("button");
+  restore.type = "button";
+  restore.className = "restore-button";
+  restore.textContent = "Restore";
+  restore.title = "Restore this shot to its ShotML timing.";
+  restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
+  cell.appendChild(restore);
+  return cell;
+}
+
 function renderTimingTable(tableId = "timing-table") {
   const table = $(tableId);
   if (!table) return;
@@ -4335,7 +4649,7 @@ function renderTimingTable(tableId = "timing-table") {
     table.innerHTML = "";
     const expandedTable = tableId === "timing-workbench-table";
     table.classList.toggle("interval-timeline-table", true);
-    table.classList.toggle("timing-resizable-table", true);
+    table.classList.toggle("timing-resizable-table", expandedTable);
     applyTimingTableColumns(table);
     if (expandedTable) {
       table.style.setProperty("--timing-action-chip-chars", String(maximumSplitRowActionLabelLength()));
@@ -4345,21 +4659,23 @@ function renderTimingTable(tableId = "timing-table") {
     const defaultScore = defaultScoreLetter();
     const headers = expandedTable
       ? [
-        { label: "", columnId: "lock", resizable: false },
+        { label: "Edit", columnId: "lock", resizable: false },
         { label: "Segment", columnId: "segment", resizable: true },
         { label: "Split", columnId: "split", resizable: true },
         { label: "Total", columnId: "total", resizable: true },
         { label: "Action", columnId: "action", resizable: true },
         { label: "Score", columnId: "score", resizable: true },
-        { label: "Confidence", columnId: "confidence", resizable: true },
-        { label: "Source", columnId: "source", resizable: true },
+        { label: "ShotML Confidence %", columnId: "confidence", resizable: true },
+        { label: "Adjustment", columnId: "adjustment", resizable: true },
+        { label: "Final Time", columnId: "final", resizable: true },
+        { label: "Delete", columnId: "delete", resizable: false },
+        { label: "Restore", columnId: "restore", resizable: false },
       ]
       : [
-        { label: "Segment", columnId: "segment", resizable: true },
-        { label: "Split", columnId: "split", resizable: true },
-        { label: "Total", columnId: "total", resizable: true },
-        { label: "Action", columnId: "action", resizable: true },
-        { label: "Score", columnId: "score", resizable: true },
+        { label: "Segment", columnId: "segment", resizable: false },
+        { label: "Split", columnId: "split", resizable: false },
+        { label: "Total", columnId: "total", resizable: false },
+        { label: "Action", columnId: "action", resizable: false },
       ];
     headers.forEach((header) => {
       const cell = document.createElement("div");
@@ -4388,102 +4704,80 @@ function renderTimingTable(tableId = "timing-table") {
     (state.split_rows || []).forEach((row) => {
       const canEdit = Boolean(row.shot_id);
       const editing = canEdit && expandedTable && timingRowEdits.has(row.shot_id);
-      const lowConfidence = isLowConfidence(row.confidence, row.source);
+      const shotmlConfidence = splitRowShotMLConfidence(row);
+      const lowConfidence = isLowConfidence(shotmlConfidence, "auto");
       if (expandedTable) {
-        const lockCell = document.createElement("div");
-        lockCell.className = "lock-cell";
-        if (canEdit) {
-          const lockButton = document.createElement("button");
-          lockButton.type = "button";
-          lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
-          lockButton.textContent = editing ? "Lock" : "Unlock";
-          lockButton.title = editing ? "Lock row" : "Unlock row";
-          lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
-          lockCell.appendChild(lockButton);
-        }
-        table.appendChild(lockCell);
+        table.appendChild(buildTimingRowControlCell(row, editing));
       }
 
       const entryCell = document.createElement("div");
       entryCell.classList.add("timeline-segment-cell");
       entryCell.textContent = splitRowEntryLabel(row);
       if (row.shot_id === selectedShotId) entryCell.classList.add("selected");
-      if (lowConfidence) entryCell.classList.add("low-confidence");
       if (canEdit) entryCell.addEventListener("click", () => selectShot(row.shot_id));
       table.appendChild(entryCell);
 
       const splitCell = document.createElement("div");
-      const splitMs = numericMs(row.split_ms);
-      if (editing) {
-        const editor = document.createElement("span");
-        editor.className = "timing-edit-control";
-        const input = document.createElement("input");
-        input.type = "number";
-        input.inputMode = "decimal";
-        input.min = "0";
-        input.step = "0.01";
-        input.className = "timing-split-input";
-        input.value = String(
-          timingSplitDrafts.get(row.shot_id) ?? seconds(splitMs ?? row.absolute_time_ms),
-        );
-        input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
-        input.title = "Edit the split in seconds using 0.00 format.";
-        input.addEventListener("input", () => {
-          timingSplitDrafts.set(row.shot_id, String(input.value ?? "").trim());
-        });
-        const actions = document.createElement("span");
-        actions.className = "timing-edit-actions";
-        const restore = document.createElement("button");
-        restore.type = "button";
-        restore.className = "restore-button";
-        restore.textContent = "Restore";
-        restore.title = "Restore this split to its original timing.";
-        restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
-        const deleteShot = document.createElement("button");
-        deleteShot.type = "button";
-        deleteShot.className = "danger-button restore-button";
-        deleteShot.textContent = "Delete";
-        deleteShot.title = "Delete this shot from the run.";
-        deleteShot.addEventListener("click", () => deleteShotById(row.shot_id, "timing_row"));
-        actions.append(restore, deleteShot);
-        editor.append(input, actions);
-        splitCell.appendChild(editor);
-      } else {
-        splitCell.textContent = splitSeconds(splitMs);
-      }
+      splitCell.textContent = splitSeconds(splitRowShotMLSplitMs(row));
       table.appendChild(splitCell);
 
       const totalCell = document.createElement("div");
-      totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));
+      totalCell.textContent = splitSeconds(splitRowShotMLCumulativeMs(row));
       table.appendChild(totalCell);
 
       const actionCell = buildSplitRowActionCell(row, expandedTable);
       if (row.shot_id === selectedShotId) actionCell.classList.add("selected");
-      if (lowConfidence) actionCell.classList.add("low-confidence");
       if (canEdit) actionCell.addEventListener("click", () => selectShot(row.shot_id));
       table.appendChild(actionCell);
 
-      const scoreCell = document.createElement("div");
-      if (lowConfidence) scoreCell.classList.add("low-confidence");
-      scoreCell.textContent = row.score_letter || defaultScore;
-      if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
-      table.appendChild(scoreCell);
+      if (expandedTable) {
+        const scoreCell = document.createElement("div");
+        scoreCell.textContent = row.score_letter || defaultScore;
+        if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
+        table.appendChild(scoreCell);
+      }
 
       if (!expandedTable) return;
 
       const confidenceCell = document.createElement("div");
       confidenceCell.textContent = splitRowConfidenceLabel(row);
       if (lowConfidence) {
-        confidenceCell.classList.add("low-confidence");
-        confidenceCell.title = row.confidence === null || row.confidence === undefined
-          ? "Manual timing edit."
-          : `Review this split manually: model confidence ${formatConfidenceValue(row.confidence)}.`;
+        confidenceCell.title = shotmlConfidence === null || shotmlConfidence === undefined
+          ? "No ShotML confidence value recorded."
+          : `Review this split manually: ShotML confidence ${formatConfidenceValue(shotmlConfidence)}.`;
       }
       table.appendChild(confidenceCell);
 
-      const sourceCell = document.createElement("div");
-      sourceCell.textContent = splitRowSourceLabel(row);
-      table.appendChild(sourceCell);
+      const adjustmentCell = document.createElement("div");
+      const adjustmentMs = splitRowAdjustmentMs(row);
+      if (editing) {
+        adjustmentCell.classList.add("timing-edit-cell");
+        const editor = document.createElement("span");
+        editor.className = "timing-edit-control";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.inputMode = "decimal";
+        input.step = "0.01";
+        input.className = "timing-adjustment-input";
+        input.value = String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
+        input.setAttribute("aria-label", `Adjustment for ${splitRowEntryLabel(row)}`);
+        input.title = "Edit the adjustment in seconds, for example +0.06 or -0.06.";
+        input.addEventListener("input", () => {
+          timingAdjustmentDrafts.set(row.shot_id, String(input.value ?? "").trim());
+        });
+        editor.append(input);
+        adjustmentCell.appendChild(editor);
+      } else {
+        adjustmentCell.textContent = signedSeconds(adjustmentMs);
+      }
+      table.appendChild(adjustmentCell);
+
+      const finalCell = document.createElement("div");
+      finalCell.textContent = splitSeconds(splitRowFinalTimeMs(row));
+      table.appendChild(finalCell);
+
+      table.appendChild(buildTimingDeleteCell(row));
+      table.appendChild(buildTimingRestoreCell(row));
     });
   });
   applyTimingTableColumns(table);
@@ -4877,6 +5171,12 @@ function buildMetricsRows() {
   const segmentsByShotId = new Map((state.timing_segments || []).map((segment) => [segment.shot_id, segment]));
   const beepMs = numericMs(state?.metrics?.beep_ms);
   const defaultScore = defaultScoreLetter();
+  const importedRawSeconds = state?.scoring_summary?.imported_stage?.raw_seconds;
+  const importedRawMs = importedRawSeconds === null || importedRawSeconds === undefined
+    ? null
+    : Math.round(Number(importedRawSeconds) * 1000);
+  const shotRows = (state.split_rows || []).filter((item) => item.shot_id);
+  const finalShotRowId = shotRows.length ? shotRows[shotRows.length - 1].shot_id : null;
   return (state.split_rows || []).map((row) => {
     const segment = row.shot_id ? (segmentsByShotId.get(row.shot_id) || null) : null;
     const absoluteMs = numericMs(row.absolute_time_ms);
@@ -4885,8 +5185,14 @@ function buildMetricsRows() {
         ? null
         : (beepMs === null ? absoluteMs : Math.max(0, absoluteMs - beepMs))
     );
-    const source = segment ? (segment.source || "") : (row.source || "");
-    const confidence = segment ? (segment.confidence ?? null) : (row.confidence ?? null);
+    const confidence = splitRowShotMLConfidence(row);
+    const shotmlSplitMs = splitRowShotMLSplitMs(row);
+    const adjustmentMs = numericMs(row.adjustment_ms) ?? 0;
+    const finalTimeMs = splitRowFinalTimeMs(row);
+    const finalSplitMs = numericMs(row.split_ms);
+    const rawDeltaMs = importedRawMs === null || finalTimeMs === null || row.shot_id !== finalShotRowId
+      ? null
+      : finalTimeMs - importedRawMs;
     const penaltyCounts = segment?.penalty_counts || row.penalty_counts;
     return {
       rowId: row.row_id,
@@ -4896,15 +5202,53 @@ function buildMetricsRows() {
       label: splitRowEntryLabel(row),
       intervalLabel: splitRowIntervalLabel(row),
       absoluteMs,
-      splitMs: numericMs(row.split_ms),
+      splitMs: finalSplitMs,
+      shotmlSplitMs,
+      adjustmentMs,
       sequenceTotalMs: splitRowSequenceTotalMs(row),
-      cumulativeMs: numericMs(row.cumulative_ms) ?? fallbackCumulativeMs,
+      cumulativeMs: finalTimeMs ?? numericMs(row.cumulative_ms) ?? fallbackCumulativeMs,
       actionSummary: splitRowActionSummary(row),
       scoreLetter: segment?.score_letter || row.score_letter || defaultScore,
       penaltyText: formatPenaltyCountsText(penaltyCounts),
-      source,
       confidence,
+      practiscoreMs: importedRawMs,
+      rawDeltaMs,
     };
+  });
+}
+
+function metricsPractiScoreLabel(entry) {
+  if (entry.rawDeltaMs === null || entry.rawDeltaMs === undefined) return "--";
+  const prefix = entry.rawDeltaMs > 0 ? "+" : "";
+  return `${prefix}${precise(entry.rawDeltaMs)}s`;
+}
+
+function renderMetricsTable(table) {
+  if (!table) return;
+  table.innerHTML = "";
+  const rows = buildMetricsRows();
+  table.style.gridTemplateColumns = "minmax(0, 1.2fr) minmax(0, 0.78fr) minmax(0, 0.78fr) minmax(0, 0.78fr) minmax(0, 0.82fr) minmax(0, 0.55fr) minmax(0, 0.95fr)";
+  METRICS_TABLE_COLUMNS.forEach(([label]) => {
+    const header = document.createElement("div");
+    header.className = "head";
+    header.textContent = label;
+    table.appendChild(header);
+  });
+  rows.forEach((entry) => {
+    const cells = [
+      entry.label,
+      splitSeconds(entry.shotmlSplitMs),
+      signedSeconds(entry.adjustmentMs || 0),
+      splitSeconds(entry.splitMs),
+      splitSeconds(entry.cumulativeMs),
+      entry.scoreLetter || "--",
+      metricsPractiScoreLabel(entry),
+    ];
+    cells.forEach((value) => {
+      const cell = document.createElement("div");
+      cell.textContent = value || "--";
+      table.appendChild(cell);
+    });
   });
 }
 
@@ -4962,17 +5306,13 @@ function renderMetricsPanel() {
           ? "Run --.--"
           : `Run ${splitSeconds(entry.sequenceTotalMs)}`;
         const detail = document.createElement("small");
-        const sourceLabel = entry.source === "manual"
-          ? "Manual"
-          : (entry.confidence === null || entry.confidence === undefined || entry.confidence === ""
-              ? entry.source
-              : formatConfidenceValue(entry.confidence));
         const detailParts = [
           entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
+          `Adjustment ${signedSeconds(entry.adjustmentMs || 0)}`,
           entry.actionSummary,
           entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
           entry.penaltyText,
-          sourceLabel,
+          entry.confidence === null || entry.confidence === undefined || entry.confidence === "" ? "" : `ShotML ${formatConfidenceValue(entry.confidence)}`,
         ].filter(Boolean);
         detail.textContent = detailParts.join(" • ") || "Timing";
         row.append(label, meta, split, cumulative, detail);
@@ -4998,6 +5338,7 @@ function renderMetricsPanel() {
     ["Raw Time", summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : ""],
     ["Imported", summary.imported_stage?.source_name || ""],
   ]);
+  renderMetricsTable($("metrics-workbench-table"));
 }
 
 function metricsFileStem() {
@@ -5038,13 +5379,16 @@ function buildMetricsCsv() {
     "segment_label",
     "interval_label",
     "actions",
-    "source",
+    "shotml_split_s",
+    "adjustment_s",
     "absolute_s",
     "split_s",
     "cumulative_s",
+    "practiscore_raw_s",
+    "raw_delta_s",
     "score_letter",
     "penalties",
-    "confidence",
+    "shotml_confidence",
   ];
   const metricsRows = rows.map((entry) => [
     state.project.name || "",
@@ -5056,10 +5400,13 @@ function buildMetricsCsv() {
     entry.label || "",
     entry.intervalLabel || "",
     entry.actionSummary || "",
-    entry.source || "",
+    entry.shotmlSplitMs === null || entry.shotmlSplitMs === undefined ? "" : precise(entry.shotmlSplitMs),
+    entry.adjustmentMs === null || entry.adjustmentMs === undefined ? "" : precise(entry.adjustmentMs),
     entry.absoluteMs === null ? "" : precise(entry.absoluteMs),
     entry.splitMs === null || entry.splitMs === undefined ? "" : precise(entry.splitMs),
     entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : precise(entry.cumulativeMs),
+    entry.practiscoreMs === null || entry.practiscoreMs === undefined ? "" : precise(entry.practiscoreMs),
+    entry.rawDeltaMs === null || entry.rawDeltaMs === undefined ? "" : precise(entry.rawDeltaMs),
     entry.scoreLetter || "",
     entry.penaltyText || "",
     entry.confidence ?? "",
@@ -5090,10 +5437,9 @@ function buildMetricsText() {
     if (entry.actionSummary) parts.push(`Actions ${entry.actionSummary}`);
     if (entry.scoreLetter) parts.push(`Score ${entry.scoreLetter}`);
     if (entry.penaltyText) parts.push(entry.penaltyText);
-    if (entry.source === "manual") parts.push("Manual");
-    else if (entry.confidence !== null && entry.confidence !== undefined && entry.confidence !== "") {
-      parts.push(formatConfidenceValue(entry.confidence));
-    }
+    parts.push(`Adjustment ${signedSeconds(entry.adjustmentMs || 0)}`);
+    if (entry.rawDeltaMs !== null && entry.rawDeltaMs !== undefined) parts.push(`PractiScore ${metricsPractiScoreLabel(entry)}`);
+    if (entry.confidence !== null && entry.confidence !== undefined && entry.confidence !== "") parts.push(`ShotML ${formatConfidenceValue(entry.confidence)}`);
     lines.push(`- ${parts.join(" | ")}`);
   });
   return lines.join("\n");
@@ -5307,6 +5653,7 @@ function renderControls() {
   syncOverlayCoordinateControlState();
   syncOverlayBubbleLockControlState();
   renderTextBoxEditors();
+  renderPopupEditors();
   syncTimingEventLabelState();
   syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
   syncControlValue($("quality"), state.project.export.quality);
@@ -6598,6 +6945,56 @@ function endTextBoxDrag(event) {
   flushDeferredRender();
 }
 
+function beginPopupBubbleDrag(event) {
+  if (event.button !== 0 || popupBubbleDrag) return;
+  const badge = event.target instanceof Element ? event.target.closest("[data-popup-drag]") : null;
+  if (!(badge instanceof HTMLElement)) return;
+  const bubbleId = badge.dataset.popupId || "";
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return;
+  const stage = $("video-stage");
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  popupBubbleDrag = {
+    bubbleId,
+    target: $("popup-overlay"),
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startX: bubble.x,
+    startY: bubble.y,
+  };
+  capturePointer(popupBubbleDrag.target, event.pointerId);
+  popupBubbleDrag.target?.classList.add("dragging");
+  event.preventDefault();
+  activity("popup.drag.start", { popup_id: bubbleId, x: bubble.x, y: bubble.y });
+}
+
+function movePopupBubbleDrag(event) {
+  if (!popupBubbleDrag) return;
+  if (event.pointerId !== undefined && popupBubbleDrag.pointerId !== undefined && event.pointerId !== popupBubbleDrag.pointerId) return;
+  const stage = $("video-stage");
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const deltaX = (event.clientX - popupBubbleDrag.startClientX) / Math.max(1, frameRect.width || 0);
+  const deltaY = (event.clientY - popupBubbleDrag.startClientY) / Math.max(1, frameRect.height || 0);
+  const newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
+  const newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
+  const nextBubbles = popupBubbles().map((bubble) => bubble.id === popupBubbleDrag.bubbleId
+    ? normalizePopupBubble({ ...bubble, x: newX, y: newY })
+    : bubble);
+  setPopupBubbles(nextBubbles, { commit: false, rerender: true });
+}
+
+function endPopupBubbleDrag(event) {
+  if (!popupBubbleDrag) return;
+  if (event.pointerId !== undefined && popupBubbleDrag.pointerId !== undefined && event.pointerId !== popupBubbleDrag.pointerId) return;
+  const drag = popupBubbleDrag;
+  releasePointer(drag.target, drag.pointerId ?? event.pointerId);
+  drag.target?.classList.remove("dragging");
+  popupBubbleDrag = null;
+  activity("popup.drag.commit", { popup_id: drag.bubbleId });
+  callApi("/api/popups", { popups: popupBubbles() });
+}
+
 function cancelOverlayDragInteractions(reason = "interrupted") {
   let cleared = false;
   if (overlayBadgeDrag) {
@@ -6615,6 +7012,14 @@ function cancelOverlayDragInteractions(reason = "interrupted") {
     customOverlay?.classList.remove("dragging");
     textBoxDrag = null;
     activity("overlay.text_box.drag.cancel", { box_id: drag.boxId, reason });
+    cleared = true;
+  }
+  if (popupBubbleDrag) {
+    const drag = popupBubbleDrag;
+    releasePointer(drag.target, drag.pointerId);
+    drag.target?.classList.remove("dragging");
+    popupBubbleDrag = null;
+    activity("popup.drag.cancel", { popup_id: drag.bubbleId, reason });
     cleared = true;
   }
   if (!cleared) return;
@@ -6802,17 +7207,61 @@ function overlayRenderPositionMs(video, mediaTimeS = null) {
   return Math.max(0, Math.floor((video?.currentTime || 0) * 1000));
 }
 
+function visiblePopupBubbles(positionMs) {
+  return popupBubbles().filter((bubble) => (
+    bubble.enabled
+    && bubble.text.trim()
+    && positionMs >= bubble.time_ms
+    && positionMs <= bubble.time_ms + bubble.duration_ms
+  ));
+}
+
+function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {
+  if (!popupOverlay) return;
+  popupOverlay.innerHTML = "";
+  popupOverlay.style.left = `${frameRect.left}px`;
+  popupOverlay.style.top = `${frameRect.top}px`;
+  popupOverlay.style.width = `${frameRect.width}px`;
+  popupOverlay.style.height = `${frameRect.height}px`;
+  visiblePopupBubbles(positionMs).forEach((bubble) => {
+    const badge = badgeElement(
+      bubble.text,
+      {
+        background_color: bubble.background_color,
+        text_color: bubble.text_color,
+        opacity: bubble.opacity,
+      },
+      size,
+      bubble.width,
+      bubble.height,
+      null,
+      "center",
+      overlayScale,
+      null,
+    );
+    badge.dataset.popupDrag = "true";
+    badge.dataset.popupId = bubble.id;
+    badge.style.position = "absolute";
+    badge.style.left = `${bubble.x * 100}%`;
+    badge.style.top = `${bubble.y * 100}%`;
+    badge.style.transform = "translate(-50%, -50%)";
+    popupOverlay.appendChild(badge);
+  });
+}
+
 function renderLiveOverlay(positionMsOverride = null) {
   if (!state?.project) return;
   const overlay = $("live-overlay");
   const customOverlay = $("custom-overlay");
+  const popupOverlay = $("popup-overlay");
   const scoreLayer = $("score-layer");
   const position = state.project.overlay.position;
   overlay.className = `live-overlay overlay-${position}`;
   customOverlay.className = `live-overlay overlay-${position}`;
   overlay.innerHTML = "";
   scoreLayer.innerHTML = "";
-  if (position === "none" || !state.media.primary_available) {
+  if (!state.media.primary_available) {
+    if (popupOverlay) popupOverlay.innerHTML = "";
     customOverlay.innerHTML = "";
     customOverlay.classList.remove("has-badge");
     customOverlayRenderKey = "";
@@ -6823,6 +7272,16 @@ function renderLiveOverlay(positionMsOverride = null) {
   const frameGeometry = previewFrameGeometry(video, stage);
   const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
   const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
+  const positionMs = Number.isFinite(positionMsOverride)
+    ? Math.max(0, Math.floor(positionMsOverride))
+    : overlayRenderPositionMs(video);
+  renderPopupOverlay(popupOverlay, frameRect, overlayScale, state.project.overlay.badge_size, positionMs);
+  if (position === "none") {
+    customOverlay.innerHTML = "";
+    customOverlay.classList.remove("has-badge");
+    customOverlayRenderKey = "";
+    return;
+  }
   positionOverlayContainer(overlay, state.project.overlay.shot_quadrant, frameRect, {
     x: state.project.overlay.custom_x,
     y: state.project.overlay.custom_y,
@@ -6837,9 +7296,6 @@ function renderLiveOverlay(positionMsOverride = null) {
   customOverlay.style.padding = "0";
   customOverlay.style.gap = "0";
 
-  const positionMs = Number.isFinite(positionMsOverride)
-    ? Math.max(0, Math.floor(positionMsOverride))
-    : overlayRenderPositionMs(video);
   const beep = state.project.analysis.beep_time_ms_primary;
   let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
   const shots = orderedShotsByTime();
@@ -7090,7 +7546,7 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
 function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
-  if (expanded) root.classList.remove("timing-expanded");
+  if (expanded) root.classList.remove("timing-expanded", "metrics-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
   syncLocalProjectUiState();
@@ -7163,7 +7619,7 @@ function resetWaveformView() {
 function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("timing-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded");
+  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("timing.expand", { expanded });
   syncLocalProjectUiState();
@@ -7175,11 +7631,26 @@ function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   scheduleReviewStageRestore();
 }
 
+function setMetricsExpanded(expanded, { persistUiState = true } = {}) {
+  const root = $("cockpit-root");
+  root.classList.toggle("metrics-expanded", expanded);
+  if (expanded) root.classList.remove("waveform-expanded", "timing-expanded");
+  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
+  activity("metrics.expand", { expanded });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
+  if (expanded) {
+    renderMetricsPanel();
+    return;
+  }
+  scheduleReviewStageRestore();
+}
+
 function moveSelectedShot(deltaMs) {
   const shot = selectedShot();
   if (!shot) return;
   activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
-  callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs });
+  callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
 }
 
 function deleteSelectedShot() {
@@ -7260,7 +7731,7 @@ function handleWaveformPointerUp(event) {
   pendingDragTimeMs = null;
   releasePointer($("waveform"), event.pointerId);
   activity("waveform.drag_commit", { shot_id: shotId, time_ms: timeMs });
-  callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs });
+  callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs, preserve_following_splits: true });
 }
 
 function handleKeyboardEdit(event) {
@@ -7952,6 +8423,8 @@ function wireEvents() {
   $("reset-waveform-view").addEventListener("click", resetWaveformView);
   $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
   $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
+  $("expand-metrics")?.addEventListener("click", () => setMetricsExpanded(true));
+  $("collapse-metrics")?.addEventListener("click", () => setMetricsExpanded(false));
   $("waveform").addEventListener("pointerdown", handleWaveformPointerDown);
   $("waveform").addEventListener("pointermove", handleWaveformPointerMove);
   $("waveform").addEventListener("pointerup", handleWaveformPointerUp);
@@ -7982,7 +8455,7 @@ function wireEvents() {
       const shot = state.project.analysis.shots.find((item) => item.id === selectedShotId);
       if (shot) {
         activity("shot.button_nudge", { shot_id: selectedShotId, delta_ms: Number(button.dataset.nudge) });
-        callApi("/api/shots/move", { shot_id: selectedShotId, time_ms: shot.time_ms + Number(button.dataset.nudge) });
+        callApi("/api/shots/move", { shot_id: selectedShotId, time_ms: shot.time_ms + Number(button.dataset.nudge), preserve_following_splits: true });
       }
     });
   });
@@ -8029,6 +8502,7 @@ function wireEvents() {
   $("video-stage").addEventListener("pointerdown", beginOverlayBadgeDrag);
   $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
   $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
+  $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
   ["badge-size"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncOverlayFontSizePreset();
@@ -8083,6 +8557,7 @@ function wireEvents() {
   ].forEach(([id, source]) => {
     $(id)?.addEventListener("click", () => addOverlayTextBox(source));
   });
+  $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
   $("badge-style-grid").addEventListener("input", (event) => {
     const target = event.target;
     if (isColorInput(target)) return;
@@ -8129,6 +8604,10 @@ function wireEvents() {
   document.addEventListener("pointerup", endTextBoxDrag);
   document.addEventListener("pointercancel", endTextBoxDrag);
   document.addEventListener("lostpointercapture", endTextBoxDrag);
+  document.addEventListener("pointermove", movePopupBubbleDrag);
+  document.addEventListener("pointerup", endPopupBubbleDrag);
+  document.addEventListener("pointercancel", endPopupBubbleDrag);
+  document.addEventListener("lostpointercapture", endPopupBubbleDrag);
   ["overlay-style"].forEach((id) => {
     $(id).addEventListener("change", () => {
       overlayStyleMode = $(id).value;

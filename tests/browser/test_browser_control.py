@@ -61,6 +61,7 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/import/secondary": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/import/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/overlay": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
+    "/api/popups": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge/remove": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge/source": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
@@ -1868,6 +1869,34 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["overlay"]["timer_badge"]["opacity"] == pytest.approx(0.5)
         assert saved["overlay"]["scoring_colors"]["A"] == "#22C55E"
         assert saved["overlay"]["text_boxes"][0]["text"] == "Session summary"
+
+        _post_json(
+            f"{server.url}api/popups",
+            {
+                "popups": [
+                    {
+                        "id": "popup-one",
+                        "enabled": True,
+                        "text": "-0",
+                        "time_ms": 1200,
+                        "duration_ms": 1000,
+                        "x": 0.42,
+                        "y": 0.58,
+                        "background_color": "#000000",
+                        "text_color": "#ffffff",
+                        "opacity": 0.8,
+                        "width": 88,
+                        "height": 36,
+                    }
+                ]
+            },
+        )
+        saved = _read_project_json(project_path)
+        assert saved["popups"][0]["text"] == "-0"
+        assert saved["popups"][0]["time_ms"] == 1200
+        assert saved["popups"][0]["duration_ms"] == 1000
+        assert saved["popups"][0]["x"] == pytest.approx(0.42)
+        assert saved["popups"][0]["y"] == pytest.approx(0.58)
 
         project_output_path = project_path / "Output" / "autosave-output.mp4"
         _post_json(
