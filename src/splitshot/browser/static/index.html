@@ -137,7 +137,6 @@
               <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
               <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
               <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
-              <label class="check-row"><input id="review-lock-to-stack" type="checkbox" /> Lock review text boxes to the overlay stack</label>
               <section class="text-box-manager">
                 <div class="section-header sub-section-header">
                   <h3>Review Text Boxes</h3>
@@ -147,7 +146,7 @@
                   <button id="review-add-text-box" type="button">Add Custom Box</button>
                   <button id="review-add-imported-box" type="button">Add Summary Box</button>
                 </div>
-                <p class="hint">Each box keeps its own enable state, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position, or lock the review boxes to keep them flowing with the live overlay stack.</p>
+                <p class="hint">Each box keeps its own enable state, shot-stack lock, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position.</p>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
             </section>
@@ -504,7 +503,7 @@
               </label>
               <label>Default PiP size
                 <div class="pip-size-control">
-                  <input id="pip-size" type="range" min="10" max="95" step="1" value="35" />
+                  <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
                   <output id="pip-size-label">35%</output>
                 </div>
               </label>
@@ -744,6 +743,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260418b"></script>
+    <script src="/static/app.js?v=20260420a"></script>
   </body>
 </html>

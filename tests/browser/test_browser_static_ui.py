@@ -12,7 +12,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260418b"' in html
-    assert 'src="/static/app.js?v=20260418b"' in html
+    assert 'src="/static/app.js?v=20260420a"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -123,7 +123,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="text-box-manager"' in html
     assert 'id="review-add-text-box"' in html
     assert 'id="review-add-imported-box"' in html
-    assert 'id="review-lock-to-stack"' in html
     assert 'id="review-text-box-list"' in html
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
@@ -144,6 +143,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert merge_start < html.index('id="add-merge-media"') < export_start
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
+    assert 'id="pip-size" type="range" min="1" max="95" step="1" value="35"' in html
     assert 'id="swap-videos"' not in html
     assert export_start < html.index('id="export-preset"') < project_start
     assert export_start < html.index('id="quality"') < project_start
@@ -233,14 +233,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="draw-lock-to-stack"' in html
     assert 'id="score-lock-to-stack"' in html
     assert 'id="show-timer"' in html
-    assert 'Lock review text boxes to the overlay stack' in html
     assert 'id="review-text-box-list"' in html
     assert 'Imported summary' in html
     assert 'Review Text Boxes' in html
+    assert 'data-text-box-field="lock_to_stack"' in js
+    assert 'Lock to shot stack' in js
     assert '<span class="style-card-label">Background</span>' in js
     assert '<span class="style-card-label">Opacity</span>' in js
-    assert 'data-opacity-percent="opacity"' in js
-    assert 'data-text-box-opacity-percent="opacity"' in js
+    assert 'type="range" data-field="opacity"' not in js
+    assert 'data-text-box-field="opacity" type="number"' in js
+    assert 'data-field="opacity" min="0" max="100" step="1" value="90"' in js
     assert 'id="layout-threshold"' not in html
     assert 'id="scoring-preset"' in html
     assert 'id="scoring-imported-caption"' in html
@@ -506,13 +508,13 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const customBadge = event.target instanceof Element' in js
     assert 'customBadge.dataset.textBoxDrag = "true";' in js
     assert 'customBadge.dataset.textBoxId = box.id;' in js
-    assert 'positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, scale: overlayScale })' in js
+    assert 'positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, anchorRect, scale: overlayScale })' in js
     assert 'if (result) setActiveTool("scoring");' not in js
     assert 'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));' in js
     assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in js
     assert '$("export-export-log")?.addEventListener("click", downloadExportLog);' in js
     assert '$("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));' in js
-    assert 'function defaultScoreLetter() {' in js
+    assert 'function defaultScoreLetter(ruleset = activeScoringRuleset()) {' in js
     assert 'function shotBadgeBaseText(shotNumber, splitText, intervalLabel = "") {' in js
     assert 'function scoreBadgeContent(shot, shotNumber, splitText, intervalLabel = "") {' in js
     assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))' in js
@@ -557,7 +559,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'row.classList.toggle("collapsed", !expanded);' in js
     assert 'header.className = "scoring-shot-header";' in js
     assert 'function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {' in js
-    assert '"-0": "A (-0)"' in js
+    assert 'A (-0)' not in js
+    assert 'if (normalizedRuleset === "idpa_time_plus") return "-0";' in js
     assert ': `Shot ${segment.shot_number} | ${compactScoreDisplay(segment.score_letter || defaultScore, ruleset)}`;' in js
     assert 'toggle.className = "scoring-shot-toggle";' in js
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
@@ -1008,7 +1011,9 @@ def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
     body = match.group("body")
     assert 'if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;' in body
     assert 'card.querySelectorAll("[data-field]")' in body
-    assert 'isColorInput(input) ? readColorControlValue(input) : input.value' in body
+    assert 'const value = isColorInput(input)' in body
+    assert '? readColorControlValue(input)' in body
+    assert '? opacityValueFromPercent(input.value)' in body
 
 
 def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:

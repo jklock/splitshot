@@ -600,11 +600,14 @@ function scoringColorOptions() {
   return fallback;
 }
 
-function defaultScoreLetter() {
+function defaultScoreLetter(ruleset = activeScoringRuleset()) {
   const options = Array.isArray(state?.scoring_summary?.score_options)
     ? state.scoring_summary.score_options
     : [];
-  return options[0] || "A";
+  if (options[0]) return options[0];
+  const normalizedRuleset = String(ruleset || "").trim().toLowerCase();
+  if (normalizedRuleset === "idpa_time_plus") return "-0";
+  return "A";
 }
 
 function activeScoringRuleset() {
@@ -614,14 +617,6 @@ function activeScoringRuleset() {
 function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {
   const normalizedLetter = String(letter || "").trim();
   if (!normalizedLetter) return "";
-  const normalizedRuleset = String(ruleset || "").trim().toLowerCase();
-  if (normalizedRuleset === "idpa_time_plus") {
-    return {
-      "-0": "A (-0)",
-      "-1": "C (-1)",
-      "-3": "D (-3)",
-    }[normalizedLetter] || normalizedLetter;
-  }
   return normalizedLetter;
 }
 
@@ -827,23 +822,6 @@ function syncOpacityPercentControl(control, opacity) {
   if (!(control instanceof HTMLInputElement) || controlIsActive(control)) return;
   const nextValue = String(opacityPercentValue(opacity));
   if (control.value !== nextValue) control.value = nextValue;
-}
-
-function bindOpacityPercentPair(rangeInput, percentInput) {
-  if (!(rangeInput instanceof HTMLInputElement) || !(percentInput instanceof HTMLInputElement)) return;
-  if (percentInput.dataset.opacityPairBound === "true") return;
-  percentInput.dataset.opacityPairBound = "true";
-  rangeInput.dataset.opacityPairBound = "true";
-  const syncPercent = () => syncOpacityPercentControl(percentInput, rangeInput.value);
-  rangeInput.addEventListener("input", syncPercent);
-  rangeInput.addEventListener("change", syncPercent);
-  const syncRange = () => {
-    rangeInput.value = opacityValueFromPercent(percentInput.value).toFixed(2);
-  };
-  percentInput.addEventListener("input", syncRange);
-  percentInput.addEventListener("change", syncRange);
-  percentInput.addEventListener("blur", syncPercent);
-  syncPercent();
 }
 
 function roundedRect(rect) {
@@ -1555,6 +1533,10 @@ function currentSourceSyncOffsetMs(source = null) {
   return Math.round(Number(source?.sync_offset_ms) || 0);
 }
 
+function currentSourceOpacity(source = null) {
+  return clampNumber(Number(source?.opacity ?? 1) || 0, 0, 1);
+}
+
 function formatSyncOffsetLabel(offsetMs) {
   const numeric = Math.round(Number(offsetMs) || 0);
   return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
@@ -1568,11 +1550,12 @@ function mergeSourceById(sourceId) {
   return (state?.project?.merge_sources || []).find((source, index) => sourceIdentifier(source, String(index)) === sourceId) || null;
 }
 
-function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null) {
+function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null) {
   const xValue = Number.isFinite(pipX) ? pipX.toFixed(3) : "";
   const yValue = Number.isFinite(pipY) ? pipY.toFixed(3) : "";
   const sizeValue = Number.isFinite(pipSizePercent) ? Math.round(pipSizePercent) : "";
   const offsetValue = Math.round(Number(syncOffsetMs) || 0);
+  const opacityValue = String(opacityPercentValue(opacity ?? 1));
   document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="x"]`).forEach((input) => {
     syncControlValue(input, xValue);
   });
@@ -1585,12 +1568,15 @@ function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, sy
   document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-output="size"]`).forEach((output) => {
     output.textContent = sizeValue === "" ? "" : `${sizeValue}%`;
   });
+  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
+    syncControlValue(input, opacityValue);
+  });
   document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
     label.textContent = formatSyncOffsetLabel(offsetValue);
   });
 }
 
-function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null) {
+function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null) {
   const source = mergeSourceById(sourceId);
   if (!source || !state?.project) return;
   const nextSize = clampNumber(
@@ -1600,15 +1586,17 @@ function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = n
         ?? state.project.merge.pip_size_percent
         ?? 35,
     ) || 35,
-    10,
+    1,
     95,
   );
   const nextX = normalizedCoordinateValue(pipX) ?? 1;
   const nextY = normalizedCoordinateValue(pipY) ?? 1;
+  const nextOpacity = currentSourceOpacity({ opacity: opacity ?? source.opacity ?? 1 });
   source.pip_size_percent = nextSize;
   source.pip_x = nextX;
   source.pip_y = nextY;
-  syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms);
+  source.opacity = nextOpacity;
+  syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity);
 }
 
 function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
@@ -1618,7 +1606,14 @@ function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
   if (state.project.merge_sources?.[0]?.id === sourceId) {
     state.project.analysis.sync_offset_ms = source.sync_offset_ms;
   }
-  syncMergeSourceControls(sourceId, normalizedCoordinateValue(source.pip_x), normalizedCoordinateValue(source.pip_y), currentPipSizePercent(source), source.sync_offset_ms);
+  syncMergeSourceControls(
+    sourceId,
+    normalizedCoordinateValue(source.pip_x),
+    normalizedCoordinateValue(source.pip_y),
+    currentPipSizePercent(source),
+    source.sync_offset_ms,
+    currentSourceOpacity(source),
+  );
 }
 
 function mergeSourcePositionPayload(sourceId, source) {
@@ -1627,6 +1622,7 @@ function mergeSourcePositionPayload(sourceId, source) {
     pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
     pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
     pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
+    opacity: currentSourceOpacity(source),
   };
 }
 
@@ -1658,6 +1654,19 @@ function overlayTextBoxAutoSize(box) {
   };
 }
 
+function resolvedOverlayTextBoxSize(box) {
+  const explicitWidth = Math.max(0, Number(box?.width || 0));
+  const explicitHeight = Math.max(0, Number(box?.height || 0));
+  if (explicitWidth > 0 && explicitHeight > 0) {
+    return { width: explicitWidth, height: explicitHeight };
+  }
+  const autoSize = overlayTextBoxAutoSize(box);
+  return {
+    width: explicitWidth > 0 ? explicitWidth : autoSize.width,
+    height: explicitHeight > 0 ? explicitHeight : autoSize.height,
+  };
+}
+
 function normalizeOverlayTextBox(box = {}, index = 0) {
   const normalizedX = normalizedCoordinateValue(box.x);
   const normalizedY = normalizedCoordinateValue(box.y);
@@ -1680,14 +1689,10 @@ function normalizeOverlayTextBox(box = {}, index = 0) {
   const usesExplicitCoordinates = requestedQuadrant === CUSTOM_QUADRANT_VALUE || normalizedX !== null || normalizedY !== null;
   let width = Math.max(0, Number(box.width || 0));
   let height = Math.max(0, Number(box.height || 0));
-  if (source === "imported_summary" && (width <= 0 || height <= 0)) {
-    const autoSize = overlayTextBoxAutoSize({ ...box, source, text: String(box.text || "") });
-    if (width <= 0 && autoSize.width > 0) width = autoSize.width;
-    if (height <= 0 && autoSize.height > 0) height = autoSize.height;
-  }
   return {
     id: box.id || createOverlayTextBoxId(),
     enabled: Boolean(box.enabled ?? true),
+    lock_to_stack: Boolean(box.lock_to_stack ?? false),
     source,
     text: String(box.text || "").slice(0, 500),
     quadrant: usesExplicitCoordinates ? CUSTOM_QUADRANT_VALUE : requestedQuadrant,
@@ -1718,6 +1723,7 @@ function overlayTextBoxes() {
   return [normalizeOverlayTextBox({
     id: "legacy-custom-box",
     enabled: overlay.custom_box_enabled,
+    lock_to_stack: false,
     source: overlay.custom_box_mode || "manual",
     text: overlay.custom_box_text || "",
     quadrant: overlay.custom_box_quadrant || "top_right",
@@ -1767,6 +1773,7 @@ function buildOverlayTextBox(source = "manual") {
   return normalizeOverlayTextBox({
     id: createOverlayTextBoxId(),
     enabled: true,
+    lock_to_stack: false,
     source,
     text: "",
     quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",
@@ -1809,6 +1816,10 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
       box.enabled = Boolean(rawValue);
       return box;
     }
+    if (field === "lock_to_stack") {
+      box.lock_to_stack = Boolean(rawValue);
+      return box;
+    }
     if (field === "source") {
       box.source = rawValue === "imported_summary" ? "imported_summary" : "manual";
       if (box.source === "imported_summary") {
@@ -1817,9 +1828,6 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
           box.x = null;
           box.y = null;
         }
-        const autoSize = overlayTextBoxAutoSize(box);
-        if (!(Number(box.width) > 0) && autoSize.width > 0) box.width = autoSize.width;
-        if (!(Number(box.height) > 0) && autoSize.height > 0) box.height = autoSize.height;
       }
       return box;
     }
@@ -1860,7 +1868,10 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
       return box;
     }
     if (field === "opacity") {
-      box.opacity = clampNumber(Number(rawValue) || 0, 0, 1);
+      const numericOpacity = Number(rawValue);
+      box.opacity = numericOpacity > 1
+        ? opacityValueFromPercent(numericOpacity)
+        : clampNumber(numericOpacity || 0, 0, 1);
       return box;
     }
     return box;
@@ -1923,7 +1934,6 @@ function syncOverlayPreviewStateFromControls() {
   overlay.timer_lock_to_stack = Boolean(payload.timer_lock_to_stack);
   overlay.draw_lock_to_stack = Boolean(payload.draw_lock_to_stack);
   overlay.score_lock_to_stack = Boolean(payload.score_lock_to_stack);
-  overlay.review_boxes_lock_to_stack = Boolean(payload.review_boxes_lock_to_stack);
   overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));
   syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
   Object.entries(payload.styles).forEach(([badgeName, style]) => {
@@ -2008,7 +2018,7 @@ function syncMergePreviewStateFromControls() {
   const merge = state.project.merge;
   merge.enabled = $("merge-enabled").checked;
   merge.layout = $("merge-layout").value;
-  merge.pip_size_percent = clampNumber(Number($("pip-size").value) || 35, 10, 95);
+  merge.pip_size_percent = clampNumber(Number($("pip-size").value) || 35, 1, 95);
   merge.pip_x = normalizedCoordinateValue($("pip-x").value) ?? 1;
   merge.pip_y = normalizedCoordinateValue($("pip-y").value) ?? 1;
 }
@@ -2059,10 +2069,6 @@ function overlayBadgeLockedToStack(kind, overlay = state?.project?.overlay) {
   return Boolean(overlay[`${kind}_lock_to_stack`] ?? true);
 }
 
-function reviewBoxesLockedToOverlayStack(overlay = state?.project?.overlay) {
-  return Boolean(overlay?.review_boxes_lock_to_stack);
-}
-
 function syncOverlayBubbleLockControlState() {
   Object.values(OVERLAY_STACK_LOCK_CONTROLS).forEach(({ lockId, xId, yId, label }) => {
     const lockControl = $(lockId);
@@ -2081,25 +2087,25 @@ function syncOverlayBubbleLockControlState() {
 
 function overlayTextBoxDisplayText(box) {
   if (box.source === "imported_summary") {
-    return state?.scoring_summary?.imported_overlay_text || "";
+    return box.text || state?.scoring_summary?.imported_overlay_text || "";
   }
   return box.text || "";
 }
 
 function overlayTextBoxHint(box) {
-  if (reviewBoxesLockedToOverlayStack()) {
-    return "Locked to the overlay stack. Unlock Review text boxes to edit placement or use the Above Final anchor.";
-  }
   const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
   if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
     return box.source === "imported_summary"
-      ? "Keeps the imported summary centered above the final score badge once it appears."
+      ? "Keeps the imported summary centered above the final score badge once it appears. Edit the text to override the imported copy."
       : "Keeps this box centered above the final score badge once it appears.";
+  }
+  if (box.lock_to_stack) {
+    return "Locked to the shot stack. Disable this to edit placement directly.";
   }
   if (box.source === "imported_summary") {
     return importedReady
-      ? "Uses the imported PractiScore stage summary and appears after the final shot."
-      : "Import PractiScore results first. The summary box will populate after the final shot when imported data is available.";
+      ? "Uses the imported PractiScore stage summary by default and appears after the final shot. Edit the text here to override it."
+      : "Import PractiScore results first. The summary box will populate after the final shot, and you can edit it here.";
   }
   return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
 }
@@ -2109,7 +2115,6 @@ function buildTextBoxCard(box, index) {
   card.className = "text-box-card";
   card.dataset.boxId = box.id;
   const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
-  const reviewBoxesLocked = reviewBoxesLockedToOverlayStack();
   card.innerHTML = `
     <div class="text-box-card-header">
       <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
@@ -2124,6 +2129,7 @@ function buildTextBoxCard(box, index) {
         <option value="imported_summary">Imported summary</option>
       </select>
     </label>
+    <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
     <p class="hint" data-text-box-hint="true"></p>
     <label>Box text
       <textarea data-text-box-field="text" rows="3"></textarea>
@@ -2176,9 +2182,8 @@ function buildTextBoxCard(box, index) {
         </label>
         <label class="opacity-field"><span class="style-card-label">Opacity</span>
           <span class="opacity-control-pair">
-            <input data-text-box-field="opacity" type="range" min="0" max="1" step="0.01" value="0.9" />
             <span class="opacity-percent-field">
-              <input class="opacity-percent-input" data-text-box-opacity-percent="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
+              <input class="opacity-percent-input" data-text-box-field="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
               <span class="opacity-percent-suffix">%</span>
             </span>
           </span>
@@ -2187,6 +2192,7 @@ function buildTextBoxCard(box, index) {
     </div>
   `;
   syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
+  syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
   syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
   syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
   syncControlValue(card.querySelector('[data-text-box-field="x"]'), box.x ?? "");
@@ -2195,29 +2201,40 @@ function buildTextBoxCard(box, index) {
   syncControlValue(card.querySelector('[data-text-box-field="height"]'), box.height || 0);
   syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
   syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
-  syncControlValue(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
-  syncOpacityPercentControl(card.querySelector('[data-text-box-opacity-percent="opacity"]'), box.opacity ?? 0.9);
+  syncOpacityPercentControl(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
   const textArea = card.querySelector('[data-text-box-field="text"]');
-  textArea.value = box.text || "";
-  textArea.disabled = box.source === "imported_summary";
+  textArea.dataset.importedSummaryDefault = box.source === "imported_summary"
+    ? (state?.scoring_summary?.imported_overlay_text || "")
+    : "";
+  textArea.value = box.text || overlayTextBoxDisplayText(box);
+  textArea.disabled = false;
   textArea.placeholder = box.source === "imported_summary"
-    ? "Uses the imported PractiScore stage summary after the final shot"
+    ? "Leave blank to use the imported PractiScore stage summary after the final shot"
     : "Text to show over the video";
   const hint = card.querySelector('[data-text-box-hint="true"]');
   if (hint) hint.textContent = overlayTextBoxHint(box);
+  const boxLockedToStack = Boolean(box.lock_to_stack);
   const quadrantInput = card.querySelector('[data-text-box-field="quadrant"]');
-  quadrantInput.disabled = reviewBoxesLocked;
+  quadrantInput.disabled = boxLockedToStack;
   const xInput = card.querySelector('[data-text-box-field="x"]');
   const yInput = card.querySelector('[data-text-box-field="y"]');
   [xInput, yInput].forEach((input) => {
-    input.disabled = reviewBoxesLocked || !usesCustomPlacement;
-    input.placeholder = reviewBoxesLocked ? "Stack locked" : usesCustomPlacement ? "0.50" : "Custom only";
+    input.disabled = boxLockedToStack || !usesCustomPlacement;
+    input.placeholder = boxLockedToStack ? "Stack locked" : usesCustomPlacement ? "0.50" : "Custom only";
   });
   card.querySelectorAll("[data-text-box-field]").forEach((control) => {
     const field = control.dataset.textBoxField || "";
     if (!field) return;
     if (isColorInput(control)) return;
-    const readValue = () => (control.type === "checkbox" ? control.checked : control.value);
+    const readValue = () => {
+      if (control.type === "checkbox") return control.checked;
+      if (field === "text" && box.source === "imported_summary") {
+        const rawValue = String(control.value || "");
+        const importedSummaryDefault = control.dataset.importedSummaryDefault || "";
+        return rawValue === importedSummaryDefault ? "" : rawValue;
+      }
+      return control.value;
+    };
     if (control.tagName === "SELECT") {
       control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), {
         commit: true,
@@ -2226,7 +2243,7 @@ function buildTextBoxCard(box, index) {
       return;
     }
     if (control.type === "checkbox") {
-      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
+      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: field === "lock_to_stack" }));
       return;
     }
     if (control.type === "range") {
@@ -2238,20 +2255,6 @@ function buildTextBoxCard(box, index) {
     control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
     control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
   });
-  const opacityRange = card.querySelector('[data-text-box-field="opacity"]');
-  const opacityPercent = card.querySelector('[data-text-box-opacity-percent="opacity"]');
-  bindOpacityPercentPair(opacityRange, opacityPercent);
-  if (opacityPercent instanceof HTMLInputElement) {
-    const applyOpacity = (commit = false) => {
-      const nextOpacity = opacityValueFromPercent(opacityPercent.value);
-      syncControlValue(opacityRange, nextOpacity.toFixed(2));
-      setOverlayTextBoxField(box.id, "opacity", nextOpacity, { commit, rerender: false });
-      syncOpacityPercentControl(opacityPercent, nextOpacity);
-    };
-    opacityPercent.addEventListener("input", () => applyOpacity(false));
-    opacityPercent.addEventListener("change", () => applyOpacity(true));
-    opacityPercent.addEventListener("blur", () => applyOpacity(true));
-  }
   card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", () => duplicateOverlayTextBox(box.id));
   card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", () => removeOverlayTextBox(box.id));
   bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
@@ -3252,6 +3255,11 @@ function ensureMergePreviewItem(layer, source) {
     media.src = mediaPath;
     media.load();
   }
+  if (media instanceof HTMLImageElement) {
+    media.style.opacity = String(currentSourceOpacity(source));
+  } else if (media instanceof HTMLVideoElement) {
+    media.style.opacity = "";
+  }
   return item;
 }
 
@@ -3419,7 +3427,7 @@ function renderVideo() {
     element.style.maxHeight = "";
   });
 
-  if (mergePreview && merge.layout === "pip" && mergeSources.length > 1) {
+  if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
     renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
     secondary.hidden = true;
     secondary.style.display = "none";
@@ -5181,7 +5189,6 @@ function renderControls() {
   syncControlChecked($("show-draw"), state.project.overlay.show_draw);
   syncControlChecked($("show-shots"), state.project.overlay.show_shots);
   syncControlChecked($("show-score"), state.project.overlay.show_score);
-  syncControlChecked($("review-lock-to-stack"), reviewBoxesLockedToOverlayStack(state.project.overlay));
   syncOverlayCoordinateControlState();
   syncOverlayBubbleLockControlState();
   renderTextBoxEditors();
@@ -5240,9 +5247,8 @@ function renderStyleControls() {
         </label>
         <label class="opacity-field"><span class="style-card-label">Opacity</span>
           <span class="opacity-control-pair">
-            <input type="range" data-field="opacity" min="0" max="1" step="0.01" />
             <span class="opacity-percent-field">
-              <input type="number" class="opacity-percent-input" data-opacity-percent="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
+              <input type="number" class="opacity-percent-input" data-field="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
               <span class="opacity-percent-suffix">%</span>
             </span>
           </span>
@@ -5250,15 +5256,13 @@ function renderStyleControls() {
       `;
       bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
       bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
-      bindOpacityPercentPair(card.querySelector('[data-field="opacity"]'), card.querySelector('[data-opacity-percent="opacity"]'));
       grid.appendChild(card);
     }
     const heading = card.querySelector("h4");
     if (heading && heading.textContent !== title) heading.textContent = title;
     syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
     syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
-    syncControlValue(card.querySelector('[data-field="opacity"]'), style.opacity);
-    syncOpacityPercentControl(card.querySelector('[data-opacity-percent="opacity"]'), style.opacity);
+    syncOpacityPercentControl(card.querySelector('[data-field="opacity"]'), style.opacity);
   });
 
   const scoreGrid = $("score-color-grid");
@@ -5393,20 +5397,23 @@ function renderMergeMediaList() {
       syncRow.className = "merge-source-sync-row";
 
       const readSourcePayload = () => {
-        const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 10, 95);
+        const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 1, 95);
         const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
         const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
+        const opacityControl = controls.querySelector('[data-merge-source-field="opacity"]');
+        const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
         return {
           source_id: sourceId,
           pip_size_percent: nextSize,
           pip_x: nextX,
           pip_y: nextY,
+          opacity: nextOpacity,
         };
       };
 
       const previewSourceUpdate = () => {
         const payload = readSourcePayload();
-        updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent);
+        updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
         scheduleInteractionPreviewRender({ video: true });
         return payload;
       };
@@ -5440,13 +5447,13 @@ function renderMergeMediaList() {
       sizeControl.className = "pip-size-control";
       const sizeInput = document.createElement("input");
       sizeInput.type = "range";
-      sizeInput.min = "10";
+      sizeInput.min = "1";
       sizeInput.max = "95";
       sizeInput.step = "1";
       sizeInput.value = String(currentPipSizePercent(source, currentPipSizePercent()));
       sizeInput.dataset.mergeSourceField = "size";
       sizeInput.dataset.sourceId = sourceId;
-      sizeInput.title = "10 is smallest, 95 is largest.";
+      sizeInput.title = "1 is smallest, 95 is largest.";
       sizeInput.addEventListener("input", () => {
         const output = sizeField.querySelector('[data-merge-source-output="size"]');
         if (output) output.textContent = `${sizeInput.value}%`;
@@ -5460,6 +5467,34 @@ function renderMergeMediaList() {
       sizeOutput.textContent = `${sizeInput.value}%`;
       sizeControl.append(sizeInput, sizeOutput);
       sizeField.append(sizeText, sizeControl);
+
+      const buildSourceOpacityInput = () => {
+        const label = document.createElement("label");
+        label.className = "merge-source-field merge-source-opacity-field";
+        const text = document.createElement("span");
+        text.textContent = "Image opacity";
+        const percentField = document.createElement("span");
+        percentField.className = "opacity-percent-field";
+        const input = document.createElement("input");
+        input.type = "number";
+        input.className = "opacity-percent-input";
+        input.min = "0";
+        input.max = "100";
+        input.step = "1";
+        input.value = String(opacityPercentValue(currentSourceOpacity(source)));
+        input.dataset.mergeSourceField = "opacity";
+        input.dataset.sourceId = sourceId;
+        input.title = "0 is transparent, 100 is opaque.";
+        input.addEventListener("input", previewSourceUpdate);
+        input.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+        input.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
+        const suffix = document.createElement("span");
+        suffix.className = "opacity-percent-suffix";
+        suffix.textContent = "%";
+        percentField.append(input, suffix);
+        label.append(text, percentField);
+        return label;
+      };
 
       const syncLabel = document.createElement("small");
       syncLabel.className = "merge-source-sync-label";
@@ -5485,6 +5520,7 @@ function renderMergeMediaList() {
 
       controls.append(
         sizeField,
+        ...(asset.is_still_image ? [buildSourceOpacityInput()] : []),
         buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
         buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
       );
@@ -5497,7 +5533,14 @@ function renderMergeMediaList() {
       syncRow.append(syncLabel, syncButtons, syncHint);
 
       card.append(header, meta, controls, syncRow);
-      syncMergeSourceControls(sourceId, normalizedCoordinateValue(source.pip_x), normalizedCoordinateValue(source.pip_y), currentPipSizePercent(source), currentSourceSyncOffsetMs(source));
+      syncMergeSourceControls(
+        sourceId,
+        normalizedCoordinateValue(source.pip_x),
+        normalizedCoordinateValue(source.pip_y),
+        currentPipSizePercent(source),
+        currentSourceSyncOffsetMs(source),
+        currentSourceOpacity(source),
+      );
       list.appendChild(card);
     });
   });
@@ -5995,20 +6038,20 @@ function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
   overlay.style.transform = `translate(${-anchorOffsetX}px, ${-anchorOffsetY}px)`;
 }
 
-function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, scale = 1 } = {}) {
+function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, anchorRect = null, scale = 1 } = {}) {
   if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
-    if (!(anchorBadge instanceof HTMLElement)) return false;
-    const anchorRect = anchorBadge.getBoundingClientRect();
+    const resolvedAnchorRect = anchorRect || (anchorBadge instanceof HTMLElement ? anchorBadge.getBoundingClientRect() : null);
+    if (!resolvedAnchorRect) return false;
     const badgeRect = badge.getBoundingClientRect();
     const gap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
     const halfWidth = Math.max(0, badgeRect.width / 2);
     const centerX = clamp(
-      (anchorRect.left - frameRect.left) + (anchorRect.width / 2),
+      (resolvedAnchorRect.left - frameRect.left) + (resolvedAnchorRect.width / 2),
       halfWidth,
       Math.max(halfWidth, frameRect.width - halfWidth),
     );
     const top = clamp(
-      (anchorRect.top - frameRect.top) - gap,
+      (resolvedAnchorRect.top - frameRect.top) - gap,
       Math.max(0, badgeRect.height),
       Math.max(0, frameRect.height),
     );
@@ -6078,9 +6121,10 @@ function overlayTextBoxStyle(box) {
   };
 }
 
-function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge) {
+function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge, stackAnchorRect = null) {
   const overlayState = state?.project?.overlay || {};
   const finalScoreRect = finalScoreBadge?.getBoundingClientRect();
+  const stackTerminalRect = overlayStackTerminalRect($("live-overlay"));
   return JSON.stringify({
     frame: roundedRect(frameRect),
     scale: Math.round(overlayScale * 1000) / 1000,
@@ -6095,8 +6139,11 @@ function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge) {
     font_bold: overlayState.font_bold,
     font_italic: overlayState.font_italic,
     final_score: roundedRect(finalScoreRect),
+    stack_anchor: roundedRect(stackAnchorRect),
+    stack_terminal: roundedRect(stackTerminalRect),
     entries: entries.map(({ box, textValue }) => ({
       id: box.id,
+      lock_to_stack: box.lock_to_stack,
       source: box.source,
       text: textValue,
       quadrant: box.quadrant,
@@ -6111,17 +6158,121 @@ function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge) {
   });
 }
 
-function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge) {
+function overlayStackBadges(overlay) {
+  if (!(overlay instanceof HTMLElement)) return [];
+  return [...overlay.querySelectorAll(".overlay-badge")].filter(
+    (element) => element instanceof HTMLElement && !element.dataset.textBoxId,
+  );
+}
+
+function overlayStackAnchorRect(overlay) {
+  const candidates = overlayStackBadges(overlay);
+  if (candidates.length === 0) return null;
+  let left = Number.POSITIVE_INFINITY;
+  let top = Number.POSITIVE_INFINITY;
+  let right = Number.NEGATIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  candidates.forEach((element) => {
+    const rect = element.getBoundingClientRect();
+    if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
+    left = Math.min(left, rect.left);
+    top = Math.min(top, rect.top);
+    right = Math.max(right, rect.right);
+    bottom = Math.max(bottom, rect.bottom);
+  });
+  if (![left, top, right, bottom].every(Number.isFinite)) return null;
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+}
+
+function overlayStackTerminalRect(overlay) {
+  const badges = overlayStackBadges(overlay);
+  const terminalBadge = badges.at(-1);
+  return terminalBadge instanceof HTMLElement ? terminalBadge.getBoundingClientRect() : null;
+}
+
+function firstStackLockedTextBoxRect(badgeRect, frameRect, scale = 1) {
+  const quadrant = state?.project?.overlay?.shot_quadrant || "bottom_left";
+  const [vertical = "bottom", horizontal = "left"] = String(quadrant).split("_");
+  const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
+  const left = horizontal === "left"
+    ? scaledMargin
+    : horizontal === "middle"
+      ? Math.max(0, (frameRect.width - badgeRect.width) / 2)
+      : Math.max(0, frameRect.width - badgeRect.width - scaledMargin);
+  const top = vertical === "top"
+    ? scaledMargin
+    : vertical === "middle"
+      ? Math.max(0, (frameRect.height - badgeRect.height) / 2)
+      : Math.max(0, frameRect.height - badgeRect.height - scaledMargin);
+  return {
+    left,
+    top,
+    width: badgeRect.width,
+    height: badgeRect.height,
+  };
+}
+
+function nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale = 1) {
+  const direction = state?.project?.overlay?.shot_direction || "right";
+  const gap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
+  let left = baseRect.left;
+  let top = baseRect.top;
+  if (direction === "left") {
+    left = baseRect.left - badgeRect.width - gap;
+  } else if (direction === "up") {
+    top = baseRect.top - badgeRect.height - gap;
+  } else if (direction === "down") {
+    top = baseRect.top + baseRect.height + gap;
+  } else {
+    left = baseRect.left + baseRect.width + gap;
+  }
+  return {
+    left: clamp(left, 0, Math.max(0, frameRect.width - badgeRect.width)),
+    top: clamp(top, 0, Math.max(0, frameRect.height - badgeRect.height)),
+    width: badgeRect.width,
+    height: badgeRect.height,
+  };
+}
+
+function positionStackLockedTextBoxBadge(badge, frameRect, { terminalRect = null, previousRect = null, scale = 1 } = {}) {
+  const badgeRect = badge.getBoundingClientRect();
+  const baseRect = previousRect || (terminalRect
+    ? {
+        left: terminalRect.left - frameRect.left,
+        top: terminalRect.top - frameRect.top,
+        width: terminalRect.width,
+        height: terminalRect.height,
+      }
+    : null);
+  const nextRect = baseRect
+    ? nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale)
+    : firstStackLockedTextBoxRect(badgeRect, frameRect, scale);
+  badge.style.position = "absolute";
+  badge.style.margin = "0";
+  badge.style.left = `${nextRect.left}px`;
+  badge.style.top = `${nextRect.top}px`;
+  badge.style.transform = "";
+  return nextRect;
+}
+
+function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, anchorRect = null, terminalRect = null) {
   customOverlay.innerHTML = "";
   const textBoxGroups = new Map();
+  let stackLockedPreviousRect = null;
   entries.forEach(({ box, index, textValue }) => {
+    const resolvedSize = resolvedOverlayTextBoxSize(box);
     const customBadge = badgeElement(
       textValue,
       overlayTextBoxStyle(box),
       size,
       null,
-      box.width,
-      box.height,
+      resolvedSize.width,
+      resolvedSize.height,
       "center",
       overlayScale,
     );
@@ -6129,7 +6280,15 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
     customBadge.dataset.textBoxId = box.id;
     customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
     customOverlay.appendChild(customBadge);
-    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, scale: overlayScale })) {
+    if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
+      stackLockedPreviousRect = positionStackLockedTextBoxBadge(customBadge, frameRect, {
+        terminalRect,
+        previousRect: stackLockedPreviousRect,
+        scale: overlayScale,
+      });
+      return;
+    }
+    if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, anchorRect, scale: overlayScale })) {
       return;
     }
     customBadge.remove();
@@ -6166,6 +6325,15 @@ function beginTextBoxDrag(event) {
     || !customOverlay.contains(customBadge)
   ) return;
   event.preventDefault();
+  if (box.lock_to_stack) {
+    const boxes = overlayTextBoxes().map((item) => item.id === boxId
+      ? normalizeOverlayTextBox({ ...item, lock_to_stack: false })
+      : item);
+    setLocalOverlayTextBoxes(boxes);
+    renderTextBoxEditors();
+    syncOverlayPreviewStateFromControls();
+    scheduleInteractionPreviewRender({ overlay: true });
+  }
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const badgeRect = customBadge.getBoundingClientRect();
@@ -6564,32 +6732,12 @@ function renderLiveOverlay(positionMsOverride = null) {
   }
 
   const textBoxEntries = visibleOverlayTextBoxEntries(finalShotReached);
-  if (reviewBoxesLockedToOverlayStack()) {
-    textBoxEntries.forEach(({ box, textValue }) => {
-      overlay.appendChild(
-        badgeElement(
-          textValue,
-          overlayTextBoxStyle(box),
-          size,
-          null,
-          box.width,
-          box.height,
-          "center",
-          overlayScale,
-        )
-      );
-    });
-    if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
-      customOverlay.innerHTML = "";
-      customOverlay.classList.remove("has-badge");
-      customOverlayRenderKey = "";
-    }
-    return;
-  }
+  const stackAnchorRect = overlayStackAnchorRect(overlay);
+  const stackTerminalRect = overlayStackTerminalRect(overlay);
 
   const nextCustomOverlayKey = textBoxEntries.length === 0
     ? ""
-    : customOverlayKey(textBoxEntries, frameRect, overlayScale, finalScoreBadge);
+    : customOverlayKey(textBoxEntries, frameRect, overlayScale, finalScoreBadge, stackAnchorRect);
   if (!nextCustomOverlayKey) {
     if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
       customOverlay.innerHTML = "";
@@ -6600,7 +6748,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   }
   // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
   if (nextCustomOverlayKey !== customOverlayRenderKey) {
-    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge);
+    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
     customOverlayRenderKey = nextCustomOverlayKey;
   }
 }
@@ -6932,7 +7080,13 @@ function readOverlayPayload() {
     if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;
     styles[badge] = {};
     card.querySelectorAll("[data-field]").forEach((input) => {
-      const value = input.type === "range" ? Number(input.value) : (isColorInput(input) ? readColorControlValue(input) : input.value);
+      const value = isColorInput(input)
+        ? readColorControlValue(input)
+        : input.dataset.field === "opacity"
+          ? opacityValueFromPercent(input.value)
+          : input.type === "range"
+            ? Number(input.value)
+            : input.value;
       styles[badge][input.dataset.field] = value;
     });
   });
@@ -6974,10 +7128,10 @@ function readOverlayPayload() {
     timer_lock_to_stack: $("timer-lock-to-stack").checked,
     draw_lock_to_stack: $("draw-lock-to-stack").checked,
     score_lock_to_stack: $("score-lock-to-stack").checked,
-    review_boxes_lock_to_stack: $("review-lock-to-stack").checked,
     text_boxes: textBoxes.map((box) => ({
       id: box.id,
       enabled: box.enabled,
+      lock_to_stack: box.lock_to_stack,
       source: box.source,
       text: box.text,
       quadrant: box.quadrant,
@@ -7049,7 +7203,7 @@ function readMergePayload() {
   return {
     enabled: $("merge-enabled").checked,
     layout: $("merge-layout").value,
-    pip_size_percent: Number.isFinite(pipValue) ? clampNumber(pipValue, 10, 95) : 35,
+    pip_size_percent: Number.isFinite(pipValue) ? clampNumber(pipValue, 1, 95) : 35,
     pip_x: normalizedCoordinateValue($("pip-x").value) ?? 1,
     pip_y: normalizedCoordinateValue($("pip-y").value) ?? 1,
   };
@@ -7702,7 +7856,6 @@ function wireEvents() {
     "show-draw",
     "show-shots",
     "show-score",
-    "review-lock-to-stack",
   ].forEach((id) => {
     const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
     $(id).addEventListener(eventName, () => {
@@ -7712,13 +7865,6 @@ function wireEvents() {
       }
       if (id.endsWith("-lock-to-stack")) {
         syncOverlayBubbleLockControlState();
-        if (id === "review-lock-to-stack") {
-          syncOverlayPreviewStateFromControls();
-          renderTextBoxEditors();
-          scheduleInteractionPreviewRender({ overlay: true });
-          scheduleOverlayApply();
-          return;
-        }
       }
       commitOverlayControlChanges();
     });

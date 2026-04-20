@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from splitshot.domain.models import (
     AspectRatio,
     ExportFrameRate,
@@ -9,6 +11,7 @@ from splitshot.domain.models import (
     ImportedStageScore,
     MergeLayout,
     OverlayPosition,
+    OverlayTextBox,
     MergeSource,
     Project,
     ScoreLetter,
@@ -43,6 +46,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
                 is_still_image=True,
             ),
             pip_size_percent=42,
+            opacity=0.55,
             sync_offset_ms=135,
         )
     ]
@@ -131,6 +135,22 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.overlay.custom_box_quadrant = "middle_middle"
     project.overlay.custom_box_x = 0.5
     project.overlay.custom_box_y = 0.6
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            lock_to_stack=True,
+            source="imported_summary",
+            text="Stage review",
+            quadrant="custom",
+            x=0.5,
+            y=0.6,
+            background_color="#202020",
+            text_color="#ffffff",
+            opacity=0.9,
+            width=180,
+            height=56,
+        )
+    ]
     project.merge.enabled = True
     project.merge.layout = MergeLayout.PIP
     project.merge.pip_size_percent = 50
@@ -229,12 +249,17 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.overlay.custom_box_quadrant == "custom"
     assert loaded.overlay.custom_box_x == 0.5
     assert loaded.overlay.custom_box_y == 0.6
+    assert len(loaded.overlay.text_boxes) == 1
+    assert loaded.overlay.text_boxes[0].lock_to_stack is True
+    assert loaded.overlay.text_boxes[0].x == pytest.approx(0.5)
+    assert loaded.overlay.text_boxes[0].y == pytest.approx(0.6)
     assert loaded.merge.enabled is True
     assert loaded.merge.layout == MergeLayout.PIP
     assert loaded.merge.pip_size_percent == 50
     assert loaded.merge.pip_x == 0.2
     assert loaded.merge.pip_y == 0.8
     assert loaded.merge_sources[0].pip_size_percent == 42
+    assert loaded.merge_sources[0].opacity == pytest.approx(0.55)
     assert loaded.merge_sources[0].sync_offset_ms == 135
     assert loaded.analysis.sync_offset_ms == 135
     assert loaded.export.output_path == "/tmp/export.mp4"
@@ -290,6 +315,33 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert loaded.merge_sources[0].pip_size_percent == loaded.merge.pip_size_percent
     assert loaded.merge_sources[0].sync_offset_ms == 87
     assert loaded.analysis.sync_offset_ms == 87
+
+
+def test_project_from_dict_migrates_legacy_review_box_stack_lock_to_per_box_state() -> None:
+    legacy = project_to_dict(Project(name="Legacy Review Lock"))
+    legacy["overlay"]["review_boxes_lock_to_stack"] = True
+    legacy["overlay"]["text_boxes"] = [
+        {
+            "id": "manual-box",
+            "enabled": True,
+            "source": "manual",
+            "text": "Review Box",
+            "quadrant": "custom",
+            "x": 0.7,
+            "y": 0.2,
+            "background_color": "#ff0000",
+            "text_color": "#ffffff",
+            "opacity": 1.0,
+            "width": 160,
+            "height": 48,
+        }
+    ]
+
+    loaded = project_from_dict(legacy)
+
+    assert len(loaded.overlay.text_boxes) == 1
+    assert loaded.overlay.text_boxes[0].lock_to_stack is True
+    assert "review_boxes_lock_to_stack" not in project_to_dict(loaded)["overlay"]
 
 
 def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None:

@@ -1375,6 +1375,7 @@ class BrowserControlServer:
                     None if payload.get("pip_size_percent") in {None, ""} else int(payload["pip_size_percent"]),
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
+                    None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))

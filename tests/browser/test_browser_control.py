@@ -336,7 +336,6 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
                 "timer_lock_to_stack": False,
                 "draw_lock_to_stack": True,
                 "score_lock_to_stack": False,
-                "review_boxes_lock_to_stack": True,
                 "timer_x": 0.21,
                 "timer_y": 0.32,
                 "score_x": 0.74,
@@ -345,6 +344,7 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
                     {
                         "id": "manual-box",
                         "enabled": True,
+                        "lock_to_stack": True,
                         "source": "manual",
                         "text": "Session summary",
                         "quadrant": "top_left",
@@ -387,6 +387,7 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
         boxes = state["project"]["overlay"]["text_boxes"]
         assert len(boxes) == 3
         assert boxes[0]["text"] == "Session summary"
+        assert boxes[0]["lock_to_stack"] is True
         assert boxes[0]["quadrant"] == "top_left"
         assert boxes[1]["source"] == "imported_summary"
         assert boxes[1]["quadrant"] == "above_final"
@@ -397,7 +398,6 @@ def test_browser_overlay_api_supports_repeatable_text_boxes() -> None:
         assert state["project"]["overlay"]["timer_lock_to_stack"] is False
         assert state["project"]["overlay"]["draw_lock_to_stack"] is True
         assert state["project"]["overlay"]["score_lock_to_stack"] is False
-        assert state["project"]["overlay"]["review_boxes_lock_to_stack"] is True
         assert state["project"]["overlay"]["timer_x"] == pytest.approx(0.21)
         assert state["project"]["overlay"]["timer_y"] == pytest.approx(0.32)
         assert state["project"]["overlay"]["score_x"] == pytest.approx(0.74)

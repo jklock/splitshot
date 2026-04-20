@@ -46,6 +46,7 @@ from splitshot.persistence.projects import (
     INPUT_DIRNAME,
     PRACTISCORE_DIRNAME,
     copy_path_to_project_subdir,
+    default_project_output_path,
     delete_project,
     ensure_project_suffix,
     load_project,
@@ -841,6 +842,7 @@ class ProjectController(QObject):
             boxes.append(
                 OverlayTextBox(
                     enabled=True,
+                    lock_to_stack=False,
                     source="imported_summary",
                     quadrant="above_final",
                     x=None,
@@ -1462,7 +1464,6 @@ class ProjectController(QObject):
             "timer_lock_to_stack",
             "draw_lock_to_stack",
             "score_lock_to_stack",
-            "review_boxes_lock_to_stack",
         ):
             if field_name in payload:
                 setattr(overlay, field_name, bool(payload[field_name]))
@@ -1504,6 +1505,7 @@ class ProjectController(QObject):
                 box = OverlayTextBox(
                     id=str(item.get("id") or OverlayTextBox().id),
                     enabled=bool(item.get("enabled", False)),
+                    lock_to_stack=bool(item.get("lock_to_stack", False)),
                     source=source if source in valid_custom_box_modes else "manual",
                     text=str(item.get("text", ""))[:500],
                     quadrant=quadrant if quadrant in valid_custom_box_quadrants else "top_right",
@@ -1585,7 +1587,7 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_pip_size_percent(self, percent: int) -> None:
-        self.project.merge.pip_size_percent = max(10, min(95, int(percent)))
+        self.project.merge.pip_size_percent = max(1, min(95, int(percent)))
         self.project.touch()
         self.project_changed.emit()
 
@@ -1603,16 +1605,19 @@ class ProjectController(QObject):
         pip_size_percent: int | None = None,
         pip_x: float | None = None,
         pip_y: float | None = None,
+        opacity: float | None = None,
     ) -> None:
         for source in self.project.merge_sources:
             if source.id != source_id:
                 continue
             if pip_size_percent is not None:
-                source.pip_size_percent = max(10, min(95, int(pip_size_percent)))
+                source.pip_size_percent = max(1, min(95, int(pip_size_percent)))
             if pip_x is not None:
                 source.pip_x = max(0.0, min(1.0, float(pip_x)))
             if pip_y is not None:
                 source.pip_y = max(0.0, min(1.0, float(pip_y)))
+            if opacity is not None:
+                source.opacity = max(0.0, min(1.0, float(opacity)))
             self.project.touch()
             self.project_changed.emit()
             return
@@ -1797,11 +1802,13 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def save_project(self, path: str | None = None) -> None:
+        previous_project_path = self.project_path
         target_path = Path(path) if path else self.project_path
         if target_path is None:
             raise ValueError("Project path is required")
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
+        self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
         self._restore_practiscore_source_from_project()
         self._saved_snapshot = project_to_dict(self.project)
@@ -1814,6 +1821,7 @@ class ProjectController(QObject):
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
         self.project_path = ensure_project_suffix(path)
+        self._ensure_project_output_path()
         loaded_snapshot = project_to_dict(self.project)
         recovered_media = self._restore_media_sources_from_project()
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
@@ -1953,6 +1961,19 @@ class ProjectController(QObject):
         project.overlay.badge_size = self.settings.badge_size
         project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
         return project
+
+    def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
+        if self.project_path is None:
+            return
+        current_output_path = str(self.project.export.output_path or "").strip()
+        project_output_path = str(default_project_output_path(self.project_path))
+        previous_output_path = (
+            str(default_project_output_path(previous_project_path))
+            if previous_project_path is not None
+            else ""
+        )
+        if not current_output_path or (previous_output_path and current_output_path == previous_output_path):
+            self.project.export.output_path = project_output_path
 
     def _set_status(self, message: str) -> None:
         self.status_message = message

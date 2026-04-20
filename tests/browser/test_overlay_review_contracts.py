@@ -6,6 +6,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
 from splitshot.overlay.render import OverlayRenderer
@@ -92,7 +93,6 @@ def test_overlay_api_defaults_partial_text_box_custom_coordinates_like_preview(
         state = _post_json(
             f"{server.url}api/overlay",
             {
-                "review_boxes_lock_to_stack": False,
                 "text_boxes": [
                     {
                         "id": "manual-box",
@@ -118,57 +118,81 @@ def test_overlay_api_defaults_partial_text_box_custom_coordinates_like_preview(
         server.shutdown()
 
 
-def test_review_stack_lock_uses_stack_rendering_without_discarding_custom_coordinates() -> None:
+def test_review_box_lock_preserves_custom_coordinates_but_renders_from_stack_anchor() -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
+        payload = {
+            "position": "top",
+            "shot_quadrant": "top_left",
+            "show_timer": False,
+            "show_draw": False,
+            "show_shots": False,
+            "show_score": False,
+            "text_boxes": [
+                {
+                    "id": "manual-box",
+                    "enabled": True,
+                    "lock_to_stack": True,
+                    "source": "manual",
+                    "text": "Review Box",
+                    "quadrant": "custom",
+                    "x": 0.7,
+                    "y": 0.2,
+                    "background_color": "#ff0000",
+                    "text_color": "#ffffff",
+                    "opacity": 1.0,
+                    "width": 140,
+                    "height": 44,
+                }
+            ],
+        }
         state = _post_json(
             f"{server.url}api/overlay",
-            {
-                "position": "top",
-                "show_timer": False,
-                "show_draw": False,
-                "show_shots": False,
-                "show_score": False,
-                "review_boxes_lock_to_stack": True,
-                "text_boxes": [
-                    {
-                        "id": "manual-box",
-                        "enabled": True,
-                        "source": "manual",
-                        "text": "Review Box",
-                        "quadrant": "custom",
-                        "x": 0.7,
-                        "y": 0.2,
-                        "background_color": "#ff0000",
-                        "text_color": "#ffffff",
-                        "opacity": 1.0,
-                        "width": 140,
-                        "height": 44,
-                    }
-                ],
-            },
+            payload,
         )
 
         box = state["project"]["overlay"]["text_boxes"][0]
+        assert box["lock_to_stack"] is True
         assert box["quadrant"] == "custom"
         assert box["x"] == pytest.approx(0.7)
         assert box["y"] == pytest.approx(0.2)
 
-        badges, positioned_badges, _score_marks = OverlayRenderer()._build_badges_with_positions(controller.project, 0)
-        assert any(badge.text == "Review Box" for badge in badges)
-        assert not any(badge.text == "Review Box" for badge, _x, _y in positioned_badges)
+        def render_center() -> tuple[float, float]:
+            image = QImage(320, 180, QImage.Format.Format_ARGB32)
+            image.fill(QColor("#000000"))
+            painter = QPainter(image)
+            OverlayRenderer().paint(painter, controller.project, 0, 320, 180)
+            painter.end()
 
-        state = _post_json(f"{server.url}api/overlay", {"review_boxes_lock_to_stack": False})
+            red_pixels: list[tuple[int, int]] = []
+            for y in range(image.height()):
+                for x in range(image.width()):
+                    color = image.pixelColor(x, y)
+                    if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                        red_pixels.append((x, y))
+
+            assert red_pixels
+            center_x = (min(x for x, _y in red_pixels) + max(x for x, _y in red_pixels)) / 2
+            center_y = (min(y for _x, y in red_pixels) + max(y for _x, y in red_pixels)) / 2
+            return center_x, center_y
+
+        locked_center_x, locked_center_y = render_center()
+        assert locked_center_x < 120
+        assert locked_center_y < 80
+
+        payload["text_boxes"][0]["lock_to_stack"] = False
+        state = _post_json(f"{server.url}api/overlay", payload)
         box = state["project"]["overlay"]["text_boxes"][0]
+        assert box["lock_to_stack"] is False
         assert box["quadrant"] == "custom"
         assert box["x"] == pytest.approx(0.7)
         assert box["y"] == pytest.approx(0.2)
 
-        badges, positioned_badges, _score_marks = OverlayRenderer()._build_badges_with_positions(controller.project, 0)
-        assert not any(badge.text == "Review Box" for badge in badges)
-        assert not any(badge.text == "Review Box" for badge, _x, _y in positioned_badges)
+        unlocked_center_x, unlocked_center_y = render_center()
+        assert unlocked_center_x == pytest.approx(320 * 0.7, abs=3)
+        assert unlocked_center_y == pytest.approx(180 * 0.2, abs=3)
     finally:
         server.shutdown()
 
@@ -181,8 +205,8 @@ def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync()
     body = match.group("body")
     assert "const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));" in body
     assert "const primaryTextBox = preferredLegacyTextBox(textBoxes);" in body
-    assert "review_boxes_lock_to_stack: $(\"review-lock-to-stack\").checked" in body
     assert "text_boxes: textBoxes.map((box) => ({" in body
+    assert "lock_to_stack: box.lock_to_stack" in body
     assert "custom_box_mode: primaryTextBox?.source || \"manual\"" in body
     assert "custom_box_x: primaryTextBox?.x ?? \"\"" in body
     assert "custom_box_y: primaryTextBox?.y ?? \"\"" in body
@@ -234,7 +258,16 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
 
     assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left"' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
+    assert 'return box.text || state?.scoring_summary?.imported_overlay_text || "";' in js
     assert 'if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE)' in js
+    assert 'textArea.disabled = false;' in js
+    assert 'Leave blank to use the imported PractiScore stage summary after the final shot' in js
+    assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in js
+    assert 'function resolvedOverlayTextBoxSize(box) {' in js
+    assert 'function overlayStackAnchorRect(overlay) {' in js
+    assert 'function overlayStackTerminalRect(overlay) {' in js
+    assert 'if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
+    assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in js
     assert 'source="imported_summary",' in controller_source
     assert 'quadrant="above_final",' in controller_source
     assert "sync_overlay_legacy_custom_box_fields(self.project.overlay)" in controller_source
