@@ -573,6 +573,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (penaltyFields.length > 0) {' in js
     assert 'penalty_counts: collectPenaltyCounts(controls),' in js
     assert 'updateTimingRowField(row.shot_id, "score_letter", select.value)' not in js
+    assert 'const commitSplitEdit = () => {' in js
+    assert 'input.addEventListener("blur", commitSplitEdit);' in js
+    assert 'input.blur();' in js
     assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72)' in js
     assert 'previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js

@@ -4409,7 +4409,21 @@ function renderTimingTable(tableId = "timing-table") {
         input.value = seconds(splitMs ?? row.absolute_time_ms);
         input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
         input.title = "Edit the split in seconds using 0.00 format.";
-        input.addEventListener("change", () => updateTimingRowField(row.shot_id, "split_ms", input.value));
+        let committedValue = String(input.value ?? "").trim();
+        const commitSplitEdit = () => {
+          const nextValue = String(input.value ?? "").trim();
+          if (!nextValue || nextValue === committedValue) return;
+          committedValue = nextValue;
+          updateTimingRowField(row.shot_id, "split_ms", nextValue);
+        };
+        input.addEventListener("change", commitSplitEdit);
+        input.addEventListener("blur", commitSplitEdit);
+        input.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          commitSplitEdit();
+          input.blur();
+        });
         const actions = document.createElement("span");
         actions.className = "timing-edit-actions";
         const restore = document.createElement("button");
