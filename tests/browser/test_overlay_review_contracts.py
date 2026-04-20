@@ -271,3 +271,18 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert 'source="imported_summary",' in controller_source
     assert 'quadrant="above_final",' in controller_source
     assert "sync_overlay_legacy_custom_box_fields(self.project.overlay)" in controller_source
+
+
+def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> None:
+    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert 'let textBoxRenderedPositionById = new Map();' in js
+    assert 'function resolveNormalizedPointFromRect(rect, frameRect) {' in js
+    assert 'function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {' in js
+    assert 'function unlockedOverlayTextBox(box, coordinates = null) {' in js
+    assert 'function syncLockedTextBoxEditorCoordinates() {' in js
+    assert 'if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
+    assert 'return unlockedOverlayTextBox(box);' in js
+    assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' in js
+    assert 'textBoxRenderedPositionById = nextRenderedPositions;' in js
+    assert 'syncLockedTextBoxEditorCoordinates();' in js

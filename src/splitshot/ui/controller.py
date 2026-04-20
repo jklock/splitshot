@@ -32,6 +32,7 @@ from splitshot.domain.models import (
     ShotEvent,
     ShotMLSettings,
     ShotSource,
+    TimingEvent,
     TimingChangeProposal,
     VideoAsset,
     legacy_custom_box_as_text_box,
@@ -361,6 +362,84 @@ def _revalidate_timing_ui_state(
     return changed
 
 
+def _merge_reanalyzed_shots(
+    previous_shots: list[ShotEvent],
+    detected_shots: list[ShotEvent],
+    settings: ShotMLSettings,
+) -> list[ShotEvent]:
+    merged_shots = [deepcopy(shot) for shot in detected_shots]
+    manual_shots = [deepcopy(shot) for shot in previous_shots if shot.source == ShotSource.MANUAL]
+    if not manual_shots:
+        return sort_shots(merged_shots)
+
+    overlap_window_ms = max(1, int(settings.min_shot_interval_ms or 0))
+    for manual_shot in sort_shots(manual_shots):
+        merged_shots = [
+            shot
+            for shot in merged_shots
+            if abs(int(shot.time_ms) - int(manual_shot.time_ms)) > overlap_window_ms
+        ]
+        merged_shots.append(manual_shot)
+    return sort_shots(merged_shots)
+
+
+def _nearest_shot_id_by_time(shots: list[ShotEvent], target_time_ms: int) -> str | None:
+    if not shots:
+        return None
+    return min(
+        enumerate(shots),
+        key=lambda item: (abs(int(item[1].time_ms) - int(target_time_ms)), item[0]),
+    )[1].id
+
+
+def _event_boundary_index(shots: list[ShotEvent], boundary_time_ms: int) -> int:
+    for index, shot in enumerate(shots):
+        if int(shot.time_ms) >= int(boundary_time_ms):
+            return index
+    return len(shots)
+
+
+def _reanchor_timing_events_for_shots(
+    events: list[TimingEvent],
+    previous_shots: list[ShotEvent],
+    next_shots: list[ShotEvent],
+) -> list[TimingEvent]:
+    if not events:
+        return []
+    previous_by_id = {shot.id: shot for shot in previous_shots}
+    reanchored_events: list[TimingEvent] = []
+
+    for event in events:
+        if not event.after_shot_id and not event.before_shot_id:
+            reanchored_events.append(deepcopy(event))
+            continue
+
+        previous_after = previous_by_id.get(event.after_shot_id or "")
+        previous_before = previous_by_id.get(event.before_shot_id or "")
+        rebased_event = deepcopy(event)
+
+        if previous_after is not None and previous_before is not None:
+            boundary_time_ms = previous_after.time_ms + max(1, (previous_before.time_ms - previous_after.time_ms) // 2)
+            boundary_index = _event_boundary_index(next_shots, boundary_time_ms)
+            rebased_event.after_shot_id = next_shots[boundary_index - 1].id if boundary_index > 0 else None
+            rebased_event.before_shot_id = next_shots[boundary_index].id if boundary_index < len(next_shots) else None
+        elif previous_after is not None:
+            rebased_event.after_shot_id = _nearest_shot_id_by_time(next_shots, previous_after.time_ms)
+            rebased_event.before_shot_id = None
+        elif previous_before is not None:
+            rebased_event.after_shot_id = None
+            rebased_event.before_shot_id = _nearest_shot_id_by_time(next_shots, previous_before.time_ms)
+        else:
+            rebased_event.after_shot_id = None
+            rebased_event.before_shot_id = None
+
+        normalized_event = normalized_timing_event_for_shots(rebased_event, next_shots)
+        if normalized_event is not None:
+            reanchored_events.append(normalized_event)
+
+    return reanchored_events
+
+
 class ProjectController(QObject):
     project_changed = Signal()
     settings_changed = Signal()
@@ -413,6 +492,8 @@ class ProjectController(QObject):
             self.project.ui_state.selected_shot_id,
             fallback_mode="time",
         )
+        previous_shots = [deepcopy(shot) for shot in self.project.analysis.shots]
+        previous_events = [deepcopy(event) for event in self.project.analysis.events]
         self._set_status("Analyzing primary video for beep and shot detections...")
         result = _run_analyze_video_audio(
             self.project.primary_video.path,
@@ -421,7 +502,16 @@ class ProjectController(QObject):
         )
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
-        self.project.analysis.shots = result.shots
+        self.project.analysis.shots = _merge_reanalyzed_shots(
+            previous_shots,
+            result.shots,
+            self.project.analysis.shotml_settings,
+        )
+        self.project.analysis.events = _reanchor_timing_events_for_shots(
+            previous_events,
+            previous_shots,
+            self.project.analysis.shots,
+        )
         self.project.analysis.detection_review_suggestions = [
             asdict(suggestion) for suggestion in result.review_suggestions
         ]
@@ -909,7 +999,7 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
-        self.set_shotml_settings({"detection_threshold": value}, rerun=True, update_app_defaults=True)
+        self.set_shotml_settings({"detection_threshold": value}, rerun=True)
 
     def set_shotml_settings(
         self,
@@ -943,8 +1033,10 @@ class ProjectController(QObject):
 
         self.project.analysis.detection_threshold = settings.detection_threshold
         if update_app_defaults:
-            self.settings.detection_threshold = settings.detection_threshold
-            self.settings.shotml_defaults = ShotMLSettings(**asdict(settings))
+            persisted_defaults = ShotMLSettings(**asdict(settings))
+            persisted_defaults.detection_threshold = ShotMLSettings().detection_threshold
+            self.settings.detection_threshold = persisted_defaults.detection_threshold
+            self.settings.shotml_defaults = persisted_defaults
             save_settings(self.settings)
             self.settings_changed.emit()
         if rerun and self.project.primary_video.path:

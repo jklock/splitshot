@@ -16,6 +16,7 @@ from splitshot.analysis.detection import (
     _suggest_timing_review_actions,
     analyze_video_audio,
 )
+from splitshot.config import AppSettings
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.domain.models import (
     BadgeSize,
@@ -103,6 +104,29 @@ def test_default_shotml_settings_match_legacy_threshold_call(synthetic_video_fac
         for shot in configured.shots
     ]
     assert legacy.waveform == configured.waveform
+
+
+def test_saved_app_threshold_is_normalized_back_to_factory_default(monkeypatch) -> None:
+    settings = AppSettings.from_dict(
+        {
+            "detection_threshold": 0.75,
+            "shotml_defaults": {
+                "detection_threshold": 0.75,
+                "beep_onset_fraction": 0.31,
+            },
+        }
+    )
+
+    assert settings.detection_threshold == pytest.approx(0.35)
+    assert settings.shotml_defaults.detection_threshold == pytest.approx(0.35)
+    assert settings.shotml_defaults.beep_onset_fraction == pytest.approx(0.31)
+
+    monkeypatch.setattr("splitshot.ui.controller.load_settings", lambda: settings)
+    controller = ProjectController()
+
+    assert controller.project.analysis.detection_threshold == pytest.approx(0.35)
+    assert controller.project.analysis.shotml_settings.detection_threshold == pytest.approx(0.35)
+    assert controller.project.analysis.shotml_settings.beep_onset_fraction == pytest.approx(0.31)
 
 
 def test_false_positive_filter_rejects_sub_tenth_second_shots() -> None:
@@ -814,6 +838,83 @@ def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch
     assert [shot.time_ms for shot in controller.project.analysis.shots] == [820]
     assert controller.project.analysis.waveform_primary == [0.1, 0.2]
     assert controller.project.analysis.waveform_secondary == [0.3, 0.4]
+
+
+def test_detection_threshold_reanalysis_preserves_manual_shots_and_timing_events(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+
+    detections = [
+        DetectionResult(
+            beep_time_ms=100,
+            shots=[
+                ShotEvent(time_ms=250, source=ShotSource.AUTO, confidence=0.9),
+                ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.9),
+                ShotEvent(time_ms=900, source=ShotSource.AUTO, confidence=0.9),
+            ],
+            waveform=[0.1],
+            sample_rate=22050,
+        ),
+        DetectionResult(
+            beep_time_ms=105,
+            shots=[
+                ShotEvent(time_ms=260, source=ShotSource.AUTO, confidence=0.95),
+                ShotEvent(time_ms=515, source=ShotSource.AUTO, confidence=0.95),
+                ShotEvent(time_ms=880, source=ShotSource.AUTO, confidence=0.95),
+            ],
+            waveform=[0.2],
+            sample_rate=22050,
+        ),
+    ]
+
+    def fake_analyze(path: str, threshold: float) -> DetectionResult:
+        return detections.pop(0)
+
+    monkeypatch.setattr("splitshot.ui.controller.analyze_video_audio", fake_analyze)
+
+    controller.analyze_primary()
+    first_shot_id = controller.project.analysis.shots[0].id
+    second_shot_id = controller.project.analysis.shots[1].id
+    controller.add_timing_event("reload", after_shot_id=first_shot_id, before_shot_id=second_shot_id, note="Keep me")
+    controller.add_shot(1200)
+    manual_shot_id = next(shot.id for shot in controller.project.analysis.shots if shot.source == ShotSource.MANUAL)
+
+    controller.set_detection_threshold(0.55)
+
+    shots = controller.project.analysis.shots
+    assert [shot.time_ms for shot in shots] == [260, 515, 880, 1200]
+    assert any(shot.id == manual_shot_id and shot.source == ShotSource.MANUAL for shot in shots)
+    assert len(controller.project.analysis.events) == 1
+    assert controller.project.analysis.events[0].note == "Keep me"
+    shot_ids = {shot.id for shot in shots}
+    assert controller.project.analysis.events[0].after_shot_id in shot_ids
+    assert controller.project.analysis.events[0].before_shot_id in shot_ids
+    rows = compute_split_rows(controller.project)
+    assert rows[1].interval_label == "Reload"
+
+
+def test_detection_threshold_rerun_does_not_change_future_app_defaults(monkeypatch) -> None:
+    monkeypatch.setattr("splitshot.ui.controller.load_settings", lambda: AppSettings())
+    saved_settings: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "splitshot.ui.controller.save_settings",
+        lambda settings: saved_settings.append(settings.to_dict()),
+    )
+
+    controller = ProjectController()
+
+    controller.set_detection_threshold(0.75)
+
+    assert controller.project.analysis.detection_threshold == pytest.approx(0.75)
+    assert controller.project.analysis.shotml_settings.detection_threshold == pytest.approx(0.75)
+    assert controller.settings.detection_threshold == pytest.approx(0.35)
+    assert controller.settings.shotml_defaults.detection_threshold == pytest.approx(0.35)
+    assert saved_settings == []
+
+    controller.new_project()
+
+    assert controller.project.analysis.detection_threshold == pytest.approx(0.35)
+    assert controller.project.analysis.shotml_settings.detection_threshold == pytest.approx(0.35)
 
 
 def test_shotml_settings_update_reanalyzes_with_full_settings_object(monkeypatch) -> None:

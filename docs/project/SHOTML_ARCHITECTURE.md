@@ -23,6 +23,8 @@ The detector still owns automatic beep and shot discovery. The Splits pane remai
 
 App-level defaults are stored on `AppSettings.shotml_defaults`. New projects copy those defaults into the project-scoped `AnalysisState`. Resetting ShotML settings from the ShotML pane applies the factory `ShotMLSettings()` profile back into the current project and updates app defaults to the same factory profile.
 
+The detection threshold is intentionally treated as a factory default instead of a sticky app default. Re-running ShotML with a project-specific threshold should not make later projects reopen at that ad-hoc value.
+
 The important design rule is: project settings are authoritative for an open project. App defaults only seed new projects or reset a project when the user requests it.
 
 ## Default Settings Review

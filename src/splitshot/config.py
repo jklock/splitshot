@@ -40,6 +40,7 @@ class AppSettings:
     def from_dict(cls, data: dict[str, object]) -> "AppSettings":
         shotml_payload = data.get("shotml_defaults")
         defaults = ShotMLSettings()
+        factory_threshold = defaults.detection_threshold
         shotml_values: dict[str, object] = {}
         if isinstance(shotml_payload, dict):
             for item in fields(ShotMLSettings):
@@ -57,10 +58,11 @@ class AppSettings:
                 except (TypeError, ValueError):
                     shotml_values[item.name] = default_value
         shotml_defaults = ShotMLSettings(**shotml_values) if shotml_values else defaults
-        detection_threshold = float(data.get("detection_threshold", shotml_defaults.detection_threshold))
-        shotml_defaults.detection_threshold = detection_threshold
+        # Keep the canonical threshold at the artifact-backed factory value instead of
+        # treating a prior project's rerun threshold as a future app default.
+        shotml_defaults.detection_threshold = factory_threshold
         return cls(
-            detection_threshold=detection_threshold,
+            detection_threshold=factory_threshold,
             shotml_defaults=shotml_defaults,
             overlay_position=OverlayPosition(str(data.get("overlay_position", OverlayPosition.BOTTOM.value))),
             merge_layout=MergeLayout(str(data.get("merge_layout", MergeLayout.SIDE_BY_SIDE.value))),

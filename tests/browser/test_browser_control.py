@@ -12,8 +12,10 @@ from pathlib import Path
 
 import pytest
 import splitshot.browser.server as browser_server_module
+import splitshot.ui.controller as controller_module
 
 from splitshot.browser.activity import ActivityLogger
+from splitshot.analysis.detection import DetectionResult
 from splitshot.browser.server import (
     BrowserControlServer,
     QuietThreadingHTTPServer,
@@ -21,7 +23,7 @@ from splitshot.browser.server import (
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import OverlayPosition, Project
+from splitshot.domain.models import OverlayPosition, Project, ShotEvent, ShotSource, VideoAsset
 from splitshot.ui.controller import ProjectController
 
 
@@ -1023,6 +1025,47 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
         assert not bundle_path.exists()
         assert state["project"]["name"] == "Untitled Project"
         assert state["status"] == "Deleted the saved project folder."
+    finally:
+        server.shutdown()
+
+
+def test_browser_threshold_rerun_preserves_manual_shots_and_timing_events(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    first = ShotEvent(time_ms=250, source=ShotSource.AUTO, confidence=0.9)
+    second = ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.9)
+    third = ShotEvent(time_ms=900, source=ShotSource.AUTO, confidence=0.9)
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [first, second, third]
+    controller.add_timing_event("reload", after_shot_id=first.id, before_shot_id=second.id, note="Keep me")
+    controller.add_shot(1200)
+
+    def fake_analyze(path: str, threshold: float) -> DetectionResult:
+        return DetectionResult(
+            beep_time_ms=105,
+            shots=[
+                ShotEvent(time_ms=260, source=ShotSource.AUTO, confidence=0.95),
+                ShotEvent(time_ms=515, source=ShotSource.AUTO, confidence=0.95),
+                ShotEvent(time_ms=880, source=ShotSource.AUTO, confidence=0.95),
+            ],
+            waveform=[0.2],
+            sample_rate=22050,
+        )
+
+    monkeypatch.setattr(controller_module, "analyze_video_audio", fake_analyze)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(f"{server.url}api/analysis/threshold", {"threshold": 0.55})
+
+        assert any(
+            shot["source"] == "manual" and shot["time_ms"] == 1200
+            for shot in state["project"]["analysis"]["shots"]
+        )
+        assert len(state["project"]["analysis"]["events"]) == 1
+        assert state["project"]["analysis"]["events"][0]["note"] == "Keep me"
+        assert state["split_rows"][1]["interval_label"] == "Reload"
     finally:
         server.shutdown()
 
