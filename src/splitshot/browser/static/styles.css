@@ -1810,6 +1810,36 @@ button:disabled {
   font-size: 0.69rem;
 }
 
+.popup-motion-guide {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.popup-motion-path-list {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.popup-motion-point-row {
+  align-items: end;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: auto minmax(0, 1.2fr) minmax(110px, 0.72fr) minmax(110px, 0.72fr);
+}
+
+.popup-motion-point-row label {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.popup-motion-point-label {
+  color: var(--quiet);
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .sub-section-header {
   padding-left: 0;
   padding-right: 0;

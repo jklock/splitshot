@@ -131,6 +131,11 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-field="shot_id"' in html
     assert 'data-popup-field="quadrant"' in html
     assert 'data-popup-field="opacity_percent"' in html
+    assert 'data-popup-field="follow_motion"' in html
+    assert 'data-popup-field="motion_point_count"' in html
+    assert 'data-popup-motion-guide' in html
+    assert 'data-popup-motion-path-list' in html
+    assert 'data-popup-action="clear_motion_path"' in html
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
     assert 'id="metrics-export-csv"' in html
@@ -479,11 +484,24 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function beginTextBoxDrag(event) {' in js
     assert 'function moveTextBoxDrag(event) {' in js
     assert 'function endTextBoxDrag(event) {' in js
+    assert 'function normalizePopupMotionPath(path) {' in js
+    assert 'function popupBubbleMotionPath(bubble) {' in js
+    assert 'function popupBubbleMotionPointCount(bubble) {' in js
+    assert 'function popupBubbleMotionPathTemplate(bubble, totalPointCount = 4) {' in js
+    assert 'function popupBubblePoint(bubble, positionMs = null) {' in js
+    assert 'function resamplePopupBubbleMotionPath(bubble, totalPointCount = null, sourcePath = null) {' in js
+    assert 'function seekPrimaryVideoToTimeMs(timeMs) {' in js
+    assert 'function seekPrimaryVideoToShot(shotId) {' in js
+    assert 'function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {' in js
+    assert 'function renderPopupBubbleMotionGuide(card, bubble) {' in js
     assert 'function popupBubbleAutoSize(bubble) {' in js
     assert 'function resolvedPopupBubbleSize(bubble) {' in js
     assert 'function syncPopupBubbleSizeControls(bubbleId) {' in js
     assert 'if (shot) return shot.time_ms;' in js
     assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
+    assert 'data-popup-field="follow_motion"' in js
+    assert 'bubble.text,' in js
+    assert 'popupSize.width,\n      popupSize.height,\n      "center"' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
     assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",' in js
@@ -986,6 +1004,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "data-sync=",
         "data-open-merge-media",
         "data-layout-lock-toggle",
+        "data-popup-action=",
     )
     button_tags = re.findall(r"<button\b[^>]*>", html)
 
