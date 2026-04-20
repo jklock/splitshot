@@ -59,7 +59,7 @@ def _popup_bubble_time_ms(project: Project, popup) -> int:
     if getattr(popup, "anchor_mode", "time") == "shot" and getattr(popup, "shot_id", None):
         shot = next((item for item in sort_shots(project.analysis.shots) if item.id == popup.shot_id), None)
         if shot is not None:
-            return shot_display_time_ms(project, shot.time_ms)
+            return shot.time_ms
     return popup.time_ms
 
 
@@ -184,15 +184,16 @@ def _standard_badge_texts(project: Project) -> tuple[str, ...]:
     return tuple(texts)
 
 
-def _auto_badge_size(texts: tuple[str, ...], metrics) -> tuple[int, int] | None:
+def _auto_badge_size(texts: tuple[str, ...], metrics, line_height: int | None = None) -> tuple[int, int] | None:
     if not texts:
         return None
     text_width = 0
     text_height = 0
+    resolved_line_height = max(1, int(line_height or metrics.height()))
     for text in texts:
         lines = str(text or "").splitlines() or [""]
         text_width = max(text_width, max(metrics.horizontalAdvance(line or " ") for line in lines))
-        text_height = max(text_height, metrics.height() * max(1, len(lines)))
+        text_height = max(text_height, resolved_line_height * max(1, len(lines)))
     if text_width <= 0 or text_height <= 0:
         return None
     return (
@@ -352,7 +353,9 @@ class OverlayRenderer:
         font.setBold(project.overlay.font_bold)
         font.setItalic(project.overlay.font_italic)
         painter.setFont(font)
-        auto_badge_size = _auto_badge_size(_standard_badge_texts(project), painter.fontMetrics())
+        metrics = painter.fontMetrics()
+        line_height = _badge_line_height(font, metrics)
+        auto_badge_size = _auto_badge_size(_standard_badge_texts(project), metrics, line_height=line_height)
 
         badges, positioned_badges, score_marks = self._build_badges_with_positions(project, position_ms)
         final_shot_time = None if not project.analysis.shots else shot_display_time_ms(project, project.analysis.shots[-1].time_ms)
@@ -402,6 +405,7 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
+            text_box_auto_size = _auto_badge_size((text_value,), metrics, line_height=line_height)
             if text_box.lock_to_stack and text_box.quadrant != _ABOVE_FINAL_TEXT_BOX_QUADRANT:
                 rects = self._paint_badges(
                     painter,
@@ -419,6 +423,8 @@ class OverlayRenderer:
                     quadrant=project.overlay.shot_quadrant,
                     anchor_rect=None,
                     after_rect=stack_terminal_rect,
+                    auto_badge_size=text_box_auto_size,
+                    use_project_bubble_size=False,
                 )
                 if rects:
                     stack_terminal_rect = rects[-1]
@@ -450,6 +456,8 @@ class OverlayRenderer:
                 custom_x=text_box.x,
                 custom_y=text_box.y,
                 anchor_rect=anchor_rect,
+                auto_badge_size=text_box_auto_size,
+                use_project_bubble_size=False,
             )
         for popup in project.popups:
             popup_time_ms = _popup_bubble_time_ms(project, popup)
@@ -465,6 +473,7 @@ class OverlayRenderer:
                 text_color=popup.text_color,
                 opacity=popup.opacity,
             )
+            popup_auto_size = _auto_badge_size((popup.text,), metrics, line_height=line_height)
             self._paint_badges(
                 painter,
                 [
@@ -481,6 +490,8 @@ class OverlayRenderer:
                 quadrant=popup.quadrant,
                 custom_x=popup.x,
                 custom_y=popup.y,
+                auto_badge_size=popup_auto_size,
+                use_project_bubble_size=False,
             )
         self._paint_scores(painter, project, score_marks, width, height)
 
@@ -499,6 +510,7 @@ class OverlayRenderer:
         auto_badge_size: tuple[int, int] | None = None,
         anchor_rect: QRectF | None = None,
         after_rect: QRectF | None = None,
+        use_project_bubble_size: bool = True,
     ) -> list[QRectF]:
         if not badges:
             return []
@@ -538,8 +550,8 @@ class OverlayRenderer:
                     self._minimum_badge_text_width(metrics, badge.text),
                 )
             text_height = line_height * max(1, len(lines))
-            explicit_width = int(badge.width or project.overlay.bubble_width or 0)
-            explicit_height = int(badge.height or project.overlay.bubble_height or 0)
+            explicit_width = int(badge.width or (project.overlay.bubble_width if use_project_bubble_size else 0) or 0)
+            explicit_height = int(badge.height or (project.overlay.bubble_height if use_project_bubble_size else 0) or 0)
             badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else text_width + (padding_x * 2))
             badge_height = explicit_height if explicit_height > 0 else (auto_badge_size[1] if auto_badge_size else text_height + (padding_y * 2))
             base_rect = previous_rect or after_rect

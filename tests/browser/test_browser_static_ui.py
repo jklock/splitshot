@@ -309,6 +309,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "handleWaveformPointerDown" in js
     assert "handleWaveformPointerMove" in js
     assert "handleKeyboardEdit" in js
+    assert "function keyboardEditTargetIsEditable(event) {" in js
+    assert 'if (keyboardEditTargetIsEditable(event)) return;' in js
     assert "scheduleSecondaryPreviewSync" in js
     assert "autoApplyShotMLSettings" in js
     assert "autoApplyOverlay" in js
@@ -472,10 +474,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));' in js
     assert 'function createOverlayTextBoxId() {' in js
     assert 'function overlayTextBoxAutoSize(box) {' in js
+    assert 'function syncOverlayTextBoxSizeControls(boxId) {' in js
     assert 'function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {' in js
     assert 'function beginTextBoxDrag(event) {' in js
     assert 'function moveTextBoxDrag(event) {' in js
     assert 'function endTextBoxDrag(event) {' in js
+    assert 'function popupBubbleAutoSize(bubble) {' in js
+    assert 'function resolvedPopupBubbleSize(bubble) {' in js
+    assert 'function syncPopupBubbleSizeControls(bubbleId) {' in js
+    assert 'if (shot) return shot.time_ms;' in js
+    assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
     assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",' in js
@@ -556,11 +564,19 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function ensurePrimaryAudioPreview(video) {' not in js
     assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' not in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
+    assert 'function formatPractiScoreTime(value, { includeUnits = true } = {}) {' in js
     assert 'const videoRawSeconds = state.scoring_summary?.raw_seconds;' in js
     assert 'const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;' in js
-    assert '["Official Raw", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],' in js
-    assert '["Video Raw", videoRawSeconds !== null && videoRawSeconds !== undefined ? `${formatNumber(videoRawSeconds, 2)}s` : ""],' in js
-    assert '["Raw Delta", rawDeltaSeconds !== null && rawDeltaSeconds !== undefined ? `${formatNumber(rawDeltaSeconds, 2)}s` : ""],' in js
+    assert 'const importedSourceFile = imported.source_name || imported.source_path || "Selected file";' in js
+    assert 'const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";' in js
+    assert 'const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;' in js
+    assert 'const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;' in js
+    assert '["Source File", importedSourceFile],' in js
+    assert '["Match Type", importedMatchType],' in js
+    assert '["Official Raw Time", formatPractiScoreTime(importedOfficialRawSeconds)],' in js
+    assert '["Video Raw Time", formatPractiScoreTime(videoRawSeconds)],' in js
+    assert '["Time Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
+    assert '["Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
@@ -655,6 +671,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".merge-source-sync-row" in css
     assert ".merge-source-sync-buttons" in css
     assert ".cockpit-shell.inspector-compact .style-card-label" in css
+    assert ".cockpit-shell.inspector-compact .style-card-label {\n  display: none;" not in css
+    assert ".cockpit-shell.inspector-compact .popup-style-card" in css
     assert "container-type: inline-size;" in css
     assert "#project-description" in css
     assert "-webkit-backdrop-filter: blur(6px);" not in css
@@ -750,6 +768,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'document.addEventListener("lostpointercapture", endLayoutResize);' in js
     assert 'document.addEventListener("pointermove", handleWaveformPointerMove);' in js
     assert 'document.addEventListener("pointerup", handleWaveformPointerUp);' in js
+    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in js
     assert 'document.addEventListener("pointercancel", handleWaveformPointerUp);' in js
     assert 'document.addEventListener("lostpointercapture", handleWaveformPointerUp);' in js
     assert 'document.addEventListener("lostpointercapture", endOverlayBadgeDrag);' in js

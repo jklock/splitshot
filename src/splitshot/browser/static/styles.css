@@ -1351,6 +1351,17 @@ button:disabled {
   font-weight: 900;
 }
 
+#practiscore-import-summary {
+  grid-template-columns: minmax(160px, 0.95fr) minmax(0, 1.05fr);
+}
+
+#practiscore-import-summary dt,
+#practiscore-import-summary dd {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .button-grid {
   display: grid;
   gap: 0;
@@ -2016,12 +2027,33 @@ button:disabled {
 }
 
 .cockpit-shell.inspector-compact .style-card-label {
-  display: none;
+  display: block;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .cockpit-shell.inspector-compact .style-card label,
 .cockpit-shell.inspector-compact .score-color-grid label {
+  align-items: stretch;
+  flex-direction: column;
   gap: 0.18rem;
+}
+
+.cockpit-shell.inspector-compact .style-card,
+.cockpit-shell.inspector-compact .custom-box-style-card,
+.cockpit-shell.inspector-compact .popup-style-card {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cockpit-shell.inspector-compact .color-control-pair,
+.cockpit-shell.inspector-compact .opacity-control-pair {
+  margin-left: 0;
+  width: 100%;
+}
+
+.cockpit-shell.inspector-compact .color-hex-input {
+  width: 100%;
 }
 
 .color-hex-input {
@@ -2474,7 +2506,8 @@ button:disabled {
   }
 
   .style-card,
-  .custom-box-style-card {
+  .custom-box-style-card,
+  .popup-style-card {
     grid-template-columns: 1fr;
   }
 

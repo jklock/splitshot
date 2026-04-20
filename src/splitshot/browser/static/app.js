@@ -512,6 +512,13 @@ function formatNumber(value, digits = 2) {
   return numeric.toFixed(digits);
 }
 
+function formatPractiScoreTime(value, { includeUnits = true } = {}) {
+  if (value === null || value === undefined || value === "") return "";
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  return `${numeric.toFixed(2)}${includeUnits ? "s" : ""}`;
+}
+
 function formatImportedCounts(scoreCounts) {
   return Object.entries(scoreCounts || {})
     .filter(([, value]) => Number(value || 0) !== 0)
@@ -1720,6 +1727,20 @@ function resolvedOverlayTextBoxSize(box) {
   };
 }
 
+function syncOverlayTextBoxSizeControls(boxId) {
+  const box = overlayTextBoxes().find((item) => item.id === boxId);
+  if (!box) return;
+  const card = [...document.querySelectorAll(".text-box-card[data-box-id]")].find(
+    (element) => element instanceof HTMLElement && element.dataset.boxId === boxId,
+  );
+  if (!(card instanceof HTMLElement)) return;
+  const displayedSize = resolvedOverlayTextBoxSize(box);
+  const widthInput = card.querySelector('[data-text-box-field="width"]');
+  const heightInput = card.querySelector('[data-text-box-field="height"]');
+  if (widthInput instanceof HTMLInputElement && !controlIsActive(widthInput)) syncControlValue(widthInput, displayedSize.width);
+  if (heightInput instanceof HTMLInputElement && !controlIsActive(heightInput)) syncControlValue(heightInput, displayedSize.height);
+}
+
 function normalizeOverlayTextBox(box = {}, index = 0) {
   const normalizedX = normalizedCoordinateValue(box.x);
   const normalizedY = normalizedCoordinateValue(box.y);
@@ -1944,6 +1965,9 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
     }
     return box;
   }, options);
+  if (["text", "quadrant", "source", "width", "height", "lock_to_stack"].includes(field)) {
+    syncOverlayTextBoxSizeControls(boxId);
+  }
 }
 
 function addOverlayTextBox(source = "manual") {
@@ -2275,6 +2299,7 @@ function buildTextBoxCard(box, index) {
   const displayedCoordinates = boxLockedToStack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE
     ? resolveRenderedTextBoxCoordinates(box.id, box)
     : null;
+  const displayedSize = resolvedOverlayTextBoxSize(box);
   const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
   card.innerHTML = `
     <div class="text-box-card-header">
@@ -2361,8 +2386,8 @@ function buildTextBoxCard(box, index) {
   syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
   syncControlValue(card.querySelector('[data-text-box-field="x"]'), displayedCoordinates?.x ?? box.x ?? "");
   syncControlValue(card.querySelector('[data-text-box-field="y"]'), displayedCoordinates?.y ?? box.y ?? "");
-  syncControlValue(card.querySelector('[data-text-box-field="width"]'), box.width || 0);
-  syncControlValue(card.querySelector('[data-text-box-field="height"]'), box.height || 0);
+  syncControlValue(card.querySelector('[data-text-box-field="width"]'), displayedSize.width);
+  syncControlValue(card.querySelector('[data-text-box-field="height"]'), displayedSize.height);
   syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
   syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
   syncOpacityPercentControl(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
@@ -2528,11 +2553,34 @@ function popupBubblePoint(bubble) {
   };
 }
 
+function popupBubbleAutoSize(bubble) {
+  const text = String(bubble?.text || "").trim();
+  if (!text) return { width: 0, height: 0 };
+  const measurement = measureOverlayBadgeContent(text);
+  return {
+    width: Math.ceil(measurement.width + (OVERLAY_BADGE_PADDING_X_PX * 2)),
+    height: Math.ceil(measurement.height + (OVERLAY_BADGE_PADDING_Y_PX * 2)),
+  };
+}
+
+function resolvedPopupBubbleSize(bubble) {
+  const explicitWidth = Math.max(0, Number(bubble?.width || 0));
+  const explicitHeight = Math.max(0, Number(bubble?.height || 0));
+  if (explicitWidth > 0 && explicitHeight > 0) {
+    return { width: explicitWidth, height: explicitHeight };
+  }
+  const autoSize = popupBubbleAutoSize(bubble);
+  return {
+    width: explicitWidth > 0 ? explicitWidth : autoSize.width,
+    height: explicitHeight > 0 ? explicitHeight : autoSize.height,
+  };
+}
+
 function popupBubbleEffectiveTimeMs(bubble) {
   if (!bubble) return 0;
   if (bubble.anchor_mode === "shot" && bubble.shot_id) {
     const shot = orderedShotsByTime().find((item) => item.id === bubble.shot_id);
-    if (shot) return shotDisplayTimeMs(shot.time_ms);
+    if (shot) return shot.time_ms;
   }
   return Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0));
 }
@@ -2557,6 +2605,20 @@ function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
   }
   renderLiveOverlay();
   if (commit) callApi("/api/popups", { popups: state.project.popups });
+}
+
+function syncPopupBubbleSizeControls(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return;
+  const card = [...document.querySelectorAll(".popup-bubble-card[data-popup-id]")].find(
+    (element) => element instanceof HTMLElement && element.dataset.popupId === bubbleId,
+  );
+  if (!(card instanceof HTMLElement)) return;
+  const displayedSize = resolvedPopupBubbleSize(bubble);
+  const widthInput = card.querySelector('[data-popup-field="width"]');
+  const heightInput = card.querySelector('[data-popup-field="height"]');
+  if (widthInput instanceof HTMLInputElement && !controlIsActive(widthInput)) syncControlValue(widthInput, displayedSize.width);
+  if (heightInput instanceof HTMLInputElement && !controlIsActive(heightInput)) syncControlValue(heightInput, displayedSize.height);
 }
 
 function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
@@ -2585,6 +2647,9 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
     return nextBubble;
   });
   setPopupBubbles(nextBubbles, options);
+  if (["text", "quadrant", "width", "height"].includes(field)) {
+    syncPopupBubbleSizeControls(bubbleId);
+  }
 }
 
 function addPopupBubble() {
@@ -2626,6 +2691,7 @@ function buildPopupBubbleCard(bubble, index) {
   card.className = "text-box-card popup-bubble-card";
   card.dataset.popupId = bubble.id;
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
+  const displayedSize = resolvedPopupBubbleSize(bubble);
   const shots = popupBubbleShotOptions();
   const shotIds = new Set(shots.map((shot) => shot.id));
   const popupShotId = bubble.anchor_mode === "shot"
@@ -2723,8 +2789,8 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="quadrant"]'), bubble.quadrant);
   syncControlValue(card.querySelector('[data-popup-field="x"]'), bubble.x);
   syncControlValue(card.querySelector('[data-popup-field="y"]'), bubble.y);
-  syncControlValue(card.querySelector('[data-popup-field="width"]'), bubble.width);
-  syncControlValue(card.querySelector('[data-popup-field="height"]'), bubble.height);
+  syncControlValue(card.querySelector('[data-popup-field="width"]'), displayedSize.width);
+  syncControlValue(card.querySelector('[data-popup-field="height"]'), displayedSize.height);
   syncControlValue(card.querySelector('[data-popup-field="background_color"]'), bubble.background_color);
   syncControlValue(card.querySelector('[data-popup-field="text_color"]'), bubble.text_color);
   syncControlValue(card.querySelector('[data-popup-field="opacity_percent"]'), Math.round((bubble.opacity ?? 0.9) * 100));
@@ -4197,12 +4263,10 @@ function renderWaveform() {
   const draggedShotIndex = draggingShotId
     ? state.project.analysis.shots.findIndex((shot) => shot.id === draggingShotId)
     : -1;
-  const draggedShot = draggedShotIndex >= 0 ? state.project.analysis.shots[draggedShotIndex] : null;
-  const dragDeltaMs = draggedShot && pendingDragTimeMs !== null ? pendingDragTimeMs - draggedShot.time_ms : 0;
   state.project.analysis.shots.forEach((shot, index) => {
     const selected = shot.id === selectedShotId;
-    const timeMs = draggedShotIndex >= 0 && index >= draggedShotIndex
-      ? shot.time_ms + dragDeltaMs
+    const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null
+      ? pendingDragTimeMs
       : shot.time_ms;
     const label = expanded ? `${index + 1} ${seconds(timeMs)}` : "";
     drawMarker(
@@ -5244,8 +5308,8 @@ function renderPractiScoreSummaries() {
     $("practiscore-status").textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
     $("scoring-imported-caption").textContent = "No PractiScore stage imported.";
     renderDetailsList("practiscore-import-summary", stagedSource ? [
-      ["Source", stagedSource],
-      ["Match", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
+      ["Source File", stagedSource],
+      ["Match Type", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
       ["Stages", stagedStages.length > 0 ? stagedStages.join(", ") : ""],
       ["Competitors", stagedCompetitorCount > 0 ? String(stagedCompetitorCount) : ""],
     ] : []);
@@ -5255,26 +5319,22 @@ function renderPractiScoreSummaries() {
   const stageLabel = imported.stage_name
     ? `Stage ${imported.stage_number}: ${imported.stage_name}`
     : `Stage ${imported.stage_number}`;
-  const divisionLabel = [imported.division, imported.classification, imported.power_factor]
-    .filter(Boolean)
-    .join(" / ");
   const countsLabel = formatImportedCounts(imported.score_counts);
-  const resultLabel = state.scoring_summary?.display_label || "Result";
   const videoRawSeconds = state.scoring_summary?.raw_seconds;
   const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;
+  const importedSourceFile = imported.source_name || imported.source_path || "Selected file";
+  const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";
+  const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
+  const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;
   $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
   $("scoring-imported-caption").textContent = `Imported ${formatMatchType(imported.match_type)} data for ${imported.competitor_name}.`;
   renderDetailsList("practiscore-import-summary", [
-    ["Source", imported.source_name || "Selected file"],
-    ["Match", formatMatchType(imported.match_type)],
-    ["Stage", stageLabel],
-    ["Competitor", imported.competitor_name],
-    ["Place", imported.competitor_place ? `#${imported.competitor_place}` : ""],
-    ["Division", divisionLabel],
-    ["Official Raw", imported.raw_seconds !== null && imported.raw_seconds !== undefined ? `${formatNumber(imported.raw_seconds, 2)}s` : ""],
-    ["Video Raw", videoRawSeconds !== null && videoRawSeconds !== undefined ? `${formatNumber(videoRawSeconds, 2)}s` : ""],
-    ["Raw Delta", rawDeltaSeconds !== null && rawDeltaSeconds !== undefined ? `${formatNumber(rawDeltaSeconds, 2)}s` : ""],
-    [resultLabel, state.scoring_summary?.display_value || ""],
+    ["Source File", importedSourceFile],
+    ["Match Type", importedMatchType],
+    ["Official Raw Time", formatPractiScoreTime(importedOfficialRawSeconds)],
+    ["Video Raw Time", formatPractiScoreTime(videoRawSeconds)],
+    ["Time Delta", formatPractiScoreTime(rawDeltaSeconds)],
+    ["Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
   ]);
   renderDetailsList("scoring-imported-summary", [
     ["Source", imported.source_name || "Selected file"],
@@ -7108,7 +7168,6 @@ function beginTextBoxDrag(event) {
       ? unlockedBox
       : item);
     setLocalOverlayTextBoxes(boxes);
-    renderTextBoxEditors();
     syncOverlayPreviewStateFromControls();
     scheduleInteractionPreviewRender({ overlay: true });
   }
@@ -7164,6 +7223,7 @@ function endTextBoxDrag(event) {
   });
   autoApplyOverlay.cancel();
   textBoxDrag = null;
+  renderTextBoxEditors();
   flushInteractionPreviewRender();
   queueInspectorScrollRestore();
   callApi("/api/overlay", readOverlayPayload());
@@ -7207,7 +7267,7 @@ function movePopupBubbleDrag(event) {
   const nextBubbles = popupBubbles().map((bubble) => bubble.id === popupBubbleDrag.bubbleId
     ? normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY })
     : bubble);
-  setPopupBubbles(nextBubbles, { commit: false, rerender: true });
+  setPopupBubbles(nextBubbles, { commit: false, rerender: false });
 }
 
 function endPopupBubbleDrag(event) {
@@ -7217,6 +7277,7 @@ function endPopupBubbleDrag(event) {
   releasePointer(drag.target, drag.pointerId ?? event.pointerId);
   drag.target?.classList.remove("dragging");
   popupBubbleDrag = null;
+  renderPopupEditors();
   activity("popup.drag.commit", { popup_id: drag.bubbleId });
   callApi("/api/popups", { popups: popupBubbles() });
 }
@@ -7451,6 +7512,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
   popupOverlay.style.height = `${frameRect.height}px`;
   visiblePopupBubbles(positionMs).forEach((bubble) => {
     const point = popupBubblePoint(bubble);
+    const popupSize = resolvedPopupBubbleSize(bubble);
     const badge = badgeElement(
       bubble.text,
       {
@@ -7459,12 +7521,12 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
         opacity: bubble.opacity,
       },
       size,
-      bubble.width,
-      bubble.height,
+      popupSize.width,
+      popupSize.height,
       null,
       "center",
       overlayScale,
-      null,
+      popupSize,
     );
     badge.dataset.popupDrag = "true";
     badge.dataset.popupId = bubble.id;
@@ -7880,6 +7942,16 @@ function deleteSelectedShot() {
   deleteShotById(selectedShotId, "selected");
 }
 
+function keyboardEditTargetIsEditable(event) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  const targets = [event.target, document.activeElement, ...path];
+  return targets.some((target) => target instanceof Element && (
+    target.isContentEditable
+    || target.closest(".inspector, .modal, [role='dialog']")
+    || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)
+  ));
+}
+
 function handleWaveformPointerDown(event) {
   if (event.button !== 0) return;
   $("waveform").focus();
@@ -7958,9 +8030,7 @@ function handleWaveformPointerUp(event) {
 }
 
 function handleKeyboardEdit(event) {
-  const target = event.target;
-  if (target instanceof Element && target.closest(".inspector, .modal, [role='dialog']")) return;
-  if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
+  if (keyboardEditTargetIsEditable(event)) return;
   if (!selectedShotId) return;
   if (event.key === "ArrowLeft") {
     event.preventDefault();
