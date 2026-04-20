@@ -41,8 +41,19 @@ class AudioEventClassifier:
         self._b2 = np.asarray(B2, dtype=np.float32)
         self._label_to_index = {label: index for index, label in enumerate(self.class_labels)}
 
-    def predict_audio(self, samples: np.ndarray, sample_rate: int) -> ModelPredictions:
-        features, centers_ms = extract_feature_matrix(samples, sample_rate, self.window_size, self.hop_size)
+    def predict_audio(
+        self,
+        samples: np.ndarray,
+        sample_rate: int,
+        window_size: int | None = None,
+        hop_size: int | None = None,
+    ) -> ModelPredictions:
+        features, centers_ms = extract_feature_matrix(
+            samples,
+            sample_rate,
+            self.window_size if window_size is None else int(window_size),
+            self.hop_size if hop_size is None else int(hop_size),
+        )
         probabilities = self.predict_proba(features)
         return ModelPredictions(centers_ms=centers_ms, probabilities=probabilities)
 
@@ -61,8 +72,17 @@ class AudioEventClassifier:
         index = self._label_to_index[label]
         return predictions.probabilities[:, index]
 
-    def shot_confidence_scores(self, predictions: ModelPredictions) -> np.ndarray:
+    def shot_confidence_scores(
+        self,
+        predictions: ModelPredictions,
+        source: str = "shot_minus_background_beep",
+    ) -> np.ndarray:
         shot_scores = self.class_scores(predictions, "shot")
+        if source == "shot":
+            return np.clip(shot_scores, 0.0, 1.0)
+        if source == "shot_minus_background":
+            background_scores = self.class_scores(predictions, "background")
+            return np.clip(shot_scores - background_scores, 0.0, 1.0)
         background_scores = self.class_scores(predictions, "background")
         beep_scores = self.class_scores(predictions, "beep")
         return np.clip(shot_scores - np.maximum(background_scores, beep_scores), 0.0, 1.0)

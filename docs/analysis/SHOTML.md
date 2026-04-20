@@ -17,11 +17,14 @@ The output is a `DetectionResult` containing:
 - `shots`
 - `waveform`
 - `sample_rate`
+- `review_suggestions`
 
 Code path:
 
 - `analyze_video_audio` in `src/splitshot/analysis/detection.py`
 - `analyze_video_audio_thresholds` in `src/splitshot/analysis/detection.py`
+
+The browser ShotML tab, settings persistence, and timing-change proposal workflow are documented in [../project/SHOTML_ARCHITECTURE.md](../project/SHOTML_ARCHITECTURE.md).
 
 ## End-To-End Pipeline
 
@@ -49,10 +52,10 @@ Current model bundle facts:
 - model version: `audio-event-ml-v1`
 - class labels: `background`, `beep`, `shot`
 - sample rate: `22050`
-- window size: `2048` samples
-- hop size: `128` samples
+- default window size: `2048` samples
+- default hop size: `128` samples
 
-Feature extraction happens in `src/splitshot/analysis/audio_features.py`.
+Feature extraction happens in `src/splitshot/analysis/audio_features.py`. The browser ShotML tab exposes window size and hop size as advanced runtime values because changing them changes classifier timing density.
 
 The audio is framed with centered padding by `frame_audio`, then each frame becomes a 19-value feature vector via `extract_window_features`.
 
@@ -126,7 +129,7 @@ Important implementation details:
 
 - The tonal heuristic uses short FFT windows and looks for a concentrated high-frequency tone.
 - The best region is selected by score, then collapsed into a weighted center rather than a raw argmax.
-- Final refinement uses `_tonal_score_series` and `BEEP_ONSET_FRACTION = 0.24` to move the rough beep estimate toward the actual onset.
+- Final refinement uses `_tonal_score_series` and the project-scoped ShotML beep onset fraction, defaulting to `0.24`, to move the rough beep estimate toward the actual onset.
 
 This is why the beep time usually lands earlier and more stably than a plain frame-level peak would.
 
@@ -140,20 +143,20 @@ Relevant functions:
 - `_detect_shots_from_predictions`
 - `pick_event_peaks`
 
-The user-facing threshold slider is converted into a probability cutoff by:
+The user-facing threshold is converted into a probability cutoff by:
 
-`cutoff = 0.18 + threshold * 0.62`
+`cutoff = shot_detection_cutoff_base + threshold * shot_detection_cutoff_span`
 
-So the slider is not the raw probability threshold. It is mapped to a narrower internal cutoff range.
+The defaults are `0.42` and `0.28`, with the default user-facing threshold set to `0.35` from the committed timing accuracy artifact. The threshold is not the raw probability threshold. It is mapped to a narrower internal cutoff range.
 
 After the cutoff is calculated, SplitShot:
 
 - ignores detections that land inside the beep exclusion radius
-- requires a minimum shot spacing of `200 ms`
-- rejects detections earlier than `beep + 45 ms`
+- requires the configured peak minimum spacing, defaulting to `200 ms`
+- rejects detections earlier than `beep + min_shot_interval_ms`, defaulting to `100 ms`
 - keeps only local maxima above the cutoff
 
-Each raw shot candidate is initially assigned a confidence equal to its clipped frame-level `shot` probability.
+Each raw shot candidate is initially assigned a confidence from the configured confidence source. The default source is `shot_minus_background_beep`.
 
 That initial confidence is only a starting point. It is not the final user-facing confidence.
 
@@ -170,15 +173,15 @@ For each shot, SplitShot:
 - finds the onset region relative to the local peak
 - moves the shot time to the first strong onset candidate
 
-The onset threshold uses `SHOT_ONSET_FRACTION = 0.66`.
+The onset threshold uses the project-scoped ShotML shot onset fraction, defaulting to `0.66`.
 
 This step is what turns a coarse model frame into a tighter event time that better matches the visible split timeline and export timer.
 
 ## 7. Confidence Derivation
 
-The confidence shown by the UI is the model's raw per-shot probability for the `shot` class, expressed on a `0%` to `100%` scale.
+The confidence shown by the UI is the selected shot-confidence source after ShotML refinement, expressed on a `0%` to `100%` scale.
 
-Shot-time refinement still moves the event timestamp to a stronger local onset in the waveform, but it does not rewrite the confidence into a separate heuristic estimate.
+Shot-time refinement moves the event timestamp to a stronger local onset in the waveform. The confidence refinement step can lift the detector confidence when local onset support agrees with the model, but it never proves the shot is correct by itself.
 
 That number is still only local evidence. It is not proof that:
 
@@ -190,7 +193,7 @@ Manual timings are different. Once a shot is added or manually moved, it is no l
 
 ## 8. Threshold Sweeps And Preflight Analysis
 
-`analyze_video_audio_thresholds` runs the full detection flow across multiple thresholds while reusing the same extracted audio, aligned samples, predictions, and waveform.
+`analyze_video_audio_thresholds` runs the full detection flow across multiple thresholds while reusing the same extracted audio, aligned samples, predictions, waveform, and ShotML settings.
 
 This powers threshold-sweep and preflight tooling so a user can compare outcomes before loading a video into the full browser workflow.
 
@@ -208,6 +211,7 @@ Consumers include:
 - metrics summaries and CSV/text exports
 - scoring summaries that rely on the current raw video timeline
 - overlay/export timer badges and imported-summary overlays
+- the ShotML timing proposal list
 
 In practice, this means one bad shot time can ripple into:
 
@@ -262,6 +266,10 @@ If you are diagnosing a mismatch between imported results and exported timing, i
 2. missing or extra shots
 3. shot refinement windows
 4. threshold choice
-5. imported-versus-video raw delta
+5. timing-change proposals
+6. imported-versus-video raw delta
 
 That order matches the real dependency chain in the code.
+
+**Last updated:** 2026-04-19
+**Referenced files last updated:** 2026-04-19

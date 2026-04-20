@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import inspect
 import json
 import re
@@ -32,6 +33,11 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/project/practiscore": ("test_browser_autosave_persists_practiscore_routes_to_project_json",),
     "/api/project/ui-state": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/analysis/threshold": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/analysis/shotml-settings": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/analysis/shotml/proposals": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/analysis/shotml/apply-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/analysis/shotml/discard-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/analysis/shotml/reset-defaults": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/beep": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/shots/add": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/shots/move": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
@@ -191,6 +197,7 @@ def test_expected_disconnect_helper_matches_browser_cancel_errors() -> None:
     assert is_expected_disconnect_error(BrokenPipeError())
     assert is_expected_disconnect_error(ConnectionResetError())
     assert is_expected_disconnect_error(ConnectionAbortedError())
+    assert is_expected_disconnect_error(OSError(errno.ENOBUFS, "No buffer space available"))
     assert not is_expected_disconnect_error(RuntimeError())
 
 
@@ -1467,6 +1474,21 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
         threshold = _post_json(f"{server.url}api/analysis/threshold", {"threshold": 0.4})
         saved = _read_project_json(project_path)
         assert saved["analysis"]["detection_threshold"] == 0.4
+        assert saved["analysis"]["shotml_settings"]["detection_threshold"] == 0.4
+
+        _post_json(
+            f"{server.url}api/analysis/shotml-settings",
+            {"settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230}, "rerun": False},
+        )
+        saved = _read_project_json(project_path)
+        assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 130
+        assert saved["analysis"]["shotml_settings"]["shot_peak_min_spacing_ms"] == 230
+
+        _post_json(f"{server.url}api/analysis/shotml/reset-defaults", {})
+        saved = _read_project_json(project_path)
+        assert saved["analysis"]["shotml_settings"]["detection_threshold"] == 0.35
+        assert saved["analysis"]["detection_threshold"] == 0.35
+        assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 100
 
         first_shot = threshold["project"]["analysis"]["shots"][0]
         first_shot_id = first_shot["id"]
@@ -1537,6 +1559,38 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
         assert moved_shot["time_ms"] == 830
         assert moved_shot["source"] == "manual"
         assert moved_shot["confidence"] is None
+
+        generated = _post_json(f"{server.url}api/analysis/shotml/proposals", {})
+        restore_proposal = next(
+            proposal
+            for proposal in generated["project"]["analysis"]["timing_change_proposals"]
+            if proposal["proposal_type"] == "restore_shot" and proposal["shot_id"] == first_shot_id
+        )
+        saved = _read_project_json(project_path)
+        assert any(proposal["id"] == restore_proposal["id"] for proposal in saved["analysis"]["timing_change_proposals"])
+
+        _post_json(
+            f"{server.url}api/analysis/shotml/discard-proposal",
+            {"proposal_id": restore_proposal["id"]},
+        )
+        saved = _read_project_json(project_path)
+        assert next(
+            proposal for proposal in saved["analysis"]["timing_change_proposals"] if proposal["id"] == restore_proposal["id"]
+        )["status"] == "discarded"
+
+        generated = _post_json(f"{server.url}api/analysis/shotml/proposals", {})
+        apply_proposal = next(
+            proposal
+            for proposal in generated["project"]["analysis"]["timing_change_proposals"]
+            if proposal["proposal_type"] == "restore_shot" and proposal["status"] == "pending"
+        )
+        _post_json(
+            f"{server.url}api/analysis/shotml/apply-proposal",
+            {"proposal_id": apply_proposal["id"]},
+        )
+        saved = _read_project_json(project_path)
+        restored_by_proposal = _shot_from_project_json(saved, first_shot_id)
+        assert restored_by_proposal["time_ms"] == original_time_ms
 
         _post_json(f"{server.url}api/scoring/profile", {"ruleset": "uspsa_major"})
         saved = _read_project_json(project_path)

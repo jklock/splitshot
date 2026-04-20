@@ -25,9 +25,9 @@ The Score pane applies ruleset-aware scoring to the current shot list. Use it to
 | `Preset` | Chooses the active scoring ruleset, such as IDPA, USPSA, IPSC, Steel Challenge, or GPA. |
 | Preset description line | Explains the active ruleset in plain language. |
 | Imported caption and details | Show the staged PractiScore source, stage, competitor, counts, and official points summary when imported data exists. |
-| Score option tiles | Show the legal score letters for the current preset and the value or penalty attached to each one. |
+| Score option tiles | Show the legal score letters for the current preset and the value or penalty attached to each one. This reference sits below the shot rows. |
 | Shot header | Selects that shot in the shared review/timing context. |
-| Expand/collapse chevron | Shows or hides the scoring controls for an individual shot. |
+| Expand/collapse chevron | Shows or hides the scoring controls for an individual shot. A collapsed row shows only the shot number and current score, such as `Shot 1 - A`, plus the chevron needed to reopen it. |
 | Shot score dropdown | Assigns the score letter for that shot. |
 | Per-shot penalty inputs | Apply ruleset-specific penalty counts such as `NT`, `PE`, `FP`, `FTDR`, or `FPE` when the preset exposes them. |
 | `Restore` | Restores the shot's original score and penalty values when SplitShot still has them. |
@@ -38,8 +38,8 @@ The Score pane applies ruleset-aware scoring to the current shot list. Use it to
 1. Turn on `Enable scoring`.
 2. Choose the correct `Preset` for the sport and scoring model you want.
 3. If PractiScore is loaded, compare the imported summary block against the stage you expect before scoring shots.
-4. Use the score option tiles as the shorthand legend for the current preset.
-5. Expand each shot row, assign the correct score letter, and fill in any ruleset-specific penalty inputs on that row.
+4. Expand each shot row, assign the correct score letter, and fill in any ruleset-specific penalty inputs on that row.
+5. Use the score option tiles below the shot rows as the shorthand legend for the current preset.
 6. Use `Restore` when a row drifted away from the original imported or default value and you want to reset only that shot.
 7. Use `Delete` only when the shot itself should be removed from the run, not just rescored.
 
@@ -81,5 +81,5 @@ SplitShot's current Score pane is shot-local. Ruleset-specific penalty inputs li
 Previous: [splits.md](splits.md)
 Next: [pip.md](pip.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-20
+**Referenced files last updated:** 2026-04-20

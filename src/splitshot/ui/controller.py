@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
+from inspect import Parameter, signature
 from pathlib import Path
 import re
 
 from PySide6.QtCore import QObject, Signal
 
-from splitshot.analysis.detection import analyze_video_audio
+from splitshot.analysis.detection import analyze_video_audio, timing_change_proposals_from_review_suggestions, TimingReviewSuggestion
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import AppSettings, load_settings, save_settings
 from splitshot.domain.models import (
@@ -29,7 +30,9 @@ from splitshot.domain.models import (
     ScoreLetter,
     ScoreMark,
     ShotEvent,
+    ShotMLSettings,
     ShotSource,
+    TimingChangeProposal,
     VideoAsset,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
@@ -84,6 +87,7 @@ _PRACTISCORE_FILE_SUFFIXES = {".csv", ".txt"}
 _VALID_BROWSER_UI_TOOLS = {
     "project",
     "scoring",
+    "shotml",
     "timing",
     "merge",
     "overlay",
@@ -237,6 +241,8 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.analysis.waveform_secondary = []
     project.analysis.shots = []
     project.analysis.events = []
+    project.analysis.timing_change_proposals = []
+    project.analysis.last_shotml_run_summary = {}
     if project.scoring.imported_stage is None:
         project.scoring.penalties = 0.0
         project.scoring.penalty_counts = {}
@@ -261,6 +267,13 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.ui_state.scoring_shot_expansion = {}
     project.ui_state.waveform_shot_amplitudes = {}
     project.ui_state.timing_edit_shot_ids = []
+
+
+def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
+    parameters = list(signature(analyze_video_audio).parameters.values())
+    if any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters) or len(parameters) >= 3:
+        return analyze_video_audio(path, threshold, settings)
+    return analyze_video_audio(path, threshold)
 
 
 def _shot_selection_context(
@@ -400,9 +413,10 @@ class ProjectController(QObject):
             fallback_mode="time",
         )
         self._set_status("Analyzing primary video for beep and shot detections...")
-        result = analyze_video_audio(
+        result = _run_analyze_video_audio(
             self.project.primary_video.path,
-            self.project.analysis.detection_threshold,
+            self.project.analysis.shotml_settings.detection_threshold,
+            self.project.analysis.shotml_settings,
         )
         self.project.analysis.beep_time_ms_primary = result.beep_time_ms
         self.project.analysis.waveform_primary = result.waveform
@@ -410,6 +424,16 @@ class ProjectController(QObject):
         self.project.analysis.detection_review_suggestions = [
             asdict(suggestion) for suggestion in result.review_suggestions
         ]
+        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.timing_change_proposals = []
+        self.project.analysis.last_shotml_run_summary = {
+            "video_path": self.project.primary_video.path,
+            "threshold": self.project.analysis.shotml_settings.detection_threshold,
+            "sample_rate": result.sample_rate,
+            "beep_time_ms": result.beep_time_ms,
+            "shot_count": len(result.shots),
+            "review_suggestion_count": len(result.review_suggestions),
+        }
         ensure_default_shot_scores(self.project)
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project, selection_context)
@@ -427,9 +451,10 @@ class ProjectController(QObject):
         if self.project.secondary_video is None or not self.project.secondary_video.path:
             return
         self._set_status("Analyzing secondary video and computing sync offset...")
-        result = analyze_video_audio(
+        result = _run_analyze_video_audio(
             self.project.secondary_video.path,
-            self.project.analysis.detection_threshold,
+            self.project.analysis.shotml_settings.detection_threshold,
+            self.project.analysis.shotml_settings,
         )
         self.project.analysis.beep_time_ms_secondary = result.beep_time_ms
         self.project.analysis.waveform_secondary = result.waveform
@@ -882,17 +907,178 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
-        self.project.analysis.detection_threshold = value
-        self.settings.detection_threshold = value
+        self.set_shotml_settings({"detection_threshold": value}, rerun=True, update_app_defaults=True)
+
+    def set_shotml_settings(
+        self,
+        updates: dict[str, object],
+        *,
+        rerun: bool = False,
+        update_app_defaults: bool = False,
+    ) -> None:
+        settings = self.project.analysis.shotml_settings
+        changed = False
+        valid_fields = {item.name: item for item in fields(ShotMLSettings)}
+        for key, raw_value in updates.items():
+            field_info = valid_fields.get(str(key))
+            if field_info is None:
+                continue
+            current_value = getattr(settings, field_info.name)
+            try:
+                if isinstance(current_value, bool):
+                    next_value = bool(raw_value)
+                elif isinstance(current_value, int) and not isinstance(current_value, bool):
+                    next_value = int(raw_value)
+                elif isinstance(current_value, float):
+                    next_value = float(raw_value)
+                else:
+                    next_value = str(raw_value)
+            except (TypeError, ValueError):
+                continue
+            if current_value != next_value:
+                setattr(settings, field_info.name, next_value)
+                changed = True
+
+        self.project.analysis.detection_threshold = settings.detection_threshold
+        if update_app_defaults:
+            self.settings.detection_threshold = settings.detection_threshold
+            self.settings.shotml_defaults = ShotMLSettings(**asdict(settings))
+            save_settings(self.settings)
+            self.settings_changed.emit()
+        if rerun and self.project.primary_video.path:
+            if changed:
+                self.project.analysis.timing_change_proposals = []
+            self.analyze_primary()
+            if self.project.secondary_video is not None and not self.project.secondary_video.is_still_image:
+                self.analyze_secondary()
+            return
+        if changed:
+            self.project.analysis.timing_change_proposals = []
+            self._set_status("Updated ShotML settings.")
+        else:
+            self._set_status("ShotML settings unchanged.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def reset_shotml_settings(self) -> None:
+        self.project.analysis.shotml_settings = ShotMLSettings()
+        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.timing_change_proposals = []
+        self.settings.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.settings.shotml_defaults = ShotMLSettings()
         save_settings(self.settings)
         self.settings_changed.emit()
+        self._set_status("Reset ShotML settings to factory defaults.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def rerun_shotml(self) -> None:
         if self.project.primary_video.path:
             self.analyze_primary()
             if self.project.secondary_video is not None and not self.project.secondary_video.is_still_image:
                 self.analyze_secondary()
             return
         self.project.touch()
-        self._set_status("Updated detection threshold.")
+        self._set_status("ShotML settings saved.")
+        self.project_changed.emit()
+
+    def _review_suggestion_objects(self) -> list[TimingReviewSuggestion]:
+        suggestions: list[TimingReviewSuggestion] = []
+        for item in self.project.analysis.detection_review_suggestions:
+            if not isinstance(item, dict):
+                continue
+            suggestions.append(
+                TimingReviewSuggestion(
+                    kind=str(item.get("kind", "")),
+                    severity=str(item.get("severity", "review")),
+                    message=str(item.get("message", "")),
+                    suggested_action=str(item.get("suggested_action", "")),
+                    shot_number=None if item.get("shot_number") in {None, ""} else int(item["shot_number"]),
+                    shot_time_ms=None if item.get("shot_time_ms") in {None, ""} else int(item["shot_time_ms"]),
+                    confidence=None if item.get("confidence") in {None, ""} else float(item["confidence"]),
+                    support_confidence=None if item.get("support_confidence") in {None, ""} else float(item["support_confidence"]),
+                    interval_ms=None if item.get("interval_ms") in {None, ""} else int(item["interval_ms"]),
+                )
+            )
+        return suggestions
+
+    def generate_timing_change_proposals(self) -> None:
+        proposals = timing_change_proposals_from_review_suggestions(
+            self.project.analysis.shots,
+            self.project.analysis.beep_time_ms_primary,
+            self._review_suggestion_objects(),
+        )
+        existing_restore_ids = {
+            proposal.shot_id
+            for proposal in self.project.analysis.timing_change_proposals
+            if proposal.proposal_type == "restore_shot" and proposal.status == "pending"
+        }
+        for shot in self.project.analysis.shots:
+            original = self._original_shot_state_by_id.get(shot.id)
+            if original is None or original.time_ms == shot.time_ms or shot.id in existing_restore_ids:
+                continue
+            proposals.append(
+                TimingChangeProposal(
+                    proposal_type="restore_shot",
+                    shot_id=shot.id,
+                    shot_number=next(
+                        (index + 1 for index, candidate in enumerate(sort_shots(self.project.analysis.shots)) if candidate.id == shot.id),
+                        None,
+                    ),
+                    source_time_ms=shot.time_ms,
+                    target_time_ms=original.time_ms,
+                    message=f"Restore ShotML's original timestamp for this edited shot ({original.time_ms} ms).",
+                    evidence={"original_source": original.source.value},
+                )
+            )
+        self.project.analysis.timing_change_proposals = proposals
+        self._set_status(f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def _pending_proposal(self, proposal_id: str) -> TimingChangeProposal:
+        for proposal in self.project.analysis.timing_change_proposals:
+            if proposal.id == proposal_id and proposal.status == "pending":
+                return proposal
+        raise ValueError("Pending proposal not found")
+
+    def apply_timing_change_proposal(self, proposal_id: str) -> None:
+        proposal = self._pending_proposal(proposal_id)
+        proposal.status = "applied"
+        if proposal.proposal_type == "move_beep":
+            if proposal.target_time_ms is None:
+                raise ValueError("Proposal target time is required")
+            self.project.analysis.beep_time_ms_primary = max(0, int(proposal.target_time_ms))
+        elif proposal.proposal_type == "move_shot":
+            if proposal.shot_id is None or proposal.target_time_ms is None:
+                raise ValueError("Proposal shot and target time are required")
+            self.move_shot(proposal.shot_id, int(proposal.target_time_ms))
+            return
+        elif proposal.proposal_type in {"suppress_shot", "choose_close_pair_survivor"}:
+            if proposal.shot_id is None:
+                raise ValueError("Proposal shot is required")
+            self.delete_shot(proposal.shot_id)
+            return
+        elif proposal.proposal_type == "restore_shot":
+            if proposal.shot_id is None:
+                raise ValueError("Proposal shot is required")
+            self.restore_original_shot_timing(proposal.shot_id)
+            proposal.status = "applied"
+            return
+        else:
+            raise ValueError(f"Unsupported proposal type: {proposal.proposal_type}")
+        normalize_project_timing_events(self.project)
+        _revalidate_timing_ui_state(self.project)
+        self.update_hit_factor()
+        self._set_status("Applied ShotML timing proposal.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def discard_timing_change_proposal(self, proposal_id: str) -> None:
+        proposal = self._pending_proposal(proposal_id)
+        proposal.status = "discarded"
+        self._set_status("Discarded ShotML timing proposal.")
+        self.project.touch()
         self.project_changed.emit()
 
     def set_beep_time(self, time_ms: int) -> None:
@@ -1661,7 +1847,8 @@ class ProjectController(QObject):
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
         save_settings(self.settings)
-        self.project.analysis.detection_threshold = self.settings.detection_threshold
+        self.project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
+        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
         self.project.overlay.position = self.settings.overlay_position
         self.project.merge.layout = self.settings.merge_layout
         self.project.merge.pip_size = self.settings.pip_size
@@ -1756,7 +1943,8 @@ class ProjectController(QObject):
 
     def _new_project_with_settings_defaults(self) -> Project:
         project = Project()
-        project.analysis.detection_threshold = self.settings.detection_threshold
+        project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
+        project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
         project.overlay.position = self.settings.overlay_position
         project.merge.layout = self.settings.merge_layout
         project.merge.pip_size = self.settings.pip_size

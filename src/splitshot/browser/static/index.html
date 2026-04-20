@@ -17,6 +17,7 @@
           <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
           <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
           <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
+          <button class="tool-item" data-tool="shotml" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
           <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
@@ -195,14 +196,149 @@
                 <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
               </section>
               <div id="timing-table" class="data-table"></div>
-              <div class="threshold-control">
-                <label for="threshold">Detection threshold</label>
-                <div class="threshold-control-row">
-                  <input id="threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.5" />
-                  <button id="apply-threshold" type="button">Re-run ShotML</button>
-                </div>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="shotml">
+              <div class="section-header">
+                <h3>ShotML</h3>
+                <button id="apply-threshold" type="button">Re-run ShotML</button>
+                <button id="reset-shotml-defaults" type="button">Reset Defaults</button>
               </div>
-              <p class="hint">Start near 0.50. Lower the threshold if quiet shots are being missed, and raise it if background noise is being marked as a shot. Each change re-analyzes the local audio for this stage.</p>
+              <p class="hint">Tune detector timing for this project. Re-running ShotML replaces the current automatic detections; manual shot edits remain available from Splits and the waveform.</p>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Threshold</h3>
+                  <span id="shotml-run-summary">No ShotML run yet.</span>
+                </div>
+                <div class="threshold-control">
+                  <label for="threshold">Detection threshold</label>
+                  <div class="threshold-control-row">
+                    <input id="threshold" data-shotml-setting="detection_threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>Cutoff base
+                    <input data-shotml-setting="shot_detection_cutoff_base" type="number" min="0" max="1" step="0.01" />
+                  </label>
+                  <label>Cutoff span
+                    <input data-shotml-setting="shot_detection_cutoff_span" type="number" min="0" max="1" step="0.01" />
+                  </label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Beep Detection</h3>
+                  <span>Start tone search and refinement</span>
+                </div>
+                <div class="control-grid">
+                  <label>Onset fraction <input data-shotml-setting="beep_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
+                  <label>Search lead ms <input data-shotml-setting="beep_search_lead_ms" type="number" min="0" max="12000" step="10" /></label>
+                  <label>Tail guard ms <input data-shotml-setting="beep_search_tail_guard_ms" type="number" min="0" max="500" step="1" /></label>
+                  <label>Fallback window ms <input data-shotml-setting="beep_fallback_min_window_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>FFT window s <input data-shotml-setting="beep_heuristic_fft_window_s" type="number" min="0.001" max="0.25" step="0.001" /></label>
+                  <label>FFT hop s <input data-shotml-setting="beep_heuristic_hop_s" type="number" min="0.001" max="0.1" step="0.001" /></label>
+                  <label>FFT band min Hz <input data-shotml-setting="beep_heuristic_band_min_hz" type="number" min="20" max="20000" step="10" /></label>
+                  <label>FFT band max Hz <input data-shotml-setting="beep_heuristic_band_max_hz" type="number" min="20" max="22000" step="10" /></label>
+                  <label>Fallback multiplier <input data-shotml-setting="beep_fallback_threshold_multiplier" type="number" min="0.01" max="2" step="0.01" /></label>
+                  <label>Tonal window ms <input data-shotml-setting="beep_tonal_window_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Tonal hop ms <input data-shotml-setting="beep_tonal_hop_ms" type="number" min="1" max="100" step="1" /></label>
+                  <label>Tonal band min Hz <input data-shotml-setting="beep_tonal_band_min_hz" type="number" min="20" max="20000" step="10" /></label>
+                  <label>Tonal band max Hz <input data-shotml-setting="beep_tonal_band_max_hz" type="number" min="20" max="22000" step="10" /></label>
+                  <label>Refine pre ms <input data-shotml-setting="beep_refine_pre_ms" type="number" min="0" max="3000" step="10" /></label>
+                  <label>Refine post ms <input data-shotml-setting="beep_refine_post_ms" type="number" min="0" max="3000" step="10" /></label>
+                  <label>Gap before first shot ms <input data-shotml-setting="beep_refine_min_gap_before_first_shot_ms" type="number" min="0" max="500" step="1" /></label>
+                  <label>Shot exclusion radius ms <input data-shotml-setting="beep_exclusion_radius_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Region cutoff base <input data-shotml-setting="beep_region_cutoff_base" type="number" min="0" max="2" step="0.01" /></label>
+                  <label>Region threshold weight <input data-shotml-setting="beep_region_cutoff_threshold_weight" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Model boost floor <input data-shotml-setting="beep_model_boost_floor" type="number" min="0" max="2" step="0.01" /></label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Shot Candidate Detection</h3>
+                  <span>Peak picking and confidence</span>
+                </div>
+                <div class="control-grid">
+                  <label>Minimum shot interval ms <input data-shotml-setting="min_shot_interval_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Peak minimum spacing ms <input data-shotml-setting="shot_peak_min_spacing_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Confidence source
+                    <select data-shotml-setting="shot_confidence_source">
+                      <option value="shot_minus_background_beep">Shot minus noise and beep</option>
+                      <option value="shot_minus_background">Shot minus background</option>
+                      <option value="shot">Raw shot probability</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Shot Refinement</h3>
+                  <span>Onset placement windows</span>
+                </div>
+                <div class="control-grid">
+                  <label>Onset fraction <input data-shotml-setting="shot_onset_fraction" type="number" min="0.01" max="1" step="0.01" /></label>
+                  <label>Pre-window ms <input data-shotml-setting="shot_refine_pre_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Post-window ms <input data-shotml-setting="shot_refine_post_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Midpoint clamp padding ms <input data-shotml-setting="shot_refine_midpoint_clamp_padding_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Minimum search window ms <input data-shotml-setting="shot_refine_min_search_window_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>RMS window ms <input data-shotml-setting="shot_refine_rms_window_ms" type="number" min="1" max="100" step="1" /></label>
+                  <label>RMS hop ms <input data-shotml-setting="shot_refine_rms_hop_ms" type="number" min="1" max="100" step="1" /></label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>False Positive Suppression</h3>
+                  <span>Duplicate and outlier filtering</span>
+                </div>
+                <div class="control-grid">
+                  <label>Weak onset threshold <input data-shotml-setting="weak_onset_support_threshold" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Near-cutoff interval ms <input data-shotml-setting="near_cutoff_interval_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Confidence weight <input data-shotml-setting="shot_selection_confidence_weight" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Support weight <input data-shotml-setting="shot_selection_support_weight" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Weak support penalty <input data-shotml-setting="weak_support_penalty" type="number" min="0" max="1" step="0.01" /></label>
+                  <label class="check-row"><input data-shotml-setting="suppress_close_pair_duplicates" type="checkbox" /> Suppress close-pair duplicates</label>
+                  <label class="check-row"><input data-shotml-setting="suppress_sound_profile_outliers" type="checkbox" /> Suppress sound-profile outliers</label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Confidence And Review</h3>
+                  <span>Support scoring and review pressure</span>
+                </div>
+                <div class="control-grid">
+                  <label>Refinement confidence weight <input data-shotml-setting="refinement_confidence_weight" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Support pre ms <input data-shotml-setting="onset_support_pre_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Support post ms <input data-shotml-setting="onset_support_post_ms" type="number" min="0" max="1000" step="1" /></label>
+                  <label>Support RMS window ms <input data-shotml-setting="onset_support_rms_window_ms" type="number" min="1" max="100" step="1" /></label>
+                  <label>Support RMS hop ms <input data-shotml-setting="onset_support_rms_hop_ms" type="number" min="1" max="100" step="1" /></label>
+                  <label>Alignment divisor ms <input data-shotml-setting="onset_support_alignment_penalty_divisor_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Alignment multiplier <input data-shotml-setting="onset_support_alignment_penalty_multiplier" type="number" min="0" max="1" step="0.01" /></label>
+                  <label>Profile search radius ms <input data-shotml-setting="sound_profile_search_radius_ms" type="number" min="1" max="1000" step="1" /></label>
+                  <label>Profile distance limit <input data-shotml-setting="sound_profile_distance_limit" type="number" min="0" max="100" step="0.1" /></label>
+                  <label>Profile high confidence limit <input data-shotml-setting="sound_profile_high_confidence_limit" type="number" min="0" max="1" step="0.001" /></label>
+                </div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Timing Changer</h3>
+                  <span id="shotml-proposal-summary">No pending proposals.</span>
+                </div>
+                <div class="button-grid two-up">
+                  <button id="generate-shotml-proposals" type="button">Generate Proposals</button>
+                </div>
+                <div id="shotml-proposal-list" class="shotml-proposal-list" aria-label="ShotML timing proposals"></div>
+              </section>
+              <section class="shotml-section">
+                <div class="section-header sub-section-header">
+                  <h3>Advanced Runtime</h3>
+                  <span>Changes alter model timing granularity</span>
+                </div>
+                <p class="hint">Window size and hop size are model-runtime values. Keep the defaults unless you are validating a detector experiment.</p>
+                <div class="control-grid">
+                  <label>Window size <input data-shotml-setting="window_size" type="number" min="128" max="16384" step="1" /></label>
+                  <label>Hop size <input data-shotml-setting="hop_size" type="number" min="1" max="4096" step="1" /></label>
+                </div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="scoring">
@@ -217,10 +353,10 @@
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
               <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
               <dl id="scoring-imported-summary" class="details"></dl>
+              <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
               <p class="hint">Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits.</p>
               <div id="score-option-grid" class="score-option-grid"></div>
               <p class="hint">Common shorthand: M miss, NS no-shoot, PE procedural error, FP flagrant penalty, FTDR failure to do right, and FPE finger procedural error.</p>
-              <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">

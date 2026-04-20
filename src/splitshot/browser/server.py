@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+import errno
 import json
 import mimetypes
 import re
@@ -35,6 +36,7 @@ from splitshot.ui.controller import ProjectController
 
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+EXPECTED_DISCONNECT_ERRNOS = {errno.EPIPE, errno.ECONNABORTED, errno.ECONNRESET, errno.ENOBUFS}
 PathChooser = Callable[[str, str | None], str | None]
 COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
 COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
@@ -259,7 +261,9 @@ def _validate_browser_preview_timeline(
 
 
 def is_expected_disconnect_error(exc: BaseException | None) -> bool:
-    return isinstance(exc, EXPECTED_DISCONNECT_ERRORS)
+    if isinstance(exc, EXPECTED_DISCONNECT_ERRORS):
+        return True
+    return isinstance(exc, OSError) and exc.errno in EXPECTED_DISCONNECT_ERRNOS
 
 
 def _existing_dialog_directory(current: str | None, *, project_path: bool = False) -> Path:
@@ -685,6 +689,11 @@ class BrowserControlServer:
                     "/api/import/secondary": self._import_merge,
                     "/api/import/merge": self._import_merge,
                     "/api/analysis/threshold": self._set_threshold,
+                    "/api/analysis/shotml-settings": self._set_shotml_settings,
+                    "/api/analysis/shotml/proposals": self._generate_shotml_proposals,
+                    "/api/analysis/shotml/apply-proposal": self._apply_shotml_proposal,
+                    "/api/analysis/shotml/discard-proposal": self._discard_shotml_proposal,
+                    "/api/analysis/shotml/reset-defaults": self._reset_shotml_defaults,
                     "/api/beep": self._set_beep,
                     "/api/shots/add": self._add_shot,
                     "/api/shots/move": self._move_shot,
@@ -943,8 +952,16 @@ class BrowserControlServer:
                             break
                         try:
                             self.wfile.write(chunk)
-                        except EXPECTED_DISCONNECT_ERRORS:
-                            activity.log(f"{event_prefix}.client_disconnect", path=str(served_path), remaining=remaining)
+                        except OSError as exc:
+                            if not is_expected_disconnect_error(exc):
+                                raise
+                            activity.log(
+                                f"{event_prefix}.client_disconnect",
+                                path=str(served_path),
+                                remaining=remaining,
+                                errno=exc.errno,
+                                error=str(exc),
+                            )
                             return
                         remaining -= len(chunk)
                 activity.log(f"{event_prefix}.complete", path=str(served_path), bytes=content_length, proxied=proxied)
@@ -1221,6 +1238,28 @@ class BrowserControlServer:
 
             def _set_threshold(self, payload: dict[str, Any]) -> None:
                 controller.set_detection_threshold(float(payload["threshold"]))
+
+            def _set_shotml_settings(self, payload: dict[str, Any]) -> None:
+                settings = payload.get("settings", payload)
+                if not isinstance(settings, dict):
+                    raise ValueError("settings object is required")
+                controller.set_shotml_settings(
+                    settings,
+                    rerun=bool(payload.get("rerun", False)),
+                    update_app_defaults=bool(payload.get("update_app_defaults", False)),
+                )
+
+            def _generate_shotml_proposals(self, payload: dict[str, Any]) -> None:
+                controller.generate_timing_change_proposals()
+
+            def _apply_shotml_proposal(self, payload: dict[str, Any]) -> None:
+                controller.apply_timing_change_proposal(str(payload["proposal_id"]))
+
+            def _discard_shotml_proposal(self, payload: dict[str, Any]) -> None:
+                controller.discard_timing_change_proposal(str(payload["proposal_id"]))
+
+            def _reset_shotml_defaults(self, payload: dict[str, Any]) -> None:
+                controller.reset_shotml_settings()
 
             def _set_beep(self, payload: dict[str, Any]) -> None:
                 controller.set_beep_time(int(payload["time_ms"]))

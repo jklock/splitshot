@@ -126,7 +126,7 @@ const OVERLAY_BADGE_PADDING_X_PX = 10;
 const OVERLAY_BADGE_PADDING_Y_PX = 5;
 const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";
 const CUSTOM_QUADRANT_VALUE = "custom";
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "merge", "overlay", "review", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "shotml", "merge", "overlay", "review", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -605,6 +605,24 @@ function defaultScoreLetter() {
     ? state.scoring_summary.score_options
     : [];
   return options[0] || "A";
+}
+
+function activeScoringRuleset() {
+  return String(state?.scoring_summary?.ruleset || state?.project?.scoring?.ruleset || "");
+}
+
+function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {
+  const normalizedLetter = String(letter || "").trim();
+  if (!normalizedLetter) return "";
+  const normalizedRuleset = String(ruleset || "").trim().toLowerCase();
+  if (normalizedRuleset === "idpa_time_plus") {
+    return {
+      "-0": "A (-0)",
+      "-1": "C (-1)",
+      "-3": "D (-3)",
+    }[normalizedLetter] || normalizedLetter;
+  }
+  return normalizedLetter;
 }
 
 function formatConfidenceValue(confidence) {
@@ -2459,7 +2477,7 @@ function setActiveTool(tool, { persistUiState = true } = {}) {
 
 async function api(path, payload = null) {
   activity("api.request", { path, payload });
-  const processing = processingForPath(path);
+  const processing = processingForPath(path, payload);
   const finishProcessing = payload === null || processing === null
     ? null
     : beginProcessing(processing.message, processing.detail, path);
@@ -2491,13 +2509,16 @@ async function callApi(path, payload = null) {
   }
 }
 
-function processingForPath(path) {
+function processingForPath(path, payload = null) {
   if (path === "/api/export") return { message: "Exporting video...", detail: "Running FFmpeg locally" };
   if (path === "/api/import/primary") {
     return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
   }
-  if (path === "/api/analysis/threshold" && state?.project?.primary_video?.path) {
-    return { message: "Re-running ShotML...", detail: "Refreshing shot detections for the current threshold" };
+  if (
+    (path === "/api/analysis/threshold" || (path === "/api/analysis/shotml-settings" && payload?.rerun))
+    && state?.project?.primary_video?.path
+  ) {
+    return { message: "Re-running ShotML...", detail: "Refreshing shot detections with the current settings" };
   }
   if (path === "/api/import/merge" || path === "/api/files/merge") {
     return { message: "Importing media...", detail: "Adding media to the list" };
@@ -3840,6 +3861,15 @@ function waveformAmplitudeForTime(timeMs) {
   return waveformShotAmplitudeById[range.shotId] ?? 1;
 }
 
+function waveformShotSubtitle(segment) {
+  const sourceLabel = segment.card_subtitle === "Manual" || segment.card_subtitle === "ShotML"
+    ? segment.card_subtitle
+    : segment.card_subtitle
+      ? `Conf ${segment.card_subtitle}`
+      : "";
+  return [segment.interval_label || "Split", sourceLabel].filter(Boolean).join(" • ");
+}
+
 function renderWaveformShotList() {
   const list = $("waveform-shot-list");
   if (!list) return;
@@ -3848,16 +3878,34 @@ function renderWaveformShotList() {
     (state.timing_segments || []).forEach((segment) => {
       const item = document.createElement("button");
       item.type = "button";
+      item.className = "waveform-shot-card";
       if (segment.shot_id === selectedShotId) item.classList.add("selected");
       if (isLowConfidence(segment.confidence, segment.source)) {
         item.classList.add("low-confidence");
         item.title = `Review this split manually: model confidence ${formatConfidenceValue(segment.confidence)}.`;
       }
+
+      const summary = document.createElement("span");
+      summary.className = "waveform-shot-card-header";
+
       const title = document.createElement("strong");
       title.textContent = segment.card_title;
+
+      const value = document.createElement("span");
+      value.className = "waveform-shot-card-value";
+      value.textContent = `${segment.card_value}s`;
+
+      summary.append(title, value);
+
+      const subtitle = document.createElement("span");
+      subtitle.className = "waveform-shot-card-subtitle";
+      subtitle.textContent = waveformShotSubtitle(segment);
+
       const meta = document.createElement("small");
+      meta.className = "waveform-shot-card-meta";
       meta.textContent = segment.card_meta;
-      item.append(title, meta);
+
+      item.append(summary, subtitle, meta);
       item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
       list.appendChild(item);
     });
@@ -4392,6 +4440,7 @@ function renderScoringShotList() {
     const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
     const penaltyFields = state.scoring_summary?.penalty_fields || [];
     const defaultScore = scoreOptions[0] || "A";
+    const ruleset = activeScoringRuleset();
     const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
     const visibleShotIds = new Set((state.timing_segments || []).map((segment) => segment.shot_id));
     [...scoringShotExpansion.keys()].forEach((shotId) => {
@@ -4411,7 +4460,9 @@ function renderScoringShotList() {
       button.type = "button";
       button.className = "scoring-shot-button";
       const title = document.createElement("strong");
-      title.textContent = `Shot ${segment.shot_number}`;
+      title.textContent = expanded
+        ? `Shot ${segment.shot_number}`
+        : `Shot ${segment.shot_number} | ${compactScoreDisplay(segment.score_letter || defaultScore, ruleset)}`;
       button.append(title);
       button.title = segment.source === "manual"
         ? "Manual shot marker."
@@ -4493,13 +4544,16 @@ function renderScoringShotList() {
         controls.appendChild(penaltyGrid);
       }
 
+      const actions = document.createElement("div");
+      actions.className = "scoring-shot-actions";
+
       const restore = document.createElement("button");
       restore.type = "button";
       restore.className = "restore-button";
       restore.textContent = "Restore";
       restore.title = "Restore this shot score and penalties to their original values.";
       restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
-      controls.appendChild(restore);
+      actions.appendChild(restore);
 
       const deleteShot = document.createElement("button");
       deleteShot.type = "button";
@@ -4507,7 +4561,8 @@ function renderScoringShotList() {
       deleteShot.textContent = "Delete";
       deleteShot.title = "Delete this shot from the run.";
       deleteShot.addEventListener("click", () => deleteShotById(segment.shot_id, "scoring_row"));
-      controls.appendChild(deleteShot);
+      actions.appendChild(deleteShot);
+      controls.appendChild(actions);
 
       row.append(header, controls);
       list.appendChild(row);
@@ -4947,8 +5002,130 @@ function syncExportPathControl() {
   if (!draftPath) exportPathDraft = nextValue;
 }
 
+function shotmlSettings() {
+  return state?.project?.analysis?.shotml_settings || {};
+}
+
+function shotmlControlValue(element) {
+  if (!element) return null;
+  if (element.type === "checkbox") return Boolean(element.checked);
+  if (element.tagName === "SELECT") return element.value;
+  const value = element.value;
+  if (value === "") return "";
+  return Number(value);
+}
+
+function readShotMLSettingsPayload() {
+  const payload = {};
+  document.querySelectorAll("[data-shotml-setting]").forEach((element) => {
+    payload[element.dataset.shotmlSetting] = shotmlControlValue(element);
+  });
+  return payload;
+}
+
+function syncShotMLControls() {
+  const settings = shotmlSettings();
+  document.querySelectorAll("[data-shotml-setting]").forEach((element) => {
+    const key = element.dataset.shotmlSetting;
+    if (!key || settings[key] === undefined) return;
+    if (element.type === "checkbox") {
+      syncControlChecked(element, Boolean(settings[key]));
+    } else {
+      syncControlValue(element, settings[key]);
+    }
+  });
+}
+
+function proposalTypeLabel(type) {
+  return {
+    move_beep: "Move Beep",
+    move_shot: "Move Shot",
+    suppress_shot: "Suppress Shot",
+    restore_shot: "Restore Shot",
+    choose_close_pair_survivor: "Choose Close Pair",
+  }[type] || String(type || "Proposal");
+}
+
+function proposalPreviewText(proposal) {
+  const before = proposal.source_time_ms === null || proposal.source_time_ms === undefined
+    ? "--"
+    : `${(Number(proposal.source_time_ms) / 1000).toFixed(3)}s`;
+  const after = proposal.target_time_ms === null || proposal.target_time_ms === undefined
+    ? null
+    : `${(Number(proposal.target_time_ms) / 1000).toFixed(3)}s`;
+  const alternate = proposal.alternate_time_ms === null || proposal.alternate_time_ms === undefined
+    ? null
+    : `${(Number(proposal.alternate_time_ms) / 1000).toFixed(3)}s`;
+  if (after) return `${before} to ${after}`;
+  if (alternate) return `${before}; keep ${alternate}`;
+  return before;
+}
+
+function renderShotMLProposals() {
+  const list = $("shotml-proposal-list");
+  const summary = $("shotml-proposal-summary");
+  if (!list || !summary) return;
+  const proposals = (state.project.analysis.timing_change_proposals || []).filter((proposal) => proposal.status === "pending");
+  summary.textContent = proposals.length
+    ? `${proposals.length} pending proposal${proposals.length === 1 ? "" : "s"}.`
+    : "No pending proposals.";
+  list.replaceChildren();
+  if (!proposals.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "Generate proposals after a ShotML run, then apply only the changes that match the video.";
+    list.appendChild(empty);
+    return;
+  }
+  proposals.forEach((proposal) => {
+    const row = document.createElement("div");
+    row.className = "shotml-proposal-row";
+    const copy = document.createElement("div");
+    copy.className = "shotml-proposal-copy";
+    const title = document.createElement("strong");
+    const shotLabel = proposal.shot_number ? ` Shot ${proposal.shot_number}` : "";
+    title.textContent = `${proposalTypeLabel(proposal.proposal_type)}${shotLabel}`;
+    const detail = document.createElement("span");
+    const confidence = proposal.confidence === null || proposal.confidence === undefined
+      ? ""
+      : ` Confidence ${formatConfidenceValue(proposal.confidence)}.`;
+    const support = proposal.support_confidence === null || proposal.support_confidence === undefined
+      ? ""
+      : ` Support ${formatConfidenceValue(proposal.support_confidence)}.`;
+    detail.textContent = `${proposalPreviewText(proposal)}.${confidence}${support}`;
+    const message = document.createElement("small");
+    message.textContent = proposal.message || "Review this timing proposal before applying it.";
+    copy.append(title, detail, message);
+    const actions = document.createElement("div");
+    actions.className = "shotml-proposal-actions";
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.textContent = "Apply";
+    apply.addEventListener("click", () => callApi("/api/analysis/shotml/apply-proposal", { proposal_id: proposal.id }));
+    const discard = document.createElement("button");
+    discard.type = "button";
+    discard.textContent = "Discard";
+    discard.addEventListener("click", () => callApi("/api/analysis/shotml/discard-proposal", { proposal_id: proposal.id }));
+    actions.append(apply, discard);
+    row.append(copy, actions);
+    list.appendChild(row);
+  });
+}
+
+function renderShotML() {
+  syncShotMLControls();
+  const summary = $("shotml-run-summary");
+  const lastRun = state.project.analysis.last_shotml_run_summary || {};
+  if (summary) {
+    summary.textContent = lastRun.shot_count === undefined
+      ? "No ShotML run yet."
+      : `${lastRun.shot_count} shots at threshold ${Number(lastRun.threshold ?? shotmlSettings().detection_threshold ?? 0.5).toFixed(2)}.`;
+  }
+  renderShotMLProposals();
+}
+
 function renderControls() {
-  syncControlValue($("threshold"), state.project.analysis.detection_threshold);
+  renderShotML();
   const mergeSources = state.project.merge_sources || [];
   $("sync-offset").textContent = mergeSources.length === 0
     ? "Defaults only"
@@ -6942,7 +7119,7 @@ function buildExportPayload(path) {
 function cancelPendingExportDrafts() {
   clearOverlayColorCommitTimer();
   clearMergeSourceCommitTimers();
-  autoApplyThreshold.cancel?.();
+  autoApplyShotMLSettings.cancel?.();
   autoApplyProjectDetails.cancel?.();
   autoApplyPractiScoreContext.cancel?.();
   autoApplyProjectUiState.cancel?.();
@@ -6956,7 +7133,7 @@ function cancelPendingExportDrafts() {
 async function flushPendingProjectDrafts() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
-  await callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+  await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   await callApi("/api/project/details", readProjectDetailsPayload());
   await callApi("/api/project/practiscore", readPractiScoreContextPayload());
   await callApi("/api/project/ui-state", readProjectUiStatePayload());
@@ -6995,7 +7172,7 @@ function sendKeepaliveJson(path, payload) {
 function flushPendingProjectDraftsKeepalive() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
-  sendKeepaliveJson("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+  sendKeepaliveJson("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   sendKeepaliveJson("/api/project/details", readProjectDetailsPayload());
   sendKeepaliveJson("/api/project/practiscore", readPractiScoreContextPayload());
   sendKeepaliveJson("/api/project/ui-state", readProjectUiStatePayload());
@@ -7064,6 +7241,42 @@ async function browseProjectPath() {
   });
 }
 
+async function createNewProject(path = $("project-path").value.trim()) {
+  const targetPath = normalizeProjectFolderInput(path);
+  if (!targetPath) {
+    return pickPath("project_folder", "project-path", async (selectedPath) => {
+      await createNewProject(selectedPath);
+    });
+  }
+
+  try {
+    const probeResult = await probeProjectFolder(targetPath);
+    const projectPath = probeResult.normalized_path || targetPath;
+    if (probeResult.has_project_file) {
+      const shouldReplace = window.confirm(`A SplitShot project already exists in:\n${targetPath}\n\nReplace it with a new blank project?`);
+      if (!shouldReplace) {
+        setStatus("New project creation cancelled.");
+        return null;
+      }
+    }
+    if (probeResult.request_id !== projectFolderProbeRequestId) {
+      setStatus("Project folder selection changed. Try again.");
+      return null;
+    }
+
+    await flushPendingProjectDrafts();
+    const resetResult = await callApi("/api/project/new", {});
+    if (!resetResult) return null;
+    const savedResult = await callApi("/api/project/save", { path: projectPath });
+    if (savedResult) setActiveTool("project");
+    return savedResult;
+  } catch (error) {
+    setStatus(error.message);
+    activity("api.error", { path: "/api/project/new", error: error.message });
+    return null;
+  }
+}
+
 async function useProjectFolder(path = $("project-path").value.trim()) {
   const targetPath = normalizeProjectFolderInput(path);
   if (!targetPath) {
@@ -7119,9 +7332,9 @@ async function applyScoringSettings(scoringPayload = readScoringPayload(), rules
   await callApi("/api/scoring", scoringPayload);
 }
 
-const autoApplyThreshold = debounce((payload) => {
-  activity("auto_apply.threshold", payload);
-  callApi("/api/analysis/threshold", payload);
+const autoApplyShotMLSettings = debounce((settings) => {
+  activity("auto_apply.shotml_settings", {});
+  callApi("/api/analysis/shotml-settings", { settings, rerun: false });
 }, 450);
 
 const autoApplyProjectDetails = debounce((payload) => {
@@ -7166,13 +7379,17 @@ const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {
 
 function scheduleThresholdApply() {
   pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");
-  autoApplyThreshold({ threshold: Number($("threshold").value) });
+  scheduleShotMLSettingsApply();
 }
 
 async function applyThresholdNow() {
   pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");
-  autoApplyThreshold.cancel?.();
-  await callApi("/api/analysis/threshold", { threshold: Number($("threshold").value) });
+  autoApplyShotMLSettings.cancel?.();
+  await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: true, update_app_defaults: true });
+}
+
+function scheduleShotMLSettingsApply() {
+  autoApplyShotMLSettings(readShotMLSettingsPayload());
 }
 
 function scheduleProjectDetailsApply() {
@@ -7239,8 +7456,7 @@ function wireEvents() {
     });
   });
   $("new-project").addEventListener("click", async () => {
-    await flushPendingProjectDrafts();
-    await callApi("/api/project/new", {});
+    await createNewProject();
   });
   $("primary-file-path").addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") return;
@@ -7304,7 +7520,7 @@ function wireEvents() {
   $("delete-project").addEventListener("click", async () => {
     const projectPath = (state?.project?.path || "").trim();
     if (!projectPath) return;
-    const shouldDelete = window.confirm(`Delete this project folder from disk?\n\n${projectPath}`);
+    const shouldDelete = window.confirm(`Delete this project folder from disk?\n\n${projectPath}\n\nThis cannot be undone.`);
     if (!shouldDelete) return;
     await flushPendingProjectDrafts();
     await callApi("/api/project/delete", {});
@@ -7411,13 +7627,20 @@ function wireEvents() {
     });
   });
   $("threshold").addEventListener("input", scheduleThresholdApply);
-  $("threshold").addEventListener("change", applyThresholdNow);
+  $("threshold").addEventListener("change", scheduleThresholdApply);
   $("threshold").addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    applyThresholdNow();
+    scheduleThresholdApply();
   });
   $("apply-threshold").addEventListener("click", applyThresholdNow);
+  document.querySelectorAll("[data-shotml-setting]").forEach((input) => {
+    if (input.id === "threshold") return;
+    input.addEventListener("input", scheduleShotMLSettingsApply);
+    input.addEventListener("change", scheduleShotMLSettingsApply);
+  });
+  $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
+  $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
