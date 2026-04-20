@@ -10,6 +10,7 @@ let pendingDragTimeMs = null;
 let waveformPanDrag = null;
 let waveformNavigatorDrag = null;
 let timingRowEdits = new Set();
+let timingSplitDrafts = new Map();
 let scoringShotExpansion = new Map();
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
@@ -1500,6 +1501,9 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
   scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
+  timingSplitDrafts = new Map(
+    [...timingSplitDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
+  );
   timingColumnWidths = resolvedTimingColumnWidths(normalized.timing_column_widths);
   setActiveTool(normalized.active_tool, { persistUiState: false });
   setWaveformMode(normalized.waveform_mode, { persistUiState: false });
@@ -2765,6 +2769,7 @@ function resetLocalProjectView() {
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
   timingRowEdits = new Set();
+  timingSplitDrafts = new Map();
   scoringShotExpansion = new Map();
   applyProjectUiState({
     ...DEFAULT_PROJECT_UI_STATE,
@@ -4123,9 +4128,19 @@ function formatTimingValue(value) {
 }
 
 function toggleTimingRowEdit(shotId) {
+  const row = (state?.split_rows || []).find((entry) => entry.shot_id === shotId) || null;
   if (timingRowEdits.has(shotId)) {
+    const draftValue = String(timingSplitDrafts.get(shotId) ?? "").trim();
+    const currentValue = row ? seconds(numericMs(row.split_ms) ?? row.absolute_time_ms) : "";
+    if (draftValue && draftValue !== currentValue) {
+      updateTimingRowField(shotId, "split_ms", draftValue);
+    }
+    timingSplitDrafts.delete(shotId);
     timingRowEdits.delete(shotId);
   } else {
+    if (row) {
+      timingSplitDrafts.set(shotId, seconds(numericMs(row.split_ms) ?? row.absolute_time_ms));
+    }
     timingRowEdits.add(shotId);
   }
   syncLocalProjectUiState();
@@ -4135,6 +4150,7 @@ function toggleTimingRowEdit(shotId) {
 
 function restoreOriginalSplit(shotId) {
   selectedShotId = shotId;
+  timingSplitDrafts.delete(shotId);
   callApi("/api/shots/restore", { shot_id: shotId });
 }
 
@@ -4149,6 +4165,7 @@ function deleteShotById(shotId, source = "selected") {
     pendingSelectionFallback = shotSelectionContext(shotId, state, "index");
     selectedShotId = null;
   }
+  timingSplitDrafts.delete(shotId);
   timingRowEdits.delete(shotId);
   scoringShotExpansion.delete(shotId);
   if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
@@ -4406,23 +4423,13 @@ function renderTimingTable(tableId = "timing-table") {
         input.min = "0";
         input.step = "0.01";
         input.className = "timing-split-input";
-        input.value = seconds(splitMs ?? row.absolute_time_ms);
+        input.value = String(
+          timingSplitDrafts.get(row.shot_id) ?? seconds(splitMs ?? row.absolute_time_ms),
+        );
         input.setAttribute("aria-label", `Split for ${splitRowEntryLabel(row)}`);
         input.title = "Edit the split in seconds using 0.00 format.";
-        let committedValue = String(input.value ?? "").trim();
-        const commitSplitEdit = () => {
-          const nextValue = String(input.value ?? "").trim();
-          if (!nextValue || nextValue === committedValue) return;
-          committedValue = nextValue;
-          updateTimingRowField(row.shot_id, "split_ms", nextValue);
-        };
-        input.addEventListener("change", commitSplitEdit);
-        input.addEventListener("blur", commitSplitEdit);
-        input.addEventListener("keydown", (event) => {
-          if (event.key !== "Enter") return;
-          event.preventDefault();
-          commitSplitEdit();
-          input.blur();
+        input.addEventListener("input", () => {
+          timingSplitDrafts.set(row.shot_id, String(input.value ?? "").trim());
         });
         const actions = document.createElement("span");
         actions.className = "timing-edit-actions";
