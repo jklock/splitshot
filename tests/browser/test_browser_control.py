@@ -1883,6 +1883,11 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                         "shot_id": first_shot_id,
                         "time_ms": 1200,
                         "duration_ms": 1000,
+                        "follow_motion": True,
+                        "motion_path": [
+                            {"offset_ms": 250, "x": 0.45, "y": 0.55},
+                            {"offset_ms": 750, "x": 0.52, "y": 0.63},
+                        ],
                         "quadrant": "custom",
                         "x": 0.42,
                         "y": 0.58,
@@ -1901,6 +1906,10 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["popups"][0]["shot_id"] == first_shot_id
         assert saved["popups"][0]["time_ms"] == 1200
         assert saved["popups"][0]["duration_ms"] == 1000
+        assert saved["popups"][0]["follow_motion"] is True
+        assert saved["popups"][0]["motion_path"][0]["offset_ms"] == 250
+        assert saved["popups"][0]["motion_path"][0]["x"] == pytest.approx(0.45)
+        assert saved["popups"][0]["motion_path"][1]["offset_ms"] == 750
         assert saved["popups"][0]["quadrant"] == "custom"
         assert saved["popups"][0]["x"] == pytest.approx(0.42)
         assert saved["popups"][0]["y"] == pytest.approx(0.58)

@@ -445,6 +445,13 @@ class OverlayTextBox:
 
 
 @dataclass(slots=True)
+class PopupMotionPoint:
+    offset_ms: int = 0
+    x: float = 0.5
+    y: float = 0.5
+
+
+@dataclass(slots=True)
 class PopupBubble:
     id: str = field(default_factory=lambda: uuid4().hex)
     enabled: bool = True
@@ -456,6 +463,8 @@ class PopupBubble:
     quadrant: str = "middle_middle"
     x: float = 0.5
     y: float = 0.5
+    follow_motion: bool = False
+    motion_path: list[PopupMotionPoint] = field(default_factory=list)
     background_color: str = "#000000"
     text_color: str = "#ffffff"
     opacity: float = 0.9
@@ -653,6 +662,38 @@ def _normalize_popup_bubble_quadrant(value: Any, *, x: Any = None, y: Any = None
     return "middle_middle"
 
 
+def _normalize_popup_motion_point(data: Any) -> PopupMotionPoint | None:
+    if not isinstance(data, dict):
+        return None
+    try:
+        offset_ms = max(0, int(round(float(data.get("offset_ms", data.get("time_ms", 0)) or 0))))
+    except (TypeError, ValueError):
+        offset_ms = 0
+    try:
+        x = max(0.0, min(1.0, float(data.get("x", 0.5))))
+    except (TypeError, ValueError):
+        x = 0.5
+    try:
+        y = max(0.0, min(1.0, float(data.get("y", 0.5))))
+    except (TypeError, ValueError):
+        y = 0.5
+    return PopupMotionPoint(offset_ms=offset_ms, x=x, y=y)
+
+
+def _normalize_popup_motion_path(data: Any) -> list[PopupMotionPoint]:
+    if not isinstance(data, list):
+        return []
+    points = [point for item in data if (point := _normalize_popup_motion_point(item)) is not None]
+    points.sort(key=lambda point: point.offset_ms)
+    deduped: list[PopupMotionPoint] = []
+    for point in points:
+        if deduped and deduped[-1].offset_ms == point.offset_ms:
+            deduped[-1] = point
+        else:
+            deduped.append(point)
+    return deduped
+
+
 def _normalize_ui_state_active_tool(value: Any) -> str:
     normalized = str(value or "project")
     return normalized if normalized in _UI_STATE_ACTIVE_TOOLS else "project"
@@ -728,6 +769,7 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
     shot_id = None if data.get("shot_id") in {None, ""} else str(data["shot_id"])
     x_value = None if data.get("x") in {None, ""} else float(data["x"])
     y_value = None if data.get("y") in {None, ""} else float(data["y"])
+    motion_path = _normalize_popup_motion_path(data.get("motion_path"))
     return PopupBubble(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", True)),
@@ -739,6 +781,8 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         quadrant=_normalize_popup_bubble_quadrant(data.get("quadrant"), x=x_value, y=y_value),
         x=max(0.0, min(1.0, x_value if x_value is not None else 0.5)),
         y=max(0.0, min(1.0, y_value if y_value is not None else 0.5)),
+        follow_motion=bool(data.get("follow_motion", bool(motion_path))),
+        motion_path=motion_path,
         background_color=str(data.get("background_color", "#000000")),
         text_color=str(data.get("text_color", "#ffffff")),
         opacity=max(0.0, min(1.0, float(data.get("opacity", 0.9)))),

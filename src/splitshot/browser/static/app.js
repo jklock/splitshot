@@ -2485,6 +2485,7 @@ function createPopupBubbleId() {
 }
 
 const POPUP_BUBBLE_ANCHOR_MODES = new Set(["time", "shot"]);
+const POPUP_BUBBLE_MOTION_POINT_COUNTS = [4, 8, 16];
 const POPUP_BUBBLE_QUADRANT_POINTS = Object.freeze({
   top_left: { x: 0.125, y: 0.125 },
   top_middle: { x: 0.5, y: 0.125 },
@@ -2511,6 +2512,30 @@ function normalizePopupQuadrant(value, xValue = null, yValue = null) {
   return "middle_middle";
 }
 
+function normalizePopupMotionPoint(point) {
+  const offsetMs = Math.max(0, Math.round(Number(point?.offset_ms ?? point?.time_ms ?? 0) || 0));
+  return {
+    offset_ms: offsetMs,
+    x: normalizedCoordinateValue(point?.x) ?? 0.5,
+    y: normalizedCoordinateValue(point?.y) ?? 0.5,
+  };
+}
+
+function normalizePopupMotionPath(path) {
+  if (!Array.isArray(path)) return [];
+  const normalized = path.map((point) => normalizePopupMotionPoint(point));
+  normalized.sort((left, right) => left.offset_ms - right.offset_ms);
+  const deduped = [];
+  normalized.forEach((point) => {
+    if (deduped.length > 0 && deduped[deduped.length - 1].offset_ms === point.offset_ms) {
+      deduped[deduped.length - 1] = point;
+      return;
+    }
+    deduped.push(point);
+  });
+  return deduped;
+}
+
 function normalizePopupBubble(bubble = {}) {
   const xValue = normalizedCoordinateValue(bubble.x);
   const yValue = normalizedCoordinateValue(bubble.y);
@@ -2518,6 +2543,15 @@ function normalizePopupBubble(bubble = {}) {
     ? null
     : String(bubble.shot_id);
   const anchorMode = normalizePopupAnchorMode(bubble.anchor_mode, shotId);
+  const motionPath = normalizePopupMotionPath(bubble.motion_path);
+  const followMotion = Boolean(bubble.follow_motion ?? motionPath.length > 0);
+  const normalizedMotionPath = motionPath.length > 0
+    ? motionPath
+    : (followMotion ? popupBubbleMotionPathTemplate({
+        ...bubble,
+        x: xValue ?? 0.5,
+        y: yValue ?? 0.5,
+      }, 4) : []);
   return {
     id: String(bubble.id || createPopupBubbleId()),
     enabled: Boolean(bubble.enabled ?? true),
@@ -2529,6 +2563,8 @@ function normalizePopupBubble(bubble = {}) {
     quadrant: normalizePopupQuadrant(bubble.quadrant, xValue, yValue),
     x: xValue === null ? 0.5 : xValue,
     y: yValue === null ? 0.5 : yValue,
+    follow_motion: followMotion,
+    motion_path: normalizedMotionPath,
     background_color: String(bubble.background_color || "#000000"),
     text_color: String(bubble.text_color || "#ffffff"),
     opacity: clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0, 1),
@@ -2542,15 +2578,113 @@ function popupBubbles() {
   return bubbles.map((bubble) => normalizePopupBubble(bubble));
 }
 
-function popupBubblePoint(bubble) {
-  if (!bubble) return { x: 0.5, y: 0.5 };
-  if (bubble.quadrant !== CUSTOM_QUADRANT_VALUE) {
-    return POPUP_BUBBLE_QUADRANT_POINTS[bubble.quadrant] || POPUP_BUBBLE_QUADRANT_POINTS.middle_middle;
+function popupBubbleMotionPath(bubble) {
+  return normalizePopupMotionPath(bubble?.motion_path || []);
+}
+
+function popupBubbleMotionPointCount(bubble) {
+  const motionPath = popupBubbleMotionPath(bubble);
+  const totalPointCount = motionPath.length > 0 ? (motionPath.length + 1) : 4;
+  if (POPUP_BUBBLE_MOTION_POINT_COUNTS.includes(totalPointCount)) return totalPointCount;
+  return POPUP_BUBBLE_MOTION_POINT_COUNTS.reduce((nearest, candidate) => (
+    Math.abs(candidate - totalPointCount) < Math.abs(nearest - totalPointCount) ? candidate : nearest
+  ), POPUP_BUBBLE_MOTION_POINT_COUNTS[0]);
+}
+
+function popupBubbleMotionPathTemplate(bubble, totalPointCount = 4) {
+  const basePoint = bubble?.quadrant !== CUSTOM_QUADRANT_VALUE
+    ? (POPUP_BUBBLE_QUADRANT_POINTS[bubble?.quadrant] || POPUP_BUBBLE_QUADRANT_POINTS.middle_middle)
+    : {
+        x: normalizedCoordinateValue(bubble?.x) ?? 0.5,
+        y: normalizedCoordinateValue(bubble?.y) ?? 0.5,
+      };
+  const durationMs = Math.max(1, Math.round(Number(bubble?.duration_ms ?? 1000) || 1000));
+  const pointCount = Math.max(2, Math.round(Number(totalPointCount) || 4));
+  const path = [];
+  for (let index = 1; index < pointCount; index += 1) {
+    path.push({
+      offset_ms: Math.round((durationMs * index) / pointCount),
+      x: basePoint.x,
+      y: basePoint.y,
+    });
   }
-  return {
-    x: normalizedCoordinateValue(bubble.x) ?? 0.5,
-    y: normalizedCoordinateValue(bubble.y) ?? 0.5,
-  };
+  return path;
+}
+
+function popupBubbleMotionPointAtOffset(motionPath, elapsedMs, basePoint) {
+  if (motionPath.length === 0) return basePoint;
+  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y };
+  for (const point of motionPath) {
+    if (elapsedMs <= point.offset_ms) {
+      if (point.offset_ms <= previousPoint.offset_ms) {
+        return { x: point.x, y: point.y };
+      }
+      const ratio = (elapsedMs - previousPoint.offset_ms) / (point.offset_ms - previousPoint.offset_ms);
+      return {
+        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * ratio), 0, 1),
+        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * ratio), 0, 1),
+      };
+    }
+    previousPoint = point;
+  }
+  return { x: previousPoint.x, y: previousPoint.y };
+}
+
+function resamplePopupBubbleMotionPath(bubble, totalPointCount = null, sourcePath = null) {
+  const motionPath = normalizePopupMotionPath(sourcePath ?? (bubble?.motion_path || []));
+  const pointCount = Math.max(2, Math.round(Number(totalPointCount) || popupBubbleMotionPointCount(bubble)));
+  const template = popupBubbleMotionPathTemplate(bubble, pointCount);
+  if (motionPath.length === 0) return template;
+  const basePoint = popupBubblePoint(bubble);
+  return template.map((point) => ({
+    offset_ms: point.offset_ms,
+    x: popupBubbleMotionPointAtOffset(motionPath, point.offset_ms, basePoint).x,
+    y: popupBubbleMotionPointAtOffset(motionPath, point.offset_ms, basePoint).y,
+  }));
+}
+
+function popupBubblePoint(bubble, positionMs = null) {
+  if (!bubble) return { x: 0.5, y: 0.5 };
+  const basePoint = bubble.quadrant !== CUSTOM_QUADRANT_VALUE
+    ? (POPUP_BUBBLE_QUADRANT_POINTS[bubble.quadrant] || POPUP_BUBBLE_QUADRANT_POINTS.middle_middle)
+    : {
+        x: normalizedCoordinateValue(bubble.x) ?? 0.5,
+        y: normalizedCoordinateValue(bubble.y) ?? 0.5,
+      };
+  if (!bubble.follow_motion || positionMs === null) return basePoint;
+  const motionPath = popupBubbleMotionPath(bubble);
+  if (motionPath.length === 0) return basePoint;
+  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
+  const elapsedMs = Math.max(0, Math.round(Number(positionMs) || 0) - popupTimeMs);
+  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y };
+  for (const point of motionPath) {
+    if (elapsedMs <= point.offset_ms) {
+      if (point.offset_ms <= previousPoint.offset_ms) {
+        return { x: point.x, y: point.y };
+      }
+      const ratio = (elapsedMs - previousPoint.offset_ms) / (point.offset_ms - previousPoint.offset_ms);
+      return {
+        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * ratio), 0, 1),
+        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * ratio), 0, 1),
+      };
+    }
+    previousPoint = point;
+  }
+  return { x: previousPoint.x, y: previousPoint.y };
+}
+
+function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {
+  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
+  if (!bubble.follow_motion || normalizedOffset <= 0) {
+    return normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x, y });
+  }
+  const motionPath = popupBubbleMotionPath(bubble).filter((point) => point.offset_ms !== normalizedOffset);
+  motionPath.push({ offset_ms: normalizedOffset, x, y });
+  return normalizePopupBubble({
+    ...bubble,
+    follow_motion: true,
+    motion_path: motionPath,
+  });
 }
 
 function popupBubbleAutoSize(bubble) {
@@ -2625,12 +2759,23 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
   const nextBubbles = popupBubbles().map((bubble) => {
     if (bubble.id !== bubbleId) return bubble;
     const nextBubble = normalizePopupBubble({ ...bubble, [field]: rawValue });
+    if (field === "follow_motion") {
+      nextBubble.follow_motion = Boolean(rawValue);
+      if (nextBubble.follow_motion && nextBubble.motion_path.length === 0) {
+        nextBubble.motion_path = popupBubbleMotionPathTemplate(nextBubble, 4);
+      }
+    }
     if (field === "anchor_mode") {
       nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
       nextBubble.shot_id = nextBubble.anchor_mode === "shot" ? (nextBubble.shot_id || defaultPopupShotId()) : null;
       if (nextBubble.anchor_mode === "shot" && !nextBubble.shot_id) {
         nextBubble.anchor_mode = "time";
       }
+    }
+    if (field === "motion_point_count") {
+      const pointCount = Math.max(2, Math.round(Number(rawValue) || 4));
+      nextBubble.follow_motion = true;
+      nextBubble.motion_path = resamplePopupBubbleMotionPath(nextBubble, pointCount, nextBubble.motion_path);
     }
     if (field === "shot_id") {
       nextBubble.shot_id = rawValue ? String(rawValue) : null;
@@ -2641,12 +2786,21 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
       nextBubble.anchor_mode = "time";
       nextBubble.shot_id = null;
     }
+    if (field === "duration_ms" && nextBubble.follow_motion && nextBubble.motion_path.length > 0) {
+      nextBubble.motion_path = resamplePopupBubbleMotionPath(nextBubble, popupBubbleMotionPointCount(nextBubble), nextBubble.motion_path);
+    }
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
     }
     return nextBubble;
   });
   setPopupBubbles(nextBubbles, options);
+  if ((field === "anchor_mode" || field === "shot_id") && state?.media?.primary_available) {
+    const updatedBubble = popupBubbles().find((bubble) => bubble.id === bubbleId);
+    if (updatedBubble?.anchor_mode === "shot" && updatedBubble.shot_id) {
+      seekPrimaryVideoToShot(updatedBubble.shot_id);
+    }
+  }
   if (["text", "quadrant", "width", "height"].includes(field)) {
     syncPopupBubbleSizeControls(bubbleId);
   }
@@ -2674,6 +2828,11 @@ function duplicatePopupBubble(bubbleId) {
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
   const coordinates = popupBubblePoint(bubble);
+  const motionPath = popupBubbleMotionPath(bubble).map((point) => ({
+    offset_ms: point.offset_ms,
+    x: clamp(point.x + 0.04, 0, 1),
+    y: clamp(point.y + 0.04, 0, 1),
+  }));
   setPopupBubbles([
     ...popupBubbles(),
     normalizePopupBubble({
@@ -2682,8 +2841,97 @@ function duplicatePopupBubble(bubbleId) {
       quadrant: CUSTOM_QUADRANT_VALUE,
       x: clamp(coordinates.x + 0.04, 0, 1),
       y: clamp(coordinates.y + 0.04, 0, 1),
+      motion_path: motionPath,
     }),
   ], { commit: true, rerender: true });
+}
+
+function clearPopupBubbleMotionPath(bubbleId) {
+  setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId
+    ? normalizePopupBubble({ ...bubble, follow_motion: false, motion_path: [] })
+    : bubble), { commit: true, rerender: true });
+}
+
+function seekPopupBubbleMotionPoint(bubbleId, offsetMs) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return false;
+  return seekPrimaryVideoToTimeMs(popupBubbleEffectiveTimeMs(bubble) + Math.max(0, Math.round(Number(offsetMs) || 0)));
+}
+
+function setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, options = {}) {
+  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
+  const nextBubbles = popupBubbles().map((bubble) => {
+    if (bubble.id !== bubbleId) return bubble;
+    const nextBubble = normalizePopupBubble(bubble);
+    const motionPath = resamplePopupBubbleMotionPath(nextBubble, popupBubbleMotionPointCount(nextBubble), nextBubble.motion_path);
+    const nextMotionPath = motionPath.map((point) => {
+      if (point.offset_ms !== normalizedOffset) return point;
+      const normalizedValue = normalizedCoordinateValue(rawValue);
+      return {
+        ...point,
+        [field]: normalizedValue === null ? point[field] : normalizedValue,
+      };
+    });
+    return normalizePopupBubble({
+      ...nextBubble,
+      follow_motion: true,
+      motion_path: nextMotionPath,
+    });
+  });
+  setPopupBubbles(nextBubbles, options);
+}
+
+function renderPopupBubbleMotionGuide(card, bubble) {
+  const guide = card.querySelector('[data-popup-motion-guide]');
+  if (!(guide instanceof HTMLElement)) return;
+  const motionPointCount = popupBubbleMotionPointCount(bubble);
+  const motionPath = bubble.follow_motion
+    ? resamplePopupBubbleMotionPath(bubble, motionPointCount, bubble.motion_path)
+    : popupBubbleMotionPath(bubble);
+  guide.hidden = !bubble.follow_motion;
+  const pointCountSelect = guide.querySelector('[data-popup-field="motion_point_count"]');
+  if (pointCountSelect instanceof HTMLSelectElement) syncControlValue(pointCountSelect, motionPointCount);
+  const motionPointList = guide.querySelector('[data-popup-motion-path-list]');
+  if (!(motionPointList instanceof HTMLElement)) return;
+  motionPointList.innerHTML = "";
+  if (!bubble.follow_motion) return;
+  const intro = document.createElement("p");
+  intro.className = "hint";
+  intro.textContent = `The X and Y fields above are the first point. Using ${motionPointCount} total point${motionPointCount === 1 ? "" : "s"}. Go to each later point, then drag the popup to set its X and Y.`;
+  motionPointList.appendChild(intro);
+  motionPath.forEach((point, index) => {
+    const row = document.createElement("div");
+    row.className = "popup-motion-point-row";
+    row.innerHTML = `
+      <button type="button" data-popup-motion-seek="true">Go</button>
+      <span class="popup-motion-point-label">Point ${index + 2} @ ${seconds(point.offset_ms)}s</span>
+      <label>X
+        <input data-popup-motion-field="x" type="number" min="0" max="1" step="0.01" />
+      </label>
+      <label>Y
+        <input data-popup-motion-field="y" type="number" min="0" max="1" step="0.01" />
+      </label>
+    `;
+    const seekButton = row.querySelector('[data-popup-motion-seek="true"]');
+    if (seekButton instanceof HTMLButtonElement) {
+      seekButton.addEventListener("click", () => seekPopupBubbleMotionPoint(bubble.id, point.offset_ms));
+    }
+    const xInput = row.querySelector('[data-popup-motion-field="x"]');
+    const yInput = row.querySelector('[data-popup-motion-field="y"]');
+    if (xInput instanceof HTMLInputElement) {
+      syncControlValue(xInput, point.x);
+      xInput.addEventListener("input", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: false, rerender: false }));
+      xInput.addEventListener("change", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: true, rerender: true }));
+      xInput.addEventListener("blur", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: true, rerender: true }));
+    }
+    if (yInput instanceof HTMLInputElement) {
+      syncControlValue(yInput, point.y);
+      yInput.addEventListener("input", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: false, rerender: false }));
+      yInput.addEventListener("change", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: true, rerender: true }));
+      yInput.addEventListener("blur", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: true, rerender: true }));
+    }
+    motionPointList.appendChild(row);
+  });
 }
 
 function buildPopupBubbleCard(bubble, index) {
@@ -2692,6 +2940,7 @@ function buildPopupBubbleCard(bubble, index) {
   card.dataset.popupId = bubble.id;
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   const displayedSize = resolvedPopupBubbleSize(bubble);
+  const motionPath = popupBubbleMotionPath(bubble);
   const shots = popupBubbleShotOptions();
   const shotIds = new Set(shots.map((shot) => shot.id));
   const popupShotId = bubble.anchor_mode === "shot"
@@ -2703,6 +2952,7 @@ function buildPopupBubbleCard(bubble, index) {
       <label class="check-row"><input type="checkbox" data-popup-field="enabled" /> <strong>Bubble ${index + 1}</strong></label>
       <div class="text-box-card-actions">
         <button type="button" data-popup-action="duplicate">Duplicate</button>
+        <button type="button" data-popup-action="clear_motion_path">Clear path</button>
         <button type="button" data-popup-action="remove">Remove</button>
       </div>
     </div>
@@ -2726,6 +2976,20 @@ function buildPopupBubbleCard(bubble, index) {
         <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
       </label>
     </div>
+    <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
+    <p class="hint" data-popup-motion-hint="true"></p>
+    <section class="popup-motion-guide" data-popup-motion-guide hidden>
+      <div class="control-grid">
+        <label>Points
+          <select data-popup-field="motion_point_count">
+            <option value="4">4</option>
+            <option value="8">8</option>
+            <option value="16">16</option>
+          </select>
+        </label>
+      </div>
+      <div class="popup-motion-path-list" data-popup-motion-path-list></div>
+    </section>
     <div class="control-grid">
       <label>Placement
         <select data-popup-field="quadrant">
@@ -2781,6 +3045,7 @@ function buildPopupBubbleCard(bubble, index) {
     </div>
   `;
   syncControlChecked(card.querySelector('[data-popup-field="enabled"]'), bubble.enabled);
+  syncControlChecked(card.querySelector('[data-popup-field="follow_motion"]'), bubble.follow_motion);
   syncControlValue(card.querySelector('[data-popup-field="text"]'), bubble.text);
   syncControlValue(card.querySelector('[data-popup-field="anchor_mode"]'), bubble.anchor_mode);
   syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
@@ -2794,6 +3059,24 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="background_color"]'), bubble.background_color);
   syncControlValue(card.querySelector('[data-popup-field="text_color"]'), bubble.text_color);
   syncControlValue(card.querySelector('[data-popup-field="opacity_percent"]'), Math.round((bubble.opacity ?? 0.9) * 100));
+  renderPopupBubbleMotionGuide(card, bubble);
+  const motionHint = card.querySelector('[data-popup-motion-hint="true"]');
+  if (motionHint) {
+    if (bubble.follow_motion) {
+      const motionPointCount = popupBubbleMotionPointCount(bubble);
+      motionHint.textContent = motionPointCount > 1
+        ? `Using ${motionPointCount} total point${motionPointCount === 1 ? "" : "s"}. Go to each point, then drag the popup to update it.`
+        : "Drag the popup at different times to add motion points. The X and Y fields remain the starting anchor.";
+    } else {
+      motionHint.textContent = motionPath.length > 0
+        ? `Motion path paused with ${motionPath.length} later point${motionPath.length === 1 ? "" : "s"}. Turn it back on to edit the guided points.`
+        : "Enable this to keep the popup attached to a moving subject. Drag it at different times to add motion points.";
+    }
+  }
+  const clearMotionButton = card.querySelector('[data-popup-action="clear_motion_path"]');
+  if (clearMotionButton instanceof HTMLButtonElement) {
+    clearMotionButton.disabled = motionPath.length === 0;
+  }
   const shotSelect = card.querySelector('[data-popup-field="shot_id"]');
   if (shotSelect) {
     shotSelect.innerHTML = "";
@@ -2869,6 +3152,7 @@ function buildPopupBubbleCard(bubble, index) {
     if (durationInput) durationInput.disabled = false;
   }
   card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
+  card.querySelector('[data-popup-action="clear_motion_path"]')?.addEventListener("click", () => clearPopupBubbleMotionPath(bubble.id));
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
   bindOverlayColorInput(card.querySelector('[data-popup-field="background_color"]'));
   bindOverlayColorInput(card.querySelector('[data-popup-field="text_color"]'));
@@ -4443,17 +4727,29 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
       renderWaveform();
     }
   }
-  const primaryVideo = $("primary-video");
-  if (shot && primaryVideo && state?.media?.primary_available) {
-    try {
-      primaryVideo.currentTime = shot.time_ms / 1000;
-    } catch {
-      // Some browsers reject seeks before metadata is ready.
-    }
-    scheduleSecondaryPreviewSync();
-    renderLiveOverlay();
-  }
+  if (shot) seekPrimaryVideoToTimeMs(shot.time_ms);
   callApi("/api/shots/select", { shot_id: nextShotId });
+}
+
+function seekPrimaryVideoToTimeMs(timeMs) {
+  const video = $("primary-video");
+  if (!(video instanceof HTMLVideoElement) || !state?.media?.primary_available) return false;
+  const nextTime = Math.max(0, Number(timeMs) || 0) / 1000;
+  try {
+    if (typeof video.fastSeek === "function") video.fastSeek(nextTime);
+    else video.currentTime = nextTime;
+  } catch {
+    // Some browsers reject seeks before metadata is ready.
+  }
+  scheduleSecondaryPreviewSync();
+  renderLiveOverlay();
+  return true;
+}
+
+function seekPrimaryVideoToShot(shotId) {
+  const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId) || null;
+  if (!shot) return false;
+  return seekPrimaryVideoToTimeMs(shot.time_ms);
 }
 
 function selectedShot() {
@@ -7239,7 +7535,10 @@ function beginPopupBubbleDrag(event) {
   if (!bubble) return;
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect) || popupBubblePoint(bubble);
+  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
+    || popupBubblePoint(bubble, overlayRenderPositionMs($("primary-video")));
+  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
+  const currentPositionMs = overlayRenderPositionMs($("primary-video"));
   popupBubbleDrag = {
     bubbleId,
     target: $("popup-overlay"),
@@ -7248,6 +7547,8 @@ function beginPopupBubbleDrag(event) {
     startClientY: event.clientY,
     startX: renderedCoordinates.x,
     startY: renderedCoordinates.y,
+    motionOffsetMs: Math.max(0, currentPositionMs - popupTimeMs),
+    followMotion: Boolean(bubble.follow_motion),
   };
   capturePointer(popupBubbleDrag.target, event.pointerId);
   popupBubbleDrag.target?.classList.add("dragging");
@@ -7265,7 +7566,7 @@ function movePopupBubbleDrag(event) {
   const newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
   const newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
   const nextBubbles = popupBubbles().map((bubble) => bubble.id === popupBubbleDrag.bubbleId
-    ? normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY })
+    ? updatePopupBubbleMotionPoint(bubble, popupBubbleDrag.motionOffsetMs, newX, newY)
     : bubble);
   setPopupBubbles(nextBubbles, { commit: false, rerender: false });
 }
@@ -7511,7 +7812,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
   popupOverlay.style.width = `${frameRect.width}px`;
   popupOverlay.style.height = `${frameRect.height}px`;
   visiblePopupBubbles(positionMs).forEach((bubble) => {
-    const point = popupBubblePoint(bubble);
+    const point = popupBubblePoint(bubble, positionMs);
     const popupSize = resolvedPopupBubbleSize(bubble);
     const badge = badgeElement(
       bubble.text,
@@ -7521,9 +7822,9 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
         opacity: bubble.opacity,
       },
       size,
+      null,
       popupSize.width,
       popupSize.height,
-      null,
       "center",
       overlayScale,
       popupSize,

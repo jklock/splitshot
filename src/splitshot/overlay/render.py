@@ -54,6 +54,19 @@ _PENALTY_LABELS = {
 
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
+_POPUP_BUBBLE_QUADRANT_POINTS = {
+    "top_left": (0.125, 0.125),
+    "top_middle": (0.5, 0.125),
+    "top_right": (0.875, 0.125),
+    "middle_left": (0.125, 0.5),
+    "middle_middle": (0.5, 0.5),
+    "middle_right": (0.875, 0.5),
+    "bottom_left": (0.125, 0.875),
+    "bottom_middle": (0.5, 0.875),
+    "bottom_right": (0.875, 0.875),
+    "custom": (0.5, 0.5),
+}
+
 
 def _popup_bubble_time_ms(project: Project, popup) -> int:
     if getattr(popup, "anchor_mode", "time") == "shot" and getattr(popup, "shot_id", None):
@@ -61,6 +74,69 @@ def _popup_bubble_time_ms(project: Project, popup) -> int:
         if shot is not None:
             return shot.time_ms
     return popup.time_ms
+
+
+def _popup_bubble_motion_path(popup) -> list[tuple[int, float, float]]:
+    motion_path = getattr(popup, "motion_path", None) or []
+    points: list[tuple[int, float, float]] = []
+    for item in motion_path:
+        if isinstance(item, dict):
+            offset_value = item.get("offset_ms", item.get("time_ms", 0))
+            x_value = item.get("x", 0.5)
+            y_value = item.get("y", 0.5)
+        else:
+            offset_value = getattr(item, "offset_ms", getattr(item, "time_ms", 0))
+            x_value = getattr(item, "x", 0.5)
+            y_value = getattr(item, "y", 0.5)
+        try:
+            offset_ms = max(0, int(round(float(offset_value or 0))))
+        except (TypeError, ValueError):
+            offset_ms = 0
+        try:
+            x = max(0.0, min(1.0, float(x_value)))
+        except (TypeError, ValueError):
+            x = 0.5
+        try:
+            y = max(0.0, min(1.0, float(y_value)))
+        except (TypeError, ValueError):
+            y = 0.5
+        points.append((offset_ms, x, y))
+    points.sort(key=lambda point: point[0])
+    return points
+
+
+def _popup_bubble_point(project: Project, popup, position_ms: int | None = None) -> tuple[float, float]:
+    quadrant = getattr(popup, "quadrant", "middle_middle")
+    if quadrant == "custom":
+        x_value = getattr(popup, "x", 0.5)
+        y_value = getattr(popup, "y", 0.5)
+        base_point = (
+            0.5 if x_value in {None, ""} else max(0.0, min(1.0, float(x_value))),
+            0.5 if y_value in {None, ""} else max(0.0, min(1.0, float(y_value))),
+        )
+    else:
+        base_point = _POPUP_BUBBLE_QUADRANT_POINTS.get(quadrant, _POPUP_BUBBLE_QUADRANT_POINTS["middle_middle"])
+    if not getattr(popup, "follow_motion", False) or position_ms is None:
+        return base_point
+
+    motion_path = _popup_bubble_motion_path(popup)
+    if not motion_path:
+        return base_point
+
+    popup_time_ms = _popup_bubble_time_ms(project, popup)
+    elapsed_ms = max(0, int(position_ms) - popup_time_ms)
+    previous_offset, previous_x, previous_y = 0, base_point[0], base_point[1]
+    for offset_ms, x, y in motion_path:
+        if elapsed_ms <= offset_ms:
+            if offset_ms <= previous_offset:
+                return x, y
+            ratio = (elapsed_ms - previous_offset) / (offset_ms - previous_offset)
+            return (
+                max(0.0, min(1.0, previous_x + ((x - previous_x) * ratio))),
+                max(0.0, min(1.0, previous_y + ((y - previous_y) * ratio))),
+            )
+        previous_offset, previous_x, previous_y = offset_ms, x, y
+    return previous_x, previous_y
 
 
 def _combined_rect(rects: list[QRectF]) -> QRectF | None:
@@ -474,6 +550,7 @@ class OverlayRenderer:
                 opacity=popup.opacity,
             )
             popup_auto_size = _auto_badge_size((popup.text,), metrics, line_height=line_height)
+            popup_x, popup_y = _popup_bubble_point(project, popup, position_ms)
             self._paint_badges(
                 painter,
                 [
@@ -487,9 +564,9 @@ class OverlayRenderer:
                 project,
                 width,
                 height,
-                quadrant=popup.quadrant,
-                custom_x=popup.x,
-                custom_y=popup.y,
+                quadrant="custom",
+                custom_x=popup_x,
+                custom_y=popup_y,
                 auto_badge_size=popup_auto_size,
                 use_project_bubble_size=False,
             )

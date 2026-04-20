@@ -9,7 +9,7 @@ import pytest
 from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
-from splitshot.domain.models import PopupBubble, ShotEvent, ShotSource
+from splitshot.domain.models import PopupBubble, PopupMotionPoint, ShotEvent, ShotSource
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.ui.controller import ProjectController
 
@@ -346,6 +346,58 @@ def test_popup_bubble_uses_exact_shot_time_and_auto_size() -> None:
         assert max_y - min_y < 80
     finally:
         server.shutdown()
+
+
+def test_popup_bubble_follow_motion_path_interpolates_between_points() -> None:
+    controller = ProjectController()
+    controller.project.popups = [PopupBubble(
+        id="popup-motion",
+        enabled=True,
+        text="Popup",
+        anchor_mode="time",
+        time_ms=0,
+        duration_ms=2000,
+        quadrant="custom",
+        x=0.25,
+        y=0.25,
+        follow_motion=True,
+        motion_path=[PopupMotionPoint(offset_ms=1000, x=0.75, y=0.75)],
+        background_color="#ff0000",
+        text_color="#ffffff",
+        opacity=1.0,
+        width=80,
+        height=40,
+    )]
+
+    def render_center(position_ms: int) -> tuple[float, float]:
+        image = QImage(320, 180, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#000000"))
+        painter = QPainter(image)
+        OverlayRenderer().paint(painter, controller.project, position_ms, 320, 180)
+        painter.end()
+
+        red_pixels: list[tuple[int, int]] = []
+        for y in range(image.height()):
+            for x in range(image.width()):
+                color = image.pixelColor(x, y)
+                if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                    red_pixels.append((x, y))
+
+        assert red_pixels
+        center_x = (min(x for x, _y in red_pixels) + max(x for x, _y in red_pixels)) / 2
+        center_y = (min(y for _x, y in red_pixels) + max(y for _x, y in red_pixels)) / 2
+        return center_x, center_y
+
+    start_center_x, start_center_y = render_center(0)
+    mid_center_x, mid_center_y = render_center(500)
+    end_center_x, end_center_y = render_center(1000)
+
+    assert start_center_x == pytest.approx(80, abs=8)
+    assert start_center_y == pytest.approx(45, abs=8)
+    assert mid_center_x == pytest.approx(160, abs=8)
+    assert mid_center_y == pytest.approx(90, abs=8)
+    assert end_center_x == pytest.approx(240, abs=8)
+    assert end_center_y == pytest.approx(135, abs=8)
 
 
 def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync() -> None:

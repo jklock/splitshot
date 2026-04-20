@@ -522,6 +522,18 @@
                     <option value="custom">Custom</option>
                   </select>
                 </label>
+                <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
+                <section data-popup-motion-guide hidden>
+                  <label>Points
+                    <select data-popup-field="motion_point_count">
+                      <option value="4">4</option>
+                      <option value="8">8</option>
+                      <option value="16">16</option>
+                    </select>
+                  </label>
+                  <div data-popup-motion-path-list></div>
+                </section>
+                <button type="button" data-popup-action="clear_motion_path">Clear path</button>
                 <label>Opacity
                   <input data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" />
                 </label>
