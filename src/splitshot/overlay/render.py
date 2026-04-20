@@ -214,6 +214,8 @@ class OverlayRenderer:
         project: Project,
         position_ms: int,
     ) -> tuple[list[Badge], list[tuple[Badge, float, float]], list[tuple[str, float, float, float]]]:
+        if project.overlay.position == OverlayPosition.NONE:
+            return [], [], []
         shots = sort_shots(project.analysis.shots)
         current_index = current_shot_index(project, position_ms)
         badges: list[Badge] = []
@@ -322,7 +324,14 @@ class OverlayRenderer:
         return text.strip()
 
     def paint(self, painter: QPainter, project: Project, position_ms: int, width: int, height: int) -> None:
-        if project.overlay.position == OverlayPosition.NONE:
+        has_visible_popup = any(
+            popup.enabled
+            and popup.text.strip()
+            and position_ms >= popup.time_ms
+            and position_ms <= popup.time_ms + popup.duration_ms
+            for popup in project.popups
+        )
+        if project.overlay.position == OverlayPosition.NONE and not has_visible_popup:
             return
 
         painter.save()
@@ -369,7 +378,8 @@ class OverlayRenderer:
             )
             if has_final_score_badge and not project.overlay.score_lock_to_stack and index == len(positioned_badges) - 1 and rects:
                 final_score_rect = rects[-1]
-        for text_box in overlay_text_boxes_for_render(project.overlay):
+        text_boxes = [] if project.overlay.position == OverlayPosition.NONE else overlay_text_boxes_for_render(project.overlay)
+        for text_box in text_boxes:
             text_value = self._text_box_text(
                 project,
                 position_ms,
@@ -432,6 +442,36 @@ class OverlayRenderer:
                 custom_x=text_box.x,
                 custom_y=text_box.y,
                 anchor_rect=anchor_rect,
+            )
+        for popup in project.popups:
+            if (
+                not popup.enabled
+                or not popup.text.strip()
+                or position_ms < popup.time_ms
+                or position_ms > popup.time_ms + popup.duration_ms
+            ):
+                continue
+            popup_style = BadgeStyle(
+                background_color=popup.background_color,
+                text_color=popup.text_color,
+                opacity=popup.opacity,
+            )
+            self._paint_badges(
+                painter,
+                [
+                    Badge(
+                        popup.text,
+                        popup_style,
+                        width=popup.width or None,
+                        height=popup.height or None,
+                    )
+                ],
+                project,
+                width,
+                height,
+                quadrant="custom",
+                custom_x=popup.x,
+                custom_y=popup.y,
             )
         self._paint_scores(painter, project, score_marks, width, height)
 

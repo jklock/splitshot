@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -83,16 +84,37 @@ def browser_state(
     media_cache_token: str | None = None,
 ) -> dict[str, Any]:
     rows = compute_split_rows(project)
+    shotml_project = deepcopy(project)
+    for shot in shotml_project.analysis.shots:
+        if shot.shotml_time_ms is not None:
+            shot.time_ms = shot.shotml_time_ms
+        if shot.shotml_confidence is not None:
+            shot.confidence = shot.shotml_confidence
+    shotml_rows_by_id = {
+        row.shot_id: row
+        for row in compute_split_rows(shotml_project)
+        if row.shot_id is not None
+    }
     presentation = build_stage_presentation(project)
     scoring_summary = calculate_scoring_summary(project)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
-    split_rows_payload = [
-        _normalize_scoring_row_payload(asdict(row), ruleset)
-        for row in rows
-    ]
+    split_rows_payload = []
+    for row in rows:
+        row_payload = _normalize_scoring_row_payload(asdict(row), ruleset)
+        shotml_row = shotml_rows_by_id.get(row.shot_id)
+        if shotml_row is not None:
+            row_payload["shotml_time_ms"] = shotml_row.absolute_time_ms
+            row_payload["shotml_split_ms"] = shotml_row.split_ms
+            row_payload["shotml_cumulative_ms"] = shotml_row.cumulative_ms
+            row_payload["shotml_confidence"] = shotml_row.confidence
+            row_payload["adjustment_ms"] = (
+                None if row.split_ms is None or shotml_row.split_ms is None else row.split_ms - shotml_row.split_ms
+            )
+            row_payload["final_time_ms"] = row.cumulative_ms
+        split_rows_payload.append(row_payload)
     timing_segments_payload = [
         _normalize_scoring_row_payload(asdict(segment), ruleset)
         for segment in presentation.timing_segments

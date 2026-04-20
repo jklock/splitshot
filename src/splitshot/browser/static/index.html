@@ -21,6 +21,7 @@
           <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
+          <button class="tool-item" data-tool="popup" type="button" aria-label="Show popup tool"><b>PopUp</b></button>
           <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
           <button class="tool-item" data-tool="metrics" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
         </nav>
@@ -60,6 +61,7 @@
               <div id="merge-preview-layer" class="merge-preview-layer" aria-hidden="true"></div>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
+              <div id="popup-overlay" class="popup-overlay" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
               <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-video" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
             </div>
@@ -117,6 +119,15 @@
               <div id="timing-workbench-table" class="data-table timing-workbench-table"></div>
               <div id="timing-event-list" class="timing-event-list" aria-label="Timing event list"></div>
             </section>
+
+            <section id="metrics-workbench" class="metrics-workbench" aria-label="Expanded metrics comparison">
+              <div class="section-header">
+                <h2>Metrics</h2>
+                <button id="collapse-metrics" type="button">Collapse</button>
+              </div>
+              <p class="hint">Adjusted split values are compared against the imported PractiScore stage result.</p>
+              <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
+            </section>
           </section>
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
@@ -154,7 +165,7 @@
             <section class="tool-pane" data-tool-pane="metrics">
               <div class="section-header">
                 <h3>Metrics</h3>
-                <span>Stage dashboard</span>
+                <button id="expand-metrics" type="button">Expand</button>
               </div>
               <p class="hint">Built from the current metrics, split rows, timing segments, and scoring summary so timing and score context stay in one view.</p>
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
@@ -172,6 +183,15 @@
                 <button id="metrics-export-csv" type="button">Export CSV</button>
                 <button id="metrics-export-text" type="button">Export Text</button>
               </div>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="popup">
+              <div class="section-header">
+                <h3>PopUp</h3>
+                <button id="popup-add-bubble" type="button">Add Bubble</button>
+              </div>
+              <p class="hint">Short-lived boxes for one-off target callouts. Set the start time and duration, or drag a rendered bubble on the video.</p>
+              <div id="popup-bubble-list" class="text-box-list" aria-label="Popup bubbles"></div>
             </section>
 
             <section class="tool-pane active" data-tool-pane="timing">

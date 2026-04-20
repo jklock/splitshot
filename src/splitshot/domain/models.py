@@ -176,9 +176,12 @@ class ScoreMark:
 class ShotEvent:
     id: str = field(default_factory=lambda: uuid4().hex)
     time_ms: int = 0
+    shotml_time_ms: int | None = None
+    shotml_confidence: float | None = None
     source: ShotSource = ShotSource.AUTO
     confidence: float | None = None
     score: ScoreMark | None = field(default_factory=ScoreMark)
+    user_added: bool = False
 
 
 @dataclass(slots=True)
@@ -442,6 +445,22 @@ class OverlayTextBox:
 
 
 @dataclass(slots=True)
+class PopupBubble:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    enabled: bool = True
+    text: str = ""
+    time_ms: int = 0
+    duration_ms: int = 1000
+    x: float = 0.5
+    y: float = 0.5
+    background_color: str = "#000000"
+    text_color: str = "#ffffff"
+    opacity: float = 0.9
+    width: int = 0
+    height: int = 0
+
+
+@dataclass(slots=True)
 class ExportSettings:
     quality: ExportQuality = ExportQuality.HIGH
     aspect_ratio: AspectRatio = AspectRatio.ORIGINAL
@@ -473,6 +492,7 @@ class UIState:
     waveform_mode: str = "select"
     waveform_expanded: bool = False
     timing_expanded: bool = False
+    metrics_expanded: bool = False
     layout_locked: bool = True
     rail_width: int = 64
     inspector_width: int = 440
@@ -481,6 +501,7 @@ class UIState:
     waveform_shot_amplitudes: dict[str, float] = field(default_factory=dict)
     timing_edit_shot_ids: list[str] = field(default_factory=list)
     timing_column_widths: dict[str, float] = field(default_factory=dict)
+    review_text_box_expansion: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -496,6 +517,7 @@ class Project:
     analysis: AnalysisState = field(default_factory=AnalysisState)
     scoring: ScoringState = field(default_factory=ScoringState)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
+    popups: list[PopupBubble] = field(default_factory=list)
     merge: MergeSettings = field(default_factory=MergeSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     ui_state: UIState = field(default_factory=UIState)
@@ -581,6 +603,7 @@ _UI_STATE_ACTIVE_TOOLS = {
     "merge",
     "overlay",
     "review",
+    "popup",
     "export",
     "metrics",
 }
@@ -666,6 +689,23 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
     if box.x is not None or box.y is not None:
         box.quadrant = "custom"
     return box
+
+
+def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
+    return PopupBubble(
+        id=str(data.get("id") or uuid4().hex),
+        enabled=bool(data.get("enabled", True)),
+        text=str(data.get("text", ""))[:500],
+        time_ms=max(0, int(data.get("time_ms", 0) or 0)),
+        duration_ms=max(1, int(data.get("duration_ms", 1000) or 1000)),
+        x=max(0.0, min(1.0, float(data.get("x", 0.5) or 0.5))),
+        y=max(0.0, min(1.0, float(data.get("y", 0.5) or 0.5))),
+        background_color=str(data.get("background_color", "#000000")),
+        text_color=str(data.get("text_color", "#ffffff")),
+        opacity=max(0.0, min(1.0, float(data.get("opacity", 0.9)))),
+        width=max(0, int(data.get("width", 0) or 0)),
+        height=max(0, int(data.get("height", 0) or 0)),
+    )
 
 
 def legacy_custom_box_as_text_box(overlay: OverlaySettings, legacy_lock_to_stack: bool = False) -> OverlayTextBox | None:
@@ -864,12 +904,19 @@ def _timing_change_proposal_from_dict(data: dict[str, Any]) -> TimingChangePropo
 
 
 def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
+    shotml_time_ms = data.get("shotml_time_ms")
+    shotml_confidence = data.get("shotml_confidence")
+    source_value = data.get("source", ShotSource.AUTO.value)
+    source = ShotSource(source_value)
     return ShotEvent(
         id=str(data.get("id", uuid4().hex)),
         time_ms=int(data.get("time_ms", 0)),
-        source=ShotSource(data.get("source", ShotSource.AUTO.value)),
+        shotml_time_ms=None if shotml_time_ms in {None, ""} else int(shotml_time_ms),
+        shotml_confidence=None if shotml_confidence in {None, ""} else float(shotml_confidence),
+        source=source,
         confidence=None if data.get("confidence") is None else float(data["confidence"]),
         score=_score_mark_from_dict(data.get("score")),
+        user_added=bool(data.get("user_added", source == ShotSource.MANUAL and shotml_time_ms in {None, ""})),
     )
 
 
@@ -1008,6 +1055,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             imported_stage=_imported_stage_from_dict(scoring_data.get("imported_stage")),
         ),
+        popups=[
+            _popup_bubble_from_dict(item)
+            for item in data.get("popups", [])
+            if isinstance(item, dict)
+        ],
         overlay=OverlaySettings(
             position=OverlayPosition(overlay_data.get("position", OverlayPosition.BOTTOM.value)),
             badge_size=BadgeSize(overlay_data.get("badge_size", BadgeSize.M.value)),
@@ -1146,6 +1198,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             waveform_mode=_normalize_ui_state_waveform_mode(ui_data.get("waveform_mode")),
             waveform_expanded=bool(ui_data.get("waveform_expanded", False)),
             timing_expanded=bool(ui_data.get("timing_expanded", False)),
+            metrics_expanded=bool(ui_data.get("metrics_expanded", False)),
             layout_locked=bool(ui_data.get("layout_locked", True)),
             rail_width=int(ui_data.get("rail_width", 64)),
             inspector_width=int(ui_data.get("inspector_width", 440)),
@@ -1160,6 +1213,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 ui_data.get("timing_column_widths"),
                 minimum=72,
             ),
+            review_text_box_expansion=_ui_state_bool_map(ui_data.get("review_text_box_expansion")),
         ),
         schema_version=int(data.get("schema_version", 1)),
     )
