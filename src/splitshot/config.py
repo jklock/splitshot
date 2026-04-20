@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
-from splitshot.domain.models import BadgeSize, ExportQuality, MergeLayout, OverlayPosition, PipSize
+from splitshot.domain.models import BadgeSize, ExportQuality, MergeLayout, OverlayPosition, PipSize, ShotMLSettings
 
 APP_DIR = Path.home() / ".splitshot"
 SETTINGS_PATH = APP_DIR / "settings.json"
@@ -12,7 +12,8 @@ SETTINGS_PATH = APP_DIR / "settings.json"
 
 @dataclass(slots=True)
 class AppSettings:
-    detection_threshold: float = 0.5
+    detection_threshold: float = 0.35
+    shotml_defaults: ShotMLSettings = field(default_factory=ShotMLSettings)
     overlay_position: OverlayPosition = OverlayPosition.BOTTOM
     merge_layout: MergeLayout = MergeLayout.SIDE_BY_SIDE
     pip_size: PipSize = PipSize.MEDIUM
@@ -23,6 +24,10 @@ class AppSettings:
     def to_dict(self) -> dict[str, object]:
         return {
             "detection_threshold": self.detection_threshold,
+            "shotml_defaults": {
+                item.name: getattr(self.shotml_defaults, item.name)
+                for item in fields(ShotMLSettings)
+            },
             "overlay_position": self.overlay_position.value,
             "merge_layout": self.merge_layout.value,
             "pip_size": self.pip_size.value,
@@ -33,8 +38,30 @@ class AppSettings:
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "AppSettings":
+        shotml_payload = data.get("shotml_defaults")
+        defaults = ShotMLSettings()
+        shotml_values: dict[str, object] = {}
+        if isinstance(shotml_payload, dict):
+            for item in fields(ShotMLSettings):
+                default_value = getattr(defaults, item.name)
+                raw_value = shotml_payload.get(item.name, default_value)
+                try:
+                    if isinstance(default_value, bool):
+                        shotml_values[item.name] = bool(raw_value)
+                    elif isinstance(default_value, int) and not isinstance(default_value, bool):
+                        shotml_values[item.name] = int(raw_value)
+                    elif isinstance(default_value, float):
+                        shotml_values[item.name] = float(raw_value)
+                    else:
+                        shotml_values[item.name] = str(raw_value)
+                except (TypeError, ValueError):
+                    shotml_values[item.name] = default_value
+        shotml_defaults = ShotMLSettings(**shotml_values) if shotml_values else defaults
+        detection_threshold = float(data.get("detection_threshold", shotml_defaults.detection_threshold))
+        shotml_defaults.detection_threshold = detection_threshold
         return cls(
-            detection_threshold=float(data.get("detection_threshold", 0.5)),
+            detection_threshold=detection_threshold,
+            shotml_defaults=shotml_defaults,
             overlay_position=OverlayPosition(str(data.get("overlay_position", OverlayPosition.BOTTOM.value))),
             merge_layout=MergeLayout(str(data.get("merge_layout", MergeLayout.SIDE_BY_SIDE.value))),
             pip_size=PipSize(str(data.get("pip_size", PipSize.MEDIUM.value))),

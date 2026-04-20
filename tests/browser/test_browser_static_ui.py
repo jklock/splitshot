@@ -23,7 +23,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="inspector"' in html
     assert html.index('data-tool="project"') < html.index('data-tool="scoring"')
     assert html.index('data-tool="scoring"') < html.index('data-tool="timing"')
-    assert html.index('data-tool="timing"') < html.index('data-tool="merge"')
+    assert html.index('data-tool="timing"') < html.index('data-tool="shotml"')
+    assert html.index('data-tool="shotml"') < html.index('data-tool="merge"')
     assert html.index('data-tool="merge"') < html.index('data-tool="overlay"')
     assert html.index('data-tool="merge"') < html.index('data-tool="review"')
     assert html.index('data-tool="review"') < html.index('data-tool="export"')
@@ -32,6 +33,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="metrics"' in html
     assert 'data-tool="review"' in html
     assert 'data-tool="timing"' in html
+    assert 'data-tool="shotml"' in html
     assert 'data-tool="edit"' not in html
     assert 'data-tool="scoring"' in html
     assert 'data-tool="overlay"' in html
@@ -43,6 +45,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<b>Metrics</b>' in html
     assert "<b>Review</b>" in html
     assert "<b>Splits</b>" in html
+    assert "<b>ShotML</b>" in html
     assert "<b>Score</b>" in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
@@ -77,6 +80,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "No video open" not in html
     assert 'id="apply-threshold"' in html
     assert '>Re-run ShotML<' in html
+    assert 'data-tool-pane="shotml"' in html
+    assert 'id="generate-shotml-proposals"' in html
+    assert 'id="reset-shotml-defaults"' in html
     assert "Apply Scoring" not in html
     assert 'id="apply-scoring"' not in html
     assert "Assign To Selected Shot" not in html
@@ -197,6 +203,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="selected-shot-copy"' in html
     assert html.index('id="timing-table"') > html.index('id="selected-shot-panel"')
     assert html.index('id="timing-table"') < html.index('id="threshold"')
+    timing_start = html.index('data-tool-pane="timing"')
+    shotml_start = html.index('data-tool-pane="shotml"')
+    assert timing_start < html.index('id="timing-table"') < shotml_start
+    assert shotml_start < html.index('id="threshold"')
     assert html.index('waveform-header') < html.index('id="waveform"')
     assert html.index('id="waveform"') < html.index('class="waveform-actions waveform-footer"')
     assert 'id="badge-style-grid"' in html
@@ -238,6 +248,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-option-grid"' in html
     assert 'Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits.' in html
     assert 'Common shorthand: M miss, NS no-shoot, PE procedural error' in html
+    assert html.index('id="scoring-shot-list"') < html.index('id="score-option-grid"')
     assert 'id="scoring-penalty-grid"' not in html
     assert 'id="score-letter"' not in html
     assert 'id="timer-x"' in html
@@ -290,7 +301,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "handleWaveformPointerMove" in js
     assert "handleKeyboardEdit" in js
     assert "scheduleSecondaryPreviewSync" in js
-    assert "autoApplyThreshold" in js
+    assert "autoApplyShotMLSettings" in js
     assert "autoApplyOverlay" in js
     assert "autoApplyMerge" in js
     assert "autoApplyExportLayout" in js
@@ -341,6 +352,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'pickPath("project_folder", "project-path", async (selectedPath)' in js
     assert 'async function probeProjectFolder(path) {' in js
     assert 'await fetch("/api/project/probe", {' in js
+    assert 'async function createNewProject(path = $("project-path").value.trim()) {' in js
     assert 'async function useProjectFolder(path = $("project-path").value.trim()) {' in js
     assert 'await flushPendingProjectDrafts();' in js
     assert 'return pickPath("project_open", "project-path");' not in js
@@ -544,10 +556,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "scoring-shot-row" in js
     assert 'row.classList.toggle("collapsed", !expanded);' in js
     assert 'header.className = "scoring-shot-header";' in js
-    assert 'title.textContent = `Shot ${segment.shot_number}`;' in js
+    assert 'function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {' in js
+    assert '"-0": "A (-0)"' in js
+    assert ': `Shot ${segment.shot_number} | ${compactScoreDisplay(segment.score_letter || defaultScore, ruleset)}`;' in js
     assert 'toggle.className = "scoring-shot-toggle";' in js
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert 'controls.hidden = !expanded;' in js
+    assert 'actions.className = "scoring-shot-actions";' in js
+    assert "actions.appendChild(restore);" in js
+    assert "actions.appendChild(deleteShot);" in js
     assert 'const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;' in js
     assert 'if (penaltyFields.length > 0) {' in js
     assert 'penalty_counts: collectPenaltyCounts(controls),' in js
@@ -637,6 +654,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit.timing-expanded .timing-workbench" in css
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
     assert ".scoring-shot-toggle" in css
+    assert ".scoring-shot-controls[hidden] {\n  display: none !important;" in css
+    assert ".scoring-shot-actions" in css
     assert ".timing-edit-actions" in css
     assert ".timing-column-resize" in css
     assert "grid-template-columns: 72px 140px 196px 108px 220px 80px 108px 96px;" in css
@@ -909,6 +928,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "close-color-picker",
         "metrics-export-csv",
         "metrics-export-text",
+        "generate-shotml-proposals",
+        "reset-shotml-defaults",
         "toggle-layout-lock-video",
         "toggle-layout-lock-waveform",
         "toggle-layout-lock-inspector",
@@ -994,7 +1015,7 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
 
     assert 'async function applyThresholdNow() {' in js
-    assert 'const autoApplyThreshold = debounce((payload) => {' in js
+    assert 'const autoApplyShotMLSettings = debounce((settings) => {' in js
     assert 'const autoApplyProjectDetails = debounce((payload) => {' in js
     assert 'const autoApplyPractiScoreContext = debounce((payload) => {' in js
     assert 'const autoApplyOverlay = debounce((payload) => {' in js
@@ -1002,21 +1023,25 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'const autoApplyExportLayout = debounce((payload) => {' in js
     assert 'const autoApplyExportSettings = debounce((payload) => {' in js
     assert 'const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {' in js
-    assert 'autoApplyThreshold({ threshold: Number($("threshold").value) });' in js
+    assert 'scheduleShotMLSettingsApply();' in js
     assert 'applyProjectDetailsDraft(readProjectDetailsPayload());' in js
     assert 'renderHeader();' in js
     assert 'autoApplyProjectDetails(readProjectDetailsPayload());' in js
     assert 'autoApplyPractiScoreContext(readPractiScoreContextPayload());' in js
-    assert 'autoApplyThreshold.cancel?.();' in js
+    assert 'autoApplyShotMLSettings.cancel?.();' in js
     assert 'autoApplyProjectDetails.cancel?.();' in js
     assert 'autoApplyPractiScoreContext.cancel?.();' in js
     assert 'autoApplyOverlay(readOverlayPayload());' in js
     assert 'autoApplyMerge(readMergePayload());' in js
     assert 'autoApplyExportLayout(readExportLayoutPayload());' in js
     assert 'autoApplyExportSettings(readExportSettingsPayload());' in js
-    assert '$("threshold").addEventListener("change", applyThresholdNow);' in js
+    assert '$("threshold").addEventListener("change", scheduleThresholdApply);' in js
     assert '$("apply-threshold").addEventListener("click", applyThresholdNow);' in js
-    assert '$("new-project").addEventListener("click", async () => {\n    await flushPendingProjectDrafts();' in js
+    assert '$("new-project").addEventListener("click", async () => {\n    await createNewProject();' in js
+    assert 'const shouldReplace = window.confirm(`A SplitShot project already exists in:\\n${targetPath}\\n\\nReplace it with a new blank project?`);' in js
+    assert 'const resetResult = await callApi("/api/project/new", {});' in js
+    assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in js
+    assert 'const shouldDelete = window.confirm(`Delete this project folder from disk?\\n\\n${projectPath}\\n\\nThis cannot be undone.`);' in js
     assert 'if (!shouldDelete) return;\n    await flushPendingProjectDrafts();\n    await callApi("/api/project/delete", {});' in js
 
 

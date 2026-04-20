@@ -1,6 +1,6 @@
 # Splits Pane
 
-The Splits pane is SplitShot's timing workbench. It shows the detected shot list, the waveform, selected-shot timing, detection threshold, and the expanded editing surface for timing events and detailed split review.
+The Splits pane is SplitShot's manual timing workbench. It shows the detected shot list, the waveform, selected-shot timing, and the expanded editing surface for timing events and detailed split review.
 
 <img src="../../screenshots/SplitsPane.png" alt="Splits pane showing selected-shot controls, the timing table, and the waveform review area" width="960">
 
@@ -8,13 +8,15 @@ The Splits pane is SplitShot's timing workbench. It shows the detected shot list
 
 - Immediately after importing the primary video.
 - Any time the detected shot list does not match the actual run.
-- When you need to add, delete, or drag individual shot markers.
+- When you need to add, delete, nudge, or drag individual shot markers.
 - When you want to add timing events such as reloads, malfunctions, or custom labels.
+- After the [ShotML pane](shotml.md) has produced a useful automatic draft.
 
 ## Before You Start
 
 - Import the primary video in [project.md](project.md) first.
-- Let local analysis finish before changing the threshold or editing shots.
+- Let local analysis finish before editing shots.
+- Use [shotml.md](shotml.md) for threshold changes, detector tuning, reruns, and timing-change proposals.
 - Expect Score, Overlay, Review, Metrics, and Export to change when the timing changes.
 
 ## Key Controls
@@ -28,7 +30,6 @@ The Splits pane is SplitShot's timing workbench. It shows the detected shot list
 | `-10 ms`, `-1 ms`, `+1 ms`, `+10 ms` | Nudges the selected shot earlier or later. |
 | `Delete Selected Shot` | Removes the active shot from the run. |
 | Timing table | Lists each shot's segment name, split, total, and action summary. |
-| `Detection threshold` | Re-runs local shot detection with a higher or lower sensitivity value. |
 
 ### Waveform Panel
 
@@ -69,7 +70,7 @@ The Splits pane is SplitShot's timing workbench. It shows the detected shot list
 1. Start in the compact pane and check whether the total shot count matches the run.
 2. Select a shot from the table or click its waveform marker to make it the active shot.
 3. Use the nudge buttons for tiny corrections, or drag a waveform marker when you need a larger change.
-4. Lower `Detection threshold` if quiet shots were missed. Raise it if echoes or background noise became false shots.
+4. If the automatic detector needs a different threshold or detector profile, open [ShotML](shotml.md), adjust the setting, and re-run ShotML before doing detailed manual edits.
 5. Switch to `Add Shot` and click the waveform when a real shot was missed completely.
 6. Use `Delete Selected Shot` only for false detections.
 7. Click `Edit` when you need the expanded workbench.
@@ -88,16 +89,16 @@ The Splits pane is SplitShot's timing workbench. It shows the detected shot list
 
 | Problem | Fix |
 | --- | --- |
-| The app found too many shots. | Raise `Detection threshold`, then delete any remaining false shots. |
-| The app missed quiet shots. | Lower `Detection threshold`, or add the missing shot manually with `Add Shot`. |
+| The app found too many shots. | Open ShotML, raise `Detection threshold`, then delete any remaining false shots. |
+| The app missed quiet shots. | Open ShotML, lower `Detection threshold`, or add the missing shot manually with `Add Shot`. |
 | The selected shot summary does not match the run. | Select the right marker first, then use the nudge buttons or drag the marker in the waveform. |
 | A reload or malfunction disappeared after editing shots. | Recheck the timing event `Position`. Event anchors follow the shot order. |
 | Score and Metrics changed unexpectedly. | That is normal after timing edits. Recheck the Score and Metrics panes after the split list is final. |
 
 ## Related Guides
 
-Previous: [project.md](project.md)
+Previous: [shotml.md](shotml.md)
 Next: [score.md](score.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-19
+**Referenced files last updated:** 2026-04-19

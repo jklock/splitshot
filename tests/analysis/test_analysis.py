@@ -24,6 +24,7 @@ from splitshot.domain.models import (
     OverlayPosition,
     ScoreLetter,
     ShotEvent,
+    ShotMLSettings,
     ShotSource,
     VideoAsset,
 )
@@ -88,6 +89,20 @@ def test_threshold_changes_shot_detection_sensitivity(synthetic_video_factory) -
     high = analyze_video_audio(video_path, threshold=0.9)
 
     assert len(low.shots) >= len(high.shots)
+
+
+def test_default_shotml_settings_match_legacy_threshold_call(synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory()
+
+    legacy = analyze_video_audio(video_path, threshold=0.35)
+    configured = analyze_video_audio(video_path, threshold=0.35, settings=ShotMLSettings())
+
+    assert legacy.beep_time_ms == configured.beep_time_ms
+    assert [(shot.time_ms, shot.source, shot.confidence) for shot in legacy.shots] == [
+        (shot.time_ms, shot.source, shot.confidence)
+        for shot in configured.shots
+    ]
+    assert legacy.waveform == configured.waveform
 
 
 def test_false_positive_filter_rejects_sub_tenth_second_shots() -> None:
@@ -202,6 +217,27 @@ def test_refine_shot_times_preserves_raw_model_confidence() -> None:
 
     assert len(refined) == 1
     assert refined[0].confidence == pytest.approx(0.9734)
+
+
+def test_shotml_refinement_setting_changes_shot_timestamp() -> None:
+    samples = np.zeros(500, dtype=np.float32)
+    samples[200:206] = np.asarray([0.1, 0.25, 0.5, 0.75, 1.0, 0.5], dtype=np.float32)
+    shots = [ShotEvent(time_ms=204, source=ShotSource.AUTO, confidence=0.8)]
+
+    early = _refine_shot_times(
+        samples,
+        sample_rate=1000,
+        shots=shots,
+        settings=ShotMLSettings(shot_onset_fraction=0.2),
+    )
+    late = _refine_shot_times(
+        samples,
+        sample_rate=1000,
+        shots=shots,
+        settings=ShotMLSettings(shot_onset_fraction=0.8),
+    )
+
+    assert early[0].time_ms < late[0].time_ms
 
 
 def test_split_times_and_draw_time_are_computed(synthetic_video_factory) -> None:
@@ -771,12 +807,98 @@ def test_detection_threshold_reanalyzes_loaded_primary_and_secondary(monkeypatch
 
     assert calls == [(primary.path, 0.35), (secondary.path, 0.35)]
     assert controller.project.analysis.detection_threshold == 0.35
+    assert controller.project.analysis.shotml_settings.detection_threshold == 0.35
     assert controller.project.analysis.beep_time_ms_primary == 410
     assert controller.project.analysis.beep_time_ms_secondary == 655
     assert controller.project.analysis.sync_offset_ms == 245
     assert [shot.time_ms for shot in controller.project.analysis.shots] == [820]
     assert controller.project.analysis.waveform_primary == [0.1, 0.2]
     assert controller.project.analysis.waveform_secondary == [0.3, 0.4]
+
+
+def test_shotml_settings_update_reanalyzes_with_full_settings_object(monkeypatch) -> None:
+    controller = ProjectController()
+    controller.project.primary_video = VideoAsset(path="/tmp/primary.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    calls: list[tuple[str, float, int]] = []
+
+    def fake_analyze(path: str, threshold: float, settings) -> DetectionResult:
+        calls.append((path, threshold, settings.min_shot_interval_ms))
+        return DetectionResult(
+            beep_time_ms=390,
+            shots=[ShotEvent(time_ms=790, source=ShotSource.AUTO, confidence=0.9)],
+            waveform=[0.4, 0.5],
+            sample_rate=48000,
+        )
+
+    monkeypatch.setattr("splitshot.ui.controller.analyze_video_audio", fake_analyze)
+
+    controller.set_shotml_settings(
+        {
+            "detection_threshold": 0.42,
+            "min_shot_interval_ms": 125,
+            "shot_peak_min_spacing_ms": 225,
+        },
+        rerun=True,
+    )
+
+    assert calls == [("/tmp/primary.mp4", 0.42, 125)]
+    assert controller.project.analysis.shotml_settings.min_shot_interval_ms == 125
+    assert controller.project.analysis.shotml_settings.shot_peak_min_spacing_ms == 225
+    assert controller.project.analysis.last_shotml_run_summary["shot_count"] == 1
+
+
+def test_timing_change_proposals_can_be_generated_applied_and_discarded() -> None:
+    controller = ProjectController()
+    keeper = ShotEvent(time_ms=500, source=ShotSource.AUTO, confidence=0.99)
+    duplicate = ShotEvent(time_ms=620, source=ShotSource.AUTO, confidence=0.55)
+    controller.project.analysis.beep_time_ms_primary = 100
+    controller.project.analysis.shots = [keeper, duplicate]
+    controller.project.analysis.detection_review_suggestions = [
+        {
+            "kind": "near_cutoff_spacing",
+            "severity": "review",
+            "message": "Shots are close together.",
+            "suggested_action": "review_close_pair",
+            "shot_number": 2,
+            "shot_time_ms": 620,
+            "confidence": 0.55,
+            "support_confidence": 0.2,
+            "interval_ms": 120,
+        },
+        {
+            "kind": "weak_onset_support",
+            "severity": "review",
+            "message": "Weak onset.",
+            "suggested_action": "review_shot",
+            "shot_number": 2,
+            "shot_time_ms": 620,
+            "confidence": 0.55,
+            "support_confidence": 0.2,
+        },
+    ]
+
+    controller.generate_timing_change_proposals()
+
+    proposal_types = {proposal.proposal_type for proposal in controller.project.analysis.timing_change_proposals}
+    assert proposal_types == {"choose_close_pair_survivor", "suppress_shot"}
+
+    suppress = next(
+        proposal
+        for proposal in controller.project.analysis.timing_change_proposals
+        if proposal.proposal_type == "suppress_shot"
+    )
+    controller.discard_timing_change_proposal(suppress.id)
+    assert suppress.status == "discarded"
+
+    close_pair = next(
+        proposal
+        for proposal in controller.project.analysis.timing_change_proposals
+        if proposal.proposal_type == "choose_close_pair_survivor"
+    )
+    controller.apply_timing_change_proposal(close_pair.id)
+
+    assert [shot.id for shot in controller.project.analysis.shots] == [keeper.id]
+    assert close_pair.status == "applied"
 
 
 def test_probe_reads_video_metadata(synthetic_video_factory) -> None:

@@ -8,6 +8,7 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [userfacing/workflow.md](userfacing/workflow.md)
 - [userfacing/troubleshooting.md](userfacing/troubleshooting.md)
 - [userfacing/panes/project.md](userfacing/panes/project.md)
+- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
 - [userfacing/panes/splits.md](userfacing/panes/splits.md)
 - [userfacing/panes/score.md](userfacing/panes/score.md)
 - [userfacing/panes/pip.md](userfacing/panes/pip.md)
@@ -24,6 +25,7 @@ SplitShot documentation is organized so new users can reach the product guides f
 
 - [analysis/SHOTML.md](analysis/SHOTML.md)
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md)
+- [project/SHOTML_ARCHITECTURE.md](project/SHOTML_ARCHITECTURE.md)
 - [src/splitshot/README.md](../src/splitshot/README.md)
 - [src/splitshot/analysis/README.md](../src/splitshot/analysis/README.md)
 - [src/splitshot/browser/README.md](../src/splitshot/browser/README.md)
@@ -52,5 +54,5 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-19
+**Referenced files last updated:** 2026-04-19

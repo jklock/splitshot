@@ -14,20 +14,22 @@ This is the fastest end-to-end path from a raw stage video to a finished local e
 1. Open SplitShot and start in [panes/project.md](panes/project.md).
 2. Name the project, add an optional description, then choose the primary video.
 3. Wait for the status bar to report local analysis results. SplitShot will detect the beep, shots, and waveform data before the rest of the workflow is reliable.
-4. Open [panes/splits.md](panes/splits.md) and confirm the shot list, first-shot draw time, and waveform markers.
-5. Lower the detection threshold if quiet shots were missed, or raise it if background noise created extra shots.
-6. Nudge, drag, add, or delete shots until the timing view matches the actual run.
-7. If you want official match context, return to [panes/project.md](panes/project.md) and import the PractiScore file.
-8. Open [panes/score.md](panes/score.md), enable scoring, choose the correct preset, and score each shot.
-9. Open [panes/overlay.md](panes/overlay.md) and set the badge layout, font, colors, and score badge placement.
-10. Open [panes/review.md](panes/review.md) and verify which badges should appear in preview and export. Add any custom review text boxes or imported summary boxes here.
-11. If you need extra media, open [panes/pip.md](panes/pip.md), add each file, and fine-tune size, position, and sync.
-12. Open [panes/metrics.md](panes/metrics.md) when you want a dashboard view or a CSV/text export of the run.
-13. Finish in [panes/export.md](panes/export.md), choose an output preset or custom settings, set the output path, and render the final video.
-14. Keep the chosen project folder so SplitShot can reopen the same bundle later.
+4. Open [panes/shotml.md](panes/shotml.md) if the automatic detector needs tuning. Lower the threshold if quiet shots were missed, raise it if background noise created extra shots, then click `Re-run ShotML`; editing a setting alone only saves the value.
+5. Use `Generate Proposals` in ShotML when review suggestions should become explicit Apply/Discard timing changes.
+6. Open [panes/splits.md](panes/splits.md) and confirm the shot list, first-shot draw time, and waveform markers.
+7. Nudge, drag, add, or delete shots until the timing view matches the actual run.
+8. If you want official match context, return to [panes/project.md](panes/project.md) and import the PractiScore file.
+9. Open [panes/score.md](panes/score.md), enable scoring, choose the correct preset, and score each shot.
+10. Open [panes/overlay.md](panes/overlay.md) and set the badge layout, font, colors, and score badge placement.
+11. Open [panes/review.md](panes/review.md) and verify which badges should appear in preview and export. Add any custom review text boxes or imported summary boxes here.
+12. If you need extra media, open [panes/pip.md](panes/pip.md), add each file, and fine-tune size, position, and sync.
+13. Open [panes/metrics.md](panes/metrics.md) when you want a dashboard view or a CSV/text export of the run.
+14. Finish in [panes/export.md](panes/export.md), choose an output preset or custom settings, set the output path, and render the final video.
+15. Keep the chosen project folder so SplitShot can reopen the same bundle later.
 
 ## Practical Order Of Operations
 
+- Do ShotML tuning before manual timing. A rerun replaces the automatic shot draft.
 - Do timing work before scoring. A changed shot list changes score rows, metrics, and overlay timing.
 - Import PractiScore after the timing pass is stable. That makes it easier to compare official context against the final shot list.
 - Tune Overlay before Review if you want review text boxes to line up with the final badge stack.
@@ -43,8 +45,9 @@ This is the fastest end-to-end path from a raw stage video to a finished local e
 ## Next Stops
 
 - [panes/project.md](panes/project.md) for setup details.
+- [panes/shotml.md](panes/shotml.md) for detector tuning and timing-change proposals.
 - [panes/export.md](panes/export.md) for render settings.
 - [troubleshooting.md](troubleshooting.md) if any step behaves differently than expected.
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-20
+**Referenced files last updated:** 2026-04-20

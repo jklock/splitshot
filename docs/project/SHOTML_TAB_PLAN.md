@@ -223,7 +223,7 @@ This work is complete only when all of the following are true:
 1. The left rail contains a `ShotML` tab.
 2. The threshold control is removed from `Splits` and lives only in `ShotML`.
 3. All timing-relevant detector variables are persisted in a dedicated settings object and editable from the browser UI.
-4. Re-running ShotML uses the full settings object, not only the threshold.
+4. Re-running ShotML uses the full settings object, not only the threshold, and settings edits do not rerun detection until the user clicks `Re-run ShotML`.
 5. Timing review suggestions can be turned into explicit proposals the user can preview and apply.
 6. Default ShotML settings reproduce today's detector behavior so the refactor does not silently change existing projects.
 7. Project save/open round-trips all ShotML settings and pending proposals correctly.
@@ -241,17 +241,18 @@ This work is complete only when all of the following are true:
 
 - Completed: locate the current threshold UI, server route, controller path, and persisted state.
 - Completed: map the current hard-coded timing variables that must be moved into settings.
-- Pending: implement the `ShotMLSettings` dataclass and serialization.
-- Pending: refactor detector code to read from settings.
-- Pending: add the new browser `ShotML` tab and move threshold out of `Splits`.
-- Pending: build timing-change proposals and apply/discard flows.
-- Pending: update tests and docs.
+- Completed: implement the `ShotMLSettings` dataclass and serialization.
+- Completed: refactor detector code to read from settings.
+- Completed: add the new browser `ShotML` tab under `Splits` in the left rail and move threshold out of `Splits`.
+- Completed: build timing-change proposals and apply/discard flows.
+- Completed: update tests and docs.
+- Completed: gate ShotML reanalysis behind the `Re-run ShotML` button while keeping settings autosave.
 
 ## Progress Snapshot
 
-- Planning is complete enough to implement without another discovery pass.
-- The main architectural constraint is now clear: the detector-first runtime already exists, but its tunables and suggestions are trapped inside code and not surfaced as project state.
-- The first implementation milestone should be the settings-object refactor, because every other part of the ShotML tab depends on it.
+- Implementation is complete for the model, detector settings path, browser tab, proposal flow, explicit rerun behavior, tests, and documentation.
+- See `docs/userfacing/panes/shotml.md` for user-facing usage.
+- See `docs/project/SHOTML_ARCHITECTURE.md` for code-line-backed technical architecture.
 
-Last updated: 2026-04-19
-Referenced files last updated: src/splitshot/browser/static/index.html, src/splitshot/browser/static/app.js, src/splitshot/browser/server.py, src/splitshot/ui/controller.py, src/splitshot/domain/models.py, src/splitshot/analysis/detection.py, src/splitshot/analysis/ml_runtime.py, src/splitshot/config.py
+Last updated: 2026-04-20
+Referenced files last updated: src/splitshot/browser/static/index.html, src/splitshot/browser/static/app.js, src/splitshot/browser/static/styles.css, src/splitshot/browser/server.py, src/splitshot/ui/controller.py, src/splitshot/domain/models.py, src/splitshot/analysis/detection.py, src/splitshot/analysis/ml_runtime.py, src/splitshot/config.py, tests/analysis/test_analysis.py, tests/persistence/test_persistence.py, tests/browser/test_browser_static_ui.py

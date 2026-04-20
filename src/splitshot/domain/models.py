@@ -191,11 +191,87 @@ class TimingEvent:
 
 
 @dataclass(slots=True)
+class ShotMLSettings:
+    detection_threshold: float = 0.35
+    shot_detection_cutoff_base: float = 0.42
+    shot_detection_cutoff_span: float = 0.28
+    beep_onset_fraction: float = 0.24
+    beep_search_lead_ms: int = 4000
+    beep_search_tail_guard_ms: int = 40
+    beep_fallback_min_window_ms: int = 80
+    beep_heuristic_fft_window_s: float = 0.02
+    beep_heuristic_hop_s: float = 0.005
+    beep_heuristic_band_min_hz: int = 1800
+    beep_heuristic_band_max_hz: int = 4200
+    beep_fallback_threshold_multiplier: float = 0.8
+    beep_tonal_window_ms: int = 80
+    beep_tonal_hop_ms: int = 1
+    beep_tonal_band_min_hz: int = 1500
+    beep_tonal_band_max_hz: int = 5000
+    beep_refine_pre_ms: int = 500
+    beep_refine_post_ms: int = 450
+    beep_refine_min_gap_before_first_shot_ms: int = 40
+    beep_exclusion_radius_ms: int = 70
+    beep_region_cutoff_base: float = 0.82
+    beep_region_cutoff_threshold_weight: float = 0.1
+    beep_model_boost_floor: float = 0.3
+    min_shot_interval_ms: int = 100
+    shot_peak_min_spacing_ms: int = 200
+    shot_confidence_source: str = "shot_minus_background_beep"
+    shot_onset_fraction: float = 0.66
+    shot_refine_pre_ms: int = 150
+    shot_refine_post_ms: int = 120
+    shot_refine_midpoint_clamp_padding_ms: int = 70
+    shot_refine_min_search_window_ms: int = 12
+    shot_refine_rms_window_ms: int = 3
+    shot_refine_rms_hop_ms: int = 1
+    weak_onset_support_threshold: float = 0.35
+    near_cutoff_interval_ms: int = 150
+    shot_selection_confidence_weight: float = 0.55
+    shot_selection_support_weight: float = 0.45
+    weak_support_penalty: float = 0.08
+    suppress_close_pair_duplicates: bool = True
+    suppress_sound_profile_outliers: bool = True
+    refinement_confidence_weight: float = 0.35
+    onset_support_pre_ms: int = 45
+    onset_support_post_ms: int = 80
+    onset_support_rms_window_ms: int = 3
+    onset_support_rms_hop_ms: int = 1
+    onset_support_alignment_penalty_divisor_ms: int = 45
+    onset_support_alignment_penalty_multiplier: float = 0.25
+    sound_profile_search_radius_ms: int = 120
+    sound_profile_distance_limit: float = 5.0
+    sound_profile_high_confidence_limit: float = 0.995
+    window_size: int = 2048
+    hop_size: int = 128
+
+
+@dataclass(slots=True)
+class TimingChangeProposal:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    proposal_type: str = "move_shot"
+    status: str = "pending"
+    shot_id: str | None = None
+    shot_number: int | None = None
+    source_time_ms: int | None = None
+    target_time_ms: int | None = None
+    alternate_shot_id: str | None = None
+    alternate_time_ms: int | None = None
+    confidence: float | None = None
+    support_confidence: float | None = None
+    message: str = ""
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
 class AnalysisState:
     beep_time_ms_primary: int | None = None
     beep_time_ms_secondary: int | None = None
     sync_offset_ms: int = 0
-    detection_threshold: float = 0.5
+    detection_threshold: float = 0.35
+    shotml_settings: ShotMLSettings = field(default_factory=ShotMLSettings)
+    timing_change_proposals: list[TimingChangeProposal] = field(default_factory=list)
+    last_shotml_run_summary: dict[str, Any] = field(default_factory=dict)
     waveform_primary: list[float] = field(default_factory=list)
     waveform_secondary: list[float] = field(default_factory=list)
     shots: list[ShotEvent] = field(default_factory=list)
@@ -498,6 +574,7 @@ _TEXT_BOX_QUADRANTS = {
 _UI_STATE_ACTIVE_TOOLS = {
     "project",
     "scoring",
+    "shotml",
     "timing",
     "merge",
     "overlay",
@@ -732,6 +809,55 @@ def _timing_event_from_dict(data: dict[str, Any]) -> TimingEvent:
     )
 
 
+def _coerce_dataclass_value(default: Any, value: Any) -> Any:
+    if isinstance(default, bool):
+        return bool(value)
+    if isinstance(default, int) and not isinstance(default, bool):
+        return int(value)
+    if isinstance(default, float):
+        return float(value)
+    if value is None:
+        return default
+    return str(value)
+
+
+def _shotml_settings_from_dict(data: dict[str, Any] | None, *, detection_threshold: float | None = None) -> ShotMLSettings:
+    defaults = ShotMLSettings()
+    payload = data if isinstance(data, dict) else {}
+    values: dict[str, Any] = {}
+    for item in fields(ShotMLSettings):
+        default = getattr(defaults, item.name)
+        if item.name in payload:
+            try:
+                values[item.name] = _coerce_dataclass_value(default, payload[item.name])
+            except (TypeError, ValueError):
+                values[item.name] = default
+        else:
+            values[item.name] = default
+    if detection_threshold is not None and "detection_threshold" not in payload:
+        values["detection_threshold"] = float(detection_threshold)
+    return ShotMLSettings(**values)
+
+
+def _timing_change_proposal_from_dict(data: dict[str, Any]) -> TimingChangeProposal:
+    evidence = data.get("evidence", {})
+    return TimingChangeProposal(
+        id=str(data.get("id", uuid4().hex)),
+        proposal_type=str(data.get("proposal_type", "move_shot")),
+        status=str(data.get("status", "pending")),
+        shot_id=None if data.get("shot_id") in {None, ""} else str(data["shot_id"]),
+        shot_number=None if data.get("shot_number") in {None, ""} else int(data["shot_number"]),
+        source_time_ms=None if data.get("source_time_ms") in {None, ""} else int(data["source_time_ms"]),
+        target_time_ms=None if data.get("target_time_ms") in {None, ""} else int(data["target_time_ms"]),
+        alternate_shot_id=None if data.get("alternate_shot_id") in {None, ""} else str(data["alternate_shot_id"]),
+        alternate_time_ms=None if data.get("alternate_time_ms") in {None, ""} else int(data["alternate_time_ms"]),
+        confidence=None if data.get("confidence") in {None, ""} else float(data["confidence"]),
+        support_confidence=None if data.get("support_confidence") in {None, ""} else float(data["support_confidence"]),
+        message=str(data.get("message", "")),
+        evidence=evidence if isinstance(evidence, dict) else {},
+    )
+
+
 def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
     return ShotEvent(
         id=str(data.get("id", uuid4().hex)),
@@ -815,7 +941,21 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             beep_time_ms_primary=analysis_data.get("beep_time_ms_primary"),
             beep_time_ms_secondary=analysis_data.get("beep_time_ms_secondary"),
             sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
-            detection_threshold=float(analysis_data.get("detection_threshold", 0.5)),
+            detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
+            shotml_settings=_shotml_settings_from_dict(
+                analysis_data.get("shotml_settings"),
+                detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
+            ),
+            timing_change_proposals=[
+                _timing_change_proposal_from_dict(item)
+                for item in analysis_data.get("timing_change_proposals", [])
+                if isinstance(item, dict)
+            ],
+            last_shotml_run_summary=(
+                analysis_data.get("last_shotml_run_summary", {})
+                if isinstance(analysis_data.get("last_shotml_run_summary", {}), dict)
+                else {}
+            ),
             waveform_primary=[
                 float(item) for item in analysis_data.get("waveform_primary", [])
             ],
@@ -824,6 +964,11 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ],
             shots=[_shot_from_dict(item) for item in analysis_data.get("shots", [])],
             events=[_timing_event_from_dict(item) for item in analysis_data.get("events", [])],
+            detection_review_suggestions=[
+                item
+                for item in analysis_data.get("detection_review_suggestions", [])
+                if isinstance(item, dict)
+            ],
         ),
         scoring=ScoringState(
             enabled=bool(scoring_data.get("enabled", False)),
@@ -1012,6 +1157,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         ),
         schema_version=int(data.get("schema_version", 1)),
     )
+    project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
     if project.merge_sources:
         project.secondary_video = project.merge_sources[0].asset
         if len(project.merge_sources) == 1:

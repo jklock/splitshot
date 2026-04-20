@@ -13,7 +13,7 @@ SplitShot is a local-first browser app for reviewing stage footage from first im
 
 Every SplitShot session uses the same four-part layout:
 
-- The left rail switches between Project, Score, Splits, PiP, Overlay, Review, Export, and Metrics.
+- The left rail switches between Project, Score, Splits, ShotML, PiP, Overlay, Review, Export, and Metrics.
 - The status bar at the top reports the active file and current status message.
 - The center workspace shows the video, overlays, and waveform review area.
 - The right inspector changes to match the active pane.
@@ -25,7 +25,8 @@ The video stage, waveform panel, and inspector can be resized. Unlock a region b
 | Guide | Use it for |
 | --- | --- |
 | [panes/project.md](panes/project.md) | Project setup, video import, PractiScore import, and project folder management |
-| [panes/splits.md](panes/splits.md) | Shot detection review, waveform editing, threshold changes, and timing events |
+| [panes/shotml.md](panes/shotml.md) | ShotML detector settings, threshold, reruns, timing-change proposals, and reset defaults |
+| [panes/splits.md](panes/splits.md) | Shot list review, waveform editing, manual timing changes, and timing events |
 | [panes/score.md](panes/score.md) | Scoring presets, per-shot scores, penalties, restore actions, and imported score context |
 | [panes/pip.md](panes/pip.md) | PiP media, per-item sync, position, size, and export inclusion |
 | [panes/overlay.md](panes/overlay.md) | Shot badge layout, timer/draw/final badge placement, fonts, and colors |
@@ -42,5 +43,5 @@ The video stage, waveform panel, and inspector can be resized. Unlock a region b
 
 If you need architecture, technical notes, or development docs instead of product usage guides, go to [../README.md](../README.md).
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-20
+**Referenced files last updated:** 2026-04-20

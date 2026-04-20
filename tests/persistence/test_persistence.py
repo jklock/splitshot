@@ -14,7 +14,9 @@ from splitshot.domain.models import (
     ScoreLetter,
     ScoreMark,
     ShotEvent,
+    ShotMLSettings,
     ShotSource,
+    TimingChangeProposal,
     VideoAsset,
     project_from_dict,
     project_to_dict,
@@ -46,6 +48,15 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     ]
     project.secondary_video = project.merge_sources[0].asset
     project.analysis.beep_time_ms_primary = 400
+    project.analysis.shotml_settings = ShotMLSettings(
+        detection_threshold=0.42,
+        min_shot_interval_ms=125,
+        shot_peak_min_spacing_ms=225,
+        window_size=4096,
+        hop_size=256,
+    )
+    project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
+    project.analysis.last_shotml_run_summary = {"shot_count": 1, "threshold": 0.42}
     project.analysis.waveform_primary = [0.1, 0.2, 0.3]
     project.analysis.shots = [
         ShotEvent(
@@ -53,6 +64,19 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             source=ShotSource.MANUAL,
             confidence=None,
             score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
+        )
+    ]
+    project.analysis.timing_change_proposals = [
+        TimingChangeProposal(
+            proposal_type="move_shot",
+            shot_id=project.analysis.shots[0].id,
+            shot_number=1,
+            source_time_ms=800,
+            target_time_ms=812,
+            confidence=0.85,
+            support_confidence=0.75,
+            message="Move shot to local onset.",
+            evidence={"review_kind": "weak_onset_support"},
         )
     ]
     selected_shot_id = project.analysis.shots[0].id
@@ -148,11 +172,22 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.path == "/tmp/merge-image.png"
     assert loaded.analysis.beep_time_ms_primary == 400
+    assert loaded.analysis.shotml_settings.detection_threshold == 0.42
+    assert loaded.analysis.detection_threshold == 0.42
+    assert loaded.analysis.shotml_settings.min_shot_interval_ms == 125
+    assert loaded.analysis.shotml_settings.shot_peak_min_spacing_ms == 225
+    assert loaded.analysis.shotml_settings.window_size == 4096
+    assert loaded.analysis.shotml_settings.hop_size == 256
+    assert loaded.analysis.last_shotml_run_summary == {"shot_count": 1, "threshold": 0.42}
     assert loaded.analysis.waveform_primary == [0.1, 0.2, 0.3]
     assert len(loaded.analysis.shots) == 1
     assert loaded.analysis.shots[0].score is not None
     assert loaded.analysis.shots[0].score.letter == ScoreLetter.C
     assert loaded.analysis.shots[0].score.penalty_counts == {"procedural_errors": 1}
+    assert len(loaded.analysis.timing_change_proposals) == 1
+    assert loaded.analysis.timing_change_proposals[0].proposal_type == "move_shot"
+    assert loaded.analysis.timing_change_proposals[0].target_time_ms == 812
+    assert loaded.analysis.timing_change_proposals[0].evidence == {"review_kind": "weak_onset_support"}
     assert loaded.scoring.enabled is True
     assert loaded.scoring.match_type == "idpa"
     assert loaded.scoring.stage_number == 2
