@@ -385,7 +385,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function beginTimingColumnResize(tableId, columnId, event) {' in js
     assert 'function moveTimingColumnResize(event) {' in js
     assert 'function endTimingColumnResize(event) {' in js
-    assert 'input.value = seconds(splitMs ?? row.absolute_time_ms);' in js
+    assert 'timingSplitDrafts.get(row.shot_id) ?? seconds(splitMs ?? row.absolute_time_ms)' in js
     assert 'actions.className = "timing-edit-actions";' in js
     assert 'handle.className = "timing-column-resize";' in js
     assert "openProjectWithDialog" not in js
@@ -573,9 +573,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (penaltyFields.length > 0) {' in js
     assert 'penalty_counts: collectPenaltyCounts(controls),' in js
     assert 'updateTimingRowField(row.shot_id, "score_letter", select.value)' not in js
-    assert 'const commitSplitEdit = () => {' in js
-    assert 'input.addEventListener("blur", commitSplitEdit);' in js
-    assert 'input.blur();' in js
+    assert 'let timingSplitDrafts = new Map();' in js
+    assert 'timingSplitDrafts.set(shotId, seconds(numericMs(row.split_ms) ?? row.absolute_time_ms));' in js
+    assert 'timingSplitDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
+    assert 'updateTimingRowField(shotId, "split_ms", draftValue);' in js
     assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72)' in js
     assert 'previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
