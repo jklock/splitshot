@@ -21,6 +21,7 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     ExportVideoCodec,
+    _popup_bubble_from_dict,
     MergeLayout,
     OverlayPosition,
     OverlayTextBox,
@@ -1733,22 +1734,7 @@ class ProjectController(QObject):
         for item in payload.get("popups", []):
             if not isinstance(item, dict):
                 continue
-            parsed_popups.append(
-                PopupBubble(
-                    id=str(item.get("id") or PopupBubble().id),
-                    enabled=bool(item.get("enabled", True)),
-                    text=str(item.get("text", ""))[:500],
-                    time_ms=max(0, int(item.get("time_ms", 0) or 0)),
-                    duration_ms=max(1, int(item.get("duration_ms", 1000) or 1000)),
-                    x=max(0.0, min(1.0, float(item.get("x", 0.5) or 0.5))),
-                    y=max(0.0, min(1.0, float(item.get("y", 0.5) or 0.5))),
-                    background_color=str(item.get("background_color", "#000000")),
-                    text_color=str(item.get("text_color", "#ffffff")),
-                    opacity=max(0.0, min(1.0, float(item.get("opacity", 0.9)))),
-                    width=max(0, int(item.get("width", 0) or 0)),
-                    height=max(0, int(item.get("height", 0) or 0)),
-                )
-            )
+            parsed_popups.append(_popup_bubble_from_dict(item))
         self.project.popups = parsed_popups
         self.project.touch()
         self.project_changed.emit()

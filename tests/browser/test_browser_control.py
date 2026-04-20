@@ -1721,6 +1721,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
             primary_path.name,
             primary_path.read_bytes(),
         )
+        first_shot_id = uploaded_primary["project"]["analysis"]["shots"][0]["id"]
         saved = _read_project_json(project_path)
         assert saved["primary_video"]["path"].startswith("Input/")
         assert len(saved["analysis"]["shots"]) == len(uploaded_primary["project"]["analysis"]["shots"])
@@ -1878,8 +1879,11 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                         "id": "popup-one",
                         "enabled": True,
                         "text": "-0",
+                        "anchor_mode": "shot",
+                        "shot_id": first_shot_id,
                         "time_ms": 1200,
                         "duration_ms": 1000,
+                        "quadrant": "custom",
                         "x": 0.42,
                         "y": 0.58,
                         "background_color": "#000000",
@@ -1893,8 +1897,11 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         )
         saved = _read_project_json(project_path)
         assert saved["popups"][0]["text"] == "-0"
+        assert saved["popups"][0]["anchor_mode"] == "shot"
+        assert saved["popups"][0]["shot_id"] == first_shot_id
         assert saved["popups"][0]["time_ms"] == 1200
         assert saved["popups"][0]["duration_ms"] == 1000
+        assert saved["popups"][0]["quadrant"] == "custom"
         assert saved["popups"][0]["x"] == pytest.approx(0.42)
         assert saved["popups"][0]["y"] == pytest.approx(0.58)
 

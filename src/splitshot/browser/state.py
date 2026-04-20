@@ -9,7 +9,6 @@ from splitshot.domain.models import Project, project_to_dict
 from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
-    calculate_scoring_summary,
     normalize_penalty_counts_for_ruleset,
     normalize_score_letter_for_ruleset,
     scoring_presets_for_api,
@@ -96,7 +95,7 @@ def browser_state(
         if row.shot_id is not None
     }
     presentation = build_stage_presentation(project)
-    scoring_summary = calculate_scoring_summary(project)
+    scoring_summary = dict(presentation.metrics.scoring_summary)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)

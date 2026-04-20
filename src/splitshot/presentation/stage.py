@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from splitshot.domain.models import Project
+from splitshot.scoring.logic import calculate_scoring_summary
 from splitshot.timeline.model import average_split_ms, compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
 
 
@@ -27,6 +28,7 @@ class StageMetrics:
     average_split_ms: int | None
     beep_ms: int | None
     final_shot_ms: int | None
+    scoring_summary: dict[str, object]
 
 
 @dataclass(slots=True)
@@ -66,6 +68,7 @@ def build_stage_presentation(project: Project) -> StagePresentation:
     split_rows = compute_split_rows(project)
     beep_ms = project.analysis.beep_time_ms_primary
     raw_ms = raw_time_ms(project)
+    scoring_summary = calculate_scoring_summary(project)
     metrics = StageMetrics(
         draw_ms=draw_time_ms(project),
         raw_time_ms=raw_ms,
@@ -74,6 +77,7 @@ def build_stage_presentation(project: Project) -> StagePresentation:
         average_split_ms=average_split_ms(project),
         beep_ms=beep_ms,
         final_shot_ms=None if not shots else shots[-1].time_ms,
+        scoring_summary=scoring_summary,
     )
 
     segments: list[TimingSegment] = []

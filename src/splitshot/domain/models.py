@@ -449,8 +449,11 @@ class PopupBubble:
     id: str = field(default_factory=lambda: uuid4().hex)
     enabled: bool = True
     text: str = ""
+    anchor_mode: str = "time"
+    shot_id: str | None = None
     time_ms: int = 0
     duration_ms: int = 1000
+    quadrant: str = "middle_middle"
     x: float = 0.5
     y: float = 0.5
     background_color: str = "#000000"
@@ -595,6 +598,20 @@ _TEXT_BOX_QUADRANTS = {
     "custom",
 }
 
+_POPUP_BUBBLE_ANCHOR_MODES = {"time", "shot"}
+_POPUP_BUBBLE_QUADRANTS = {
+    "top_left",
+    "top_middle",
+    "top_right",
+    "middle_left",
+    "middle_middle",
+    "middle_right",
+    "bottom_left",
+    "bottom_middle",
+    "bottom_right",
+    "custom",
+}
+
 _UI_STATE_ACTIVE_TOOLS = {
     "project",
     "scoring",
@@ -618,6 +635,22 @@ def _normalize_text_box_source(value: str | None) -> str:
 def _normalize_text_box_quadrant(value: str | None) -> str:
     normalized = str(value or "top_right")
     return normalized if normalized in _TEXT_BOX_QUADRANTS else "top_right"
+
+
+def _normalize_popup_bubble_anchor_mode(value: Any, shot_id: str | None = None) -> str:
+    normalized = str(value or "").strip()
+    if normalized in _POPUP_BUBBLE_ANCHOR_MODES:
+        return normalized
+    return "shot" if shot_id else "time"
+
+
+def _normalize_popup_bubble_quadrant(value: Any, *, x: Any = None, y: Any = None) -> str:
+    normalized = str(value or "").strip()
+    if normalized in _POPUP_BUBBLE_QUADRANTS:
+        return normalized
+    if x not in {None, ""} or y not in {None, ""}:
+        return "custom"
+    return "middle_middle"
 
 
 def _normalize_ui_state_active_tool(value: Any) -> str:
@@ -692,14 +725,20 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
 
 
 def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
+    shot_id = None if data.get("shot_id") in {None, ""} else str(data["shot_id"])
+    x_value = None if data.get("x") in {None, ""} else float(data["x"])
+    y_value = None if data.get("y") in {None, ""} else float(data["y"])
     return PopupBubble(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", True)),
         text=str(data.get("text", ""))[:500],
+        anchor_mode=_normalize_popup_bubble_anchor_mode(data.get("anchor_mode"), shot_id),
+        shot_id=shot_id,
         time_ms=max(0, int(data.get("time_ms", 0) or 0)),
         duration_ms=max(1, int(data.get("duration_ms", 1000) or 1000)),
-        x=max(0.0, min(1.0, float(data.get("x", 0.5) or 0.5))),
-        y=max(0.0, min(1.0, float(data.get("y", 0.5) or 0.5))),
+        quadrant=_normalize_popup_bubble_quadrant(data.get("quadrant"), x=x_value, y=y_value),
+        x=max(0.0, min(1.0, x_value if x_value is not None else 0.5)),
+        y=max(0.0, min(1.0, y_value if y_value is not None else 0.5)),
         background_color=str(data.get("background_color", "#000000")),
         text_color=str(data.get("text_color", "#ffffff")),
         opacity=max(0.0, min(1.0, float(data.get("opacity", 0.9)))),

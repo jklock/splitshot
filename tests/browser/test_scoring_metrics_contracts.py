@@ -42,6 +42,8 @@ def test_browser_state_projects_active_preset_scores_to_score_and_metrics_rows()
     assert payload["timing_segments"][0]["penalty_counts"] == {}
     assert payload["scoring_summary"]["shot_points"] == 5
     assert payload["scoring_summary"]["field_penalties"] == 0
+    assert payload["metrics"]["scoring_summary"]["shot_points"] == 5
+    assert payload["metrics"]["scoring_summary"]["field_penalties"] == 0
 
 
 def test_browser_state_refreshes_imported_stage_context_for_metrics_consumers() -> None:
