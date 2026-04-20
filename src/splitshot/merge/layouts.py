@@ -38,7 +38,7 @@ def _pip_scale(size: PipSize | int | float) -> float:
             PipSize.MEDIUM: 0.35,
             PipSize.LARGE: 0.50,
         }[size]
-    return max(0.10, min(0.95, float(size) / 100.0))
+    return max(0.01, min(0.95, float(size) / 100.0))
 
 
 def _clamp_unit(value: float | None, default: float = 1.0) -> float:

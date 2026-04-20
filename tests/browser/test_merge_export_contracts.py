@@ -57,6 +57,9 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "await flushPendingMergeSourceCommits();" in export_click
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
     assert 'state.project.export.last_error = null;' in _function_body(source, "clearCurrentExportLogState")
+    assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
+    assert 'media.style.opacity = String(currentSourceOpacity(source));' in source
+    assert 'input.dataset.mergeSourceField = "opacity";' in source
     assert "These values are saved per item and take effect in PiP layout and export timing." in source
 
 
@@ -79,7 +82,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
     controller.project.secondary_video = controller.project.merge_sources[0].asset
     first_id = controller.project.merge_sources[0].id
     second_id = controller.project.merge_sources[1].id
-    captured: list[list[tuple[str, int | None, float, float, int]]] = []
+    captured: list[list[tuple[str, int | None, float, float, float, int]]] = []
 
     def fake_export_project(project, output_path, progress_callback=None, log_callback=None):
         captured.append([
@@ -88,6 +91,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                 source.pip_size_percent,
                 source.pip_x,
                 source.pip_y,
+                source.opacity,
                 source.sync_offset_ms,
             )
             for source in project.merge_sources
@@ -107,16 +111,18 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
             f"{server.url}api/merge/source",
             {
                 "source_id": first_id,
-                "pip_size_percent": 44,
+                "pip_size_percent": 1,
                 "pip_x": 0.25,
                 "pip_y": 0.75,
+                "opacity": 0.45,
                 "sync_offset_ms": 125,
             },
         )
         first = next(source for source in state["project"]["merge_sources"] if source["id"] == first_id)
-        assert first["pip_size_percent"] == 44
+        assert first["pip_size_percent"] == 1
         assert first["pip_x"] == 0.25
         assert first["pip_y"] == 0.75
+        assert first["opacity"] == 0.45
         assert first["sync_offset_ms"] == 125
 
         _post_json(
@@ -126,6 +132,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                 "pip_size_percent": 55,
                 "pip_x": 0.1,
                 "pip_y": 0.2,
+                "opacity": 0.8,
                 "sync_offset_ms": -75,
             },
         )
@@ -138,7 +145,9 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         assert [source["id"] for source in reopened_sources] == [first_id, second_id]
         assert [source["sync_offset_ms"] for source in reopened_sources] == [125, -75]
         assert reopened_sources[0]["pip_x"] == 0.25
+        assert reopened_sources[0]["opacity"] == 0.45
         assert reopened_sources[1]["pip_size_percent"] == 55
+        assert reopened_sources[1]["opacity"] == 0.8
 
         output_path = tmp_path / "merge-export.mp4"
         state = _post_json(
@@ -155,6 +164,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                             "pip_size_percent": 46,
                             "pip_x": 0.3,
                             "pip_y": 0.7,
+                            "opacity": 0.4,
                             "sync_offset_ms": 140,
                         },
                         {
@@ -162,6 +172,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                             "pip_size_percent": 58,
                             "pip_x": 0.12,
                             "pip_y": 0.22,
+                            "opacity": 0.85,
                             "sync_offset_ms": -90,
                         },
                     ],
@@ -170,7 +181,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         )
 
         assert state["project"]["export"]["output_path"] == str(output_path)
-        assert captured == [[(first_id, 46, 0.3, 0.7, 140), (second_id, 58, 0.12, 0.22, -90)]]
+        assert captured == [[(first_id, 46, 0.3, 0.7, 0.4, 140), (second_id, 58, 0.12, 0.22, 0.85, -90)]]
     finally:
         server.shutdown()
 
@@ -203,5 +214,23 @@ def test_export_path_preset_and_custom_mode_contract_persists(tmp_path: Path) ->
         assert reopened["project"]["export"]["preset"] == "custom"
         assert reopened["project"]["export"]["video_bitrate_mbps"] == 12.5
         assert reopened["project"]["export"]["output_path"] == str(typed_path)
+    finally:
+        server.shutdown()
+
+
+def test_project_open_defaults_blank_export_output_path_to_project_output_folder(tmp_path: Path) -> None:
+    controller = ProjectController()
+    project_path = tmp_path / "project-output-default.ssproj"
+    controller.save_project(str(project_path))
+    project_json = project_path / "project.json"
+    payload = json.loads(project_json.read_text(encoding="utf-8"))
+    payload.setdefault("export", {})["output_path"] = ""
+    project_json.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        opened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        assert opened["project"]["export"]["output_path"] == str(project_path / "Output" / "output.mp4")
     finally:
         server.shutdown()

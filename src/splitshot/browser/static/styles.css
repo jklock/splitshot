@@ -1927,11 +1927,6 @@ button:disabled {
   min-width: 0;
 }
 
-.style-card label > input[type="range"] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
 .color-field {
   min-width: 0;
 }
@@ -1952,10 +1947,10 @@ button:disabled {
 .opacity-control-pair {
   align-items: center;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   gap: 0.35rem;
   margin-left: auto;
-  min-width: 0;
+  min-width: auto;
 }
 
 .opacity-percent-field {
@@ -2028,11 +2023,6 @@ button:disabled {
   min-width: 28px;
   padding: 0;
   width: 28px;
-}
-
-.style-card input[type="range"] {
-  max-width: none;
-  width: 100%;
 }
 
 .modal {

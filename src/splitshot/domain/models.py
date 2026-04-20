@@ -159,6 +159,7 @@ class MergeSource:
     pip_size_percent: int | None = None
     pip_x: float = 1.0
     pip_y: float = 1.0
+    opacity: float = 1.0
     sync_offset_ms: int = 0
 
 
@@ -360,7 +361,6 @@ class OverlaySettings:
     timer_lock_to_stack: bool = True
     draw_lock_to_stack: bool = True
     score_lock_to_stack: bool = True
-    review_boxes_lock_to_stack: bool = False
     custom_box_enabled: bool = False
     custom_box_mode: str = "manual"
     custom_box_text: str = ""
@@ -428,6 +428,7 @@ class MergeSettings:
 class OverlayTextBox:
     id: str = field(default_factory=lambda: uuid4().hex)
     enabled: bool = False
+    lock_to_stack: bool = False
     source: str = "manual"
     text: str = ""
     quadrant: str = "top_right"
@@ -528,6 +529,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     overlay = data.get("overlay")
     if isinstance(overlay, dict):
         overlay["scoring_colors"] = _normalize_scoring_color_map(overlay.get("scoring_colors", {}))
+        overlay.pop("review_boxes_lock_to_stack", None)
     return data
 
 
@@ -645,10 +647,11 @@ def _ui_state_string_list(data: Any) -> list[str]:
     return normalized
 
 
-def _overlay_text_box_from_dict(data: dict[str, Any]) -> OverlayTextBox:
+def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool = False) -> OverlayTextBox:
     box = OverlayTextBox(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", False)),
+        lock_to_stack=bool(data.get("lock_to_stack", legacy_lock_to_stack)),
         source=_normalize_text_box_source(data.get("source")),
         text=str(data.get("text", ""))[:500],
         quadrant=_normalize_text_box_quadrant(data.get("quadrant")),
@@ -665,7 +668,7 @@ def _overlay_text_box_from_dict(data: dict[str, Any]) -> OverlayTextBox:
     return box
 
 
-def legacy_custom_box_as_text_box(overlay: OverlaySettings) -> OverlayTextBox | None:
+def legacy_custom_box_as_text_box(overlay: OverlaySettings, legacy_lock_to_stack: bool = False) -> OverlayTextBox | None:
     has_legacy_box = (
         overlay.custom_box_enabled
         or overlay.custom_box_mode == "imported_summary"
@@ -675,6 +678,7 @@ def legacy_custom_box_as_text_box(overlay: OverlaySettings) -> OverlayTextBox | 
         return None
     box = OverlayTextBox(
         enabled=overlay.custom_box_enabled,
+        lock_to_stack=legacy_lock_to_stack,
         source=_normalize_text_box_source(overlay.custom_box_mode),
         text=overlay.custom_box_text,
         quadrant=_normalize_text_box_quadrant(overlay.custom_box_quadrant),
@@ -794,6 +798,7 @@ def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
         ),
         pip_x=float(payload.get("pip_x", 1.0)),
         pip_y=float(payload.get("pip_y", 1.0)),
+        opacity=max(0.0, min(1.0, float(payload.get("opacity", 1.0)))),
         sync_offset_ms=int(payload.get("sync_offset_ms", 0)),
     )
 
@@ -891,6 +896,7 @@ def _video_from_dict(data: dict[str, Any] | None) -> VideoAsset:
 def project_from_dict(data: dict[str, Any]) -> Project:
     scoring_data = data.get("scoring", {})
     overlay_data = data.get("overlay", {})
+    legacy_review_boxes_lock_to_stack = bool(overlay_data.get("review_boxes_lock_to_stack", False))
     merge_data = data.get("merge", {})
     export_data = data.get("export", {})
     ui_data = data.get("ui_state", {})
@@ -917,6 +923,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 pip_size_percent=int(merge_data.get("pip_size_percent", merge_pip_percent_default)),
                 pip_x=float(merge_data.get("pip_x", 1.0)),
                 pip_y=float(merge_data.get("pip_y", 1.0)),
+                opacity=1.0,
                 sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
             )
         ]
@@ -1062,7 +1069,6 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                     overlay_data.get("score_x") in {None, ""} and overlay_data.get("score_y") in {None, ""},
                 )
             ),
-            review_boxes_lock_to_stack=bool(overlay_data.get("review_boxes_lock_to_stack", False)),
             custom_box_enabled=bool(overlay_data.get("custom_box_enabled", False)),
             custom_box_mode=(
                 str(overlay_data.get("custom_box_mode", "manual"))
@@ -1083,7 +1089,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             custom_box_width=int(overlay_data.get("custom_box_width", 0)),
             custom_box_height=int(overlay_data.get("custom_box_height", 0)),
             text_boxes=[
-                _overlay_text_box_from_dict(item)
+                _overlay_text_box_from_dict(item, legacy_lock_to_stack=legacy_review_boxes_lock_to_stack)
                 for item in overlay_data.get("text_boxes", [])
                 if isinstance(item, dict)
             ],
@@ -1163,7 +1169,10 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         if len(project.merge_sources) == 1:
             project.analysis.sync_offset_ms = int(project.merge_sources[0].sync_offset_ms)
     if not project.overlay.text_boxes:
-        legacy_box = legacy_custom_box_as_text_box(project.overlay)
+        legacy_box = legacy_custom_box_as_text_box(
+            project.overlay,
+            legacy_lock_to_stack=legacy_review_boxes_lock_to_stack,
+        )
         if legacy_box is not None:
             project.overlay.text_boxes = [legacy_box]
     for text_box in project.overlay.text_boxes:

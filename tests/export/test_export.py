@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PySide6.QtGui import QColor, QImage, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
@@ -14,7 +14,7 @@ from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageS
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import OverlayRenderer, _auto_badge_size, _standard_badge_texts
+from splitshot.overlay.render import Badge, BadgeStyle, OverlayRenderer, _FONT_SIZE, _auto_badge_size, _combined_rect, _standard_badge_texts
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
 
@@ -515,6 +515,97 @@ def test_overlay_renderer_can_anchor_imported_summary_above_final_box() -> None:
     assert orange_bottom < green_top
 
 
+def test_overlay_renderer_keeps_locked_imported_summary_above_badge_stack() -> None:
+    project = Project(name="Locked Summary Above Stack")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [
+        ShotEvent(time_ms=900, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+        ShotEvent(time_ms=1200, score=ScoreMark(letter=ScoreLetter.DOWN_0)),
+    ]
+    apply_scoring_preset(project, "idpa_time_plus")
+    project.scoring.enabled = True
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = True
+    project.overlay.show_score = True
+    project.overlay.text_boxes = [
+        OverlayTextBox(
+            enabled=True,
+            source="imported_summary",
+            quadrant="above_final",
+            background_color="#ff7b22",
+            text_color="#ffffff",
+            opacity=1.0,
+            width=180,
+            height=54,
+        )
+    ]
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=13.05,
+        final_time=17.05,
+        score_counts={"PD": 4},
+    )
+
+    image = QImage(420, 220, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
+    font = QFont(project.overlay.font_family or "Helvetica Neue")
+    font.setPixelSize(max(1, int(font_size)))
+    font.setBold(project.overlay.font_bold)
+    font.setItalic(project.overlay.font_italic)
+    painter.setFont(font)
+
+    renderer = OverlayRenderer()
+    auto_badge_size = _auto_badge_size(_standard_badge_texts(project), painter.fontMetrics())
+    badges, _positioned_badges, _score_marks = renderer._build_badges_with_positions(project, 1400)
+    badge_rects = renderer._paint_badges(painter, badges, project, 420, 220, auto_badge_size=auto_badge_size)
+    stack_anchor_rect = _combined_rect(badge_rects)
+    summary_text = renderer._text_box_text(project, 1400, "imported_summary", "", True)
+    summary_rects = renderer._paint_badges(
+        painter,
+        [
+            Badge(
+                summary_text,
+                BadgeStyle(background_color="#ff7b22", text_color="#ffffff", opacity=1.0),
+                width=180,
+                height=54,
+            )
+        ],
+        project,
+        420,
+        220,
+        quadrant="above_final",
+        auto_badge_size=auto_badge_size,
+        anchor_rect=stack_anchor_rect,
+    )
+    painter.end()
+
+    assert stack_anchor_rect is not None
+    assert summary_rects
+
+    summary_rect = summary_rects[0]
+    assert abs(summary_rect.center().x() - stack_anchor_rect.center().x()) <= 1
+    assert summary_rect.bottom() < stack_anchor_rect.top()
+
+
+def test_overlay_renderer_uses_imported_summary_text_override_after_final_shot() -> None:
+    project = Project(name="Imported Summary Override")
+    project.analysis.beep_time_ms_primary = 100
+    project.analysis.shots = [ShotEvent(time_ms=1100)]
+    project.scoring.imported_stage = ImportedStageScore(
+        match_type="idpa",
+        raw_seconds=13.05,
+        final_time=17.05,
+        score_counts={"PD": 4},
+    )
+
+    assert OverlayRenderer._text_box_text(project, 1200, "imported_summary", "Edited summary", True) == "Edited summary"
+    assert OverlayRenderer._text_box_text(project, 800, "imported_summary", "Edited summary", True) == ""
+
+
 def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_summary() -> None:
     project = Project(name="Imported Summary Browser Line Height")
     project.analysis.beep_time_ms_primary = 100
@@ -567,17 +658,20 @@ def test_overlay_renderer_matches_browser_line_height_for_multiline_imported_sum
 def test_overlay_renderer_can_lock_review_boxes_to_overlay_stack() -> None:
     project = Project(name="Review Box Stack Lock")
     project.overlay.position = OverlayPosition.TOP
+    project.overlay.shot_quadrant = "top_left"
     project.overlay.show_timer = False
     project.overlay.show_draw = False
     project.overlay.show_shots = False
     project.overlay.show_score = False
-    project.overlay.review_boxes_lock_to_stack = True
     project.overlay.text_boxes = [
         OverlayTextBox(
             enabled=True,
+            lock_to_stack=True,
             source="manual",
             text="Review Box",
-            quadrant="bottom_right",
+            quadrant="custom",
+            x=0.75,
+            y=0.25,
             background_color="#ff0000",
             text_color="#ffffff",
             opacity=1.0,
@@ -586,14 +680,25 @@ def test_overlay_renderer_can_lock_review_boxes_to_overlay_stack() -> None:
         )
     ]
 
-    badges, _score_marks = OverlayRenderer().build_badges(project, 0)
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, project, 0, 320, 180)
+    painter.end()
 
-    review_badge = next(badge for badge in badges if badge.text == "Review Box")
+    red_pixels: list[tuple[int, int]] = []
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                red_pixels.append((x, y))
 
-    assert review_badge.style.background_color == "#ff0000"
-    assert review_badge.style.text_color == "#ffffff"
-    assert review_badge.width == 160
-    assert review_badge.height == 48
+    assert red_pixels
+    center_x = (min(x for x, _y in red_pixels) + max(x for x, _y in red_pixels)) / 2
+    center_y = (min(y for _x, y in red_pixels) + max(y for _x, y in red_pixels)) / 2
+
+    assert center_x < 120
+    assert center_y < 80
 
 
 def test_overlay_renderer_uses_unlocked_review_box_custom_coordinates() -> None:
@@ -603,10 +708,10 @@ def test_overlay_renderer_uses_unlocked_review_box_custom_coordinates() -> None:
     project.overlay.show_draw = False
     project.overlay.show_shots = False
     project.overlay.show_score = False
-    project.overlay.review_boxes_lock_to_stack = False
     project.overlay.text_boxes = [
         OverlayTextBox(
             enabled=True,
+            lock_to_stack=False,
             source="manual",
             text="Review Box",
             quadrant="custom",

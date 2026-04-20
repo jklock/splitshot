@@ -107,6 +107,29 @@ def test_multi_pip_merge_plan_uses_per_source_positions_and_offsets() -> None:
     assert plan.duration_ms == 1200
 
 
+def test_pip_merge_plan_applies_still_image_opacity() -> None:
+    project = Project(name="Still Image PiP Opacity")
+    project.primary_video = _asset("/tmp/primary.mp4")
+    project.merge.enabled = True
+    project.merge.layout = MergeLayout.PIP
+    project.merge_sources = [
+        MergeSource(
+            asset=_asset("/tmp/overlay.png", width=320, height=180),
+            pip_size_percent=1,
+            pip_x=1.0,
+            pip_y=1.0,
+            opacity=0.35,
+        )
+    ]
+    project.merge_sources[0].asset.is_still_image = True
+
+    plan = _build_merge_plan(project)
+    command = _command_text(plan.command)
+
+    assert "colorchannelmixer=aa=0.350" in command
+    assert "overlay=x=" in command
+
+
 def test_export_clears_stale_log_state_before_early_validation_error(tmp_path: Path) -> None:
     project = Project(name="Stale Export Log")
     project.export.last_log = "old ffmpeg output"

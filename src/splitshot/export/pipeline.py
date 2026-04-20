@@ -169,6 +169,13 @@ def _source_sync_offset_ms(source: MergeSource) -> int:
     return int(getattr(source, "sync_offset_ms", 0) or 0)
 
 
+def _source_opacity(source: MergeSource) -> float:
+    raw_opacity = getattr(source, "opacity", 1.0)
+    if raw_opacity is None:
+        return 1.0
+    return max(0.0, min(1.0, float(raw_opacity)))
+
+
 def _source_end_ms(source: MergeSource) -> int:
     duration_ms = int(source.asset.duration_ms or 0)
     if duration_ms <= 0:
@@ -301,6 +308,8 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
         asset_chain = f"[{index}:v]setpts=PTS-STARTPTS"
         if offset_ms < 0:
             asset_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
+        if _source_opacity(source) < 1.0:
+            asset_chain += f",format=rgba,colorchannelmixer=aa={_source_opacity(source):.3f}"
         filter_parts.append(
             f"{asset_chain},scale={rect.width}:{rect.height}[pip{index}]"
         )
@@ -400,6 +409,8 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
     secondary_chain = "[1:v]setpts=PTS-STARTPTS"
     if offset_ms < 0:
         secondary_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
+    if project.merge.layout == MergeLayout.PIP and _source_opacity(secondary_source) < 1.0:
+        secondary_chain += f",format=rgba,colorchannelmixer=aa={_source_opacity(secondary_source):.3f}"
 
     if project.merge.layout == MergeLayout.SIDE_BY_SIDE:
         filter_complex = (

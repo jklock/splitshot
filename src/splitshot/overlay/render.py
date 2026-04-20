@@ -55,6 +55,20 @@ _PENALTY_LABELS = {
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
 
+def _should_anchor_imported_summary_above_stack(text_box) -> bool:
+    return getattr(text_box, "source", "") == "imported_summary" and getattr(text_box, "quadrant", "") == _ABOVE_FINAL_TEXT_BOX_QUADRANT
+
+
+def _combined_rect(rects: list[QRectF]) -> QRectF | None:
+    if not rects:
+        return None
+    left = min(rect.left() for rect in rects)
+    top = min(rect.top() for rect in rects)
+    right = max(rect.right() for rect in rects)
+    bottom = max(rect.bottom() for rect in rects)
+    return QRectF(left, top, max(0.0, right - left), max(0.0, bottom - top))
+
+
 def _score_token_color(project: Project, token: str) -> str | None:
     normalized_token = str(token).strip()
     if not normalized_token:
@@ -289,30 +303,6 @@ class OverlayRenderer:
                     None if project.overlay.score_lock_to_stack else project.overlay.score_y,
                 )
 
-        if project.overlay.review_boxes_lock_to_stack:
-            for text_box in overlay_text_boxes_for_render(project.overlay):
-                text_value = self._text_box_text(
-                    project,
-                    position_ms,
-                    text_box.source,
-                    text_box.text,
-                    text_box.enabled,
-                )
-                if not text_value:
-                    continue
-                badges.append(
-                    Badge(
-                        text_value,
-                        BadgeStyle(
-                            background_color=text_box.background_color or project.overlay.hit_factor_badge.background_color,
-                            text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
-                            opacity=text_box.opacity,
-                        ),
-                        width=text_box.width or None,
-                        height=text_box.height or None,
-                    )
-                )
-
         score_marks: list[tuple[str, float, float, float]] = []
 
         return badges, positioned_badges, score_marks
@@ -329,6 +319,9 @@ class OverlayRenderer:
             )
             if final_shot_time is None or position_ms < final_shot_time:
                 return ""
+            override_text = text.strip()
+            if override_text:
+                return override_text
             return format_imported_stage_overlay_text(project.scoring.imported_stage).strip()
         return text.strip()
 
@@ -362,6 +355,8 @@ class OverlayRenderer:
 
         final_score_rect: QRectF | None = None
         badge_rects = self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
+        stack_anchor_rect = _combined_rect(badge_rects)
+        stack_terminal_rect = badge_rects[-1] if badge_rects else None
         if has_final_score_badge and project.overlay.score_x is None and project.overlay.score_y is None and badge_rects:
             final_score_rect = badge_rects[-1]
         for index, (badge, x, y) in enumerate(positioned_badges):
@@ -379,8 +374,7 @@ class OverlayRenderer:
             if has_final_score_badge and project.overlay.score_x is not None and project.overlay.score_y is not None and index == len(positioned_badges) - 1 and rects:
                 final_score_rect = rects[-1]
         for text_box in overlay_text_boxes_for_render(project.overlay):
-            if project.overlay.review_boxes_lock_to_stack:
-                continue
+            anchored_imported_summary = _should_anchor_imported_summary_above_stack(text_box)
             text_value = self._text_box_text(
                 project,
                 position_ms,
@@ -395,8 +389,30 @@ class OverlayRenderer:
                 text_color=text_box.text_color or project.overlay.hit_factor_badge.text_color,
                 opacity=text_box.opacity,
             )
+            if text_box.lock_to_stack and not anchored_imported_summary:
+                rects = self._paint_badges(
+                    painter,
+                    [
+                        Badge(
+                            text_value,
+                            custom_style,
+                            width=text_box.width or None,
+                            height=text_box.height or None,
+                        )
+                    ],
+                    project,
+                    width,
+                    height,
+                    quadrant=project.overlay.shot_quadrant,
+                    anchor_rect=None,
+                    after_rect=stack_terminal_rect,
+                )
+                if rects:
+                    stack_terminal_rect = rects[-1]
+                continue
             text_box_quadrant = text_box.quadrant
-            if text_box_quadrant == _ABOVE_FINAL_TEXT_BOX_QUADRANT and final_score_rect is None:
+            anchor_rect = (stack_anchor_rect or final_score_rect) if anchored_imported_summary else final_score_rect
+            if text_box_quadrant == _ABOVE_FINAL_TEXT_BOX_QUADRANT and anchor_rect is None:
                 text_box_quadrant = "top_middle"
             self._paint_badges(
                 painter,
@@ -414,7 +430,7 @@ class OverlayRenderer:
                 quadrant=text_box_quadrant,
                 custom_x=text_box.x,
                 custom_y=text_box.y,
-                anchor_rect=final_score_rect,
+                anchor_rect=anchor_rect,
             )
         self._paint_scores(painter, project, score_marks, width, height)
 
@@ -432,6 +448,7 @@ class OverlayRenderer:
         custom_y: float | None = None,
         auto_badge_size: tuple[int, int] | None = None,
         anchor_rect: QRectF | None = None,
+        after_rect: QRectF | None = None,
     ) -> list[QRectF]:
         if not badges:
             return []
@@ -475,7 +492,8 @@ class OverlayRenderer:
             explicit_height = int(badge.height or project.overlay.bubble_height or 0)
             badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else text_width + (padding_x * 2))
             badge_height = explicit_height if explicit_height > 0 else (auto_badge_size[1] if auto_badge_size else text_height + (padding_y * 2))
-            if previous_rect is None:
+            base_rect = previous_rect or after_rect
+            if base_rect is None:
                 if quadrant_value == "custom":
                     rect_x = (max(0.0, min(1.0, float(x_override))) * width) - (badge_width / 2)
                     rect_y = (max(0.0, min(1.0, float(y_override))) * height) - (badge_height / 2)
@@ -494,16 +512,16 @@ class OverlayRenderer:
                 rect_x = max(0.0, min(rect_x, max(0.0, width - badge_width)))
                 rect_y = max(0.0, min(rect_y, max(0.0, height - badge_height)))
             else:
-                rect_x = previous_rect.x()
-                rect_y = previous_rect.y()
+                rect_x = base_rect.x()
+                rect_y = base_rect.y()
                 if project.overlay.shot_direction == "right":
-                    rect_x = previous_rect.x() + previous_rect.width() + gap
+                    rect_x = base_rect.x() + base_rect.width() + gap
                 elif project.overlay.shot_direction == "left":
-                    rect_x = previous_rect.x() - badge_width - gap
+                    rect_x = base_rect.x() - badge_width - gap
                 elif project.overlay.shot_direction == "up":
-                    rect_y = previous_rect.y() - badge_height - gap
+                    rect_y = base_rect.y() - badge_height - gap
                 else:
-                    rect_y = previous_rect.y() + previous_rect.height() + gap
+                    rect_y = base_rect.y() + base_rect.height() + gap
             rect = QRectF(rect_x, rect_y, badge_width, badge_height)
             previous_rect = rect
             painted_rects.append(rect)
