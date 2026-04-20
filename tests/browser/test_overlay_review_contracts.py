@@ -9,6 +9,7 @@ import pytest
 from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import PopupBubble, ShotEvent, ShotSource
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.ui.controller import ProjectController
 
@@ -193,6 +194,156 @@ def test_review_box_lock_preserves_custom_coordinates_but_renders_from_stack_anc
         unlocked_center_x, unlocked_center_y = render_center()
         assert unlocked_center_x == pytest.approx(320 * 0.7, abs=3)
         assert unlocked_center_y == pytest.approx(180 * 0.2, abs=3)
+    finally:
+        server.shutdown()
+
+
+def test_review_text_box_auto_size_is_independent_of_global_bubble_size() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(
+            f"{server.url}api/overlay",
+            {
+                "position": "top",
+                "show_timer": False,
+                "show_draw": False,
+                "show_shots": False,
+                "show_score": False,
+                "bubble_width": 240,
+                "bubble_height": 96,
+                "text_boxes": [
+                    {
+                        "id": "manual-box",
+                        "enabled": True,
+                        "lock_to_stack": False,
+                        "source": "manual",
+                        "text": "Review Box",
+                        "quadrant": "custom",
+                        "x": 0.5,
+                        "y": 0.5,
+                        "background_color": "#ff0000",
+                        "text_color": "#ffffff",
+                        "opacity": 1.0,
+                        "width": 0,
+                        "height": 0,
+                    }
+                ],
+            },
+        )
+
+        image = QImage(320, 180, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#000000"))
+        painter = QPainter(image)
+        OverlayRenderer().paint(painter, controller.project, 0, 320, 180)
+        painter.end()
+
+        red_pixels: list[tuple[int, int]] = []
+        for y in range(image.height()):
+            for x in range(image.width()):
+                color = image.pixelColor(x, y)
+                if color.red() > 120 and color.red() > color.green() + 40 and color.red() > color.blue() + 40:
+                    red_pixels.append((x, y))
+
+        assert red_pixels
+        min_x = min(x for x, _y in red_pixels)
+        max_x = max(x for x, _y in red_pixels)
+        min_y = min(y for _x, y in red_pixels)
+        max_y = max(y for _x, y in red_pixels)
+        assert max_x - min_x < 180
+        assert max_y - min_y < 80
+    finally:
+        server.shutdown()
+
+
+def test_popup_bubble_uses_exact_shot_time_and_auto_size() -> None:
+    controller = ProjectController()
+    controller.project.primary_video.fps = 10
+    shot = ShotEvent(id="shot-one", time_ms=101, source=ShotSource.AUTO, confidence=0.9)
+    controller.project.analysis.shots = [shot]
+    controller.project.popups = [PopupBubble(
+        id="popup-one",
+        enabled=True,
+        text="Popup",
+        anchor_mode="shot",
+        shot_id=shot.id,
+        time_ms=0,
+        duration_ms=1000,
+        quadrant="middle_middle",
+        x=0.5,
+        y=0.5,
+        background_color="#ff0000",
+        text_color="#ffffff",
+        opacity=1.0,
+        width=0,
+        height=0,
+    )]
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(
+            f"{server.url}api/overlay",
+            {
+                "position": "none",
+                "show_timer": False,
+                "show_draw": False,
+                "show_shots": False,
+                "show_score": False,
+            },
+        )
+        _post_json(
+            f"{server.url}api/popups",
+            {
+                "popups": [
+                    {
+                        "id": "popup-one",
+                        "enabled": True,
+                        "text": "Popup",
+                        "anchor_mode": "shot",
+                        "shot_id": shot.id,
+                        "time_ms": 0,
+                        "duration_ms": 1000,
+                        "quadrant": "middle_middle",
+                        "x": 0.5,
+                        "y": 0.5,
+                        "background_color": "#ff0000",
+                        "text_color": "#ffffff",
+                        "opacity": 1.0,
+                        "width": 0,
+                        "height": 0,
+                    }
+                ],
+            },
+        )
+
+        def render_popup(position_ms: int) -> list[tuple[int, int]]:
+            image = QImage(320, 180, QImage.Format.Format_ARGB32)
+            image.fill(QColor("#000000"))
+            painter = QPainter(image)
+            OverlayRenderer().paint(painter, controller.project, position_ms, 320, 180)
+            painter.end()
+
+            return [
+                (x, y)
+                for y in range(image.height())
+                for x in range(image.width())
+                if image.pixelColor(x, y).red() > 120
+                and image.pixelColor(x, y).red() > image.pixelColor(x, y).green() + 40
+                and image.pixelColor(x, y).red() > image.pixelColor(x, y).blue() + 40
+            ]
+
+        before_pixels = render_popup(100)
+        on_time_pixels = render_popup(101)
+
+        assert not before_pixels
+        assert on_time_pixels
+        min_x = min(x for x, _y in on_time_pixels)
+        max_x = max(x for x, _y in on_time_pixels)
+        min_y = min(y for _x, y in on_time_pixels)
+        max_y = max(y for _x, y in on_time_pixels)
+        assert max_x - min_x < 160
+        assert max_y - min_y < 80
     finally:
         server.shutdown()
 

@@ -160,3 +160,4 @@ def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
     assert "function syncSelectedShotId" in app_js
     assert "syncSelectedShotId();" in app_js
     assert "pendingSelectionFallback = shotSelectionContext(selectedShotId, state, \"time\");" in app_js
+    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in app_js
