@@ -55,6 +55,14 @@ _PENALTY_LABELS = {
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
 
 
+def _popup_bubble_time_ms(project: Project, popup) -> int:
+    if getattr(popup, "anchor_mode", "time") == "shot" and getattr(popup, "shot_id", None):
+        shot = next((item for item in sort_shots(project.analysis.shots) if item.id == popup.shot_id), None)
+        if shot is not None:
+            return shot_display_time_ms(project, shot.time_ms)
+    return popup.time_ms
+
+
 def _combined_rect(rects: list[QRectF]) -> QRectF | None:
     if not rects:
         return None
@@ -327,8 +335,8 @@ class OverlayRenderer:
         has_visible_popup = any(
             popup.enabled
             and popup.text.strip()
-            and position_ms >= popup.time_ms
-            and position_ms <= popup.time_ms + popup.duration_ms
+            and position_ms >= _popup_bubble_time_ms(project, popup)
+            and position_ms <= _popup_bubble_time_ms(project, popup) + popup.duration_ms
             for popup in project.popups
         )
         if project.overlay.position == OverlayPosition.NONE and not has_visible_popup:
@@ -444,11 +452,12 @@ class OverlayRenderer:
                 anchor_rect=anchor_rect,
             )
         for popup in project.popups:
+            popup_time_ms = _popup_bubble_time_ms(project, popup)
             if (
                 not popup.enabled
                 or not popup.text.strip()
-                or position_ms < popup.time_ms
-                or position_ms > popup.time_ms + popup.duration_ms
+                or position_ms < popup_time_ms
+                or position_ms > popup_time_ms + popup.duration_ms
             ):
                 continue
             popup_style = BadgeStyle(
@@ -469,7 +478,7 @@ class OverlayRenderer:
                 project,
                 width,
                 height,
-                quadrant="custom",
+                quadrant=popup.quadrant,
                 custom_x=popup.x,
                 custom_y=popup.y,
             )

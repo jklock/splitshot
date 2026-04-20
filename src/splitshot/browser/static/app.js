@@ -1037,13 +1037,17 @@ function updateColorFromHexInput(hexInput, { commit = false } = {}) {
   }
   const textBoxCard = colorInput.closest(".text-box-card");
   const textBoxField = colorInput.dataset.textBoxField || "";
+  const popupBubbleCard = colorInput.closest(".popup-bubble-card");
+  const popupBubbleField = colorInput.dataset.popupField || "";
   if (textBoxCard?.dataset.boxId && textBoxField) {
     setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });
+  } else if (popupBubbleCard?.dataset.popupId && popupBubbleField) {
+    setPopupBubbleField(popupBubbleCard.dataset.popupId, popupBubbleField, normalized, { commit, rerender: true });
   } else {
     previewOverlayControlChanges();
   }
   if (colorInput === activeColorPickerControl) syncColorPickerModal(normalized);
-  if (commit) {
+  if (commit && !popupBubbleCard) {
     scheduleOverlayColorCommit();
   }
 }
@@ -1081,15 +1085,19 @@ function applyColorControlValue(control, value, { queueCommit = false } = {}) {
   syncOverlayHexControl(colorControl);
   const textBoxCard = colorControl.closest(".text-box-card");
   const textBoxField = colorControl.dataset.textBoxField || "";
+  const popupBubbleCard = colorControl.closest(".popup-bubble-card");
+  const popupBubbleField = colorControl.dataset.popupField || "";
   if (changed) {
     if (textBoxCard?.dataset.boxId && textBoxField) {
       setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });
+    } else if (popupBubbleCard?.dataset.popupId && popupBubbleField) {
+      setPopupBubbleField(popupBubbleCard.dataset.popupId, popupBubbleField, normalized, { commit: queueCommit, rerender: true });
     } else {
       previewOverlayControlChanges();
     }
   }
   if (colorControl === activeColorPickerControl) syncColorPickerModal(normalized);
-  if (queueCommit) scheduleOverlayColorCommit();
+  if (!popupBubbleCard && queueCommit) scheduleOverlayColorCommit();
 }
 
 function openColorPicker(control) {
@@ -2451,15 +2459,51 @@ function createPopupBubbleId() {
   return `popup_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const POPUP_BUBBLE_ANCHOR_MODES = new Set(["time", "shot"]);
+const POPUP_BUBBLE_QUADRANT_POINTS = Object.freeze({
+  top_left: { x: 0.125, y: 0.125 },
+  top_middle: { x: 0.5, y: 0.125 },
+  top_right: { x: 0.875, y: 0.125 },
+  middle_left: { x: 0.125, y: 0.5 },
+  middle_middle: { x: 0.5, y: 0.5 },
+  middle_right: { x: 0.875, y: 0.5 },
+  bottom_left: { x: 0.125, y: 0.875 },
+  bottom_middle: { x: 0.5, y: 0.875 },
+  bottom_right: { x: 0.875, y: 0.875 },
+  custom: { x: 0.5, y: 0.5 },
+});
+
+function normalizePopupAnchorMode(value, shotId = null) {
+  const normalized = String(value || "").trim();
+  if (POPUP_BUBBLE_ANCHOR_MODES.has(normalized)) return normalized;
+  return shotId ? "shot" : "time";
+}
+
+function normalizePopupQuadrant(value, xValue = null, yValue = null) {
+  const normalized = String(value || "").trim();
+  if (normalized in POPUP_BUBBLE_QUADRANT_POINTS) return normalized;
+  if (xValue !== null || yValue !== null) return "custom";
+  return "middle_middle";
+}
+
 function normalizePopupBubble(bubble = {}) {
+  const xValue = normalizedCoordinateValue(bubble.x);
+  const yValue = normalizedCoordinateValue(bubble.y);
+  const shotId = bubble.shot_id === undefined || bubble.shot_id === null || bubble.shot_id === ""
+    ? null
+    : String(bubble.shot_id);
+  const anchorMode = normalizePopupAnchorMode(bubble.anchor_mode, shotId);
   return {
     id: String(bubble.id || createPopupBubbleId()),
     enabled: Boolean(bubble.enabled ?? true),
     text: String(bubble.text || "").slice(0, 500),
+    anchor_mode: anchorMode,
+    shot_id: anchorMode === "shot" && shotId ? shotId : null,
     time_ms: Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0)),
     duration_ms: Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000)),
-    x: clamp(Number(bubble.x ?? 0.5) || 0.5, 0, 1),
-    y: clamp(Number(bubble.y ?? 0.5) || 0.5, 0, 1),
+    quadrant: normalizePopupQuadrant(bubble.quadrant, xValue, yValue),
+    x: xValue === null ? 0.5 : xValue,
+    y: yValue === null ? 0.5 : yValue,
     background_color: String(bubble.background_color || "#000000"),
     text_color: String(bubble.text_color || "#ffffff"),
     opacity: clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0, 1),
@@ -2471,6 +2515,38 @@ function normalizePopupBubble(bubble = {}) {
 function popupBubbles() {
   const bubbles = Array.isArray(state?.project?.popups) ? state.project.popups : [];
   return bubbles.map((bubble) => normalizePopupBubble(bubble));
+}
+
+function popupBubblePoint(bubble) {
+  if (!bubble) return { x: 0.5, y: 0.5 };
+  if (bubble.quadrant !== CUSTOM_QUADRANT_VALUE) {
+    return POPUP_BUBBLE_QUADRANT_POINTS[bubble.quadrant] || POPUP_BUBBLE_QUADRANT_POINTS.middle_middle;
+  }
+  return {
+    x: normalizedCoordinateValue(bubble.x) ?? 0.5,
+    y: normalizedCoordinateValue(bubble.y) ?? 0.5,
+  };
+}
+
+function popupBubbleEffectiveTimeMs(bubble) {
+  if (!bubble) return 0;
+  if (bubble.anchor_mode === "shot" && bubble.shot_id) {
+    const shot = orderedShotsByTime().find((item) => item.id === bubble.shot_id);
+    if (shot) return shotDisplayTimeMs(shot.time_ms);
+  }
+  return Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0));
+}
+
+function defaultPopupShotId() {
+  if (selectedShotId && stateHasShot(state, selectedShotId)) return selectedShotId;
+  return orderedShotsByTime()[0]?.id || null;
+}
+
+function popupBubbleShotOptions() {
+  return orderedShotsByTime().map((shot, index) => ({
+    id: shot.id,
+    label: `Shot ${index + 1} ${seconds(shot.time_ms)}s`,
+  }));
 }
 
 function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
@@ -2486,7 +2562,27 @@ function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
 function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
   const nextBubbles = popupBubbles().map((bubble) => {
     if (bubble.id !== bubbleId) return bubble;
-    return normalizePopupBubble({ ...bubble, [field]: rawValue });
+    const nextBubble = normalizePopupBubble({ ...bubble, [field]: rawValue });
+    if (field === "anchor_mode") {
+      nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
+      nextBubble.shot_id = nextBubble.anchor_mode === "shot" ? (nextBubble.shot_id || defaultPopupShotId()) : null;
+      if (nextBubble.anchor_mode === "shot" && !nextBubble.shot_id) {
+        nextBubble.anchor_mode = "time";
+      }
+    }
+    if (field === "shot_id") {
+      nextBubble.shot_id = rawValue ? String(rawValue) : null;
+      nextBubble.anchor_mode = nextBubble.shot_id ? "shot" : "time";
+    }
+    if (field === "time_ms") {
+      nextBubble.time_ms = Math.max(0, Math.round(Number(rawValue) || 0));
+      nextBubble.anchor_mode = "time";
+      nextBubble.shot_id = null;
+    }
+    if (field === "quadrant") {
+      nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
+    }
+    return nextBubble;
   });
   setPopupBubbles(nextBubbles, options);
 }
@@ -2498,6 +2594,7 @@ function addPopupBubble() {
     text: "-0",
     time_ms: timeMs,
     duration_ms: 1000,
+    quadrant: "middle_middle",
     x: 0.5,
     y: 0.5,
   });
@@ -2511,13 +2608,30 @@ function removePopupBubble(bubbleId) {
 function duplicatePopupBubble(bubbleId) {
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
-  setPopupBubbles([...popupBubbles(), normalizePopupBubble({ ...bubble, id: createPopupBubbleId(), x: clamp(bubble.x + 0.04, 0, 1), y: clamp(bubble.y + 0.04, 0, 1) })], { commit: true, rerender: true });
+  const coordinates = popupBubblePoint(bubble);
+  setPopupBubbles([
+    ...popupBubbles(),
+    normalizePopupBubble({
+      ...bubble,
+      id: createPopupBubbleId(),
+      quadrant: CUSTOM_QUADRANT_VALUE,
+      x: clamp(coordinates.x + 0.04, 0, 1),
+      y: clamp(coordinates.y + 0.04, 0, 1),
+    }),
+  ], { commit: true, rerender: true });
 }
 
 function buildPopupBubbleCard(bubble, index) {
   const card = document.createElement("section");
   card.className = "text-box-card popup-bubble-card";
   card.dataset.popupId = bubble.id;
+  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
+  const shots = popupBubbleShotOptions();
+  const shotIds = new Set(shots.map((shot) => shot.id));
+  const popupShotId = bubble.anchor_mode === "shot"
+    ? (shotIds.has(bubble.shot_id) ? bubble.shot_id : (defaultPopupShotId() || ""))
+    : (bubble.shot_id || "");
+  const usesCustomPlacement = bubble.quadrant === CUSTOM_QUADRANT_VALUE;
   card.innerHTML = `
     <div class="text-box-card-header">
       <label class="check-row"><input type="checkbox" data-popup-field="enabled" /> <strong>Bubble ${index + 1}</strong></label>
@@ -2527,25 +2641,46 @@ function buildPopupBubbleCard(bubble, index) {
       </div>
     </div>
     <label>Text
-      <input data-popup-field="text" type="text" maxlength="500" placeholder="-0" />
+      <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
     </label>
     <div class="control-grid">
+      <label>Start mode
+        <select data-popup-field="anchor_mode">
+          <option value="time">Time</option>
+          <option value="shot">Shot</option>
+        </select>
+      </label>
       <label>Start (seconds)
         <input data-popup-field="time_s" type="number" min="0" step="0.001" />
+      </label>
+      <label>Shot
+        <select data-popup-field="shot_id"></select>
       </label>
       <label>Duration (seconds)
         <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
       </label>
     </div>
     <div class="control-grid">
+      <label>Placement
+        <select data-popup-field="quadrant">
+          <option value="top_left">Top left</option>
+          <option value="top_middle">Top middle</option>
+          <option value="top_right">Top right</option>
+          <option value="middle_left">Middle left</option>
+          <option value="middle_middle">Middle middle</option>
+          <option value="middle_right">Middle right</option>
+          <option value="bottom_left">Bottom left</option>
+          <option value="bottom_middle">Bottom middle</option>
+          <option value="bottom_right">Bottom right</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
       <label>X
         <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
       </label>
       <label>Y
         <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
       </label>
-    </div>
-    <div class="control-grid">
       <label>Width
         <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
       </label>
@@ -2553,22 +2688,39 @@ function buildPopupBubbleCard(bubble, index) {
         <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
       </label>
     </div>
-    <div class="control-grid">
-      <label>Background
-        <input data-popup-field="background_color" type="text" inputmode="text" spellcheck="false" />
-      </label>
-      <label>Text color
-        <input data-popup-field="text_color" type="text" inputmode="text" spellcheck="false" />
-      </label>
+    <div class="style-grid review-style-grid">
+      <section class="style-card popup-style-card">
+        <h4>Bubble Style</h4>
+        <label class="color-field"><span class="style-card-label">Background</span>
+          <span class="color-control-pair">
+            <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
+            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
+          </span>
+        </label>
+        <label class="color-field"><span class="style-card-label">Text</span>
+          <span class="color-control-pair">
+            <button data-popup-field="text_color" class="color-swatch-button" data-color-label="Popup text" type="button"></button>
+            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
+          </span>
+        </label>
+        <label class="opacity-field"><span class="style-card-label">Opacity</span>
+          <span class="opacity-control-pair">
+            <span class="opacity-percent-field">
+              <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup opacity percent" />
+              <span class="opacity-percent-suffix">%</span>
+            </span>
+          </span>
+        </label>
+      </section>
     </div>
-    <label>Opacity %
-      <input data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" />
-    </label>
   `;
   syncControlChecked(card.querySelector('[data-popup-field="enabled"]'), bubble.enabled);
   syncControlValue(card.querySelector('[data-popup-field="text"]'), bubble.text);
-  syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(bubble.time_ms));
+  syncControlValue(card.querySelector('[data-popup-field="anchor_mode"]'), bubble.anchor_mode);
+  syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
+  syncControlValue(card.querySelector('[data-popup-field="shot_id"]'), popupShotId);
   syncControlValue(card.querySelector('[data-popup-field="duration_s"]'), precise(bubble.duration_ms));
+  syncControlValue(card.querySelector('[data-popup-field="quadrant"]'), bubble.quadrant);
   syncControlValue(card.querySelector('[data-popup-field="x"]'), bubble.x);
   syncControlValue(card.querySelector('[data-popup-field="y"]'), bubble.y);
   syncControlValue(card.querySelector('[data-popup-field="width"]'), bubble.width);
@@ -2576,8 +2728,31 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="background_color"]'), bubble.background_color);
   syncControlValue(card.querySelector('[data-popup-field="text_color"]'), bubble.text_color);
   syncControlValue(card.querySelector('[data-popup-field="opacity_percent"]'), Math.round((bubble.opacity ?? 0.9) * 100));
+  const shotSelect = card.querySelector('[data-popup-field="shot_id"]');
+  if (shotSelect) {
+    shotSelect.innerHTML = "";
+    if (shots.length === 0) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No shots available";
+      shotSelect.appendChild(option);
+    } else {
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "Time based";
+      shotSelect.appendChild(defaultOption);
+      shots.forEach((shot) => {
+        const option = document.createElement("option");
+        option.value = shot.id;
+        option.textContent = shot.label;
+        shotSelect.appendChild(option);
+      });
+      if (popupShotId) shotSelect.value = popupShotId;
+    }
+  }
   card.querySelectorAll("[data-popup-field]").forEach((control) => {
     const field = control.dataset.popupField || "";
+    if (isColorInput(control)) return;
     const readValue = () => {
       if (control.type === "checkbox") return control.checked;
       if (field === "time_s") return Math.round((Number(control.value) || 0) * 1000);
@@ -2589,14 +2764,48 @@ function buildPopupBubbleCard(bubble, index) {
       time_s: "time_ms",
       duration_s: "duration_ms",
       opacity_percent: "opacity",
+      anchor_mode: "anchor_mode",
+      shot_id: "shot_id",
     }[field] || field;
     const eventName = control.type === "checkbox" ? "change" : "input";
+    if (field === "shot_id" || field === "anchor_mode" || field === "quadrant") {
+      control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
+      return;
+    }
     control.addEventListener(eventName, () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: false, rerender: false }));
     control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
     control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
   });
+  const placementInput = card.querySelector('[data-popup-field="quadrant"]');
+  const xInput = card.querySelector('[data-popup-field="x"]');
+  const yInput = card.querySelector('[data-popup-field="y"]');
+  [xInput, yInput].forEach((input) => {
+    if (!input) return;
+    input.disabled = !usesCustomPlacement;
+    input.placeholder = usesCustomPlacement ? "0.50" : "Custom only";
+  });
+  if (placementInput instanceof HTMLSelectElement) {
+    const customPlacement = placementInput.value === CUSTOM_QUADRANT_VALUE;
+    [xInput, yInput].forEach((input) => {
+      if (!input) return;
+      input.disabled = !customPlacement;
+      input.placeholder = customPlacement ? "0.50" : "Custom only";
+    });
+  }
+  const anchorModeInput = card.querySelector('[data-popup-field="anchor_mode"]');
+  const timeInput = card.querySelector('[data-popup-field="time_s"]');
+  const durationInput = card.querySelector('[data-popup-field="duration_s"]');
+  const shotInput = card.querySelector('[data-popup-field="shot_id"]');
+  if (anchorModeInput instanceof HTMLSelectElement) {
+    const shotAnchored = anchorModeInput.value === "shot";
+    if (timeInput) timeInput.disabled = shotAnchored;
+    if (shotInput) shotInput.disabled = !shotAnchored || shots.length === 0;
+    if (durationInput) durationInput.disabled = false;
+  }
   card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
+  bindOverlayColorInput(card.querySelector('[data-popup-field="background_color"]'));
+  bindOverlayColorInput(card.querySelector('[data-popup-field="text_color"]'));
   return card;
 }
 
@@ -5257,6 +5466,7 @@ function renderMetricsPanel() {
   const trendList = $("metrics-trend-list");
   const scoreStatus = $("metrics-score-status");
   if (!summaryGrid || !trendList || !scoreStatus) return;
+  const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
 
   const summaryCards = [
     ["Draw", splitSeconds(state.metrics.draw_ms), "First-shot timing"],
@@ -5264,7 +5474,9 @@ function renderMetricsPanel() {
     ["Shots", String(state.metrics.total_shots || 0), "Current timeline shots"],
     ["Avg Split", splitSeconds(state.metrics.average_split_ms), "Average split"],
     ["Beep", splitSeconds(state.metrics.beep_ms), "Start marker"],
-    [state.scoring_summary?.display_label || "Result", state.scoring_summary?.display_value || "--", "Scoring summary"],
+    [scoringSummary.display_label || "Result", scoringSummary.display_value || "--", scoringSummary.sport || "Scoring summary"],
+    ["Shot Points", formatNumber(scoringSummary.shot_points, 2), "Raw score total"],
+    ["Penalties", formatNumber(scoringSummary.total_penalties, 2), scoringSummary.penalty_label || "Penalty summary"],
   ];
   summaryGrid.innerHTML = "";
   summaryCards.forEach(([label, value, caption]) => {
@@ -5321,7 +5533,7 @@ function renderMetricsPanel() {
     }
   });
 
-  const summary = state.scoring_summary || {};
+  const summary = scoringSummary;
   const imported = summary.imported_stage || {};
   scoreStatus.dataset.importedSource = imported.source_name || "";
   scoreStatus.dataset.importedStage = imported.stage_number ?? "";
@@ -5332,11 +5544,24 @@ function renderMetricsPanel() {
     : "Scoring disabled.";
   renderDetailsList("metrics-score-summary", [
     ["Ruleset", summary.ruleset_name || ""],
+    ["Sport", summary.sport || ""],
+    ["Mode", summary.mode || ""],
     [summary.display_label || "Result", summary.display_value || ""],
     ["Shot Points", formatNumber(summary.shot_points, 2)],
+    ["Shot Penalties", formatNumber(summary.shot_penalties, 2)],
+    ["Field Penalties", formatNumber(summary.field_penalties, 2)],
     [summary.penalty_label || "Penalties", formatNumber(summary.total_penalties, 2)],
+    ["Hit Factor", summary.hit_factor !== null && summary.hit_factor !== undefined ? formatNumber(summary.hit_factor, 2) : ""],
     ["Raw Time", summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : ""],
+    ["Official Raw", summary.official_raw_seconds !== null && summary.official_raw_seconds !== undefined ? `${formatNumber(summary.official_raw_seconds, 2)}s` : ""],
+    ["Raw Delta", summary.raw_delta_seconds !== null && summary.raw_delta_seconds !== undefined ? `${formatNumber(summary.raw_delta_seconds, 2)}s` : ""],
+    ["Final Time", summary.final_time !== null && summary.final_time !== undefined ? `${formatNumber(summary.final_time, 2)}s` : ""],
+    ["Official Final", summary.official_final_time !== null && summary.official_final_time !== undefined ? `${formatNumber(summary.official_final_time, 2)}s` : ""],
+    ["Final Delta", summary.final_delta_seconds !== null && summary.final_delta_seconds !== undefined ? `${formatNumber(summary.final_delta_seconds, 2)}s` : ""],
     ["Imported", summary.imported_stage?.source_name || ""],
+    ["Imported Stage", summary.imported_stage?.stage_number !== null && summary.imported_stage?.stage_number !== undefined ? `Stage ${summary.imported_stage.stage_number}` : ""],
+    ["Competitor", summary.imported_stage?.competitor_name || ""],
+    ["Place", summary.imported_stage?.competitor_place !== null && summary.imported_stage?.competitor_place !== undefined ? String(summary.imported_stage.competitor_place) : ""],
   ]);
   renderMetricsTable($("metrics-workbench-table"));
 }
@@ -6954,19 +7179,20 @@ function beginPopupBubbleDrag(event) {
   if (!bubble) return;
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect) || popupBubblePoint(bubble);
   popupBubbleDrag = {
     bubbleId,
     target: $("popup-overlay"),
     pointerId: event.pointerId,
     startClientX: event.clientX,
     startClientY: event.clientY,
-    startX: bubble.x,
-    startY: bubble.y,
+    startX: renderedCoordinates.x,
+    startY: renderedCoordinates.y,
   };
   capturePointer(popupBubbleDrag.target, event.pointerId);
   popupBubbleDrag.target?.classList.add("dragging");
   event.preventDefault();
-  activity("popup.drag.start", { popup_id: bubbleId, x: bubble.x, y: bubble.y });
+  activity("popup.drag.start", { popup_id: bubbleId, x: renderedCoordinates.x, y: renderedCoordinates.y });
 }
 
 function movePopupBubbleDrag(event) {
@@ -6979,7 +7205,7 @@ function movePopupBubbleDrag(event) {
   const newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
   const newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
   const nextBubbles = popupBubbles().map((bubble) => bubble.id === popupBubbleDrag.bubbleId
-    ? normalizePopupBubble({ ...bubble, x: newX, y: newY })
+    ? normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY })
     : bubble);
   setPopupBubbles(nextBubbles, { commit: false, rerender: true });
 }
@@ -7211,8 +7437,8 @@ function visiblePopupBubbles(positionMs) {
   return popupBubbles().filter((bubble) => (
     bubble.enabled
     && bubble.text.trim()
-    && positionMs >= bubble.time_ms
-    && positionMs <= bubble.time_ms + bubble.duration_ms
+    && positionMs >= popupBubbleEffectiveTimeMs(bubble)
+    && positionMs <= popupBubbleEffectiveTimeMs(bubble) + bubble.duration_ms
   ));
 }
 
@@ -7224,6 +7450,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
   popupOverlay.style.width = `${frameRect.width}px`;
   popupOverlay.style.height = `${frameRect.height}px`;
   visiblePopupBubbles(positionMs).forEach((bubble) => {
+    const point = popupBubblePoint(bubble);
     const badge = badgeElement(
       bubble.text,
       {
@@ -7241,11 +7468,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     );
     badge.dataset.popupDrag = "true";
     badge.dataset.popupId = bubble.id;
-    badge.style.position = "absolute";
-    badge.style.left = `${bubble.x * 100}%`;
-    badge.style.top = `${bubble.y * 100}%`;
-    badge.style.transform = "translate(-50%, -50%)";
-    popupOverlay.appendChild(badge);
+    placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
   });
 }
 
@@ -7736,6 +7959,7 @@ function handleWaveformPointerUp(event) {
 
 function handleKeyboardEdit(event) {
   const target = event.target;
+  if (target instanceof Element && target.closest(".inspector, .modal, [role='dialog']")) return;
   if (target && ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
   if (!selectedShotId) return;
   if (event.key === "ArrowLeft") {

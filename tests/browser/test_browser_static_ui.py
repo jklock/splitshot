@@ -12,7 +12,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260418b"' in html
-    assert 'src="/static/app.js?v=20260420a"' in html
+    assert 'src="/static/app.js?v=20260420b"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -26,7 +26,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert html.index('data-tool="timing"') < html.index('data-tool="shotml"')
     assert html.index('data-tool="shotml"') < html.index('data-tool="merge"')
     assert html.index('data-tool="merge"') < html.index('data-tool="overlay"')
-    assert html.index('data-tool="merge"') < html.index('data-tool="review"')
+    assert html.index('data-tool="overlay"') < html.index('data-tool="popup"')
+    assert html.index('data-tool="popup"') < html.index('data-tool="review"')
     assert html.index('data-tool="review"') < html.index('data-tool="export"')
     assert html.index('data-tool="export"') < html.index('data-tool="metrics"')
     assert 'data-tool="project"' in html
@@ -37,6 +38,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="edit"' not in html
     assert 'data-tool="scoring"' in html
     assert 'data-tool="overlay"' in html
+    assert 'data-tool="popup"' in html
     assert 'data-tool="merge"' in html
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
@@ -124,6 +126,11 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="review-add-text-box"' in html
     assert 'id="review-add-imported-box"' in html
     assert 'id="review-text-box-list"' in html
+    assert 'data-tool-pane="popup"' in html
+    assert 'data-popup-field="anchor_mode"' in html
+    assert 'data-popup-field="shot_id"' in html
+    assert 'data-popup-field="quadrant"' in html
+    assert 'data-popup-field="opacity_percent"' in html
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
     assert 'id="metrics-export-csv"' in html
