@@ -267,6 +267,9 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert 'function overlayStackAnchorRect(overlay) {' in js
     assert 'function overlayStackTerminalRect(overlay) {' in js
     assert 'if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
+    assert 'const aboveFinalAnchorRect = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE' in js
+    assert '!(finalScoreBadge instanceof HTMLElement) && box.source === "imported_summary" ? stackAnchorRect : null' in js
+    assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
     assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in js
     assert 'source="imported_summary",' in controller_source
     assert 'quadrant="above_final",' in controller_source
@@ -286,3 +289,19 @@ def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> Non
     assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' in js
     assert 'textBoxRenderedPositionById = nextRenderedPositions;' in js
     assert 'syncLockedTextBoxEditorCoordinates();' in js
+
+
+def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:
+    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+
+    assert 'function resolveRenderedOverlayBadgeCoordinates(kind) {' in js
+    assert 'function resetOverlayPlacementBaseline(controlId) {' in js
+    assert 'function syncOverlayBadgeCoordinateControlValues() {' in js
+    assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
+    assert 'const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {' in js
+    assert 'if (locked && !box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
+    assert 'syncControlValue($(config.xId), anchor.x);' in js
+    assert 'syncControlValue($(config.yId), anchor.y);' in js
+    assert 'resetOverlayPlacementBaseline(id);' in js
+    assert 'syncOverlayBadgeCoordinateControlValues();' in js
+    assert '["timer-x", "timer-y", "draw-x", "draw-y"]' not in js
