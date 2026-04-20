@@ -55,6 +55,7 @@ let overlayBadgeMeasureCanvas = null;
 let overlayAutoBubbleCacheKey = null;
 let overlayAutoBubbleCache = { width: 0, height: 0 };
 let customOverlayRenderKey = "";
+let textBoxRenderedPositionById = new Map();
 let pendingInspectorScrollTop = null;
 let lastInspectorUserScrollTop = 0;
 let lastInspectorUserScrollTs = 0;
@@ -1817,7 +1818,11 @@ function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
       return box;
     }
     if (field === "lock_to_stack") {
-      box.lock_to_stack = Boolean(rawValue);
+      const locked = Boolean(rawValue);
+      if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
+        return unlockedOverlayTextBox(box);
+      }
+      box.lock_to_stack = locked;
       return box;
     }
     if (field === "source") {
@@ -2114,6 +2119,10 @@ function buildTextBoxCard(box, index) {
   const card = document.createElement("section");
   card.className = "text-box-card";
   card.dataset.boxId = box.id;
+  const boxLockedToStack = Boolean(box.lock_to_stack);
+  const displayedCoordinates = boxLockedToStack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE
+    ? resolveRenderedTextBoxCoordinates(box.id, box)
+    : null;
   const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
   card.innerHTML = `
     <div class="text-box-card-header">
@@ -2195,8 +2204,8 @@ function buildTextBoxCard(box, index) {
   syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
   syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
   syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
-  syncControlValue(card.querySelector('[data-text-box-field="x"]'), box.x ?? "");
-  syncControlValue(card.querySelector('[data-text-box-field="y"]'), box.y ?? "");
+  syncControlValue(card.querySelector('[data-text-box-field="x"]'), displayedCoordinates?.x ?? box.x ?? "");
+  syncControlValue(card.querySelector('[data-text-box-field="y"]'), displayedCoordinates?.y ?? box.y ?? "");
   syncControlValue(card.querySelector('[data-text-box-field="width"]'), box.width || 0);
   syncControlValue(card.querySelector('[data-text-box-field="height"]'), box.height || 0);
   syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
@@ -2213,7 +2222,6 @@ function buildTextBoxCard(box, index) {
     : "Text to show over the video";
   const hint = card.querySelector('[data-text-box-hint="true"]');
   if (hint) hint.textContent = overlayTextBoxHint(box);
-  const boxLockedToStack = Boolean(box.lock_to_stack);
   const quadrantInput = card.querySelector('[data-text-box-field="quadrant"]');
   quadrantInput.disabled = boxLockedToStack;
   const xInput = card.querySelector('[data-text-box-field="x"]');
@@ -6073,6 +6081,78 @@ function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, ancho
   return true;
 }
 
+function resolveNormalizedPointFromRect(rect, frameRect) {
+  if (!rect || !frameRect) return null;
+  const width = Math.max(1, Number(frameRect.width) || 0);
+  const height = Math.max(1, Number(frameRect.height) || 0);
+  return {
+    x: Math.round(clamp((rect.left - frameRect.left + (rect.width / 2)) / width, 0, 1) * 10000) / 10000,
+    y: Math.round(clamp((rect.top - frameRect.top + (rect.height / 2)) / height, 0, 1) * 10000) / 10000,
+  };
+}
+
+function previewFrameRectForTextBoxes() {
+  const stage = $("video-stage");
+  if (!stage) return null;
+  return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+}
+
+function overlayTextBoxBadge(boxId) {
+  const customOverlay = $("custom-overlay");
+  if (!customOverlay) return null;
+  return [...customOverlay.querySelectorAll("[data-text-box-id]")].find(
+    (element) => element instanceof HTMLElement && element.dataset.textBoxId === boxId,
+  ) || null;
+}
+
+function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {
+  const frameRect = previewFrameRectForTextBoxes();
+  const badge = overlayTextBoxBadge(boxId);
+  const liveCoordinates = frameRect && badge instanceof HTMLElement
+    ? resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
+    : null;
+  if (liveCoordinates) return liveCoordinates;
+  const cachedCoordinates = textBoxRenderedPositionById.get(boxId) || null;
+  if (cachedCoordinates) return cachedCoordinates;
+  if (!fallbackBox) return null;
+  const fallbackX = normalizedCoordinateValue(fallbackBox.x);
+  const fallbackY = normalizedCoordinateValue(fallbackBox.y);
+  if (fallbackX === null || fallbackY === null) return null;
+  return { x: fallbackX, y: fallbackY };
+}
+
+function unlockedOverlayTextBox(box, coordinates = null) {
+  const nextCoordinates = coordinates
+    || resolveRenderedTextBoxCoordinates(box.id, box)
+    || {
+      x: normalizedCoordinateValue(box.x) ?? 0.5,
+      y: normalizedCoordinateValue(box.y) ?? 0.5,
+    };
+  return normalizeOverlayTextBox({
+    ...box,
+    lock_to_stack: false,
+    quadrant: CUSTOM_QUADRANT_VALUE,
+    x: nextCoordinates.x,
+    y: nextCoordinates.y,
+  });
+}
+
+function syncLockedTextBoxEditorCoordinates() {
+  overlayTextBoxes().forEach((box) => {
+    if (!box.lock_to_stack || box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) return;
+    const coordinates = resolveRenderedTextBoxCoordinates(box.id, box);
+    if (!coordinates) return;
+    const card = [...document.querySelectorAll(".text-box-card[data-box-id]")].find(
+      (element) => element instanceof HTMLElement && element.dataset.boxId === box.id,
+    );
+    if (!(card instanceof HTMLElement)) return;
+    const xInput = card.querySelector('[data-text-box-field="x"]');
+    const yInput = card.querySelector('[data-text-box-field="y"]');
+    if (xInput instanceof HTMLInputElement && xInput.disabled) syncControlValue(xInput, coordinates.x);
+    if (yInput instanceof HTMLInputElement && yInput.disabled) syncControlValue(yInput, coordinates.y);
+  });
+}
+
 function configureTextBoxGroup(group, quadrant, frameRect, scale = 1) {
   const [vertical = "top", horizontal = "left"] = String(quadrant || "top_left").split("_");
   const horizontalLayout = vertical === "middle";
@@ -6263,6 +6343,7 @@ function positionStackLockedTextBoxBadge(badge, frameRect, { terminalRect = null
 function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, anchorRect = null, terminalRect = null) {
   customOverlay.innerHTML = "";
   const textBoxGroups = new Map();
+  const nextRenderedPositions = new Map();
   let stackLockedPreviousRect = null;
   entries.forEach(({ box, index, textValue }) => {
     const resolvedSize = resolvedOverlayTextBoxSize(box);
@@ -6286,9 +6367,13 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
         previousRect: stackLockedPreviousRect,
         scale: overlayScale,
       });
+      const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
+      if (coordinates) nextRenderedPositions.set(box.id, coordinates);
       return;
     }
     if (positionTextBoxBadge(customBadge, box, frameRect, { anchorBadge: finalScoreBadge, anchorRect, scale: overlayScale })) {
+      const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
+      if (coordinates) nextRenderedPositions.set(box.id, coordinates);
       return;
     }
     customBadge.remove();
@@ -6304,7 +6389,10 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
       customOverlay.appendChild(group);
     }
     group.appendChild(customBadge);
+    const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
+    if (coordinates) nextRenderedPositions.set(box.id, coordinates);
   });
+  textBoxRenderedPositionById = nextRenderedPositions;
   customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
 }
 
@@ -6325,18 +6413,19 @@ function beginTextBoxDrag(event) {
     || !customOverlay.contains(customBadge)
   ) return;
   event.preventDefault();
-  if (box.lock_to_stack) {
+  const stage = $("video-stage");
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const badgeRect = customBadge.getBoundingClientRect();
+  if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
+    const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));
     const boxes = overlayTextBoxes().map((item) => item.id === boxId
-      ? normalizeOverlayTextBox({ ...item, lock_to_stack: false })
+      ? unlockedBox
       : item);
     setLocalOverlayTextBoxes(boxes);
     renderTextBoxEditors();
     syncOverlayPreviewStateFromControls();
     scheduleInteractionPreviewRender({ overlay: true });
   }
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const badgeRect = customBadge.getBoundingClientRect();
   const startX = clamp((badgeRect.left - frameRect.left + badgeRect.width / 2) / frameRect.width, 0, 1);
   const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);
   textBoxDrag = {
@@ -6744,6 +6833,7 @@ function renderLiveOverlay(positionMsOverride = null) {
       customOverlay.classList.remove("has-badge");
       customOverlayRenderKey = "";
     }
+    textBoxRenderedPositionById = new Map();
     return;
   }
   // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
@@ -6751,6 +6841,7 @@ function renderLiveOverlay(positionMsOverride = null) {
     renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
     customOverlayRenderKey = nextCustomOverlayKey;
   }
+  syncLockedTextBoxEditorCoordinates();
 }
 
 function requestOverlayFrame(video, tick) {
@@ -7539,7 +7630,7 @@ function scheduleThresholdApply() {
 async function applyThresholdNow() {
   pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");
   autoApplyShotMLSettings.cancel?.();
-  await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: true, update_app_defaults: true });
+  await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: true });
 }
 
 function scheduleShotMLSettingsApply() {
