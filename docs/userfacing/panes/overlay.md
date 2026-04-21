@@ -21,6 +21,7 @@ The Overlay pane controls the badges and summary markers drawn over the video. U
 
 | Control | What it does |
 | --- | --- |
+| `Overlay visibility` | Shows or hides the whole overlay and chooses the screen edge used for the default overlay band: `Hidden`, `Top`, `Bottom`, `Left`, or `Right`. |
 | `Badge size` | Chooses the overall badge scale. |
 | `Badge style` | Chooses `Square`, `Bubble`, or `Rounded Bubble`. |
 | `Shot gap` | Sets the spacing between badges inside the live shot stack. |
@@ -46,18 +47,20 @@ The Overlay pane controls the badges and summary markers drawn over the video. U
 
 ## How To Use It
 
-1. Pick `Badge size` and `Badge style` first so the rest of the placement work uses the right visual scale.
-2. Set `Shot gap`, `Frame padding`, and `Shots shown` to control how dense the shot stack feels.
-3. Choose `Quadrant` and `Shot flow` for the basic stack direction.
-4. Switch `Quadrant` to `Custom` when you need exact `Shot stack X` and `Shot stack Y` values.
-5. Keep `Lock timer badge to the shot stack`, `Lock draw badge to the shot stack`, and `Lock score badge to the shot stack` on if you want those badges to travel with the shot stack.
-6. Turn a lock off when a badge needs its own custom `X` and `Y` position.
-7. Leave `Bubble width` and `Bubble height` unset when you want SplitShot to size the badges automatically for the longest badge text in the current project.
-8. Finish by choosing the font, text styling, badge colors, and score text colors while watching the live preview.
+1. Set `Overlay visibility` first. Use `Hidden` when you want no badges in preview or export, or choose an edge when you want the overlay visible.
+2. Pick `Badge size` and `Badge style` so the rest of the placement work uses the right visual scale.
+3. Set `Shot gap`, `Frame padding`, and `Shots shown` to control how dense the shot stack feels.
+4. Choose `Quadrant` and `Shot flow` for the basic stack direction.
+5. Switch `Quadrant` to `Custom` when you need exact `Shot stack X` and `Shot stack Y` values.
+6. Keep `Lock timer badge to the shot stack`, `Lock draw badge to the shot stack`, and `Lock score badge to the shot stack` on if you want those badges to travel with the shot stack.
+7. Turn a lock off when a badge needs its own custom `X` and `Y` position.
+8. Leave `Bubble width` and `Bubble height` unset when you want SplitShot to size the badges automatically for the longest badge text in the current project.
+9. Finish by choosing the font, text styling, badge colors, and score text colors while watching the live preview.
 
 ## Live Preview Expectations
 
 - Overlay changes auto-apply while you work.
+- The preview keeps overlay badges above the browser's native video controls so drag targets do not sit under the control bar.
 - `Custom` shot-stack coordinates only apply when `Quadrant` is set to `Custom`.
 - `Stack locked` means the badge is currently following the shot stack instead of using independent coordinates.
 - Score text colors only change the score tokens inside the badge. They do not replace the badge background color.
@@ -72,6 +75,7 @@ The Overlay pane controls the badges and summary markers drawn over the video. U
 
 | Problem | Fix |
 | --- | --- |
+| No badges appear in preview. | Set `Overlay visibility` to an edge instead of `Hidden`, then confirm the relevant Review visibility toggles are on. |
 | `Shot stack X` and `Shot stack Y` are not doing anything. | Set `Quadrant` to `Custom` first. |
 | A timer, draw, or score badge will not move. | Turn off the matching lock-to-stack checkbox. |
 | The score text color changed but the badge background did not. | That is expected. `Score Text Colors` only affect the text tokens. |
@@ -83,5 +87,5 @@ The Overlay pane controls the badges and summary markers drawn over the video. U
 Previous: [pip.md](pip.md)
 Next: [review.md](review.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-21
+**Referenced files last updated:** 2026-04-21

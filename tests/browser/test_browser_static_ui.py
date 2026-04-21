@@ -229,6 +229,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert html.index('id="waveform"') < html.index('class="waveform-actions waveform-footer"')
     assert 'id="badge-style-grid"' in html
     assert 'id="score-color-grid"' in html
+    assert 'id="overlay-position"' in html
+    assert '<option value="none">Hidden</option>' in html
+    assert '<option value="bottom">Bottom</option>' in html
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
     assert 'id="merge-media-input"' in html
@@ -386,7 +389,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'overlay: readOverlayPayload(),' in js
     assert 'merge: {' in js
     assert 'scoring: {' in js
-    assert 'position: state.project.overlay.position,' in js
+    assert 'position: $("overlay-position").value,' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
     assert 'await callApi("/api/export", buildExportPayload(path));' in js
@@ -476,6 +479,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
     assert "const BADGE_FONT_SIZES = {" in js
+    assert "const PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX = 48;" in js
     assert "function syncOverlayFontSizePreset()" in js
     assert "function ensureShotQuadrantDefaults()" in js
     assert 'activity("layout.resize.start"' in js
@@ -491,6 +495,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function syncOverlayTextBoxSizeControls(boxId) {' in js
     assert 'function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {' in js
     assert 'function beginTextBoxDrag(event) {' in js
+    assert 'if (textBoxDrag) return;' in js
     assert 'function moveTextBoxDrag(event) {' in js
     assert 'function endTextBoxDrag(event) {' in js
     assert 'function normalizePopupMotionPath(path) {' in js
@@ -561,8 +566,19 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const customBadge = event.target instanceof Element' in js
     assert 'customBadge.dataset.textBoxDrag = "true";' in js
     assert 'customBadge.dataset.textBoxId = box.id;' in js
+    assert 'customBadge.dataset.textBoxSource = box.source || "manual";' in js
+    assert 'box = overlayTextBoxes().find((item) => item.source === customBadge.dataset.textBoxSource);' in js
+    assert '$("video-stage").addEventListener("pointerdown", beginTextBoxDrag, true);' in js
+    assert '$("video-stage").addEventListener("mousedown", beginTextBoxDrag, true);' in js
+    assert 'document.addEventListener("pointerdown", beginTextBoxDrag, true);' in js
+    assert 'document.addEventListener("mousedown", beginTextBoxDrag, true);' in js
+    assert 'document.addEventListener("mousemove", moveTextBoxDrag);' in js
+    assert 'document.addEventListener("mouseup", endTextBoxDrag);' in js
     assert 'if (positionTextBoxBadge(customBadge, box, frameRect, {' in js
     assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
+    assert 'const renderedTextBoxCount = customOverlay.querySelectorAll("[data-text-box-drag=\'true\']").length;' in js
+    assert 'if (nextCustomOverlayKey !== customOverlayRenderKey || renderedTextBoxCount !== textBoxEntries.length) {' in js
+    assert 'customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);' in js
     assert 'if (result) setActiveTool("scoring");' not in js
     assert 'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));' in js
     assert '$("show-export-log")?.addEventListener("click", openExportLogModal);' in js
@@ -595,7 +611,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded");' in js
     assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");' in js
     assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
-    assert js.index('setActiveTool(normalized.active_tool, { persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
+    assert 'function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {' in js
+    assert 'if (changed || (collapseExpandedLayout && hadExpandedLayout)) {' in js
+    assert 'setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });' in js
+    assert 'setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });' in js
+    assert js.index('setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
+    assert 'const PIP_DEFAULTS_SECTION_ID = "pip-defaults";' in js
+    assert 'if (sourceId === PIP_DEFAULTS_SECTION_ID) return true;' in js
+    assert 'if (firstSource && sourceId === sourceIdentifier(firstSource, "0")) return true;' in js
+    assert 'if (sourceId === PIP_DEFAULTS_SECTION_ID) return;' in js
     assert '/media/primary-audio' not in js
     assert 'function primaryAudioPreviewNeeded(video) {' not in js
     assert 'function ensurePrimaryAudioPreview(video) {' not in js
@@ -608,12 +632,17 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";' in js
     assert 'const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;' in js
     assert 'const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;' in js
+    assert 'const currentResultLabel = state.scoring_summary?.display_label || "Result";' in js
+    assert 'const currentResultValue = state.scoring_summary?.display_value || "";' in js
     assert '["Source File", importedSourceFile],' in js
     assert '["Match Type", importedMatchType],' in js
-    assert '["Official Raw Time", formatPractiScoreTime(importedOfficialRawSeconds)],' in js
-    assert '["Video Raw Time", formatPractiScoreTime(videoRawSeconds)],' in js
-    assert '["Time Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
-    assert '["Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
+    assert '["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],' in js
+    assert '["Video Raw", formatPractiScoreTime(videoRawSeconds)],' in js
+    assert '["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
+    assert '[currentResultLabel, currentResultValue],' in js
+    assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
+    assert 'syncControlValue($("overlay-position"), state.project.overlay.position);' in js
+    assert 'position: $("overlay-position").value,' in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
@@ -654,9 +683,12 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "setActivePage" not in js
     assert 'let overlayFrameMode = null;' in js
     assert 'function overlayRenderPositionMs(video, mediaTimeS = null) {' in js
+    assert 'function previewOverlayFrameRect(frameRect, video) {' in js
     assert 'function requestOverlayFrame(video, tick) {' in js
     assert 'function cancelOverlayFrame(video) {' in js
     assert 'renderLiveOverlay(positionMsOverride = null)' in js
+    assert 'const textBoxDragging = customOverlay.classList.contains("dragging");' in js
+    assert 'if (textBoxDragging) customOverlay.classList.add("dragging");' in js
     assert 'function browserShotPresentationLagFrames(video = $("primary-video")) {' in js
     assert 'return "mozPaintedFrames" in video ? 1 : 0;' in js
     assert 'function shotDisplayTimeMs(shotTimeMs, video = $("primary-video")) {' in js
@@ -846,6 +878,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'badge.style.fontWeight = state.project.overlay.font_bold ? "700" : "400";' in js
     assert 'badge.style.wordBreak = "normal";' in js
     assert 'const frameGeometry = previewFrameGeometry(video, stage);' in js
+    assert 'const frameRect = roundedRect(previewOverlayFrameRect(frameGeometry?.frameRect || stage.getBoundingClientRect(), video));' in js
     assert 'const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="background_color"]\'));' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="text_color"]\'));' in js

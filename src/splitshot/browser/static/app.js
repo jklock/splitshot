@@ -83,6 +83,7 @@ const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
+const PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX = 48;
 const TIMING_COLUMN_DEFAULTS = Object.freeze({
   lock: 72,
   segment: 160,
@@ -114,6 +115,7 @@ const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
   "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "adjustment", "final", "delete", "restore"],
 });
 const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "adjustment", "final"]);
+const PIP_DEFAULTS_SECTION_ID = "pip-defaults";
 const METRICS_TABLE_COLUMNS = Object.freeze([
   ["Shot", "segment"],
   ["ShotML Split", "shotmlSplit"],
@@ -1610,7 +1612,7 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
     [...timingAdjustmentDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
   );
   timingColumnWidths = resolvedTimingColumnWidths(normalized.timing_column_widths);
-  setActiveTool(normalized.active_tool, { persistUiState: false });
+  setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });
   setWaveformMode(normalized.waveform_mode, { persistUiState: false });
   setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });
   setTimingExpanded(normalized.timing_expanded, { persistUiState: false });
@@ -1664,6 +1666,9 @@ function mergeSourceById(sourceId) {
 function isMergeSourceExpanded(sourceId) {
   if (!sourceId) return false;
   if (mergeSourceExpansion.has(sourceId)) return Boolean(mergeSourceExpansion.get(sourceId));
+  if (sourceId === PIP_DEFAULTS_SECTION_ID) return true;
+  const firstSource = state?.project?.merge_sources?.[0] || null;
+  if (firstSource && sourceId === sourceIdentifier(firstSource, "0")) return true;
   return false;
 }
 
@@ -2063,6 +2068,7 @@ function syncOverlayPreviewStateFromControls() {
   if (!state?.project) return;
   const payload = readOverlayPayload();
   const overlay = state.project.overlay;
+  overlay.position = payload.position;
   overlay.badge_size = payload.badge_size;
   overlay.style_type = payload.style_type;
   overlay.spacing = Math.max(0, Number(payload.spacing || 0));
@@ -2407,7 +2413,7 @@ function renderCollapsibleInspectorSections() {
 
   const pipDefaults = document.querySelector('[data-inspector-section="pip-defaults"]');
   if (pipDefaults instanceof HTMLElement) {
-    const sectionId = "pip-defaults";
+    const sectionId = PIP_DEFAULTS_SECTION_ID;
     const expanded = isMergeSourceExpanded(sectionId);
     pipDefaults.classList.toggle("collapsed", !expanded);
     ensureSectionToggle(pipDefaults, expanded, () => {
@@ -2946,6 +2952,7 @@ function collapseMinimizableInspectorItems({ syncUiState: shouldSyncUiState = tr
     }
   });
   mergeSourceExpansion.forEach((expanded, sourceId) => {
+    if (sourceId === PIP_DEFAULTS_SECTION_ID) return;
     if (expanded) {
       mergeSourceExpansion.set(sourceId, false);
       changed = true;
@@ -3730,7 +3737,7 @@ function endLayoutResize(event) {
   flushDeferredRender();
 }
 
-function setActiveTool(tool, { persistUiState = true } = {}) {
+function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
@@ -3739,7 +3746,7 @@ function setActiveTool(tool, { persistUiState = true } = {}) {
     || root?.classList.contains("metrics-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
-  if (changed) {
+  if (changed || (collapseExpandedLayout && hadExpandedLayout)) {
     collapseMinimizableInspectorItems({ persistUiState, rerender: false });
     root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
     const expand = $("expand-waveform");
@@ -6042,15 +6049,18 @@ function renderPractiScoreSummaries() {
   const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";
   const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
   const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;
+  const currentResultLabel = state.scoring_summary?.display_label || "Result";
+  const currentResultValue = state.scoring_summary?.display_value || "";
   $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
   $("scoring-imported-caption").textContent = `Imported ${formatMatchType(imported.match_type)} data for ${imported.competitor_name}.`;
   renderDetailsList("practiscore-import-summary", [
     ["Source File", importedSourceFile],
     ["Match Type", importedMatchType],
-    ["Official Raw Time", formatPractiScoreTime(importedOfficialRawSeconds)],
-    ["Video Raw Time", formatPractiScoreTime(videoRawSeconds)],
-    ["Time Delta", formatPractiScoreTime(rawDeltaSeconds)],
-    ["Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
+    ["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],
+    ["Video Raw", formatPractiScoreTime(videoRawSeconds)],
+    ["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],
+    [currentResultLabel, currentResultValue],
+    ["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
   ]);
   renderDetailsList("scoring-imported-summary", [
     ["Source", imported.source_name || "Selected file"],
@@ -6652,6 +6662,7 @@ function renderControls() {
   $("pip-size-label").textContent = `${pipValue}%`;
   syncControlValue($("pip-x"), state.project.merge.pip_x ?? 1);
   syncControlValue($("pip-y"), state.project.merge.pip_y ?? 1);
+  syncControlValue($("overlay-position"), state.project.overlay.position);
   syncControlValue($("badge-size"), state.project.overlay.badge_size);
   overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
@@ -7463,6 +7474,18 @@ function previewFrameClientRect(video, container) {
   };
 }
 
+function previewOverlayFrameRect(frameRect, video) {
+  if (!frameRect) return null;
+  const safeBottom = video?.controls
+    ? Math.min(PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX, Math.max(0, frameRect.height * 0.18))
+    : 0;
+  if (safeBottom <= 0) return frameRect;
+  return {
+    ...frameRect,
+    height: Math.max(1, frameRect.height - safeBottom),
+  };
+}
+
 function overlayDisplayScale(video, frameRect, outputWidth = null) {
   if (!video || !frameRect) return 1;
   const sourceWidth = Number(outputWidth) || Number(video.videoWidth) || 0;
@@ -7870,6 +7893,7 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
     customBadge.dataset.textBoxDrag = "true";
     customBadge.dataset.textBoxId = box.id;
     customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
+    customBadge.dataset.textBoxSource = box.source || "manual";
     customOverlay.appendChild(customBadge);
     if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
       stackLockedPreviousRect = positionStackLockedTextBoxBadge(customBadge, frameRect, {
@@ -7914,12 +7938,17 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
 }
 
 function beginTextBoxDrag(event) {
+  if (textBoxDrag) return;
   const customOverlay = $("custom-overlay");
   const customBadge = event.target instanceof Element
     ? event.target.closest("[data-text-box-drag]")
     : null;
-  const boxId = customBadge?.dataset?.textBoxId || "";
-  const box = overlayTextBoxes().find((item) => item.id === boxId);
+  const renderedBoxId = customBadge?.dataset?.textBoxId || "";
+  let box = overlayTextBoxes().find((item) => item.id === renderedBoxId);
+  if (!box && customBadge?.dataset?.textBoxSource) {
+    box = overlayTextBoxes().find((item) => item.source === customBadge.dataset.textBoxSource);
+  }
+  const boxId = box?.id || renderedBoxId;
   if (
     event.button !== 0
     || !customOverlay
@@ -8332,8 +8361,10 @@ function renderLiveOverlay(positionMsOverride = null) {
   const popupOverlay = $("popup-overlay");
   const scoreLayer = $("score-layer");
   const position = state.project.overlay.position;
+  const textBoxDragging = customOverlay.classList.contains("dragging");
   overlay.className = `live-overlay overlay-${position}`;
   customOverlay.className = `live-overlay overlay-${position}`;
+  if (textBoxDragging) customOverlay.classList.add("dragging");
   overlay.innerHTML = "";
   scoreLayer.innerHTML = "";
   if (!state.media.primary_available) {
@@ -8346,7 +8377,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   const stage = $("video-stage");
   const video = $("primary-video");
   const frameGeometry = previewFrameGeometry(video, stage);
-  const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
+  const frameRect = roundedRect(previewOverlayFrameRect(frameGeometry?.frameRect || stage.getBoundingClientRect(), video));
   const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
   const positionMs = Number.isFinite(positionMsOverride)
     ? Math.max(0, Math.floor(positionMsOverride))
@@ -8483,10 +8514,12 @@ function renderLiveOverlay(positionMsOverride = null) {
     return;
   }
   // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
-  if (nextCustomOverlayKey !== customOverlayRenderKey) {
+  const renderedTextBoxCount = customOverlay.querySelectorAll("[data-text-box-drag='true']").length;
+  if (nextCustomOverlayKey !== customOverlayRenderKey || renderedTextBoxCount !== textBoxEntries.length) {
     renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
     customOverlayRenderKey = nextCustomOverlayKey;
   }
+  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
   syncOverlayBadgeCoordinateControlValues();
   syncLockedTextBoxEditorCoordinates();
 }
@@ -8558,7 +8591,7 @@ function render() {
     renderControls();
     renderSelection();
     renderLiveOverlay();
-    setActiveTool(activeTool, { persistUiState: false });
+    setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
   });
   flushPendingInspectorScrollRestore();
 }
@@ -8859,7 +8892,7 @@ function readOverlayPayload() {
   const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));
   const primaryTextBox = preferredLegacyTextBox(textBoxes);
   return {
-    position: state.project.overlay.position,
+    position: $("overlay-position").value,
     badge_size: $("badge-size").value,
     styles,
     scoring_colors: scoringColors,
@@ -9585,6 +9618,10 @@ function wireEvents() {
   $("timing-event-kind").addEventListener("change", syncTimingEventLabelState);
   $("add-timing-event").addEventListener("click", addTimingEvent);
   $("video-stage").addEventListener("pointerdown", beginOverlayBadgeDrag);
+  $("video-stage").addEventListener("pointerdown", beginTextBoxDrag, true);
+  $("video-stage").addEventListener("mousedown", beginTextBoxDrag, true);
+  document.addEventListener("pointerdown", beginTextBoxDrag, true);
+  document.addEventListener("mousedown", beginTextBoxDrag, true);
   $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
   $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
   $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
@@ -9598,6 +9635,7 @@ function wireEvents() {
   });
   [
     "max-visible-shots",
+    "overlay-position",
     "shot-quadrant",
     "shot-direction",
     "overlay-custom-x",
@@ -9690,6 +9728,8 @@ function wireEvents() {
   document.addEventListener("pointerup", endTextBoxDrag);
   document.addEventListener("pointercancel", endTextBoxDrag);
   document.addEventListener("lostpointercapture", endTextBoxDrag);
+  document.addEventListener("mousemove", moveTextBoxDrag);
+  document.addEventListener("mouseup", endTextBoxDrag);
   document.addEventListener("pointermove", movePopupBubbleDrag);
   document.addEventListener("pointerup", endPopupBubbleDrag);
   document.addEventListener("pointercancel", endPopupBubbleDrag);
@@ -9787,7 +9827,7 @@ function wireEvents() {
 }
 
 applyLayoutState();
-setActiveTool(activeTool, { persistUiState: false });
+setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
 wireGlobalActivityLogging();
 wireEvents();
 startActivityPolling();

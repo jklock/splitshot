@@ -54,6 +54,7 @@ The Review pane controls what preview-only artifacts stay visible and manages th
 
 - Imported summary boxes appear after the final shot when imported PractiScore data exists.
 - `Above Final Box` keeps the box centered above the final score badge once that badge appears.
+- Dragging a rendered imported summary box switches it to custom placement and saves the new `Box X` and `Box Y` through the overlay settings.
 - If PractiScore is not imported yet, the summary box stays empty until stage data is available.
 
 ## How It Affects The Rest Of SplitShot
@@ -77,5 +78,5 @@ The Review pane controls what preview-only artifacts stay visible and manages th
 Previous: [overlay.md](overlay.md)
 Next: [export.md](export.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-21
+**Referenced files last updated:** 2026-04-21

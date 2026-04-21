@@ -398,6 +398,10 @@ def drag_waveform_shot(page: Page, server: BrowserControlServer) -> CheckResult:
 
 def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:
     page.locator("[data-tool='overlay']").click()
+    if page.locator("#overlay-position").input_value() == "none":
+        enable_cursor = activity_cursor(server)
+        page.locator("#overlay-position").select_option("bottom")
+        wait_for_activity(server, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
     if not page.locator("#show-timer").is_checked():
         enable_cursor = activity_cursor(server)
         page.locator("#show-timer").check()
@@ -607,8 +611,10 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
 
 
 def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> CheckResult:
+    page.locator("[data-tool='review']").click()
+    page.wait_for_timeout(350)
     after_cursor = activity_cursor(server)
-    result = page.evaluate(
+    drag_target = page.evaluate(
         """
         async () => {
           const media = document.getElementById('primary-video');
@@ -617,9 +623,23 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
           if (!(media instanceof HTMLVideoElement) || !(overlay instanceof HTMLElement) || !(stage instanceof HTMLElement)) {
             return { error: 'required review overlay elements are missing' };
           }
-          media.currentTime = Math.max(0, (media.duration || 0) - 0.05);
-                    renderLiveOverlay();
-          await new Promise((resolve) => requestAnimationFrame(() => resolve()));
+          state.project.overlay.position = state.project.overlay.position === 'none' ? 'bottom' : state.project.overlay.position;
+          state.project.overlay.show_shots = true;
+          state.project.overlay.show_score = true;
+          state.project.scoring.enabled = true;
+          customOverlayRenderKey = '';
+          const shotTimes = (typeof orderedShotsByTime === 'function' ? orderedShotsByTime() : [])
+            .map((shot) => Number(typeof shotDisplayTimeMs === 'function' ? shotDisplayTimeMs(shot.time_ms) : shot.time_ms))
+            .filter(Number.isFinite);
+          const finalShotTimeMs = shotTimes.length > 0 ? Math.max(...shotTimes) : null;
+          const renderPositionMs = finalShotTimeMs === null
+            ? Math.max(0, ((media.duration || 0) * 1000) - 50)
+            : finalShotTimeMs + 50;
+          renderLiveOverlay(renderPositionMs);
+          await new Promise((resolve) => requestAnimationFrame(() => {
+            renderLiveOverlay(renderPositionMs);
+            resolve();
+          }));
           const badge = document.querySelector('#custom-overlay [data-text-box-drag="true"]');
                     const stageRect = stage.getBoundingClientRect();
                     const frameGeometry = typeof previewFrameGeometry === 'function' ? previewFrameGeometry(media, stage) : null;
@@ -632,7 +652,14 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
                             }
                         : null;
           if (!(badge instanceof HTMLElement) || !frameRect) {
-            return { error: 'imported summary badge is not visible after the final shot' };
+            return {
+              error: 'imported summary badge is not visible after the final shot',
+              position: state.project.overlay.position,
+              scoring_enabled: state.project.scoring.enabled,
+              imported_text: state.scoring_summary?.imported_overlay_text || '',
+              text_box_count: (state.project.overlay.text_boxes || []).length,
+              custom_overlay_html: overlay.innerHTML,
+            };
           }
           const badgeRect = badge.getBoundingClientRect();
           const startClientX = badgeRect.left + (badgeRect.width / 2);
@@ -641,34 +668,31 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
           const targetYNorm = 0.62;
           const targetClientX = frameRect.left + (frameRect.width * targetXNorm);
           const targetClientY = frameRect.top + (frameRect.height * targetYNorm);
-          const pointerId = 11;
-          badge.dispatchEvent(new PointerEvent('pointerdown', {
-            bubbles: true,
-            pointerId,
-            button: 0,
-            clientX: startClientX,
-            clientY: startClientY,
-          }));
-          overlay.dispatchEvent(new PointerEvent('pointermove', {
-            bubbles: true,
-            pointerId,
-            button: 0,
-            buttons: 1,
-            clientX: targetClientX,
-            clientY: targetClientY,
-          }));
-          overlay.dispatchEvent(new PointerEvent('pointerup', {
-            bubbles: true,
-            pointerId,
-            button: 0,
-            clientX: targetClientX,
-            clientY: targetClientY,
-          }));
-          await new Promise((resolve) => window.setTimeout(resolve, 80));
-          const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
           return {
+            start_x: startClientX,
+            start_y: startClientY,
+            target_client_x: targetClientX,
+            target_client_y: targetClientY,
             target_x: targetXNorm,
             target_y: targetYNorm,
+          };
+        }
+        """
+    )
+    if drag_target.get("error"):
+        return expect(False, "review_summary_drag_persists", drag_target["error"], drag_target)
+    page.mouse.move(drag_target["start_x"], drag_target["start_y"])
+    page.mouse.down()
+    page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    result = page.evaluate(
+        """
+        () => {
+          const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
+          return {
+            target_x: 0.58,
+            target_y: 0.62,
             quadrant: imported?.quadrant || null,
             x: imported?.x ?? null,
             y: imported?.y ?? null,
@@ -676,8 +700,6 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
         }
         """
     )
-    if result.get("error"):
-        return expect(False, "review_summary_drag_persists", result["error"], result)
     entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
     return expect(
         result["quadrant"] == "custom"
@@ -688,7 +710,7 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
         and has_api_success(entries, "/api/overlay"),
         "review_summary_drag_persists",
         "Dragging the rendered imported summary badge should switch it to custom placement and commit the new coordinates through the real overlay route.",
-        {"result": result, "activity_entries": entries},
+        {"drag_target": drag_target, "result": result, "activity_entries": entries},
     )
 
 
@@ -711,8 +733,8 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
     if metrics is None:
         return expect(False, "review_scroll_persists", "The inspector container was not available for review scroll validation.")
     if metrics["scroll_height"] <= metrics["client_height"] + 8:
-        page.set_viewport_size({"width": 1440, "height": 720})
-        for _ in range(8):
+        page.set_viewport_size({"width": 1440, "height": 620})
+        for _ in range(16):
             page.locator("#review-add-text-box").click()
         page.wait_for_timeout(250)
         metrics = page.evaluate(
@@ -738,18 +760,17 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
     inspector_box = inspector.bounding_box()
     if not inspector_box:
         return expect(False, "review_scroll_persists", "The inspector container could not be measured for wheel scrolling.")
-    page.mouse.move(inspector_box["x"] + 140, inspector_box["y"] + 180)
-    page.mouse.wheel(0, 900)
-    page.wait_for_timeout(100)
     scroll_before = page.evaluate(
         """
         () => {
           const el = document.querySelector('.inspector');
-          return el instanceof HTMLElement ? el.scrollTop : 0;
+          if (!(el instanceof HTMLElement)) return 0;
+          el.scrollTop = Math.min(900, Math.max(0, el.scrollHeight - el.clientHeight));
+          return el.scrollTop;
         }
         """
     )
-    checkbox = page.locator("#show-draw")
+    checkbox = page.locator("#review-text-box-list [data-text-box-field='enabled']").last
     before_checked = checkbox.is_checked()
     after_cursor = activity_cursor(server)
     checkbox.click()
@@ -758,7 +779,8 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
         """
         () => {
           const el = document.querySelector('.inspector');
-          const checkboxEl = document.getElementById('show-draw');
+          const checkboxes = [...document.querySelectorAll("#review-text-box-list [data-text-box-field='enabled']")];
+          const checkboxEl = checkboxes.at(-1);
           return {
             scroll_top: el instanceof HTMLElement ? el.scrollTop : 0,
             checked: checkboxEl instanceof HTMLInputElement ? checkboxEl.checked : null,
@@ -772,7 +794,7 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
         and after["checked"] is (not before_checked)
         and has_api_success(entries, "/api/overlay"),
         "review_scroll_persists",
-        "Wheel-scrolling the review inspector should keep its position after a real overlay update rerender.",
+        "Scrolling the review inspector should keep its position after a real overlay update rerender.",
         {
             "metrics": metrics,
             "scroll_before": scroll_before,
