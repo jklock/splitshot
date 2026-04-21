@@ -13,6 +13,7 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [userfacing/panes/score.md](userfacing/panes/score.md)
 - [userfacing/panes/pip.md](userfacing/panes/pip.md)
 - [userfacing/panes/overlay.md](userfacing/panes/overlay.md)
+- [userfacing/panes/popup.md](userfacing/panes/popup.md)
 - [userfacing/panes/review.md](userfacing/panes/review.md)
 - [userfacing/panes/export.md](userfacing/panes/export.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
@@ -54,5 +55,5 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-04-19
-**Referenced files last updated:** 2026-04-19
+**Last updated:** 2026-04-20
+**Referenced files last updated:** 2026-04-20

@@ -21,17 +21,19 @@ This is the fastest end-to-end path from a raw stage video to a finished local e
 8. If you want official match context, return to [panes/project.md](panes/project.md) and import the PractiScore file.
 9. Open [panes/score.md](panes/score.md), enable scoring, choose the correct preset, and score each shot.
 10. Open [panes/overlay.md](panes/overlay.md) and set the badge layout, font, colors, and score badge placement.
-11. Open [panes/review.md](panes/review.md) and verify which badges should appear in preview and export. Add any custom review text boxes or imported summary boxes here.
-12. If you need extra media, open [panes/pip.md](panes/pip.md), add each file, and fine-tune size, position, and sync.
-13. Open [panes/metrics.md](panes/metrics.md) when you want a dashboard view or a CSV/text export of the run.
-14. Finish in [panes/export.md](panes/export.md), choose an output preset or custom settings, set the output path, and render the final video.
-15. Keep the chosen project folder so SplitShot can reopen the same bundle later.
+11. Open [panes/popup.md](panes/popup.md) when you want score or penalty bubbles. Use `Add Bubble` for the selected shot, or `Import Shots` to create one popup per shot.
+12. Open [panes/review.md](panes/review.md) and verify which badges should appear in preview and export. Add any custom review text boxes or imported summary boxes here.
+13. If you need extra media, open [panes/pip.md](panes/pip.md), add each file, and fine-tune size, position, and sync.
+14. Open [panes/metrics.md](panes/metrics.md) when you want the expanded table or a CSV/text export of the run.
+15. Finish in [panes/export.md](panes/export.md), choose an output preset or custom settings, set the output path, and render the final video.
+16. Keep the chosen project folder so SplitShot can reopen the same bundle later.
 
 ## Practical Order Of Operations
 
 - Do ShotML tuning before manual timing. A rerun replaces the automatic shot draft.
 - Do timing work before scoring. A changed shot list changes score rows, metrics, and overlay timing.
 - Import PractiScore after the timing pass is stable. That makes it easier to compare official context against the final shot list.
+- Create shot-linked popups after scoring. PopUp derives shot-linked text from the current score and penalties.
 - Tune Overlay before Review if you want review text boxes to line up with the final badge stack.
 - Add PiP media after the main angle is stable. It is easier to sync and place secondary media once the primary timeline is finished.
 - Export only after you have scrubbed near the final shot and confirmed the score summary, review boxes, and PiP layout.
@@ -47,6 +49,7 @@ This is the fastest end-to-end path from a raw stage video to a finished local e
 - [panes/project.md](panes/project.md) for setup details.
 - [panes/shotml.md](panes/shotml.md) for detector tuning and timing-change proposals.
 - [panes/export.md](panes/export.md) for render settings.
+- [panes/popup.md](panes/popup.md) for shot-linked score and penalty popups.
 - [troubleshooting.md](troubleshooting.md) if any step behaves differently than expected.
 
 **Last updated:** 2026-04-20

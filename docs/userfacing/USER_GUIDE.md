@@ -13,7 +13,7 @@ SplitShot is a local-first browser app for reviewing stage footage from first im
 
 Every SplitShot session uses the same four-part layout:
 
-- The left rail switches between Project, Score, Splits, ShotML, PiP, Overlay, Review, Export, and Metrics.
+- The left rail switches between Project, Score, Splits, ShotML, PiP, Overlay, PopUp, Review, Export, and Metrics.
 - The status bar at the top reports the active file and current status message.
 - The center workspace shows the video, overlays, and waveform review area.
 - The right inspector changes to match the active pane.
@@ -30,6 +30,7 @@ The video stage, waveform panel, and inspector can be resized. Unlock a region b
 | [panes/score.md](panes/score.md) | Scoring presets, per-shot scores, penalties, restore actions, and imported score context |
 | [panes/pip.md](panes/pip.md) | PiP media, per-item sync, position, size, and export inclusion |
 | [panes/overlay.md](panes/overlay.md) | Shot badge layout, timer/draw/final badge placement, fonts, and colors |
+| [panes/popup.md](panes/popup.md) | Shot-linked score and penalty popups, imported shot popups, popup timing, and popup minimization |
 | [panes/review.md](panes/review.md) | Preview visibility toggles, summary boxes, custom text boxes, and review placement |
 | [panes/export.md](panes/export.md) | Export presets, frame settings, codecs, output path, logs, and final render workflow |
 | [panes/metrics.md](panes/metrics.md) | Stage dashboard, timing trends, scoring context, and CSV/text exports |

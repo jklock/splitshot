@@ -63,6 +63,7 @@ SplitShot's current Score pane is shot-local. Ruleset-specific penalty inputs li
 
 - Metrics updates the result, penalties, and scoring context immediately.
 - Overlay uses the current scoring summary and score text colors for the final score badge.
+- PopUp uses the current per-shot score and penalties for shot-linked popup text.
 - Review uses the same scoring summary for imported summary boxes and final-stage presentation.
 - Export burns in the current scoring state, not the original untouched run.
 
@@ -75,6 +76,7 @@ SplitShot's current Score pane is shot-local. Ruleset-specific penalty inputs li
 | The imported summary does not match the run. | Recheck the PractiScore stage and competitor selection in [project.md](project.md). |
 | You expected a separate global penalty field. | Use the per-shot penalty inputs in the visible shot rows. The current pane is shot-local. |
 | Metrics or Overlay changed after rescoring. | That is expected. Those panes use the live scoring summary from the current shot list. |
+| A PopUp changed after rescoring. | That is expected for shot-linked popups. Edit the score row when you want the popup text to change. |
 
 ## Related Guides
 

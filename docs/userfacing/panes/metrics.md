@@ -21,7 +21,8 @@ The Metrics pane is the read-only dashboard for the current run. It summarizes t
 
 | Control | What it does |
 | --- | --- |
-| Summary cards | Show `Draw`, `Raw`, `Shots`, `Avg Split`, `Beep`, and the final scoring result. |
+| Summary cards | Show `Draw`, `Raw`, `Shots`, `Avg Split`, `Beep`, and the final scoring result in the inspector pane. |
+| `Expand` | Opens the full-width Metrics workbench as one dense table. |
 | `Trend Snapshot` | Lists each timeline row with its absolute time, split, run total, and stage total. |
 | Confidence context | Shows ShotML confidence for detected shots or `Manual` when a row came from a manual timing edit. |
 | Scoring context | Shows the current ruleset, result, shot points, penalties, raw time, and imported source. |
@@ -36,9 +37,10 @@ The Metrics pane is the read-only dashboard for the current run. It summarizes t
 
 1. Read the summary cards first for the headline numbers: draw time, raw time, shot count, average split, beep timing, and result.
 2. Use `Trend Snapshot` when you want the row-by-row story of the run.
-3. Check the `Scoring Context` block when you need to confirm the ruleset, result, penalty total, raw time, or imported source.
-4. Click `Export CSV` when you want to graph the run or compare it in a spreadsheet.
-5. Click `Export Text` when you want a note-friendly summary that can be pasted into a message, training log, or document.
+3. Click `Expand` when you want the big table view with shot, ShotML split, adjustment, final split, final time, score, penalties, PractiScore comparison, delta, confidence, and action context.
+4. Check the `Scoring Context` block when you need to confirm the ruleset, result, penalty total, raw time, or imported source.
+5. Click `Export CSV` when you want to graph the run or compare it in a spreadsheet.
+6. Click `Export Text` when you want a note-friendly summary that can be pasted into a message, training log, or document.
 
 ## What The Metrics Mean
 
@@ -57,7 +59,7 @@ The Metrics pane is the read-only dashboard for the current run. It summarizes t
 
 ## How It Affects The Rest Of SplitShot
 
-Metrics is read-only. It does not edit the project directly, but it changes immediately when you edit Splits or Score because it is built from the current timing rows and scoring summary.
+Metrics is read-only. It does not edit the project directly, but it changes immediately when you edit Splits, Score, or PractiScore context because it is built from the current timing rows and scoring summary.
 
 ## Common Mistakes And Fixes
 
@@ -73,5 +75,5 @@ Metrics is read-only. It does not edit the project directly, but it changes imme
 Previous: [export.md](export.md)
 Next: [../workflow.md](../workflow.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-20
+**Referenced files last updated:** 2026-04-20
