@@ -9,7 +9,7 @@ import pytest
 from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.browser.server import BrowserControlServer
-from splitshot.domain.models import PopupBubble, PopupMotionPoint, ShotEvent, ShotSource
+from splitshot.domain.models import PopupBubble, PopupMotionPoint, ScoreLetter, ScoreMark, ShotEvent, ShotSource
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.ui.controller import ProjectController
 
@@ -346,6 +346,54 @@ def test_popup_bubble_uses_exact_shot_time_and_auto_size() -> None:
         assert max_y - min_y < 80
     finally:
         server.shutdown()
+
+
+def test_popup_bubble_uses_shot_score_and_penalties_for_text() -> None:
+    controller = ProjectController()
+    controller.project.scoring.ruleset = "idpa_time_plus"
+    controller.project.primary_video.fps = 10
+    shot = ShotEvent(
+        id="shot-score",
+        time_ms=101,
+        source=ShotSource.AUTO,
+        confidence=0.9,
+        score=ScoreMark(letter=ScoreLetter.DOWN_0, penalty_counts={"procedural_errors": 1}),
+    )
+    controller.project.analysis.shots = [shot]
+    controller.project.popups = [PopupBubble(
+        id="popup-score",
+        enabled=True,
+        text="",
+        anchor_mode="shot",
+        shot_id=shot.id,
+        time_ms=0,
+        duration_ms=1000,
+        quadrant="middle_middle",
+        x=0.5,
+        y=0.5,
+        background_color="#ff0000",
+        text_color="#ffffff",
+        opacity=1.0,
+        width=0,
+        height=0,
+    )]
+
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    OverlayRenderer().paint(painter, controller.project, 101, 320, 180)
+    painter.end()
+
+    red_pixels = [
+        (x, y)
+        for y in range(image.height())
+        for x in range(image.width())
+        if image.pixelColor(x, y).red() > 120
+        and image.pixelColor(x, y).red() > image.pixelColor(x, y).green() + 40
+        and image.pixelColor(x, y).red() > image.pixelColor(x, y).blue() + 40
+    ]
+
+    assert red_pixels
 
 
 def test_popup_bubble_follow_motion_path_interpolates_between_points() -> None:

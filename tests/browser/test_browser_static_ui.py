@@ -9,6 +9,7 @@ STATIC_ROOT = Path("src/splitshot/browser/static")
 
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
+    js = (STATIC_ROOT / "app.js").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260418b"' in html
@@ -127,8 +128,13 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="review-add-imported-box"' in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="popup"' in html
+    assert 'id="popup-import-shots"' in html
     assert 'data-popup-field="anchor_mode"' in html
     assert 'data-popup-field="shot_id"' in html
+    assert 'data-popup-field="name"' in js
+    assert 'function selectPopupBubble(' in js
+    assert 'function selectPopupBubbleForShot(shotId' in js
+    assert 'function importShotPopups() {' in js
     assert 'data-popup-field="quadrant"' in html
     assert 'data-popup-field="opacity_percent"' in html
     assert 'data-popup-field="follow_motion"' in html
@@ -231,7 +237,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
     assert 'aria-label="Move selected shot earlier by 10 milliseconds"' in html
-    assert 'Each PiP card below has its own size, placement, and sync nudges.' in html
+    assert 'Each PiP card below has its own size, placement, transparency, and sync nudges.' in html
     assert 'id="max-visible-shots"' in html
     assert 'id="shot-quadrant"' in html
     assert '<option value="custom">Custom</option>' in html
@@ -327,10 +333,13 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "renderScoringPenaltyFields" in js
     assert "renderPractiScoreSummaries" in js
     assert "renderMergeMediaList" in js
+    assert "renderCollapsibleInspectorSections" in js
+    assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert 'const INSPECTOR_COMPACT_WIDTH = 700;' in js
     assert 'shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in js
     assert 'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in js
     assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs} ms`;' in js
+    assert 'text.textContent = "PiP opacity";' in js
     assert 'pip_size_percent: nextSize,' in js
     assert 'let exportPathDraft = "";' in js
     assert 'let projectDetailsDraft = { name: null, description: null };' in js
@@ -495,12 +504,22 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {' in js
     assert 'function renderPopupBubbleMotionGuide(card, bubble) {' in js
     assert 'function popupBubbleAutoSize(bubble) {' in js
+    assert 'function popupTextForShotId(shotId) {' in js
+    assert 'function popupBubbleResolvedText(bubble) {' in js
     assert 'function resolvedPopupBubbleSize(bubble) {' in js
     assert 'function syncPopupBubbleSizeControls(bubbleId) {' in js
+    assert 'function popupBubbleVisibleWindow(bubble) {' in js
+    assert 'function popupBubbleRenderPositionMs(bubble, positionMs) {' in js
+    assert 'function popupBubbleIsVisibleAtPosition(bubble, positionMs) {' in js
+    assert 'function popupBubbleSeekTimeMs(bubble) {' in js
+    assert 'const isSelectedEditorBubble = activeTool === "popup" && bubble.id === selectedPopupBubbleId;' in js
+    assert 'positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),' in js
+    assert 'badge.classList.toggle("popup-selected", Boolean(entry.selected));' in js
+    assert 'badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));' in js
     assert 'if (shot) return shot.time_ms;' in js
     assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
     assert 'data-popup-field="follow_motion"' in js
-    assert 'bubble.text,' in js
+    assert 'entry.text,' in js
     assert 'popupSize.width,\n      popupSize.height,\n      "center"' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
@@ -672,7 +691,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);" in css
     assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
     assert ".processing-bar[hidden] {\n  display: none !important;" in css
-    assert "grid-auto-rows: minmax(72px, auto);" in css
+    assert "grid-auto-rows: minmax(0, 1fr);" in css
+    assert "overflow: hidden;" in css
     assert "display: flex;" in css
     assert "width: var(--inspector-width);" in css
     assert "overflow-x: hidden;" in css
@@ -691,6 +711,15 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".cockpit-shell.inspector-compact .style-card-label" in css
     assert ".cockpit-shell.inspector-compact .style-card-label {\n  display: none;" not in css
     assert ".cockpit-shell.inspector-compact .popup-style-card" in css
+    assert ".popup-overlay [data-popup-drag].popup-selected" in css
+    assert ".popup-overlay [data-popup-drag].popup-outside-window" in css
+    assert "@container (max-width: 620px)" in css
+    assert "@container (max-width: 560px)" in css
+    assert "@container (max-width: 460px)" in css
+    assert "@container (max-width: 420px)" in css
+    assert ".popup-bubble-card .text-box-card-actions {\n  flex-wrap: wrap;" in css
+    assert ".popup-motion-point-row,\n  .metrics-row {\n    grid-template-columns: minmax(0, 1fr);" in css
+    assert ".color-control-pair,\n  .opacity-control-pair {\n    margin-left: 0;\n    width: 100%;" in css
     assert "container-type: inline-size;" in css
     assert "#project-description" in css
     assert "-webkit-backdrop-filter: blur(6px);" not in css
@@ -967,6 +996,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "collapse-metrics",
         "expand-metrics",
         "popup-add-bubble",
+        "popup-import-shots",
         "add-timing-event",
         "delete-selected",
         "expand-timing",

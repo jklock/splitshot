@@ -9,7 +9,9 @@ from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Proj
 from splitshot.scoring.logic import (
     calculate_scoring_summary,
     current_shot_index,
+    default_score_letter_for_ruleset,
     format_imported_stage_overlay_text,
+    normalize_penalty_counts_for_ruleset,
     shot_display_time_ms,
 )
 from splitshot.timeline.model import compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
@@ -74,6 +76,31 @@ def _popup_bubble_time_ms(project: Project, popup) -> int:
         if shot is not None:
             return shot.time_ms
     return popup.time_ms
+
+
+def _popup_bubble_display_text(project: Project, popup) -> str:
+    fallback_text = str(getattr(popup, "text", "") or "").strip()
+    if getattr(popup, "anchor_mode", "time") != "shot" or not getattr(popup, "shot_id", None):
+        return fallback_text
+    shot = next((item for item in sort_shots(project.analysis.shots) if item.id == popup.shot_id), None)
+    if shot is None:
+        return fallback_text
+    score = getattr(shot, "score", None)
+    default_letter = default_score_letter_for_ruleset(project.scoring.ruleset).value
+    score_value = getattr(getattr(score, "letter", None), "value", getattr(score, "letter", None)) or default_letter
+    penalty_counts = normalize_penalty_counts_for_ruleset(
+        project.scoring.ruleset,
+        getattr(score, "penalty_counts", None),
+    )
+    penalty_text = ", ".join(
+        f"{_PENALTY_LABELS.get(field_id, field_id.replace('_', ' '))} x{_format_penalty_count(float(value))}"
+        for field_id, value in penalty_counts.items()
+        if float(value) > 0
+    )
+    parts = [str(score_value).strip()]
+    if penalty_text:
+        parts.append(penalty_text)
+    return " | ".join(part for part in parts if part) or fallback_text
 
 
 def _popup_bubble_motion_path(popup) -> list[tuple[int, float, float]]:
@@ -411,7 +438,7 @@ class OverlayRenderer:
     def paint(self, painter: QPainter, project: Project, position_ms: int, width: int, height: int) -> None:
         has_visible_popup = any(
             popup.enabled
-            and popup.text.strip()
+            and _popup_bubble_display_text(project, popup).strip()
             and position_ms >= _popup_bubble_time_ms(project, popup)
             and position_ms <= _popup_bubble_time_ms(project, popup) + popup.duration_ms
             for popup in project.popups
@@ -537,9 +564,10 @@ class OverlayRenderer:
             )
         for popup in project.popups:
             popup_time_ms = _popup_bubble_time_ms(project, popup)
+            popup_text = _popup_bubble_display_text(project, popup)
             if (
                 not popup.enabled
-                or not popup.text.strip()
+                or not popup_text.strip()
                 or position_ms < popup_time_ms
                 or position_ms > popup_time_ms + popup.duration_ms
             ):
@@ -549,13 +577,13 @@ class OverlayRenderer:
                 text_color=popup.text_color,
                 opacity=popup.opacity,
             )
-            popup_auto_size = _auto_badge_size((popup.text,), metrics, line_height=line_height)
+            popup_auto_size = _auto_badge_size((popup_text,), metrics, line_height=line_height)
             popup_x, popup_y = _popup_bubble_point(project, popup, position_ms)
             self._paint_badges(
                 painter,
                 [
                     Badge(
-                        popup.text,
+                        popup_text,
                         popup_style,
                         width=popup.width or None,
                         height=popup.height or None,
