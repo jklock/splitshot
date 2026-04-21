@@ -1,0 +1,87 @@
+{
+  "primary_video": "/Volumes/Storage/GitHub/splitshot/tests/artifacts/test_video/TestVideo1.MP4",
+  "results": [
+    {
+      "browser": "chromium",
+      "passed": true,
+      "checks": [
+        {
+          "name": "overlay_elements_stay_inside_video",
+          "passed": true,
+          "detail": "Timer, shot, score, and custom overlay badges should render inside the live video frame.",
+          "data": {
+            "before": {
+              "frame": {
+                "left": 68,
+                "top": 165.28125,
+                "right": 995,
+                "bottom": 686.71875
+              },
+              "texts": [
+                "Timer 0.00",
+                "QA Box"
+              ],
+              "all_inside": true
+            },
+            "after": {
+              "frame": {
+                "left": 68,
+                "top": 165.28125,
+                "right": 995,
+                "bottom": 686.71875
+              },
+              "texts": [
+                "Timer 13.55",
+                "Shot 16 0.51s  C",
+                "Shot 17 0.73s  C",
+                "Shot 18 0.28s  C",
+                "Hit Factor 5.75",
+                "QA Box"
+              ],
+              "all_inside": true
+            }
+          }
+        },
+        {
+          "name": "waveform_drag_moves_shot",
+          "passed": true,
+          "detail": "Dragging a waveform marker should move the selected shot and commit the new time through the browser UI.",
+          "data": {
+            "selected_shot_id": "a5f10ce712454963ad94b7fc5c5f35eb",
+            "new_time_ms": 7150,
+            "delta_ms": 1480
+          }
+        },
+        {
+          "name": "layout_resize_persists",
+          "passed": true,
+          "detail": "Dragging the inspector resize handle should persist the new layout width and release the resize state.",
+          "data": {
+            "before": {
+              "inspector_width": 440,
+              "stored": 440
+            },
+            "after": {
+              "inspector_width": 522,
+              "stored": 522,
+              "css_value": "522px",
+              "layout_locked": "false",
+              "resizing_class_present": false
+            }
+          }
+        },
+        {
+          "name": "merge_file_input_change_adds_media",
+          "passed": true,
+          "detail": "Setting files on the merge-media input should trigger the browser change path and update the added-media list.",
+          "data": {
+            "merge_source_count": 1,
+            "items": [
+              "1. TestVideo1.MP4"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

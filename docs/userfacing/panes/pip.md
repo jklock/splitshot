@@ -32,6 +32,7 @@ The PiP pane manages extra media that should appear alongside the primary run. U
 | `Layout` | Chooses `Side by side`, `Above / below`, or `Picture in picture`. |
 | `Default PiP size` | Sets the default size used for newly added items. |
 | `Default PiP X` and `Default PiP Y` | Set the default normalized placement used for newly added items. |
+| PiP defaults section | Stays expanded so default size and placement are visible before and after adding media. |
 
 ## How To Use It
 
@@ -46,6 +47,7 @@ The PiP pane manages extra media that should appear alongside the primary run. U
 ## Multiple Items And Layout Behavior
 
 - Every added file gets its own numbered card.
+- The first added media card opens expanded by default so its size, position, and sync controls are immediately available.
 - Videos and images can coexist in the same project.
 - Each item keeps its own size, position, and sync values.
 - Default PiP values do not retroactively move existing items.
@@ -68,6 +70,7 @@ The current PiP pane does not expose a dedicated swap-or-compare button. Compare
 | --- | --- |
 | The extra media look correct in preview but are missing from the render. | Turn on `Enable added media export`. |
 | Changing the default PiP size did not move older cards. | Edit the per-item card. Defaults affect only new items. |
+| You cannot find the default PiP controls. | Reopen the PiP defaults section; it is intended to stay visible at the top of the pane. |
 | A secondary video is visibly late or early. | Use the per-item sync nudges until the motion matches the primary video. |
 | A still image does not need timing but still shows sync controls. | That is normal. Position and size still matter, while sync mainly matters for video items. |
 | You expected a swap-angle button. | The current pane uses per-item cards and live preview instead of a dedicated swap control. |
@@ -77,5 +80,5 @@ The current PiP pane does not expose a dedicated swap-or-compare button. Compare
 Previous: [score.md](score.md)
 Next: [overlay.md](overlay.md)
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-21
+**Referenced files last updated:** 2026-04-21
