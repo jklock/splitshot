@@ -215,7 +215,7 @@
                 <button id="reset-shotml-defaults" type="button">Reset Defaults</button>
               </div>
               <p class="hint">Tune detector timing for this project. Re-running ShotML replaces the current automatic detections; manual shot edits remain available from Splits and the waveform.</p>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="threshold">
                 <div class="section-header sub-section-header">
                   <h3>Threshold</h3>
                   <span id="shotml-run-summary">No ShotML run yet.</span>
@@ -235,7 +235,7 @@
                   </label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="beep_detection">
                 <div class="section-header sub-section-header">
                   <h3>Beep Detection</h3>
                   <span>Start tone search and refinement</span>
@@ -263,7 +263,7 @@
                   <label>Model boost floor <input data-shotml-setting="beep_model_boost_floor" type="number" min="0" max="2" step="0.01" /></label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="shot_candidate_detection">
                 <div class="section-header sub-section-header">
                   <h3>Shot Candidate Detection</h3>
                   <span>Peak picking and confidence</span>
@@ -280,7 +280,7 @@
                   </label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="shot_refinement">
                 <div class="section-header sub-section-header">
                   <h3>Shot Refinement</h3>
                   <span>Onset placement windows</span>
@@ -295,7 +295,7 @@
                   <label>RMS hop ms <input data-shotml-setting="shot_refine_rms_hop_ms" type="number" min="1" max="100" step="1" /></label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="false_positive_suppression">
                 <div class="section-header sub-section-header">
                   <h3>False Positive Suppression</h3>
                   <span>Duplicate and outlier filtering</span>
@@ -310,7 +310,7 @@
                   <label class="check-row"><input data-shotml-setting="suppress_sound_profile_outliers" type="checkbox" /> Suppress sound-profile outliers</label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="confidence_review">
                 <div class="section-header sub-section-header">
                   <h3>Confidence And Review</h3>
                   <span>Support scoring and review pressure</span>
@@ -328,7 +328,7 @@
                   <label>Profile high confidence limit <input data-shotml-setting="sound_profile_high_confidence_limit" type="number" min="0" max="1" step="0.001" /></label>
                 </div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="timing_changer">
                 <div class="section-header sub-section-header">
                   <h3>Timing Changer</h3>
                   <span id="shotml-proposal-summary">No pending proposals.</span>
@@ -338,7 +338,7 @@
                 </div>
                 <div id="shotml-proposal-list" class="shotml-proposal-list" aria-label="ShotML timing proposals"></div>
               </section>
-              <section class="shotml-section">
+              <section class="shotml-section" data-shotml-section="advanced_runtime">
                 <div class="section-header sub-section-header">
                   <h3>Advanced Runtime</h3>
                   <span>Changes alter model timing granularity</span>
@@ -499,6 +499,7 @@
             <section class="tool-pane" data-tool-pane="popup">
               <div class="section-header">
                 <h3>PopUp</h3>
+                <button id="popup-import-shots" type="button">Import Shots</button>
                 <button id="popup-add-bubble" type="button">Add Bubble</button>
               </div>
               <p class="hint">Short-lived boxes for one-off target callouts. Set the start time and duration, or drag a rendered bubble on the video.</p>
@@ -547,31 +548,37 @@
               </div>
               <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add PiP Media</button>
               <p class="hint">Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.</p>
-              <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
-              <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-              <label>Layout
-                <select id="merge-layout">
-                  <option value="side_by_side">Side by side</option>
-                  <option value="above_below">Above / below</option>
-                  <option value="pip">Picture in picture</option>
-                </select>
-              </label>
-              <label>Default PiP size
-                <div class="pip-size-control">
-                  <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
-                  <output id="pip-size-label">35%</output>
+              <section class="pip-defaults-section" data-inspector-section="pip-defaults">
+                <div class="section-header sub-section-header">
+                  <h3>PiP Defaults</h3>
+                  <span>Used for new items</span>
                 </div>
-              </label>
-              <div class="control-grid pip-position-grid">
-                <label>Default PiP X (0 left, 1 right)
-                  <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
+                <label>Layout
+                  <select id="merge-layout">
+                    <option value="side_by_side">Side by side</option>
+                    <option value="above_below">Above / below</option>
+                    <option value="pip">Picture in picture</option>
+                  </select>
                 </label>
-                <label>Default PiP Y (0 top, 1 bottom)
-                  <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                <label>Default PiP size
+                  <div class="pip-size-control">
+                    <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
+                    <output id="pip-size-label">35%</output>
+                  </div>
                 </label>
-              </div>
-              <p class="hint">PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.</p>
-              <p class="hint">Each PiP card below has its own size, placement, and sync nudges. These defaults only affect new items.</p>
+                <div class="control-grid pip-position-grid">
+                  <label>Default PiP X (0 left, 1 right)
+                    <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                  </label>
+                  <label>Default PiP Y (0 top, 1 bottom)
+                    <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                  </label>
+                </div>
+                <p class="hint">PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.</p>
+                <p class="hint">Each PiP card below has its own size, placement, transparency, and sync nudges.</p>
+              </section>
+              <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">

@@ -13,6 +13,7 @@ from splitshot.domain.models import (
     OverlayPosition,
     OverlayTextBox,
     MergeSource,
+    PopupBubble,
     Project,
     ScoreLetter,
     ScoreMark,
@@ -151,6 +152,8 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             height=56,
         )
     ]
+    popup = PopupBubble(name="Entry target", text="-0", shot_id=selected_shot_id, anchor_mode="shot")
+    project.popups = [popup]
     project.merge.enabled = True
     project.merge.layout = MergeLayout.PIP
     project.merge.pip_size_percent = 50
@@ -179,6 +182,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.waveform_shot_amplitudes = {selected_shot_id: 1.75}
     project.ui_state.timing_edit_shot_ids = [selected_shot_id]
     project.ui_state.timing_column_widths = {"segment": 128, "split": 224, "action": 244}
+    project.ui_state.popup_bubble_expansion = {popup.id: False}
+    project.ui_state.merge_source_expansion = {project.merge_sources[0].id: False, "pip-defaults": False}
+    project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
 
     bundle = save_project(project, tmp_path / "round-trip.ssproj")
     loaded = load_project(bundle)
@@ -287,6 +293,10 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.ui_state.timing_column_widths["segment"] == 128
     assert loaded.ui_state.timing_column_widths["split"] == 224
     assert loaded.ui_state.timing_column_widths["action"] == 244
+    assert loaded.popups[0].name == "Entry target"
+    assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
+    assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
+    assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}
 
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:

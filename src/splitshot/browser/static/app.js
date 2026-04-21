@@ -13,6 +13,10 @@ let timingRowEdits = new Set();
 let timingAdjustmentDrafts = new Map();
 let scoringShotExpansion = new Map();
 let reviewTextBoxExpansion = new Map();
+let popupBubbleExpansion = new Map();
+let mergeSourceExpansion = new Map();
+let shotMLSectionExpansion = new Map();
+let selectedPopupBubbleId = null;
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -111,13 +115,17 @@ const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
 });
 const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "adjustment", "final"]);
 const METRICS_TABLE_COLUMNS = Object.freeze([
-  ["Segment", "segment"],
+  ["Shot", "segment"],
   ["ShotML Split", "shotmlSplit"],
   ["Adjustment", "adjustment"],
   ["Final Split", "finalSplit"],
   ["Final Time", "finalTime"],
   ["Score", "score"],
+  ["Penalties", "penalties"],
   ["PractiScore", "practiscore"],
+  ["Delta", "delta"],
+  ["Confidence", "confidence"],
+  ["Action", "action"],
 ]);
 
 const $ = (id) => document.getElementById(id);
@@ -183,6 +191,9 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   timing_edit_shot_ids: [],
   timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },
   review_text_box_expansion: {},
+  popup_bubble_expansion: {},
+  merge_source_expansion: {},
+  shotml_section_expansion: {},
 });
 
 function normalizeProjectNameValue(value) {
@@ -646,6 +657,31 @@ function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {
   const normalizedLetter = String(letter || "").trim();
   if (!normalizedLetter) return "";
   return normalizedLetter;
+}
+
+function shotById(shotId) {
+  if (!shotId) return null;
+  return orderedShotsByTime().find((shot) => shot.id === shotId) || null;
+}
+
+function timingSegmentForShot(shotId) {
+  if (!shotId) return null;
+  return (state?.timing_segments || []).find((segment) => segment.shot_id === shotId) || null;
+}
+
+function popupTextForShotId(shotId) {
+  if (!shotId) return "";
+  const ruleset = activeScoringRuleset();
+  const defaultLetter = defaultScoreLetter(ruleset);
+  const segment = timingSegmentForShot(shotId);
+  const shot = shotById(shotId);
+  const rawLetter = segment?.score_letter
+    || shot?.score?.letter?.value
+    || shot?.score?.letter
+    || defaultLetter;
+  const scoreLetter = compactScoreDisplay(rawLetter, ruleset) || defaultLetter;
+  const penaltyText = formatPenaltyCountsText(segment?.penalty_counts || shot?.score?.penalty_counts || {});
+  return [scoreLetter, penaltyText].filter(Boolean).join(" | ");
 }
 
 function formatConfidenceValue(confidence) {
@@ -1490,6 +1526,9 @@ function normalizeProjectUiState(uiState = {}) {
     timing_edit_shot_ids: normalizedUiStringList(uiState.timing_edit_shot_ids),
     timing_column_widths: resolvedTimingColumnWidths(normalizedUiFloatMap(uiState.timing_column_widths, 48)),
     review_text_box_expansion: normalizedUiBooleanMap(uiState.review_text_box_expansion),
+    popup_bubble_expansion: normalizedUiBooleanMap(uiState.popup_bubble_expansion),
+    merge_source_expansion: normalizedUiBooleanMap(uiState.merge_source_expansion),
+    shotml_section_expansion: normalizedUiBooleanMap(uiState.shotml_section_expansion),
   };
 }
 
@@ -1524,6 +1563,15 @@ function readProjectUiStatePayload() {
     review_text_box_expansion: Object.fromEntries(
       [...reviewTextBoxExpansion.entries()].filter(([boxId]) => Boolean(String(boxId || "").trim())),
     ),
+    popup_bubble_expansion: Object.fromEntries(
+      [...popupBubbleExpansion.entries()].filter(([bubbleId]) => Boolean(String(bubbleId || "").trim())),
+    ),
+    merge_source_expansion: Object.fromEntries(
+      [...mergeSourceExpansion.entries()].filter(([sourceId]) => Boolean(String(sourceId || "").trim())),
+    ),
+    shotml_section_expansion: Object.fromEntries(
+      [...shotMLSectionExpansion.entries()].filter(([sectionId]) => Boolean(String(sectionId || "").trim())),
+    ),
   });
 }
 
@@ -1553,6 +1601,10 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
   scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
   reviewTextBoxExpansion = new Map(Object.entries(normalized.review_text_box_expansion));
+  popupBubbleExpansion = new Map(Object.entries(normalized.popup_bubble_expansion));
+  mergeSourceExpansion = new Map(Object.entries(normalized.merge_source_expansion));
+  shotMLSectionExpansion = new Map(Object.entries(normalized.shotml_section_expansion));
+  collapseMinimizableInspectorItems({ syncUiState: false, persistUiState: false, rerender: false });
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
   timingAdjustmentDrafts = new Map(
     [...timingAdjustmentDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
@@ -1607,6 +1659,19 @@ function mergePreviewTargetTime(primaryTime, source = null) {
 
 function mergeSourceById(sourceId) {
   return (state?.project?.merge_sources || []).find((source, index) => sourceIdentifier(source, String(index)) === sourceId) || null;
+}
+
+function isMergeSourceExpanded(sourceId) {
+  if (!sourceId) return false;
+  if (mergeSourceExpansion.has(sourceId)) return Boolean(mergeSourceExpansion.get(sourceId));
+  return false;
+}
+
+function setMergeSourceExpanded(sourceId, expanded) {
+  if (!sourceId) return;
+  mergeSourceExpansion.set(sourceId, Boolean(expanded));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
 }
 
 function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null) {
@@ -2277,9 +2342,9 @@ function overlayTextBoxHint(box) {
 }
 
 function isReviewTextBoxExpanded(boxId) {
-  if (!boxId) return true;
+  if (!boxId) return false;
   if (reviewTextBoxExpansion.has(boxId)) return Boolean(reviewTextBoxExpansion.get(boxId));
-  return true;
+  return false;
 }
 
 function setReviewTextBoxExpanded(boxId, expanded) {
@@ -2287,6 +2352,69 @@ function setReviewTextBoxExpanded(boxId, expanded) {
   reviewTextBoxExpansion.set(boxId, Boolean(expanded));
   syncLocalProjectUiState();
   scheduleProjectUiStateApply();
+}
+
+function isShotMLSectionExpanded(sectionId) {
+  if (!sectionId) return false;
+  if (shotMLSectionExpansion.has(sectionId)) return Boolean(shotMLSectionExpansion.get(sectionId));
+  return false;
+}
+
+function setShotMLSectionExpanded(sectionId, expanded) {
+  if (!sectionId) return;
+  shotMLSectionExpansion.set(sectionId, Boolean(expanded));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+}
+
+function ensureSectionToggle(section, expanded, onToggle) {
+  const header = section?.querySelector(":scope > .section-header");
+  if (!(header instanceof HTMLElement)) return;
+  let actions = header.querySelector(":scope > .section-header-actions");
+  if (!(actions instanceof HTMLElement)) {
+    actions = document.createElement("div");
+    actions.className = "section-header-actions";
+    while (header.children.length > 1) {
+      actions.appendChild(header.lastElementChild);
+    }
+    header.appendChild(actions);
+  }
+  let toggle = actions.querySelector(":scope > [data-section-toggle]");
+  if (!(toggle instanceof HTMLButtonElement)) {
+    toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.dataset.sectionToggle = "true";
+    toggle.className = "scoring-shot-toggle";
+    actions.prepend(toggle);
+  }
+  toggle.textContent = expanded ? "v" : ">";
+  toggle.title = expanded ? "Hide section" : "Show section";
+  toggle.setAttribute("aria-label", expanded ? "Hide section" : "Show section");
+  toggle.onclick = onToggle;
+}
+
+function renderCollapsibleInspectorSections() {
+  document.querySelectorAll("[data-shotml-section]").forEach((section) => {
+    if (!(section instanceof HTMLElement)) return;
+    const sectionId = section.dataset.shotmlSection || "";
+    const expanded = isShotMLSectionExpanded(sectionId);
+    section.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(section, expanded, () => {
+      setShotMLSectionExpanded(sectionId, !expanded);
+      renderCollapsibleInspectorSections();
+    });
+  });
+
+  const pipDefaults = document.querySelector('[data-inspector-section="pip-defaults"]');
+  if (pipDefaults instanceof HTMLElement) {
+    const sectionId = "pip-defaults";
+    const expanded = isMergeSourceExpanded(sectionId);
+    pipDefaults.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(pipDefaults, expanded, () => {
+      setMergeSourceExpanded(sectionId, !expanded);
+      renderCollapsibleInspectorSections();
+    });
+  }
 }
 
 function buildTextBoxCard(box, index) {
@@ -2555,6 +2683,7 @@ function normalizePopupBubble(bubble = {}) {
   return {
     id: String(bubble.id || createPopupBubbleId()),
     enabled: Boolean(bubble.enabled ?? true),
+    name: String(bubble.name || "").slice(0, 80),
     text: String(bubble.text || "").slice(0, 500),
     anchor_mode: anchorMode,
     shot_id: anchorMode === "shot" && shotId ? shotId : null,
@@ -2688,7 +2817,7 @@ function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {
 }
 
 function popupBubbleAutoSize(bubble) {
-  const text = String(bubble?.text || "").trim();
+  const text = popupBubbleResolvedText(bubble).trim();
   if (!text) return { width: 0, height: 0 };
   const measurement = measureOverlayBadgeContent(text);
   return {
@@ -2719,6 +2848,33 @@ function popupBubbleEffectiveTimeMs(bubble) {
   return Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0));
 }
 
+function popupBubbleVisibleWindow(bubble) {
+  const startMs = popupBubbleEffectiveTimeMs(bubble);
+  const durationMs = Math.max(1, Math.round(Number(bubble?.duration_ms ?? 1000) || 1000));
+  return { startMs, endMs: startMs + durationMs };
+}
+
+function popupBubbleRenderPositionMs(bubble, positionMs) {
+  const normalizedPositionMs = Math.max(0, Math.round(Number(positionMs) || 0));
+  const { startMs, endMs } = popupBubbleVisibleWindow(bubble);
+  return clamp(normalizedPositionMs, startMs, endMs);
+}
+
+function popupBubbleIsVisibleAtPosition(bubble, positionMs) {
+  const normalizedPositionMs = Math.max(0, Math.round(Number(positionMs) || 0));
+  const { startMs, endMs } = popupBubbleVisibleWindow(bubble);
+  return normalizedPositionMs >= startMs && normalizedPositionMs <= endMs;
+}
+
+function popupBubbleSeekTimeMs(bubble) {
+  if (!bubble) return 0;
+  if (bubble.anchor_mode === "shot" && bubble.shot_id) {
+    const shot = orderedShotsByTime().find((item) => item.id === bubble.shot_id);
+    if (shot) return shotDisplayTimeMs(shot.time_ms);
+  }
+  return popupBubbleEffectiveTimeMs(bubble);
+}
+
 function defaultPopupShotId() {
   if (selectedShotId && stateHasShot(state, selectedShotId)) return selectedShotId;
   return orderedShotsByTime()[0]?.id || null;
@@ -2731,9 +2887,143 @@ function popupBubbleShotOptions() {
   }));
 }
 
+function popupBubbleShotLabel(bubble) {
+  if (!bubble?.shot_id) return "";
+  return popupBubbleShotOptions().find((shot) => shot.id === bubble.shot_id)?.label?.replace(/\s+\d+(?:\.\d+)?s$/, "") || "";
+}
+
+function popupBubbleResolvedText(bubble) {
+  if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
+    return popupTextForShotId(bubble.shot_id) || String(bubble?.text || "");
+  }
+  return String(bubble?.text || "");
+}
+
+function popupBubbleDisplayName(bubble, index) {
+  const explicitName = String(bubble?.name || "").trim();
+  if (explicitName) return explicitName;
+  if (bubble?.anchor_mode === "shot") return popupBubbleShotLabel(bubble) || `Shot ${index + 1}`;
+  return `Bubble ${index + 1}`;
+}
+
+function popupBubbleSummaryText(bubble, index) {
+  const parts = [popupBubbleDisplayName(bubble, index)];
+  if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
+    const resolvedText = popupBubbleResolvedText(bubble).trim();
+    parts.push(popupBubbleShotLabel(bubble) || "Shot anchor");
+    if (resolvedText) parts.push(resolvedText);
+  } else {
+    parts.push(`${precise(popupBubbleEffectiveTimeMs(bubble))}s`);
+  }
+  return parts.filter(Boolean).join(" | ");
+}
+
+function isPopupBubbleExpanded(bubbleId) {
+  if (!bubbleId) return false;
+  if (popupBubbleExpansion.has(bubbleId)) return Boolean(popupBubbleExpansion.get(bubbleId));
+  return false;
+}
+
+function setPopupBubbleExpanded(bubbleId, expanded) {
+  if (!bubbleId) return;
+  popupBubbleExpansion.set(bubbleId, Boolean(expanded));
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+}
+
+function collapseMinimizableInspectorItems({ syncUiState: shouldSyncUiState = true, persistUiState = true, rerender = false } = {}) {
+  let changed = false;
+  reviewTextBoxExpansion.forEach((expanded, boxId) => {
+    if (expanded) {
+      reviewTextBoxExpansion.set(boxId, false);
+      changed = true;
+    }
+  });
+  popupBubbleExpansion.forEach((expanded, bubbleId) => {
+    if (expanded) {
+      popupBubbleExpansion.set(bubbleId, false);
+      changed = true;
+    }
+  });
+  mergeSourceExpansion.forEach((expanded, sourceId) => {
+    if (expanded) {
+      mergeSourceExpansion.set(sourceId, false);
+      changed = true;
+    }
+  });
+  shotMLSectionExpansion.forEach((expanded, sectionId) => {
+    if (expanded) {
+      shotMLSectionExpansion.set(sectionId, false);
+      changed = true;
+    }
+  });
+  if (!changed) return;
+  if (shouldSyncUiState) syncLocalProjectUiState();
+  if (shouldSyncUiState && persistUiState) scheduleProjectUiStateApply();
+  if (rerender) {
+    renderTextBoxEditors();
+    renderPopupEditors();
+    renderMergeMediaList();
+    renderCollapsibleInspectorSections();
+  }
+}
+
+function popupBubbleCardElement(bubbleId) {
+  return document.querySelector(`.popup-bubble-card[data-popup-id="${bubbleId}"]`);
+}
+
+function revealPopupBubbleCard(bubbleId, { focus = false } = {}) {
+  const card = popupBubbleCardElement(bubbleId);
+  if (!(card instanceof HTMLElement)) return;
+  card.scrollIntoView({ block: "nearest" });
+  if (focus) {
+    const button = card.querySelector(".popup-bubble-button");
+    if (button instanceof HTMLElement) button.focus();
+  }
+}
+
+function selectPopupBubble(
+  bubbleId,
+  { seek = true, reveal = true, focus = false, activateTool = false, expand = true } = {},
+) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId) || null;
+  if (!bubble) {
+    selectedPopupBubbleId = null;
+    return false;
+  }
+  selectedPopupBubbleId = bubble.id;
+  if (expand) {
+    if (!popupBubbleExpansion.has(bubble.id)) {
+      popupBubbleExpansion.set(bubble.id, true);
+    } else if (!popupBubbleExpansion.get(bubble.id)) {
+      popupBubbleExpansion.set(bubble.id, true);
+    }
+  }
+  if (activateTool) setActiveTool("popup");
+  renderPopupEditors();
+  if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
+  if (reveal) window.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
+  return true;
+}
+
+function selectPopupBubbleForShot(shotId, options = {}) {
+  if (!shotId) return false;
+  const matchingBubble = popupBubbles().find((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id === shotId) || null;
+  if (!matchingBubble) return false;
+  return selectPopupBubble(matchingBubble.id, options);
+}
+
+function selectedPopupBubble() {
+  if (!selectedPopupBubbleId) return null;
+  return popupBubbles().find((bubble) => bubble.id === selectedPopupBubbleId) || null;
+}
+
 function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
   if (!state?.project) return;
   state.project.popups = bubbles.map((bubble) => normalizePopupBubble(bubble));
+  if (selectedPopupBubbleId && !state.project.popups.some((bubble) => bubble.id === selectedPopupBubbleId)) {
+    selectedPopupBubbleId = null;
+  }
   if (rerender) {
     renderPopupEditors();
   }
@@ -2792,13 +3082,17 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
     }
+    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id) {
+      nextBubble.text = popupTextForShotId(nextBubble.shot_id) || nextBubble.text;
+    }
     return nextBubble;
   });
   setPopupBubbles(nextBubbles, options);
+  if (field !== "enabled") selectedPopupBubbleId = bubbleId;
   if ((field === "anchor_mode" || field === "shot_id") && state?.media?.primary_available) {
     const updatedBubble = popupBubbles().find((bubble) => bubble.id === bubbleId);
     if (updatedBubble?.anchor_mode === "shot" && updatedBubble.shot_id) {
-      seekPrimaryVideoToShot(updatedBubble.shot_id);
+      selectPopupBubble(updatedBubble.id, { seek: true, reveal: true, focus: false, activateTool: false });
     }
   }
   if (["text", "quadrant", "width", "height"].includes(field)) {
@@ -2807,17 +3101,66 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
 }
 
 function addPopupBubble() {
+  const shot = selectedShot();
   const video = $("primary-video");
-  const timeMs = Math.max(0, Math.round((video?.currentTime || 0) * 1000));
-  const nextBubble = normalizePopupBubble({
-    text: "-0",
-    time_ms: timeMs,
-    duration_ms: 1000,
-    quadrant: "middle_middle",
-    x: 0.5,
-    y: 0.5,
-  });
+  const timeMs = shot ? shot.time_ms : Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+  const nextBubble = normalizePopupBubble(
+    shot
+      ? {
+          text: popupTextForShotId(shot.id) || defaultScoreLetter(),
+          anchor_mode: "shot",
+          shot_id: shot.id,
+          time_ms: timeMs,
+          duration_ms: 1000,
+          quadrant: "middle_middle",
+          x: 0.5,
+          y: 0.5,
+        }
+      : {
+          text: defaultScoreLetter(),
+          time_ms: timeMs,
+          duration_ms: 1000,
+          quadrant: "middle_middle",
+          x: 0.5,
+          y: 0.5,
+        },
+  );
   setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
+  selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true });
+}
+
+function importShotPopups() {
+  const shots = orderedShotsByTime();
+  if (shots.length === 0) {
+    setStatus("No shots available to import into PopUp.");
+    return;
+  }
+  const timeBasedBubbles = popupBubbles().filter((bubble) => bubble.anchor_mode !== "shot" || !bubble.shot_id);
+  const existingShotBubbleByShotId = new Map();
+  popupBubbles()
+    .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
+    .forEach((bubble) => {
+      if (!existingShotBubbleByShotId.has(bubble.shot_id)) existingShotBubbleByShotId.set(bubble.shot_id, bubble);
+    });
+  const importedBubbles = shots.map((shot) => {
+    const existingBubble = existingShotBubbleByShotId.get(shot.id);
+    return normalizePopupBubble({
+      ...(existingBubble || {}),
+      id: existingBubble?.id || createPopupBubbleId(),
+      text: popupTextForShotId(shot.id) || defaultScoreLetter(),
+      anchor_mode: "shot",
+      shot_id: shot.id,
+      time_ms: shot.time_ms,
+      duration_ms: existingBubble?.duration_ms || 1000,
+      quadrant: existingBubble?.quadrant || "middle_middle",
+      x: existingBubble?.x ?? 0.5,
+      y: existingBubble?.y ?? 0.5,
+      enabled: existingBubble?.enabled ?? true,
+    });
+  });
+  setPopupBubbles([...timeBasedBubbles, ...importedBubbles], { commit: true, rerender: true });
+  const focusShotId = selectedShotId && shots.some((shot) => shot.id === selectedShotId) ? selectedShotId : shots[0]?.id || null;
+  if (focusShotId) selectPopupBubbleForShot(focusShotId, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
 }
 
 function removePopupBubble(bubbleId) {
@@ -2844,6 +3187,8 @@ function duplicatePopupBubble(bubbleId) {
       motion_path: motionPath,
     }),
   ], { commit: true, rerender: true });
+  const duplicate = popupBubbles()[popupBubbles().length - 1];
+  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "popup" });
 }
 
 function clearPopupBubbleMotionPath(bubbleId) {
@@ -2938,6 +3283,8 @@ function buildPopupBubbleCard(bubble, index) {
   const card = document.createElement("section");
   card.className = "text-box-card popup-bubble-card";
   card.dataset.popupId = bubble.id;
+  const expanded = isPopupBubbleExpanded(bubble.id);
+  card.classList.toggle("collapsed", !expanded);
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   const displayedSize = resolvedPopupBubbleSize(bubble);
   const motionPath = popupBubbleMotionPath(bubble);
@@ -2947,106 +3294,121 @@ function buildPopupBubbleCard(bubble, index) {
     ? (shotIds.has(bubble.shot_id) ? bubble.shot_id : (defaultPopupShotId() || ""))
     : (bubble.shot_id || "");
   const usesCustomPlacement = bubble.quadrant === CUSTOM_QUADRANT_VALUE;
+  const displayName = popupBubbleDisplayName(bubble, index);
+  const selected = bubble.id === selectedPopupBubbleId;
+  const resolvedText = popupBubbleResolvedText(bubble);
+  const usesShotScoreText = bubble.anchor_mode === "shot" && Boolean(bubble.shot_id);
   card.innerHTML = `
     <div class="text-box-card-header">
-      <label class="check-row"><input type="checkbox" data-popup-field="enabled" /> <strong>Bubble ${index + 1}</strong></label>
+      <button type="button" class="popup-bubble-button">
+        <strong>${expanded ? displayName : popupBubbleSummaryText(bubble, index)}</strong>
+      </button>
       <div class="text-box-card-actions">
+        <label class="check-row popup-bubble-enabled"><input type="checkbox" data-popup-field="enabled" /> <span>On</span></label>
+        <button type="button" class="scoring-shot-toggle" data-popup-action="toggle" aria-label="${expanded ? "Hide" : "Show"} popup bubble editor">${expanded ? "v" : ">"}</button>
         <button type="button" data-popup-action="duplicate">Duplicate</button>
         <button type="button" data-popup-action="clear_motion_path">Clear path</button>
         <button type="button" data-popup-action="remove">Remove</button>
       </div>
     </div>
-    <label>Text
-      <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
-    </label>
-    <div class="control-grid">
-      <label>Start mode
-        <select data-popup-field="anchor_mode">
-          <option value="time">Time</option>
-          <option value="shot">Shot</option>
-        </select>
+    <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
+      <label>Bubble name
+        <input data-popup-field="name" type="text" maxlength="80" placeholder="Inherit shot name" />
       </label>
-      <label>Start (seconds)
-        <input data-popup-field="time_s" type="number" min="0" step="0.001" />
+      <label>Text
+        <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
       </label>
-      <label>Shot
-        <select data-popup-field="shot_id"></select>
-      </label>
-      <label>Duration (seconds)
-        <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
-      </label>
-    </div>
-    <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
-    <p class="hint" data-popup-motion-hint="true"></p>
-    <section class="popup-motion-guide" data-popup-motion-guide hidden>
       <div class="control-grid">
-        <label>Points
-          <select data-popup-field="motion_point_count">
-            <option value="4">4</option>
-            <option value="8">8</option>
-            <option value="16">16</option>
+        <label>Start mode
+          <select data-popup-field="anchor_mode">
+            <option value="time">Time</option>
+            <option value="shot">Shot</option>
           </select>
         </label>
+        <label>Start (seconds)
+          <input data-popup-field="time_s" type="number" min="0" step="0.001" />
+        </label>
+        <label>Shot
+          <select data-popup-field="shot_id"></select>
+        </label>
+        <label>Duration (seconds)
+          <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
+        </label>
       </div>
-      <div class="popup-motion-path-list" data-popup-motion-path-list></div>
-    </section>
-    <div class="control-grid">
-      <label>Placement
-        <select data-popup-field="quadrant">
-          <option value="top_left">Top left</option>
-          <option value="top_middle">Top middle</option>
-          <option value="top_right">Top right</option>
-          <option value="middle_left">Middle left</option>
-          <option value="middle_middle">Middle middle</option>
-          <option value="middle_right">Middle right</option>
-          <option value="bottom_left">Bottom left</option>
-          <option value="bottom_middle">Bottom middle</option>
-          <option value="bottom_right">Bottom right</option>
-          <option value="custom">Custom</option>
-        </select>
-      </label>
-      <label>X
-        <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
-      </label>
-      <label>Y
-        <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
-      </label>
-      <label>Width
-        <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
-      </label>
-      <label>Height
-        <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
-      </label>
-    </div>
-    <div class="style-grid review-style-grid">
-      <section class="style-card popup-style-card">
-        <h4>Bubble Style</h4>
-        <label class="color-field"><span class="style-card-label">Background</span>
-          <span class="color-control-pair">
-            <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
-            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
-          </span>
-        </label>
-        <label class="color-field"><span class="style-card-label">Text</span>
-          <span class="color-control-pair">
-            <button data-popup-field="text_color" class="color-swatch-button" data-color-label="Popup text" type="button"></button>
-            <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
-          </span>
-        </label>
-        <label class="opacity-field"><span class="style-card-label">Opacity</span>
-          <span class="opacity-control-pair">
-            <span class="opacity-percent-field">
-              <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup opacity percent" />
-              <span class="opacity-percent-suffix">%</span>
-            </span>
-          </span>
-        </label>
+      <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
+      <p class="hint" data-popup-motion-hint="true"></p>
+      <section class="popup-motion-guide" data-popup-motion-guide hidden>
+        <div class="control-grid">
+          <label>Points
+            <select data-popup-field="motion_point_count">
+              <option value="4">4</option>
+              <option value="8">8</option>
+              <option value="16">16</option>
+            </select>
+          </label>
+        </div>
+        <div class="popup-motion-path-list" data-popup-motion-path-list></div>
       </section>
+      <div class="control-grid">
+        <label>Placement
+          <select data-popup-field="quadrant">
+            <option value="top_left">Top left</option>
+            <option value="top_middle">Top middle</option>
+            <option value="top_right">Top right</option>
+            <option value="middle_left">Middle left</option>
+            <option value="middle_middle">Middle middle</option>
+            <option value="middle_right">Middle right</option>
+            <option value="bottom_left">Bottom left</option>
+            <option value="bottom_middle">Bottom middle</option>
+            <option value="bottom_right">Bottom right</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>X
+          <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
+        </label>
+        <label>Y
+          <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
+        </label>
+        <label>Width
+          <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
+        </label>
+        <label>Height
+          <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
+        </label>
+      </div>
+      <div class="style-grid review-style-grid">
+        <section class="style-card popup-style-card">
+          <h4>Bubble Style</h4>
+          <label class="color-field"><span class="style-card-label">Background</span>
+            <span class="color-control-pair">
+              <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
+              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
+            </span>
+          </label>
+          <label class="color-field"><span class="style-card-label">Text</span>
+            <span class="color-control-pair">
+              <button data-popup-field="text_color" class="color-swatch-button" data-color-label="Popup text" type="button"></button>
+              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
+            </span>
+          </label>
+          <label class="opacity-field"><span class="style-card-label">Opacity</span>
+            <span class="opacity-control-pair">
+              <span class="opacity-percent-field">
+                <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup opacity percent" />
+                <span class="opacity-percent-suffix">%</span>
+              </span>
+            </span>
+          </label>
+        </section>
+      </div>
     </div>
   `;
+  card.classList.toggle("selected", selected);
   syncControlChecked(card.querySelector('[data-popup-field="enabled"]'), bubble.enabled);
   syncControlChecked(card.querySelector('[data-popup-field="follow_motion"]'), bubble.follow_motion);
-  syncControlValue(card.querySelector('[data-popup-field="text"]'), bubble.text);
+  syncControlValue(card.querySelector('[data-popup-field="name"]'), bubble.name);
+  syncControlValue(card.querySelector('[data-popup-field="text"]'), resolvedText);
   syncControlValue(card.querySelector('[data-popup-field="anchor_mode"]'), bubble.anchor_mode);
   syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
   syncControlValue(card.querySelector('[data-popup-field="shot_id"]'), popupShotId);
@@ -3078,6 +3440,14 @@ function buildPopupBubbleCard(bubble, index) {
     clearMotionButton.disabled = motionPath.length === 0;
   }
   const shotSelect = card.querySelector('[data-popup-field="shot_id"]');
+  const textArea = card.querySelector('[data-popup-field="text"]');
+  if (textArea instanceof HTMLTextAreaElement) {
+    textArea.disabled = usesShotScoreText;
+    textArea.placeholder = usesShotScoreText ? "Uses the shot score and penalties." : "-0";
+    textArea.title = usesShotScoreText
+      ? "This popup is tied to a shot, so its text follows that shot's score and penalties."
+      : "Enter the text to show in the popup.";
+  }
   if (shotSelect) {
     shotSelect.innerHTML = "";
     if (shots.length === 0) {
@@ -3151,6 +3521,19 @@ function buildPopupBubbleCard(bubble, index) {
     if (shotInput) shotInput.disabled = !shotAnchored || shots.length === 0;
     if (durationInput) durationInput.disabled = false;
   }
+  card.querySelector(".popup-bubble-button")?.addEventListener("click", () => {
+    selectPopupBubble(bubble.id, {
+      seek: true,
+      reveal: true,
+      focus: false,
+      activateTool: activeTool !== "popup",
+      expand: true,
+    });
+  });
+  card.querySelector('[data-popup-action="toggle"]')?.addEventListener("click", () => {
+    setPopupBubbleExpanded(bubble.id, !expanded);
+    renderPopupEditors();
+  });
   card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
   card.querySelector('[data-popup-action="clear_motion_path"]')?.addEventListener("click", () => clearPopupBubbleMotionPath(bubble.id));
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
@@ -3163,6 +3546,13 @@ function renderPopupEditors() {
   const list = $("popup-bubble-list");
   if (!list) return;
   const bubbles = popupBubbles();
+  const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
+  [...popupBubbleExpansion.keys()].forEach((bubbleId) => {
+    if (!validBubbleIds.has(bubbleId)) popupBubbleExpansion.delete(bubbleId);
+  });
+  if (selectedPopupBubbleId && !validBubbleIds.has(selectedPopupBubbleId)) {
+    selectedPopupBubbleId = null;
+  }
   withPreservedScrollState([list, document.querySelector(".inspector")].filter(Boolean), () => {
     list.innerHTML = "";
     if (bubbles.length === 0) {
@@ -3350,6 +3740,7 @@ function setActiveTool(tool, { persistUiState = true } = {}) {
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
   if (changed) {
+    collapseMinimizableInspectorItems({ persistUiState, rerender: false });
     root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
@@ -3366,6 +3757,10 @@ function setActiveTool(tool, { persistUiState = true } = {}) {
   });
   if (tool === "merge") {
     $("add-merge-media")?.focus();
+  } else if (tool === "popup") {
+    if (selectedPopupBubbleId) {
+      window.requestAnimationFrame(() => revealPopupBubbleCard(selectedPopupBubbleId, { focus: false }));
+    }
   }
   if (changed) activity("ui.tool.active", { tool });
   syncLocalProjectUiState();
@@ -4154,7 +4549,7 @@ function ensureMergePreviewItem(layer, source) {
   if (media instanceof HTMLImageElement) {
     media.style.opacity = String(currentSourceOpacity(source));
   } else if (media instanceof HTMLVideoElement) {
-    media.style.opacity = "";
+    media.style.opacity = String(currentSourceOpacity(source));
   }
   return item;
 }
@@ -4321,6 +4716,7 @@ function renderVideo() {
     element.style.height = "";
     element.style.maxWidth = "";
     element.style.maxHeight = "";
+    element.style.opacity = "";
   });
 
   if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
@@ -4339,6 +4735,7 @@ function renderVideo() {
 
     if (mergePreview) {
       const activeSecondary = imageSecondary ? secondaryImage : secondary;
+      activeSecondary.style.opacity = String(currentSourceOpacity(mergeSources[0] || null));
       const frameRect = previewFrameGeometry(video, stage)?.frameRect;
       const secondaryWidth = Math.max(
         1,
@@ -4727,7 +5124,30 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
       renderWaveform();
     }
   }
-  if (shot) seekPrimaryVideoToTimeMs(shot.time_ms);
+  if (shot) {
+    let revealedPopup = false;
+    if (activeTool === "popup") {
+      const activePopup = selectedPopupBubble();
+      if (activePopup?.anchor_mode === "shot" && activePopup.shot_id === shot.id) {
+        revealedPopup = selectPopupBubble(activePopup.id, {
+          seek: true,
+          reveal: true,
+          focus: false,
+          activateTool: false,
+          expand: false,
+        });
+      } else if (!activePopup) {
+        revealedPopup = selectPopupBubbleForShot(shot.id, {
+          seek: true,
+          reveal: true,
+          focus: false,
+          activateTool: false,
+          expand: false,
+        });
+      }
+    }
+    if (!revealedPopup) seekPrimaryVideoToTimeMs(shot.time_ms);
+  }
   callApi("/api/shots/select", { shot_id: nextShotId });
 }
 
@@ -5792,7 +6212,7 @@ function renderMetricsTable(table) {
   if (!table) return;
   table.innerHTML = "";
   const rows = buildMetricsRows();
-  table.style.gridTemplateColumns = "minmax(0, 1.2fr) minmax(0, 0.78fr) minmax(0, 0.78fr) minmax(0, 0.78fr) minmax(0, 0.82fr) minmax(0, 0.55fr) minmax(0, 0.95fr)";
+  table.style.gridTemplateColumns = "minmax(0, 1.15fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.72fr) minmax(0, 0.48fr) minmax(0, 1fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 0.7fr) minmax(0, 1.15fr)";
   METRICS_TABLE_COLUMNS.forEach(([label]) => {
     const header = document.createElement("div");
     header.className = "head";
@@ -5807,7 +6227,11 @@ function renderMetricsTable(table) {
       splitSeconds(entry.splitMs),
       splitSeconds(entry.cumulativeMs),
       entry.scoreLetter || "--",
+      entry.penaltyText || "--",
+      entry.practiscoreMs === null || entry.practiscoreMs === undefined ? "--" : splitSeconds(entry.practiscoreMs),
       metricsPractiScoreLabel(entry),
+      formatConfidenceValue(entry.confidence),
+      entry.actionSummary || "--",
     ];
     cells.forEach((value) => {
       const cell = document.createElement("div");
@@ -5815,6 +6239,50 @@ function renderMetricsTable(table) {
       table.appendChild(cell);
     });
   });
+}
+
+function metricsScoringDetailRows(summary) {
+  const imported = summary.imported_stage || {};
+  const shortPenaltyLabels = {
+    procedural_errors: "PE",
+    failures_to_do_right: "FTDR",
+    finger_pe: "FPE",
+    flagrant_penalties: "FP",
+    non_threats: "NS",
+    manual_misses: "M",
+  };
+  const penaltyFieldRows = (summary.penalty_fields || []).map((field) => {
+    const count = Number(field.count || 0);
+    const value = Number(field.value || 0);
+    const suffix = field.unit === "seconds" ? "s" : " pts";
+    return [
+      shortPenaltyLabels[field.id] || field.label || field.id,
+      `${formatNumber(count, 2)} x ${formatNumber(value, 2)}${suffix}`,
+    ];
+  });
+  return [
+    ["Ruleset", summary.ruleset_name || ""],
+    ["Sport", summary.sport || ""],
+    ["Mode", summary.mode || ""],
+    [summary.display_label || "Result", summary.display_value || ""],
+    ["Raw Time", summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : ""],
+    ["Official Raw", summary.official_raw_seconds !== null && summary.official_raw_seconds !== undefined ? `${formatNumber(summary.official_raw_seconds, 2)}s` : ""],
+    ["Raw Delta", summary.raw_delta_seconds !== null && summary.raw_delta_seconds !== undefined ? `${formatNumber(summary.raw_delta_seconds, 2)}s` : ""],
+    ["Final Time", summary.final_time !== null && summary.final_time !== undefined ? `${formatNumber(summary.final_time, 2)}s` : ""],
+    ["Official Final", summary.official_final_time !== null && summary.official_final_time !== undefined ? `${formatNumber(summary.official_final_time, 2)}s` : ""],
+    ["Final Delta", summary.final_delta_seconds !== null && summary.final_delta_seconds !== undefined ? `${formatNumber(summary.final_delta_seconds, 2)}s` : ""],
+    ["Shot Points", formatNumber(summary.shot_points, 2)],
+    ["Shot Penalties", formatNumber(summary.shot_penalties, 2)],
+    ["Field Penalties", formatNumber(summary.field_penalties, 2)],
+    [summary.penalty_label || "Penalties", formatNumber(summary.total_penalties, 2)],
+    ["Hit Factor", summary.hit_factor !== null && summary.hit_factor !== undefined ? formatNumber(summary.hit_factor, 2) : ""],
+    ...penaltyFieldRows,
+    ["Score Options", (summary.score_options || []).join(", ")],
+    ["Imported", imported.source_name || ""],
+    ["Imported Stage", imported.stage_number !== null && imported.stage_number !== undefined ? `Stage ${imported.stage_number}` : ""],
+    ["Competitor", imported.competitor_name || ""],
+    ["Place", imported.competitor_place !== null && imported.competitor_place !== undefined ? String(imported.competitor_place) : ""],
+  ];
 }
 
 function renderMetricsPanel() {
@@ -5898,27 +6366,8 @@ function renderMetricsPanel() {
   scoreStatus.textContent = summary.enabled
     ? `${summary.display_label || "Result"} ${summary.display_value || "--"}`
     : "Scoring disabled.";
-  renderDetailsList("metrics-score-summary", [
-    ["Ruleset", summary.ruleset_name || ""],
-    ["Sport", summary.sport || ""],
-    ["Mode", summary.mode || ""],
-    [summary.display_label || "Result", summary.display_value || ""],
-    ["Shot Points", formatNumber(summary.shot_points, 2)],
-    ["Shot Penalties", formatNumber(summary.shot_penalties, 2)],
-    ["Field Penalties", formatNumber(summary.field_penalties, 2)],
-    [summary.penalty_label || "Penalties", formatNumber(summary.total_penalties, 2)],
-    ["Hit Factor", summary.hit_factor !== null && summary.hit_factor !== undefined ? formatNumber(summary.hit_factor, 2) : ""],
-    ["Raw Time", summary.raw_seconds !== null && summary.raw_seconds !== undefined ? `${formatNumber(summary.raw_seconds, 2)}s` : ""],
-    ["Official Raw", summary.official_raw_seconds !== null && summary.official_raw_seconds !== undefined ? `${formatNumber(summary.official_raw_seconds, 2)}s` : ""],
-    ["Raw Delta", summary.raw_delta_seconds !== null && summary.raw_delta_seconds !== undefined ? `${formatNumber(summary.raw_delta_seconds, 2)}s` : ""],
-    ["Final Time", summary.final_time !== null && summary.final_time !== undefined ? `${formatNumber(summary.final_time, 2)}s` : ""],
-    ["Official Final", summary.official_final_time !== null && summary.official_final_time !== undefined ? `${formatNumber(summary.official_final_time, 2)}s` : ""],
-    ["Final Delta", summary.final_delta_seconds !== null && summary.final_delta_seconds !== undefined ? `${formatNumber(summary.final_delta_seconds, 2)}s` : ""],
-    ["Imported", summary.imported_stage?.source_name || ""],
-    ["Imported Stage", summary.imported_stage?.stage_number !== null && summary.imported_stage?.stage_number !== undefined ? `Stage ${summary.imported_stage.stage_number}` : ""],
-    ["Competitor", summary.imported_stage?.competitor_name || ""],
-    ["Place", summary.imported_stage?.competitor_place !== null && summary.imported_stage?.competitor_place !== undefined ? String(summary.imported_stage.competitor_place) : ""],
-  ]);
+  const details = metricsScoringDetailRows(summary);
+  renderDetailsList("metrics-score-summary", details);
   renderMetricsTable($("metrics-workbench-table"));
 }
 
@@ -6164,6 +6613,7 @@ function renderShotMLProposals() {
 
 function renderShotML() {
   syncShotMLControls();
+  renderCollapsibleInspectorSections();
   const summary = $("shotml-run-summary");
   const lastRun = state.project.analysis.last_shotml_run_summary || {};
   if (summary) {
@@ -6176,6 +6626,7 @@ function renderShotML() {
 
 function renderControls() {
   renderShotML();
+  renderCollapsibleInspectorSections();
   const mergeSources = state.project.merge_sources || [];
   $("sync-offset").textContent = mergeSources.length === 0
     ? "Defaults only"
@@ -6396,6 +6847,10 @@ function renderMergeMediaList() {
   const list = $("merge-media-list");
   if (!list) return;
   const mergeSources = state?.project?.merge_sources || [];
+  const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
+  [...mergeSourceExpansion.keys()].forEach((sourceId) => {
+    if (!validSourceIds.has(sourceId)) mergeSourceExpansion.delete(sourceId);
+  });
   withPreservedScrollState([list], () => {
     list.innerHTML = "";
     if (mergeSources.length === 0) {
@@ -6411,11 +6866,24 @@ function renderMergeMediaList() {
       const sourceId = sourceIdentifier(source, String(index));
       const card = document.createElement("div");
       card.className = "merge-media-card";
+      const expanded = isMergeSourceExpanded(sourceId);
+      card.classList.toggle("collapsed", !expanded);
 
       const header = document.createElement("div");
       header.className = "merge-media-card-header";
       const title = document.createElement("strong");
       title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "scoring-shot-toggle";
+      toggle.textContent = expanded ? "v" : ">";
+      toggle.title = expanded ? "Hide PiP item controls" : "Show PiP item controls";
+      toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} PiP item controls`);
+      toggle.addEventListener("click", () => {
+        setMergeSourceExpanded(sourceId, !expanded);
+        renderMergeMediaList();
+      });
 
       const remove = document.createElement("button");
       remove.type = "button";
@@ -6426,7 +6894,10 @@ function renderMergeMediaList() {
         callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
       });
 
-      header.append(title, remove);
+      const headerActions = document.createElement("div");
+      headerActions.className = "merge-media-card-actions";
+      headerActions.append(toggle, remove);
+      header.append(title, headerActions);
 
       const meta = document.createElement("small");
       meta.className = "merge-media-card-meta";
@@ -6515,7 +6986,7 @@ function renderMergeMediaList() {
         const label = document.createElement("label");
         label.className = "merge-source-field merge-source-opacity-field";
         const text = document.createElement("span");
-        text.textContent = "Image opacity";
+        text.textContent = "PiP opacity";
         const percentField = document.createElement("span");
         percentField.className = "opacity-percent-field";
         const input = document.createElement("input");
@@ -6563,7 +7034,7 @@ function renderMergeMediaList() {
 
       controls.append(
         sizeField,
-        ...(asset.is_still_image ? [buildSourceOpacityInput()] : []),
+        buildSourceOpacityInput(),
         buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
         buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
       );
@@ -6575,7 +7046,11 @@ function renderMergeMediaList() {
         : "These values are saved per item and take effect in PiP layout and export timing.";
       syncRow.append(syncLabel, syncButtons, syncHint);
 
-      card.append(header, meta, controls, syncRow);
+      const body = document.createElement("div");
+      body.className = "merge-media-card-body";
+      body.hidden = !expanded;
+      body.append(meta, controls, syncRow);
+      card.append(header, body);
       syncMergeSourceControls(
         sourceId,
         normalizedCoordinateValue(source.pip_x),
@@ -7533,12 +8008,16 @@ function beginPopupBubbleDrag(event) {
   const bubbleId = badge.dataset.popupId || "";
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
+  selectedPopupBubbleId = bubbleId;
+  if (!popupBubbleExpansion.get(bubbleId)) popupBubbleExpansion.set(bubbleId, true);
+  renderPopupEditors();
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
-    || popupBubblePoint(bubble, overlayRenderPositionMs($("primary-video")));
-  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   const currentPositionMs = overlayRenderPositionMs($("primary-video"));
+  const renderPositionMs = popupBubbleRenderPositionMs(bubble, currentPositionMs);
+  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
+    || popupBubblePoint(bubble, renderPositionMs);
+  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   popupBubbleDrag = {
     bubbleId,
     target: $("popup-overlay"),
@@ -7547,7 +8026,7 @@ function beginPopupBubbleDrag(event) {
     startClientY: event.clientY,
     startX: renderedCoordinates.x,
     startY: renderedCoordinates.y,
-    motionOffsetMs: Math.max(0, currentPositionMs - popupTimeMs),
+    motionOffsetMs: Math.max(0, renderPositionMs - popupTimeMs),
     followMotion: Boolean(bubble.follow_motion),
   };
   capturePointer(popupBubbleDrag.target, event.pointerId);
@@ -7796,12 +8275,20 @@ function overlayRenderPositionMs(video, mediaTimeS = null) {
 }
 
 function visiblePopupBubbles(positionMs) {
-  return popupBubbles().filter((bubble) => (
-    bubble.enabled
-    && bubble.text.trim()
-    && positionMs >= popupBubbleEffectiveTimeMs(bubble)
-    && positionMs <= popupBubbleEffectiveTimeMs(bubble) + bubble.duration_ms
-  ));
+  return popupBubbles().flatMap((bubble) => {
+    const resolvedText = popupBubbleResolvedText(bubble).trim();
+    if (!bubble.enabled || !resolvedText) return [];
+    const isVisible = popupBubbleIsVisibleAtPosition(bubble, positionMs);
+    const isSelectedEditorBubble = activeTool === "popup" && bubble.id === selectedPopupBubbleId;
+    if (!isVisible && !isSelectedEditorBubble) return [];
+    return [{
+      bubble,
+      text: resolvedText,
+      positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),
+      selected: isSelectedEditorBubble,
+      outsideWindow: !isVisible,
+    }];
+  });
 }
 
 function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {
@@ -7811,11 +8298,12 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
   popupOverlay.style.top = `${frameRect.top}px`;
   popupOverlay.style.width = `${frameRect.width}px`;
   popupOverlay.style.height = `${frameRect.height}px`;
-  visiblePopupBubbles(positionMs).forEach((bubble) => {
-    const point = popupBubblePoint(bubble, positionMs);
+  visiblePopupBubbles(positionMs).forEach((entry) => {
+    const bubble = entry.bubble;
+    const point = popupBubblePoint(bubble, entry.positionMs);
     const popupSize = resolvedPopupBubbleSize(bubble);
     const badge = badgeElement(
-      bubble.text,
+      entry.text,
       {
         background_color: bubble.background_color,
         text_color: bubble.text_color,
@@ -7831,6 +8319,8 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     );
     badge.dataset.popupDrag = "true";
     badge.dataset.popupId = bubble.id;
+    badge.classList.toggle("popup-selected", Boolean(entry.selected));
+    badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));
     placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
   });
 }
@@ -9152,6 +9642,7 @@ function wireEvents() {
   ].forEach(([id, source]) => {
     $(id)?.addEventListener("click", () => addOverlayTextBox(source));
   });
+  $("popup-import-shots")?.addEventListener("click", importShotPopups);
   $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
   $("badge-style-grid").addEventListener("input", (event) => {
     const target = event.target;

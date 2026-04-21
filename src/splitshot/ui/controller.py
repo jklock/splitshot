@@ -275,6 +275,9 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.ui_state.waveform_shot_amplitudes = {}
     project.ui_state.timing_edit_shot_ids = []
     project.ui_state.review_text_box_expansion = {}
+    project.ui_state.popup_bubble_expansion = {}
+    project.ui_state.merge_source_expansion = {}
+    project.ui_state.shotml_section_expansion = {}
 
 
 def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
@@ -1456,6 +1459,52 @@ class ProjectController(QObject):
                         next_expansion[clean_key] = bool(value)
             if ui_state.review_text_box_expansion != next_expansion:
                 ui_state.review_text_box_expansion = next_expansion
+                changed = True
+        if "popup_bubble_expansion" in payload:
+            next_expansion: dict[str, bool] = {}
+            raw_expansion = payload.get("popup_bubble_expansion")
+            if isinstance(raw_expansion, dict):
+                valid_bubble_ids = {bubble.id for bubble in self.project.popups}
+                for key, value in raw_expansion.items():
+                    clean_key = str(key).strip()
+                    if clean_key and clean_key in valid_bubble_ids:
+                        next_expansion[clean_key] = bool(value)
+            if ui_state.popup_bubble_expansion != next_expansion:
+                ui_state.popup_bubble_expansion = next_expansion
+                changed = True
+        if "merge_source_expansion" in payload:
+            next_expansion: dict[str, bool] = {}
+            raw_expansion = payload.get("merge_source_expansion")
+            if isinstance(raw_expansion, dict):
+                valid_source_ids = {source.id for source in self.project.merge_sources}
+                valid_source_ids.add("pip-defaults")
+                for key, value in raw_expansion.items():
+                    clean_key = str(key).strip()
+                    if clean_key and clean_key in valid_source_ids:
+                        next_expansion[clean_key] = bool(value)
+            if ui_state.merge_source_expansion != next_expansion:
+                ui_state.merge_source_expansion = next_expansion
+                changed = True
+        if "shotml_section_expansion" in payload:
+            next_expansion: dict[str, bool] = {}
+            raw_expansion = payload.get("shotml_section_expansion")
+            if isinstance(raw_expansion, dict):
+                valid_section_ids = {
+                    "threshold",
+                    "beep_detection",
+                    "shot_candidate_detection",
+                    "shot_refinement",
+                    "false_positive_suppression",
+                    "confidence_review",
+                    "timing_changer",
+                    "advanced_runtime",
+                }
+                for key, value in raw_expansion.items():
+                    clean_key = str(key).strip()
+                    if clean_key and clean_key in valid_section_ids:
+                        next_expansion[clean_key] = bool(value)
+            if ui_state.shotml_section_expansion != next_expansion:
+                ui_state.shotml_section_expansion = next_expansion
                 changed = True
 
         if changed:

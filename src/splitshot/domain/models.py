@@ -455,6 +455,7 @@ class PopupMotionPoint:
 class PopupBubble:
     id: str = field(default_factory=lambda: uuid4().hex)
     enabled: bool = True
+    name: str = ""
     text: str = ""
     anchor_mode: str = "time"
     shot_id: str | None = None
@@ -514,6 +515,9 @@ class UIState:
     timing_edit_shot_ids: list[str] = field(default_factory=list)
     timing_column_widths: dict[str, float] = field(default_factory=dict)
     review_text_box_expansion: dict[str, bool] = field(default_factory=dict)
+    popup_bubble_expansion: dict[str, bool] = field(default_factory=dict)
+    merge_source_expansion: dict[str, bool] = field(default_factory=dict)
+    shotml_section_expansion: dict[str, bool] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -773,6 +777,7 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
     return PopupBubble(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", True)),
+        name=str(data.get("name", ""))[:80],
         text=str(data.get("text", ""))[:500],
         anchor_mode=_normalize_popup_bubble_anchor_mode(data.get("anchor_mode"), shot_id),
         shot_id=shot_id,
@@ -1297,6 +1302,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
                 minimum=72,
             ),
             review_text_box_expansion=_ui_state_bool_map(ui_data.get("review_text_box_expansion")),
+            popup_bubble_expansion=_ui_state_bool_map(ui_data.get("popup_bubble_expansion")),
+            merge_source_expansion=_ui_state_bool_map(ui_data.get("merge_source_expansion")),
+            shotml_section_expansion=_ui_state_bool_map(ui_data.get("shotml_section_expansion")),
         ),
         schema_version=int(data.get("schema_version", 1)),
     )
