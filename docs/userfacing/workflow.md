@@ -1,56 +1,56 @@
 # SplitShot Workflow
 
-This is the fastest end-to-end path from a raw stage video to a finished local export.
+This is the recommended path from raw stage video to finished local export.
 
 ## Before You Start
 
-- Install and launch SplitShot from the root [README.md](../../README.md).
-- Keep the primary stage video on a local drive.
-- If you want official stage context, have the PractiScore CSV or TXT file ready.
-- If you want a second angle or supporting graphics, keep those files ready for the PiP step.
+- Launch SplitShot from the root [README.md](../../README.md).
+- Keep the primary video on a local drive.
+- Keep PractiScore CSV/TXT data ready if you want official context.
+- Keep secondary angles or graphics ready if you plan to use PiP.
 
 ## End-To-End Flow
 
-1. Open SplitShot and start in [panes/project.md](panes/project.md).
-2. Name the project, add an optional description, then choose the primary video.
-3. Wait for the status bar to report local analysis results. SplitShot will detect the beep, shots, and waveform data before the rest of the workflow is reliable.
-4. Open [panes/shotml.md](panes/shotml.md) if the automatic detector needs tuning. Lower the threshold if quiet shots were missed, raise it if background noise created extra shots, then click `Re-run ShotML`; editing a setting alone only saves the value.
-5. Use `Generate Proposals` in ShotML when review suggestions should become explicit Apply/Discard timing changes.
-6. Open [panes/splits.md](panes/splits.md) and confirm the shot list, first-shot draw time, and waveform markers.
-7. Nudge, drag, add, or delete shots until the timing view matches the actual run.
-8. If you want official match context, return to [panes/project.md](panes/project.md) and import the PractiScore file.
-9. Open [panes/score.md](panes/score.md), enable scoring, choose the correct preset, and score each shot.
-10. Open [panes/overlay.md](panes/overlay.md) and set the badge layout, font, colors, and score badge placement.
-11. Open [panes/popup.md](panes/popup.md) when you want score or penalty bubbles. Use `Add Bubble` for the selected shot, or `Import Shots` to create one popup per shot.
-12. Open [panes/review.md](panes/review.md) and verify which badges should appear in preview and export. Add any custom review text boxes or imported summary boxes here.
-13. If you need extra media, open [panes/pip.md](panes/pip.md), add each file, and fine-tune size, position, and sync.
-14. Open [panes/metrics.md](panes/metrics.md) when you want the expanded table or a CSV/text export of the run.
-15. Finish in [panes/export.md](panes/export.md), choose an output preset or custom settings, set the output path, and render the final video.
-16. Keep the chosen project folder so SplitShot can reopen the same bundle later.
+1. Open [panes/project.md](panes/project.md).
+2. Name the project, add a description, and import the primary video.
+3. Wait for analysis to finish.
+4. If needed, open [panes/shotml.md](panes/shotml.md), tune detector settings, and click `Re-run ShotML`.
+5. Use `Generate Proposals` only when ShotML suggestions should become explicit reviewable changes.
+6. Open [panes/splits.md](panes/splits.md) and confirm the shot count, beep, first shot, and waveform markers.
+7. Nudge, drag, add, or delete shots until the timeline matches the video.
+8. Import PractiScore in [panes/project.md](panes/project.md) if official match context is needed.
+9. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.
+10. Open [panes/pip.md](panes/pip.md) if added media is needed; sync and place each item.
+11. Open [panes/overlay.md](panes/overlay.md) and configure badge layout, locks, fonts, colors, and score-token colors.
+12. Open [panes/popup.md](panes/popup.md) for shot-linked or time-based callout bubbles.
+13. Open [panes/review.md](panes/review.md) to set badge visibility and add summary/custom text boxes.
+14. Open [panes/metrics.md](panes/metrics.md) to inspect the dashboard, expanded table, or CSV/text exports.
+15. Finish in [panes/export.md](panes/export.md), choose render settings, set output path, and click `Export Video`.
+16. Keep the project folder if you will revise or rerender later.
 
-## Practical Order Of Operations
+## Practical Order
 
-- Do ShotML tuning before manual timing. A rerun replaces the automatic shot draft.
-- Do timing work before scoring. A changed shot list changes score rows, metrics, and overlay timing.
-- Import PractiScore after the timing pass is stable. That makes it easier to compare official context against the final shot list.
-- Create shot-linked popups after scoring. PopUp derives shot-linked text from the current score and penalties.
-- Tune Overlay before Review if you want review text boxes to line up with the final badge stack.
-- Add PiP media after the main angle is stable. It is easier to sync and place secondary media once the primary timeline is finished.
-- Export only after you have scrubbed near the final shot and confirmed the score summary, review boxes, and PiP layout.
+- Tune ShotML before manual timing because reruns replace the automatic draft.
+- Finish timing before scoring because score rows follow the shot list.
+- Score before PopUp when shot-linked popups should show score and penalties.
+- Configure PiP before final overlay placement when added media changes where badges should sit.
+- Configure Overlay before Review when text boxes need to align with the final badge stack.
+- Check Metrics before Export when you need confidence, raw delta, or CSV confirmation.
+- Export only after scrubbing near the final shot and confirming overlays, popups, review boxes, and PiP.
 
-## When To Save The Bundle
+## Bundle Guidance
 
-- Choose the project folder early if you want SplitShot to keep the session in a named bundle.
-- Keep the same folder through revisions so the run, timing, score, overlay, PiP, and export settings stay together.
-- Reopen that folder later from the Project pane when you need to revise timing or export another version.
+- Choose the project folder early when you want a reusable bundle.
+- Keep using the same folder through revisions.
+- Reopen the bundle from Project when you need another export version.
 
 ## Next Stops
 
-- [panes/project.md](panes/project.md) for setup details.
-- [panes/shotml.md](panes/shotml.md) for detector tuning and timing-change proposals.
-- [panes/export.md](panes/export.md) for render settings.
-- [panes/popup.md](panes/popup.md) for shot-linked score and penalty popups.
-- [troubleshooting.md](troubleshooting.md) if any step behaves differently than expected.
+- [panes/project.md](panes/project.md) for setup.
+- [panes/shotml.md](panes/shotml.md) for detector tuning.
+- [panes/splits.md](panes/splits.md) for manual timing.
+- [panes/export.md](panes/export.md) for final render settings.
+- [troubleshooting.md](troubleshooting.md) for common issues.
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22

@@ -1,6 +1,6 @@
 # SplitShot Documentation
 
-SplitShot documentation is organized so new users can reach the product guides first, then drill into limitations, technical details, and development notes.
+SplitShot documentation starts with the product guides, then branches into troubleshooting, technical notes, and development references. The current user-facing screenshots live in [screenshots/](screenshots/).
 
 ## User Docs
 
@@ -8,15 +8,34 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [userfacing/workflow.md](userfacing/workflow.md)
 - [userfacing/troubleshooting.md](userfacing/troubleshooting.md)
 - [userfacing/panes/project.md](userfacing/panes/project.md)
-- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
-- [userfacing/panes/splits.md](userfacing/panes/splits.md)
 - [userfacing/panes/score.md](userfacing/panes/score.md)
+- [userfacing/panes/splits.md](userfacing/panes/splits.md)
+- [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
 - [userfacing/panes/pip.md](userfacing/panes/pip.md)
 - [userfacing/panes/overlay.md](userfacing/panes/overlay.md)
 - [userfacing/panes/popup.md](userfacing/panes/popup.md)
 - [userfacing/panes/review.md](userfacing/panes/review.md)
 - [userfacing/panes/export.md](userfacing/panes/export.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
+
+## Screenshot Set
+
+- `ProjectPane.png`
+- `ScoringPane.png`, `ScoringPane2.png`
+- `SplitsPane.png`, `SplitsExpanded.png`, `WaveFormExpanded.png`
+- `ShotMLPane.png`, `ShotMLPane2.png`
+- `PiPPane.png`
+- `OverlayPane.png`, `OverlayPane2.png`
+- `PopUpPane.png`, `PopUpPane2.png`
+- `ReviewPane.png`, `ReviewPane2.png`
+- `ExportPane.png`, `ExportPane2.png`
+- `MetricsPane.png`, `MetricsPane2.png`, `MetricsCSV.png`
+
+Regenerate the browser screenshots with:
+
+```bash
+uv run python scripts/docs/capture_browser_screenshots.py
+```
 
 ## Current Limitations
 
@@ -55,5 +74,5 @@ SplitShot documentation is organized so new users can reach the product guides f
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22
