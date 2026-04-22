@@ -526,6 +526,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function popupBubbleRenderPositionMs(bubble, positionMs) {' in js
     assert 'function popupBubbleIsVisibleAtPosition(bubble, positionMs) {' in js
     assert 'function popupBubbleSeekTimeMs(bubble) {' in js
+    assert '{ seek = true, reveal = true, focus = false, activateTool = false, expand = false, rerender = true } = {}' in js
+    assert 'card.querySelector(".popup-bubble-button")?.addEventListener("click", (event) => {' in js
+    assert 'expand: false,\n    });\n  };' in js
+    assert 'setPopupBubbleExpanded(bubble.id, !isPopupBubbleExpanded(bubble.id));' in js
+    assert 'if (!popupBubbleExpansion.get(bubbleId)) popupBubbleExpansion.set(bubbleId, true);' not in js
     assert 'const isSelectedEditorBubble = activeTool === "popup" && bubble.id === selectedPopupBubbleId;' in js
     assert 'positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),' in js
     assert 'badge.classList.toggle("popup-selected", Boolean(entry.selected));' in js
@@ -777,7 +782,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "overflow-wrap: anywhere;\n  white-space: normal;" in css
     assert ".cockpit-shell.inspector-compact .style-card-label" in css
     assert ".cockpit-shell.inspector-compact .style-card-label {\n  display: none;" not in css
-    assert ".cockpit-shell.inspector-compact .popup-style-card" in css
+    assert ".popup-style-card,\n.cockpit-shell.inspector-compact .popup-style-card {\n  grid-template-columns: repeat(2, minmax(0, 1fr));" in css
+    assert ".popup-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
+    assert "  .popup-style-card {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }" in css
     assert "#badge-style-grid {\n  grid-template-columns: repeat(4, minmax(0, 1fr));" in css
     assert "#badge-style-grid .badge-style-card .color-swatch-button" in css
     assert "#badge-style-grid .badge-style-card .opacity-percent-input" in css

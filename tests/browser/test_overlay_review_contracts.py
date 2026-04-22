@@ -516,6 +516,7 @@ def test_overlay_drag_math_uses_client_preview_frame_rect() -> None:
 def test_imported_summary_defaults_and_above_final_contract_are_source_visible() -> None:
     js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
     controller_source = Path("src/splitshot/ui/controller.py").read_text(encoding="utf-8")
+    renderer_source = Path("src/splitshot/overlay/render.py").read_text(encoding="utf-8")
 
     assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left"' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
@@ -527,11 +528,18 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert 'function resolvedOverlayTextBoxSize(box) {' in js
     assert 'function overlayStackAnchorRect(overlay) {' in js
     assert 'function overlayStackTerminalRect(overlay) {' in js
+    assert 'const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());' in js
+    assert 'if (direction === "up") return candidateRect.top < selectedRect.top ? candidate : selected;' in js
+    assert 'left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);' in js
+    assert 'top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);' in js
     assert 'if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
     assert 'const aboveFinalAnchorRect = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE' in js
     assert '!(finalScoreBadge instanceof HTMLElement) && box.source === "imported_summary" ? stackAnchorRect : null' in js
     assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
-    assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in js
+    assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameClientRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in js
+    assert "def _terminal_stack_rect(rects: list[QRectF], direction: str) -> QRectF | None:" in renderer_source
+    assert 'rect_x = base_rect.center().x() - (badge_width / 2)' in renderer_source
+    assert 'rect_y = base_rect.center().y() - (badge_height / 2)' in renderer_source
     assert 'source="imported_summary",' in controller_source
     assert 'quadrant="above_final",' in controller_source
     assert "sync_overlay_legacy_custom_box_fields(self.project.overlay)" in controller_source
@@ -550,6 +558,8 @@ def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> Non
     assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' in js
     assert 'textBoxRenderedPositionById = nextRenderedPositions;' in js
     assert 'syncLockedTextBoxEditorCoordinates();' in js
+    assert 'setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));' in js
+    assert 'card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {' in js
 
 
 def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:

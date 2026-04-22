@@ -2589,7 +2589,16 @@ function buildTextBoxCard(box, index) {
   card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setReviewTextBoxExpanded(box.id, !expanded);
+    event.stopImmediatePropagation();
+    setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
+    renderTextBoxEditors();
+  });
+  card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest("button, input, select, textarea, label, a")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
     renderTextBoxEditors();
   });
   card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
@@ -3010,7 +3019,7 @@ function revealPopupBubbleCard(bubbleId, { focus = false } = {}) {
 
 function selectPopupBubble(
   bubbleId,
-  { seek = true, reveal = true, focus = false, activateTool = false, expand = true } = {},
+  { seek = true, reveal = true, focus = false, activateTool = false, expand = false, rerender = true } = {},
 ) {
   const bubble = popupBubbles().find((item) => item.id === bubbleId) || null;
   if (!bubble) {
@@ -3026,7 +3035,7 @@ function selectPopupBubble(
     }
   }
   if (activateTool) setActiveTool("popup");
-  renderPopupEditors();
+  if (rerender) renderPopupEditors();
   if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
   if (reveal) window.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
   return true;
@@ -3152,7 +3161,7 @@ function addPopupBubble() {
         },
   );
   setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
-  selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true });
+  selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true, expand: true });
 }
 
 function importShotPopups() {
@@ -3214,7 +3223,7 @@ function duplicatePopupBubble(bubbleId) {
     }),
   ], { commit: true, rerender: true });
   const duplicate = popupBubbles()[popupBubbles().length - 1];
-  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "popup" });
+  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "popup", expand: true });
 }
 
 function clearPopupBubbleMotionPath(bubbleId) {
@@ -3547,19 +3556,38 @@ function buildPopupBubbleCard(bubble, index) {
     if (shotInput) shotInput.disabled = !shotAnchored || shots.length === 0;
     if (durationInput) durationInput.disabled = false;
   }
-  card.querySelector(".popup-bubble-button")?.addEventListener("click", () => {
+  const selectFromCard = () => {
     selectPopupBubble(bubble.id, {
       seek: true,
       reveal: true,
       focus: false,
       activateTool: activeTool !== "popup",
-      expand: true,
+      expand: false,
     });
+  };
+  card.querySelector(".popup-bubble-button")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectFromCard();
+  });
+  card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("button, input, select, textarea, label, a")) return;
+    selectFromCard();
   });
   card.querySelector('[data-popup-action="toggle"]')?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
-    setPopupBubbleExpanded(bubble.id, !expanded);
+    event.stopImmediatePropagation();
+    selectPopupBubble(bubble.id, {
+      seek: true,
+      reveal: false,
+      focus: false,
+      activateTool: activeTool !== "popup",
+      expand: false,
+      rerender: false,
+    });
+    setPopupBubbleExpanded(bubble.id, !isPopupBubbleExpanded(bubble.id));
     renderPopupEditors();
   });
   card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", (event) => {
@@ -7825,7 +7853,17 @@ function overlayStackAnchorRect(overlay) {
 
 function overlayStackTerminalRect(overlay) {
   const badges = overlayStackBadges(overlay);
-  const terminalBadge = badges.at(-1);
+  if (badges.length === 0) return null;
+  const direction = state?.project?.overlay?.shot_direction || "right";
+  const terminalBadge = badges.reduce((selected, candidate) => {
+    if (!(selected instanceof HTMLElement)) return candidate;
+    const selectedRect = selected.getBoundingClientRect();
+    const candidateRect = candidate.getBoundingClientRect();
+    if (direction === "left") return candidateRect.left < selectedRect.left ? candidate : selected;
+    if (direction === "up") return candidateRect.top < selectedRect.top ? candidate : selected;
+    if (direction === "down") return candidateRect.bottom > selectedRect.bottom ? candidate : selected;
+    return candidateRect.right > selectedRect.right ? candidate : selected;
+  }, badges[0]);
   return terminalBadge instanceof HTMLElement ? terminalBadge.getBoundingClientRect() : null;
 }
 
@@ -7858,12 +7896,16 @@ function nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale = 1) {
   let top = baseRect.top;
   if (direction === "left") {
     left = baseRect.left - badgeRect.width - gap;
+    top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);
   } else if (direction === "up") {
+    left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);
     top = baseRect.top - badgeRect.height - gap;
   } else if (direction === "down") {
+    left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);
     top = baseRect.top + baseRect.height + gap;
   } else {
     left = baseRect.left + baseRect.width + gap;
+    top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);
   }
   return {
     left: clamp(left, 0, Math.max(0, frameRect.width - badgeRect.width)),
@@ -8059,8 +8101,8 @@ function beginPopupBubbleDrag(event) {
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
   selectedPopupBubbleId = bubbleId;
-  if (!popupBubbleExpansion.get(bubbleId)) popupBubbleExpansion.set(bubbleId, true);
   renderPopupEditors();
+  renderLiveOverlay();
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const currentPositionMs = overlayRenderPositionMs($("primary-video"));
@@ -8395,6 +8437,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   const video = $("primary-video");
   const frameGeometry = previewFrameGeometry(video, stage);
   const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
+  const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());
   const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
   const positionMs = Number.isFinite(positionMsOverride)
     ? Math.max(0, Math.floor(positionMsOverride))
@@ -8523,7 +8566,7 @@ function renderLiveOverlay(positionMsOverride = null) {
 
   const nextCustomOverlayKey = textBoxEntries.length === 0
     ? ""
-    : customOverlayKey(textBoxEntries, frameRect, overlayScale, finalScoreBadge, stackAnchorRect);
+    : customOverlayKey(textBoxEntries, frameClientRect, overlayScale, finalScoreBadge, stackAnchorRect);
   if (!nextCustomOverlayKey) {
     if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
       customOverlay.innerHTML = "";
@@ -8537,7 +8580,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
   const renderedTextBoxCount = customOverlay.querySelectorAll("[data-text-box-drag='true']").length;
   if (nextCustomOverlayKey !== customOverlayRenderKey || renderedTextBoxCount !== textBoxEntries.length) {
-    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
+    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameClientRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
     customOverlayRenderKey = nextCustomOverlayKey;
   }
   customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);

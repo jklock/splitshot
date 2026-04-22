@@ -176,6 +176,18 @@ def _combined_rect(rects: list[QRectF]) -> QRectF | None:
     return QRectF(left, top, max(0.0, right - left), max(0.0, bottom - top))
 
 
+def _terminal_stack_rect(rects: list[QRectF], direction: str) -> QRectF | None:
+    if not rects:
+        return None
+    if direction == "left":
+        return min(rects, key=lambda rect: rect.left())
+    if direction == "up":
+        return min(rects, key=lambda rect: rect.top())
+    if direction == "down":
+        return max(rects, key=lambda rect: rect.bottom())
+    return max(rects, key=lambda rect: rect.right())
+
+
 def _score_token_color(project: Project, token: str) -> str | None:
     normalized_token = str(token).strip()
     if not normalized_token:
@@ -475,7 +487,7 @@ class OverlayRenderer:
         final_score_rect: QRectF | None = None
         badge_rects = self._paint_badges(painter, badges, project, width, height, auto_badge_size=auto_badge_size)
         stack_anchor_rect = _combined_rect(badge_rects)
-        stack_terminal_rect = badge_rects[-1] if badge_rects else None
+        stack_terminal_rect = _terminal_stack_rect(badge_rects, project.overlay.shot_direction)
         if has_final_score_badge and project.overlay.score_lock_to_stack and badge_rects:
             final_score_rect = badge_rects[-1]
         for index, (badge, x, y) in enumerate(positioned_badges):
@@ -679,16 +691,28 @@ class OverlayRenderer:
                 rect_x = max(0.0, min(rect_x, max(0.0, width - badge_width)))
                 rect_y = max(0.0, min(rect_y, max(0.0, height - badge_height)))
             else:
+                center_on_base = after_rect is not None
                 rect_x = base_rect.x()
                 rect_y = base_rect.y()
                 if project.overlay.shot_direction == "right":
                     rect_x = base_rect.x() + base_rect.width() + gap
+                    if center_on_base:
+                        rect_y = base_rect.center().y() - (badge_height / 2)
                 elif project.overlay.shot_direction == "left":
                     rect_x = base_rect.x() - badge_width - gap
+                    if center_on_base:
+                        rect_y = base_rect.center().y() - (badge_height / 2)
                 elif project.overlay.shot_direction == "up":
+                    if center_on_base:
+                        rect_x = base_rect.center().x() - (badge_width / 2)
                     rect_y = base_rect.y() - badge_height - gap
                 else:
+                    if center_on_base:
+                        rect_x = base_rect.center().x() - (badge_width / 2)
                     rect_y = base_rect.y() + base_rect.height() + gap
+                if center_on_base:
+                    rect_x = max(0.0, min(rect_x, max(0.0, width - badge_width)))
+                    rect_y = max(0.0, min(rect_y, max(0.0, height - badge_height)))
             rect = QRectF(rect_x, rect_y, badge_width, badge_height)
             previous_rect = rect
             painted_rects.append(rect)
