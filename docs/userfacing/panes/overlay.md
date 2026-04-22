@@ -32,7 +32,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | Lock checkboxes | Keep timer, draw, or score badges attached to the shot stack. |
 | `Bubble width` / `Bubble height` | Force badge dimensions; leave unset for auto-sizing. |
 | `Font`, `Font size`, `Bold`, `Italic` | Control badge typography. |
-| Badge style cards | Set background, text color, and opacity for timer, shot, current shot, and score badges. |
+| Badge style cards | Compact side-by-side cards for timer, shot, current shot, and score badge background, text color, and opacity. |
 | Score text color controls | Set colors for score tokens such as `-0`, `-1`, `M`, `NS`, `PE`, and similar values. |
 | Color swatches | Open the shared color picker modal with quick swatches, hue, saturation, lightness, and hex input. |
 
@@ -44,7 +44,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 4. Leave timer/draw/score locks on when those badges should travel with the shot stack.
 5. Turn a lock off when that badge needs its own X/Y placement.
 6. Tune bubble dimensions and typography.
-7. Finish with badge style cards and score text colors while watching the preview.
+7. Finish with the compact badge style cards and score text colors while watching the preview.
 8. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
 
 ## Preview And Export Behavior

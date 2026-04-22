@@ -24,7 +24,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `Add Custom Box` | Adds a manually typed text box. |
 | `Add Summary Box` | Adds a PractiScore-backed summary box. |
 | Box enable checkbox | Turns one text box on or off. |
-| `Hide` / `Show` | Expands or collapses that box editor. |
+| `>` / `v` | Expands or collapses that box editor. |
 | `Duplicate` | Copies the box and its styling. |
 | `Remove` | Deletes the box. |
 | `Content Source` | Chooses `Custom text` or `Imported summary`. |

@@ -21,8 +21,8 @@ The Metrics pane is a read-only dashboard for the current run. It summarizes tim
 | Control | What it does |
 | --- | --- |
 | Summary cards | Show headline values such as draw, raw time, shot count, average split, beep, and result. |
-| `Trend Snapshot` | Lists row-by-row timing context in the inspector. |
-| Scoring context block | Shows ruleset, result, raw/final timing, penalties, points, and imported source details. |
+| `Trend Snapshot` | Shows the compact row-by-row timing table in the inspector. |
+| Scoring context block | Shows imported stage number, competitor, place, ruleset, result, raw/final timing, penalties, and points. |
 | `Export CSV` | Downloads the current metrics table as CSV. |
 | `Export Text` | Downloads a plain-text run summary. |
 | `Expand` | Opens the full-width Metrics table. |
@@ -47,8 +47,8 @@ The Metrics pane is a read-only dashboard for the current run. It summarizes tim
 ## How To Use It
 
 1. Read the summary cards for draw, raw, shots, average split, beep, and result.
-2. Review `Trend Snapshot` for the sequence story.
-3. Check scoring context when you need ruleset, penalty, imported source, or official comparison details.
+2. Review the `Trend Snapshot` table for the sequence story.
+3. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details.
 4. Click `Expand` for the dense table view.
 5. Click `Export CSV` for spreadsheet work.
 6. Click `Export Text` for coaching notes, messages, or training logs.
