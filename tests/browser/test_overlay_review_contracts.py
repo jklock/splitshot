@@ -501,6 +501,16 @@ def test_overlay_drag_math_uses_client_preview_frame_rect() -> None:
     assert "const badgeRect = customBadge.getBoundingClientRect();" in js
     assert "const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);" in js
     assert "const anchorRect = anchorBadge?.getBoundingClientRect() || overlay?.getBoundingClientRect() || badge.getBoundingClientRect();" in js
+    assert 'scoreLayer.style.left = `${frameRect.left}px`;' in js
+    assert 'scoreLayer.style.top = `${frameRect.top}px`;' in js
+    assert 'scoreLayer.style.width = `${frameRect.width}px`;' in js
+    assert 'scoreLayer.style.height = `${frameRect.height}px`;' in js
+    assert 'badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;' in js
+    assert 'badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;' in js
+    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in js
+    assert 'kind: effectiveKind,' in js
+    assert 'sourceKind: kind,' in js
+    assert '$(config.lockId).checked = false;' not in js
 
 
 def test_imported_summary_defaults_and_above_final_contract_are_source_visible() -> None:
@@ -551,8 +561,10 @@ def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:
     assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
     assert 'const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {' in js
     assert 'if (locked && !box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
-    assert 'syncControlValue($(config.xId), anchor.x);' in js
-    assert 'syncControlValue($(config.yId), anchor.y);' in js
+    assert 'const coords = resolveRenderedOverlayBadgeCoordinates(kind);' in js
+    assert 'syncControlValue($(config.xId), coords.x);' in js
+    assert 'syncControlValue($(config.yId), coords.y);' in js
+    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in js
     assert 'resetOverlayPlacementBaseline(id);' in js
     assert 'syncOverlayBadgeCoordinateControlValues();' in js
     assert '["timer-x", "timer-y", "draw-x", "draw-y"]' not in js

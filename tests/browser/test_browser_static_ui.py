@@ -488,7 +488,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
     assert "const BADGE_FONT_SIZES = {" in js
-    assert "const PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX = 48;" in js
+    assert "PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX" not in js
     assert "function syncOverlayFontSizePreset()" in js
     assert "function ensureShotQuadrantDefaults()" in js
     assert 'activity("layout.resize.start"' in js
@@ -706,7 +706,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "setActivePage" not in js
     assert 'let overlayFrameMode = null;' in js
     assert 'function overlayRenderPositionMs(video, mediaTimeS = null) {' in js
-    assert 'function previewOverlayFrameRect(frameRect, video) {' in js
+    assert 'function previewFrameClientRect(video, container) {' in js
     assert 'function requestOverlayFrame(video, tick) {' in js
     assert 'function cancelOverlayFrame(video) {' in js
     assert 'renderLiveOverlay(positionMsOverride = null)' in js
@@ -923,7 +923,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'badge.style.fontWeight = state.project.overlay.font_bold ? "700" : "400";' in js
     assert 'badge.style.wordBreak = "normal";' in js
     assert 'const frameGeometry = previewFrameGeometry(video, stage);' in js
-    assert 'const frameRect = roundedRect(previewOverlayFrameRect(frameGeometry?.frameRect || stage.getBoundingClientRect(), video));' in js
+    assert 'const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());' in js
     assert 'const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="background_color"]\'));' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="text_color"]\'));' in js
