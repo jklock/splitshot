@@ -364,8 +364,7 @@ function buttonDescriptor(button) {
     waveform_mode: button.dataset.waveformMode || "",
     nudge_ms: button.dataset.nudge || "",
     sync_ms: button.dataset.sync || "",
-    opens_secondary: button.hasAttribute("data-open-secondary"),
-    opens_media: button.hasAttribute("data-open-merge-media") || button.hasAttribute("data-open-secondary"),
+    opens_media: button.hasAttribute("data-open-merge-media"),
   };
 }
 
@@ -2138,15 +2137,6 @@ function scheduleOverlayColorCommit() {
     overlayColorCommitTimer = null;
     scheduleOverlayApply();
   }, OVERLAY_COLOR_COMMIT_DELAY_MS);
-}
-
-function previewOverlayColorChanges() {
-  previewOverlayControlChanges();
-}
-
-function queueOverlayColorCommit() {
-  previewOverlayControlChanges();
-  scheduleOverlayColorCommit();
 }
 
 function flushOverlayColorCommit() {
@@ -5983,12 +5973,6 @@ function renderScoringShotList() {
   });
 }
 
-function renderScoringPenaltyFields(summary) {
-  const grid = $("scoring-penalty-grid");
-  if (!grid) return;
-  grid.innerHTML = "";
-}
-
 function renderScoringPresetOptions() {
   const select = $("scoring-preset");
   const selected = state.project.scoring.ruleset;
@@ -6008,7 +5992,6 @@ function renderScoringPresetOptions() {
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "Choose a scoring preset.";
   $("scoring-result").textContent = `${summary.display_label}: ${summary.display_value}`;
   renderScoreOptions(summary);
-  renderScoringPenaltyFields(summary);
   renderScoringShotList();
   if (previousLength === 0) select.addEventListener("change", renderScoringPresetDescription);
 }
@@ -9012,14 +8995,10 @@ function readExportLayoutPayload() {
 }
 
 function readScoringPayload() {
-  const penaltyGrid = $("scoring-penalty-grid");
-  const penaltyCounts = penaltyGrid
-    ? collectPenaltyCounts(penaltyGrid, ".penalty-input[data-penalty-id]")
-    : { ...(state.project?.scoring?.penalty_counts || {}) };
   return {
     enabled: $("scoring-enabled").checked,
     penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state.project?.scoring?.penalties || 0),
-    penalty_counts: penaltyCounts,
+    penalty_counts: { ...(state.project?.scoring?.penalty_counts || {}) },
   };
 }
 
@@ -9695,7 +9674,6 @@ function wireEvents() {
   ["scoring-enabled", "scoring-preset"].forEach((id) => {
     $(id).addEventListener("change", scheduleScoringApply);
   });
-  $("scoring-penalty-grid")?.addEventListener("input", scheduleScoringApply);
   document.querySelectorAll("[data-layout-lock-toggle]").forEach((button) => {
     button.addEventListener("click", toggleLayoutLock);
   });

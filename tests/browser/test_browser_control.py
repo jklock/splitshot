@@ -1457,6 +1457,14 @@ def test_browser_project_details_autosave_persists_after_reopen(tmp_path: Path) 
 
         assert updated["project"]["name"] == "Test Project"
         assert updated["project"]["description"] == "Test Description"
+        assert updated["status"] == "Updated project details."
+
+        unchanged = _post_json(
+            f"{first_server.url}api/project/details",
+            {"name": "Test Project", "description": "Test Description"},
+        )
+
+        assert unchanged["status"] == "Project details unchanged."
     finally:
         first_server.shutdown()
 

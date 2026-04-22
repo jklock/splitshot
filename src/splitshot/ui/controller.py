@@ -598,12 +598,23 @@ class ProjectController(QObject):
         self.load_secondary_video(self._stage_project_input_path(path, source_name=source_name))
 
     def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
+        changed = False
         if name is not None:
-            self.project.name = name.strip() or "Untitled Project"
+            next_name = name.strip() or "Untitled Project"
+            if self.project.name != next_name:
+                self.project.name = next_name
+                changed = True
         if description is not None:
-            self.project.description = str(description)
-        self.project.touch()
-        self.project_changed.emit()
+            next_description = str(description)
+            if self.project.description != next_description:
+                self.project.description = next_description
+                changed = True
+        if changed:
+            self.project.touch()
+            self.project_changed.emit()
+            self._set_status("Updated project details.")
+        else:
+            self._set_status("Project details unchanged.")
 
     def set_practiscore_context(
         self,
@@ -620,7 +631,10 @@ class ProjectController(QObject):
                 scoring.match_type = clean_match_type
                 changed = True
             if clean_match_type:
-                apply_scoring_preset(self.project, default_ruleset_for_match_type(clean_match_type))
+                target_ruleset = default_ruleset_for_match_type(clean_match_type)
+                if scoring.ruleset != target_ruleset:
+                    changed = True
+                apply_scoring_preset(self.project, target_ruleset)
         if stage_number is not None or scoring.stage_number is not None:
             next_stage_number = None if stage_number is None else max(1, int(stage_number))
             if scoring.stage_number != next_stage_number:
@@ -647,6 +661,8 @@ class ProjectController(QObject):
             scoring.penalty_counts = {}
             self.update_hit_factor()
             self._set_status("Updated PractiScore import settings.")
+        else:
+            self._set_status("PractiScore import settings unchanged.")
         self.project.touch()
         self.project_changed.emit()
 

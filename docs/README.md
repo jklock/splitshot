@@ -26,9 +26,11 @@ SplitShot documentation starts with the product guides, then branches into troub
 - `ShotMLPane.png`, `ShotMLPane2.png`
 - `PiPPane.png`
 - `OverlayPane.png`, `OverlayPane2.png`
+- `ColorPickerModal.png`
 - `PopUpPane.png`, `PopUpPane2.png`
 - `ReviewPane.png`, `ReviewPane2.png`
 - `ExportPane.png`, `ExportPane2.png`
+- `ExportLogModal.png`
 - `MetricsPane.png`, `MetricsPane2.png`, `MetricsCSV.png`
 
 Regenerate the browser screenshots with:
@@ -36,6 +38,22 @@ Regenerate the browser screenshots with:
 ```bash
 uv run python scripts/docs/capture_browser_screenshots.py
 ```
+
+## Expanded State Coverage
+
+The screenshot script covers:
+
+- Every left-rail pane: Project, Score, Splits, ShotML, PiP, Overlay, PopUp, Review, Export, and Metrics.
+- Expanded Score shot cards.
+- Expanded Splits timing table and expanded waveform layout.
+- Every ShotML collapsible section.
+- Expanded PiP defaults and per-media card controls.
+- Overlay lower style controls and score text color controls.
+- Expanded PopUp bubble editor with motion path controls.
+- Expanded Review imported-summary and custom text-box editors.
+- Export lower controls plus the Export Log modal.
+- Expanded Metrics table.
+- Shared Color Picker modal used by color swatches across Overlay, PopUp, and Review.
 
 ## Current Limitations
 

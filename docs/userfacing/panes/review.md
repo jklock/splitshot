@@ -34,6 +34,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `Box X` / `Box Y` | Set direct normalized placement when custom placement is available. |
 | `Box width` / `Box height` | Force text-box dimensions. |
 | `Background`, `Text`, `Opacity` | Style the rendered box. |
+| Color swatches | Open the shared color picker modal shown in [overlay.md](overlay.md). |
 
 ## How To Use It
 
@@ -45,6 +46,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 6. Use `Above Final Box` for a summary that should sit above the final result badge.
 7. Use `Custom` placement plus X/Y, or drag the rendered box in the video, when the box needs an exact location.
 8. Adjust width, height, colors, and opacity until the text reads clearly over the footage.
+9. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
 
 ## Summary Box Behavior
 

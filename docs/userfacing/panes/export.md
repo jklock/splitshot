@@ -6,6 +6,8 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 
 <img src="../../screenshots/ExportPane2.png" alt="Export pane lower view with output path, Export Video button, Show Log button, and FFmpeg render note" width="840">
 
+<img src="../../screenshots/ExportLogModal.png" alt="Export Log modal with recent local FFmpeg output, Close button, and Export Log button" width="840">
+
 ## When To Use This Pane
 
 - After timing, scoring, overlays, popups, review boxes, and PiP are final.
@@ -34,6 +36,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | `Browse` | Opens a save dialog for the output path. |
 | `Export Video` | Starts the local render. |
 | `Show Log` | Opens the live/latest export log. |
+| Export Log modal | Shows recent local FFmpeg output and can export the log text. |
 
 ## How To Use It
 
@@ -44,6 +47,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 5. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
 6. Click `Export Video`.
 7. Click `Show Log` if you need to follow FFmpeg progress or diagnose a failed render.
+8. Use `Export Log` inside the modal when you need the log as a separate text file.
 
 ## What The Export Includes
 

@@ -18,6 +18,7 @@ Every session uses the same workspace:
 - The center stage shows the primary video, optional PiP media, overlay badges, popup bubbles, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.
 - The waveform, timing table, metrics table, and right inspector have expanded states where available.
+- Shared modals, including the color picker and export log, appear above the current pane.
 
 Most edits auto-apply. Export is the main exception: the final video is created only when you click `Export Video`.
 
@@ -35,6 +36,10 @@ Most edits auto-apply. Export is the main exception: the final video is created 
 | [panes/review.md](panes/review.md) | Preview artifact toggles, imported summary boxes, custom text boxes, placement, size, and style |
 | [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
 | [panes/metrics.md](panes/metrics.md) | Read-only run dashboard, expanded timing table, scoring context, CSV export, and text export |
+
+## Screenshot Coverage
+
+The screenshot set covers every pane plus expanded timing, waveform, metrics, ShotML sections, score cards, PiP media cards, PopUp cards, Review text boxes, the shared color picker, and the export log modal.
 
 ## Common Workflows
 
