@@ -83,7 +83,6 @@ const ACTIVITY_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
-const PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX = 48;
 const TIMING_COLUMN_DEFAULTS = Object.freeze({
   lock: 72,
   segment: 160,
@@ -7503,18 +7502,6 @@ function previewFrameClientRect(video, container) {
   };
 }
 
-function previewOverlayFrameRect(frameRect, video) {
-  if (!frameRect) return null;
-  const safeBottom = video?.controls
-    ? Math.min(PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX, Math.max(0, frameRect.height * 0.18))
-    : 0;
-  if (safeBottom <= 0) return frameRect;
-  return {
-    ...frameRect,
-    height: Math.max(1, frameRect.height - safeBottom),
-  };
-}
-
 function overlayDisplayScale(video, frameRect, outputWidth = null) {
   if (!video || !frameRect) return 1;
   const sourceWidth = Number(outputWidth) || Number(video.videoWidth) || 0;
@@ -7738,10 +7725,15 @@ function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
   if (!layer || !badge || !frameRect || x === null || y === null) return false;
   badge.style.position = "absolute";
   badge.style.margin = "0";
-  badge.style.left = `${clamp(x * frameRect.width, 0, frameRect.width)}px`;
-  badge.style.top = `${clamp(y * frameRect.height, 0, frameRect.height)}px`;
-  badge.style.transform = "translate(-50%, -50%)";
+  badge.style.left = "0px";
+  badge.style.top = "0px";
+  badge.style.transform = "";
   layer.appendChild(badge);
+  const badgeRect = badge.getBoundingClientRect();
+  const badgeWidth = Math.max(0, badgeRect.width || badge.offsetWidth || 0);
+  const badgeHeight = Math.max(0, badgeRect.height || badge.offsetHeight || 0);
+  badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;
+  badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;
   return true;
 }
 
@@ -8189,21 +8181,17 @@ function beginOverlayBadgeDrag(event) {
   const badge = event.target instanceof Element ? event.target.closest("[data-overlay-drag]") : null;
   if (!(badge instanceof HTMLElement)) return;
   const kind = badge.dataset.overlayDrag || "";
-  const config = overlayDragConfiguration(kind);
+  const initialConfig = overlayDragConfiguration(kind);
+  const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;
+  const config = overlayDragConfiguration(effectiveKind);
   if (!config || !state?.project) return;
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const anchor = overlayDragAnchor(kind, badge, frameRect);
-  if (config.lockId && $(config.lockId)?.checked) {
-    $(config.lockId).checked = false;
-    syncControlValue($(config.xId), anchor.x);
-    syncControlValue($(config.yId), anchor.y);
-    syncOverlayBubbleLockControlState();
-    syncOverlayPreviewStateFromControls();
-  }
+  const anchor = overlayDragAnchor(effectiveKind, badge, frameRect);
   overlayBadgeDrag = {
     target: stage,
-    kind,
+    kind: effectiveKind,
+    sourceKind: kind,
     pointerId: event.pointerId,
     startClientX: event.clientX,
     startClientY: event.clientY,
@@ -8213,7 +8201,7 @@ function beginOverlayBadgeDrag(event) {
   capturePointer(stage, event.pointerId);
   stage.classList.add("overlay-dragging");
   event.preventDefault();
-  activity("overlay.drag.start", { kind, x: anchor.x, y: anchor.y });
+  activity("overlay.drag.start", { kind: effectiveKind, source_kind: kind, x: anchor.x, y: anchor.y });
 }
 
 function moveOverlayBadgeDrag(event) {
@@ -8406,7 +8394,7 @@ function renderLiveOverlay(positionMsOverride = null) {
   const stage = $("video-stage");
   const video = $("primary-video");
   const frameGeometry = previewFrameGeometry(video, stage);
-  const frameRect = roundedRect(previewOverlayFrameRect(frameGeometry?.frameRect || stage.getBoundingClientRect(), video));
+  const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
   const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
   const positionMs = Number.isFinite(positionMsOverride)
     ? Math.max(0, Math.floor(positionMsOverride))
@@ -8431,6 +8419,10 @@ function renderLiveOverlay(positionMsOverride = null) {
   customOverlay.style.alignItems = "flex-start";
   customOverlay.style.padding = "0";
   customOverlay.style.gap = "0";
+  scoreLayer.style.left = `${frameRect.left}px`;
+  scoreLayer.style.top = `${frameRect.top}px`;
+  scoreLayer.style.width = `${frameRect.width}px`;
+  scoreLayer.style.height = `${frameRect.height}px`;
 
   const beep = state.project.analysis.beep_time_ms_primary;
   let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
