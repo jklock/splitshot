@@ -17,6 +17,8 @@ Every session uses the same workspace:
 - The top status line reports the active file, analysis state, and sync offset.
 - The center stage shows the primary video, optional PiP media, overlay badges, popup bubbles, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.
+- The right inspector can be resized; pane cards, tables, badge controls, and action buttons reflow to the available width without horizontal scrolling.
+- Inspector card chevrons use `>` when collapsed and `v` when expanded.
 - The waveform, timing table, metrics table, and right inspector have expanded states where available.
 - Shared modals, including the color picker and export log, appear above the current pane.
 

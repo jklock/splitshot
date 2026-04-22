@@ -23,7 +23,7 @@ The PopUp pane creates short-lived callout bubbles on top of the video. A bubble
 | Card chevron | Expands or collapses the editor without changing the playhead. |
 | `On` | Enables or disables the popup. |
 | `Duplicate` | Copies the popup. |
-| `Clear path` | Removes stored motion path points. |
+| `Clear path` | Removes stored motion path points from the expanded motion-path editor. |
 | `Remove` | Deletes the popup. |
 | `Bubble name` | Sets the card title. |
 | `Text` | Sets manual text for time-based popups. Shot-linked popups derive text from Score. |
@@ -57,7 +57,7 @@ Shot-linked popups use the live Score pane values:
 5. Choose `Shot` or `Time` start behavior.
 6. Set `Duration`.
 7. Place the bubble with a fixed anchor or `Custom` X/Y values.
-8. Enable `Follow motion path` when the callout should track movement; use each `Go` button to set later points.
+8. Enable `Follow motion path` when the callout should track movement; use each `Go` button to set later points. `Clear path` appears inside this expanded motion-path editor when a path exists.
 9. Tune size, colors, and opacity against the live preview.
 10. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
 

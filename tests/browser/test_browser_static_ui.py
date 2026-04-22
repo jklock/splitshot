@@ -142,8 +142,17 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-motion-guide' in html
     assert 'data-popup-motion-path-list' in html
     assert 'data-popup-action="clear_motion_path"' in html
+    popup_motion_template = re.search(
+        r'<section class="popup-motion-guide" data-popup-motion-guide hidden>.*?</section>',
+        js,
+        re.DOTALL,
+    )
+    assert popup_motion_template is not None
+    popup_motion_html = popup_motion_template.group(0)
+    assert popup_motion_html.index('data-popup-action="clear_motion_path"') < popup_motion_html.index('data-popup-motion-path-list')
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
+    assert 'class="data-table metrics-trend-table" aria-label="Metrics trend table"' in html
     assert 'id="metrics-export-csv"' in html
     assert 'id="metrics-export-text"' in html
     assert 'id="show-export-log"' in html
@@ -616,6 +625,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });' in js
     assert 'setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });' in js
     assert js.index('setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
+    apply_ui_state_body = js.split("function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {", 1)[1].split("function normalizedCoordinateValue", 1)[0]
+    assert "collapseMinimizableInspectorItems" not in apply_ui_state_body
     assert 'const PIP_DEFAULTS_SECTION_ID = "pip-defaults";' in js
     assert 'if (sourceId === PIP_DEFAULTS_SECTION_ID) return true;' in js
     assert 'if (firstSource && sourceId === sourceIdentifier(firstSource, "0")) return true;' in js
@@ -643,6 +654,18 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert 'syncControlValue($("overlay-position"), state.project.overlay.position);' in js
     assert 'position: $("overlay-position").value,' in js
+    assert 'const badgeDisplayLabels = {' in js
+    assert 'card.className = "style-card badge-style-card";' in js
+    assert '<span class="style-card-label">Bg</span>' in js
+    assert '<span class="style-card-label">Alpha</span>' in js
+    assert 'const displayTitle = badgeDisplayLabels[key] || title.replace(/ Badge$/, "");' in js
+    assert "function renderMetricsTrendTable(table) {" in js
+    assert '["Shot", "Split", "Run", "Score", "ShotML", "Action"].forEach((label) => {' in js
+    assert '["Stage #", imported.stage_number !== null && imported.stage_number !== undefined ? String(imported.stage_number) : ""],' in js
+    assert '["Score Options", (summary.score_options || []).join(", "),' not in js
+    assert '["Imported Stage", imported.stage_number !== null && imported.stage_number !== undefined ? `Stage ${imported.stage_number}` : ""],' not in js
+    assert "event.stopPropagation();" in js
+    assert "toggle.onclick = (event) => {" in js
     assert '$("badge-style-grid").addEventListener("change", (event) => {' in js
     assert '$("score-color-grid").addEventListener("change", () => {' not in js
     assert "Behavior" not in html
@@ -671,8 +694,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));' in js
     assert 'timingAdjustmentDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
     assert 'updateTimingRowField(shotId, "adjustment_ms", draftValue);' in js
-    assert 'railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72)' in js
-    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));' in js
+    assert 'railWidth: clamp(savedNumber("splitshot.layout.railWidth", 84), 84, 104)' in js
+    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
     assert 'parentRect?.width' in js
     assert 'canvas.style.width = "100%";' in js
@@ -714,7 +737,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".empty-start" not in css
     assert ".metrics-strip" not in css
     assert ".rail-action" not in css
-    assert "--rail-width: 64px;" in css
+    assert "--rail-width: 84px;" in css
     assert "--topbar-height: 38px;" in css
     assert "--inspector-width: 440px;" in css
     assert "--waveform-height: 206px;" in css
@@ -723,11 +746,16 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);" in css
     assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
     assert ".processing-bar[hidden] {\n  display: none !important;" in css
-    assert "grid-auto-rows: minmax(0, 1fr);" in css
+    assert "grid-auto-rows: 56px;" in css
+    assert "align-content: start;" in css
+    assert "height: 56px;" in css
     assert "overflow: hidden;" in css
     assert "display: flex;" in css
     assert "width: var(--inspector-width);" in css
     assert "overflow-x: hidden;" in css
+    assert "-ms-overflow-style: none;" in css
+    assert "scrollbar-width: none;" in css
+    assert ".inspector::-webkit-scrollbar {\n  height: 0;\n  width: 0;" in css
     assert "grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--waveform-height));" in css
     assert "grid-template-rows: minmax(320px, 1fr) 206px;" not in css
     assert ".layout-unlocked .resize-handle" in css
@@ -740,9 +768,21 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".merge-media-card-header" in css
     assert ".merge-source-sync-row" in css
     assert ".merge-source-sync-buttons" in css
+    assert ".inspector :is(\n  .text-box-manager," in css
+    assert "overflow-x: clip;" in css
+    assert "@container (max-width: 380px)" in css
+    assert ".text-box-card-header,\n  .popup-bubble-card .text-box-card-header,\n  .merge-media-card-header" in css
+    assert ".merge-source-sync-hint {\n  color: var(--muted);" in css
+    assert ".merge-media-card .merge-source-sync-hint {\n  overflow: visible;" in css
+    assert "overflow-wrap: anywhere;\n  white-space: normal;" in css
     assert ".cockpit-shell.inspector-compact .style-card-label" in css
     assert ".cockpit-shell.inspector-compact .style-card-label {\n  display: none;" not in css
     assert ".cockpit-shell.inspector-compact .popup-style-card" in css
+    assert "#badge-style-grid {\n  grid-template-columns: repeat(4, minmax(0, 1fr));" in css
+    assert "#badge-style-grid .badge-style-card .color-swatch-button" in css
+    assert "#badge-style-grid .badge-style-card .opacity-percent-input" in css
+    assert ".metrics-trend-table" in css
+    assert ".metrics-details {\n  border: 1px solid var(--line);\n  grid-template-columns:" in css
     assert ".popup-overlay [data-popup-drag].popup-selected" in css
     assert ".popup-overlay [data-popup-drag].popup-outside-window" in css
     assert "@container (max-width: 620px)" in css
@@ -750,7 +790,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "@container (max-width: 460px)" in css
     assert "@container (max-width: 420px)" in css
     assert ".popup-bubble-card .text-box-card-actions {\n  flex-wrap: wrap;" in css
-    assert ".popup-motion-point-row,\n  .metrics-row {\n    grid-template-columns: minmax(0, 1fr);" in css
+    assert ".popup-bubble-card .text-box-card-actions > .scoring-shot-toggle {\n  flex: 0 0 1.7rem;" in css
+    assert ".popup-motion-point-row,\n  .metrics-trend-table {\n    grid-template-columns: minmax(0, 1fr);" in css
     assert ".color-control-pair,\n  .opacity-control-pair {\n    margin-left: 0;\n    width: 100%;" in css
     assert "container-type: inline-size;" in css
     assert "#project-description" in css
@@ -785,6 +826,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".export-log-output" in css
     assert ".modal" in css
     assert ".metrics-summary-grid" in css
+    assert ".metrics-row" not in css
     assert ".text-box-card" in css
     assert ".cockpit.scoring-active .score-target-button" not in css
     assert ".overlay-badge.timer-badge" in css
@@ -835,6 +877,9 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);' in js
     assert 'window.visualViewport?.addEventListener("scroll", handleViewportLayoutChange);' not in js
     assert 'function renderViewportLayout() {' in js
+    assert 'function resetInspectorHorizontalScroll() {' in js
+    assert 'resetInspectorHorizontalScroll();' in js
+    assert 'element.scrollLeft = element.closest(".inspector") || element.classList.contains("inspector") ? 0 : scrollLeft;' in js
     assert 'function requestRender() {' in js
     assert 'function withPreservedScrollState(elements, callback) {' in js
     assert 'window.requestAnimationFrame(() => renderWaveform());' in js

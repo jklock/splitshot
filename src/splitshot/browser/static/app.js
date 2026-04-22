@@ -26,7 +26,7 @@ let waveformOffsetMs = Math.max(0, Number(window.localStorage.getItem("splitshot
 let busyCount = 0;
 let layoutLocked = window.localStorage.getItem("splitshot.layoutLocked") !== "false";
 let layoutSizes = {
-  railWidth: Math.min(savedNumber("splitshot.layout.railWidth", 64), 72),
+  railWidth: clamp(savedNumber("splitshot.layout.railWidth", 84), 84, 104),
   inspectorWidth: savedNumber("splitshot.layout.inspectorWidth", 440),
   waveformHeight: savedNumber("splitshot.layout.waveformHeight", 206),
 };
@@ -138,6 +138,12 @@ const badgeControls = [
   ["current_shot_badge", "Current Shot Badge"],
   ["hit_factor_badge", "Score Badge"],
 ];
+const badgeDisplayLabels = {
+  timer_badge: "Timer",
+  shot_badge: "Shot",
+  current_shot_badge: "Current",
+  hit_factor_badge: "Score",
+};
 const OVERLAY_STACK_LOCK_CONTROLS = Object.freeze({
   timer: { lockId: "timer-lock-to-stack", xId: "timer-x", yId: "timer-y", label: "Timer badge" },
   draw: { lockId: "draw-lock-to-stack", xId: "draw-x", yId: "draw-y", label: "Draw badge" },
@@ -756,8 +762,9 @@ function restoreScrollState(states = []) {
   states.forEach(({ element, scrollTop, scrollLeft }) => {
     if (!(element instanceof HTMLElement)) return;
     element.scrollTop = scrollTop;
-    element.scrollLeft = scrollLeft;
+    element.scrollLeft = element.closest(".inspector") || element.classList.contains("inspector") ? 0 : scrollLeft;
   });
+  resetInspectorHorizontalScroll();
 }
 
 function withPreservedScrollState(elements, callback) {
@@ -773,6 +780,15 @@ function scrollRenderTargets() {
     document.querySelector(".tool-nav"),
     document.querySelector(".inspector"),
   ].filter((element) => element instanceof HTMLElement);
+}
+
+function resetInspectorHorizontalScroll() {
+  const inspector = document.querySelector(".inspector");
+  if (!(inspector instanceof HTMLElement)) return;
+  inspector.scrollLeft = 0;
+  inspector.querySelectorAll(".tool-pane, .inspector-section, .text-box-manager, .text-box-list, .text-box-card, .merge-media-list, .merge-media-card, .shotml-section, .pip-defaults-section").forEach((element) => {
+    if (element instanceof HTMLElement) element.scrollLeft = 0;
+  });
 }
 
 function rememberInspectorScrollPosition() {
@@ -799,6 +815,7 @@ function flushPendingInspectorScrollRestore() {
   const inspector = document.querySelector(".inspector");
   if (inspector instanceof HTMLElement) {
     inspector.scrollTop = pendingInspectorScrollTop;
+    resetInspectorHorizontalScroll();
   }
   pendingInspectorScrollTop = null;
 }
@@ -1519,7 +1536,7 @@ function normalizeProjectUiState(uiState = {}) {
     timing_expanded: Boolean(uiState.timing_expanded ?? DEFAULT_PROJECT_UI_STATE.timing_expanded),
     metrics_expanded: Boolean(uiState.metrics_expanded ?? DEFAULT_PROJECT_UI_STATE.metrics_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
-    rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 48, 72),
+    rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
     inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
     waveform_height: Math.max(112, Math.round(Number(uiState.waveform_height ?? DEFAULT_PROJECT_UI_STATE.waveform_height) || DEFAULT_PROJECT_UI_STATE.waveform_height)),
     scoring_shot_expansion: normalizedUiBooleanMap(uiState.scoring_shot_expansion),
@@ -1605,7 +1622,6 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   popupBubbleExpansion = new Map(Object.entries(normalized.popup_bubble_expansion));
   mergeSourceExpansion = new Map(Object.entries(normalized.merge_source_expansion));
   shotMLSectionExpansion = new Map(Object.entries(normalized.shotml_section_expansion));
-  collapseMinimizableInspectorItems({ syncUiState: false, persistUiState: false, rerender: false });
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
   timingAdjustmentDrafts = new Map(
     [...timingAdjustmentDrafts.entries()].filter(([shotId]) => timingRowEdits.has(shotId)),
@@ -2386,7 +2402,11 @@ function ensureSectionToggle(section, expanded, onToggle) {
   toggle.textContent = expanded ? "v" : ">";
   toggle.title = expanded ? "Hide section" : "Show section";
   toggle.setAttribute("aria-label", expanded ? "Hide section" : "Show section");
-  toggle.onclick = onToggle;
+  toggle.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onToggle(event);
+  };
 }
 
 function renderCollapsibleInspectorSections() {
@@ -2429,7 +2449,7 @@ function buildTextBoxCard(box, index) {
     <div class="text-box-card-header">
       <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
       <div class="text-box-card-actions">
-        <button type="button" data-text-box-action="toggle">${expanded ? "Hide" : "Show"}</button>
+        <button type="button" class="scoring-shot-toggle" data-text-box-action="toggle" aria-label="${expanded ? "Hide" : "Show"} text box editor">${expanded ? "v" : ">"}</button>
         <button type="button" data-text-box-action="duplicate">Duplicate</button>
         <button type="button" data-text-box-action="remove">Remove</button>
       </div>
@@ -2567,12 +2587,22 @@ function buildTextBoxCard(box, index) {
     control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
     control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
   });
-  card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", () => {
+  card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     setReviewTextBoxExpanded(box.id, !expanded);
     renderTextBoxEditors();
   });
-  card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", () => duplicateOverlayTextBox(box.id));
-  card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", () => removeOverlayTextBox(box.id));
+  card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    duplicateOverlayTextBox(box.id);
+  });
+  card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removeOverlayTextBox(box.id);
+  });
   bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
   bindOverlayColorInput(card.querySelector('[data-text-box-field="text_color"]'));
   return card;
@@ -3304,7 +3334,6 @@ function buildPopupBubbleCard(bubble, index) {
         <label class="check-row popup-bubble-enabled"><input type="checkbox" data-popup-field="enabled" /> <span>On</span></label>
         <button type="button" class="scoring-shot-toggle" data-popup-action="toggle" aria-label="${expanded ? "Hide" : "Show"} popup bubble editor">${expanded ? "v" : ">"}</button>
         <button type="button" data-popup-action="duplicate">Duplicate</button>
-        <button type="button" data-popup-action="clear_motion_path">Clear path</button>
         <button type="button" data-popup-action="remove">Remove</button>
       </div>
     </div>
@@ -3343,6 +3372,7 @@ function buildPopupBubbleCard(bubble, index) {
               <option value="16">16</option>
             </select>
           </label>
+          <button type="button" data-popup-action="clear_motion_path">Clear path</button>
         </div>
         <div class="popup-motion-path-list" data-popup-motion-path-list></div>
       </section>
@@ -3527,13 +3557,27 @@ function buildPopupBubbleCard(bubble, index) {
       expand: true,
     });
   });
-  card.querySelector('[data-popup-action="toggle"]')?.addEventListener("click", () => {
+  card.querySelector('[data-popup-action="toggle"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
     setPopupBubbleExpanded(bubble.id, !expanded);
     renderPopupEditors();
   });
-  card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
-  card.querySelector('[data-popup-action="clear_motion_path"]')?.addEventListener("click", () => clearPopupBubbleMotionPath(bubble.id));
-  card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
+  card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    duplicatePopupBubble(bubble.id);
+  });
+  card.querySelector('[data-popup-action="clear_motion_path"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearPopupBubbleMotionPath(bubble.id);
+  });
+  card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    removePopupBubble(bubble.id);
+  });
   bindOverlayColorInput(card.querySelector('[data-popup-field="background_color"]'));
   bindOverlayColorInput(card.querySelector('[data-popup-field="text_color"]'));
   return card;
@@ -3613,7 +3657,7 @@ function applyLayoutState() {
   const viewportHeight = layoutViewportHeight();
   setCssPixels("--app-height", viewportHeight);
   layoutSizes = {
-    railWidth: clamp(layoutSizes.railWidth, 48, 72),
+    railWidth: clamp(layoutSizes.railWidth, 84, 104),
     inspectorWidth: clamp(layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
     waveformHeight: clamp(layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
   };
@@ -3665,7 +3709,7 @@ function toggleLayoutLock() {
 }
 
 function resetLayout() {
-  layoutSizes = { railWidth: 64, inspectorWidth: 440, waveformHeight: 206 };
+  layoutSizes = { railWidth: 84, inspectorWidth: 440, waveformHeight: 206 };
   ["splitshot.layout.railWidth", "splitshot.layout.inspectorWidth", "splitshot.layout.waveformHeight"].forEach((key) => {
     window.localStorage.removeItem(key);
   });
@@ -3694,7 +3738,7 @@ function moveLayoutResize(event) {
   if (event.pointerId !== undefined && activeResize.pointerId !== undefined && event.pointerId !== activeResize.pointerId) return;
   const kind = activeResize.kind;
   if (kind === "railWidth") {
-    previewLayoutSize("railWidth", clamp(event.clientX, 48, 72));
+    previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));
   } else if (kind === "inspectorWidth") {
     const grid = document.querySelector(".review-grid");
     const right = grid?.getBoundingClientRect().right || window.innerWidth;
@@ -3967,7 +4011,7 @@ function resetLocalProjectView() {
     timeline_zoom: 1,
     timeline_offset_ms: 0,
     layout_locked: true,
-    rail_width: 64,
+    rail_width: 84,
     inspector_width: 440,
     waveform_height: 206,
   });
@@ -6234,6 +6278,40 @@ function renderMetricsTable(table) {
   });
 }
 
+function renderMetricsTrendTable(table) {
+  if (!table) return;
+  table.innerHTML = "";
+  const rows = buildMetricsRows();
+  table.style.gridTemplateColumns = "minmax(0, 1.1fr) minmax(0, 0.68fr) minmax(0, 0.68fr) minmax(0, 0.5fr) minmax(0, 0.72fr) minmax(0, 1.05fr)";
+  ["Shot", "Split", "Run", "Score", "ShotML", "Action"].forEach((label) => {
+    const header = document.createElement("div");
+    header.className = "head";
+    header.textContent = label;
+    table.appendChild(header);
+  });
+  if (rows.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "metrics-table-empty";
+    empty.textContent = "No timing segments yet.";
+    table.appendChild(empty);
+    return;
+  }
+  rows.forEach((entry) => {
+    [
+      entry.intervalLabel ? `${entry.label} ${entry.intervalLabel}` : entry.label,
+      splitSeconds(entry.splitMs),
+      splitSeconds(entry.sequenceTotalMs),
+      entry.scoreLetter || "--",
+      formatConfidenceValue(entry.confidence),
+      entry.actionSummary || "--",
+    ].forEach((value) => {
+      const cell = document.createElement("div");
+      cell.textContent = value || "--";
+      table.appendChild(cell);
+    });
+  });
+}
+
 function metricsScoringDetailRows(summary) {
   const imported = summary.imported_stage || {};
   const shortPenaltyLabels = {
@@ -6253,7 +6331,13 @@ function metricsScoringDetailRows(summary) {
       `${formatNumber(count, 2)} x ${formatNumber(value, 2)}${suffix}`,
     ];
   });
+  const importedRows = [
+    ["Stage #", imported.stage_number !== null && imported.stage_number !== undefined ? String(imported.stage_number) : ""],
+    ["Competitor", imported.competitor_name || ""],
+    ["Place", imported.competitor_place !== null && imported.competitor_place !== undefined ? String(imported.competitor_place) : ""],
+  ];
   return [
+    ...importedRows,
     ["Ruleset", summary.ruleset_name || ""],
     ["Sport", summary.sport || ""],
     ["Mode", summary.mode || ""],
@@ -6270,11 +6354,6 @@ function metricsScoringDetailRows(summary) {
     [summary.penalty_label || "Penalties", formatNumber(summary.total_penalties, 2)],
     ["Hit Factor", summary.hit_factor !== null && summary.hit_factor !== undefined ? formatNumber(summary.hit_factor, 2) : ""],
     ...penaltyFieldRows,
-    ["Score Options", (summary.score_options || []).join(", ")],
-    ["Imported", imported.source_name || ""],
-    ["Imported Stage", imported.stage_number !== null && imported.stage_number !== undefined ? `Stage ${imported.stage_number}` : ""],
-    ["Competitor", imported.competitor_name || ""],
-    ["Place", imported.competitor_place !== null && imported.competitor_place !== undefined ? String(imported.competitor_place) : ""],
   ];
 }
 
@@ -6310,45 +6389,7 @@ function renderMetricsPanel() {
     summaryGrid.appendChild(card);
   });
 
-  withPreservedScrollState([trendList], () => {
-    trendList.innerHTML = "";
-    const rows = buildMetricsRows();
-    if (rows.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No timing segments yet.";
-      trendList.appendChild(empty);
-    } else {
-      rows.forEach((entry) => {
-        const row = document.createElement("div");
-        row.className = "metrics-row";
-        const label = document.createElement("strong");
-        label.textContent = `${entry.label} • ${entry.intervalLabel}`;
-        const meta = document.createElement("span");
-        meta.textContent = entry.absoluteMs === null ? "Timing" : `At ${precise(entry.absoluteMs)}s`;
-        const split = document.createElement("span");
-        split.textContent = entry.splitMs === null || entry.splitMs === undefined
-          ? "Split --.--"
-          : `Split ${splitSeconds(entry.splitMs)}`;
-        const cumulative = document.createElement("span");
-        cumulative.textContent = entry.sequenceTotalMs === null || entry.sequenceTotalMs === undefined
-          ? "Run --.--"
-          : `Run ${splitSeconds(entry.sequenceTotalMs)}`;
-        const detail = document.createElement("small");
-        const detailParts = [
-          entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : `Stage ${splitSeconds(entry.cumulativeMs)}`,
-          `Adjustment ${signedSeconds(entry.adjustmentMs || 0)}`,
-          entry.actionSummary,
-          entry.scoreLetter ? `Score ${entry.scoreLetter}` : "",
-          entry.penaltyText,
-          entry.confidence === null || entry.confidence === undefined || entry.confidence === "" ? "" : `ShotML ${formatConfidenceValue(entry.confidence)}`,
-        ].filter(Boolean);
-        detail.textContent = detailParts.join(" • ") || "Timing";
-        row.append(label, meta, split, cumulative, detail);
-        trendList.appendChild(row);
-      });
-    }
-  });
+  withPreservedScrollState([trendList], () => renderMetricsTrendTable(trendList));
 
   const summary = scoringSummary;
   const imported = summary.imported_stage || {};
@@ -6717,11 +6758,11 @@ function renderStyleControls() {
     let card = grid.querySelector(`.style-card[data-badge="${key}"]`);
     if (!card) {
       card = document.createElement("section");
-      card.className = "style-card";
+      card.className = "style-card badge-style-card";
       card.dataset.badge = key;
       card.innerHTML = `
         <h4></h4>
-        <label class="color-field"><span class="style-card-label">Background</span>
+        <label class="color-field"><span class="style-card-label">Bg</span>
           <span class="color-control-pair">
             <button type="button" class="color-swatch-button" data-color-label="Badge background" data-field="background_color"></button>
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Background hex value" placeholder="#111827" />
@@ -6733,7 +6774,7 @@ function renderStyleControls() {
             <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Text hex value" placeholder="#F9FAFB" />
           </span>
         </label>
-        <label class="opacity-field"><span class="style-card-label">Opacity</span>
+        <label class="opacity-field"><span class="style-card-label">Alpha</span>
           <span class="opacity-control-pair">
             <span class="opacity-percent-field">
               <input type="number" class="opacity-percent-input" data-field="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
@@ -6747,7 +6788,8 @@ function renderStyleControls() {
       grid.appendChild(card);
     }
     const heading = card.querySelector("h4");
-    if (heading && heading.textContent !== title) heading.textContent = title;
+    const displayTitle = badgeDisplayLabels[key] || title.replace(/ Badge$/, "");
+    if (heading && heading.textContent !== displayTitle) heading.textContent = displayTitle;
     syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
     syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
     syncOpacityPercentControl(card.querySelector('[data-field="opacity"]'), style.opacity);
@@ -6874,7 +6916,9 @@ function renderMergeMediaList() {
       toggle.textContent = expanded ? "v" : ">";
       toggle.title = expanded ? "Hide PiP item controls" : "Show PiP item controls";
       toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} PiP item controls`);
-      toggle.addEventListener("click", () => {
+      toggle.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         setMergeSourceExpanded(sourceId, !expanded);
         renderMergeMediaList();
       });
@@ -6883,7 +6927,9 @@ function renderMergeMediaList() {
       remove.type = "button";
       remove.textContent = "Remove";
       remove.dataset.mergeSourceRemove = sourceId;
-      remove.addEventListener("click", () => {
+      remove.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
         callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
       });
