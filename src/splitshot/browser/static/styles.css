@@ -2233,6 +2233,41 @@ button:disabled {
   grid-template-columns: minmax(136px, 1fr) repeat(3, minmax(0, 1fr));
 }
 
+.popup-style-card,
+.cockpit-shell.inspector-compact .popup-style-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.popup-style-card h4 {
+  grid-column: 1 / -1;
+}
+
+.popup-style-card label,
+.cockpit-shell.inspector-compact .popup-style-card label {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.popup-style-card .color-control-pair,
+.popup-style-card .opacity-control-pair,
+.cockpit-shell.inspector-compact .popup-style-card .color-control-pair,
+.cockpit-shell.inspector-compact .popup-style-card .opacity-control-pair {
+  margin-left: 0;
+  width: 100%;
+}
+
+.popup-style-card .color-hex-input,
+.cockpit-shell.inspector-compact .popup-style-card .color-hex-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+}
+
+.popup-style-card .opacity-field {
+  grid-column: 1 / -1;
+}
+
 .style-card h4 {
   align-self: center;
   font-size: 0.76rem;
@@ -2315,9 +2350,12 @@ button:disabled {
 }
 
 .cockpit-shell.inspector-compact .style-card,
-.cockpit-shell.inspector-compact .custom-box-style-card,
-.cockpit-shell.inspector-compact .popup-style-card {
+.cockpit-shell.inspector-compact .custom-box-style-card {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.cockpit-shell.inspector-compact .popup-style-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .cockpit-shell.inspector-compact .color-control-pair,
@@ -2348,9 +2386,12 @@ button:disabled {
   }
 
   .style-card,
-  .custom-box-style-card,
-  .popup-style-card {
+  .custom-box-style-card {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .popup-style-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .style-card label,
@@ -2912,9 +2953,12 @@ button:disabled {
   }
 
   .style-card,
-  .custom-box-style-card,
-  .popup-style-card {
+  .custom-box-style-card {
     grid-template-columns: 1fr;
+  }
+
+  .popup-style-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .opacity-control-pair {
