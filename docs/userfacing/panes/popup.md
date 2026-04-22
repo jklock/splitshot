@@ -1,82 +1,78 @@
 # PopUp Pane
 
-The PopUp pane creates short-lived callout bubbles on the stage. Use it when a shot needs a visible score callout, penalty callout, or other brief annotation tied to a precise point in the video.
+The PopUp pane creates short-lived callout bubbles on top of the video. A bubble can be tied to a shot, tied to a timestamp, styled independently, and optionally moved along a motion path during its visible window.
+
+<img src="../../screenshots/PopUpPane.png" alt="PopUp pane with an expanded shot-linked bubble, motion path controls, placement fields, and live popup preview" width="960">
+
+<img src="../../screenshots/PopUpPane2.png" alt="Lower PopUp pane with motion path points, custom placement, bubble size, colors, and opacity" width="840">
 
 ## When To Use This Pane
 
-- After the shot list is stable in [splits.md](splits.md).
-- After scoring shots in [score.md](score.md) when you want score and penalty bubbles.
-- When you need one popup for the selected shot.
-- When you want to create one popup for every shot in the run.
+- After shot timing is stable.
+- After scoring, when you want score or penalty callouts.
+- When one target transition or stage moment needs a visible annotation.
+- When every shot should receive a score-linked popup.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Import Shots` | Creates or refreshes one shot-linked popup for every current shot. Re-running it updates existing shot popups instead of duplicating them. |
-| `Add Bubble` | Adds a popup. If a shot is selected, the popup is linked to that shot; otherwise it is time-based at the current playhead. |
-| Popup header | Selects that popup and seeks the video to the popup's start point. |
-| Chevron | Shows or hides the popup editor without seeking the video. |
-| `On` | Enables or disables that popup. |
-| `Bubble name` | Names the popup card. If blank and shot-linked, the card inherits the shot label. |
-| `Start mode` | Chooses `Time` or `Shot`. Shot mode follows the selected shot's timing. |
+| `Import Shots` | Creates or refreshes one shot-linked popup for every current shot. |
+| `Add Bubble` | Adds a popup for the selected shot, or a time-based popup at the playhead. |
+| Popup title button | Selects the popup and seeks the video to its start. |
+| Card chevron | Expands or collapses the editor without changing the playhead. |
+| `On` | Enables or disables the popup. |
+| `Duplicate` | Copies the popup. |
+| `Clear path` | Removes stored motion path points. |
+| `Remove` | Deletes the popup. |
+| `Bubble name` | Sets the card title. |
+| `Text` | Sets manual text for time-based popups. Shot-linked popups derive text from Score. |
+| `Start mode` | Chooses `Time` or `Shot`. |
+| `Start (seconds)` | Sets a time-based start. Disabled for shot-linked popups. |
 | `Shot` | Chooses the shot anchor for shot-linked popups. |
-| `Text` | Edits manual time-based popup text. Shot-linked popups derive text from the shot score and penalties. |
-| `Follow motion path` | Lets a popup move between stored path points during its duration. |
-| `Placement`, `X`, and `Y` | Set the popup position. `Custom` enables direct normalized coordinates. |
-| `Width` and `Height` | Force popup dimensions. Leave at auto-sized values when possible. |
-| `Background`, `Text`, and `Opacity` | Style the popup bubble. |
+| `Duration (seconds)` | Controls how long the popup stays visible. |
+| `Follow motion path` | Enables guided movement across stored path points. |
+| `Points` | Chooses the number of motion guide points. |
+| Motion point `Go` buttons | Seek to each path point so you can place it accurately. |
+| `Placement`, `X`, `Y` | Set fixed or custom normalized placement. |
+| `Width`, `Height` | Force popup size. |
+| `Background`, `Text`, `Opacity` | Style the bubble. |
 
-## Score And Penalty Text
+## Shot-Linked Text
 
-Shot-linked popups use the live shot score and penalties:
+Shot-linked popups use the live Score pane values:
 
-- IDPA popups use values like `-0`, `-1`, or `-3`.
-- USPSA/IPSC popups use values like `A`, `C`, `D`, `M`, `NS`, or `M+NS`.
-- Per-shot penalties are appended with the same shorthand used by Score, such as `PE x1`, `FTDR x1`, or `FPE x1`.
-- Browser preview and export rendering both resolve the text from the current shot score, so rescoring a shot updates its popup output.
+- IDPA-style scores resolve as values like `-0`, `-1`, or `-3`.
+- USPSA/IPSC-style scores resolve as values like `A`, `C`, `D`, `M`, or `NS`.
+- Per-shot penalties are appended using the visible scoring shorthand.
+- Rescoring a shot updates that popup in preview and export.
 
 ## How To Use It
 
-1. Confirm shot timing in [splits.md](splits.md).
-2. Score shots in [score.md](score.md).
-3. Open PopUp.
-4. Select a shot and click `Add Bubble` to create one popup for that shot.
-5. Click `Import Shots` when every shot should get a popup.
-6. Click a popup header to jump to its video time and edit placement or style.
-7. Use the chevron to minimize cards when the inspector gets crowded.
-8. Drag a rendered popup on the video to move it.
+1. Confirm timing in [splits.md](splits.md).
+2. Score the run in [score.md](score.md) if popup text should follow shot scores.
+3. Click `Add Bubble` for one selected-shot callout, or `Import Shots` for one popup per shot.
+4. Expand the popup card.
+5. Choose `Shot` or `Time` start behavior.
+6. Set `Duration`.
+7. Place the bubble with a fixed anchor or `Custom` X/Y values.
+8. Enable `Follow motion path` when the callout should track movement; use each `Go` button to set later points.
+9. Tune size, colors, and opacity against the live preview.
 
-## Minimize And Navigation Behavior
-
-- Popups start minimized by default.
-- Switching to another pane and returning minimizes popup cards again.
-- Selecting a popup seeks to that popup's start point.
-- Minimizing a popup does not seek the video.
-- A selected popup remains editable in the PopUp tool even when the playhead is slightly outside its active window.
-- The popup inspector is designed to stay inside the right pane without horizontal scrolling.
-
-## How It Affects The Rest Of SplitShot
-
-- Shot-linked popup text follows Score.
-- Popup timing follows Splits when the popup is anchored to a shot.
-- Export uses the same popup text, timing, placement, and style as the preview.
-- Metrics remains read-only; it reports score and split context but does not create popups.
-
-## Common Mistakes And Fixes
+## Common Fixes
 
 | Problem | Fix |
 | --- | --- |
-| Popup text is disabled. | The popup is shot-linked, so text is generated from that shot's score and penalties. Edit the shot in Score. |
-| The popup did not use the score you expected. | Recheck the active scoring preset and the shot row in [score.md](score.md). |
-| `Import Shots` did not create duplicates. | That is expected. It refreshes one popup per shot. |
-| Clicking a popup moved the video. | That is expected for popup selection. Use the chevron when you only want to minimize or expand. |
-| A card is minimized after returning to the pane. | That is expected. Minimizable inspector items default back to minimized for navigation. |
+| `Text` is disabled. | The popup is shot-linked. Edit the shot score instead. |
+| The popup appears at the wrong time. | Check `Start mode`, `Shot`, and `Duration`. |
+| The bubble does not move. | Turn on `Follow motion path` and set path points. |
+| `Import Shots` did not duplicate existing popups. | That is expected; it refreshes one popup per shot. |
+| A popup is missing from export. | Confirm the popup is `On` and visible during the exported time range. |
 
 ## Related Guides
 
 Previous: [overlay.md](overlay.md)
 Next: [review.md](review.md)
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22

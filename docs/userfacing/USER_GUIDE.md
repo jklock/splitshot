@@ -1,48 +1,49 @@
 # SplitShot User Guide
 
-SplitShot is a local-first browser app for reviewing stage footage from first import through final export. This guide is the hub for the user-facing docs; the pane guides below are the exhaustive references for every visible control and feature in the app.
+SplitShot is a local-first browser app for turning stage footage into a reviewed, scored, annotated, and exported video. This guide is the hub for the user-facing docs. Each pane guide below matches the current left-rail tool set and references fresh screenshots from the active UI.
 
 ## Start Here
 
 1. Install and launch SplitShot from the root [README.md](../../README.md).
-2. Open the [Project pane](panes/project.md) and load your primary video.
-3. Follow the end-to-end [workflow guide](workflow.md) for your first complete run.
-4. Use the pane guides below when you want a complete explanation of a specific part of the app.
+2. Open [panes/project.md](panes/project.md), name the run, and import the primary video.
+3. Use [workflow.md](workflow.md) for the full import-to-export path.
+4. Open the pane guide for any control you need to understand before changing it.
 
 ## Browser Layout
 
-Every SplitShot session uses the same four-part layout:
+Every session uses the same workspace:
 
-- The left rail switches between Project, Score, Splits, ShotML, PiP, Overlay, PopUp, Review, Export, and Metrics.
-- The status bar at the top reports the active file and current status message.
-- The center workspace shows the video, overlays, and waveform review area.
-- The right inspector changes to match the active pane.
+- The left rail switches between `Project`, `Score`, `Splits`, `ShotML`, `PiP`, `Overlay`, `PopUp`, `Review`, `Export`, and `Metrics`.
+- The top status line reports the active file, analysis state, and sync offset.
+- The center stage shows the primary video, optional PiP media, overlay badges, popup bubbles, review boxes, and the waveform.
+- The right inspector changes to match the selected rail tool.
+- The waveform, timing table, metrics table, and right inspector have expanded states where available.
 
-The video stage, waveform panel, and inspector can be resized. Unlock a region before dragging its handle.
+Most edits auto-apply. Export is the main exception: the final video is created only when you click `Export Video`.
 
 ## Pane Guides
 
 | Guide | Use it for |
 | --- | --- |
-| [panes/project.md](panes/project.md) | Project setup, video import, PractiScore import, and project folder management |
-| [panes/shotml.md](panes/shotml.md) | ShotML detector settings, threshold, reruns, timing-change proposals, and reset defaults |
-| [panes/splits.md](panes/splits.md) | Shot list review, waveform editing, manual timing changes, and timing events |
-| [panes/score.md](panes/score.md) | Scoring presets, per-shot scores, penalties, restore actions, and imported score context |
-| [panes/pip.md](panes/pip.md) | PiP media, per-item sync, position, size, and export inclusion |
-| [panes/overlay.md](panes/overlay.md) | Shot badge layout, timer/draw/final badge placement, fonts, and colors |
-| [panes/popup.md](panes/popup.md) | Shot-linked score and penalty popups, imported shot popups, popup timing, and popup minimization |
-| [panes/review.md](panes/review.md) | Preview visibility toggles, summary boxes, custom text boxes, and review placement |
-| [panes/export.md](panes/export.md) | Export presets, frame settings, codecs, output path, logs, and final render workflow |
-| [panes/metrics.md](panes/metrics.md) | Stage dashboard, timing trends, scoring context, and CSV/text exports |
+| [panes/project.md](panes/project.md) | Project metadata, primary video import, PractiScore import, and project bundle controls |
+| [panes/score.md](panes/score.md) | Ruleset selection, per-shot score cards, penalty fields, restore/delete actions, and imported score context |
+| [panes/splits.md](panes/splits.md) | Shot timing, waveform review, marker nudges, manual shots, expanded timing edits, and timing events |
+| [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
+| [panes/pip.md](panes/pip.md) | Added media, picture-in-picture layout, per-item size/position/opacity, sync nudges, and export inclusion |
+| [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
+| [panes/popup.md](panes/popup.md) | Shot-linked callouts, imported shot bubbles, custom timing, motion paths, placement, and bubble styling |
+| [panes/review.md](panes/review.md) | Preview artifact toggles, imported summary boxes, custom text boxes, placement, size, and style |
+| [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
+| [panes/metrics.md](panes/metrics.md) | Read-only run dashboard, expanded timing table, scoring context, CSV export, and text export |
 
 ## Common Workflows
 
-- [workflow.md](workflow.md) for the full import-to-export sequence.
-- [troubleshooting.md](troubleshooting.md) for the most common user-facing problems.
+- [workflow.md](workflow.md) walks through the recommended order from raw video to final export.
+- [troubleshooting.md](troubleshooting.md) covers the most common user-facing problems and where to fix them.
 
-## Need Repository Details?
+## Repository Details
 
-If you need architecture, technical notes, or development docs instead of product usage guides, go to [../README.md](../README.md).
+Architecture, development, and technical notes live in [../README.md](../README.md).
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22

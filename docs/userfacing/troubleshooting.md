@@ -1,97 +1,95 @@
 # Troubleshooting
 
-This page covers the most common SplitShot problems you can solve from the user-facing workflow.
+This page covers common SplitShot problems and the pane that owns the fix.
 
 ## No Video Selected
 
-If the status bar still says `No Video Selected`, SplitShot does not have a usable primary video yet.
+- Open [panes/project.md](panes/project.md).
+- Use `Select Primary Video`, or paste an absolute path into `Primary Video` and press Enter.
+- Wait for analysis to finish before judging Splits, Score, Metrics, or Export.
 
-- Go back to [panes/project.md](panes/project.md).
-- Use `Select Primary Video`, or paste a full local path into `Primary Video` and press Enter.
-- Wait for the status message to confirm that local analysis started.
+## Large Video Import Is Slow
 
-## Large Video Import Guidance
-
-Very large files are usually easier to open by direct path than by browser upload.
-
-- Paste the full absolute path into the `Primary Video` field in the Project pane.
-- Press Enter to import it directly from disk.
-- Use the file picker for normal-sized files when convenience matters more than avoiding browser upload overhead.
-
-## Browser Preview Audio Is Missing
-
-Some browsers are stricter about unusual source audio formats.
-
-- Try Chromium first if you are currently on a different browser.
-- Confirm the video itself still plays outside SplitShot.
-- If the source video uses an uncommon audio combination, re-encode the source audio to a more browser-friendly format before the session.
+- Prefer the direct path field in Project for very large local files.
+- Paste the full path into `Primary Video`.
+- Press Enter.
 
 ## Missing Or Extra Shots
 
-Shot detection problems nearly always start in [panes/splits.md](panes/splits.md).
+- Open [panes/shotml.md](panes/shotml.md) before detailed manual edits.
+- Lower `Detection threshold` for missed quiet shots.
+- Raise `Detection threshold` for extra noise or echoes.
+- Click `Re-run ShotML`.
+- Finish remaining marker fixes in [panes/splits.md](panes/splits.md) with nudges, drag, `Add Shot`, or `Delete Selected Shot`.
 
-- Lower `Detection threshold` if quiet shots were missed.
-- Raise `Detection threshold` if background noise or echoes became shots.
-- Use waveform `Select` mode to drag a shot marker into place.
-- Use `Add Shot` for a missed shot, or `Delete Selected Shot` for a false detection.
+## Beep Or All Shot Times Are Shifted
 
-## PractiScore Import Does Not Match The Expected Competitor Or Stage
+- Tune Beep Detection in [panes/shotml.md](panes/shotml.md).
+- Rerun ShotML.
+- Confirm the orange beep marker and first-shot draw time in Splits.
 
-The staged file may have multiple stages or multiple competitors.
+## PractiScore Does Not Match The Expected Stage
 
-- Recheck `Match type`, `Stage #`, `Competitor name`, and `Place` in [panes/project.md](panes/project.md).
-- If the file is correct but the wrong stage is still selected, choose the correct stage first and then recheck the competitor and place fields.
-- If you loaded the wrong source file, use `Select PractiScore File` again and restage the right one.
+- Reopen [panes/project.md](panes/project.md).
+- Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
+- If the wrong file was loaded, click `Select PractiScore File` again.
 
-## Overlay Looks Right In Preview But Not In Export
+## Score Or Popup Text Looks Wrong
 
-Preview and export use the same settings, but the final render is still a separate local render pass.
+- Open [panes/score.md](panes/score.md).
+- Confirm `Enable scoring` and `Preset`.
+- Expand the relevant shot card and check score plus penalties.
+- Shot-linked PopUp text follows this score state.
 
-- Confirm the settings in [panes/overlay.md](panes/overlay.md) and [panes/review.md](panes/review.md) are still enabled.
-- Scrub near the final shot and confirm the badges and text boxes appear when expected.
-- If a review box is locked to the overlay stack, unlock it before expecting custom X and Y placement.
-- If a PractiScore summary box is empty, recheck the imported stage in the Project pane.
+## Overlay Or Review Boxes Are Missing
 
-## PiP Media Is Not Included In Export
+- Check [panes/overlay.md](panes/overlay.md) for overall overlay visibility and style.
+- Check [panes/review.md](panes/review.md) for `Show timer badge`, `Show draw badge`, `Show split badges`, `Show scoring summary`, and each text-box enable checkbox.
+- If a summary box is empty, import PractiScore in Project.
+- If X/Y fields are disabled, use `Custom` placement and turn off shot-stack locking for that box or badge.
 
-PiP media must be both added and enabled for export.
+## Popups Are Missing Or At The Wrong Time
+
+- Open [panes/popup.md](panes/popup.md).
+- Confirm the popup is `On`.
+- Check `Start mode`, `Shot`, `Start (seconds)`, and `Duration (seconds)`.
+- For moving callouts, enable `Follow motion path` and set the path points.
+
+## PiP Media Is Missing From Export
 
 - Open [panes/pip.md](panes/pip.md).
-- Confirm the media item still exists in the card list.
+- Confirm the media item still exists.
 - Turn on `Enable added media export`.
-- Recheck the chosen `Layout` and the per-item size and position values.
+- Recheck layout, opacity, size, position, and sync.
 
-## Export Fails Because FFmpeg Or ffprobe Is Missing
+## Export Fails
 
-SplitShot renders locally, so FFmpeg tools must be available on the machine.
-
-- Install `ffmpeg` and `ffprobe`.
-- Relaunch SplitShot after installation.
-- Run `uv run splitshot --check` from the repository root if you want a quick toolchain check before trying the export again.
-
-## Output Path Or Container Problems
-
-The output file extension decides the container.
-
+- Open [panes/export.md](panes/export.md).
+- Confirm the output path is writable and does not point to the source video.
 - Use `.mp4`, `.m4v`, `.mov`, or `.mkv`.
-- Do not export over the original source file.
-- Choose a writable destination folder.
-- If the export button opens a log with an immediate path error, change the destination and try again.
+- Install `ffmpeg` and `ffprobe` if the log reports missing tools.
+- Use `Show Log` for the exact local FFmpeg error.
+
+## Metrics Looks Wrong
+
+Metrics is read-only. Fix the source pane:
+
+- Project for imported PractiScore context.
+- ShotML for detector confidence and automatic split context.
+- Splits for timing.
+- Score for score and penalties.
 
 ## Project Folder Confusion
 
-The Project pane uses a chosen project folder as the saved bundle location.
-
-- Use `Choose Project` to open an existing project folder or create a new one for the current session.
-- Keep using the same folder if you want SplitShot to preserve the session state across launches.
-- Use `New Project` only when you want to clear the current project and start fresh.
-- Use `Delete Project` only when you want to remove the saved bundle from disk.
+- `Choose Project` opens an existing bundle or chooses a bundle location.
+- `New Project` clears the current session.
+- `Delete Project` removes the saved bundle from disk.
 
 ## If You Still Need Help
 
-- Recheck the relevant pane guide from [USER_GUIDE.md](USER_GUIDE.md).
-- Review [panes/export.md](panes/export.md) for export-specific issues.
-- Review [../project/LIMITATIONS.md](../project/LIMITATIONS.md) if you suspect the problem is a current product limitation rather than a workflow mistake.
+- Start from [USER_GUIDE.md](USER_GUIDE.md).
+- Use the pane guide for the active rail tool.
+- Review [../project/LIMITATIONS.md](../project/LIMITATIONS.md) if the issue may be a current product limitation.
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22
