@@ -333,7 +333,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "autoApplyExportSettings" in js
     assert "autoApplyScoring" in js
     assert "/api/layout" not in js
-    assert "renderScoringPenaltyFields" in js
+    assert "renderScoringPenaltyFields" not in js
     assert "renderPractiScoreSummaries" in js
     assert "renderMergeMediaList" in js
     assert "renderCollapsibleInspectorSections" in js

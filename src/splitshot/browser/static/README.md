@@ -13,19 +13,21 @@ This directory contains the browser-first SplitShot shell that talks to the loca
 
 `index.html` is organized into these major regions:
 
-- the left rail with Project, Metrics, Score, Splits, PiP, Overlay, Review, and Export tools
+- the left rail with Project, Score, Splits, ShotML, PiP, Overlay, PopUp, Review, Export, and Metrics tools
 - the persistent status bar that shows the selected video name or `No Video Selected`
 - the review grid with the stage preview, waveform, timing workbench, and inspector
-- inspector panes for project metadata, metrics, scoring, PiP, overlays, review text boxes, and export controls
-- the export log modal that opens from the Export pane while render is active
+- inspector panes for project metadata, scoring, timing, ShotML, PiP, overlays, popup bubbles, review text boxes, export controls, and metrics
+- the color picker and export log modals used by overlay, popup, review, and export controls
 
 Important ids and data attributes include:
 
 - `primary-file-input`, `merge-media-input`, `project-path`, `export-path`, and `practiscore-file-input`
-- `review-text-box-list`, `export-text-box-list`, `metrics-summary-grid`, `metrics-trend-list`, and `metrics-score-summary`
+- `timing-table`, `timing-workbench-table`, `timing-event-list`, `score-option-grid`, and `scoring-shot-list`
+- `review-text-box-list`, `popup-bubble-list`, `metrics-summary-grid`, `metrics-trend-list`, and `metrics-score-summary`
 - `show-export-log`, `export-log-modal`, `export-log-output`, and `export-log-error`
+- `color-picker-modal`, `color-picker-hue`, `color-picker-saturation`, `color-picker-lightness`, and `color-picker-hex`
 - `toggle-layout-lock-video`, `toggle-layout-lock-waveform`, `toggle-layout-lock-inspector`, `resize-rail`, `resize-waveform`, and `resize-sidebar`
-- `data-tool`, `data-tool-pane`, `data-waveform-mode`, `data-sync`, and `data-nudge`
+- `data-tool`, `data-tool-pane`, `data-waveform-mode`, `data-sync`, `data-nudge`, `data-open-merge-media`, and popup/text-box data action attributes
 
 ## Browser State Flow
 
@@ -36,7 +38,7 @@ Important ids and data attributes include:
 - waveform zoom and offset state
 - layout lock and resize state
 - progress and activity polling state
-- repeatable overlay text-box state
+- repeatable overlay text-box, popup bubble, and color-picker state
 - export path drafts and export log lines
 
 The main loop is:
@@ -51,7 +53,9 @@ The main loop is:
 
 - Layout sizing uses CSS variables such as `--app-height`, `--rail-width`, `--inspector-width`, and `--waveform-height`.
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
-- Review and Export share the same repeatable text-box model, including imported summary boxes and manual notes.
+- Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
+- Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
+- Popup bubbles are separate from review text boxes and can be time-based, shot-linked, or motion-following.
 - Export progress uses the processing bar plus the live export log modal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
@@ -60,5 +64,5 @@ The main loop is:
 - The browser shell depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-04-22
+**Referenced files last updated:** 2026-04-22

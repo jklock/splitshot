@@ -6,6 +6,8 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 
 <img src="../../screenshots/OverlayPane2.png" alt="Lower Overlay pane with shot badge, current shot badge, score badge, and score text color controls" width="840">
 
+<img src="../../screenshots/ColorPickerModal.png" alt="Shared color picker modal opened from an overlay color swatch with quick swatches, hue, saturation, lightness, and hex controls" width="840">
+
 ## When To Use This Pane
 
 - After timing and scoring are close to final.
@@ -32,6 +34,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | `Font`, `Font size`, `Bold`, `Italic` | Control badge typography. |
 | Badge style cards | Set background, text color, and opacity for timer, shot, current shot, and score badges. |
 | Score text color controls | Set colors for score tokens such as `-0`, `-1`, `M`, `NS`, `PE`, and similar values. |
+| Color swatches | Open the shared color picker modal with quick swatches, hue, saturation, lightness, and hex input. |
 
 ## How To Use It
 
@@ -42,6 +45,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 5. Turn a lock off when that badge needs its own X/Y placement.
 6. Tune bubble dimensions and typography.
 7. Finish with badge style cards and score text colors while watching the preview.
+8. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
 
 ## Preview And Export Behavior
 
@@ -49,6 +53,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 - Review visibility toggles can hide individual badge types without changing the underlying style.
 - Export uses the same overlay style and placement you see in preview.
 - Score text colors affect the text token, not the badge background.
+- The same color picker modal is used by Overlay, PopUp, and Review color swatches.
 
 ## Common Fixes
 

@@ -37,6 +37,7 @@ The PopUp pane creates short-lived callout bubbles on top of the video. A bubble
 | `Placement`, `X`, `Y` | Set fixed or custom normalized placement. |
 | `Width`, `Height` | Force popup size. |
 | `Background`, `Text`, `Opacity` | Style the bubble. |
+| Color swatches | Open the shared color picker modal shown in [overlay.md](overlay.md). |
 
 ## Shot-Linked Text
 
@@ -58,6 +59,7 @@ Shot-linked popups use the live Score pane values:
 7. Place the bubble with a fixed anchor or `Custom` X/Y values.
 8. Enable `Follow motion path` when the callout should track movement; use each `Go` button to set later points.
 9. Tune size, colors, and opacity against the live preview.
+10. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
 
 ## Common Fixes
 

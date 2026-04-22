@@ -57,6 +57,25 @@ def screenshot(page: Page, filename: str, scroll_top: int = 0) -> None:
     page.screenshot(path=str(SCREENSHOT_DIR / filename), full_page=False)
 
 
+def open_color_picker(page: Page) -> None:
+    page.evaluate(
+        """
+        () => {
+          const button = document.querySelector('#badge-style-grid .color-swatch-button');
+          if (button instanceof HTMLElement) button.click();
+        }
+        """
+    )
+    page.wait_for_selector("#color-picker-modal:not([hidden])", timeout=30_000)
+    page.wait_for_timeout(250)
+
+
+def open_export_log(page: Page) -> None:
+    page.locator("#show-export-log").click()
+    page.wait_for_selector("#export-log-modal:not([hidden])", timeout=30_000)
+    page.wait_for_timeout(250)
+
+
 def stabilize_pip_controls(page: Page) -> None:
     page.locator("#merge-enabled").check()
     page.locator("#merge-layout").select_option("pip")
@@ -116,6 +135,19 @@ def prepare_demo_state(page: Page) -> None:
 
           if (state?.project?.scoring) {
             state.project.scoring.enabled = true;
+          }
+
+          if (state?.project?.export) {
+            state.project.export.output_path = '/Users/klock/splitshot/output.mp4';
+            state.project.export.last_error = '';
+            state.project.export.last_log = [
+              'SplitShot export preview log',
+              'Input: TestVideo1.MP4',
+              'Overlay: timer, draw, shots, score, popups, and review boxes enabled',
+              'PiP: 1 added media item, sync -2555 ms',
+              'Output: /Users/klock/splitshot/output.mp4',
+              'Status: ready to render'
+            ].join('\\n');
           }
 
           if (state?.project?.merge) {
@@ -301,6 +333,10 @@ def capture_all(page: Page) -> None:
     seek_near_final_shot(page)
     screenshot(page, "OverlayPane.png", 0)
     screenshot(page, "OverlayPane2.png", 760)
+    open_color_picker(page)
+    screenshot(page, "ColorPickerModal.png", 760)
+    page.locator("#close-color-picker").click()
+    page.wait_for_function("() => document.getElementById('color-picker-modal')?.hidden === true")
 
     click_tool(page, "popup")
     prepare_demo_state(page)
@@ -317,6 +353,10 @@ def capture_all(page: Page) -> None:
     prepare_demo_state(page)
     screenshot(page, "ExportPane.png", 0)
     screenshot(page, "ExportPane2.png", 760)
+    open_export_log(page)
+    screenshot(page, "ExportLogModal.png", 760)
+    page.locator("#close-export-log").click()
+    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
 
     click_tool(page, "metrics")
     prepare_demo_state(page)
