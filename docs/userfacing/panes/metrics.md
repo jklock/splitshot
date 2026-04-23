@@ -2,7 +2,7 @@
 
 The Metrics pane is a read-only dashboard for the current run. It summarizes timing, scoring, confidence, PractiScore comparison, and action context, then exports the same run data as CSV or plain text.
 
-<img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, trend snapshot rows, scoring context, and export buttons beside the live preview" width="960">
+<img src="../../screenshots/MetricsPane.png" alt="Metrics pane with summary cards, compact trend snapshot table, scoring context, and export buttons beside the live preview" width="960">
 
 <img src="../../screenshots/MetricsPane2.png" alt="Expanded Metrics table with shot rows, ShotML split, adjustment, final split, final time, score, penalties, PractiScore, delta, confidence, and action columns" width="960">
 
@@ -21,8 +21,8 @@ The Metrics pane is a read-only dashboard for the current run. It summarizes tim
 | Control | What it does |
 | --- | --- |
 | Summary cards | Show headline values such as draw, raw time, shot count, average split, beep, and result. |
-| `Trend Snapshot` | Shows the compact row-by-row timing table in the inspector. |
-| Scoring context block | Shows imported stage number, competitor, place, ruleset, result, raw/final timing, penalties, and points. |
+| `Trend Snapshot` | Shows the compact row-by-row timing table in the inspector. The columns are `Shot`, `Split`, `Run`, `Score`, `ShotML`, and `Action`. |
+| Scoring context block | Shows imported `Stage #`, `Competitor`, and `Place` first, followed by ruleset, result, raw/final timing, penalties, and points. |
 | `Export CSV` | Downloads the current metrics table as CSV. |
 | `Export Text` | Downloads a plain-text run summary. |
 | `Expand` | Opens the full-width Metrics table. |
@@ -48,7 +48,7 @@ The Metrics pane is a read-only dashboard for the current run. It summarizes tim
 
 1. Read the summary cards for draw, raw, shots, average split, beep, and result.
 2. Review the `Trend Snapshot` table for the sequence story.
-3. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details.
+3. Check scoring context when you need stage, competitor, place, ruleset, penalty, or official comparison details. The context is a two-column table so long names wrap instead of clipping.
 4. Click `Expand` for the dense table view.
 5. Click `Export CSV` for spreadsheet work.
 6. Click `Export Text` for coaching notes, messages, or training logs.
@@ -76,5 +76,5 @@ Metrics does not edit the project. It changes when the source data changes:
 Previous: [export.md](export.md)
 Next: [../workflow.md](../workflow.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

@@ -449,6 +449,7 @@ class PopupMotionPoint:
     offset_ms: int = 0
     x: float = 0.5
     y: float = 0.5
+    easing: str = "linear"
 
 
 @dataclass(slots=True)
@@ -516,6 +517,7 @@ class UIState:
     timing_column_widths: dict[str, float] = field(default_factory=dict)
     review_text_box_expansion: dict[str, bool] = field(default_factory=dict)
     popup_bubble_expansion: dict[str, bool] = field(default_factory=dict)
+    popup_authoring_collapsed: bool = False
     merge_source_expansion: dict[str, bool] = field(default_factory=dict)
     shotml_section_expansion: dict[str, bool] = field(default_factory=dict)
 
@@ -624,6 +626,7 @@ _POPUP_BUBBLE_QUADRANTS = {
     "bottom_right",
     "custom",
 }
+_POPUP_MOTION_EASINGS = {"linear", "hold", "ease_in", "ease_out", "ease_in_out"}
 
 _UI_STATE_ACTIVE_TOOLS = {
     "project",
@@ -681,7 +684,10 @@ def _normalize_popup_motion_point(data: Any) -> PopupMotionPoint | None:
         y = max(0.0, min(1.0, float(data.get("y", 0.5))))
     except (TypeError, ValueError):
         y = 0.5
-    return PopupMotionPoint(offset_ms=offset_ms, x=x, y=y)
+    easing = str(data.get("easing", "linear") or "linear").strip().lower()
+    if easing not in _POPUP_MOTION_EASINGS:
+        easing = "linear"
+    return PopupMotionPoint(offset_ms=offset_ms, x=x, y=y, easing=easing)
 
 
 def _normalize_popup_motion_path(data: Any) -> list[PopupMotionPoint]:
@@ -1303,6 +1309,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             review_text_box_expansion=_ui_state_bool_map(ui_data.get("review_text_box_expansion")),
             popup_bubble_expansion=_ui_state_bool_map(ui_data.get("popup_bubble_expansion")),
+            popup_authoring_collapsed=bool(ui_data.get("popup_authoring_collapsed", False)),
             merge_source_expansion=_ui_state_bool_map(ui_data.get("merge_source_expansion")),
             shotml_section_expansion=_ui_state_bool_map(ui_data.get("shotml_section_expansion")),
         ),

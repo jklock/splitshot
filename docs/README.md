@@ -58,6 +58,7 @@ The screenshot script covers:
 ## Current Limitations
 
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
+- [project/QUALITY_ELEVATION_PLAN.md](project/QUALITY_ELEVATION_PLAN.md)
 
 ## Technical Docs
 

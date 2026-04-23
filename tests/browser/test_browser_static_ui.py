@@ -129,19 +129,52 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="popup"' in html
     assert 'id="popup-import-shots"' in html
-    assert 'data-popup-field="anchor_mode"' in html
-    assert 'data-popup-field="shot_id"' in html
+    assert 'id="popup-import-mode"' in html
+    assert 'id="popup-filter"' in html
+    assert 'id="popup-prev"' not in html
+    assert 'id="popup-next"' not in html
+    assert 'id="popup-prev-compact"' in html
+    assert 'id="popup-next-compact"' in html
+    assert 'id="popup-play-window"' in html
+    assert 'id="popup-loop-window"' in html
+    assert 'id="popup-toggle-authoring"' in html
+    assert 'id="popup-duplicate-selected"' not in html
+    assert 'id="popup-delete-selected"' not in html
+    assert 'id="popup-enable-shown"' not in html
+    assert 'id="popup-disable-shown"' not in html
+    assert 'id="popup-bulk-duration-s"' not in html
+    assert 'id="popup-apply-duration-selected"' not in html
+    assert 'id="popup-apply-duration-shown"' not in html
+    assert 'id="popup-apply-duration-shot-linked"' not in html
+    assert 'id="popup-timeline-strip"' in html
+    assert 'id="popup-bubble-template"' not in html
+    assert 'data-popup-field="anchor_mode"' in js
+    assert 'data-popup-field="shot_id"' in js
     assert 'data-popup-field="name"' in js
     assert 'function selectPopupBubble(' in js
     assert 'function selectPopupBubbleForShot(shotId' in js
     assert 'function importShotPopups() {' in js
-    assert 'data-popup-field="quadrant"' in html
-    assert 'data-popup-field="opacity_percent"' in html
-    assert 'data-popup-field="follow_motion"' in html
-    assert 'data-popup-field="motion_point_count"' in html
-    assert 'data-popup-motion-guide' in html
-    assert 'data-popup-motion-path-list' in html
-    assert 'data-popup-action="clear_motion_path"' in html
+    assert 'function filteredPopupBubbles(bubbles = popupBubbles()) {' in js
+    assert 'function renderPopupTimeline(allBubbles = popupBubbles(), visibleBubbles = filteredPopupBubbles(allBubbles)) {' in js
+    assert 'function selectAdjacentPopupBubble(direction) {' in js
+    assert 'function playSelectedPopupWindow({ loop = false } = {}) {' in js
+    assert 'function syncPopupPlaybackWindow() {' in js
+    assert 'function popupShotMatchesImportMode(shot, mode) {' in js
+    assert 'function setPopupAuthoringCollapsed(collapsed' in js
+    assert 'data-popup-field="quadrant"' in js
+    assert 'data-popup-field="opacity_percent"' in js
+    assert 'data-popup-field="follow_motion"' in js
+    assert 'function popupBubbleKeyframes(bubble) {' in js
+    assert 'function popupKeyframePoint(bubble, offsetMs) {' in js
+    assert 'function addPopupBubbleKeyframeAtPlayhead(bubbleId) {' in js
+    assert 'function deletePopupBubbleKeyframe(bubbleId, offsetMs) {' in js
+    assert 'function jumpPopupBubbleKeyframe(bubbleId, direction) {' in js
+    assert 'data-popup-motion-guide' in js
+    assert 'data-popup-keyframe-list' in js
+    assert 'data-popup-action="add_keyframe"' in js
+    assert 'data-popup-action="prev_keyframe"' in js
+    assert 'data-popup-action="next_keyframe"' in js
+    assert 'data-popup-action="clear_motion_path"' in js
     popup_motion_template = re.search(
         r'<section class="popup-motion-guide" data-popup-motion-guide hidden>.*?</section>',
         js,
@@ -149,7 +182,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     )
     assert popup_motion_template is not None
     popup_motion_html = popup_motion_template.group(0)
-    assert popup_motion_html.index('data-popup-action="clear_motion_path"') < popup_motion_html.index('data-popup-motion-path-list')
+    assert popup_motion_html.index('data-popup-action="add_keyframe"') < popup_motion_html.index('data-popup-keyframe-list')
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
     assert 'class="data-table metrics-trend-table" aria-label="Metrics trend table"' in html
@@ -213,8 +246,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="resize-sidebar"' in html
     assert 'id="resize-waveform"' in html
     assert 'id="toggle-layout-lock-video"' in html
-    assert 'id="toggle-layout-lock-waveform"' in html
-    assert 'id="toggle-layout-lock-inspector"' in html
+    assert 'id="toggle-layout-lock-waveform"' not in html
+    assert 'id="toggle-layout-lock-inspector"' not in html
     assert 'data-waveform-mode="select"' in html
     assert 'data-waveform-mode="add"' in html
     assert 'data-waveform-mode="beep"' not in html
@@ -498,21 +531,23 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (state && renderWaveformNow) renderWaveform();' in js
     assert 'font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),' in js
     assert 'text_boxes: textBoxes.map((box) => ({' in js
-    assert 'overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));' in js
+    assert 'const preserveExistingTextBoxes = Boolean(' in js
+    assert 'overlay.text_boxes = (preserveExistingTextBoxes ? previousTextBoxes : payloadTextBoxes)' in js
     assert 'function createOverlayTextBoxId() {' in js
     assert 'function overlayTextBoxAutoSize(box) {' in js
     assert 'function syncOverlayTextBoxSizeControls(boxId) {' in js
     assert 'function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {' in js
     assert 'function beginTextBoxDrag(event) {' in js
-    assert 'if (textBoxDrag) return;' in js
+    assert 'if (textBoxDrag || overlayBadgeDrag) return;' in js
     assert 'function moveTextBoxDrag(event) {' in js
     assert 'function endTextBoxDrag(event) {' in js
     assert 'function normalizePopupMotionPath(path) {' in js
     assert 'function popupBubbleMotionPath(bubble) {' in js
-    assert 'function popupBubbleMotionPointCount(bubble) {' in js
-    assert 'function popupBubbleMotionPathTemplate(bubble, totalPointCount = 4) {' in js
     assert 'function popupBubblePoint(bubble, positionMs = null) {' in js
-    assert 'function resamplePopupBubbleMotionPath(bubble, totalPointCount = null, sourcePath = null) {' in js
+    assert 'function popupBubbleKeyframes(bubble) {' in js
+    assert 'function popupKeyframePoint(bubble, offsetMs) {' in js
+    assert 'function popupOverlayPixelPoint(frameRect, xValue, yValue) {' in js
+    assert 'function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {' in js
     assert 'function seekPrimaryVideoToTimeMs(timeMs) {' in js
     assert 'function seekPrimaryVideoToShot(shotId) {' in js
     assert 'function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {' in js
@@ -538,6 +573,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (shot) return shot.time_ms;' in js
     assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
     assert 'data-popup-field="follow_motion"' in js
+    assert 'data-popup-keyframe-drag' in js
+    assert 'dataset.popupKeyframeOffset' in js
     assert 'entry.text,' in js
     assert 'popupSize.width,\n      popupSize.height,\n      "center"' in js
     assert '<option value="above_final">Above Final Box</option>' in js
@@ -782,8 +819,15 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "overflow-wrap: anywhere;\n  white-space: normal;" in css
     assert ".cockpit-shell.inspector-compact .style-card-label" in css
     assert ".cockpit-shell.inspector-compact .style-card-label {\n  display: none;" not in css
+    assert ".popup-authoring-bar {\n  align-items: end;" in css
+    assert ".popup-duration-actions {\n  align-items: end;" not in css
+    assert ".popup-authoring-panel {\n  display: grid;" in css
+    assert ".popup-collapsed-nav {\n  display: grid;" in css
+    assert ".popup-timeline-strip {\n  background:" in css
+    assert ".popup-timeline-bar.selected {\n  border-color: var(--accent);" in css
     assert ".popup-style-card,\n.cockpit-shell.inspector-compact .popup-style-card {\n  grid-template-columns: repeat(2, minmax(0, 1fr));" in css
     assert ".popup-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
+    assert ".popup-style-card .color-hex-input,\n.cockpit-shell.inspector-compact .popup-style-card .color-hex-input {\n  flex: 1 1 auto;\n  max-width: 10rem;" in css
     assert "  .popup-style-card {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }" in css
     assert "#badge-style-grid {\n  grid-template-columns: repeat(4, minmax(0, 1fr));" in css
     assert "#badge-style-grid .badge-style-card .color-swatch-button" in css
@@ -1080,9 +1124,16 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "collapse-timing",
         "collapse-metrics",
         "expand-metrics",
-        "popup-add-bubble",
-        "popup-import-shots",
-        "add-timing-event",
+            "popup-add-bubble",
+            "popup-import-shots",
+            "popup-import-mode",
+            "popup-filter",
+            "popup-prev-compact",
+            "popup-next-compact",
+            "popup-play-window",
+            "popup-loop-window",
+            "popup-toggle-authoring",
+            "add-timing-event",
         "delete-selected",
         "expand-timing",
         "export-video",
@@ -1106,8 +1157,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "generate-shotml-proposals",
         "reset-shotml-defaults",
         "toggle-layout-lock-video",
-        "toggle-layout-lock-waveform",
-        "toggle-layout-lock-inspector",
         "resize-rail",
         "resize-sidebar",
         "resize-waveform",

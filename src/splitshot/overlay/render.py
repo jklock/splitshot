@@ -6,12 +6,15 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project, overlay_text_boxes_for_render
+from splitshot.presentation.popups import (
+    popup_bubble_display_text,
+    popup_bubble_is_visible_at,
+    popup_bubble_point,
+)
 from splitshot.scoring.logic import (
     calculate_scoring_summary,
     current_shot_index,
-    default_score_letter_for_ruleset,
     format_imported_stage_overlay_text,
-    normalize_penalty_counts_for_ruleset,
     shot_display_time_ms,
 )
 from splitshot.timeline.model import compute_split_rows, draw_time_ms, raw_time_ms, sort_shots
@@ -55,116 +58,6 @@ _PENALTY_LABELS = {
 }
 
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
-
-_POPUP_BUBBLE_QUADRANT_POINTS = {
-    "top_left": (0.125, 0.125),
-    "top_middle": (0.5, 0.125),
-    "top_right": (0.875, 0.125),
-    "middle_left": (0.125, 0.5),
-    "middle_middle": (0.5, 0.5),
-    "middle_right": (0.875, 0.5),
-    "bottom_left": (0.125, 0.875),
-    "bottom_middle": (0.5, 0.875),
-    "bottom_right": (0.875, 0.875),
-    "custom": (0.5, 0.5),
-}
-
-
-def _popup_bubble_time_ms(project: Project, popup) -> int:
-    if getattr(popup, "anchor_mode", "time") == "shot" and getattr(popup, "shot_id", None):
-        shot = next((item for item in sort_shots(project.analysis.shots) if item.id == popup.shot_id), None)
-        if shot is not None:
-            return shot.time_ms
-    return popup.time_ms
-
-
-def _popup_bubble_display_text(project: Project, popup) -> str:
-    fallback_text = str(getattr(popup, "text", "") or "").strip()
-    if getattr(popup, "anchor_mode", "time") != "shot" or not getattr(popup, "shot_id", None):
-        return fallback_text
-    shot = next((item for item in sort_shots(project.analysis.shots) if item.id == popup.shot_id), None)
-    if shot is None:
-        return fallback_text
-    score = getattr(shot, "score", None)
-    default_letter = default_score_letter_for_ruleset(project.scoring.ruleset).value
-    score_value = getattr(getattr(score, "letter", None), "value", getattr(score, "letter", None)) or default_letter
-    penalty_counts = normalize_penalty_counts_for_ruleset(
-        project.scoring.ruleset,
-        getattr(score, "penalty_counts", None),
-    )
-    penalty_text = ", ".join(
-        f"{_PENALTY_LABELS.get(field_id, field_id.replace('_', ' '))} x{_format_penalty_count(float(value))}"
-        for field_id, value in penalty_counts.items()
-        if float(value) > 0
-    )
-    parts = [str(score_value).strip()]
-    if penalty_text:
-        parts.append(penalty_text)
-    return " | ".join(part for part in parts if part) or fallback_text
-
-
-def _popup_bubble_motion_path(popup) -> list[tuple[int, float, float]]:
-    motion_path = getattr(popup, "motion_path", None) or []
-    points: list[tuple[int, float, float]] = []
-    for item in motion_path:
-        if isinstance(item, dict):
-            offset_value = item.get("offset_ms", item.get("time_ms", 0))
-            x_value = item.get("x", 0.5)
-            y_value = item.get("y", 0.5)
-        else:
-            offset_value = getattr(item, "offset_ms", getattr(item, "time_ms", 0))
-            x_value = getattr(item, "x", 0.5)
-            y_value = getattr(item, "y", 0.5)
-        try:
-            offset_ms = max(0, int(round(float(offset_value or 0))))
-        except (TypeError, ValueError):
-            offset_ms = 0
-        try:
-            x = max(0.0, min(1.0, float(x_value)))
-        except (TypeError, ValueError):
-            x = 0.5
-        try:
-            y = max(0.0, min(1.0, float(y_value)))
-        except (TypeError, ValueError):
-            y = 0.5
-        points.append((offset_ms, x, y))
-    points.sort(key=lambda point: point[0])
-    return points
-
-
-def _popup_bubble_point(project: Project, popup, position_ms: int | None = None) -> tuple[float, float]:
-    quadrant = getattr(popup, "quadrant", "middle_middle")
-    if quadrant == "custom":
-        x_value = getattr(popup, "x", 0.5)
-        y_value = getattr(popup, "y", 0.5)
-        base_point = (
-            0.5 if x_value in {None, ""} else max(0.0, min(1.0, float(x_value))),
-            0.5 if y_value in {None, ""} else max(0.0, min(1.0, float(y_value))),
-        )
-    else:
-        base_point = _POPUP_BUBBLE_QUADRANT_POINTS.get(quadrant, _POPUP_BUBBLE_QUADRANT_POINTS["middle_middle"])
-    if not getattr(popup, "follow_motion", False) or position_ms is None:
-        return base_point
-
-    motion_path = _popup_bubble_motion_path(popup)
-    if not motion_path:
-        return base_point
-
-    popup_time_ms = _popup_bubble_time_ms(project, popup)
-    elapsed_ms = max(0, int(position_ms) - popup_time_ms)
-    previous_offset, previous_x, previous_y = 0, base_point[0], base_point[1]
-    for offset_ms, x, y in motion_path:
-        if elapsed_ms <= offset_ms:
-            if offset_ms <= previous_offset:
-                return x, y
-            ratio = (elapsed_ms - previous_offset) / (offset_ms - previous_offset)
-            return (
-                max(0.0, min(1.0, previous_x + ((x - previous_x) * ratio))),
-                max(0.0, min(1.0, previous_y + ((y - previous_y) * ratio))),
-            )
-        previous_offset, previous_x, previous_y = offset_ms, x, y
-    return previous_x, previous_y
-
 
 def _combined_rect(rects: list[QRectF]) -> QRectF | None:
     if not rects:
@@ -450,9 +343,8 @@ class OverlayRenderer:
     def paint(self, painter: QPainter, project: Project, position_ms: int, width: int, height: int) -> None:
         has_visible_popup = any(
             popup.enabled
-            and _popup_bubble_display_text(project, popup).strip()
-            and position_ms >= _popup_bubble_time_ms(project, popup)
-            and position_ms <= _popup_bubble_time_ms(project, popup) + popup.duration_ms
+            and popup_bubble_display_text(project, popup).strip()
+            and popup_bubble_is_visible_at(project, popup, position_ms)
             for popup in project.popups
         )
         if project.overlay.position == OverlayPosition.NONE and not has_visible_popup:
@@ -575,13 +467,11 @@ class OverlayRenderer:
                 use_project_bubble_size=False,
             )
         for popup in project.popups:
-            popup_time_ms = _popup_bubble_time_ms(project, popup)
-            popup_text = _popup_bubble_display_text(project, popup)
+            popup_text = popup_bubble_display_text(project, popup)
             if (
                 not popup.enabled
                 or not popup_text.strip()
-                or position_ms < popup_time_ms
-                or position_ms > popup_time_ms + popup.duration_ms
+                or not popup_bubble_is_visible_at(project, popup, position_ms)
             ):
                 continue
             popup_style = BadgeStyle(
@@ -590,7 +480,7 @@ class OverlayRenderer:
                 opacity=popup.opacity,
             )
             popup_auto_size = _auto_badge_size((popup_text,), metrics, line_height=line_height)
-            popup_x, popup_y = _popup_bubble_point(project, popup, position_ms)
+            popup_x, popup_y = popup_bubble_point(project, popup, position_ms)
             self._paint_badges(
                 painter,
                 [

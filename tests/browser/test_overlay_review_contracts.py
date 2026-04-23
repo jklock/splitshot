@@ -555,11 +555,16 @@ def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> Non
     assert 'function syncLockedTextBoxEditorCoordinates() {' in js
     assert 'if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
     assert 'return unlockedOverlayTextBox(box);' in js
-    assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' in js
+    assert 'kind: "shots",\n      sourceKind: "text_box",' in js
+    assert 'preservedTextBoxes: overlayTextBoxes(),' in js
+    assert 'activity("overlay.drag.start", { kind: "shots", source_kind: "text_box", x: anchor.x, y: anchor.y });' in js
+    assert 'const preserveExistingTextBoxes = Boolean(' in js
+    assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' not in js
     assert 'textBoxRenderedPositionById = nextRenderedPositions;' in js
     assert 'syncLockedTextBoxEditorCoordinates();' in js
     assert 'setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));' in js
-    assert 'card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {' in js
+    build_text_box_body = js[js.index("function buildTextBoxCard("):js.index("function renderTextBoxEditors()")]
+    assert 'card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {' not in build_text_box_body
 
 
 def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:

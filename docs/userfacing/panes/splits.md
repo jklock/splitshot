@@ -28,7 +28,7 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 | --- | --- |
 | Orange beep marker | Shows the detected start signal. |
 | Green shot markers | Show detected and manual shots. |
-| `Select` | Lets you select and drag existing markers. |
+| `Select` | Lets you select and drag existing markers. Waveform cards use the same selected shot as the timing table. |
 | `Add Shot` | Places a manual shot where you click the waveform. |
 | `Zoom -` / `Zoom +` | Changes the visible time range. |
 | `Amp -` / `Amp +` | Changes waveform amplitude scale. |
@@ -55,7 +55,7 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 ## How To Use It
 
 1. Confirm the shot count in the compact timing table.
-2. Select a shot from the table or waveform.
+2. Select a shot from the table or waveform. Selection follows into Score and the shared video preview.
 3. Use the nudge buttons for small timestamp fixes.
 4. Drag waveform markers for larger timing corrections.
 5. Use `Add Shot` when the detector missed a real shot.
@@ -78,5 +78,5 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 Previous: [shotml.md](shotml.md)
 Next: [score.md](score.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

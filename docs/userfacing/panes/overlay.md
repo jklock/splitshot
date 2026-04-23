@@ -29,7 +29,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | `Shot flow` | Sets whether shot badges build right, left, down, or up. |
 | `Shot stack X` / `Shot stack Y` | Custom stack coordinates when `Quadrant` is custom. |
 | `Timer X/Y`, `Draw X/Y`, `Score X/Y` | Independent badge coordinates when the matching lock is off. |
-| Lock checkboxes | Keep timer, draw, or score badges attached to the shot stack. |
+| Lock checkboxes | Keep timer, draw, or score badges attached to the shot stack. Dragging a locked badge moves the whole locked stack. |
 | `Bubble width` / `Bubble height` | Force badge dimensions; leave unset for auto-sizing. |
 | `Font`, `Font size`, `Bold`, `Italic` | Control badge typography. |
 | Badge style cards | Compact side-by-side cards for timer, shot, current shot, and score badge background, text color, and opacity. |
@@ -43,9 +43,10 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 3. Set `Shots shown`, `Quadrant`, and `Shot flow` to get the stack into the right part of the frame.
 4. Leave timer/draw/score locks on when those badges should travel with the shot stack.
 5. Turn a lock off when that badge needs its own X/Y placement.
-6. Tune bubble dimensions and typography.
-7. Finish with the compact badge style cards and score text colors while watching the preview.
-8. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
+6. Drag a locked timer, draw, or score badge when you want to reposition the whole locked stack directly in preview.
+7. Tune bubble dimensions and typography.
+8. Finish with the compact badge style cards and score text colors while watching the preview.
+9. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
 
 ## Preview And Export Behavior
 
@@ -70,5 +71,5 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 Previous: [pip.md](pip.md)
 Next: [popup.md](popup.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

@@ -17,6 +17,10 @@ let popupBubbleExpansion = new Map();
 let mergeSourceExpansion = new Map();
 let shotMLSectionExpansion = new Map();
 let selectedPopupBubbleId = null;
+let selectedPopupKeyframeOffsetMs = 0;
+let popupFilterMode = window.localStorage.getItem("splitshot.popupFilterMode") || "all";
+let popupAuthoringCollapsed = false;
+let popupPlaybackWindow = null;
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -113,6 +117,17 @@ const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
   "timing-table": ["segment", "split", "total", "action"],
   "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "adjustment", "final", "delete", "restore"],
 });
+const POPUP_FILTER_OPTIONS = Object.freeze([
+  "all",
+  "enabled",
+  "disabled",
+  "shot",
+  "time",
+  "motion",
+  "missing_text",
+  "visible",
+]);
+const VALID_POPUP_FILTER_MODES = new Set(POPUP_FILTER_OPTIONS);
 const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "adjustment", "final"]);
 const PIP_DEFAULTS_SECTION_ID = "pip-defaults";
 const METRICS_TABLE_COLUMNS = Object.freeze([
@@ -199,6 +214,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },
   review_text_box_expansion: {},
   popup_bubble_expansion: {},
+  popup_authoring_collapsed: false,
   merge_source_expansion: {},
   shotml_section_expansion: {},
 });
@@ -771,6 +787,27 @@ function withPreservedScrollState(elements, callback) {
   const scrollState = captureScrollState(targets);
   const result = callback();
   restoreScrollState(scrollState);
+  return result;
+}
+
+function scrollContainerForElement(element) {
+  if (!(element instanceof HTMLElement)) return null;
+  return element.closest(".popup-bubble-list, .text-box-list, .merge-media-list, .inspector");
+}
+
+function preserveElementViewportAnchor(elementOrResolver, callback) {
+  const resolveElement = () => (typeof elementOrResolver === "function" ? elementOrResolver() : elementOrResolver);
+  const before = resolveElement();
+  const beforeTop = before instanceof HTMLElement ? before.getBoundingClientRect().top : null;
+  const beforeContainer = scrollContainerForElement(before);
+  const result = callback();
+  const after = resolveElement();
+  const afterContainer = scrollContainerForElement(after) || beforeContainer;
+  if (beforeTop !== null && after instanceof HTMLElement && afterContainer instanceof HTMLElement) {
+    const delta = after.getBoundingClientRect().top - beforeTop;
+    if (Math.abs(delta) > 0.5) afterContainer.scrollTop += delta;
+    if (afterContainer.classList.contains("inspector") || afterContainer.closest(".inspector")) afterContainer.scrollLeft = 0;
+  }
   return result;
 }
 
@@ -1544,6 +1581,7 @@ function normalizeProjectUiState(uiState = {}) {
     timing_column_widths: resolvedTimingColumnWidths(normalizedUiFloatMap(uiState.timing_column_widths, 48)),
     review_text_box_expansion: normalizedUiBooleanMap(uiState.review_text_box_expansion),
     popup_bubble_expansion: normalizedUiBooleanMap(uiState.popup_bubble_expansion),
+    popup_authoring_collapsed: Boolean(uiState.popup_authoring_collapsed ?? DEFAULT_PROJECT_UI_STATE.popup_authoring_collapsed),
     merge_source_expansion: normalizedUiBooleanMap(uiState.merge_source_expansion),
     shotml_section_expansion: normalizedUiBooleanMap(uiState.shotml_section_expansion),
   };
@@ -1583,6 +1621,7 @@ function readProjectUiStatePayload() {
     popup_bubble_expansion: Object.fromEntries(
       [...popupBubbleExpansion.entries()].filter(([bubbleId]) => Boolean(String(bubbleId || "").trim())),
     ),
+    popup_authoring_collapsed: popupAuthoringCollapsed,
     merge_source_expansion: Object.fromEntries(
       [...mergeSourceExpansion.entries()].filter(([sourceId]) => Boolean(String(sourceId || "").trim())),
     ),
@@ -1619,6 +1658,7 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
   reviewTextBoxExpansion = new Map(Object.entries(normalized.review_text_box_expansion));
   popupBubbleExpansion = new Map(Object.entries(normalized.popup_bubble_expansion));
+  popupAuthoringCollapsed = Boolean(normalized.popup_authoring_collapsed);
   mergeSourceExpansion = new Map(Object.entries(normalized.merge_source_expansion));
   shotMLSectionExpansion = new Map(Object.entries(normalized.shotml_section_expansion));
   timingRowEdits = new Set(normalized.timing_edit_shot_ids);
@@ -2111,7 +2151,14 @@ function syncOverlayPreviewStateFromControls() {
   overlay.timer_lock_to_stack = Boolean(payload.timer_lock_to_stack);
   overlay.draw_lock_to_stack = Boolean(payload.draw_lock_to_stack);
   overlay.score_lock_to_stack = Boolean(payload.score_lock_to_stack);
-  overlay.text_boxes = (payload.text_boxes || []).map((box, index) => normalizeOverlayTextBox(box, index));
+  const previousTextBoxes = Array.isArray(overlay.text_boxes) ? overlay.text_boxes : [];
+  const payloadTextBoxes = Array.isArray(payload.text_boxes) ? payload.text_boxes : [];
+  const preserveExistingTextBoxes = Boolean(
+    payloadTextBoxes.length === 0
+      && previousTextBoxes.length > 0,
+  );
+  overlay.text_boxes = (preserveExistingTextBoxes ? previousTextBoxes : payloadTextBoxes)
+    .map((box, index) => normalizeOverlayTextBox(box, index));
   syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
   Object.entries(payload.styles).forEach(([badgeName, style]) => {
     const badge = overlay[badgeName];
@@ -2404,7 +2451,7 @@ function ensureSectionToggle(section, expanded, onToggle) {
   toggle.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    onToggle(event);
+    preserveElementViewportAnchor(section, () => onToggle(event));
   };
 }
 
@@ -2523,6 +2570,8 @@ function buildTextBoxCard(box, index) {
       </div>
     </div>
   `;
+  const body = card.querySelector(".text-box-card-body");
+  if (body) body.hidden = !expanded;
   syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
   syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
   syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
@@ -2590,16 +2639,13 @@ function buildTextBoxCard(box, index) {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
-    renderTextBoxEditors();
-  });
-  card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest("button, input, select, textarea, label, a")) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
-    renderTextBoxEditors();
+    preserveElementViewportAnchor(
+      () => document.querySelector(`.text-box-card[data-box-id="${box.id}"]`),
+      () => {
+        setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
+        renderTextBoxEditors();
+      },
+    );
   });
   card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -2625,7 +2671,7 @@ function renderTextBoxEditors() {
     if (!validBoxIds.has(boxId)) reviewTextBoxExpansion.delete(boxId);
   });
   containers.forEach((container) => {
-    withPreservedScrollState([container, document.querySelector(".inspector")].filter(Boolean), () => {
+    withPreservedScrollState([container], () => {
       container.innerHTML = "";
       if (boxes.length === 0) {
         const empty = document.createElement("div");
@@ -2647,7 +2693,14 @@ function createPopupBubbleId() {
 }
 
 const POPUP_BUBBLE_ANCHOR_MODES = new Set(["time", "shot"]);
-const POPUP_BUBBLE_MOTION_POINT_COUNTS = [4, 8, 16];
+const POPUP_KEYFRAME_EASINGS = Object.freeze([
+  ["linear", "Linear"],
+  ["hold", "Hold"],
+  ["ease_in", "Ease In"],
+  ["ease_out", "Ease Out"],
+  ["ease_in_out", "Ease In/Out"],
+]);
+const VALID_POPUP_KEYFRAME_EASINGS = new Set(POPUP_KEYFRAME_EASINGS.map(([value]) => value));
 const POPUP_BUBBLE_QUADRANT_POINTS = Object.freeze({
   top_left: { x: 0.125, y: 0.125 },
   top_middle: { x: 0.5, y: 0.125 },
@@ -2680,6 +2733,9 @@ function normalizePopupMotionPoint(point) {
     offset_ms: offsetMs,
     x: normalizedCoordinateValue(point?.x) ?? 0.5,
     y: normalizedCoordinateValue(point?.y) ?? 0.5,
+    easing: VALID_POPUP_KEYFRAME_EASINGS.has(String(point?.easing || "").trim())
+      ? String(point.easing).trim()
+      : "linear",
   };
 }
 
@@ -2707,13 +2763,6 @@ function normalizePopupBubble(bubble = {}) {
   const anchorMode = normalizePopupAnchorMode(bubble.anchor_mode, shotId);
   const motionPath = normalizePopupMotionPath(bubble.motion_path);
   const followMotion = Boolean(bubble.follow_motion ?? motionPath.length > 0);
-  const normalizedMotionPath = motionPath.length > 0
-    ? motionPath
-    : (followMotion ? popupBubbleMotionPathTemplate({
-        ...bubble,
-        x: xValue ?? 0.5,
-        y: yValue ?? 0.5,
-      }, 4) : []);
   return {
     id: String(bubble.id || createPopupBubbleId()),
     enabled: Boolean(bubble.enabled ?? true),
@@ -2727,7 +2776,7 @@ function normalizePopupBubble(bubble = {}) {
     x: xValue === null ? 0.5 : xValue,
     y: yValue === null ? 0.5 : yValue,
     follow_motion: followMotion,
-    motion_path: normalizedMotionPath,
+    motion_path: motionPath,
     background_color: String(bubble.background_color || "#000000"),
     text_color: String(bubble.text_color || "#ffffff"),
     opacity: clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0, 1),
@@ -2745,65 +2794,50 @@ function popupBubbleMotionPath(bubble) {
   return normalizePopupMotionPath(bubble?.motion_path || []);
 }
 
-function popupBubbleMotionPointCount(bubble) {
-  const motionPath = popupBubbleMotionPath(bubble);
-  const totalPointCount = motionPath.length > 0 ? (motionPath.length + 1) : 4;
-  if (POPUP_BUBBLE_MOTION_POINT_COUNTS.includes(totalPointCount)) return totalPointCount;
-  return POPUP_BUBBLE_MOTION_POINT_COUNTS.reduce((nearest, candidate) => (
-    Math.abs(candidate - totalPointCount) < Math.abs(nearest - totalPointCount) ? candidate : nearest
-  ), POPUP_BUBBLE_MOTION_POINT_COUNTS[0]);
+function popupKeyframeEasing(easing) {
+  const normalized = String(easing || "").trim();
+  return VALID_POPUP_KEYFRAME_EASINGS.has(normalized) ? normalized : "linear";
 }
 
-function popupBubbleMotionPathTemplate(bubble, totalPointCount = 4) {
-  const basePoint = bubble?.quadrant !== CUSTOM_QUADRANT_VALUE
-    ? (POPUP_BUBBLE_QUADRANT_POINTS[bubble?.quadrant] || POPUP_BUBBLE_QUADRANT_POINTS.middle_middle)
-    : {
-        x: normalizedCoordinateValue(bubble?.x) ?? 0.5,
-        y: normalizedCoordinateValue(bubble?.y) ?? 0.5,
-      };
-  const durationMs = Math.max(1, Math.round(Number(bubble?.duration_ms ?? 1000) || 1000));
-  const pointCount = Math.max(2, Math.round(Number(totalPointCount) || 4));
-  const path = [];
-  for (let index = 1; index < pointCount; index += 1) {
-    path.push({
-      offset_ms: Math.round((durationMs * index) / pointCount),
-      x: basePoint.x,
-      y: basePoint.y,
-    });
+function popupKeyframeRatio(easing, ratio) {
+  const clampedRatio = clampNumber(Number(ratio) || 0, 0, 1);
+  if (easing === "hold") return clampedRatio < 1 ? 0 : 1;
+  if (easing === "ease_in") return clampedRatio * clampedRatio;
+  if (easing === "ease_out") return 1 - ((1 - clampedRatio) * (1 - clampedRatio));
+  if (easing === "ease_in_out") {
+    if (clampedRatio <= 0.5) return 2 * clampedRatio * clampedRatio;
+    return 1 - (((-2 * clampedRatio) + 2) ** 2) / 2;
   }
-  return path;
+  return clampedRatio;
+}
+
+function scaledPopupMotionPathOffsets(motionPath, previousDurationMs, nextDurationMs) {
+  const oldDuration = Math.max(1, Math.round(Number(previousDurationMs) || 1));
+  const newDuration = Math.max(1, Math.round(Number(nextDurationMs) || 1));
+  return normalizePopupMotionPath(motionPath.map((point) => ({
+    ...point,
+    offset_ms: Math.max(1, Math.min(newDuration, Math.round((point.offset_ms / oldDuration) * newDuration))),
+  })));
 }
 
 function popupBubbleMotionPointAtOffset(motionPath, elapsedMs, basePoint) {
   if (motionPath.length === 0) return basePoint;
-  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y };
+  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y, easing: "linear" };
   for (const point of motionPath) {
     if (elapsedMs <= point.offset_ms) {
       if (point.offset_ms <= previousPoint.offset_ms) {
         return { x: point.x, y: point.y };
       }
       const ratio = (elapsedMs - previousPoint.offset_ms) / (point.offset_ms - previousPoint.offset_ms);
+      const easedRatio = popupKeyframeRatio(point.easing, ratio);
       return {
-        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * ratio), 0, 1),
-        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * ratio), 0, 1),
+        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * easedRatio), 0, 1),
+        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * easedRatio), 0, 1),
       };
     }
     previousPoint = point;
   }
   return { x: previousPoint.x, y: previousPoint.y };
-}
-
-function resamplePopupBubbleMotionPath(bubble, totalPointCount = null, sourcePath = null) {
-  const motionPath = normalizePopupMotionPath(sourcePath ?? (bubble?.motion_path || []));
-  const pointCount = Math.max(2, Math.round(Number(totalPointCount) || popupBubbleMotionPointCount(bubble)));
-  const template = popupBubbleMotionPathTemplate(bubble, pointCount);
-  if (motionPath.length === 0) return template;
-  const basePoint = popupBubblePoint(bubble);
-  return template.map((point) => ({
-    offset_ms: point.offset_ms,
-    x: popupBubbleMotionPointAtOffset(motionPath, point.offset_ms, basePoint).x,
-    y: popupBubbleMotionPointAtOffset(motionPath, point.offset_ms, basePoint).y,
-  }));
 }
 
 function popupBubblePoint(bubble, positionMs = null) {
@@ -2819,16 +2853,17 @@ function popupBubblePoint(bubble, positionMs = null) {
   if (motionPath.length === 0) return basePoint;
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   const elapsedMs = Math.max(0, Math.round(Number(positionMs) || 0) - popupTimeMs);
-  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y };
+  let previousPoint = { offset_ms: 0, x: basePoint.x, y: basePoint.y, easing: "linear" };
   for (const point of motionPath) {
     if (elapsedMs <= point.offset_ms) {
       if (point.offset_ms <= previousPoint.offset_ms) {
         return { x: point.x, y: point.y };
       }
       const ratio = (elapsedMs - previousPoint.offset_ms) / (point.offset_ms - previousPoint.offset_ms);
+      const easedRatio = popupKeyframeRatio(point.easing, ratio);
       return {
-        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * ratio), 0, 1),
-        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * ratio), 0, 1),
+        x: clamp(previousPoint.x + ((point.x - previousPoint.x) * easedRatio), 0, 1),
+        y: clamp(previousPoint.y + ((point.y - previousPoint.y) * easedRatio), 0, 1),
       };
     }
     previousPoint = point;
@@ -2842,7 +2877,8 @@ function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {
     return normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x, y });
   }
   const motionPath = popupBubbleMotionPath(bubble).filter((point) => point.offset_ms !== normalizedOffset);
-  motionPath.push({ offset_ms: normalizedOffset, x, y });
+  const existingPoint = popupBubbleMotionPath(bubble).find((point) => point.offset_ms === normalizedOffset);
+  motionPath.push({ offset_ms: normalizedOffset, x, y, easing: existingPoint?.easing || "linear" });
   return normalizePopupBubble({
     ...bubble,
     follow_motion: true,
@@ -3010,7 +3046,13 @@ function popupBubbleCardElement(bubbleId) {
 function revealPopupBubbleCard(bubbleId, { focus = false } = {}) {
   const card = popupBubbleCardElement(bubbleId);
   if (!(card instanceof HTMLElement)) return;
-  card.scrollIntoView({ block: "nearest" });
+  const list = $("popup-bubble-list");
+  if (list instanceof HTMLElement && list.contains(card)) {
+    const offset = card.getBoundingClientRect().top - list.getBoundingClientRect().top;
+    list.scrollTop = Math.max(0, list.scrollTop + offset);
+  } else {
+    card.scrollIntoView({ block: "nearest" });
+  }
   if (focus) {
     const button = card.querySelector(".popup-bubble-button");
     if (button instanceof HTMLElement) button.focus();
@@ -3083,12 +3125,10 @@ function syncPopupBubbleSizeControls(bubbleId) {
 function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
   const nextBubbles = popupBubbles().map((bubble) => {
     if (bubble.id !== bubbleId) return bubble;
+    const previousDurationMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000));
     const nextBubble = normalizePopupBubble({ ...bubble, [field]: rawValue });
     if (field === "follow_motion") {
       nextBubble.follow_motion = Boolean(rawValue);
-      if (nextBubble.follow_motion && nextBubble.motion_path.length === 0) {
-        nextBubble.motion_path = popupBubbleMotionPathTemplate(nextBubble, 4);
-      }
     }
     if (field === "anchor_mode") {
       nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
@@ -3096,11 +3136,6 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
       if (nextBubble.anchor_mode === "shot" && !nextBubble.shot_id) {
         nextBubble.anchor_mode = "time";
       }
-    }
-    if (field === "motion_point_count") {
-      const pointCount = Math.max(2, Math.round(Number(rawValue) || 4));
-      nextBubble.follow_motion = true;
-      nextBubble.motion_path = resamplePopupBubbleMotionPath(nextBubble, pointCount, nextBubble.motion_path);
     }
     if (field === "shot_id") {
       nextBubble.shot_id = rawValue ? String(rawValue) : null;
@@ -3112,7 +3147,7 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
       nextBubble.shot_id = null;
     }
     if (field === "duration_ms" && nextBubble.follow_motion && nextBubble.motion_path.length > 0) {
-      nextBubble.motion_path = resamplePopupBubbleMotionPath(nextBubble, popupBubbleMotionPointCount(nextBubble), nextBubble.motion_path);
+      nextBubble.motion_path = scaledPopupMotionPathOffsets(nextBubble.motion_path, previousDurationMs, nextBubble.duration_ms);
     }
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
@@ -3164,20 +3199,64 @@ function addPopupBubble() {
   selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true, expand: true });
 }
 
+function popupShotPenaltyCounts(shotId) {
+  const segment = timingSegmentForShot(shotId);
+  const shot = shotById(shotId);
+  return segment?.penalty_counts || shot?.score?.penalty_counts || {};
+}
+
+function popupShotHasPenaltySignal(shotId) {
+  const counts = popupShotPenaltyCounts(shotId);
+  if (Object.values(counts).some((value) => Number(value || 0) > 0)) return true;
+  const text = popupTextForShotId(shotId).toUpperCase();
+  return /\b(M|NS|NT|PE|FP|FTDR|FPE|PM|SPF|SND)\b/.test(text);
+}
+
+function popupShotHasScoringSignal(shotId) {
+  if (popupShotHasPenaltySignal(shotId)) return true;
+  const segment = timingSegmentForShot(shotId);
+  const shot = shotById(shotId);
+  const rawLetter = segment?.score_letter || shot?.score?.letter?.value || shot?.score?.letter || "";
+  const scoreLetter = compactScoreDisplay(rawLetter, activeScoringRuleset());
+  return Boolean(scoreLetter && scoreLetter !== defaultScoreLetter());
+}
+
+function popupShotMatchesImportMode(shot, mode) {
+  if (!shot?.id) return false;
+  if (mode === "scored") return popupShotHasScoringSignal(shot.id);
+  if (mode === "penalty") return popupShotHasPenaltySignal(shot.id);
+  return true;
+}
+
+function selectedPopupImportMode() {
+  const mode = $("popup-import-mode")?.value || "all";
+  return ["all", "scored", "penalty"].includes(mode) ? mode : "all";
+}
+
 function importShotPopups() {
   const shots = orderedShotsByTime();
   if (shots.length === 0) {
     setStatus("No shots available to import into PopUp.");
     return;
   }
-  const timeBasedBubbles = popupBubbles().filter((bubble) => bubble.anchor_mode !== "shot" || !bubble.shot_id);
+  const importMode = selectedPopupImportMode();
+  const targetShots = shots.filter((shot) => popupShotMatchesImportMode(shot, importMode));
+  if (targetShots.length === 0) {
+    setStatus("No shots match the selected PopUp import mode.");
+    return;
+  }
+  const targetShotIds = new Set(targetShots.map((shot) => shot.id));
+  const preservedBubbles = popupBubbles().filter((bubble) => {
+    if (bubble.anchor_mode !== "shot" || !bubble.shot_id) return true;
+    return importMode !== "all" && !targetShotIds.has(bubble.shot_id);
+  });
   const existingShotBubbleByShotId = new Map();
   popupBubbles()
     .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
     .forEach((bubble) => {
       if (!existingShotBubbleByShotId.has(bubble.shot_id)) existingShotBubbleByShotId.set(bubble.shot_id, bubble);
     });
-  const importedBubbles = shots.map((shot) => {
+  const importedBubbles = targetShots.map((shot) => {
     const existingBubble = existingShotBubbleByShotId.get(shot.id);
     return normalizePopupBubble({
       ...(existingBubble || {}),
@@ -3193,8 +3272,8 @@ function importShotPopups() {
       enabled: existingBubble?.enabled ?? true,
     });
   });
-  setPopupBubbles([...timeBasedBubbles, ...importedBubbles], { commit: true, rerender: true });
-  const focusShotId = selectedShotId && shots.some((shot) => shot.id === selectedShotId) ? selectedShotId : shots[0]?.id || null;
+  setPopupBubbles([...preservedBubbles, ...importedBubbles], { commit: true, rerender: true });
+  const focusShotId = selectedShotId && targetShots.some((shot) => shot.id === selectedShotId) ? selectedShotId : targetShots[0]?.id || null;
   if (focusShotId) selectPopupBubbleForShot(focusShotId, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
 }
 
@@ -3210,6 +3289,7 @@ function duplicatePopupBubble(bubbleId) {
     offset_ms: point.offset_ms,
     x: clamp(point.x + 0.04, 0, 1),
     y: clamp(point.y + 0.04, 0, 1),
+    easing: point.easing || "linear",
   }));
   setPopupBubbles([
     ...popupBubbles(),
@@ -3243,9 +3323,31 @@ function setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, opt
   const nextBubbles = popupBubbles().map((bubble) => {
     if (bubble.id !== bubbleId) return bubble;
     const nextBubble = normalizePopupBubble(bubble);
-    const motionPath = resamplePopupBubbleMotionPath(nextBubble, popupBubbleMotionPointCount(nextBubble), nextBubble.motion_path);
-    const nextMotionPath = motionPath.map((point) => {
+    if (normalizedOffset <= 0) {
+      if (field === "x" || field === "y") {
+        const normalizedValue = normalizedCoordinateValue(rawValue);
+        return normalizePopupBubble({
+          ...nextBubble,
+          quadrant: CUSTOM_QUADRANT_VALUE,
+          [field]: normalizedValue === null ? nextBubble[field] : normalizedValue,
+        });
+      }
+      return nextBubble;
+    }
+    const nextMotionPath = popupBubbleMotionPath(nextBubble).map((point) => {
       if (point.offset_ms !== normalizedOffset) return point;
+      if (field === "offset_ms") {
+        return {
+          ...point,
+          offset_ms: Math.max(1, Math.min(nextBubble.duration_ms, Math.round(Number(rawValue) || point.offset_ms))),
+        };
+      }
+      if (field === "easing") {
+        return {
+          ...point,
+          easing: popupKeyframeEasing(rawValue),
+        };
+      }
       const normalizedValue = normalizedCoordinateValue(rawValue);
       return {
         ...point,
@@ -3261,56 +3363,198 @@ function setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, opt
   setPopupBubbles(nextBubbles, options);
 }
 
+function popupBubbleKeyframes(bubble) {
+  const basePoint = popupBubblePoint(bubble);
+  return [
+    { offset_ms: 0, x: basePoint.x, y: basePoint.y, easing: "linear", base: true },
+    ...popupBubbleMotionPath(bubble).map((point) => ({ ...point, base: false })),
+  ];
+}
+
+function popupKeyframePoint(bubble, offsetMs) {
+  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
+  const keyframe = popupBubbleKeyframes(bubble).find((point) => point.offset_ms === normalizedOffset);
+  if (keyframe) return { x: keyframe.x, y: keyframe.y, base: Boolean(keyframe.base), easing: popupKeyframeEasing(keyframe.easing) };
+  const fallbackPoint = popupBubblePoint(bubble, popupBubbleEffectiveTimeMs(bubble) + normalizedOffset);
+  return { x: fallbackPoint.x, y: fallbackPoint.y, base: normalizedOffset <= 0, easing: "linear" };
+}
+
+function syncSelectedPopupKeyframeOffset(bubble) {
+  const keyframes = popupBubbleKeyframes(bubble);
+  if (!keyframes.some((point) => point.offset_ms === selectedPopupKeyframeOffsetMs)) {
+    selectedPopupKeyframeOffsetMs = keyframes[keyframes.length - 1]?.offset_ms ?? 0;
+  }
+}
+
+function setSelectedPopupKeyframeOffset(offsetMs) {
+  selectedPopupKeyframeOffsetMs = Math.max(0, Math.round(Number(offsetMs) || 0));
+}
+
+function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return false;
+  const offsetMs = clamp(
+    currentPrimaryVideoPositionMs() - popupBubbleEffectiveTimeMs(bubble),
+    0,
+    Math.max(1, bubble.duration_ms),
+  );
+  const point = popupBubblePoint(bubble, popupBubbleEffectiveTimeMs(bubble) + offsetMs);
+  const nextBubble = updatePopupBubbleMotionPoint(
+    normalizePopupBubble({ ...bubble, follow_motion: true }),
+    offsetMs,
+    point.x,
+    point.y,
+  );
+  setSelectedPopupKeyframeOffset(offsetMs);
+  setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
+  return true;
+}
+
+function deletePopupBubbleKeyframe(bubbleId, offsetMs) {
+  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
+  if (normalizedOffset <= 0) return false;
+  const nextBubbles = popupBubbles().map((bubble) => bubble.id === bubbleId
+    ? normalizePopupBubble({
+        ...bubble,
+        motion_path: popupBubbleMotionPath(bubble).filter((point) => point.offset_ms !== normalizedOffset),
+      })
+    : bubble);
+  setSelectedPopupKeyframeOffset(0);
+  setPopupBubbles(nextBubbles, { commit: true, rerender: true });
+  return true;
+}
+
+function adjacentPopupKeyframeOffset(bubble, direction) {
+  const keyframes = popupBubbleKeyframes(bubble);
+  if (keyframes.length === 0) return 0;
+  const currentIndex = keyframes.findIndex((point) => point.offset_ms === selectedPopupKeyframeOffsetMs);
+  if (currentIndex < 0) return keyframes[0].offset_ms;
+  const nextIndex = clamp(currentIndex + direction, 0, keyframes.length - 1);
+  return keyframes[nextIndex].offset_ms;
+}
+
+function jumpPopupBubbleKeyframe(bubbleId, direction) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return false;
+  syncSelectedPopupKeyframeOffset(bubble);
+  const offsetMs = adjacentPopupKeyframeOffset(bubble, direction);
+  setSelectedPopupKeyframeOffset(offsetMs);
+  seekPopupBubbleMotionPoint(bubbleId, offsetMs);
+  renderPopupEditors();
+  return true;
+}
+
+function copyPopupBubbleMotionFromPrevious(bubbleId) {
+  const ordered = sortedPopupBubblesForTimeline(popupBubbles());
+  const index = ordered.findIndex((bubble) => bubble.id === bubbleId);
+  if (index <= 0) return false;
+  const source = ordered[index - 1];
+  const target = ordered[index];
+  const nextTarget = normalizePopupBubble({
+    ...target,
+    follow_motion: Boolean(source.follow_motion || popupBubbleMotionPath(source).length > 0),
+    motion_path: popupBubbleMotionPath(source).map((point) => ({ ...point })),
+  });
+  setSelectedPopupKeyframeOffset(popupBubbleMotionPath(nextTarget)[0]?.offset_ms ?? 0);
+  setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId ? nextTarget : bubble), { commit: true, rerender: true });
+  return true;
+}
+
+function applyPopupBubbleMotionToVisibleShotLinked(bubbleId) {
+  const source = popupBubbles().find((bubble) => bubble.id === bubbleId);
+  if (!source) return false;
+  const sourceMotion = popupBubbleMotionPath(source).map((point) => ({ ...point }));
+  const targetIds = new Set(
+    filteredPopupBubbles()
+      .filter((bubble) => bubble.id !== bubbleId && bubble.anchor_mode === "shot" && bubble.shot_id)
+      .map((bubble) => bubble.id),
+  );
+  if (targetIds.size === 0) {
+    setStatus("No visible shot-linked popups to receive this motion path.");
+    return false;
+  }
+  setPopupBubbles(popupBubbles().map((bubble) => targetIds.has(bubble.id)
+    ? normalizePopupBubble({
+        ...bubble,
+        follow_motion: Boolean(source.follow_motion || sourceMotion.length > 0),
+        motion_path: sourceMotion.map((point) => ({ ...point })),
+      })
+    : bubble), { commit: true, rerender: true });
+  setStatus(`Applied motion path to ${targetIds.size} shot-linked popup${targetIds.size === 1 ? "" : "s"}.`);
+  return true;
+}
+
 function renderPopupBubbleMotionGuide(card, bubble) {
   const guide = card.querySelector('[data-popup-motion-guide]');
   if (!(guide instanceof HTMLElement)) return;
-  const motionPointCount = popupBubbleMotionPointCount(bubble);
-  const motionPath = bubble.follow_motion
-    ? resamplePopupBubbleMotionPath(bubble, motionPointCount, bubble.motion_path)
-    : popupBubbleMotionPath(bubble);
   guide.hidden = !bubble.follow_motion;
-  const pointCountSelect = guide.querySelector('[data-popup-field="motion_point_count"]');
-  if (pointCountSelect instanceof HTMLSelectElement) syncControlValue(pointCountSelect, motionPointCount);
-  const motionPointList = guide.querySelector('[data-popup-motion-path-list]');
-  if (!(motionPointList instanceof HTMLElement)) return;
-  motionPointList.innerHTML = "";
+  const keyframeList = guide.querySelector('[data-popup-keyframe-list]');
+  if (!(keyframeList instanceof HTMLElement)) return;
+  keyframeList.innerHTML = "";
   if (!bubble.follow_motion) return;
-  const intro = document.createElement("p");
-  intro.className = "hint";
-  intro.textContent = `The X and Y fields above are the first point. Using ${motionPointCount} total point${motionPointCount === 1 ? "" : "s"}. Go to each later point, then drag the popup to set its X and Y.`;
-  motionPointList.appendChild(intro);
-  motionPath.forEach((point, index) => {
+  syncSelectedPopupKeyframeOffset(bubble);
+  const keyframes = popupBubbleKeyframes(bubble);
+  keyframes.forEach((point, index) => {
     const row = document.createElement("div");
     row.className = "popup-motion-point-row";
+    row.classList.toggle("selected", point.offset_ms === selectedPopupKeyframeOffsetMs);
+    row.dataset.popupKeyframeOffset = String(point.offset_ms);
+    const easingOptions = POPUP_KEYFRAME_EASINGS
+      .map(([value, label]) => `<option value="${value}" ${value === popupKeyframeEasing(point.easing) ? "selected" : ""}>${label}</option>`)
+      .join("");
     row.innerHTML = `
-      <button type="button" data-popup-motion-seek="true">Go</button>
-      <span class="popup-motion-point-label">Point ${index + 2} @ ${seconds(point.offset_ms)}s</span>
+      <button type="button" data-popup-motion-seek="true">${point.base ? "Base" : "Jump"}</button>
+      <span class="popup-motion-point-label">${point.base ? "Base point" : `Keyframe ${index} @ ${seconds(point.offset_ms)}s`}</span>
+      <label>Time
+        <input data-popup-motion-field="offset_ms" type="number" min="0" max="${Math.max(1, bubble.duration_ms)}" step="1" ${point.base ? "disabled" : ""} />
+      </label>
+      <label>Easing
+        <select data-popup-motion-field="easing" ${point.base ? "disabled" : ""}>${easingOptions}</select>
+      </label>
       <label>X
         <input data-popup-motion-field="x" type="number" min="0" max="1" step="0.01" />
       </label>
       <label>Y
         <input data-popup-motion-field="y" type="number" min="0" max="1" step="0.01" />
       </label>
+      <button type="button" data-popup-motion-delete="true" ${point.base ? "disabled" : ""}>Delete</button>
     `;
+    row.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("button, input, select, textarea")) return;
+      setSelectedPopupKeyframeOffset(point.offset_ms);
+      renderPopupEditors();
+    });
     const seekButton = row.querySelector('[data-popup-motion-seek="true"]');
     if (seekButton instanceof HTMLButtonElement) {
-      seekButton.addEventListener("click", () => seekPopupBubbleMotionPoint(bubble.id, point.offset_ms));
+      seekButton.addEventListener("click", () => {
+        setSelectedPopupKeyframeOffset(point.offset_ms);
+        seekPopupBubbleMotionPoint(bubble.id, point.offset_ms);
+        renderPopupEditors();
+      });
     }
-    const xInput = row.querySelector('[data-popup-motion-field="x"]');
-    const yInput = row.querySelector('[data-popup-motion-field="y"]');
-    if (xInput instanceof HTMLInputElement) {
-      syncControlValue(xInput, point.x);
-      xInput.addEventListener("input", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: false, rerender: false }));
-      xInput.addEventListener("change", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: true, rerender: true }));
-      xInput.addEventListener("blur", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "x", xInput.value, { commit: true, rerender: true }));
+    const deleteButton = row.querySelector('[data-popup-motion-delete="true"]');
+    if (deleteButton instanceof HTMLButtonElement) {
+      deleteButton.addEventListener("click", () => deletePopupBubbleKeyframe(bubble.id, point.offset_ms));
     }
-    if (yInput instanceof HTMLInputElement) {
-      syncControlValue(yInput, point.y);
-      yInput.addEventListener("input", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: false, rerender: false }));
-      yInput.addEventListener("change", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: true, rerender: true }));
-      yInput.addEventListener("blur", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, "y", yInput.value, { commit: true, rerender: true }));
-    }
-    motionPointList.appendChild(row);
+    ["offset_ms", "x", "y", "easing"].forEach((field) => {
+      const control = row.querySelector(`[data-popup-motion-field="${field}"]`);
+      if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement)) return;
+      if (field === "offset_ms") syncControlValue(control, point.offset_ms);
+      else if (field === "easing") syncControlValue(control, popupKeyframeEasing(point.easing));
+      else syncControlValue(control, point[field]);
+      const commitHandler = () => {
+        setSelectedPopupKeyframeOffset(point.offset_ms);
+        setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, field, control.value, { commit: true, rerender: true });
+      };
+      if (field === "easing") {
+        control.addEventListener("change", commitHandler);
+      } else {
+        control.addEventListener("input", () => setPopupBubbleMotionPointValue(bubble.id, point.offset_ms, field, control.value, { commit: false, rerender: false }));
+        control.addEventListener("change", commitHandler);
+        control.addEventListener("blur", commitHandler);
+      }
+    });
+    keyframeList.appendChild(row);
   });
 }
 
@@ -3372,17 +3616,15 @@ function buildPopupBubbleCard(bubble, index) {
       <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
       <p class="hint" data-popup-motion-hint="true"></p>
       <section class="popup-motion-guide" data-popup-motion-guide hidden>
-        <div class="control-grid">
-          <label>Points
-            <select data-popup-field="motion_point_count">
-              <option value="4">4</option>
-              <option value="8">8</option>
-              <option value="16">16</option>
-            </select>
-          </label>
+        <div class="popup-keyframe-toolbar">
+          <button type="button" data-popup-action="add_keyframe">Add Keyframe</button>
+          <button type="button" data-popup-action="prev_keyframe">Previous Keyframe</button>
+          <button type="button" data-popup-action="next_keyframe">Next Keyframe</button>
+          <button type="button" data-popup-action="copy_motion_prev">Copy Prev Motion</button>
+          <button type="button" data-popup-action="apply_motion_visible">Apply To Shown Shot Popups</button>
           <button type="button" data-popup-action="clear_motion_path">Clear path</button>
         </div>
-        <div class="popup-motion-path-list" data-popup-motion-path-list></div>
+        <div class="popup-motion-path-list popup-keyframe-list" data-popup-keyframe-list></div>
       </section>
       <div class="control-grid">
         <label>Placement
@@ -3413,9 +3655,9 @@ function buildPopupBubbleCard(bubble, index) {
         </label>
       </div>
       <div class="style-grid review-style-grid">
-        <section class="style-card popup-style-card">
+        <section class="style-card popup-style-card compact-style-card">
           <h4>Bubble Style</h4>
-          <label class="color-field"><span class="style-card-label">Background</span>
+          <label class="color-field"><span class="style-card-label">Bg</span>
             <span class="color-control-pair">
               <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
               <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
@@ -3427,7 +3669,7 @@ function buildPopupBubbleCard(bubble, index) {
               <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
             </span>
           </label>
-          <label class="opacity-field"><span class="style-card-label">Opacity</span>
+          <label class="opacity-field"><span class="style-card-label">Alpha</span>
             <span class="opacity-control-pair">
               <span class="opacity-percent-field">
                 <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup opacity percent" />
@@ -3460,14 +3702,13 @@ function buildPopupBubbleCard(bubble, index) {
   const motionHint = card.querySelector('[data-popup-motion-hint="true"]');
   if (motionHint) {
     if (bubble.follow_motion) {
-      const motionPointCount = popupBubbleMotionPointCount(bubble);
-      motionHint.textContent = motionPointCount > 1
-        ? `Using ${motionPointCount} total point${motionPointCount === 1 ? "" : "s"}. Go to each point, then drag the popup to update it.`
-        : "Drag the popup at different times to add motion points. The X and Y fields remain the starting anchor.";
+      motionHint.textContent = motionPath.length > 0
+        ? `Add or select keyframes, then drag their on-video dots to preview the exact exported path.`
+        : "Turn on Follow motion, scrub to a point in time, then add a keyframe or drag the popup on the video.";
     } else {
       motionHint.textContent = motionPath.length > 0
-        ? `Motion path paused with ${motionPath.length} later point${motionPath.length === 1 ? "" : "s"}. Turn it back on to edit the guided points.`
-        : "Enable this to keep the popup attached to a moving subject. Drag it at different times to add motion points.";
+        ? `Motion keyframes are paused. Turn Follow motion back on to edit them.`
+        : "Enable this to add keyframes and keep the popup attached to movement.";
     }
   }
   const clearMotionButton = card.querySelector('[data-popup-action="clear_motion_path"]');
@@ -3579,16 +3820,21 @@ function buildPopupBubbleCard(bubble, index) {
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    selectPopupBubble(bubble.id, {
-      seek: true,
-      reveal: false,
-      focus: false,
-      activateTool: activeTool !== "popup",
-      expand: false,
-      rerender: false,
-    });
-    setPopupBubbleExpanded(bubble.id, !isPopupBubbleExpanded(bubble.id));
-    renderPopupEditors();
+    preserveElementViewportAnchor(
+      () => document.querySelector(`.popup-bubble-card[data-popup-id="${bubble.id}"]`),
+      () => {
+        selectPopupBubble(bubble.id, {
+          seek: true,
+          reveal: false,
+          focus: false,
+          activateTool: activeTool !== "popup",
+          expand: false,
+          rerender: false,
+        });
+        setPopupBubbleExpanded(bubble.id, !isPopupBubbleExpanded(bubble.id));
+        renderPopupEditors();
+      },
+    );
   });
   card.querySelector('[data-popup-action="duplicate"]')?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -3600,6 +3846,31 @@ function buildPopupBubbleCard(bubble, index) {
     event.stopPropagation();
     clearPopupBubbleMotionPath(bubble.id);
   });
+  card.querySelector('[data-popup-action="add_keyframe"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addPopupBubbleKeyframeAtPlayhead(bubble.id);
+  });
+  card.querySelector('[data-popup-action="prev_keyframe"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    jumpPopupBubbleKeyframe(bubble.id, -1);
+  });
+  card.querySelector('[data-popup-action="next_keyframe"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    jumpPopupBubbleKeyframe(bubble.id, 1);
+  });
+  card.querySelector('[data-popup-action="copy_motion_prev"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    copyPopupBubbleMotionFromPrevious(bubble.id);
+  });
+  card.querySelector('[data-popup-action="apply_motion_visible"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    applyPopupBubbleMotionToVisibleShotLinked(bubble.id);
+  });
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -3610,10 +3881,195 @@ function buildPopupBubbleCard(bubble, index) {
   return card;
 }
 
+function currentPrimaryVideoPositionMs() {
+  const video = $("primary-video");
+  return Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+}
+
+function popupBubbleFilterMatches(bubble, positionMs = currentPrimaryVideoPositionMs()) {
+  if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
+  if (popupFilterMode === "enabled") return Boolean(bubble.enabled);
+  if (popupFilterMode === "disabled") return !bubble.enabled;
+  if (popupFilterMode === "shot") return bubble.anchor_mode === "shot" && Boolean(bubble.shot_id);
+  if (popupFilterMode === "time") return bubble.anchor_mode !== "shot" || !bubble.shot_id;
+  if (popupFilterMode === "motion") return Boolean(bubble.follow_motion || popupBubbleMotionPath(bubble).length > 0);
+  if (popupFilterMode === "missing_text") return !popupBubbleResolvedText(bubble).trim();
+  if (popupFilterMode === "visible") return popupBubbleIsVisibleAtPosition(bubble, positionMs);
+  return true;
+}
+
+function filteredPopupBubbles(bubbles = popupBubbles()) {
+  const positionMs = currentPrimaryVideoPositionMs();
+  return bubbles.filter((bubble) => popupBubbleFilterMatches(bubble, positionMs));
+}
+
+function sortedPopupBubblesForTimeline(bubbles = filteredPopupBubbles()) {
+  return [...bubbles].sort((left, right) => {
+    const timeDelta = popupBubbleEffectiveTimeMs(left) - popupBubbleEffectiveTimeMs(right);
+    if (timeDelta !== 0) return timeDelta;
+    return String(left.id || "").localeCompare(String(right.id || ""));
+  });
+}
+
+function setPopupAuthoringCollapsed(collapsed, { persistUiState = true, rerender = true } = {}) {
+  popupAuthoringCollapsed = Boolean(collapsed);
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
+  if (rerender) renderPopupEditors();
+}
+
+function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
+  if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
+  const authoringPanel = $("popup-authoring-panel");
+  const collapsedNav = $("popup-collapsed-nav");
+  const toggle = $("popup-toggle-authoring");
+  const filter = $("popup-filter");
+  if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
+  const importMode = $("popup-import-mode");
+  if (importMode instanceof HTMLSelectElement && !["all", "scored", "penalty"].includes(importMode.value)) {
+    syncControlValue(importMode, "all");
+  }
+  const selected = selectedPopupBubble();
+  const hasBubbles = allBubbles.length > 0;
+  const hasSelectedBubble = Boolean(selected);
+  if (authoringPanel instanceof HTMLElement) authoringPanel.hidden = popupAuthoringCollapsed;
+  if (collapsedNav instanceof HTMLElement) collapsedNav.hidden = !popupAuthoringCollapsed;
+  if (toggle instanceof HTMLButtonElement) {
+    toggle.textContent = popupAuthoringCollapsed ? ">" : "v";
+    toggle.title = popupAuthoringCollapsed ? "Show popup controls" : "Hide popup controls";
+    toggle.setAttribute("aria-label", popupAuthoringCollapsed ? "Show popup controls" : "Hide popup controls");
+  }
+  ["popup-prev-compact", "popup-next-compact", "popup-play-window", "popup-loop-window"].forEach((id) => {
+    const button = $(id);
+    if (button instanceof HTMLButtonElement) button.disabled = !hasBubbles || (id.includes("window") && !hasSelectedBubble);
+  });
+  const loopButton = $("popup-loop-window");
+  if (loopButton instanceof HTMLButtonElement) {
+    loopButton.classList.toggle("active", Boolean(popupPlaybackWindow?.loop));
+    loopButton.textContent = popupPlaybackWindow?.loop ? "Stop Loop" : "Loop";
+  }
+  const summary = $("popup-authoring-summary");
+  if (summary) {
+    const filterLabel = filter instanceof HTMLSelectElement
+      ? filter.selectedOptions[0]?.textContent || "All"
+      : "All";
+    const selectedText = selected ? ` Selected: ${popupBubbleDisplayName(selected, allBubbles.findIndex((bubble) => bubble.id === selected.id))}.` : "";
+    summary.textContent = `${visibleBubbles.length} of ${allBubbles.length} shown (${filterLabel}).${selectedText}`;
+  }
+}
+
+function renderPopupTimeline(allBubbles = popupBubbles(), visibleBubbles = filteredPopupBubbles(allBubbles)) {
+  const strip = $("popup-timeline-strip");
+  if (!(strip instanceof HTMLElement)) return;
+  const sortedBubbles = sortedPopupBubblesForTimeline(visibleBubbles);
+  const totalMs = Math.max(1, durationMs());
+  const playheadMs = clamp(currentPrimaryVideoPositionMs(), 0, totalMs);
+  strip.innerHTML = "";
+  const playhead = document.createElement("div");
+  playhead.className = "popup-timeline-playhead";
+  playhead.style.left = `${clamp((playheadMs / totalMs) * 100, 0, 100)}%`;
+  strip.appendChild(playhead);
+  if (sortedBubbles.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "popup-timeline-empty";
+    empty.textContent = allBubbles.length === 0 ? "No popups yet." : "No popups match the current filter.";
+    strip.appendChild(empty);
+    return;
+  }
+  const originalIndexById = new Map(allBubbles.map((bubble, index) => [bubble.id, index]));
+  sortedBubbles.forEach((bubble, index) => {
+    const { startMs, endMs } = popupBubbleVisibleWindow(bubble);
+    const leftPercent = clamp((startMs / totalMs) * 100, 0, 100);
+    const rightPercent = clamp((endMs / totalMs) * 100, leftPercent, 100);
+    const widthPercent = Math.max(0.8, rightPercent - leftPercent);
+    const bubbleBackground = String(bubble.background_color || "#4B5563");
+    const bubbleTextColor = String(bubble.text_color || "#F9FAFB");
+    const bubbleOpacity = clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0.18, 1);
+    const bar = document.createElement("button");
+    bar.type = "button";
+    bar.className = "popup-timeline-bar";
+    bar.classList.toggle("enabled", Boolean(bubble.enabled));
+    bar.classList.toggle("disabled", !bubble.enabled);
+    bar.classList.toggle("selected", bubble.id === selectedPopupBubbleId);
+    bar.dataset.popupId = bubble.id;
+    bar.style.left = `${leftPercent}%`;
+    bar.style.top = `${0.35 + ((index % 3) * 1.1)}rem`;
+    bar.style.width = `${Math.min(widthPercent, 100 - leftPercent)}%`;
+    bar.style.background = rgba(bubbleBackground, bubble.enabled ? bubbleOpacity : Math.max(0.18, bubbleOpacity * 0.45));
+    bar.style.color = bubbleTextColor;
+    bar.style.borderColor = bubble.id === selectedPopupBubbleId ? "var(--accent)" : rgba(bubbleTextColor, bubble.enabled ? 0.42 : 0.24);
+    bar.title = `${popupBubbleDisplayName(bubble, originalIndexById.get(bubble.id) ?? index)} ${seconds(startMs)}s-${seconds(endMs)}s`;
+    bar.textContent = popupBubbleDisplayName(bubble, originalIndexById.get(bubble.id) ?? index);
+    bar.addEventListener("click", () => {
+      selectPopupBubble(bubble.id, { seek: true, reveal: true, focus: false, activateTool: false, expand: false });
+    });
+    strip.appendChild(bar);
+  });
+}
+
+function setPopupFilterMode(nextMode) {
+  popupFilterMode = VALID_POPUP_FILTER_MODES.has(nextMode) ? nextMode : "all";
+  window.localStorage.setItem("splitshot.popupFilterMode", popupFilterMode);
+  renderPopupEditors();
+}
+
+function selectAdjacentPopupBubble(direction) {
+  const bubbles = sortedPopupBubblesForTimeline(filteredPopupBubbles());
+  if (bubbles.length === 0) {
+    setStatus("No PopUp bubbles match the current filter.");
+    return false;
+  }
+  const selectedIndex = bubbles.findIndex((bubble) => bubble.id === selectedPopupBubbleId);
+  let nextIndex = selectedIndex;
+  if (selectedIndex < 0) nextIndex = direction < 0 ? bubbles.length - 1 : 0;
+  else nextIndex = (selectedIndex + direction + bubbles.length) % bubbles.length;
+  return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
+}
+
+function playSelectedPopupWindow({ loop = false } = {}) {
+  const bubble = selectedPopupBubble() || sortedPopupBubblesForTimeline(filteredPopupBubbles())[0] || null;
+  const video = $("primary-video");
+  if (!bubble || !(video instanceof HTMLVideoElement) || !state?.media?.primary_available) {
+    setStatus("Select a PopUp bubble with loaded media before playing its window.");
+    return false;
+  }
+  const { startMs, endMs } = popupBubbleVisibleWindow(bubble);
+  popupPlaybackWindow = { bubbleId: bubble.id, startMs, endMs, loop };
+  selectPopupBubble(bubble.id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
+  const playResult = video.play?.();
+  if (playResult?.catch) playResult.catch(() => setStatus("Browser blocked playback until the video is clicked."));
+  renderPopupTimeline();
+  return true;
+}
+
+function syncPopupPlaybackWindow() {
+  if (!popupPlaybackWindow) return;
+  const video = $("primary-video");
+  if (!(video instanceof HTMLVideoElement)) {
+    popupPlaybackWindow = null;
+    return;
+  }
+  const currentMs = currentPrimaryVideoPositionMs();
+  if (currentMs < popupPlaybackWindow.startMs - 250) return;
+  if (currentMs < popupPlaybackWindow.endMs) return;
+  if (popupPlaybackWindow.loop) {
+    seekPrimaryVideoToTimeMs(popupPlaybackWindow.startMs);
+    if (video.paused) {
+      const playResult = video.play?.();
+      if (playResult?.catch) playResult.catch(() => {});
+    }
+    return;
+  }
+  video.pause();
+  popupPlaybackWindow = null;
+  renderPopupTimeline();
+}
+
 function renderPopupEditors() {
   const list = $("popup-bubble-list");
   if (!list) return;
   const bubbles = popupBubbles();
+  const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
   [...popupBubbleExpansion.keys()].forEach((bubbleId) => {
     if (!validBubbleIds.has(bubbleId)) popupBubbleExpansion.delete(bubbleId);
@@ -3621,7 +4077,10 @@ function renderPopupEditors() {
   if (selectedPopupBubbleId && !validBubbleIds.has(selectedPopupBubbleId)) {
     selectedPopupBubbleId = null;
   }
-  withPreservedScrollState([list, document.querySelector(".inspector")].filter(Boolean), () => {
+  renderPopupAuthoringControls(bubbles, visibleBubbles);
+  renderPopupTimeline(bubbles, visibleBubbles);
+  const originalIndexById = new Map(bubbles.map((bubble, index) => [bubble.id, index]));
+  withPreservedScrollState([list], () => {
     list.innerHTML = "";
     if (bubbles.length === 0) {
       const empty = document.createElement("div");
@@ -3630,7 +4089,16 @@ function renderPopupEditors() {
       list.appendChild(empty);
       return;
     }
-    bubbles.forEach((bubble, index) => list.appendChild(buildPopupBubbleCard(bubble, index)));
+    if (visibleBubbles.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No popup bubbles match the current filter.";
+      list.appendChild(empty);
+      return;
+    }
+    visibleBubbles.forEach((bubble, index) => {
+      list.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
+    });
   });
 }
 
@@ -5924,6 +6392,7 @@ function renderScoringShotList() {
       const expanded = isScoringShotExpanded(segment.shot_id, activeShotId);
       const row = document.createElement("div");
       row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
+      row.dataset.shotId = segment.shot_id;
       row.classList.toggle("collapsed", !expanded);
       if (isLowConfidence(segment.confidence, segment.source)) row.classList.add("low-confidence");
 
@@ -5955,8 +6424,13 @@ function renderScoringShotList() {
       toggle.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        setScoringShotExpanded(segment.shot_id, !expanded);
-        renderScoringShotList();
+        preserveElementViewportAnchor(
+          () => document.querySelector(`.scoring-shot-row[data-shot-id="${segment.shot_id}"]`),
+          () => {
+          setScoringShotExpanded(segment.shot_id, !expanded);
+          renderScoringShotList();
+          },
+        );
       });
       header.appendChild(toggle);
 
@@ -6929,6 +7403,7 @@ function renderMergeMediaList() {
       const sourceId = sourceIdentifier(source, String(index));
       const card = document.createElement("div");
       card.className = "merge-media-card";
+      card.dataset.sourceId = sourceId;
       const expanded = isMergeSourceExpanded(sourceId);
       card.classList.toggle("collapsed", !expanded);
 
@@ -6946,8 +7421,13 @@ function renderMergeMediaList() {
       toggle.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        setMergeSourceExpanded(sourceId, !expanded);
-        renderMergeMediaList();
+        preserveElementViewportAnchor(
+          () => document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`),
+          () => {
+          setMergeSourceExpanded(sourceId, !expanded);
+          renderMergeMediaList();
+          },
+        );
       });
 
       const remove = document.createElement("button");
@@ -8001,7 +8481,7 @@ function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScal
 }
 
 function beginTextBoxDrag(event) {
-  if (textBoxDrag) return;
+  if (textBoxDrag || overlayBadgeDrag) return;
   const customOverlay = $("custom-overlay");
   const customBadge = event.target instanceof Element
     ? event.target.closest("[data-text-box-drag]")
@@ -8026,13 +8506,22 @@ function beginTextBoxDrag(event) {
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const badgeRect = customBadge.getBoundingClientRect();
   if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
-    const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));
-    const boxes = overlayTextBoxes().map((item) => item.id === boxId
-      ? unlockedBox
-      : item);
-    setLocalOverlayTextBoxes(boxes);
-    syncOverlayPreviewStateFromControls();
-    scheduleInteractionPreviewRender({ overlay: true });
+    const anchor = overlayDragAnchor("shots", customBadge, frameRect);
+    overlayBadgeDrag = {
+      target: stage,
+      kind: "shots",
+      sourceKind: "text_box",
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: anchor.x,
+      startY: anchor.y,
+      preservedTextBoxes: overlayTextBoxes(),
+    };
+    capturePointer(stage, event.pointerId);
+    stage.classList.add("overlay-dragging");
+    activity("overlay.drag.start", { kind: "shots", source_kind: "text_box", x: anchor.x, y: anchor.y });
+    return;
   }
   const startX = clamp((badgeRect.left - frameRect.left + badgeRect.width / 2) / frameRect.width, 0, 1);
   const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);
@@ -8095,6 +8584,34 @@ function endTextBoxDrag(event) {
 
 function beginPopupBubbleDrag(event) {
   if (event.button !== 0 || popupBubbleDrag) return;
+  const keyframeHandle = event.target instanceof Element ? event.target.closest("[data-popup-keyframe-drag='true']") : null;
+  if (keyframeHandle instanceof HTMLElement) {
+    const bubbleId = keyframeHandle.dataset.popupId || selectedPopupBubbleId || "";
+    const bubble = popupBubbles().find((item) => item.id === bubbleId);
+    if (!bubble) return;
+    const offsetMs = Math.max(0, Math.round(Number(keyframeHandle.dataset.popupKeyframeOffset) || 0));
+    const point = popupKeyframePoint(bubble, offsetMs);
+    selectedPopupBubbleId = bubbleId;
+    setSelectedPopupKeyframeOffset(offsetMs);
+    renderPopupEditors();
+    renderLiveOverlay();
+    popupBubbleDrag = {
+      bubbleId,
+      target: $("popup-overlay"),
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: point.x,
+      startY: point.y,
+      motionOffsetMs: offsetMs,
+      kind: "keyframe",
+    };
+    capturePointer(popupBubbleDrag.target, event.pointerId);
+    popupBubbleDrag.target?.classList.add("dragging");
+    event.preventDefault();
+    activity("popup.keyframe.drag.start", { popup_id: bubbleId, offset_ms: offsetMs, x: point.x, y: point.y });
+    return;
+  }
   const badge = event.target instanceof Element ? event.target.closest("[data-popup-drag]") : null;
   if (!(badge instanceof HTMLElement)) return;
   const bubbleId = badge.dataset.popupId || "";
@@ -8119,8 +8636,9 @@ function beginPopupBubbleDrag(event) {
     startX: renderedCoordinates.x,
     startY: renderedCoordinates.y,
     motionOffsetMs: Math.max(0, renderPositionMs - popupTimeMs),
-    followMotion: Boolean(bubble.follow_motion),
+    kind: "bubble",
   };
+  setSelectedPopupKeyframeOffset(popupBubbleDrag.motionOffsetMs);
   capturePointer(popupBubbleDrag.target, event.pointerId);
   popupBubbleDrag.target?.classList.add("dragging");
   event.preventDefault();
@@ -8150,7 +8668,10 @@ function endPopupBubbleDrag(event) {
   drag.target?.classList.remove("dragging");
   popupBubbleDrag = null;
   renderPopupEditors();
-  activity("popup.drag.commit", { popup_id: drag.bubbleId });
+  activity(drag.kind === "keyframe" ? "popup.keyframe.drag.commit" : "popup.drag.commit", {
+    popup_id: drag.bubbleId,
+    offset_ms: drag.motionOffsetMs,
+  });
   callApi("/api/popups", { popups: popupBubbles() });
 }
 
@@ -8239,6 +8760,7 @@ function beginOverlayBadgeDrag(event) {
     startClientY: event.clientY,
     startX: anchor.x,
     startY: anchor.y,
+    preservedTextBoxes: overlayTextBoxes(),
   };
   capturePointer(stage, event.pointerId);
   stage.classList.add("overlay-dragging");
@@ -8259,14 +8781,27 @@ function moveOverlayBadgeDrag(event) {
   const deltaY = (event.clientY - overlayBadgeDrag.startClientY) / height;
   const nextX = clamp(overlayBadgeDrag.startX + deltaX, 0, 1);
   const nextY = clamp(overlayBadgeDrag.startY + deltaY, 0, 1);
+  const overlay = state.project.overlay;
 
   if (config.quadrantId) {
     $(config.quadrantId).value = config.quadrantValue;
+    overlay.shot_quadrant = config.quadrantValue;
     syncOverlayCoordinateControlState();
   }
-  $(config.xId).value = nextX.toFixed(3);
-  $(config.yId).value = nextY.toFixed(3);
-  syncOverlayPreviewStateFromControls();
+  const xControl = $(config.xId);
+  const yControl = $(config.yId);
+  const nextXValue = nextX.toFixed(3);
+  const nextYValue = nextY.toFixed(3);
+  xControl.value = nextXValue;
+  yControl.value = nextYValue;
+  if (config.xId === "overlay-custom-x") overlay.custom_x = nextX;
+  if (config.yId === "overlay-custom-y") overlay.custom_y = nextY;
+  if (config.xId === "timer-x") overlay.timer_x = nextX;
+  if (config.yId === "timer-y") overlay.timer_y = nextY;
+  if (config.xId === "draw-x") overlay.draw_x = nextX;
+  if (config.yId === "draw-y") overlay.draw_y = nextY;
+  if (config.xId === "score-x") overlay.score_x = nextX;
+  if (config.yId === "score-y") overlay.score_y = nextY;
   scheduleInteractionPreviewRender({ overlay: true });
 }
 
@@ -8278,6 +8813,13 @@ function endOverlayBadgeDrag(event) {
   releasePointer(drag.target, drag.pointerId ?? event.pointerId);
   drag.target.classList.remove("overlay-dragging");
   overlayBadgeDrag = null;
+  if (
+    Array.isArray(drag.preservedTextBoxes)
+    && drag.preservedTextBoxes.length > 0
+    && overlayTextBoxes().length === 0
+  ) {
+    setLocalOverlayTextBoxes(drag.preservedTextBoxes);
+  }
   flushInteractionPreviewRender();
   if (config) {
     activity("overlay.drag.commit", {
@@ -8379,6 +8921,64 @@ function visiblePopupBubbles(positionMs) {
   });
 }
 
+function popupOverlayPixelPoint(frameRect, xValue, yValue) {
+  const x = clamp(Number(xValue) || 0, 0, 1);
+  const y = clamp(Number(yValue) || 0, 0, 1);
+  return {
+    left: clamp(x * frameRect.width, 0, frameRect.width),
+    top: clamp(y * frameRect.height, 0, frameRect.height),
+  };
+}
+
+function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
+  const keyframes = popupBubbleKeyframes(bubble);
+  if (keyframes.length === 0) return;
+  const entries = keyframes.map((point) => ({
+    ...point,
+    pixel: popupOverlayPixelPoint(frameRect, point.x, point.y),
+  }));
+  entries.forEach((point, index) => {
+    if (index === 0) return;
+    const previous = entries[index - 1];
+    const deltaX = point.pixel.left - previous.pixel.left;
+    const deltaY = point.pixel.top - previous.pixel.top;
+    const segment = document.createElement("div");
+    segment.className = "popup-keyframe-path";
+    if (!bubble.follow_motion) segment.classList.add("paused");
+    segment.style.left = `${previous.pixel.left}px`;
+    segment.style.top = `${previous.pixel.top}px`;
+    segment.style.width = `${Math.max(1, Math.hypot(deltaX, deltaY))}px`;
+    segment.style.transform = `translateY(-50%) rotate(${Math.atan2(deltaY, deltaX)}rad)`;
+    popupOverlay.appendChild(segment);
+  });
+  entries.forEach((point) => {
+    const handle = document.createElement("button");
+    handle.type = "button";
+    handle.className = "popup-keyframe-dot";
+    if (point.base) handle.classList.add("base");
+    if (!bubble.follow_motion) handle.classList.add("paused");
+    if (point.offset_ms === selectedPopupKeyframeOffsetMs) handle.classList.add("selected");
+    handle.dataset.popupKeyframeDrag = bubble.follow_motion ? "true" : "false";
+    handle.dataset.popupId = bubble.id;
+    handle.dataset.popupKeyframeOffset = String(point.offset_ms);
+    handle.title = point.base
+      ? "Base point"
+      : `Keyframe ${seconds(point.offset_ms)}s (${popupKeyframeEasing(point.easing).replace(/_/g, " ")})`;
+    handle.style.left = `${point.pixel.left}px`;
+    handle.style.top = `${point.pixel.top}px`;
+    handle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      selectedPopupBubbleId = bubble.id;
+      setSelectedPopupKeyframeOffset(point.offset_ms);
+      seekPopupBubbleMotionPoint(bubble.id, point.offset_ms);
+      renderPopupEditors();
+      renderLiveOverlay();
+    });
+    popupOverlay.appendChild(handle);
+  });
+}
+
 function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {
   if (!popupOverlay) return;
   popupOverlay.innerHTML = "";
@@ -8410,6 +9010,9 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     badge.classList.toggle("popup-selected", Boolean(entry.selected));
     badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));
     placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
+    if (entry.selected && (bubble.follow_motion || popupBubbleMotionPath(bubble).length > 0)) {
+      renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect);
+    }
   });
 }
 
@@ -9582,11 +10185,17 @@ function wireEvents() {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
+    if (activeTool === "popup") renderPopupTimeline();
   });
   $("primary-video").addEventListener("timeupdate", () => {
     if (overlayFrame !== null) return;
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
+    syncPopupPlaybackWindow();
+    if (activeTool === "popup") {
+      if (popupFilterMode === "visible") renderPopupEditors();
+      else renderPopupTimeline();
+    }
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
     button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));
@@ -9742,6 +10351,20 @@ function wireEvents() {
   });
   $("popup-import-shots")?.addEventListener("click", importShotPopups);
   $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
+  $("popup-toggle-authoring")?.addEventListener("click", () => setPopupAuthoringCollapsed(!popupAuthoringCollapsed));
+  $("popup-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
+  $("popup-prev-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
+  $("popup-next-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
+  $("popup-play-window")?.addEventListener("click", () => playSelectedPopupWindow({ loop: false }));
+  $("popup-loop-window")?.addEventListener("click", () => {
+    if (popupPlaybackWindow?.loop) {
+      popupPlaybackWindow = null;
+      renderPopupTimeline();
+      renderPopupAuthoringControls(popupBubbles(), filteredPopupBubbles());
+      return;
+    }
+    playSelectedPopupWindow({ loop: true });
+  });
   $("badge-style-grid").addEventListener("input", (event) => {
     const target = event.target;
     if (isColorInput(target)) return;

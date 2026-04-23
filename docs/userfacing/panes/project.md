@@ -21,7 +21,7 @@ The Project pane is the setup surface for a SplitShot run. It names the project,
 | `Match type` | Chooses the scoring family for the staged file, such as IDPA, USPSA, or IPSC. |
 | `Stage #` | Selects the stage from the imported match file. |
 | `Competitor name` | Selects the competitor record from the staged data. |
-| `Place` | Selects the matching place entry when duplicate competitor rows exist. |
+| `Place` | Selects the matching place entry when duplicate competitor rows exist. `Competitor name` and `Place` stay synchronized. |
 | `Select PractiScore File` | Loads a PractiScore CSV or TXT file. |
 | Imported summary rows | Show source file, match type, official raw time, SplitShot raw time, raw delta, final value, and official final value. |
 | `Primary Video` | Shows the current primary path and accepts a pasted local path. Press Enter after pasting. |
@@ -37,8 +37,9 @@ The Project pane is the setup surface for a SplitShot run. It names the project,
 2. Click `Select Primary Video`, or paste the absolute path into `Primary Video` and press Enter.
 3. Wait for local analysis to finish. The waveform, shot list, metrics, score rows, and overlays depend on that analysis.
 4. If you want official match context, click `Select PractiScore File`, then confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
-5. Use `Choose Project` when you want SplitShot to save the current work as a reusable bundle.
-6. Use `New Project` for a clean session and `Delete Project` only when the saved bundle should be removed from disk.
+5. When a competitor name is unique, selecting it also selects the matching `Place`. Selecting a duplicate `Place` backfills the matching competitor row.
+6. Use `Choose Project` when you want SplitShot to save the current work as a reusable bundle.
+7. Use `New Project` for a clean session and `Delete Project` only when the saved bundle should be removed from disk.
 
 ## Downstream Effects
 
@@ -62,5 +63,5 @@ The Project pane is the setup surface for a SplitShot run. It names the project,
 Previous: [../USER_GUIDE.md](../USER_GUIDE.md)
 Next: [shotml.md](shotml.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23
