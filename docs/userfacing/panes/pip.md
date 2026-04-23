@@ -20,7 +20,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 | `Layout` | Chooses `Side by side`, `Above / below`, or `Picture in picture`. |
 | `Default PiP size` | Sets the size for newly added PiP items. |
 | `Default PiP X` / `Default PiP Y` | Set default normalized placement for new PiP items. |
-| Media card chevron | Expands or collapses per-item controls. |
+| Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
 | Per-item `PiP size` | Sets one item's size. |
 | `PiP opacity` | Sets one item's transparency. |
@@ -35,7 +35,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 4. Set defaults before adding several similar items.
 5. Expand each media card and adjust item-specific `PiP size`, `PiP opacity`, `PiP X`, and `PiP Y`.
 6. Use the sync nudge buttons until the secondary motion lines up with the primary video.
-7. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement.
+7. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
 
 ## Layout Notes
 
@@ -43,6 +43,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 - `Side by side` and `Above / below` are layout-wide compositions, but the same item list and sync controls remain available.
 - Defaults apply to new items. Existing media cards keep their own saved values.
 - Each item keeps its own size, opacity, position, and sync.
+- Preview dragging is clamped to the live video frame so the inset stays fully visible.
 
 ## Common Fixes
 
@@ -59,5 +60,5 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 Previous: [score.md](score.md)
 Next: [overlay.md](overlay.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

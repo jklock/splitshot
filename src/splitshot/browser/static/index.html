@@ -74,7 +74,6 @@
                   <span><b class="shot-key"></b> Shot</span>
                   <small id="waveform-help">Select mode: click a shot marker, drag a shot to move, drag empty space to pan, arrows nudge.</small>
                 </div>
-                <button id="toggle-layout-lock-waveform" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock waveform layout">🔒</button>
               </div>
               <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
               <div id="waveform-window" class="waveform-window" hidden>
@@ -137,7 +136,6 @@
                 <strong id="inspector-file">No Video Selected</strong>
                 <span id="inspector-status-copy">Ready.</span>
               </div>
-              <button id="toggle-layout-lock-inspector" class="panel-lock-button" data-layout-lock-toggle type="button" aria-label="Unlock inspector layout">🔒</button>
             </div>
             <section class="tool-pane" data-tool-pane="review">
               <div class="section-header">
@@ -508,47 +506,48 @@
             <section class="tool-pane" data-tool-pane="popup">
               <div class="section-header">
                 <h3>PopUp</h3>
-                <button id="popup-import-shots" type="button">Import Shots</button>
-                <button id="popup-add-bubble" type="button">Add Bubble</button>
+                <div class="section-header-actions popup-pane-actions">
+                  <button id="popup-import-shots" type="button">Import Shots</button>
+                  <button id="popup-add-bubble" type="button">Add Bubble</button>
+                  <button id="popup-toggle-authoring" type="button" class="scoring-shot-toggle" aria-label="Hide popup controls">v</button>
+                </div>
               </div>
-              <p class="hint">Short-lived boxes for one-off target callouts. Set the start time and duration, or drag a rendered bubble on the video.</p>
-              <div id="popup-bubble-list" class="text-box-list" aria-label="Popup bubbles"></div>
-            </section>
-
-            <template id="popup-bubble-template" hidden>
-              <section class="text-box-card popup-bubble-card">
-                <label>Start mode
-                  <select data-popup-field="anchor_mode">
-                    <option value="time">Time</option>
-                    <option value="shot">Shot</option>
-                  </select>
-                </label>
-                <label>Shot
-                  <select data-popup-field="shot_id"></select>
-                </label>
-                <label>Placement
-                  <select data-popup-field="quadrant">
-                    <option value="middle_middle">Middle middle</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                </label>
-                <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
-                <section data-popup-motion-guide hidden>
-                  <label>Points
-                    <select data-popup-field="motion_point_count">
-                      <option value="4">4</option>
-                      <option value="8">8</option>
-                      <option value="16">16</option>
+              <div id="popup-authoring-panel" class="popup-authoring-panel">
+                <p class="hint">Short-lived boxes for one-off target callouts. Drag a rendered bubble on the video, or tune one card at a time below.</p>
+                <div class="popup-authoring-bar" aria-label="Popup authoring controls">
+                  <label>Import
+                    <select id="popup-import-mode">
+                      <option value="all">All shots</option>
+                      <option value="scored">Scored shots</option>
+                      <option value="penalty">Penalty / miss shots</option>
                     </select>
                   </label>
-                  <div data-popup-motion-path-list></div>
-                </section>
-                <button type="button" data-popup-action="clear_motion_path">Clear path</button>
-                <label>Opacity
-                  <input data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" />
-                </label>
-              </section>
-            </template>
+                  <label>Filter
+                    <select id="popup-filter">
+                      <option value="all">All</option>
+                      <option value="enabled">Enabled</option>
+                      <option value="disabled">Disabled</option>
+                      <option value="shot">Shot-linked</option>
+                      <option value="time">Time-based</option>
+                      <option value="motion">Has motion</option>
+                      <option value="missing_text">Missing text</option>
+                      <option value="visible">Visible now</option>
+                    </select>
+                  </label>
+                  <div class="popup-authoring-actions">
+                    <button id="popup-play-window" type="button">Play Window</button>
+                    <button id="popup-loop-window" type="button">Loop</button>
+                  </div>
+                  <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
+                </div>
+              </div>
+              <div id="popup-collapsed-nav" class="popup-collapsed-nav" hidden>
+                <button id="popup-prev-compact" type="button">Previous</button>
+                <button id="popup-next-compact" type="button">Next</button>
+              </div>
+              <div id="popup-timeline-strip" class="popup-timeline-strip" aria-label="Popup timeline"></div>
+              <div id="popup-bubble-list" class="text-box-list popup-bubble-list" aria-label="Popup bubbles"></div>
+            </section>
 
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">

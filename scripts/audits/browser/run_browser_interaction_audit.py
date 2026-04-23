@@ -936,7 +936,7 @@ def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_
 
 
 def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckResult:
-    lock_button = page.locator("#toggle-layout-lock-waveform")
+    lock_button = page.locator("#toggle-layout-lock-video")
     if "Unlock" in (lock_button.get_attribute("aria-label") or ""):
         lock_button.click()
         page.wait_for_timeout(120)

@@ -27,6 +27,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `>` / `v` | Expands or collapses that box editor. |
 | `Duplicate` | Copies the box and its styling. |
 | `Remove` | Deletes the box. |
+| Video-frame lock icon | Unlocks or relocks the shared layout resize controls. The inspector header no longer duplicates this icon. |
 | `Content Source` | Chooses `Custom text` or `Imported summary`. |
 | `Lock to shot stack` | Makes the box follow the overlay shot stack instead of independent placement. |
 | `Box text` | Edits the text for custom boxes. Imported summaries can be overridden here. |
@@ -43,15 +44,18 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 3. Use `Add Summary Box` for imported PractiScore summary text.
 4. Use `Add Custom Box` for a typed note, title, or stage plan.
 5. Pick `Content Source` on each card.
-6. Use `Above Final Box` for a summary that should sit above the final result badge.
-7. Use `Custom` placement plus X/Y, or drag the rendered box in the video, when the box needs an exact location.
-8. Adjust width, height, colors, and opacity until the text reads clearly over the footage.
-9. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
+6. Expand or collapse cards with `>` / `v`; the pane preserves the clicked card position so the inspector does not jump vertically.
+7. Use `Above Final Box` for a summary that should sit above the final result badge.
+8. Use `Custom` placement plus X/Y, or drag the rendered box in the video, when the box needs an exact location.
+9. When `Lock to shot stack` is on, dragging that rendered box moves the whole locked stack and keeps the box locked.
+10. Adjust width, height, colors, and opacity until the text reads clearly over the footage.
+11. Use a color swatch when you want the expanded picker with quick swatches and HSL/hex controls.
 
 ## Summary Box Behavior
 
 - Imported summary boxes use PractiScore content when available.
 - `Above Final Box` keeps a summary aligned with the final score/result badge.
+- Locked boxes keep the same spacing relationship as the shot stack. Drag any locked item to reposition the stack as a group.
 - Custom boxes stay visible according to their own enable state and placement.
 - Enabled review boxes render into export.
 
@@ -70,5 +74,5 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 Previous: [popup.md](popup.md)
 Next: [export.md](export.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23
