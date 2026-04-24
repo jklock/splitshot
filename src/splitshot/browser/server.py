@@ -39,6 +39,7 @@ EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, Connectio
 EXPECTED_DISCONNECT_ERRNOS = {errno.EPIPE, errno.ECONNABORTED, errno.ECONNRESET, errno.ENOBUFS}
 PathChooser = Callable[[str, str | None], str | None]
 COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
+COMMON_IMAGE_FILE_PATTERNS = "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff"
 COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
 _PCM_BROWSER_PROXY_FORMATS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
 _PCM_BROWSER_PROXY_SUFFIXES = {".mov", ".qt", ".mp4", ".m4v", ".m4a"}
@@ -293,7 +294,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
         import tkinter as tk
         from tkinter import filedialog
     except Exception as exc:  # noqa: BLE001
-        raise RuntimeError("Native file browser is not available in this Python environment.") from exc
+        return None
 
     initial_dir = str(
         _existing_dialog_directory(
@@ -308,11 +309,16 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary"}:
+        if kind in {"primary", "secondary", "popup_image"}:
             return filedialog.askopenfilename(
-                title="Choose stage video" if kind == "primary" else "Choose secondary angle video",
+                title=(
+                    "Choose stage video"
+                    if kind == "primary"
+                    else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+                ),
                 initialdir=initial_dir,
                 filetypes=[
+                    ("Image files", COMMON_IMAGE_FILE_PATTERNS),
                     ("Video files", COMMON_VIDEO_FILE_PATTERNS),
                     ("All files", "*.*"),
                 ],
@@ -341,8 +347,12 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary"}:
-        prompt = "Choose stage video" if kind == "primary" else "Choose secondary angle video"
+    if kind in {"primary", "secondary", "popup_image"}:
+        prompt = (
+            "Choose stage video"
+            if kind == "primary"
+            else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+        )
         script = "\n".join(
             [
                 f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
@@ -447,6 +457,8 @@ def _sync_export_payload(controller: ProjectController, payload: dict[str, Any])
 
 
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
     def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
         if is_expected_disconnect_error(sys.exc_info()[1]):
             return
@@ -489,27 +501,63 @@ class BrowserControlServer:
             return f"http://{host}:{port}/"
         return f"http://{self.host}:{self.port}/"
 
-    def serve_forever(self, open_browser: bool = True) -> None:
-        self._httpd = self._build_httpd()
-        self.activity.log("server.serve_forever", url=self.url, open_browser=open_browser)
-        if open_browser:
-            webbrowser.open(self.url)
+    def _attempt_open_browser(self) -> bool:
         try:
-            self._httpd.serve_forever()
-        except KeyboardInterrupt:
-            print("\nSplitShot browser control stopped.")
+            success = webbrowser.open(self.url)
+        except Exception as exc:  # noqa: BLE001
+            self.activity.log("browser.open.error", url=self.url, error=str(exc))
+            success = False
+
+        self.activity.log("browser.open", url=self.url, success=success)
+        if not success:
+            print("Failed to open the local browser automatically.")
+            print(f"Open SplitShot manually at {self.url}")
+        return success
+
+    def serve_forever(self, open_browser: bool = True) -> None:
+        try:
+            self._httpd = self._build_httpd()
+        except OSError as exc:
+            self.activity.log("server.bind.error", host=self.host, port=self.port, error=str(exc))
+            print(f"SplitShot could not bind to {self.host}:{self.port}: {exc}")
+            print("Use --port to select a different port, or stop the process using this port.")
+            raise
+
+        self.activity.log("server.serve_forever", url=self.url, open_browser=open_browser)
+        try:
+            if open_browser:
+                self._thread = threading.Thread(target=self._httpd.serve_forever)
+                self._thread.start()
+                self._attempt_open_browser()
+                try:
+                    while self._thread.is_alive():
+                        self._thread.join(timeout=0.5)
+                except KeyboardInterrupt:
+                    print("\nSplitShot browser control stopped.")
+            else:
+                try:
+                    self._httpd.serve_forever()
+                except KeyboardInterrupt:
+                    print("\nSplitShot browser control stopped.")
         finally:
             self.activity.log("server.stopping", url=self.url)
             self._httpd.server_close()
             self._session_dir.cleanup()
 
     def start_background(self, open_browser: bool = False) -> None:
-        self._httpd = self._build_httpd()
+        try:
+            self._httpd = self._build_httpd()
+        except OSError as exc:
+            self.activity.log("server.bind.error", host=self.host, port=self.port, error=str(exc))
+            print(f"SplitShot could not bind to {self.host}:{self.port}: {exc}")
+            print("Use --port to select a different port, or stop the process using this port.")
+            raise
+
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
         self.activity.log("server.start_background", url=self.url, open_browser=open_browser)
         if open_browser:
-            webbrowser.open(self.url)
+            self._attempt_open_browser()
 
     def shutdown(self) -> None:
         self.activity.log("server.shutdown", url=self.url)
@@ -652,6 +700,9 @@ class BrowserControlServer:
                 if request_path.startswith("/media/merge/"):
                     self._send_merge_media(request_path.removeprefix("/media/merge/"))
                     return
+                if request_path.startswith("/media/popup/"):
+                    self._send_popup_media(request_path.removeprefix("/media/popup/"))
+                    return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
             def do_POST(self) -> None:  # noqa: N802
@@ -694,6 +745,8 @@ class BrowserControlServer:
                     "/api/analysis/shotml/apply-proposal": self._apply_shotml_proposal,
                     "/api/analysis/shotml/discard-proposal": self._discard_shotml_proposal,
                     "/api/analysis/shotml/reset-defaults": self._reset_shotml_defaults,
+                    "/api/settings": self._set_settings_defaults,
+                    "/api/settings/reset-defaults": self._reset_settings_defaults,
                     "/api/beep": self._set_beep,
                     "/api/shots/add": self._add_shot,
                     "/api/shots/move": self._move_shot,
@@ -809,6 +862,8 @@ class BrowserControlServer:
                 payload = browser_state(
                     controller.project,
                     controller.status_message,
+                    settings=controller.effective_settings().to_dict(),
+                    settings_layers=controller.settings_layers(),
                     practiscore_options=controller.practiscore_browser_state(),
                     media_cache_token=server._media_url_token,
                 )
@@ -991,6 +1046,19 @@ class BrowserControlServer:
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 self._send_media(Path(source.asset.path))
+
+            def _send_popup_media(self, popup_id: str) -> None:
+                popup = next((item for item in controller.project.popups if item.id == popup_id), None)
+                if popup is None or not popup.image_path:
+                    activity.log("popup_media.missing", popup_id=popup_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                path = Path(popup.image_path)
+                if not path.exists() or not path.is_file():
+                    activity.log("popup_media.missing", popup_id=popup_id, path=str(path))
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self._send_file_response(path, path, event_prefix="popup_media")
 
             def _record_browser_activity(self) -> None:
                 try:
@@ -1261,6 +1329,15 @@ class BrowserControlServer:
 
             def _reset_shotml_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_shotml_settings()
+
+            def _reset_settings_defaults(self, payload: dict[str, Any]) -> None:
+                controller.restore_defaults()
+
+            def _set_settings_defaults(self, payload: dict[str, Any]) -> None:
+                controller.set_settings_defaults(
+                    payload.get("settings", payload) if isinstance(payload.get("settings", payload), dict) else {},
+                    scope=str(payload.get("scope", "app") or "app"),
+                )
 
             def _set_beep(self, payload: dict[str, Any]) -> None:
                 controller.set_beep_time(int(payload["time_ms"]))

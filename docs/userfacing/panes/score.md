@@ -41,7 +41,7 @@ The Score pane applies a ruleset to the current shot list. It shows imported mat
 
 - IDPA-style presets use values like `-0`, `-1`, and `-3`.
 - USPSA/IPSC-style presets commonly use `A`, `C`, `D`, `M`, `NS`, and combined miss/no-shoot values.
-- Shot-linked PopUp bubbles read their visible text from the score and penalty state here.
+- Shot-linked markers read their visible text from the score and penalty state here.
 - Metrics, Review summary boxes, Overlay result badges, and Export all use the live scoring summary.
 
 ## Common Fixes
@@ -51,7 +51,7 @@ The Score pane applies a ruleset to the current shot list. It shows imported mat
 | The wrong score labels are visible. | Recheck `Preset`. |
 | A shot is missing from Score. | Fix the shot list in [splits.md](splits.md). |
 | PractiScore comparison looks wrong. | Recheck the imported stage and competitor in [project.md](project.md). |
-| A popup changed after rescoring. | That is expected for shot-linked popups. |
+| A marker changed after rescoring. | That is expected for shot-linked markers. |
 | Metrics changed after a penalty edit. | That is expected. Metrics is built from the live scoring summary. |
 
 ## Related Guides

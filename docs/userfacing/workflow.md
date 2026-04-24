@@ -21,22 +21,23 @@ This is the recommended path from raw stage video to finished local export.
 8. Import PractiScore in [panes/project.md](panes/project.md) if official match context is needed.
 9. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.
 10. Open [panes/pip.md](panes/pip.md) if added media is needed; sync and place each item.
-11. Open [panes/overlay.md](panes/overlay.md) and configure badge layout, locks, fonts, colors, and score-token colors.
-12. Open [panes/popup.md](panes/popup.md) for shot-linked or time-based callout bubbles.
-13. Open [panes/review.md](panes/review.md) to set badge visibility and add summary/custom text boxes.
-14. Open [panes/metrics.md](panes/metrics.md) to inspect the dashboard, expanded table, or CSV/text exports.
-15. Finish in [panes/export.md](panes/export.md), choose render settings, set output path, and click `Export Video`.
+11. Open [panes/score.md](panes/score.md) for final score and penalty edits if timing changed.
+12. Open [panes/popup.md](panes/popup.md) for shot-linked or time-based markers, including text/image callouts.
+13. Open [panes/overlay.md](panes/overlay.md) and configure badge layout, locks, fonts, colors, and score-token colors.
+14. Open [panes/review.md](panes/review.md) to set badge visibility and add summary/custom text boxes.
+15. Open [panes/metrics.md](panes/metrics.md) to inspect the dashboard, expanded table, or CSV/text exports.
+16. Finish in [panes/export.md](panes/export.md), choose render settings, set output path, and click `Export Video`.
 16. Keep the project folder if you will revise or rerender later.
 
 ## Practical Order
 
 - Tune ShotML before manual timing because reruns replace the automatic draft.
 - Finish timing before scoring because score rows follow the shot list.
-- Score before PopUp when shot-linked popups should show score and penalties.
+- Score before Markers when shot-linked markers should show score and penalties.
 - Configure PiP before final overlay placement when added media changes where badges should sit.
 - Configure Overlay before Review when text boxes need to align with the final badge stack.
 - Check Metrics before Export when you need confidence, raw delta, or CSV confirmation.
-- Export only after scrubbing near the final shot and confirming overlays, popups, review boxes, and PiP.
+- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and PiP.
 
 ## Bundle Guidance
 
@@ -52,5 +53,5 @@ This is the recommended path from raw stage video to finished local export.
 - [panes/export.md](panes/export.md) for final render settings.
 - [troubleshooting.md](troubleshooting.md) for common issues.
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

@@ -13,9 +13,10 @@ SplitShot documentation starts with the product guides, then branches into troub
 - [userfacing/panes/shotml.md](userfacing/panes/shotml.md)
 - [userfacing/panes/pip.md](userfacing/panes/pip.md)
 - [userfacing/panes/overlay.md](userfacing/panes/overlay.md)
-- [userfacing/panes/popup.md](userfacing/panes/popup.md)
+- [userfacing/panes/popup.md](userfacing/panes/popup.md) - Markers pane
 - [userfacing/panes/review.md](userfacing/panes/review.md)
 - [userfacing/panes/export.md](userfacing/panes/export.md)
+- [userfacing/panes/settings.md](userfacing/panes/settings.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
 
 ## Screenshot Set
@@ -28,6 +29,7 @@ SplitShot documentation starts with the product guides, then branches into troub
 - `OverlayPane.png`, `OverlayPane2.png`
 - `ColorPickerModal.png`
 - `PopUpPane.png`, `PopUpPane2.png`
+- `SettingsPane.png`, `SettingsPane2.png`
 - `ReviewPane.png`, `ReviewPane2.png`
 - `ExportPane.png`, `ExportPane2.png`
 - `ExportLogModal.png`
@@ -43,17 +45,22 @@ uv run python scripts/docs/capture_browser_screenshots.py
 
 The screenshot script covers:
 
-- Every left-rail pane: Project, Score, Splits, ShotML, PiP, Overlay, PopUp, Review, Export, and Metrics.
+- Every left-rail pane: Project, PiP, Score, Splits, Markers, Overlay, Review, Export, Settings, Metrics, and ShotML.
 - Expanded Score shot cards.
 - Expanded Splits timing table and expanded waveform layout.
 - Every ShotML collapsible section.
 - Expanded PiP defaults and per-media card controls.
 - Overlay lower style controls and score text color controls.
-- Expanded PopUp bubble editor with motion path controls.
+- Expanded Markers editor with motion path controls.
+- Expanded Settings pane with layered defaults and marker template controls.
 - Expanded Review imported-summary and custom text-box editors.
 - Export lower controls plus the Export Log modal.
 - Expanded Metrics table.
-- Shared Color Picker modal used by color swatches across Overlay, PopUp, and Review.
+- Shared Color Picker modal used by color swatches across Overlay, Markers, and Review.
+
+## Archived Notes
+
+- [archive/wizard.md](archive/wizard.md) - Retired workflow wizard reference.
 
 ## Current Limitations
 
@@ -93,5 +100,5 @@ The screenshot script covers:
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

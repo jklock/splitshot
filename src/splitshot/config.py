@@ -3,11 +3,48 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+import tomllib
 
-from splitshot.domain.models import BadgeSize, ExportQuality, MergeLayout, OverlayPosition, PipSize, ShotMLSettings
+from splitshot.domain.models import (
+    BadgeSize,
+    ExportQuality,
+    MergeLayout,
+    OverlayPosition,
+    PipSize,
+    PopupTemplate,
+    ShotMLSettings,
+)
 
 APP_DIR = Path.home() / ".splitshot"
 SETTINGS_PATH = APP_DIR / "settings.json"
+FOLDER_SETTINGS_FILENAME = "splitshot.conf"
+
+
+def _serialize_popup_template(template: PopupTemplate) -> dict[str, object]:
+    return {
+        "enabled": template.enabled,
+        "content_type": template.content_type,
+        "text_source": template.text_source,
+        "duration_ms": template.duration_ms,
+        "quadrant": template.quadrant,
+        "width": template.width,
+        "height": template.height,
+        "follow_motion": template.follow_motion,
+    }
+
+
+def _popup_template_from_dict(data: object) -> PopupTemplate:
+    payload = data if isinstance(data, dict) else {}
+    return PopupTemplate(
+        enabled=bool(payload.get("enabled", True)),
+        content_type=str(payload.get("content_type", "text") or "text"),
+        text_source=str(payload.get("text_source", "score") or "score"),
+        duration_ms=max(1, int(payload.get("duration_ms", 1000) or 1000)),
+        quadrant=str(payload.get("quadrant", "middle_middle") or "middle_middle"),
+        width=max(0, int(payload.get("width", 0) or 0)),
+        height=max(0, int(payload.get("height", 0) or 0)),
+        follow_motion=bool(payload.get("follow_motion", False)),
+    )
 
 
 @dataclass(slots=True)
@@ -19,6 +56,9 @@ class AppSettings:
     pip_size: PipSize = PipSize.MEDIUM
     export_quality: ExportQuality = ExportQuality.HIGH
     badge_size: BadgeSize = BadgeSize.M
+    default_tool: str = "project"
+    reopen_last_tool: bool = True
+    marker_template: PopupTemplate = field(default_factory=PopupTemplate)
     recent_projects: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
@@ -33,6 +73,9 @@ class AppSettings:
             "pip_size": self.pip_size.value,
             "export_quality": self.export_quality.value,
             "badge_size": self.badge_size.value,
+            "default_tool": self.default_tool,
+            "reopen_last_tool": self.reopen_last_tool,
+            "marker_template": _serialize_popup_template(self.marker_template),
             "recent_projects": self.recent_projects,
         }
 
@@ -69,6 +112,9 @@ class AppSettings:
             pip_size=PipSize(str(data.get("pip_size", PipSize.MEDIUM.value))),
             export_quality=ExportQuality(str(data.get("export_quality", ExportQuality.HIGH.value))),
             badge_size=BadgeSize(str(data.get("badge_size", BadgeSize.M.value))),
+            default_tool=str(data.get("default_tool", "project") or "project"),
+            reopen_last_tool=bool(data.get("reopen_last_tool", True)),
+            marker_template=_popup_template_from_dict(data.get("marker_template")),
             recent_projects=[str(item) for item in data.get("recent_projects", [])],
         )
 
@@ -89,3 +135,67 @@ def load_settings() -> AppSettings:
 def save_settings(settings: AppSettings) -> None:
     ensure_app_dir()
     SETTINGS_PATH.write_text(json.dumps(settings.to_dict(), indent=2))
+
+
+def folder_settings_path(project_path: str | Path | None) -> Path | None:
+    if project_path in {None, ""}:
+        return None
+    return Path(project_path) / FOLDER_SETTINGS_FILENAME
+
+
+def load_folder_settings(project_path: str | Path | None) -> AppSettings | None:
+    path = folder_settings_path(project_path)
+    if path is None or not path.exists():
+        return None
+    payload = tomllib.loads(path.read_text())
+    return AppSettings.from_dict(payload)
+
+
+def save_folder_settings(project_path: str | Path, settings: AppSettings) -> None:
+    path = folder_settings_path(project_path)
+    if path is None:
+        raise ValueError("Project path is required for folder settings.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = settings.to_dict()
+    lines = [
+        f'detection_threshold = {data["detection_threshold"]}',
+        f'overlay_position = "{data["overlay_position"]}"',
+        f'merge_layout = "{data["merge_layout"]}"',
+        f'pip_size = "{data["pip_size"]}"',
+        f'export_quality = "{data["export_quality"]}"',
+        f'badge_size = "{data["badge_size"]}"',
+        f'default_tool = "{data["default_tool"]}"',
+        f'reopen_last_tool = {"true" if data["reopen_last_tool"] else "false"}',
+    ]
+    shotml = data["shotml_defaults"]
+    if isinstance(shotml, dict):
+        lines.append("")
+        lines.append("[shotml_defaults]")
+        for key, value in shotml.items():
+            if isinstance(value, bool):
+                encoded = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                encoded = str(value)
+            else:
+                encoded = json.dumps(str(value))
+            lines.append(f"{key} = {encoded}")
+    marker_template = data["marker_template"]
+    if isinstance(marker_template, dict):
+        lines.append("")
+        lines.append("[marker_template]")
+        for key, value in marker_template.items():
+            if isinstance(value, bool):
+                encoded = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                encoded = str(value)
+            else:
+                encoded = json.dumps(str(value))
+            lines.append(f"{key} = {encoded}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def delete_folder_settings(project_path: str | Path | None) -> None:
+    path = folder_settings_path(project_path)
+    if path is None or not path.exists():
+        return
+    path.unlink()

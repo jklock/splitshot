@@ -10,7 +10,14 @@ from PySide6.QtCore import QObject, Signal
 
 from splitshot.analysis.detection import analyze_video_audio, timing_change_proposals_from_review_suggestions, TimingReviewSuggestion
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.config import AppSettings, load_settings, save_settings
+from splitshot.config import (
+    AppSettings,
+    delete_folder_settings,
+    load_folder_settings,
+    load_settings,
+    save_folder_settings,
+    save_settings,
+)
 from splitshot.domain.models import (
     BadgeSize,
     BadgeStyle,
@@ -97,6 +104,8 @@ _VALID_BROWSER_UI_TOOLS = {
     "overlay",
     "review",
     "popup",
+    "markers",
+    "settings",
     "export",
     "metrics",
 }
@@ -475,6 +484,8 @@ class ProjectController(QObject):
     def __init__(self) -> None:
         super().__init__()
         self.settings: AppSettings = load_settings()
+        self.folder_settings: AppSettings | None = None
+        self.folder_settings_error: str | None = None
         self.project = self._new_project_with_settings_defaults()
         self.project_path: Path | None = None
         self._practiscore_source_path: Path | None = None
@@ -488,6 +499,8 @@ class ProjectController(QObject):
         self.project_changed.connect(self._autosave_project_if_needed)
 
     def new_project(self) -> None:
+        self.folder_settings = None
+        self.folder_settings_error = None
         self.project = self._new_project_with_settings_defaults()
         self.project_path = None
         self._clear_practiscore_source()
@@ -1338,6 +1351,8 @@ class ProjectController(QObject):
                 changed = True
         if "active_tool" in payload:
             next_active_tool = str(payload["active_tool"])
+            if next_active_tool == "popup":
+                next_active_tool = "markers"
             if next_active_tool not in _VALID_BROWSER_UI_TOOLS:
                 next_active_tool = "project"
             if ui_state.active_tool != next_active_tool:
@@ -1801,6 +1816,17 @@ class ProjectController(QObject):
                 continue
             parsed_popups.append(_popup_bubble_from_dict(item))
         self.project.popups = parsed_popups
+        template_payload = payload.get("popup_template")
+        if isinstance(template_payload, dict):
+            template = self.project.popup_template
+            template.enabled = bool(template_payload.get("enabled", template.enabled))
+            template.content_type = str(template_payload.get("content_type", template.content_type))
+            template.text_source = str(template_payload.get("text_source", template.text_source))
+            template.duration_ms = max(1, int(template_payload.get("duration_ms", template.duration_ms) or 1000))
+            template.quadrant = str(template_payload.get("quadrant", template.quadrant))
+            template.width = max(0, int(template_payload.get("width", template.width) or 0))
+            template.height = max(0, int(template_payload.get("height", template.height) or 0))
+            template.follow_motion = bool(template_payload.get("follow_motion", template.follow_motion))
         self.project.touch()
         self.project_changed.emit()
 
@@ -2079,6 +2105,7 @@ class ProjectController(QObject):
             raise ValueError("Project path is required")
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
+        self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
         self._restore_practiscore_source_from_project()
@@ -2092,6 +2119,7 @@ class ProjectController(QObject):
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
         self.project_path = ensure_project_suffix(path)
+        self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path()
         loaded_snapshot = project_to_dict(self.project)
         recovered_media = self._restore_media_sources_from_project()
@@ -2123,18 +2151,110 @@ class ProjectController(QObject):
         self.new_project()
         self._set_status("Deleted the saved project folder.")
 
+    def effective_settings(self) -> AppSettings:
+        if self.folder_settings is None:
+            return AppSettings.from_dict(self.settings.to_dict())
+        merged = self.settings.to_dict()
+        folder_payload = self.folder_settings.to_dict()
+        for key in (
+            "detection_threshold",
+            "shotml_defaults",
+            "overlay_position",
+            "merge_layout",
+            "pip_size",
+            "export_quality",
+            "badge_size",
+            "default_tool",
+            "reopen_last_tool",
+            "marker_template",
+        ):
+            merged[key] = folder_payload[key]
+        merged["recent_projects"] = self.settings.recent_projects
+        return AppSettings.from_dict(merged)
+
+    def settings_layers(self) -> dict[str, object]:
+        return {
+            "app": self.settings.to_dict(),
+            "folder": {} if self.folder_settings is None else self.folder_settings.to_dict(),
+            "effective": self.effective_settings().to_dict(),
+            "project": {
+                "path": "" if self.project_path is None else str(self.project_path),
+                "folder_settings_error": self.folder_settings_error or "",
+                "popup_template": {
+                    "enabled": self.project.popup_template.enabled,
+                    "content_type": self.project.popup_template.content_type,
+                    "text_source": self.project.popup_template.text_source,
+                    "duration_ms": self.project.popup_template.duration_ms,
+                    "quadrant": self.project.popup_template.quadrant,
+                    "width": self.project.popup_template.width,
+                    "height": self.project.popup_template.height,
+                    "follow_motion": self.project.popup_template.follow_motion,
+                },
+            },
+        }
+
+    def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
+        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        target = AppSettings.from_dict(base.to_dict())
+        if "overlay_position" in payload:
+            target.overlay_position = OverlayPosition(str(payload["overlay_position"]))
+        if "badge_size" in payload:
+            target.badge_size = BadgeSize(str(payload["badge_size"]))
+        if "merge_layout" in payload:
+            target.merge_layout = MergeLayout(str(payload["merge_layout"]))
+        if "pip_size" in payload:
+            target.pip_size = PipSize(str(payload["pip_size"]))
+        if "export_quality" in payload:
+            target.export_quality = ExportQuality(str(payload["export_quality"]))
+        if "default_tool" in payload:
+            target.default_tool = str(payload["default_tool"] or "project")
+        if "reopen_last_tool" in payload:
+            target.reopen_last_tool = bool(payload["reopen_last_tool"])
+        if "detection_threshold" in payload:
+            threshold = float(payload["detection_threshold"])
+            target.detection_threshold = threshold
+            target.shotml_defaults.detection_threshold = threshold
+        marker_template_payload = payload.get("marker_template")
+        if isinstance(marker_template_payload, dict):
+            template = target.marker_template
+            template.enabled = bool(marker_template_payload.get("enabled", template.enabled))
+            template.content_type = str(marker_template_payload.get("content_type", template.content_type))
+            template.text_source = str(marker_template_payload.get("text_source", template.text_source))
+            template.duration_ms = max(1, int(marker_template_payload.get("duration_ms", template.duration_ms) or 1000))
+            template.quadrant = str(marker_template_payload.get("quadrant", template.quadrant))
+            template.width = max(0, int(marker_template_payload.get("width", template.width) or 0))
+            template.height = max(0, int(marker_template_payload.get("height", template.height) or 0))
+            template.follow_motion = bool(marker_template_payload.get("follow_motion", template.follow_motion))
+        if scope == "folder":
+            if self.project_path is None:
+                raise ValueError("Save the project before writing folder defaults.")
+            self.folder_settings = target
+            self.folder_settings_error = None
+            save_folder_settings(self.project_path, target)
+        else:
+            target.recent_projects = self.settings.recent_projects
+            self.settings = target
+            save_settings(self.settings)
+        self.settings_changed.emit()
+        self._set_status(f"Updated {'folder' if scope == 'folder' else 'app'} defaults.")
+
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
         save_settings(self.settings)
-        self.project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
+        delete_folder_settings(self.project_path)
+        self.folder_settings = None
+        self.folder_settings_error = None
+        effective = self.effective_settings()
+        self.project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
         self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
-        self.project.overlay.position = self.settings.overlay_position
-        self.project.merge.layout = self.settings.merge_layout
-        self.project.merge.pip_size = self.settings.pip_size
-        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        self.project.export.quality = self.settings.export_quality
-        self.project.overlay.badge_size = self.settings.badge_size
-        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        self.project.overlay.position = effective.overlay_position
+        self.project.merge.layout = effective.merge_layout
+        self.project.merge.pip_size = effective.pip_size
+        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
+        self.project.export.quality = effective.export_quality
+        self.project.overlay.badge_size = effective.badge_size
+        self.project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
+        self.project.popup_template = deepcopy(effective.marker_template)
         self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()
@@ -2223,17 +2343,28 @@ class ProjectController(QObject):
         return normalize_project_path(path)
 
     def _new_project_with_settings_defaults(self) -> Project:
+        effective = self.effective_settings()
         project = Project()
-        project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
+        project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
         project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
-        project.overlay.position = self.settings.overlay_position
-        project.merge.layout = self.settings.merge_layout
-        project.merge.pip_size = self.settings.pip_size
-        project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        project.export.quality = self.settings.export_quality
-        project.overlay.badge_size = self.settings.badge_size
-        project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        project.overlay.position = effective.overlay_position
+        project.merge.layout = effective.merge_layout
+        project.merge.pip_size = effective.pip_size
+        project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
+        project.export.quality = effective.export_quality
+        project.overlay.badge_size = effective.badge_size
+        project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
+        project.popup_template = deepcopy(effective.marker_template)
+        project.ui_state.active_tool = effective.default_tool if effective.reopen_last_tool else "project"
         return project
+
+    def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
+        self.folder_settings_error = None
+        try:
+            return load_folder_settings(project_path)
+        except Exception as exc:  # noqa: BLE001
+            self.folder_settings_error = f"Folder defaults were ignored: {exc}"
+            return None
 
     def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
         if self.project_path is None:

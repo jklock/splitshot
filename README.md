@@ -116,6 +116,8 @@ uv sync
 uv run splitshot
 ```
 
+If the browser does not open automatically, retry with `uv run splitshot --no-open` and open the URL shown in the terminal manually.
+
 #### Windows PowerShell with Chocolatey
 
 ```powershell

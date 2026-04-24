@@ -71,7 +71,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 
 ## Related Guides
 
-Previous: [popup.md](popup.md)
+Previous: [popup.md](popup.md) (Markers)
 Next: [export.md](export.md)
 
 **Last updated:** 2026-04-23

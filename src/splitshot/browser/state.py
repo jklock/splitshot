@@ -79,6 +79,8 @@ def _normalize_timing_project_payload(project_payload: dict[str, Any], project: 
 def browser_state(
     project: Project,
     status_message: str,
+    settings: dict[str, Any] | None = None,
+    settings_layers: dict[str, Any] | None = None,
     practiscore_options: dict[str, Any] | None = None,
     media_cache_token: str | None = None,
 ) -> dict[str, Any]:
@@ -129,6 +131,8 @@ def browser_state(
     return {
         "status": status_message,
         "project": project_payload,
+        "settings": settings or {},
+        "settings_layers": settings_layers or {},
         "metrics": asdict(presentation.metrics),
         "timing_segments": timing_segments_payload,
         "split_rows": split_rows_payload,

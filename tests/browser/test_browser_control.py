@@ -40,6 +40,7 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/analysis/shotml/apply-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/analysis/shotml/discard-proposal": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/analysis/shotml/reset-defaults": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
+    "/api/settings/reset-defaults": ("test_browser_settings_reset_defaults_restores_project_state",),
     "/api/beep": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/shots/add": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
     "/api/shots/move": ("test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json",),
@@ -83,6 +84,7 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/activity",
     "/api/dialog/path",
     "/api/project/probe",
+    "/api/settings",
 }
 
 
@@ -170,6 +172,56 @@ def test_browser_foreground_server_handles_keyboard_interrupt_cleanly(capsys) ->
 
     assert fake_httpd.closed is True
     assert "SplitShot browser control stopped." in capsys.readouterr().out
+
+
+def test_browser_foreground_server_reports_failed_browser_open(monkeypatch, capsys) -> None:
+    opened_urls: list[str] = []
+
+    def fake_open(url: str) -> bool:
+        opened_urls.append(url)
+        return False
+
+    monkeypatch.setattr(browser_server_module.webbrowser, "open", fake_open)
+
+    class FakeHTTPD:
+        server_address = ("127.0.0.1", 8765)
+
+        def __init__(self) -> None:
+            self.closed = False
+            self.started = False
+
+        def serve_forever(self) -> None:
+            self.started = True
+
+        def server_close(self) -> None:
+            self.closed = True
+
+    fake_httpd = FakeHTTPD()
+    server = BrowserControlServer(port=0)
+    server._build_httpd = lambda: fake_httpd  # type: ignore[method-assign]
+
+    server.serve_forever(open_browser=True)
+
+    output = capsys.readouterr().out
+    assert opened_urls == [server.url]
+    assert "Failed to open the local browser automatically." in output
+    assert f"Open SplitShot manually at {server.url}" in output
+    assert fake_httpd.closed is True
+
+
+def test_browser_foreground_server_reports_bind_failure(monkeypatch, capsys) -> None:
+    def failing_build_httpd(self) -> ThreadingHTTPServer:
+        raise OSError(errno.EADDRINUSE, "Address already in use")
+
+    server = BrowserControlServer(port=0)
+    monkeypatch.setattr(server, "_build_httpd", failing_build_httpd.__get__(server, BrowserControlServer))
+
+    with pytest.raises(OSError):
+        server.serve_forever(open_browser=False)
+
+    output = capsys.readouterr().out
+    assert "SplitShot could not bind to" in output
+    assert "Use --port to select a different port" in output
 
 
 def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:
@@ -2007,6 +2059,201 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["overlay"]["custom_box_text"] == "Export Summary"
         assert saved["merge"]["layout"] == "pip"
         assert _merge_source_from_project_json(saved, first_source_id)["sync_offset_ms"] == 15
+    finally:
+        server.shutdown()
+
+
+def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "settings-reset-autosave.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        _post_json(f"{server.url}api/overlay", {"position": "top", "badge_size": "XL"})
+        _post_json(f"{server.url}api/merge", {"layout": "pip", "pip_size": "50%"})
+        _post_json(f"{server.url}api/export/settings", {"quality": "low"})
+        _post_json(
+            f"{server.url}api/analysis/shotml-settings",
+            {"settings": {"min_shot_interval_ms": 130, "shot_peak_min_spacing_ms": 230}, "rerun": False},
+        )
+
+        reset = _post_json(f"{server.url}api/settings/reset-defaults", {})
+        saved = _read_project_json(project_path)
+
+        assert reset["settings"]["overlay_position"] == "bottom"
+        assert reset["settings"]["merge_layout"] == "side_by_side"
+        assert reset["settings"]["pip_size"] == "35%"
+        assert reset["settings"]["export_quality"] == "high"
+        assert reset["settings"]["badge_size"] == "M"
+        assert reset["settings"]["shotml_defaults"]["min_shot_interval_ms"] == 100
+        assert reset["settings"]["shotml_defaults"]["shot_peak_min_spacing_ms"] == 200
+
+        assert saved["overlay"]["position"] == "bottom"
+        assert saved["overlay"]["badge_size"] == "M"
+        assert saved["merge"]["layout"] == "side_by_side"
+        assert saved["merge"]["pip_size"] == "35%"
+        assert saved["merge"]["pip_size_percent"] == 35
+        assert saved["export"]["quality"] == "high"
+        assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 100
+        assert saved["analysis"]["shotml_settings"]["shot_peak_min_spacing_ms"] == 200
+    finally:
+        server.shutdown()
+
+
+def test_browser_settings_reset_defaults_deletes_folder_settings_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "settings-reset-folder.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "folder",
+                "settings": {
+                    "default_tool": "review",
+                    "merge_layout": "pip",
+                },
+            },
+        )
+
+        folder_settings_path = project_path / "splitshot.conf"
+        assert folder_settings_path.exists()
+
+        _post_json(f"{server.url}api/settings/reset-defaults", {})
+
+        assert not folder_settings_path.exists()
+        reopened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+        assert reopened["settings"]["default_tool"] == "project"
+        assert reopened["settings"]["merge_layout"] == "side_by_side"
+    finally:
+        server.shutdown()
+
+
+def test_browser_project_open_ignores_invalid_folder_settings(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        controller_module,
+        "load_settings",
+        lambda: controller_module.AppSettings(default_tool="metrics"),
+    )
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "invalid-folder-settings.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+    (project_path / "splitshot.conf").write_text("not = [valid\n", encoding="utf-8")
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        assert state["settings"]["default_tool"] == "metrics"
+        assert state["settings_layers"]["folder"] == {}
+        assert "Folder defaults were ignored:" in state["settings_layers"]["project"]["folder_settings_error"]
+    finally:
+        server.shutdown()
+
+
+def test_browser_popup_image_assets_are_bundled_and_served(tmp_path: Path) -> None:
+    project_path = tmp_path / "popup-images.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    marker_image = tmp_path / "marker-image.png"
+    marker_image.write_bytes(b"popup-image-bytes")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        _post_json(
+            f"{server.url}api/popups",
+            {
+                "popups": [
+                    {
+                        "id": "popup-image",
+                        "enabled": True,
+                        "text": "",
+                        "content_type": "image",
+                        "image_path": str(marker_image),
+                        "anchor_mode": "time",
+                        "time_ms": 1200,
+                        "duration_ms": 1000,
+                        "quadrant": "middle_middle",
+                        "x": 0.5,
+                        "y": 0.5,
+                    }
+                ]
+            },
+        )
+
+        saved = _read_project_json(project_path)
+        assert saved["popups"][0]["image_path"] == "Markers/marker-image.png"
+
+        with urllib.request.urlopen(f"{server.url}media/popup/popup-image", timeout=30) as response:
+            assert response.read() == b"popup-image-bytes"
+    finally:
+        server.shutdown()
+
+
+def test_browser_state_exposes_settings_layers_and_folder_precedence(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "settings-layers.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "app",
+                "settings": {
+                    "default_tool": "metrics",
+                    "merge_layout": "pip",
+                },
+            },
+        )
+        _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "folder",
+                "settings": {
+                    "default_tool": "review",
+                    "merge_layout": "above_below",
+                },
+            },
+        )
+
+        state = _get_json(f"{server.url}api/state")
+
+        assert state["settings_layers"]["app"]["default_tool"] == "metrics"
+        assert state["settings_layers"]["folder"]["default_tool"] == "review"
+        assert state["settings"]["default_tool"] == "review"
+        assert state["settings_layers"]["app"]["merge_layout"] == "pip"
+        assert state["settings_layers"]["folder"]["merge_layout"] == "above_below"
+        assert state["settings"]["merge_layout"] == "above_below"
+        assert state["settings_layers"]["project"]["path"] == str(project_path)
     finally:
         server.shutdown()
 

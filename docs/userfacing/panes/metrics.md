@@ -73,7 +73,7 @@ Metrics does not edit the project. It changes when the source data changes:
 
 ## Related Guides
 
-Previous: [export.md](export.md)
+Previous: [settings.md](settings.md)
 Next: [../workflow.md](../workflow.md)
 
 **Last updated:** 2026-04-23

@@ -11,6 +11,7 @@ PROJECT_FILENAME = "project.json"
 INPUT_DIRNAME = "Input"
 PRACTISCORE_DIRNAME = "CSV"
 OUTPUT_DIRNAME = "Output"
+POPUP_DIRNAME = "Markers"
 
 _BROWSER_UPLOAD_PREFIX = re.compile(r"^[A-Fa-f0-9]{32}_")
 
@@ -137,6 +138,9 @@ def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, obj
     export = payload.get("export", {})
     if isinstance(export, dict):
         export["output_path"] = relativize(export.get("output_path"))
+    for popup in payload.get("popups", []):
+        if isinstance(popup, dict):
+            popup["image_path"] = relativize(popup.get("image_path"))
     return payload
 
 
@@ -159,6 +163,9 @@ def _resolve_saved_paths(project: Project, project_path: Path) -> None:
         project.scoring.imported_stage.source_path = resolve(project.scoring.imported_stage.source_path)
     if project.export.output_path:
         project.export.output_path = resolve(project.export.output_path)
+    for popup in project.popups:
+        if popup.image_path:
+            popup.image_path = resolve(popup.image_path)
 
 
 def _normalize_project_assets(project: Project, project_path: Path) -> None:
@@ -195,6 +202,13 @@ def _normalize_project_assets(project: Project, project_path: Path) -> None:
 
     if not project.export.output_path:
         project.export.output_path = str(default_project_output_path(project_path))
+    for popup in project.popups:
+        if popup.image_path:
+            popup.image_path = copy_path_to_project_subdir(
+                project_path,
+                popup.image_path,
+                POPUP_DIRNAME,
+            )
 
 
 def save_project(project: Project, bundle_path: str | Path) -> Path:
