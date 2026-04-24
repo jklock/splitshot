@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260423c" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260424a" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -14,19 +14,21 @@
           <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
-          <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
-          <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
-          <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
-          <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
-          <button class="tool-item" data-tool="markers" type="button" aria-label="Show markers tool"><b>Markers</b></button>
-          <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
-          <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
-          <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
-          <div class="tool-rail-divider" aria-hidden="true"></div>
-          <button class="tool-item" data-tool="settings" type="button" aria-label="Show settings tool"><b>Settings</b></button>
-          <button class="tool-item" data-tool="metrics" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
-          <button class="tool-item" data-tool="shotml" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
+          <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool"><b>Project</b></button>
+          <button class="tool-item" data-tool="merge" data-short="PiP" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
+          <button class="tool-item" data-tool="scoring" data-short="Sco" type="button" aria-label="Show scoring tool"><b>Score</b></button>
+          <button class="tool-item active" data-tool="timing" data-short="Spl" type="button" aria-label="Show splits tool"><b>Splits</b></button>
+          <button class="tool-item" data-tool="markers" data-short="Mar" type="button" aria-label="Show markers tool"><b>Markers</b></button>
+          <button class="tool-item" data-tool="overlay" data-short="Ovr" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
+          <button class="tool-item" data-tool="review" data-short="Rev" type="button" aria-label="Show review tool"><b>Review</b></button>
+          <button class="tool-item" data-tool="export" data-short="Exp" type="button" aria-label="Show export tool"><b>Export</b></button>
+          <button class="tool-item" data-tool="metrics" data-short="Met" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
+          <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
         </nav>
+        <div class="tool-rail-footer" aria-label="Rail controls">
+          <button id="settings-rail-button" class="tool-item" data-tool="settings" data-short="Set" type="button" aria-label="Show settings tool">⚙</button>
+          <button id="toggle-rail" class="tool-item rail-toggle-button" data-short="◀" type="button" aria-label="Minimize left rail">◀</button>
+        </div>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
 
@@ -133,12 +135,6 @@
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
           <aside class="inspector" aria-label="Context tools">
-            <div class="section-header inspector-header">
-              <div class="inspector-status-copy">
-                <strong id="inspector-file">No Video Selected</strong>
-                <span id="inspector-status-copy">Ready.</span>
-              </div>
-            </div>
             <section class="tool-pane" data-tool-pane="review">
               <div class="section-header">
                 <h3>Review</h3>
@@ -189,7 +185,6 @@
               <div class="section-header">
                 <h3>Splits</h3>
                 <div class="section-header-actions">
-                  <button id="show-score-pane" type="button">Show Score</button>
                   <button id="expand-timing" type="button">Edit</button>
                 </div>
               </div>
@@ -358,7 +353,6 @@
               <div class="section-header">
                 <h3>Score</h3>
                 <div class="section-header-actions scoring-header-actions">
-                  <button id="show-splits" type="button">Show splits</button>
                   <button id="expand-scoring" type="button">Edit</button>
                   <strong id="scoring-result">--</strong>
                 </div>
@@ -386,15 +380,7 @@
                 <small>Auto-applies</small>
               </div>
               <div class="control-grid">
-                <label>Overlay visibility
-                  <select id="overlay-position">
-                    <option value="none">Hidden</option>
-                    <option value="top">Top</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
+                <label class="check-row"><input id="show-overlay" type="checkbox" /> Show overlay</label>
                 <label>Badge size
                   <select id="badge-size">
                     <option>XS</option>
@@ -784,127 +770,318 @@
             <section class="tool-pane" data-tool-pane="settings">
               <div class="section-header">
                 <h3>Settings</h3>
-                <small>Layered defaults</small>
+                <small>Master defaults</small>
               </div>
-              <p class="hint">App defaults live on this machine. Folder defaults live in the current project folder and override app defaults for that project.</p>
-              <p id="settings-scope-status" class="hint">No project folder is open. App defaults are active.</p>
-              <div id="settings-layer-summary" class="table-wrap" aria-live="polite"></div>
-              <div class="control-grid">
-                <label>Save scope
-                  <select id="settings-scope">
-                    <option value="app">App Defaults</option>
-                    <option value="folder">Folder Defaults</option>
-                  </select>
-                </label>
-                <label>Landing pane
-                  <select id="settings-default-tool">
-                    <option value="project">Project</option>
-                    <option value="merge">PiP</option>
-                    <option value="scoring">Score</option>
-                    <option value="timing">Splits</option>
-                    <option value="markers">Markers</option>
-                    <option value="overlay">Overlay</option>
-                    <option value="review">Review</option>
-                    <option value="export">Export</option>
-                    <option value="metrics">Metrics</option>
-                    <option value="shotml">ShotML</option>
-                  </select>
-                </label>
-              </div>
-              <label class="check-row"><input id="settings-reopen-last-tool" type="checkbox" /> Reopen the selected pane on new projects</label>
-              <div class="control-grid">
-                <label>Overlay position
-                  <select id="settings-overlay-position">
-                    <option value="none">Hidden</option>
-                    <option value="top">Top</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                  </select>
-                </label>
-                <label>Badge size
-                  <select id="settings-badge-size">
-                    <option>XS</option>
-                    <option>S</option>
-                    <option>M</option>
-                    <option>L</option>
-                    <option>XL</option>
-                  </select>
-                </label>
-                <label>PiP layout
-                  <select id="settings-merge-layout">
-                    <option value="side_by_side">Side by side</option>
-                    <option value="above_below">Above / below</option>
-                    <option value="pip">PiP</option>
-                  </select>
-                </label>
-                <label>PiP size
-                  <select id="settings-pip-size">
-                    <option value="25%">25%</option>
-                    <option value="35%">35%</option>
-                    <option value="50%">50%</option>
-                  </select>
-                </label>
-                <label>Export quality
-                  <select id="settings-export-quality">
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </label>
-                <label>ShotML threshold
-                  <input id="settings-shotml-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
-                </label>
-              </div>
-              <section class="text-box-card compact-style-card">
-                <div class="section-header">
-                  <h3>Marker Template</h3>
-                  <small id="settings-marker-source">Project</small>
+              <p class="hint">Settings now stores the global template that new projects start from.</p>
+
+              <section class="settings-section collapsed" data-settings-section="global-template">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Global template</h3>
+                    <span>Save scope and capture from the current project</span>
+                  </div>
                 </div>
                 <div class="control-grid">
-                  <label class="check-row"><input id="settings-marker-enabled" type="checkbox" /> Enabled</label>
-                  <label>Content
-                    <select id="settings-marker-content-type">
-                      <option value="text">Text</option>
-                      <option value="image">Image</option>
-                      <option value="text_image">Text + Image</option>
+                  <label>Save scope
+                    <select id="settings-scope">
+                      <option value="app">App Defaults</option>
+                      <option value="folder">Folder Defaults</option>
                     </select>
                   </label>
-                  <label>Text source
-                    <select id="settings-marker-text-source">
-                      <option value="score">Score</option>
-                      <option value="shot_label">Shot label</option>
-                      <option value="custom">Custom text</option>
+                  <label>Landing pane
+                    <select id="settings-default-tool">
+                      <option value="project">Project</option>
+                      <option value="merge">PiP</option>
+                      <option value="scoring">Score</option>
+                      <option value="timing">Splits</option>
+                      <option value="markers">Markers</option>
+                      <option value="overlay">Overlay</option>
+                      <option value="review">Review</option>
+                      <option value="export">Export</option>
+                      <option value="metrics">Metrics</option>
+                      <option value="shotml">ShotML</option>
                     </select>
                   </label>
-                  <label>Duration (s)
-                    <input id="settings-marker-duration" type="number" min="0.001" step="0.001" value="1.000" />
-                  </label>
-                  <label>Quadrant
-                    <select id="settings-marker-quadrant">
-                      <option value="top_left">Top left</option>
-                      <option value="top_middle">Top middle</option>
-                      <option value="top_right">Top right</option>
-                      <option value="middle_left">Middle left</option>
-                      <option value="middle_middle">Middle middle</option>
-                      <option value="middle_right">Middle right</option>
-                      <option value="bottom_left">Bottom left</option>
-                      <option value="bottom_middle">Bottom middle</option>
-                      <option value="bottom_right">Bottom right</option>
+                </div>
+                <label class="check-row"><input id="settings-reopen-last-tool" type="checkbox" /> Reopen the selected pane on new projects</label>
+                <div class="button-grid two-up">
+                  <button id="settings-import-current" type="button">Use Current Project As Defaults</button>
+                  <button id="settings-reset-defaults" type="button">Reset Defaults</button>
+                </div>
+                <p id="settings-scope-status" class="hint">No project folder is open. App defaults are the global template.</p>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="scoring">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Scoring</h3>
+                    <span>Default sport for new projects</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>Default sport
+                    <select id="settings-default-match-type">
+                      <option value="uspsa">USPSA</option>
+                      <option value="ipsc">IPSC</option>
+                      <option value="idpa">IDPA</option>
                     </select>
                   </label>
-                  <label>Width
-                    <input id="settings-marker-width" type="number" min="0" step="1" value="0" />
+                </div>
+                <p class="hint">New projects start with this sport unless an import provides a match type.</p>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="pip">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>PiP</h3>
+                    <span>Merge layout, size, and position defaults</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>PiP layout
+                    <select id="settings-merge-layout">
+                      <option value="side_by_side">Side by side</option>
+                      <option value="above_below">Above / below</option>
+                      <option value="pip">PiP</option>
+                    </select>
                   </label>
-                  <label>Height
-                    <input id="settings-marker-height" type="number" min="0" step="1" value="0" />
+                  <label>PiP size
+                    <select id="settings-pip-size">
+                      <option value="25%">25%</option>
+                      <option value="35%">35%</option>
+                      <option value="50%">50%</option>
+                    </select>
                   </label>
-                  <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Follow motion by default</label>
+                  <label>PiP X (0 left, 1 right)
+                    <input id="settings-merge-pip-x" type="number" min="0" max="1" step="0.01" value="1" />
+                  </label>
+                  <label>PiP Y (0 top, 1 bottom)
+                    <input id="settings-merge-pip-y" type="number" min="0" max="1" step="0.01" value="1" />
+                  </label>
                 </div>
               </section>
-              <div class="button-grid two-up">
-                <button id="settings-reset-defaults" type="button">Reset Defaults</button>
-              </div>
+
+              <section class="settings-section collapsed" data-settings-section="overlay">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Overlay</h3>
+                    <span>Badge placement, color, and opacity defaults</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>Overlay position
+                    <select id="settings-overlay-position">
+                      <option value="none">Hidden</option>
+                      <option value="top">Top</option>
+                      <option value="bottom">Bottom</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </label>
+                  <label>Badge size
+                    <select id="settings-badge-size">
+                      <option>XS</option>
+                      <option>S</option>
+                      <option>M</option>
+                      <option>L</option>
+                      <option>XL</option>
+                    </select>
+                  </label>
+                  <label>Stage box background
+                    <input id="settings-overlay-custom-background-color" type="color" value="#000000" />
+                  </label>
+                  <label>Stage box text
+                    <input id="settings-overlay-custom-text-color" type="color" value="#ffffff" />
+                  </label>
+                  <label>Stage box opacity
+                    <input id="settings-overlay-custom-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                  </label>
+                </div>
+                <div id="settings-badge-style-grid" class="settings-badge-style-grid">
+                  <article class="badge-style-card">
+                    <h4>Timer badge</h4>
+                    <label>Background
+                      <input id="settings-timer-badge-background-color" type="color" value="#111827" />
+                    </label>
+                    <label>Text
+                      <input id="settings-timer-badge-text-color" type="color" value="#f9fafb" />
+                    </label>
+                    <label>Opacity
+                      <input id="settings-timer-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                    </label>
+                  </article>
+                  <article class="badge-style-card">
+                    <h4>Shot badge</h4>
+                    <label>Background
+                      <input id="settings-shot-badge-background-color" type="color" value="#1D4ED8" />
+                    </label>
+                    <label>Text
+                      <input id="settings-shot-badge-text-color" type="color" value="#f9fafb" />
+                    </label>
+                    <label>Opacity
+                      <input id="settings-shot-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                    </label>
+                  </article>
+                  <article class="badge-style-card">
+                    <h4>Current shot badge</h4>
+                    <label>Background
+                      <input id="settings-current-shot-badge-background-color" type="color" value="#DC2626" />
+                    </label>
+                    <label>Text
+                      <input id="settings-current-shot-badge-text-color" type="color" value="#f9fafb" />
+                    </label>
+                    <label>Opacity
+                      <input id="settings-current-shot-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                    </label>
+                  </article>
+                  <article class="badge-style-card">
+                    <h4>Score badge</h4>
+                    <label>Background
+                      <input id="settings-hit-factor-badge-background-color" type="color" value="#047857" />
+                    </label>
+                    <label>Text
+                      <input id="settings-hit-factor-badge-text-color" type="color" value="#f9fafb" />
+                    </label>
+                    <label>Opacity
+                      <input id="settings-hit-factor-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                    </label>
+                  </article>
+                </div>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="markers">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Markers</h3>
+                    <span id="settings-marker-source">App template</span>
+                  </div>
+                </div>
+                <div class="text-box-card compact-style-card">
+                  <div class="control-grid">
+                    <label class="check-row"><input id="settings-marker-enabled" type="checkbox" /> Enabled</label>
+                    <label>Content
+                      <select id="settings-marker-content-type">
+                        <option value="text">Text</option>
+                        <option value="image">Image</option>
+                        <option value="text_image">Text + Image</option>
+                      </select>
+                    </label>
+                    <label>Text source
+                      <select id="settings-marker-text-source">
+                        <option value="score">Score</option>
+                        <option value="shot_label">Shot label</option>
+                        <option value="custom">Custom text</option>
+                      </select>
+                    </label>
+                    <label>Duration (s)
+                      <input id="settings-marker-duration" type="number" min="0.001" step="0.001" value="1.000" />
+                    </label>
+                    <label>Quadrant
+                      <select id="settings-marker-quadrant">
+                        <option value="top_left">Top left</option>
+                        <option value="top_middle">Top middle</option>
+                        <option value="top_right">Top right</option>
+                        <option value="middle_left">Middle left</option>
+                        <option value="middle_middle">Middle middle</option>
+                        <option value="middle_right">Middle right</option>
+                        <option value="bottom_left">Bottom left</option>
+                        <option value="bottom_middle">Bottom middle</option>
+                        <option value="bottom_right">Bottom right</option>
+                      </select>
+                    </label>
+                    <label>Width
+                      <input id="settings-marker-width" type="number" min="0" step="1" value="0" />
+                    </label>
+                    <label>Height
+                      <input id="settings-marker-height" type="number" min="0" step="1" value="0" />
+                    </label>
+                    <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Follow motion by default</label>
+                  </div>
+                  <div class="control-grid">
+                    <label>Background
+                      <input id="settings-marker-background-color" type="color" value="#000000" />
+                    </label>
+                    <label>Text
+                      <input id="settings-marker-text-color" type="color" value="#ffffff" />
+                    </label>
+                    <label>Opacity
+                      <input id="settings-marker-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                    </label>
+                  </div>
+                </div>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="export">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Export</h3>
+                    <span>Render quality and FFmpeg defaults</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>Export quality
+                    <select id="settings-export-quality">
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </label>
+                  <label>Preset
+                    <select id="settings-export-preset"></select>
+                  </label>
+                  <label>Frame rate
+                    <select id="settings-export-frame-rate">
+                      <option value="source">Source</option>
+                      <option value="30">30 fps</option>
+                      <option value="60">60 fps</option>
+                    </select>
+                  </label>
+                  <label>Video codec
+                    <select id="settings-export-video-codec">
+                      <option value="h264">H.264</option>
+                      <option value="hevc">HEVC</option>
+                    </select>
+                  </label>
+                  <label>Audio codec
+                    <select id="settings-export-audio-codec">
+                      <option value="aac">AAC</option>
+                    </select>
+                  </label>
+                  <label>Color space
+                    <select id="settings-export-color-space">
+                      <option value="bt709_sdr">Rec.709 SDR</option>
+                    </select>
+                  </label>
+                  <label>FFmpeg preset
+                    <select id="settings-export-ffmpeg-preset">
+                      <option value="ultrafast">ultrafast</option>
+                      <option value="superfast">superfast</option>
+                      <option value="veryfast">veryfast</option>
+                      <option value="faster">faster</option>
+                      <option value="fast">fast</option>
+                      <option value="medium">medium</option>
+                      <option value="slow">slow</option>
+                      <option value="slower">slower</option>
+                    </select>
+                  </label>
+                  <label class="check-row"><input id="settings-export-two-pass" type="checkbox" /> Use two-pass export</label>
+                </div>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="shotml">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>ShotML</h3>
+                    <span>Detector threshold and defaults</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label>ShotML threshold
+                    <input id="settings-shotml-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
+                  </label>
+                </div>
+                <p class="hint">Use the ShotML pane for the full detector setup and proposal workflow.</p>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="project">

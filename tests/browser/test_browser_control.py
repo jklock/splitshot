@@ -2091,7 +2091,14 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         assert reset["settings"]["merge_layout"] == "side_by_side"
         assert reset["settings"]["pip_size"] == "35%"
         assert reset["settings"]["export_quality"] == "high"
+        assert reset["settings"]["default_match_type"] == "uspsa"
         assert reset["settings"]["badge_size"] == "M"
+        assert reset["settings"]["merge_pip_x"] == 1.0
+        assert reset["settings"]["merge_pip_y"] == 1.0
+        assert reset["settings"]["export_preset"] == "source"
+        assert reset["settings"]["export_frame_rate"] == "source"
+        assert reset["settings"]["marker_template"]["background_color"] == "#000000"
+        assert reset["settings"]["marker_template"]["opacity"] == 0.9
         assert reset["settings"]["shotml_defaults"]["min_shot_interval_ms"] == 100
         assert reset["settings"]["shotml_defaults"]["shot_peak_min_spacing_ms"] == 200
 
@@ -2100,7 +2107,12 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         assert saved["merge"]["layout"] == "side_by_side"
         assert saved["merge"]["pip_size"] == "35%"
         assert saved["merge"]["pip_size_percent"] == 35
+        assert saved["merge"]["pip_x"] == 1.0
+        assert saved["merge"]["pip_y"] == 1.0
         assert saved["export"]["quality"] == "high"
+        assert saved["export"]["preset"] == "source"
+        assert saved["export"]["frame_rate"] == "source"
+        assert saved["scoring"]["match_type"] == "uspsa"
         assert saved["analysis"]["shotml_settings"]["min_shot_interval_ms"] == 100
         assert saved["analysis"]["shotml_settings"]["shot_peak_min_spacing_ms"] == 200
     finally:

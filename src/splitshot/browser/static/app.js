@@ -16,6 +16,7 @@ let reviewTextBoxExpansion = new Map();
 let popupBubbleExpansion = new Map();
 let mergeSourceExpansion = new Map();
 let shotMLSectionExpansion = new Map();
+let settingsSectionExpansion = new Map();
 let selectedPopupBubbleId = null;
 let selectedPopupKeyframeOffsetMs = 0;
 let popupFilterMode = window.localStorage.getItem("splitshot.popupFilterMode") || "all";
@@ -23,6 +24,8 @@ let popupAuthoringCollapsed = false;
 let popupPlaybackWindow = null;
 let popupShotEditorOpen = false;
 let scoringWorkbenchExpanded = false;
+let overlayVisibilityPosition = "bottom";
+let railCollapsed = window.localStorage.getItem("splitshot.railCollapsed") === "true";
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -2510,6 +2513,29 @@ function renderCollapsibleInspectorSections() {
   }
 }
 
+function isSettingsSectionExpanded(sectionId) {
+  if (settingsSectionExpansion.has(sectionId)) return Boolean(settingsSectionExpansion.get(sectionId));
+  return false;
+}
+
+function setSettingsSectionExpanded(sectionId, expanded) {
+  if (!sectionId) return;
+  settingsSectionExpansion.set(sectionId, Boolean(expanded));
+}
+
+function renderSettingsSections() {
+  document.querySelectorAll("[data-settings-section]").forEach((section) => {
+    if (!(section instanceof HTMLElement)) return;
+    const sectionId = section.dataset.settingsSection || "";
+    const expanded = isSettingsSectionExpanded(sectionId);
+    section.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(section, expanded, () => {
+      setSettingsSectionExpanded(sectionId, !expanded);
+      renderSettingsSections();
+    });
+  });
+}
+
 function buildTextBoxCard(box, index) {
   const card = document.createElement("section");
   card.className = "text-box-card";
@@ -2829,6 +2855,9 @@ function normalizePopupTemplate(template = {}) {
     width: Math.max(0, Math.round(Number(template.width ?? 0) || 0)),
     height: Math.max(0, Math.round(Number(template.height ?? 0) || 0)),
     follow_motion: Boolean(template.follow_motion ?? false),
+    background_color: String(template.background_color || "#000000"),
+    text_color: String(template.text_color || "#ffffff"),
+    opacity: Math.max(0, Math.min(1, template.opacity === undefined || template.opacity === null || template.opacity === "" ? 0.9 : Number(template.opacity))),
   };
 }
 
@@ -4100,6 +4129,7 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
 }
 
 function readPopupTemplatePayload() {
+  const current = currentPopupTemplate();
   return normalizePopupTemplate({
     enabled: $("popup-template-enabled")?.checked ?? true,
     content_type: $("popup-template-content-type")?.value || "text",
@@ -4109,6 +4139,9 @@ function readPopupTemplatePayload() {
     width: Number($("popup-template-width")?.value || 0),
     height: Number($("popup-template-height")?.value || 0),
     follow_motion: $("popup-template-follow-motion")?.checked ?? false,
+    background_color: current.background_color,
+    text_color: current.text_color,
+    opacity: current.opacity,
   });
 }
 
@@ -4373,7 +4406,7 @@ function applyLayoutState() {
     inspectorWidth: clamp(layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
     waveformHeight: clamp(layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
   };
-  setCssPixels("--rail-width", layoutSizes.railWidth);
+  setCssPixels("--rail-width", railCollapsed ? 48 : layoutSizes.railWidth);
   setCssPixels("--inspector-width", layoutSizes.inspectorWidth);
   setCssPixels("--waveform-height", layoutSizes.waveformHeight);
   const shell = document.querySelector(".cockpit-shell");
@@ -4382,6 +4415,13 @@ function applyLayoutState() {
     shell.classList.toggle("layout-unlocked", !layoutLocked);
     shell.classList.toggle("resizing-layout", activeResize !== null);
     shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
+    shell.classList.toggle("rail-collapsed", railCollapsed);
+  }
+  const railToggle = $("toggle-rail");
+  if (railToggle) {
+    railToggle.textContent = railCollapsed ? "▶" : "◀";
+    railToggle.title = railCollapsed ? "Expand left rail" : "Minimize left rail";
+    railToggle.setAttribute("aria-label", railToggle.title);
   }
   document.querySelectorAll("[data-layout-lock-toggle]").forEach((toggle) => {
     const target = toggle.id.replace("toggle-layout-lock-", "");
@@ -4710,6 +4750,142 @@ function applyRemoteState(nextState) {
   currentProjectId = nextProjectId;
   state = nextState;
   applyProjectUiState(nextUiState);
+  if (!stateHasShot(state, selectedShotId)) {
+    selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;
+  }
+  syncSelectedShotId(state, previousSelectionContext);
+  syncLocalProjectUiState();
+}
+
+function hasCompleteProjectState(nextState) {
+  return Boolean(
+    nextState?.project?.analysis
+      && nextState?.project?.overlay
+      && nextState?.project?.merge
+      && nextState?.project?.export
+      && nextState?.project?.ui_state
+      && nextState?.metrics
+      && nextState?.media,
+  );
+}
+
+function stateHasShot(nextState, shotId) {
+  return Boolean(shotId)
+    && (nextState?.project?.analysis?.shots || []).some((shot) => shot.id === shotId);
+}
+
+function resetLocalProjectView() {
+  selectedShotId = null;
+  draggingShotId = null;
+  draggingShotPointerId = null;
+  pendingDragTimeMs = null;
+  exportPathDraft = "";
+  projectDetailsDraft = { name: null, description: null };
+  exportLogLines = [];
+  timingRowEdits = new Set();
+  timingAdjustmentDrafts = new Map();
+  scoringRowEdits = new Set();
+  applyProjectUiState({
+    ...DEFAULT_PROJECT_UI_STATE,
+    active_tool: "project",
+    waveform_mode: "select",
+    timeline_zoom: 1,
+    timeline_offset_ms: 0,
+    layout_locked: true,
+    rail_width: 84,
+    inspector_width: 440,
+    waveform_height: 206,
+  });
+  window.localStorage.removeItem("splitshot.waveform.zoomX");
+  window.localStorage.removeItem("splitshot.waveform.offsetMs");
+  resetMediaElement($("primary-video"));
+  resetMediaElement($("secondary-video"));
+  const secondaryImage = $("secondary-image");
+  if (secondaryImage) secondaryImage.hidden = true;
+  [
+    "project-title",
+    "rail-project",
+    "media-badge",
+    "project-name",
+    "project-description",
+    "practiscore-status",
+    "current-file",
+    "timing-summary",
+    "selected-shot-copy",
+    "selected-timing-shot",
+    "scoring-result",
+    "scoring-imported-caption",
+    "status",
+    "processing-message",
+    "processing-detail",
+  ].forEach((id) => {
+    const element = $(id);
+    if (!element) return;
+    if (id === "project-title" || id === "rail-project") {
+      element.textContent = "Untitled Project";
+    } else if (id === "project-name") {
+      element.value = "Untitled Project";
+    } else if (id === "project-description") {
+      element.value = "";
+    } else if (id === "practiscore-status") {
+      element.textContent = "No results imported";
+    } else if (id === "media-badge" || id === "current-file") {
+      element.textContent = "No Video Selected";
+    } else if (id === "timing-summary") {
+      element.textContent = "No timing data.";
+    } else if (id === "selected-shot-copy") {
+      element.textContent = "No shot selected.";
+    } else if (id === "selected-timing-shot") {
+      element.textContent = "No shot selected";
+    } else if (id === "scoring-result") {
+      element.textContent = "--";
+    } else if (id === "scoring-imported-caption") {
+      element.textContent = "No PractiScore stage imported.";
+    } else if (id === "status" || id === "processing-message") {
+      element.textContent = "Ready.";
+    } else if (id === "processing-detail") {
+      element.textContent = "Local processing";
+    }
+  });
+  [
+    "primary-file-path",
+    "project-path",
+    "export-path",
+    "match-type",
+    "match-stage-number",
+    "match-competitor-name",
+    "match-competitor-place",
+  ].forEach((id) => {
+    const element = $(id);
+    if (element) element.value = "";
+  });
+  const mergeMediaInput = $("merge-media-input");
+  if (mergeMediaInput) mergeMediaInput.value = "";
+  const practiscoreFileInput = $("practiscore-file-input");
+  if (practiscoreFileInput) practiscoreFileInput.value = "";
+  const mergeMediaList = $("merge-media-list");
+  if (mergeMediaList) mergeMediaList.innerHTML = "";
+  renderDetailsList("practiscore-import-summary", []);
+  renderDetailsList("scoring-imported-summary", []);
+  setActiveTool("project");
+  stopOverlayLoop();
+}
+
+function resetMediaElement(video) {
+  if (!(video instanceof HTMLMediaElement)) return;
+  video.pause();
+  video.removeAttribute("src");
+  video.dataset.sourcePath = "";
+  video.dataset.mediaUrl = "";
+  video.load();
+}
+
+function restoreVideoElementFrame(video) {
+  if (!(video instanceof HTMLVideoElement)) return;
+  if (video.hidden || !video.isConnected || !video.currentSrc) return;
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+  video.style.willChange = "transform";
+  void video.getBoundingClientRect();
   window.requestAnimationFrame(() => {
     if (video.style.willChange === "transform") video.style.willChange = "";
   });
@@ -5102,10 +5278,6 @@ function renderHeader() {
   $("current-file").textContent = primaryName;
   const statusCopy = $("status-copy");
   if (statusCopy) statusCopy.textContent = state.status;
-  const inspectorFile = $("inspector-file");
-  if (inspectorFile) inspectorFile.textContent = primaryName;
-  const inspectorStatusCopy = $("inspector-status-copy");
-  if (inspectorStatusCopy) inspectorStatusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
   $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/My Match`;
@@ -5124,6 +5296,43 @@ function renderStats() {
 
 function currentSettings() {
   return state?.settings || {};
+}
+
+function readNumberSetting(id, defaultValue) {
+  const element = $(id);
+  if (!element) return defaultValue;
+  const value = element.value;
+  if (value === "") return defaultValue;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : defaultValue;
+}
+
+function syncSettingsBadgeStyle(prefix, style = {}) {
+  syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
+  syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
+  syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
+}
+
+function readSettingsBadgeStyle(prefix) {
+  return {
+    background_color: $(`${prefix}-background-color`)?.value || "#000000",
+    text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
+    opacity: readNumberSetting(`${prefix}-opacity`, 0.9),
+  };
+}
+
+function syncSettingsMarkerTemplate(template = {}) {
+  syncControlChecked($("settings-marker-enabled"), Boolean(template.enabled ?? true));
+  syncControlValue($("settings-marker-content-type"), template.content_type ?? "text");
+  syncControlValue($("settings-marker-text-source"), template.text_source ?? "score");
+  syncControlValue($("settings-marker-duration"), (Number(template.duration_ms ?? 1000) / 1000).toFixed(3));
+  syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
+  syncControlValue($("settings-marker-width"), template.width ?? 0);
+  syncControlValue($("settings-marker-height"), template.height ?? 0);
+  syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
+  syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
+  syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
+  syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
 }
 
 const SETTINGS_LAYER_FIELDS = [
@@ -5281,6 +5490,11 @@ function renderSettingsPane() {
   const layers = state?.settings_layers || {};
   const hasProjectPath = Boolean(state?.project?.path);
   const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
+  const projectOverlay = state?.project?.overlay || {};
+  const projectExport = state?.project?.export || {};
+  const projectScoring = state?.project?.scoring || {};
+  const projectAnalysis = state?.project?.analysis || {};
+  const markerTemplate = normalizePopupTemplate(state?.project?.popup_template || settings.marker_template || {});
   const scopeSelect = $("settings-scope");
   const scopeStatus = $("settings-scope-status");
   if (scopeSelect) {
@@ -5294,42 +5508,48 @@ function renderSettingsPane() {
     scopeStatus.textContent = folderSettingsError
       ? folderSettingsError
       : !hasProjectPath
-      ? "No project folder is open. App defaults are active."
+      ? "No project folder is open. App defaults are the global template."
       : (hasFolderLayer
-        ? "Folder defaults are active for this project. Choose app or folder to select where edits are saved."
-        : "No folder defaults file exists yet. Effective values currently come from app defaults.");
+        ? "Folder defaults are active for this project and override the global template here."
+        : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
   }
   const shotmlDefaults = settings.shotml_defaults || {};
-  const markerTemplate = normalizePopupTemplate(state?.project?.popup_template || settings.marker_template || {});
+  renderExportPresetOptions("settings-export-preset", null, settings.export_preset ?? projectExport.preset ?? "source");
+  syncControlValue($("settings-default-match-type"), settings.default_match_type ?? projectScoring.match_type ?? "uspsa");
   syncControlValue($("settings-overlay-position"), settings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
   syncControlValue($("settings-badge-size"), settings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
+  syncControlValue($("settings-overlay-custom-background-color"), settings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
+  syncControlValue($("settings-overlay-custom-text-color"), settings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
+  syncControlValue($("settings-overlay-custom-opacity"), settings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+  syncSettingsBadgeStyle("settings-timer-badge", settings.timer_badge || projectOverlay.timer_badge || {});
+  syncSettingsBadgeStyle("settings-shot-badge", settings.shot_badge || projectOverlay.shot_badge || {});
+  syncSettingsBadgeStyle("settings-current-shot-badge", settings.current_shot_badge || projectOverlay.current_shot_badge || {});
+  syncSettingsBadgeStyle("settings-hit-factor-badge", settings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
   syncControlValue($("settings-merge-layout"), settings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
   syncControlValue($("settings-pip-size"), settings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
+  syncControlValue($("settings-merge-pip-x"), settings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
+  syncControlValue($("settings-merge-pip-y"), settings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
   syncControlValue($("settings-export-quality"), settings.export_quality ?? state?.project?.export?.quality ?? "high");
+  syncControlValue($("settings-export-frame-rate"), settings.export_frame_rate ?? projectExport.frame_rate ?? "source");
+  syncControlValue($("settings-export-video-codec"), settings.export_video_codec ?? projectExport.video_codec ?? "h264");
+  syncControlValue($("settings-export-audio-codec"), settings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
+  syncControlValue($("settings-export-color-space"), settings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
+  syncControlChecked($("settings-export-two-pass"), Boolean(settings.export_two_pass ?? projectExport.two_pass ?? false));
+  syncControlValue($("settings-export-ffmpeg-preset"), settings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
   syncControlValue($("settings-default-tool"), settings.default_tool ?? "project");
   syncControlChecked($("settings-reopen-last-tool"), Boolean(settings.reopen_last_tool ?? true));
   syncControlValue(
     $("settings-shotml-threshold"),
-    Number(shotmlDefaults.detection_threshold ?? state?.project?.analysis?.shotml_settings?.detection_threshold ?? 0.35),
+    Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
   );
-  syncControlChecked($("settings-marker-enabled"), markerTemplate.enabled);
-  syncControlValue($("settings-marker-content-type"), markerTemplate.content_type);
-  syncControlValue($("settings-marker-text-source"), markerTemplate.text_source);
-  syncControlValue($("settings-marker-duration"), (markerTemplate.duration_ms / 1000).toFixed(3));
-  syncControlValue($("settings-marker-quadrant"), markerTemplate.quadrant);
-  syncControlValue($("settings-marker-width"), markerTemplate.width);
-  syncControlValue($("settings-marker-height"), markerTemplate.height);
-  syncControlChecked($("settings-marker-follow-motion"), markerTemplate.follow_motion);
+  syncSettingsMarkerTemplate(markerTemplate);
   const markerSource = $("settings-marker-source");
   if (markerSource) {
     markerSource.textContent = hasProjectPath
-      ? (Object.keys(layers.folder || {}).length > 0 ? "Folder + project" : "Project")
-      : "App";
+      ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
+      : "App template";
   }
-  renderSettingsLayerSummary(settings, markerTemplate, layers);
-}
-
-function wizardCurrentStepIndex() {
+  renderSettingsSections();
 }
 
 function mergeSourcePipRect(source, frameRect, pipSizeValue = null) {
@@ -6953,9 +7173,9 @@ function renderPractiScoreSummaries() {
   ]);
 }
 
-function renderExportPresetOptions() {
-  const select = $("export-preset");
-  const selected = state.project.export.preset;
+function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = state?.project?.export?.preset) {
+  const select = $(selectId);
+  if (!select) return;
   select.innerHTML = "";
   (state.export_presets || []).forEach((preset) => {
     const option = document.createElement("option");
@@ -6967,10 +7187,13 @@ function renderExportPresetOptions() {
   custom.value = "custom";
   custom.textContent = "Custom";
   select.appendChild(custom);
-  const hasSelected = Array.from(select.options).some((option) => option.value === selected);
-  select.value = hasSelected ? selected : "custom";
-  const preset = (state.export_presets || []).find((item) => item.id === select.value);
-  $("export-preset-description").textContent = preset ? preset.description : "Manual custom export settings.";
+  const hasSelected = Array.from(select.options).some((option) => option.value === selectedValue);
+  select.value = hasSelected ? selectedValue : "custom";
+  if (descriptionId) {
+    const preset = (state.export_presets || []).find((item) => item.id === select.value);
+    const description = $(descriptionId);
+    if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
+  }
 }
 
 function renderExportLog() {
@@ -7651,7 +7874,13 @@ function renderControls() {
   $("pip-size-label").textContent = `${pipValue}%`;
   syncControlValue($("pip-x"), state.project.merge.pip_x ?? 1);
   syncControlValue($("pip-y"), state.project.merge.pip_y ?? 1);
-  syncControlValue($("overlay-position"), state.project.overlay.position);
+  const overlayPosition = state.project.overlay.position || "none";
+  if (overlayPosition !== "none") {
+    overlayVisibilityPosition = overlayPosition;
+  } else if (!overlayVisibilityPosition || overlayVisibilityPosition === "none") {
+    overlayVisibilityPosition = state.settings?.overlay_position || "bottom";
+  }
+  syncControlChecked($("show-overlay"), overlayPosition !== "none");
   syncControlValue($("badge-size"), state.project.overlay.badge_size);
   overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
@@ -10047,8 +10276,11 @@ function readOverlayPayload() {
   });
   const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));
   const primaryTextBox = preferredLegacyTextBox(textBoxes);
+  const showOverlay = $("show-overlay")?.checked ?? true;
+  const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";
+  if (showOverlay && position !== "none") overlayVisibilityPosition = position;
   return {
-    position: $("overlay-position").value,
+    position,
     badge_size: $("badge-size").value,
     styles,
     scoring_colors: scoringColors,
@@ -10578,6 +10810,11 @@ function wireEvents() {
     const result = await callApi("/api/import/primary", { path });
     if (result) setActiveTool("project");
   }));
+  $("toggle-rail")?.addEventListener("click", () => {
+    railCollapsed = !railCollapsed;
+    window.localStorage.setItem("splitshot.railCollapsed", String(railCollapsed));
+    requestRender();
+  });
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
       await flushPendingProjectDrafts();
@@ -10699,7 +10936,10 @@ function wireEvents() {
   $("reset-waveform-view").addEventListener("click", resetWaveformView);
   $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
   $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
-  $("expand-scoring")?.addEventListener("click", () => setScoringWorkbenchExpanded(true));
+  $("expand-scoring")?.addEventListener("click", () => {
+    setScoringWorkbenchExpanded(true);
+    $("scoring-workbench")?.scrollIntoView({ block: "start" });
+  });
   $("collapse-scoring")?.addEventListener("click", () => setScoringWorkbenchExpanded(false));
   $("expand-metrics")?.addEventListener("click", () => setMetricsExpanded(true));
   $("collapse-metrics")?.addEventListener("click", () => setMetricsExpanded(false));
@@ -10795,7 +11035,7 @@ function wireEvents() {
   });
   [
     "max-visible-shots",
-    "overlay-position",
+    "show-overlay",
     "shot-quadrant",
     "shot-direction",
     "overlay-custom-x",
@@ -10889,76 +11129,124 @@ function wireEvents() {
       callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() });
     });
   });
-  $("show-splits")?.addEventListener("click", () => setActiveTool("timing"));
-  $("show-score-pane")?.addEventListener("click", () => setActiveTool("scoring"));
-  const readSettingsDefaultsPayload = () => ({
-    scope: $("settings-scope")?.value || "app",
-    settings: {
-      overlay_position: $("settings-overlay-position").value,
-      badge_size: $("settings-badge-size").value,
-      merge_layout: $("settings-merge-layout").value,
-      pip_size: $("settings-pip-size").value,
-      export_quality: $("settings-export-quality").value,
-      default_tool: $("settings-default-tool").value,
-      reopen_last_tool: $("settings-reopen-last-tool").checked,
-      detection_threshold: Number($("settings-shotml-threshold").value || 0.35),
-      marker_template: {
-        enabled: $("settings-marker-enabled").checked,
-        content_type: $("settings-marker-content-type").value,
-        text_source: $("settings-marker-text-source").value,
-        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration").value || 1) || 1) * 1000)),
-        quadrant: $("settings-marker-quadrant").value,
-        width: Number($("settings-marker-width").value || 0),
-        height: Number($("settings-marker-height").value || 0),
-        follow_motion: $("settings-marker-follow-motion").checked,
+  const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
+    const projectOverlay = state?.project?.overlay || {};
+    const projectExport = state?.project?.export || {};
+    const projectScoring = state?.project?.scoring || {};
+    const projectAnalysis = state?.project?.analysis || {};
+    const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || settings.marker_template || {});
+    const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
+    const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
+    const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
+    const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
+    const markerTemplate = projectDefaults
+      ? projectPopupTemplate
+      : normalizePopupTemplate({
+        enabled: $("settings-marker-enabled")?.checked ?? true,
+        content_type: $("settings-marker-content-type")?.value || "text",
+        text_source: $("settings-marker-text-source")?.value || "score",
+        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
+        quadrant: $("settings-marker-quadrant")?.value || "middle_middle",
+        width: Number($("settings-marker-width")?.value || 0),
+        height: Number($("settings-marker-height")?.value || 0),
+        follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
+        background_color: $("settings-marker-background-color")?.value || "#000000",
+        text_color: $("settings-marker-text-color")?.value || "#ffffff",
+        opacity: readNumberSetting("settings-marker-opacity", 0.9),
+      });
+    return {
+      scope: $("settings-scope")?.value || "app",
+      settings: {
+        default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
+        overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
+        badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
+        overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
+        overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
+        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+        timer_badge: timerBadge,
+        shot_badge: shotBadge,
+        current_shot_badge: currentShotBadge,
+        hit_factor_badge: hitFactorBadge,
+        merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
+        pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
+        merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
+        merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+        export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
+        export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
+        export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
+        export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
+        export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
+        export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
+        export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
+        export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
+        default_tool: $("settings-default-tool")?.value || "project",
+        reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
+        detection_threshold: projectDefaults
+          ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
+          : readNumberSetting("settings-shotml-threshold", 0.35),
+        marker_template: markerTemplate,
       },
-    },
-  });
-  const applySettingsDefaults = () => callApi("/api/settings", readSettingsDefaultsPayload());
-  const applySettingsOverlayDefaults = () => applySettingsDefaults();
-  const applySettingsMergeDefaults = () => applySettingsDefaults();
-  const applySettingsExportDefaults = () => applySettingsDefaults();
+    };
+  };
+  const applySettingsDefaults = (options = {}) => callApi("/api/settings", readSettingsDefaultsPayload(options));
   const applySettingsShotMLDefaults = () => {
-    const threshold = Number($("settings-shotml-threshold").value);
+    const threshold = readNumberSetting("settings-shotml-threshold", 0.35);
     if (!Number.isFinite(threshold)) return;
     return applySettingsDefaults();
   };
-  ["settings-overlay-position", "settings-badge-size"].forEach((id) => {
-    $(id)?.addEventListener("change", applySettingsOverlayDefaults);
-  });
-  ["settings-merge-layout", "settings-pip-size"].forEach((id) => {
-    $(id)?.addEventListener("change", applySettingsMergeDefaults);
-  });
-  $("settings-export-quality")?.addEventListener("change", applySettingsExportDefaults);
-  $("settings-shotml-threshold")?.addEventListener("change", applySettingsShotMLDefaults);
-  $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    applySettingsShotMLDefaults();
-  });
+  $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
   [
     "settings-scope",
     "settings-default-tool",
+    "settings-reopen-last-tool",
+    "settings-default-match-type",
+    "settings-overlay-position",
+    "settings-badge-size",
+    "settings-overlay-custom-background-color",
+    "settings-overlay-custom-text-color",
+    "settings-merge-layout",
+    "settings-pip-size",
+    "settings-export-quality",
+    "settings-export-preset",
+    "settings-export-frame-rate",
+    "settings-export-video-codec",
+    "settings-export-audio-codec",
+    "settings-export-color-space",
+    "settings-export-two-pass",
+    "settings-export-ffmpeg-preset",
     "settings-marker-content-type",
     "settings-marker-text-source",
     "settings-marker-quadrant",
-  ].forEach((id) => $(id)?.addEventListener("change", applySettingsDefaults));
-  [
-    "settings-reopen-last-tool",
     "settings-marker-enabled",
     "settings-marker-follow-motion",
-  ].forEach((id) => $(id)?.addEventListener("change", applySettingsDefaults));
+    "settings-marker-background-color",
+    "settings-marker-text-color",
+  ].forEach((id) => $(id)?.addEventListener("change", () => applySettingsDefaults()));
   [
+    "settings-overlay-custom-opacity",
+    "settings-timer-badge-opacity",
+    "settings-shot-badge-opacity",
+    "settings-current-shot-badge-opacity",
+    "settings-hit-factor-badge-opacity",
+    "settings-merge-pip-x",
+    "settings-merge-pip-y",
+    "settings-marker-opacity",
     "settings-marker-duration",
     "settings-marker-width",
     "settings-marker-height",
   ].forEach((id) => {
-    $(id)?.addEventListener("change", applySettingsDefaults);
+    $(id)?.addEventListener("change", () => applySettingsDefaults());
     $(id)?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
       applySettingsDefaults();
     });
+  });
+  $("settings-shotml-threshold")?.addEventListener("change", applySettingsShotMLDefaults);
+  $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applySettingsShotMLDefaults();
   });
   $("settings-reset-defaults")?.addEventListener("click", async () => {
     await callApi("/api/settings/reset-defaults", {});

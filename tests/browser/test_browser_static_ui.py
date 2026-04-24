@@ -10,9 +10,10 @@ STATIC_ROOT = Path("src/splitshot/browser/static")
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    css = (STATIC_ROOT / "styles.css").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260423c"' in html
+    assert 'href="/static/styles.css?v=20260424a"' in html
     assert 'src="/static/app.js?v=20260423c"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
@@ -29,9 +30,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert html.index('data-tool="markers"') < html.index('data-tool="overlay"')
     assert html.index('data-tool="overlay"') < html.index('data-tool="review"')
     assert html.index('data-tool="review"') < html.index('data-tool="export"')
-    assert html.index('data-tool="export"') < html.index('data-tool="settings"')
-    assert html.index('data-tool="settings"') < html.index('data-tool="metrics"')
+    assert html.index('data-tool="export"') < html.index('data-tool="metrics"')
     assert html.index('data-tool="metrics"') < html.index('data-tool="shotml"')
+    assert html.index('data-tool="shotml"') < html.index('data-tool="settings"')
     assert 'data-tool="project"' in html
     assert 'data-tool="metrics"' in html
     assert 'data-tool="review"' in html
@@ -42,7 +43,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="overlay"' in html
     assert 'data-tool="markers"' in html
     assert 'data-tool="merge"' in html
-    assert 'data-tool="settings"' in html
+    assert 'data-tool="settings" data-short="Set"' in html
+    assert 'id="settings-rail-button"' in html
+    assert 'id="toggle-rail"' in html
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
@@ -53,6 +56,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "<b>ShotML</b>" in html
     assert "<b>Score</b>" in html
     assert "<b>Markers</b>" in html
+    assert "⚙" in html
+    for short in ["Pro", "PiP", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
+        assert f'data-short="{short}"' in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
     assert 'class="command-strip"' not in html
@@ -77,8 +83,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="practiscore-import-summary"' in html
     assert 'id="current-file"' in html
     assert 'id="status-copy"' in html
-    assert 'id="inspector-file"' in html
-    assert 'id="inspector-status-copy"' in html
+    assert 'id="inspector-file"' not in html
+    assert 'id="inspector-status-copy"' not in html
     assert 'id="processing-bar"' in html
     assert '<span id="media-badge">No Video Selected</span>' in html
     assert 'id="selected-shot-panel"' in html
@@ -106,6 +112,17 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Add Second Video" not in html
     assert "Add PiP Media" in html
     assert 'id="merge-media-input"' in html
+    assert 'tool-item[data-tool="metrics"]:not(.active)' in css
+    assert 'tool-item[data-tool="settings"]:not(.active)' not in css
+    rail_footer_css = css[css.index('.tool-rail-footer {') : css.index('.tool-rail-divider {')]
+    assert 'display: flex;' in rail_footer_css
+    assert 'flex-direction: column;' in rail_footer_css
+    assert 'grid-template-columns: repeat(2, minmax(0, 1fr));' not in rail_footer_css
+    assert '.tool-rail-footer .tool-item {' in rail_footer_css
+    assert 'width: 44px;' in rail_footer_css
+    assert 'height: 44px;' in rail_footer_css
+    assert '#settings-rail-button {' in rail_footer_css
+    assert '#toggle-rail {' in rail_footer_css
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
@@ -156,14 +173,41 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="popup-shot-linked-list"' in html
     assert 'id="popup-open-shot-editor"' in html
     assert 'id="popup-shot-editor"' in html
+    assert 'id="settings-default-match-type"' in html
+    assert 'id="settings-import-current"' in html
     assert 'id="settings-overlay-position"' in html
     assert 'id="settings-badge-size"' in html
+    assert 'id="settings-overlay-custom-opacity"' in html
+    assert 'id="settings-badge-style-grid"' in html
+    assert 'id="settings-timer-badge-background-color"' in html
+    assert 'id="settings-hit-factor-badge-opacity"' in html
     assert 'id="settings-merge-layout"' in html
+    assert 'id="settings-merge-pip-x"' in html
     assert 'id="settings-pip-size"' in html
     assert 'id="settings-export-quality"' in html
+    assert 'id="settings-export-preset"' in html
+    assert 'id="settings-export-ffmpeg-preset"' in html
+    assert 'id="settings-marker-background-color"' in html
+    assert 'id="settings-marker-opacity"' in html
     assert 'id="settings-shotml-threshold"' in html
     assert 'id="settings-scope-status"' in html
-    assert 'id="settings-layer-summary"' in html
+    assert 'id="settings-layer-summary"' not in html
+    assert 'class="settings-section collapsed"' in html
+    for section_id in ["global-template", "scoring", "pip", "overlay", "markers", "export", "shotml"]:
+        assert f'data-settings-section="{section_id}"' in html
+    assert 'Open Project' not in html
+    assert 'Open PiP' not in html
+    assert 'Open Score' not in html
+    assert 'Open Splits' not in html
+    assert 'Open Markers' not in html
+    assert 'Open Overlay' not in html
+    assert 'Open Review' not in html
+    assert 'Open Export' not in html
+    assert 'Open Metrics' not in html
+    assert 'Open ShotML' not in html
+    assert 'Timing tools still live in the Splits pane' not in html
+    assert 'Review tools stay in the Review pane' not in html
+    assert 'Summary and reporting stay in Metrics' not in html
     assert 'id="settings-reset-defaults"' in html
     assert 'id="wizard-panel"' not in html
     assert 'id="wizard-summary"' not in html
@@ -304,7 +348,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert html.index('id="waveform"') < html.index('class="waveform-actions waveform-footer"')
     assert 'id="badge-style-grid"' in html
     assert 'id="score-color-grid"' in html
-    assert 'id="overlay-position"' in html
+    assert 'id="show-overlay"' in html
+    assert 'Overlay visibility' not in html
     assert '<option value="none">Hidden</option>' in html
     assert '<option value="bottom">Bottom</option>' in html
     assert 'id="project-name"' in html
@@ -465,7 +510,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'overlay: readOverlayPayload(),' in js
     assert 'merge: {' in js
     assert 'scoring: {' in js
-    assert 'position: $("overlay-position").value,' in js
+    assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
+    assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
     assert 'await callApi("/api/export", buildExportPayload(path));' in js
@@ -728,8 +774,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
     assert '[currentResultLabel, currentResultValue],' in js
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
-    assert 'syncControlValue($("overlay-position"), state.project.overlay.position);' in js
-    assert 'position: $("overlay-position").value,' in js
+    assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
+    assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
     assert 'const badgeDisplayLabels = {' in js
     assert 'card.className = "style-card badge-style-card";' in js
     assert '<span class="style-card-label">Bg</span>' in js
@@ -1171,10 +1217,10 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
                 "popup-shot-editor-next",
                 "popup-shot-editor-duplicate",
                 "popup-shot-editor-delete",
-                "show-splits",
-            "show-score-pane",
+                "show-overlay",
             "expand-scoring",
             "collapse-scoring",
+                "settings-import-current",
             "settings-reset-defaults",
             "add-timing-event",
         "delete-selected",
@@ -1200,6 +1246,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "generate-shotml-proposals",
         "reset-shotml-defaults",
         "toggle-layout-lock-video",
+        "toggle-rail",
         "resize-rail",
         "resize-sidebar",
         "resize-waveform",

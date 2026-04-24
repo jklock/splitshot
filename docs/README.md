@@ -91,6 +91,7 @@ The screenshot script covers:
 ## Development Docs
 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
+- [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
 - [scripts/README.md](../scripts/README.md)
 
 ## Repository Files
