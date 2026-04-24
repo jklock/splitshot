@@ -87,6 +87,10 @@ As of 2026-04-18, `uv run pytest --cov=src/splitshot --cov-report=term-missing` 
 - coverage work stays honest about the remaining branches that need deterministic tests;
 - we do not claim 100% until the measured command actually reports it.
 
+Browser-visible controls also have an explicit coverage map in [browser-control-qa-matrix.md](browser-control-qa-matrix.md). When you change a button or field, update that matrix row and the matching tests in the same change so the browser QA claim stays explicit.
+
+The browser interaction smoke tests now cover waveform expand/zoom/amplitude, waveform pan and shot movement, overlay visibility and badge toggles, and review text-box creation and drag in [tests/browser/test_browser_interactions.py](../../tests/browser/test_browser_interactions.py).
+
 | Area | Current hotspots | Next step |
 | --- | --- | --- |
 | Entry points and CLI glue | `src/splitshot/__main__.py` 0%, `src/splitshot/browser/cli.py` 0%, `src/splitshot/benchmarks/cli.py` 0%, `src/splitshot/cli.py` 61% | Add command-dispatch tests that execute the public entrypoints, cover `--check` and failure exits, and verify browser/benchmark launch plumbing without opening a browser window |

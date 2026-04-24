@@ -487,6 +487,9 @@ class PopupTemplate:
     width: int = 0
     height: int = 0
     follow_motion: bool = False
+    background_color: str = "#000000"
+    text_color: str = "#ffffff"
+    opacity: float = 0.9
 
 
 @dataclass(slots=True)
