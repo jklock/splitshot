@@ -34,12 +34,12 @@ This page covers common SplitShot problems and the pane that owns the fix.
 - Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
 - If the wrong file was loaded, click `Select PractiScore File` again.
 
-## Score Or Popup Text Looks Wrong
+## Score Or Marker Text Looks Wrong
 
 - Open [panes/score.md](panes/score.md).
 - Confirm `Enable scoring` and `Preset`.
 - Expand the relevant shot card and check score plus penalties.
-- Shot-linked PopUp text follows this score state.
+- Shot-linked marker text follows this score state.
 
 ## Overlay Or Review Boxes Are Missing
 
@@ -48,12 +48,13 @@ This page covers common SplitShot problems and the pane that owns the fix.
 - If a summary box is empty, import PractiScore in Project.
 - If X/Y fields are disabled, use `Custom` placement and turn off shot-stack locking for that box or badge.
 
-## Popups Are Missing Or At The Wrong Time
+## Markers Are Missing Or At The Wrong Time
 
 - Open [panes/popup.md](panes/popup.md).
-- Confirm the popup is `On`.
+- Confirm the marker is `On`.
 - Check `Start mode`, `Shot`, `Start (seconds)`, and `Duration (seconds)`.
 - For moving callouts, enable `Follow motion path` and set the path points.
+- For image markers, confirm the image path still resolves or save the project so the image is bundled into the project folder.
 
 ## PiP Media Is Missing From Export
 
@@ -79,6 +80,13 @@ Metrics is read-only. Fix the source pane:
 - Splits for timing.
 - Score for score and penalties.
 
+## SplitShot Does Not Open In Your Browser
+
+- Some Windows browser configurations can prevent automatic localhost launches.
+- Run `uv run splitshot --no-open` instead.
+- Open `http://127.0.0.1:8765/` manually in a browser such as Edge or Firefox.
+- If your default browser is a privacy-focused or hardened browser, try a standard browser for the first launch.
+
 ## Project Folder Confusion
 
 - `Choose Project` opens an existing bundle or chooses a bundle location.
@@ -91,5 +99,5 @@ Metrics is read-only. Fix the source pane:
 - Use the pane guide for the active rail tool.
 - Review [../project/LIMITATIONS.md](../project/LIMITATIONS.md) if the issue may be a current product limitation.
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

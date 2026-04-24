@@ -1,6 +1,6 @@
 # Export Pane
 
-The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, popup, review-box, and enabled PiP state at the moment you start the render.
+The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, marker, review-box, and enabled PiP state at the moment you start the render.
 
 <img src="../../screenshots/ExportPane.png" alt="Export pane with custom preset, frame settings, codecs, bitrate, output path, export button, and log button" width="960">
 
@@ -10,7 +10,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 
 ## When To Use This Pane
 
-- After timing, scoring, overlays, popups, review boxes, and PiP are final.
+- After timing, scoring, overlays, markers, review boxes, and PiP are final.
 - When you need a draft or final render.
 - When the output needs a specific aspect ratio, frame rate, codec, bitrate, or container.
 - When you want to inspect the live FFmpeg log.
@@ -54,7 +54,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 - Current primary video timing.
 - Overlay badge layout and colors.
 - Score summary and score-token colors.
-- Enabled popup bubbles.
+- Enabled markers.
 - Enabled review text boxes.
 - Enabled PiP media.
 
@@ -71,7 +71,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 ## Related Guides
 
 Previous: [review.md](review.md)
-Next: [metrics.md](metrics.md)
+Next: [settings.md](settings.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-23
+**Referenced files last updated:** 2026-04-23

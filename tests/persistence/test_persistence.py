@@ -152,7 +152,16 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             height=56,
         )
     ]
-    popup = PopupBubble(name="Entry target", text="-0", shot_id=selected_shot_id, anchor_mode="shot")
+    popup_image = tmp_path / "popup-image.png"
+    popup_image.write_bytes(b"popup-image-bytes")
+    popup = PopupBubble(
+        name="Entry target",
+        text="-0",
+        shot_id=selected_shot_id,
+        anchor_mode="shot",
+        content_type="text_image",
+        image_path=str(popup_image),
+    )
     project.popups = [popup]
     project.merge.enabled = True
     project.merge.layout = MergeLayout.PIP
@@ -294,6 +303,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.ui_state.timing_column_widths["split"] == 224
     assert loaded.ui_state.timing_column_widths["action"] == 244
     assert loaded.popups[0].name == "Entry target"
+    assert loaded.popups[0].content_type == "text_image"
+    assert loaded.popups[0].image_path.endswith("Markers/popup-image.png")
+    assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
     assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
     assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}

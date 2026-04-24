@@ -319,6 +319,13 @@ h3 {
   line-height: 1;
 }
 
+.tool-rail-divider {
+  border-top: 1px solid var(--line);
+  height: 100%;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
 .cockpit {
   display: grid;
   grid-template-rows: var(--topbar-height) minmax(0, 1fr);
@@ -1404,12 +1411,12 @@ button:disabled {
   display: grid;
 }
 
-.inspector[data-active-tool="popup"] {
+.inspector[data-active-tool="markers"] {
   grid-template-rows: max-content minmax(0, 1fr);
   overflow-y: hidden;
 }
 
-.inspector[data-active-tool="popup"] .tool-pane[data-tool-pane="popup"].active {
+.inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
   align-content: stretch;
   display: flex;
   flex-direction: column;
@@ -1974,6 +1981,13 @@ button:disabled {
   gap: 0.42rem;
 }
 
+.popup-authoring-panel[hidden],
+.popup-collapsed-nav[hidden],
+.popup-timeline-strip[hidden],
+.popup-bubble-list[hidden] {
+  display: none !important;
+}
+
 .popup-authoring-bar .hint {
   grid-column: 1 / -1;
   margin: 0;
@@ -2003,6 +2017,39 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   position: relative;
+}
+
+.popup-list-section {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.42rem;
+  min-height: 0;
+  padding: 0.48rem;
+}
+
+.popup-shot-editor[hidden],
+.scoring-workbench[hidden] {
+  display: none !important;
+}
+
+.popup-shot-editor .selected-shot-controls {
+  margin: 0;
+}
+
+.scoring-table,
+.scoring-workbench-table {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.scoring-inline-penalties {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.scoring-inline-penalties .shot-penalty-field {
+  align-items: center;
+  column-gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) 4.5rem;
 }
 
 .popup-timeline-empty {

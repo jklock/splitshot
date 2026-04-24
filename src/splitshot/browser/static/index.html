@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260418b" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260423c" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -15,15 +15,17 @@
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" type="button" aria-label="Show project tool"><b>Project</b></button>
+          <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
           <button class="tool-item" data-tool="scoring" type="button" aria-label="Show scoring tool"><b>Score</b></button>
           <button class="tool-item active" data-tool="timing" type="button" aria-label="Show splits tool"><b>Splits</b></button>
-          <button class="tool-item" data-tool="shotml" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
-          <button class="tool-item" data-tool="merge" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
+          <button class="tool-item" data-tool="markers" type="button" aria-label="Show markers tool"><b>Markers</b></button>
           <button class="tool-item" data-tool="overlay" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
-          <button class="tool-item" data-tool="popup" type="button" aria-label="Show popup tool"><b>PopUp</b></button>
           <button class="tool-item" data-tool="review" type="button" aria-label="Show review tool"><b>Review</b></button>
           <button class="tool-item" data-tool="export" type="button" aria-label="Show export tool"><b>Export</b></button>
+          <div class="tool-rail-divider" aria-hidden="true"></div>
+          <button class="tool-item" data-tool="settings" type="button" aria-label="Show settings tool"><b>Settings</b></button>
           <button class="tool-item" data-tool="metrics" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
+          <button class="tool-item" data-tool="shotml" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
         </nav>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
@@ -186,7 +188,10 @@
             <section class="tool-pane active" data-tool-pane="timing">
               <div class="section-header">
                 <h3>Splits</h3>
-                <button id="expand-timing" type="button">Edit</button>
+                <div class="section-header-actions">
+                  <button id="show-score-pane" type="button">Show Score</button>
+                  <button id="expand-timing" type="button">Edit</button>
+                </div>
               </div>
               <span id="timing-summary">No timing data.</span>
               <section id="selected-shot-panel" class="selected-shot-controls">
@@ -351,8 +356,12 @@
 
             <section class="tool-pane" data-tool-pane="scoring">
               <div class="section-header">
-                <h3>Scoring</h3>
-                <strong id="scoring-result">--</strong>
+                <h3>Score</h3>
+                <div class="section-header-actions scoring-header-actions">
+                  <button id="show-splits" type="button">Show splits</button>
+                  <button id="expand-scoring" type="button">Edit</button>
+                  <strong id="scoring-result">--</strong>
+                </div>
               </div>
               <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
               <label>Preset
@@ -361,10 +370,14 @@
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
               <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
               <dl id="scoring-imported-summary" class="details"></dl>
-              <div id="scoring-shot-list" class="scoring-shot-list" aria-label="Scoring shot list"></div>
-              <p class="hint">Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits.</p>
-              <div id="score-option-grid" class="score-option-grid"></div>
-              <p class="hint">Common shorthand: M miss, NS no-shoot, PE procedural error, FP flagrant penalty, FTDR failure to do right, and FPE finger procedural error.</p>
+              <div id="scoring-table" class="data-table scoring-table" aria-label="Score table"></div>
+              <section id="scoring-workbench" class="timing-workbench scoring-workbench" aria-label="Expanded scoring editor">
+                <div class="section-header">
+                  <h2>Score</h2>
+                  <button id="collapse-scoring" type="button">Collapse</button>
+                </div>
+                <div id="scoring-workbench-table" class="data-table timing-workbench-table scoring-workbench-table"></div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
@@ -503,17 +516,65 @@
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
 
-            <section class="tool-pane" data-tool-pane="popup">
+            <section class="tool-pane" data-tool-pane="markers">
               <div class="section-header">
-                <h3>PopUp</h3>
+                <h3>Markers</h3>
                 <div class="section-header-actions popup-pane-actions">
                   <button id="popup-import-shots" type="button">Import Shots</button>
-                  <button id="popup-add-bubble" type="button">Add Bubble</button>
-                  <button id="popup-toggle-authoring" type="button" class="scoring-shot-toggle" aria-label="Hide popup controls">v</button>
+                  <button id="popup-add-bubble" type="button">Add Time Marker</button>
+                  <button id="popup-toggle-authoring" type="button" class="scoring-shot-toggle" aria-label="Hide marker controls">v</button>
                 </div>
               </div>
               <div id="popup-authoring-panel" class="popup-authoring-panel">
-                <p class="hint">Short-lived boxes for one-off target callouts. Drag a rendered bubble on the video, or tune one card at a time below.</p>
+                <p class="hint">Template defaults drive imported shot markers. Drag a rendered marker on the video, or tune one marker at a time below.</p>
+                <section class="text-box-manager popup-template-panel">
+                  <div class="section-header sub-section-header">
+                    <h3>Shot Marker Template</h3>
+                    <span>Used for imported shot markers</span>
+                  </div>
+                  <div class="control-grid">
+                    <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
+                    <label>Content
+                      <select id="popup-template-content-type">
+                        <option value="text">Text</option>
+                        <option value="image">Image</option>
+                        <option value="text_image">Text + image</option>
+                      </select>
+                    </label>
+                    <label>Text source
+                      <select id="popup-template-text-source">
+                        <option value="score">Shot score</option>
+                        <option value="shot_label">Shot label</option>
+                        <option value="custom">Custom text</option>
+                      </select>
+                    </label>
+                    <label>Duration
+                      <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
+                    </label>
+                  </div>
+                  <div class="control-grid">
+                    <label>Placement
+                      <select id="popup-template-quadrant">
+                        <option value="top_left">Top left</option>
+                        <option value="top_middle">Top middle</option>
+                        <option value="top_right">Top right</option>
+                        <option value="middle_left">Middle left</option>
+                        <option value="middle_middle">Middle middle</option>
+                        <option value="middle_right">Middle right</option>
+                        <option value="bottom_left">Bottom left</option>
+                        <option value="bottom_middle">Bottom middle</option>
+                        <option value="bottom_right">Bottom right</option>
+                      </select>
+                    </label>
+                    <label>Width
+                      <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
+                    </label>
+                    <label>Height
+                      <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
+                    </label>
+                    <label class="check-row"><input id="popup-template-follow-motion" type="checkbox" /> Follow motion</label>
+                  </div>
+                </section>
                 <div class="popup-authoring-bar" aria-label="Popup authoring controls">
                   <label>Import
                     <select id="popup-import-mode">
@@ -545,8 +606,33 @@
                 <button id="popup-prev-compact" type="button">Previous</button>
                 <button id="popup-next-compact" type="button">Next</button>
               </div>
-              <div id="popup-timeline-strip" class="popup-timeline-strip" aria-label="Popup timeline"></div>
-              <div id="popup-bubble-list" class="text-box-list popup-bubble-list" aria-label="Popup bubbles"></div>
+              <div id="popup-timeline-strip" class="popup-timeline-strip" aria-label="Markers timeline"></div>
+              <section class="popup-list-section">
+                <div class="section-header sub-section-header">
+                  <h3>Shot-linked Markers</h3>
+                  <button id="popup-open-shot-editor" type="button">Open Editor</button>
+                </div>
+                <div id="popup-shot-linked-list" class="text-box-list popup-bubble-list" aria-label="Shot-linked markers"></div>
+              </section>
+              <section class="popup-list-section">
+                <div class="section-header sub-section-header">
+                  <h3>Time Markers</h3>
+                </div>
+                <div id="popup-bubble-list" class="text-box-list popup-bubble-list" aria-label="Time markers"></div>
+              </section>
+              <section id="popup-shot-editor" class="timing-workbench popup-shot-editor" aria-label="Shot-linked marker editor" hidden>
+                <div class="section-header">
+                  <h2>Shot Marker Editor</h2>
+                  <button id="popup-shot-editor-done" type="button">Done</button>
+                </div>
+                <div id="popup-shot-editor-current" class="selected-shot-controls"></div>
+                <div class="button-grid compact popup-shot-editor-actions">
+                  <button id="popup-shot-editor-prev" type="button">Previous Shot</button>
+                  <button id="popup-shot-editor-next" type="button">Next Shot</button>
+                  <button id="popup-shot-editor-duplicate" type="button">Duplicate Marker</button>
+                  <button id="popup-shot-editor-delete" type="button">Delete Marker</button>
+                </div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="merge">
@@ -695,6 +781,132 @@
               <p id="export-log-status" class="hint">The live export log opens in a separate window so the output settings stay readable while rendering runs.</p>
             </section>
 
+            <section class="tool-pane" data-tool-pane="settings">
+              <div class="section-header">
+                <h3>Settings</h3>
+                <small>Layered defaults</small>
+              </div>
+              <p class="hint">App defaults live on this machine. Folder defaults live in the current project folder and override app defaults for that project.</p>
+              <p id="settings-scope-status" class="hint">No project folder is open. App defaults are active.</p>
+              <div id="settings-layer-summary" class="table-wrap" aria-live="polite"></div>
+              <div class="control-grid">
+                <label>Save scope
+                  <select id="settings-scope">
+                    <option value="app">App Defaults</option>
+                    <option value="folder">Folder Defaults</option>
+                  </select>
+                </label>
+                <label>Landing pane
+                  <select id="settings-default-tool">
+                    <option value="project">Project</option>
+                    <option value="merge">PiP</option>
+                    <option value="scoring">Score</option>
+                    <option value="timing">Splits</option>
+                    <option value="markers">Markers</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="review">Review</option>
+                    <option value="export">Export</option>
+                    <option value="metrics">Metrics</option>
+                    <option value="shotml">ShotML</option>
+                  </select>
+                </label>
+              </div>
+              <label class="check-row"><input id="settings-reopen-last-tool" type="checkbox" /> Reopen the selected pane on new projects</label>
+              <div class="control-grid">
+                <label>Overlay position
+                  <select id="settings-overlay-position">
+                    <option value="none">Hidden</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                  </select>
+                </label>
+                <label>Badge size
+                  <select id="settings-badge-size">
+                    <option>XS</option>
+                    <option>S</option>
+                    <option>M</option>
+                    <option>L</option>
+                    <option>XL</option>
+                  </select>
+                </label>
+                <label>PiP layout
+                  <select id="settings-merge-layout">
+                    <option value="side_by_side">Side by side</option>
+                    <option value="above_below">Above / below</option>
+                    <option value="pip">PiP</option>
+                  </select>
+                </label>
+                <label>PiP size
+                  <select id="settings-pip-size">
+                    <option value="25%">25%</option>
+                    <option value="35%">35%</option>
+                    <option value="50%">50%</option>
+                  </select>
+                </label>
+                <label>Export quality
+                  <select id="settings-export-quality">
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <label>ShotML threshold
+                  <input id="settings-shotml-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
+                </label>
+              </div>
+              <section class="text-box-card compact-style-card">
+                <div class="section-header">
+                  <h3>Marker Template</h3>
+                  <small id="settings-marker-source">Project</small>
+                </div>
+                <div class="control-grid">
+                  <label class="check-row"><input id="settings-marker-enabled" type="checkbox" /> Enabled</label>
+                  <label>Content
+                    <select id="settings-marker-content-type">
+                      <option value="text">Text</option>
+                      <option value="image">Image</option>
+                      <option value="text_image">Text + Image</option>
+                    </select>
+                  </label>
+                  <label>Text source
+                    <select id="settings-marker-text-source">
+                      <option value="score">Score</option>
+                      <option value="shot_label">Shot label</option>
+                      <option value="custom">Custom text</option>
+                    </select>
+                  </label>
+                  <label>Duration (s)
+                    <input id="settings-marker-duration" type="number" min="0.001" step="0.001" value="1.000" />
+                  </label>
+                  <label>Quadrant
+                    <select id="settings-marker-quadrant">
+                      <option value="top_left">Top left</option>
+                      <option value="top_middle">Top middle</option>
+                      <option value="top_right">Top right</option>
+                      <option value="middle_left">Middle left</option>
+                      <option value="middle_middle">Middle middle</option>
+                      <option value="middle_right">Middle right</option>
+                      <option value="bottom_left">Bottom left</option>
+                      <option value="bottom_middle">Bottom middle</option>
+                      <option value="bottom_right">Bottom right</option>
+                    </select>
+                  </label>
+                  <label>Width
+                    <input id="settings-marker-width" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label>Height
+                    <input id="settings-marker-height" type="number" min="0" step="1" value="0" />
+                  </label>
+                  <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Follow motion by default</label>
+                </div>
+              </section>
+              <div class="button-grid two-up">
+                <button id="settings-reset-defaults" type="button">Reset Defaults</button>
+              </div>
+            </section>
+
             <section class="tool-pane" data-tool-pane="project">
               <div class="section-header">
                 <h3>Project</h3>
@@ -813,6 +1025,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260420b"></script>
+    <script src="/static/app.js?v=20260423c"></script>
   </body>
 </html>
