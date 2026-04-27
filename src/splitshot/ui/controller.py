@@ -1923,6 +1923,7 @@ class ProjectController(QObject):
 
     def set_overlay_display_options(self, payload: dict[str, object]) -> None:
         overlay = self.project.overlay
+        existing_text_boxes = list(overlay.text_boxes)
         valid_quadrants = {
             "above_final",
             "top_left",
@@ -2045,8 +2046,11 @@ class ProjectController(QObject):
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)
         else:
-            legacy_box = legacy_custom_box_as_text_box(overlay)
-            overlay.text_boxes = [] if legacy_box is None else [legacy_box]
+            if existing_text_boxes:
+                overlay.text_boxes = existing_text_boxes
+            else:
+                legacy_box = legacy_custom_box_as_text_box(overlay)
+                overlay.text_boxes = [] if legacy_box is None else [legacy_box]
         self.project.touch()
         self.project_changed.emit()
 
