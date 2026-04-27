@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260424a" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260427b" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -537,21 +537,6 @@
                     <label>Duration
                       <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
                     </label>
-                  </div>
-                  <div class="control-grid">
-                    <label>Placement
-                      <select id="popup-template-quadrant">
-                        <option value="top_left">Top left</option>
-                        <option value="top_middle">Top middle</option>
-                        <option value="top_right">Top right</option>
-                        <option value="middle_left">Middle left</option>
-                        <option value="middle_middle">Middle middle</option>
-                        <option value="middle_right">Middle right</option>
-                        <option value="bottom_left">Bottom left</option>
-                        <option value="bottom_middle">Bottom middle</option>
-                        <option value="bottom_right">Bottom right</option>
-                      </select>
-                    </label>
                     <label>Width
                       <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
                     </label>
@@ -976,19 +961,6 @@
                     <label>Duration (s)
                       <input id="settings-marker-duration" type="number" min="0.001" step="0.001" value="1.000" />
                     </label>
-                    <label>Quadrant
-                      <select id="settings-marker-quadrant">
-                        <option value="top_left">Top left</option>
-                        <option value="top_middle">Top middle</option>
-                        <option value="top_right">Top right</option>
-                        <option value="middle_left">Middle left</option>
-                        <option value="middle_middle">Middle middle</option>
-                        <option value="middle_right">Middle right</option>
-                        <option value="bottom_left">Bottom left</option>
-                        <option value="bottom_middle">Bottom middle</option>
-                        <option value="bottom_right">Bottom right</option>
-                      </select>
-                    </label>
                     <label>Width
                       <input id="settings-marker-width" type="number" min="0" step="1" value="0" />
                     </label>
@@ -1099,6 +1071,35 @@
                 <h3>PractiScore Import</h3>
                 <span id="practiscore-status">No results imported</span>
               </div>
+              <section class="practiscore-remote-panel" aria-label="Remote PractiScore sync">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>PractiScore Sync</h3>
+                    <span>Connect once, finish login in the visible PractiScore window, then let SplitShot import the selected match in the background.</span>
+                  </div>
+                </div>
+                <div class="button-grid two-up practiscore-remote-actions">
+                  <button id="connect-practiscore" type="button">Connect PractiScore</button>
+                  <button id="clear-practiscore-session" type="button">Clear PractiScore Session</button>
+                </div>
+                <label>Remote match
+                  <select id="practiscore-remote-match">
+                    <option value="">Connect PractiScore to load matches</option>
+                  </select>
+                </label>
+                <button id="import-practiscore-selected" class="primary-button" type="button">Import Selected Match</button>
+                <section id="practiscore-session-sync-status" class="practiscore-session-sync-status" data-state="not_authenticated">
+                  <div class="practiscore-session-sync-row">
+                    <span class="practiscore-state-label">Session</span>
+                    <span id="practiscore-session-status" class="practiscore-status-pill" data-state="not_authenticated">Not Authenticated</span>
+                  </div>
+                  <div class="practiscore-session-sync-row">
+                    <span class="practiscore-state-label">Sync</span>
+                    <span id="practiscore-sync-status" class="practiscore-status-pill" data-state="idle">Idle</span>
+                  </div>
+                  <p id="practiscore-sync-message" class="hint">Connect PractiScore. If you are already logged into PractiScore in a supported browser, SplitShot will reuse that session. Otherwise finish login in your browser and SplitShot will continue in the background.</p>
+                </section>
+              </section>
               <div class="control-grid">
                 <label>Match type
                   <select id="match-type">
@@ -1126,6 +1127,7 @@
                   </select>
                 </label>
               </div>
+              <p class="hint practiscore-manual-fallback">Manual fallback: if remote sync is unavailable or you want to replace the staged source directly, use Select PractiScore File.</p>
               <button id="import-practiscore" type="button">Select PractiScore File</button>
               <dl id="practiscore-import-summary" class="details"></dl>
               <div class="project-path-row">
@@ -1202,6 +1204,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260423c"></script>
+    <script src="/static/app.js?v=20260427b"></script>
   </body>
 </html>

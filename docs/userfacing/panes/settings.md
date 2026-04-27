@@ -20,7 +20,7 @@ The summary table in the pane shows the effective value and whether it currently
 
 - Before starting a batch of similar projects.
 - When one project folder should carry its own default layout or detector values.
-- When imported shot-linked markers should start with different duration, placement, or content defaults.
+- When imported shot-linked markers should start with different duration, size, or content defaults.
 - When you need to confirm why the current effective setting is different from the app-wide default.
 
 ## Key Controls
@@ -37,7 +37,7 @@ The summary table in the pane shows the effective value and whether it currently
 | `PiP size` | Sets the default picture-in-picture size. |
 | `Export quality` | Sets the default export quality target. |
 | `ShotML threshold` | Sets the default detection threshold for new projects. |
-| `Marker Template` | Sets the default content, duration, placement, size, and motion behavior for imported shot-linked markers. |
+| `Marker Template` | Sets the default content, duration, size, and motion behavior for imported shot-linked markers. |
 | `Reset Defaults` | Clears the selected defaults layer and falls back to the next available layer. |
 
 ## Folder Defaults
@@ -57,7 +57,7 @@ Use it to set:
 - whether imported markers start enabled
 - whether they use text, image, or text plus image
 - which text source they use by default
-- duration, quadrant, width, and height
+- duration, width, and height
 - whether imported markers follow motion by default
 
 ## How To Use It

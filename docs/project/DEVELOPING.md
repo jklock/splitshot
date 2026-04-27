@@ -7,6 +7,7 @@ This project is designed to be run directly from source with `uv` and Python 3.1
 - Python version: 3.12
 - Package manager / runner: `uv`
 - Required media tools: `ffmpeg` and `ffprobe`
+- PractiScore remote sync in the live app uses PySide6 Qt WebEngine. Playwright is only a dev/test dependency for the browser test suite.
 
 The runtime locates media binaries from `PATH` first, then from bundled resources, and it also honors `SPLITSHOT_FFMPEG_DIR`.
 
@@ -18,7 +19,11 @@ uv run splitshot --no-open
 uv run splitshot --check
 uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 uv run pytest --cov=src/splitshot --cov-report=term-missing
+uv sync --extra dev
 uv run python -m playwright install chromium firefox webkit
+uv run pytest tests/browser/test_practiscore_session_api.py
+uv run pytest tests/browser/test_browser_control.py -k practiscore
+uv run pytest tests/browser/test_project_lifecycle_contracts.py -k practiscore
 uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
 uv run python scripts/audits/browser/run_browser_av_audit.py
 uv run python scripts/audits/browser/run_browser_interaction_audit.py --primary-video /path/to/Stage1.MP4 --merge-video /path/to/Stage2.MP4 --practiscore /path/to/IDPA.csv
@@ -43,10 +48,18 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Run a subset with `uv run pytest tests/export/test_export.py` or any other test module.
 - Measure the current baseline with `uv run pytest --cov=src/splitshot --cov-report=term-missing`.
 - Re-run browser-focused tests after changing `src/splitshot/browser/static`, `src/splitshot/browser/server.py`, `src/splitshot/ui/controller.py`, or `src/splitshot/overlay/render.py`.
+- The Task A PractiScore session slice is covered by `uv run pytest tests/browser/test_practiscore_session_api.py`, plus the PractiScore browser regressions in `uv run pytest tests/browser/test_browser_control.py -k practiscore` and `uv run pytest tests/browser/test_project_lifecycle_contracts.py -k practiscore`.
 - Use real media for browser review changes. The development validation set used a primary stage video, a merge stage video, and `example_data/IDPA/IDPA.csv`. If your local `Stage1.MP4` / `Stage2.MP4` files are not available, substitute equivalent real clips rather than synthetic placeholders.
 - Use `uv run python scripts/analysis/analyze_video_shots.py /path/to/video.mp4` when you want to inspect split timing, confidence, and a recommended starting sensitivity threshold before importing a clip into the browser shell.
 - The audit defaults to the available Chromium, Firefox, and Safari-class WebKit targets and also picks up installed Chrome or Edge channels when present.
 - The VS Code integrated browser is useful for Chromium-class debugging, but actual cross-browser validation should run from the VS Code terminal through Playwright.
+
+### PractiScore Session Smoke Check
+
+- Start the browser server with `uv run splitshot --no-open`.
+- Trigger `POST /api/practiscore/session/start` from a REST client or the browser control surface and confirm a visible SplitShot-owned PractiScore window opens.
+- Complete login or any challenge only inside that SplitShot PractiScore window. Do not add or use SplitShot credential fields for PractiScore username, password, or MFA.
+- Confirm `GET /api/practiscore/session/status` transitions through the expected stable states and that `POST /api/practiscore/session/clear` removes the persisted profile when you need a fresh login.
 
 ## Script Layout
 
@@ -115,5 +128,5 @@ The browser interaction smoke tests now cover waveform expand/zoom/amplitude, wa
 - Update both the project bundle load/save path and the browser state serialization when the project schema changes.
 - Use the technical docs in `src/splitshot/.../README.md` to locate the owning module before adding new behavior.
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-04-27
+**Referenced files last updated:** 2026-04-27

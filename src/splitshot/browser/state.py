@@ -76,6 +76,63 @@ def _normalize_timing_project_payload(project_payload: dict[str, Any], project: 
         ]
 
 
+def _default_practiscore_session_payload() -> dict[str, Any]:
+    return {
+        "state": "not_authenticated",
+        "message": "Connect PractiScore to use your browser session for background sync.",
+        "details": {},
+    }
+
+
+def _normalize_practiscore_session_payload(payload: object) -> dict[str, Any]:
+    normalized = _default_practiscore_session_payload()
+    if not isinstance(payload, dict):
+        return normalized
+    normalized["state"] = str(payload.get("state") or normalized["state"])
+    normalized["message"] = str(payload.get("message") or normalized["message"])
+    details = payload.get("details")
+    normalized["details"] = dict(details) if isinstance(details, dict) else {}
+    return normalized
+
+
+def _default_practiscore_sync_payload() -> dict[str, Any]:
+    return {
+        "state": "idle",
+        "message": "No remote PractiScore sync activity yet.",
+        "matches": [],
+        "selected_remote_id": None,
+        "error_category": "",
+        "details": {},
+    }
+
+
+def _normalize_practiscore_sync_payload(payload: object) -> dict[str, Any]:
+    normalized = _default_practiscore_sync_payload()
+    if not isinstance(payload, dict):
+        return normalized
+    normalized["state"] = str(payload.get("state") or normalized["state"])
+    normalized["message"] = str(payload.get("message") or normalized["message"])
+    raw_matches = payload.get("matches")
+    if isinstance(raw_matches, list):
+        normalized["matches"] = [
+            {
+                "remote_id": str(item.get("remote_id") or ""),
+                "label": str(item.get("label") or ""),
+                "match_type": str(item.get("match_type") or ""),
+                "event_name": str(item.get("event_name") or ""),
+                "event_date": str(item.get("event_date") or ""),
+            }
+            for item in raw_matches
+            if isinstance(item, dict) and str(item.get("remote_id") or "").strip()
+        ]
+    selected_remote_id = payload.get("selected_remote_id")
+    normalized["selected_remote_id"] = None if selected_remote_id in {None, ""} else str(selected_remote_id)
+    normalized["error_category"] = str(payload.get("error_category") or "")
+    details = payload.get("details")
+    normalized["details"] = dict(details) if isinstance(details, dict) else {}
+    return normalized
+
+
 def browser_state(
     project: Project,
     status_message: str,
@@ -99,6 +156,13 @@ def browser_state(
     presentation = build_stage_presentation(project)
     scoring_summary = dict(presentation.metrics.scoring_summary)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
+    practiscore_payload = deepcopy(practiscore_options or {})
+    practiscore_session_payload = _normalize_practiscore_session_payload(
+        practiscore_payload.pop("_session_payload", None)
+    )
+    practiscore_sync_payload = _normalize_practiscore_sync_payload(
+        practiscore_payload.pop("_sync_payload", None)
+    )
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
@@ -138,7 +202,9 @@ def browser_state(
         "split_rows": split_rows_payload,
         "scoring_summary": scoring_summary,
         "scoring_presets": scoring_presets_for_api(),
-        "practiscore_options": practiscore_options or {
+        "practiscore_session": practiscore_session_payload,
+        "practiscore_sync": practiscore_sync_payload,
+        "practiscore_options": practiscore_payload or {
             "has_source": False,
             "source_name": "",
             "detected_match_type": "",

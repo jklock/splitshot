@@ -141,7 +141,10 @@ id:export-video
 id:ffmpeg-preset
 id:frame-rate
 id:generate-shotml-proposals
+id:clear-practiscore-session
+id:connect-practiscore
 id:import-practiscore
+id:import-practiscore-selected
 id:match-competitor-name
 id:match-competitor-place
 id:match-stage-number
@@ -184,11 +187,11 @@ id:popup-template-duration-s
 id:popup-template-enabled
 id:popup-template-follow-motion
 id:popup-template-height
-id:popup-template-quadrant
 id:popup-template-text-source
 id:popup-template-width
 id:popup-toggle-authoring
 id:practiscore-file-input
+id:practiscore-remote-match
 id:primary-file-input
 id:primary-file-path
 id:project-description
@@ -232,7 +235,6 @@ id:settings-marker-enabled
 id:settings-marker-follow-motion
 id:settings-marker-height
 id:settings-marker-opacity
-id:settings-marker-quadrant
 id:settings-marker-text-color
 id:settings-marker-text-source
 id:settings-marker-width
@@ -334,7 +336,7 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
     assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
-    assert len(actual_identifiers) == 268
+    assert len(actual_identifiers) == 270
 
 
 def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:

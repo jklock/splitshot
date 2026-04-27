@@ -119,7 +119,6 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                     ('settings-marker-content-type', 'text_image'),
                     ('settings-marker-text-source', 'custom'),
                     ('settings-marker-duration', '1.500'),
-                    ('settings-marker-quadrant', 'bottom_right'),
                     ('settings-marker-width', '222'),
                     ('settings-marker-height', '88'),
                     ('settings-marker-follow-motion', True),
