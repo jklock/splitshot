@@ -47,7 +47,7 @@ def run_browser(
     log_level: str = "off",
 ) -> int:
     try:
-        BrowserControlServer, ProjectController = _browser_runtime()
+        BrowserControlServer, ProjectController, SplitShotDesktopRuntime = _browser_runtime()
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(f"SplitShot browser runtime is unavailable: {exc}") from exc
 
@@ -55,19 +55,20 @@ def run_browser(
     if project_path is not None:
         controller.open_project(str(project_path))
     server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    desktop_runtime = SplitShotDesktopRuntime()
     if not open_browser:
         print(f"Open SplitShot at {server.url}")
     if log_level != "off":
         print(f"SplitShot activity log: {server.activity.path}")
-    server.serve_forever(open_browser=open_browser)
-    return 0
+    return desktop_runtime.run_server(server, open_browser=open_browser)
 
 
 def _browser_runtime():
     from splitshot.browser.server import BrowserControlServer
+    from splitshot.browser.practiscore_qt_runtime import SplitShotDesktopRuntime
     from splitshot.ui.controller import ProjectController
 
-    return BrowserControlServer, ProjectController
+    return BrowserControlServer, ProjectController, SplitShotDesktopRuntime
 
 
 def _platform_label() -> str:
@@ -95,12 +96,13 @@ def _check_media_tool(tool: str) -> str:
 def _check_qt_runtime() -> str:
     try:
         from PySide6 import __version__ as pyside_version
+        from PySide6.QtWebEngineCore import QWebEnginePage  # noqa: F401
         from splitshot.export.pipeline import prepare_export_runtime
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"PySide6 runtime unavailable: {exc}") from exc
 
     prepare_export_runtime()
-    return pyside_version
+    return f"{pyside_version} (QtWebEngine available)"
 
 
 def _check_dialog_runtime() -> str:

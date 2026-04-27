@@ -8,11 +8,16 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
 
     assert "It is not a claim that every button or field has its own direct behavior test." in matrix
     assert "If a control is missing from this matrix, it does not have an explicit owner yet." in matrix
+    assert "| Project / import | project details, choose/open project, primary import, remote PractiScore connect, remote match select, selected-match import, clear session, manual fallback file import, delete project |" in matrix
     assert "| Splits / waveform | timing edit, selected shot actions, add/delete/move/nudge, waveform expand/zoom/amplitude, waveform pan |" in matrix
     assert "| Markers / Review / Overlay | marker import, marker template defaults, playback window, collapsed nav, timeline selectors, time-marker list cards, bubble enabled, bubble card actions, show overlay checkbox, badge size, style, locks, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, color pickers, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
     assert "tests/browser/test_browser_interactions.py" in matrix
     assert "tests/browser/test_metrics_e2e.py" in matrix
     assert "tests/browser/test_settings_e2e.py" in matrix
+    assert "match-list load" in matrix
+    assert "selected-match import" in matrix
+    assert "expired-session rendering" in matrix
+    assert "manual fallback parity" in matrix
     assert "waveform expand/zoom/amplitude" in matrix
     assert "waveform pan and shot movement" in matrix
     assert "marker import-selected-shot seek" in matrix
@@ -43,6 +48,8 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     for test_path in [
         "tests/browser/test_browser_static_ui.py",
         "tests/browser/test_browser_control.py",
+        "tests/browser/test_browser_control_inventory_audit.py",
+        "tests/browser/test_browser_control_coverage_matrix.py",
         "tests/browser/test_browser_interactions.py",
         "tests/browser/test_metrics_e2e.py",
         "tests/browser/test_settings_e2e.py",

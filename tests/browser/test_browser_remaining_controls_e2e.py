@@ -332,7 +332,6 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
 
                 _set_input_value(first_card.locator('[data-popup-field="x"]'), "0.2")
                 _set_input_value(first_card.locator('[data-popup-field="y"]'), "0.8")
-                first_card.locator('[data-popup-field="quadrant"]').select_option("custom")
                 _set_input_value(first_card.locator('[data-popup-field="width"]'), "222")
                 _set_input_value(first_card.locator('[data-popup-field="height"]'), "88")
                 page.wait_for_function(

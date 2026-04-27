@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
+from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch, SelectedRemoteMatchArtifacts
+import splitshot.ui.controller as controller_module
 from splitshot.ui.controller import ProjectController
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EXAMPLES_DIR = REPO_ROOT / "example_data"
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -66,6 +74,260 @@ def _ensure_overlay_visible(page) -> None:
         """
     )
     page.wait_for_function("() => document.getElementById('show-overlay').checked === true")
+
+
+class _BrowserFakeStatus:
+    def __init__(self, state: str, message: str, details: dict[str, object]) -> None:
+        self.state = state
+        self.message = message
+        self.details = details
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "state": self.state,
+            "message": self.message,
+            "details": dict(self.details),
+        }
+
+
+class _BrowserFakeSessionManager:
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        start_state: str = "authenticating",
+        poll_states: list[str] | None = None,
+    ) -> None:
+        self.profile_paths = type("ProfilePaths", (), {"app_dir": tmp_path})()
+        self._start_state = start_state
+        self._state = "not_authenticated"
+        self._poll_states = list(poll_states or [])
+        self._details = {
+            "profile_path": str(tmp_path / "practiscore" / "browser-profile"),
+        }
+        self._browser_context = object()
+
+    def _message(self) -> str:
+        return {
+            "not_authenticated": "Connect PractiScore to use your browser session for background sync.",
+            "authenticating": "Complete PractiScore login in your browser. SplitShot will continue in the background.",
+            "authenticated_ready": "PractiScore session is authenticated and ready.",
+            "expired": "PractiScore session expired. Reconnect in your browser to continue.",
+        }.get(self._state, self._state)
+
+    def current_status(self) -> _BrowserFakeStatus:
+        return _BrowserFakeStatus(self._state, self._message(), self._details)
+
+    def start_login_flow(self) -> _BrowserFakeStatus:
+        self._state = self._start_state
+        return self.current_status()
+
+    def serialize_status(self) -> dict[str, object]:
+        if self._poll_states:
+            self._state = self._poll_states.pop(0)
+        return self.current_status().to_dict()
+
+    def clear_session(self) -> _BrowserFakeStatus:
+        self._state = "not_authenticated"
+        self._poll_states = []
+        return self.current_status()
+
+    def require_authenticated_browser(self) -> object:
+        if self._state != "authenticated_ready":
+            raise RuntimeError(self._message())
+        return self._browser_context
+
+    def shutdown(self) -> None:
+        return
+
+
+def _build_remote_match_artifacts(tmp_path: Path, remote_id: str) -> SelectedRemoteMatchArtifacts:
+    cache_dir = tmp_path / "practiscore" / "sync-audit" / remote_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    source_artifact_path = cache_dir / "remote-idpa.csv"
+    shutil.copyfile(EXAMPLES_DIR / "IDPA" / "IDPA.csv", source_artifact_path)
+    html_path = cache_dir / "selected-match.html"
+    html_path.write_text("<html><body><h1>Remote IDPA Match</h1></body></html>", encoding="utf-8")
+    summary_path = cache_dir / "summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "remote_match": {
+                    "remote_id": remote_id,
+                    "label": "Remote IDPA Match",
+                    "match_type": "idpa",
+                    "event_name": "Remote IDPA Match",
+                    "event_date": "2026-04-21",
+                }
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return SelectedRemoteMatchArtifacts(
+        match=RemotePractiScoreMatch(
+            remote_id=remote_id,
+            label="Remote IDPA Match",
+            match_type="idpa",
+            event_name="Remote IDPA Match",
+            event_date="2026-04-21",
+        ),
+        cache_dir=cache_dir,
+        source_artifact_path=source_artifact_path,
+        source_name="remote-idpa.csv",
+        html_path=html_path,
+        summary_path=summary_path,
+        summary_snapshot={
+            "remote_match": {
+                "remote_id": remote_id,
+                "label": "Remote IDPA Match",
+                "match_type": "idpa",
+                "event_name": "Remote IDPA Match",
+                "event_date": "2026-04-21",
+            }
+        },
+    )
+
+
+def test_project_pane_practiscore_connect_match_list_and_selected_match_import_flow(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        controller_module,
+        "discover_remote_matches",
+        lambda browser_context: [
+            RemotePractiScoreMatch(
+                remote_id="match-100",
+                label="April USPSA Night Match",
+                match_type="uspsa",
+                event_name="April USPSA Night Match",
+                event_date="2026-04-21",
+            ),
+            RemotePractiScoreMatch(
+                remote_id="match-200",
+                label="Remote IDPA Match",
+                match_type="idpa",
+                event_name="Remote IDPA Match",
+                event_date="2026-04-21",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "download_remote_match_artifacts",
+        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_remote_match_artifacts(tmp_path, remote_id),
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(
+        tmp_path,
+        start_state="authenticating",
+        poll_states=["authenticated_ready"],
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                page.locator("#connect-practiscore").click()
+                page.wait_for_function(
+                    "() => state?.practiscore_sync?.state === 'match_list_ready' && (state?.practiscore_sync?.matches || []).length === 2"
+                )
+
+                assert page.locator("#practiscore-session-status").text_content().strip() == "Authenticated Ready"
+                assert page.locator("#practiscore-sync-status").text_content().strip() == "Match List Ready"
+
+                page.locator("#practiscore-remote-match").select_option("match-200")
+                page.wait_for_function(
+                    "() => document.getElementById('import-practiscore-selected') && !document.getElementById('import-practiscore-selected').disabled"
+                )
+
+                page.locator("#import-practiscore-selected").click()
+                page.wait_for_function("() => state?.practiscore_sync?.state === 'success'")
+                page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
+                page.wait_for_function("() => state?.practiscore_options?.has_source === true")
+
+                assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
+                assert "imported remote practiscore match" in (page.locator("#practiscore-sync-message").text_content() or "").lower()
+                assert page.locator("#match-competitor-name option").count() > 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_practiscore_expired_session_state_disables_selected_match_import(tmp_path: Path) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(tmp_path, start_state="expired")
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                page.locator("#connect-practiscore").click()
+                page.wait_for_function("() => state?.practiscore_session?.state === 'expired'")
+
+                assert page.locator("#practiscore-session-status").text_content().strip() == "Expired"
+                assert page.locator("#practiscore-sync-status").text_content().strip() == "Idle"
+                assert page.locator("#import-practiscore-selected").is_disabled() is True
+                assert "expired" in (page.locator("#practiscore-sync-message").text_content() or "").lower()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_manual_practiscore_file_import_remains_functional_with_remote_controls(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        controller_module,
+        "discover_remote_matches",
+        lambda browser_context: [
+            RemotePractiScoreMatch(
+                remote_id="match-100",
+                label="April USPSA Night Match",
+                match_type="uspsa",
+                event_name="April USPSA Night Match",
+                event_date="2026-04-21",
+            ),
+            RemotePractiScoreMatch(
+                remote_id="match-200",
+                label="Remote IDPA Match",
+                match_type="idpa",
+                event_name="Remote IDPA Match",
+                event_date="2026-04-21",
+            ),
+        ],
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(
+        tmp_path,
+        start_state="authenticating",
+        poll_states=["authenticated_ready"],
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                page.locator("#connect-practiscore").click()
+                page.wait_for_function("() => state?.practiscore_sync?.state === 'match_list_ready'")
+
+                page.locator("#practiscore-file-input").set_input_files(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"))
+                page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
+                page.wait_for_function("() => state?.practiscore_options?.has_source === true")
+
+                assert page.locator("#import-practiscore").is_enabled() is True
+                assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
+                assert page.locator("#match-competitor-name option").count() > 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_waveform_controls_expand_zoom_and_amplitude_update_project_state(synthetic_video_factory) -> None:
@@ -1138,9 +1400,6 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 duration_input.press("Enter")
                 page.wait_for_function("() => state?.project?.popup_template?.duration_ms === 1750")
 
-                page.locator("#popup-template-quadrant").select_option("bottom_right")
-                page.wait_for_function("() => state?.project?.popup_template?.quadrant === 'bottom_right'")
-
                 width_input = page.locator("#popup-template-width")
                 width_input.fill("320")
                 width_input.press("Enter")
@@ -1186,7 +1445,6 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 assert labeled_popup["text"] == "Shot 1"
                 assert labeled_popup["contentType"] == "text_image"
                 assert labeled_popup["durationMs"] == 1750
-                assert labeled_popup["quadrant"] == "bottom_right"
                 assert labeled_popup["width"] == 320
                 assert labeled_popup["height"] == 96
                 assert labeled_popup["followMotion"] is True

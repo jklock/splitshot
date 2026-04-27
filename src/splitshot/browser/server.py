@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from splitshot.browser.activity import ActivityLogger
+from splitshot.browser.practiscore_session import PractiScoreSessionManager
 from splitshot.browser.state import browser_state
 from splitshot.domain.models import (
     BadgeSize,
@@ -491,6 +492,7 @@ class BrowserControlServer:
         self._browser_media_cache: dict[str, BrowserMediaCacheEntry] = {}
         self._browser_media_lock = threading.Lock()
         self._media_url_token = uuid4().hex
+        self.practiscore_session = PractiScoreSessionManager()
         prepare_export_runtime()
         self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
@@ -541,6 +543,7 @@ class BrowserControlServer:
                     print("\nSplitShot browser control stopped.")
         finally:
             self.activity.log("server.stopping", url=self.url)
+            self.practiscore_session.shutdown()
             self._httpd.server_close()
             self._session_dir.cleanup()
 
@@ -561,6 +564,7 @@ class BrowserControlServer:
 
     def shutdown(self) -> None:
         self.activity.log("server.shutdown", url=self.url)
+        self.practiscore_session.shutdown()
         if self._httpd is not None:
             self._httpd.shutdown()
             self._httpd.server_close()
@@ -665,6 +669,7 @@ class BrowserControlServer:
         activity = self.activity
         display_names = self._display_names
         path_chooser = self.path_chooser
+        practiscore_session = self.practiscore_session
 
         class Handler(BaseHTTPRequestHandler):
             server_version = "SplitShotBrowser/1.0"
@@ -687,6 +692,12 @@ class BrowserControlServer:
                     return
                 if request_path == "/api/state":
                     self._send_json(self._browser_state())
+                    return
+                if request_path == "/api/practiscore/session/status":
+                    self._send_json(practiscore_session.serialize_status())
+                    return
+                if request_path == "/api/practiscore/matches":
+                    self._list_practiscore_matches()
                     return
                 if request_path == "/media/primary":
                     self._send_media(Path(controller.project.primary_video.path))
@@ -721,6 +732,15 @@ class BrowserControlServer:
                     return
                 if self.path == "/api/files/practiscore":
                     self._import_practiscore_file()
+                    return
+                if self.path == "/api/practiscore/session/start":
+                    self._start_practiscore_session()
+                    return
+                if self.path == "/api/practiscore/session/clear":
+                    self._clear_practiscore_session()
+                    return
+                if self.path == "/api/practiscore/sync/start":
+                    self._start_practiscore_sync()
                     return
                 if self.path == "/api/dialog/path":
                     self._choose_dialog_path()
@@ -816,6 +836,37 @@ class BrowserControlServer:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def _send_structured_error(
+                self,
+                *,
+                code: str,
+                message: str,
+                status: HTTPStatus,
+                details: dict[str, Any] | None = None,
+            ) -> None:
+                payload: dict[str, Any] = {
+                    "error": {
+                        "code": code,
+                        "message": message,
+                    }
+                }
+                if details:
+                    payload["error"]["details"] = details
+                self._send_json(payload, status=status)
+
+            def _send_task_b_unavailable(self, route: str, hook_name: str) -> None:
+                self._send_structured_error(
+                    code="practiscore_task_b_unavailable",
+                    message=(
+                        f"{route} is not available until Task B implements controller.{hook_name}()."
+                    ),
+                    status=HTTPStatus.SERVICE_UNAVAILABLE,
+                    details={
+                        "route": route,
+                        "required_hook": hook_name,
+                    },
+                )
+
             def _choose_dialog_path(self) -> None:
                 try:
                     payload = self._read_json()
@@ -883,6 +934,77 @@ class BrowserControlServer:
                 )
                 payload["project"]["path"] = "" if controller.project_path is None else str(controller.project_path)
                 return payload
+
+            def _start_practiscore_session(self) -> None:
+                try:
+                    with controller_lock:
+                        status = practiscore_session.start_login_flow()
+                    activity.log("api.practiscore.session.start", state=status.state)
+                    self._send_json(status.to_dict())
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.practiscore.session.start.error", error=str(exc))
+                    self._send_structured_error(
+                        code="practiscore_session_start_failed",
+                        message="Unable to prepare the PractiScore browser session.",
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        details={
+                            "route": "/api/practiscore/session/start",
+                            "reason": str(exc),
+                        },
+                    )
+
+            def _clear_practiscore_session(self) -> None:
+                with controller_lock:
+                    status = practiscore_session.clear_session()
+                activity.log("api.practiscore.session.clear", state=status.state)
+                self._send_json(status.to_dict())
+
+            def _list_practiscore_matches(self) -> None:
+                hook_name = "list_practiscore_matches"
+                hook = getattr(controller, hook_name, None)
+                if not callable(hook):
+                    self._send_task_b_unavailable("/api/practiscore/matches", hook_name)
+                    return
+                try:
+                    with controller_lock:
+                        payload = hook(practiscore_session)
+                    self._send_json(payload if isinstance(payload, dict) else {"matches": payload})
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.practiscore.matches.error", error=str(exc))
+                    self._send_structured_error(
+                        code="practiscore_matches_failed",
+                        message=str(exc),
+                        status=HTTPStatus.BAD_REQUEST,
+                        details={
+                            "route": "/api/practiscore/matches",
+                            "hook": hook_name,
+                        },
+                    )
+
+            def _start_practiscore_sync(self) -> None:
+                hook_name = "start_practiscore_sync"
+                hook = getattr(controller, hook_name, None)
+                if not callable(hook):
+                    self._send_task_b_unavailable("/api/practiscore/sync/start", hook_name)
+                    return
+                try:
+                    payload = self._read_json()
+                    activity.log("api.practiscore.sync.start", payload=payload)
+                    with controller_lock:
+                        result = hook(payload, practiscore_session)
+                        controller.autosave_project_if_needed()
+                    self._send_json(result if isinstance(result, dict) else {"sync": result})
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.practiscore.sync.start.error", error=str(exc))
+                    self._send_structured_error(
+                        code="practiscore_sync_failed",
+                        message=str(exc),
+                        status=HTTPStatus.BAD_REQUEST,
+                        details={
+                            "route": "/api/practiscore/sync/start",
+                            "hook": hook_name,
+                        },
+                    )
 
             def _set_project_details(self, payload: dict[str, Any]) -> None:
                 controller.set_project_details(

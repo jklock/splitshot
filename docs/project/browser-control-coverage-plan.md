@@ -123,7 +123,6 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Template Content | behavioral | Keep the fresh shot-linked marker generation coverage if content modes or image fallback behavior changes. |
 | Template Text Source | behavioral | Keep the score, shot-label, and custom generated-marker payload coverage; shot-linked live overlay text still resolves from score text today. |
 | Template Duration | behavioral | Keep the generated-marker duration coverage if the marker window model changes. |
-| Template Placement | behavioral | Keep the generated-marker quadrant coverage if shot-marker default placement changes. |
 | Template Width / Height | behavioral | Keep the generated-marker size coverage and live badge-size assertion if popup sizing changes. |
 | Template Follow Motion | behavioral | Keep the generated-marker follow-motion default coverage if motion-path defaulting changes. |
 
@@ -152,8 +151,7 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Copy Prev Motion | missing | Add a motion-copy test from the previous bubble. |
 | Apply To Shown Shot Popups | missing | Add a bulk-apply motion test for visible shot-linked popups. |
 | Clear path | missing | Add a clear-motion-path test. |
-| Placement select | missing | Add a quadrant placement test. |
-| X / Y inputs | missing | Add a custom-position test. |
+| X / Y inputs | behavioral | Keep the direct-position coverage and custom-placement assertion when marker placement rules change. |
 | Width / Height inputs | missing | Add a size commit test. |
 | Background color swatch + hex field | behavioral | Review text-box background color-picker and linked hex-input coverage are directly covered. |
 | Text color swatch + hex field | behavioral | Review text-box text color swatch and linked hex-input coverage are directly covered. |

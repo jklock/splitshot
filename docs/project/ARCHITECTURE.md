@@ -44,11 +44,15 @@ The persistence layer writes a bundle directory that contains `project.json` plu
 The browser server in [src/splitshot/browser/server.py](../src/splitshot/browser/server.py) exposes a small JSON API and static assets. The key routes are:
 
 - `GET /api/state` for the current serialized project state.
+- `GET /api/practiscore/session/status`, `POST /api/practiscore/session/start`, and `POST /api/practiscore/session/clear` for the visible manual PractiScore login flow backed by a reusable persistent browser profile.
+- `GET /api/practiscore/matches` and `POST /api/practiscore/sync/start` for the remote PractiScore match-list and selected-match import surface. Task A ships these as safe route placeholders that return structured unavailable errors until Task B controller hooks exist.
 - `GET /media/primary` and `GET /media/secondary` for media playback.
 - `POST /api/files/primary`, `POST /api/files/secondary`, and `POST /api/files/merge` for imports.
 - `POST /api/project/*`, `POST /api/analysis/shotml-*`, `POST /api/analysis/shotml/*`, `POST /api/shots/*`, `POST /api/scoring/*`, `POST /api/overlay`, `POST /api/merge`, and `POST /api/export` for edits and export.
 
 The browser shell keeps its own view state, but all authoritative data still lives in the controller and `Project` model.
+
+The PractiScore session foundation lives in [src/splitshot/browser/practiscore_profile.py](../src/splitshot/browser/practiscore_profile.py), [src/splitshot/browser/practiscore_session.py](../src/splitshot/browser/practiscore_session.py), and the desktop runtime in [src/splitshot/browser/practiscore_qt_runtime.py](../src/splitshot/browser/practiscore_qt_runtime.py). SplitShot opens a visible app-owned Qt WebEngine window for manual PractiScore authentication, stores the persistent profile under the app data directory, and never collects PractiScore credentials through SplitShot form fields.
 
 Media endpoints treat normal browser cancellations and local socket buffer exhaustion as client disconnects. Large video requests can stop mid-stream when the browser seeks or abandons a previous range request; the server logs those cases as `media.client_disconnect` warnings rather than surfacing a fatal traceback.
 
@@ -64,5 +68,5 @@ For the ShotML-specific data flow, proposal workflow, browser API, and line-leve
 
 The codebase is intentionally local-first. It does not depend on a remote service for detection, scoring, merge math, or export rendering. The main external dependencies are FFmpeg, FFprobe, NumPy, and PySide6.
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-04-27
+**Referenced files last updated:** 2026-04-27

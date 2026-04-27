@@ -13,8 +13,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     css = (STATIC_ROOT / "styles.css").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260424a"' in html
-    assert 'src="/static/app.js?v=20260423c"' in html
+    assert 'href="/static/styles.css?v=20260427b"' in html
+    assert 'src="/static/app.js?v=20260427b"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -79,7 +79,16 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html
     assert 'id="import-practiscore"' in html
+    assert 'id="connect-practiscore"' in html
     assert 'id="practiscore-status"' in html
+    assert 'id="clear-practiscore-session"' in html
+    assert 'id="practiscore-remote-match"' in html
+    assert 'id="import-practiscore-selected"' in html
+    assert 'id="practiscore-session-sync-status"' in html
+    assert 'id="practiscore-session-status"' in html
+    assert 'id="practiscore-sync-status"' in html
+    assert 'id="practiscore-sync-message"' in html
+    assert 'id="practiscore-session-message"' not in html
     assert 'id="practiscore-import-summary"' in html
     assert 'id="current-file"' in html
     assert 'id="status-copy"' in html
@@ -114,6 +123,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="merge-media-input"' in html
     assert 'tool-item[data-tool="metrics"]:not(.active)' in css
     assert 'tool-item[data-tool="settings"]:not(.active)' not in css
+    assert '.practiscore-remote-panel {' in css
+    assert '.practiscore-remote-actions {' in css
+    assert '.practiscore-session-sync-status {' in css
     rail_footer_css = css[css.index('.tool-rail-footer {') : css.index('.tool-rail-divider {')]
     assert 'display: flex;' in rail_footer_css
     assert 'flex-direction: column;' in rail_footer_css
@@ -129,6 +141,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'Default PiP size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
+    assert "Connect PractiScore" in html
+    assert "Clear PractiScore Session" in html
+    assert "Import Selected Match" in html
+    assert "Manual fallback:" in html
     assert "Select Primary Video" in html
     assert "John Klockenkemper" not in html
     assert 'id="match-stage-number-options"' not in html
@@ -237,7 +253,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'function syncPopupPlaybackWindow() {' in js
     assert 'function popupShotMatchesImportMode(shot, mode) {' in js
     assert 'function setPopupAuthoringCollapsed(collapsed' in js
-    assert 'data-popup-field="quadrant"' in js
+    assert 'data-popup-field="quadrant"' not in js
     assert 'data-popup-field="opacity_percent"' in js
     assert 'data-popup-field="follow_motion"' in js
     assert 'function popupBubbleKeyframes(bubble) {' in js
@@ -551,6 +567,17 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function openHiddenFileInput(inputId) {' in js
     assert 'if (typeof input.showPicker === "function") {' in js
     assert 'openHiddenFileInput("practiscore-file-input");' in js
+    assert 'function renderPractiScoreRemoteState() {' in js
+    assert 'function renderPractiScoreRemoteMatchOptions() {' in js
+    assert 'async function connectPractiScore() {' in js
+    assert 'async function clearPractiScoreSession() {' in js
+    assert 'async function importSelectedPractiScoreMatch() {' in js
+    assert '$("connect-practiscore")?.addEventListener("click", async () => {' in js
+    assert 'await connectPractiScore();' in js
+    assert '$("clear-practiscore-session")?.addEventListener("click", async () => {' in js
+    assert 'await clearPractiScoreSession();' in js
+    assert '$("import-practiscore-selected")?.addEventListener("click", async () => {' in js
+    assert 'await importSelectedPractiScoreMatch();' in js
     assert 'document.addEventListener("fullscreenchange", handleStageFullscreenChange);' in js
     assert 'media.defaultMuted = false;' in js
     assert 'media.muted = false;' in js
@@ -1232,6 +1259,9 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "browse-primary-path",
         "new-project",
         "browse-project-path",
+        "connect-practiscore",
+        "clear-practiscore-session",
+        "import-practiscore-selected",
         "import-practiscore",
         "save-project",
         "open-project",

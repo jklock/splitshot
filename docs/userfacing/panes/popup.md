@@ -2,9 +2,9 @@
 
 The Markers pane creates short-lived callouts on top of the video. A marker can be tied to a shot, tied to a timestamp, show text, show an image, show both, and optionally move along a motion path during its visible window.
 
-<img src="../../screenshots/PopUpPane.png" alt="Markers pane with an expanded shot-linked marker, motion path controls, placement fields, and live preview" width="960">
+<img src="../../screenshots/PopUpPane.png" alt="Markers pane with an expanded shot-linked marker, motion path controls, X/Y placement fields, and live preview" width="960">
 
-<img src="../../screenshots/PopUpPane2.png" alt="Lower Markers pane with motion path points, custom placement, marker size, colors, and opacity" width="840">
+<img src="../../screenshots/PopUpPane2.png" alt="Lower Markers pane with motion path points, direct X/Y placement, marker size, colors, and opacity" width="840">
 
 ## When To Use This Pane
 
@@ -19,7 +19,7 @@ The Markers pane creates short-lived callouts on top of the video. A marker can 
 | --- | --- |
 | `Import Shots` | Creates or refreshes one shot-linked marker for every current shot. |
 | `Add Time Marker` | Adds a time-based marker at the playhead. |
-| `Shot Marker Template` | Sets the default content, duration, placement, and motion behavior used when importing shot-linked markers. |
+| `Shot Marker Template` | Sets the default content, duration, size, and motion behavior used when importing shot-linked markers. |
 | `>` / `v` in the pane header | Collapses the authoring block while keeping the timeline and lists visible. |
 | `Import` | Chooses whether `Import Shots` targets all shots, scored shots, or penalty/miss shots. Existing manual time markers are preserved. |
 | `Filter` | Narrows the lists and timeline to all, enabled, disabled, shot-linked, time-based, motion, missing text, or currently visible markers. |
@@ -50,7 +50,7 @@ The Markers pane creates short-lived callouts on top of the video. A marker can 
 | `Previous Keyframe` / `Next Keyframe` | Jumps between stored keyframes. |
 | Motion keyframe list | Edits offset, easing, X, and Y for each stored keyframe. |
 | On-video keyframe dots | Select and drag the base point or later keyframes directly on the video. |
-| `Placement`, `X`, `Y` | Set fixed or custom normalized placement. |
+| `X`, `Y` | Set direct normalized placement for the marker base point. |
 | `Width`, `Height` | Force marker size. |
 | `Bg`, `Text`, `Alpha` | Style the bubble with the same compact swatch/hex controls used in Overlay. |
 | Color swatches | Open the shared color picker modal shown in [overlay.md](overlay.md). |
@@ -79,7 +79,7 @@ Shot-linked markers use the live Score pane values:
 10. Expand the marker card with the chevron.
 11. Choose `Shot` or `Time` start behavior.
 12. Set `Duration` inside that marker card.
-12. Place the bubble with a fixed anchor or `Custom` X/Y values.
+12. Adjust `X` and `Y`, or drag the rendered marker on the video, when the bubble needs an exact position.
 13. Enable `Follow motion path` when the callout should track movement.
 14. Scrub the playhead, click `Add Keyframe`, then drag the on-video dots to place the base point and later keyframes directly on the frame.
 15. Use the keyframe list for exact offset, easing, X, and Y edits. `Clear path` removes the stored motion path.

@@ -83,6 +83,8 @@ let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
 let pendingInteractionPreview = { video: false, waveform: false, overlay: false };
 let pendingSelectionFallback = null;
+let practiScoreSessionPollTimer = null;
+let practiScoreConnectFlowActive = false;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
@@ -90,6 +92,7 @@ const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
 const ACTIVITY_POLL_INTERVAL_MS = 1000;
+const PRACTISCORE_SESSION_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
@@ -3314,7 +3317,11 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
   const nextBubbles = popupBubbles().map((bubble) => {
     if (bubble.id !== bubbleId) return bubble;
     const previousDurationMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000));
-    const nextBubble = normalizePopupBubble({ ...bubble, [field]: rawValue });
+    const nextBubble = normalizePopupBubble({
+      ...bubble,
+      [field]: rawValue,
+      ...(field === "x" || field === "y" ? { quadrant: CUSTOM_QUADRANT_VALUE } : {}),
+    });
     if (field === "follow_motion") {
       nextBubble.follow_motion = Boolean(rawValue);
     }
@@ -3774,7 +3781,6 @@ function buildPopupBubbleCard(bubble, index) {
   const popupShotId = bubble.anchor_mode === "shot"
     ? (shotIds.has(bubble.shot_id) ? bubble.shot_id : (defaultPopupShotId() || ""))
     : (bubble.shot_id || "");
-  const usesCustomPlacement = bubble.quadrant === CUSTOM_QUADRANT_VALUE;
   const displayName = popupBubbleDisplayName(bubble, index);
   const selected = bubble.id === selectedPopupBubbleId;
   const resolvedText = popupBubbleResolvedText(bubble);
@@ -3850,24 +3856,10 @@ function buildPopupBubbleCard(bubble, index) {
         <div class="popup-motion-path-list popup-keyframe-list" data-popup-keyframe-list></div>
       </section>
       <div class="control-grid">
-        <label>Placement
-          <select data-popup-field="quadrant">
-            <option value="top_left">Top left</option>
-            <option value="top_middle">Top middle</option>
-            <option value="top_right">Top right</option>
-            <option value="middle_left">Middle left</option>
-            <option value="middle_middle">Middle middle</option>
-            <option value="middle_right">Middle right</option>
-            <option value="bottom_left">Bottom left</option>
-            <option value="bottom_middle">Bottom middle</option>
-            <option value="bottom_right">Bottom right</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label>X
+        <label>X (0 left, 1 right)
           <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
         </label>
-        <label>Y
+        <label>Y (0 top, 1 bottom)
           <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
         </label>
         <label>Width
@@ -3916,7 +3908,6 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
   syncControlValue(card.querySelector('[data-popup-field="shot_id"]'), popupShotId);
   syncControlValue(card.querySelector('[data-popup-field="duration_s"]'), precise(bubble.duration_ms));
-  syncControlValue(card.querySelector('[data-popup-field="quadrant"]'), bubble.quadrant);
   syncControlValue(card.querySelector('[data-popup-field="x"]'), bubble.x);
   syncControlValue(card.querySelector('[data-popup-field="y"]'), bubble.y);
   syncControlValue(card.querySelector('[data-popup-field="width"]'), displayedSize.width);
@@ -3989,7 +3980,7 @@ function buildPopupBubbleCard(bubble, index) {
       shot_id: "shot_id",
     }[field] || field;
     const eventName = control.type === "checkbox" ? "change" : "input";
-    if (field === "shot_id" || field === "anchor_mode" || field === "quadrant") {
+    if (field === "shot_id" || field === "anchor_mode") {
       control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
       return;
     }
@@ -3997,22 +3988,13 @@ function buildPopupBubbleCard(bubble, index) {
     control.addEventListener("change", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
     control.addEventListener("blur", () => setPopupBubbleField(bubble.id, targetField, readValue(), { commit: true, rerender: true }));
   });
-  const placementInput = card.querySelector('[data-popup-field="quadrant"]');
   const xInput = card.querySelector('[data-popup-field="x"]');
   const yInput = card.querySelector('[data-popup-field="y"]');
   [xInput, yInput].forEach((input) => {
     if (!input) return;
-    input.disabled = !usesCustomPlacement;
-    input.placeholder = usesCustomPlacement ? "0.50" : "Custom only";
+    input.disabled = false;
+    input.placeholder = "0.50";
   });
-  if (placementInput instanceof HTMLSelectElement) {
-    const customPlacement = placementInput.value === CUSTOM_QUADRANT_VALUE;
-    [xInput, yInput].forEach((input) => {
-      if (!input) return;
-      input.disabled = !customPlacement;
-      input.placeholder = customPlacement ? "0.50" : "Custom only";
-    });
-  }
   const anchorModeInput = card.querySelector('[data-popup-field="anchor_mode"]');
   const timeInput = card.querySelector('[data-popup-field="time_s"]');
   const durationInput = card.querySelector('[data-popup-field="duration_s"]');
@@ -4175,7 +4157,6 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   syncControlValue($("popup-template-content-type"), template.content_type);
   syncControlValue($("popup-template-text-source"), template.text_source);
   syncControlValue($("popup-template-duration-s"), precise(template.duration_ms));
-  syncControlValue($("popup-template-quadrant"), template.quadrant);
   syncControlValue($("popup-template-width"), template.width);
   syncControlValue($("popup-template-height"), template.height);
   syncControlChecked($("popup-template-follow-motion"), template.follow_motion);
@@ -4214,7 +4195,7 @@ function readPopupTemplatePayload() {
     content_type: $("popup-template-content-type")?.value || "text",
     text_source: $("popup-template-text-source")?.value || "score",
     duration_ms: Math.max(1, Math.round((Number($("popup-template-duration-s")?.value || 1) || 1) * 1000)),
-    quadrant: $("popup-template-quadrant")?.value || "middle_middle",
+    quadrant: $("popup-template-quadrant")?.value || current.quadrant || "middle_middle",
     width: Number($("popup-template-width")?.value || 0),
     height: Number($("popup-template-height")?.value || 0),
     follow_motion: $("popup-template-follow-motion")?.checked ?? false,
@@ -4708,8 +4689,181 @@ async function callApi(path, payload = null) {
   }
 }
 
+function practiScoreResponseErrorMessage(data, fallback) {
+  if (typeof data?.error === "string") return data.error;
+  if (data?.error && typeof data.error === "object") {
+    return String(data.error.message || data.error.code || fallback);
+  }
+  return String(fallback || "Unexpected PractiScore response.");
+}
+
+async function requestPractiScorePayload(path, payload = null) {
+  activity("api.request", { path, payload });
+  const processing = processingForPath(path, payload);
+  const finishProcessing = processing === null
+    ? null
+    : beginProcessing(processing.message, processing.detail, path);
+  const options = payload === null
+    ? {}
+    : {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      };
+  try {
+    const response = await fetch(path, options);
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(practiScoreResponseErrorMessage(data, response.statusText));
+    }
+    activity("api.response", { path, status: data.status || data.message || "Ready.", shots: data.metrics?.total_shots });
+    if (finishProcessing) finishProcessing(data.status || data.message || "Ready.");
+    return data;
+  } catch (error) {
+    if (finishProcessing) finishProcessing(error.message || "PractiScore request failed.");
+    forceHideProcessingBar();
+    setStatus(error.message);
+    activity("api.error", { path, error: error.message });
+    return null;
+  }
+}
+
+function stopPractiScoreSessionPolling() {
+  practiScoreConnectFlowActive = false;
+  if (practiScoreSessionPollTimer === null) return;
+  window.clearTimeout(practiScoreSessionPollTimer);
+  practiScoreSessionPollTimer = null;
+}
+
+function schedulePractiScoreSessionPoll(delayMs = PRACTISCORE_SESSION_POLL_INTERVAL_MS) {
+  if (!practiScoreConnectFlowActive) return;
+  if (practiScoreSessionPollTimer !== null) {
+    window.clearTimeout(practiScoreSessionPollTimer);
+  }
+  practiScoreSessionPollTimer = window.setTimeout(() => {
+    practiScoreSessionPollTimer = null;
+    pollPractiScoreSessionStatus();
+  }, delayMs);
+}
+
+async function loadPractiScoreRemoteMatches() {
+  if (!state) return null;
+  state.practiscore_sync = normalizePractiScoreSyncPayload({
+    ...practiScoreSyncPayload(),
+    state: "discovering_matches",
+    message: "Discovering remote PractiScore matches...",
+  });
+  requestRender();
+  const payload = await requestPractiScorePayload("/api/practiscore/matches");
+  if (!payload) return null;
+  applyPractiScoreRoutePayload(payload);
+  requestRender();
+  setStatus(payload.practiscore_sync?.message || payload.practiscore_session?.message || "PractiScore matches updated.");
+  const matches = remotePractiScoreMatches();
+  if (matches.length === 1 && !state?.practiscore_options?.has_source && !selectedPractiScoreRemoteId()) {
+    state.practiscore_sync = normalizePractiScoreSyncPayload({
+      ...practiScoreSyncPayload(),
+      selected_remote_id: matches[0].remote_id,
+    });
+    requestRender();
+    await importSelectedPractiScoreMatch();
+  }
+  return payload;
+}
+
+async function pollPractiScoreSessionStatus() {
+  if (!practiScoreConnectFlowActive) return null;
+  const payload = await requestPractiScorePayload("/api/practiscore/session/status");
+  if (!payload) {
+    stopPractiScoreSessionPolling();
+    return null;
+  }
+  applyPractiScoreSessionPayload(payload);
+  requestRender();
+  setStatus(payload.message || "PractiScore session updated.");
+  if (payload.state === "authenticating") {
+    schedulePractiScoreSessionPoll();
+    return payload;
+  }
+  stopPractiScoreSessionPolling();
+  if (payload.state === "authenticated_ready") {
+    await loadPractiScoreRemoteMatches();
+  }
+  return payload;
+}
+
+async function connectPractiScore() {
+  stopPractiScoreSessionPolling();
+  practiScoreConnectFlowActive = true;
+  const payload = await requestPractiScorePayload("/api/practiscore/session/start", {});
+  if (!payload) {
+    practiScoreConnectFlowActive = false;
+    return null;
+  }
+  applyPractiScoreSessionPayload(payload);
+  requestRender();
+  setStatus(payload.message || "PractiScore session updated.");
+  if (payload.state === "authenticated_ready") {
+    stopPractiScoreSessionPolling();
+    return loadPractiScoreRemoteMatches();
+  }
+  if (payload.state === "authenticating") {
+    schedulePractiScoreSessionPoll(0);
+    return payload;
+  }
+  practiScoreConnectFlowActive = false;
+  return payload;
+}
+
+async function clearPractiScoreSession() {
+  stopPractiScoreSessionPolling();
+  const payload = await requestPractiScorePayload("/api/practiscore/session/clear", {});
+  if (!payload) return null;
+  applyPractiScoreSessionPayload(payload, { resetSync: true });
+  requestRender();
+  setStatus(payload.message || "PractiScore session cleared.");
+  return payload;
+}
+
+async function importSelectedPractiScoreMatch() {
+  if (!state) return null;
+  const remoteId = selectedPractiScoreRemoteId();
+  if (!remoteId) {
+    setStatus("Select a remote PractiScore match before importing.");
+    return null;
+  }
+  state.practiscore_sync = normalizePractiScoreSyncPayload({
+    ...practiScoreSyncPayload(),
+    state: "importing_selected_match",
+    message: "Importing selected remote PractiScore match...",
+    selected_remote_id: remoteId,
+  });
+  requestRender();
+  const payload = await requestPractiScorePayload("/api/practiscore/sync/start", { remote_id: remoteId });
+  if (!payload) return null;
+  applyPractiScoreRoutePayload(payload);
+  requestRender();
+  setStatus(payload.practiscore_sync?.message || payload.practiscore_session?.message || "PractiScore sync updated.");
+  if (payload.practiscore_sync?.state === "success") {
+    await refresh();
+  }
+  return payload;
+}
+
 function processingForPath(path, payload = null) {
   if (path === "/api/export") return { message: "Exporting video...", detail: "Running FFmpeg locally" };
+  if (path === "/api/practiscore/session/start") {
+    return { message: "Connecting PractiScore...", detail: "Checking your browser session or opening PractiScore in your browser" };
+  }
+  if (path === "/api/practiscore/session/clear") {
+    return { message: "Clearing PractiScore session...", detail: "Removing cached authentication state" };
+  }
+  if (path === "/api/practiscore/matches") {
+    return { message: "Loading remote PractiScore matches...", detail: "Reading the selected account's available matches" };
+  }
+  if (path === "/api/practiscore/sync/start") {
+    return { message: "Importing selected PractiScore match...", detail: "Downloading and staging the selected remote results" };
+  }
   if (path === "/api/import/primary") {
     return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
   }
@@ -5108,6 +5262,129 @@ function normalizedPractiScorePlaceValue(rawValue) {
   return Math.trunc(numeric);
 }
 
+function defaultPractiScoreSessionPayload() {
+  return {
+    state: "not_authenticated",
+    message: "Connect PractiScore to use your browser session for background sync.",
+    details: {},
+  };
+}
+
+function normalizePractiScoreSessionPayload(payload) {
+  const normalized = defaultPractiScoreSessionPayload();
+  if (!payload || typeof payload !== "object") return normalized;
+  normalized.state = String(payload.state || normalized.state);
+  normalized.message = String(payload.message || normalized.message);
+  normalized.details = payload.details && typeof payload.details === "object" ? { ...payload.details } : {};
+  return normalized;
+}
+
+function normalizePractiScoreRemoteMatches(matches) {
+  if (!Array.isArray(matches)) return [];
+  return matches
+    .filter((item) => item && typeof item === "object" && String(item.remote_id || "").trim())
+    .map((item) => ({
+      remote_id: String(item.remote_id || "").trim(),
+      label: String(item.label || "").trim(),
+      match_type: String(item.match_type || "").trim(),
+      event_name: String(item.event_name || "").trim(),
+      event_date: String(item.event_date || "").trim(),
+    }));
+}
+
+function defaultPractiScoreSyncPayload() {
+  return {
+    state: "idle",
+    message: "No remote PractiScore sync activity yet.",
+    matches: [],
+    selected_remote_id: null,
+    error_category: "",
+    details: {},
+  };
+}
+
+function normalizePractiScoreSyncPayload(payload) {
+  const normalized = defaultPractiScoreSyncPayload();
+  if (!payload || typeof payload !== "object") return normalized;
+  normalized.state = String(payload.state || normalized.state);
+  normalized.message = String(payload.message || normalized.message);
+  normalized.matches = normalizePractiScoreRemoteMatches(payload.matches);
+  normalized.selected_remote_id = payload.selected_remote_id === null || payload.selected_remote_id === undefined || String(payload.selected_remote_id).trim() === ""
+    ? null
+    : String(payload.selected_remote_id).trim();
+  normalized.error_category = String(payload.error_category || "").trim();
+  normalized.details = payload.details && typeof payload.details === "object" ? { ...payload.details } : {};
+  return normalized;
+}
+
+function practiScoreSessionPayload() {
+  return normalizePractiScoreSessionPayload(state?.practiscore_session);
+}
+
+function practiScoreSyncPayload() {
+  return normalizePractiScoreSyncPayload(state?.practiscore_sync);
+}
+
+function applyPractiScoreSessionPayload(payload, { resetSync = false } = {}) {
+  if (!state) return;
+  state.practiscore_session = normalizePractiScoreSessionPayload(payload);
+  if (resetSync) state.practiscore_sync = defaultPractiScoreSyncPayload();
+}
+
+function applyPractiScoreRoutePayload(payload) {
+  if (!state || !payload || typeof payload !== "object") return;
+  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_session")) {
+    state.practiscore_session = normalizePractiScoreSessionPayload(payload.practiscore_session);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_sync")) {
+    state.practiscore_sync = normalizePractiScoreSyncPayload(payload.practiscore_sync);
+  } else if (Array.isArray(payload.matches)) {
+    state.practiscore_sync = normalizePractiScoreSyncPayload({
+      ...practiScoreSyncPayload(),
+      matches: payload.matches,
+    });
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_options") && payload.practiscore_options && typeof payload.practiscore_options === "object") {
+    state.practiscore_options = {
+      ...(state.practiscore_options || {}),
+      ...payload.practiscore_options,
+    };
+  }
+}
+
+function formatPractiScoreStateLabel(value) {
+  const label = String(value || "").trim();
+  if (!label) return "Idle";
+  return label
+    .split("_")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+function currentPractiScoreUiState() {
+  const sessionState = practiScoreSessionPayload().state;
+  const syncState = practiScoreSyncPayload().state;
+  if (sessionState === "expired") return "expired";
+  if (syncState === "error") return "error";
+  if (syncState === "success") return "success";
+  if (syncState === "importing_selected_match") return "importing_selected_match";
+  if (syncState === "match_list_ready") return "match_list_ready";
+  if (sessionState === "authenticated_ready") return "authenticated_ready";
+  if (sessionState === "authenticating") return "authenticating";
+  return "not_authenticated";
+}
+
+function remotePractiScoreMatches() {
+  return practiScoreSyncPayload().matches;
+}
+
+function selectedPractiScoreRemoteId() {
+  const control = $("practiscore-remote-match");
+  const selectedValue = control instanceof HTMLSelectElement ? String(control.value || "").trim() : "";
+  if (selectedValue) return selectedValue;
+  return String(practiScoreSyncPayload().selected_remote_id || "").trim();
+}
+
 function practiScoreCompetitors() {
   return Array.isArray(state?.practiscore_options?.competitors)
     ? state.practiscore_options.competitors
@@ -5240,6 +5517,107 @@ function syncPractiScoreSelectionFields(changedField) {
     competitor_name: nameSelect.value,
     competitor_place: placeSelect.value,
   });
+}
+
+function renderPractiScoreRemoteMatchOptions() {
+  const select = $("practiscore-remote-match");
+  if (!(select instanceof HTMLSelectElement)) return;
+  const sessionState = practiScoreSessionPayload().state;
+  const syncState = practiScoreSyncPayload();
+  const matches = remotePractiScoreMatches();
+  const activeValue = controlIsActive(select) ? String(select.value || "").trim() : "";
+  const selectedValue = activeValue || String(syncState.selected_remote_id || "").trim();
+  const emptyLabel = sessionState === "authenticated_ready"
+    ? (matches.length > 0 ? "Select a remote match" : "No remote matches available")
+    : sessionState === "authenticating"
+      ? "Waiting for PractiScore login..."
+      : "Connect PractiScore to load matches";
+  select.innerHTML = "";
+  const emptyOption = document.createElement("option");
+  emptyOption.value = "";
+  emptyOption.textContent = emptyLabel;
+  select.appendChild(emptyOption);
+  matches.forEach((match) => {
+    const option = document.createElement("option");
+    option.value = match.remote_id;
+    option.textContent = [
+      match.label || match.event_name || `Remote match ${match.remote_id}`,
+      match.match_type ? formatMatchType(match.match_type) : "",
+      match.event_date || "",
+    ].filter(Boolean).join(" | ");
+    select.appendChild(option);
+  });
+  select.value = selectedValue && matches.some((match) => match.remote_id === selectedValue) ? selectedValue : "";
+}
+
+function defaultPractiScoreRemoteMessage(uiState, sessionPayload, syncPayload) {
+  if (uiState === "importing_selected_match") {
+    return "SplitShot is downloading and staging the selected PractiScore match in the background.";
+  }
+  if (uiState === "match_list_ready") {
+    const matches = remotePractiScoreMatches();
+    if (matches.length === 0) {
+      return syncPayload.message || "No remote PractiScore matches were found for the authenticated session.";
+    }
+    if (!selectedPractiScoreRemoteId()) {
+      return `${syncPayload.message || "Remote PractiScore matches are ready."} Select a remote match, then click Import Selected Match.`;
+    }
+    return "Click Import Selected Match and SplitShot will download the selected PractiScore match in the background.";
+  }
+  if (uiState === "authenticated_ready") {
+    return "PractiScore is connected. SplitShot is loading the available remote matches.";
+  }
+  if (uiState === "authenticating") {
+    return sessionPayload.message || "Complete PractiScore login in your browser. SplitShot will continue in the background.";
+  }
+  if (uiState === "success") {
+    return syncPayload.message || "PractiScore match imported successfully.";
+  }
+  if (uiState === "error") {
+    return syncPayload.message || sessionPayload.message || "PractiScore sync failed.";
+  }
+  if (uiState === "expired") {
+    return sessionPayload.message || "PractiScore session expired. Connect again to continue.";
+  }
+  return "Connect PractiScore. If you are already logged into PractiScore in a supported browser, SplitShot will reuse that session. Otherwise finish login in your browser and SplitShot will continue in the background.";
+}
+
+function renderPractiScoreRemoteState() {
+  const panel = document.querySelector(".practiscore-remote-panel");
+  const statusBlock = $("practiscore-session-sync-status");
+  const sessionStatus = $("practiscore-session-status");
+  const syncStatus = $("practiscore-sync-status");
+  const syncMessage = $("practiscore-sync-message");
+  const sessionPayload = practiScoreSessionPayload();
+  const syncPayload = practiScoreSyncPayload();
+  const uiState = currentPractiScoreUiState();
+  const matches = remotePractiScoreMatches();
+  renderPractiScoreRemoteMatchOptions();
+  if (panel instanceof HTMLElement) panel.dataset.state = uiState;
+  if (statusBlock instanceof HTMLElement) statusBlock.dataset.state = uiState;
+  if (sessionStatus instanceof HTMLElement) {
+    sessionStatus.dataset.state = sessionPayload.state;
+    sessionStatus.textContent = formatPractiScoreStateLabel(sessionPayload.state);
+  }
+  if (syncStatus instanceof HTMLElement) {
+    syncStatus.dataset.state = syncPayload.state;
+    syncStatus.textContent = formatPractiScoreStateLabel(syncPayload.state);
+  }
+  if (syncMessage) syncMessage.textContent = defaultPractiScoreRemoteMessage(uiState, sessionPayload, syncPayload);
+  const connectButton = $("connect-practiscore");
+  if (connectButton) connectButton.disabled = uiState === "authenticating" || uiState === "importing_selected_match";
+  const clearButton = $("clear-practiscore-session");
+  if (clearButton) clearButton.disabled = uiState === "importing_selected_match";
+  const remoteMatchSelect = $("practiscore-remote-match");
+  if (remoteMatchSelect instanceof HTMLSelectElement) {
+    remoteMatchSelect.disabled = uiState === "authenticating" || uiState === "importing_selected_match" || matches.length === 0;
+  }
+  const importSelectedButton = $("import-practiscore-selected");
+  if (importSelectedButton) {
+    importSelectedButton.disabled = uiState === "importing_selected_match" || matches.length === 0 || !selectedPractiScoreRemoteId();
+  }
+  const importButton = $("import-practiscore");
+  if (importButton) importButton.disabled = uiState === "importing_selected_match";
 }
 
 function durationMs() {
@@ -5442,7 +5820,6 @@ function syncSettingsMarkerTemplate(template = {}) {
   syncControlValue($("settings-marker-content-type"), template.content_type ?? "text");
   syncControlValue($("settings-marker-text-source"), template.text_source ?? "score");
   syncControlValue($("settings-marker-duration"), (Number(template.duration_ms ?? 1000) / 1000).toFixed(3));
-  syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
   syncControlValue($("settings-marker-width"), template.width ?? 0);
   syncControlValue($("settings-marker-height"), template.height ?? 0);
   syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
@@ -5483,12 +5860,6 @@ const SETTINGS_LAYER_FIELDS = [
     path: ["marker_template", "duration_ms"],
     usesProjectTemplate: true,
     projectPath: ["project", "popup_template", "duration_ms"],
-  },
-  {
-    label: "Marker quadrant",
-    path: ["marker_template", "quadrant"],
-    usesProjectTemplate: true,
-    projectPath: ["project", "popup_template", "quadrant"],
   },
   {
     label: "Marker width",
@@ -7986,6 +8357,7 @@ function renderControls() {
     competitor_name: state.project.scoring.competitor_name || "",
     competitor_place: state.project.scoring.competitor_place ?? "",
   });
+  renderPractiScoreRemoteState();
   syncControlChecked($("merge-enabled"), state.project.merge.enabled);
   syncControlValue($("merge-layout"), state.project.merge.layout);
   const pipValue = Number(
@@ -10998,7 +11370,7 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
       content_type: $("settings-marker-content-type")?.value || "text",
       text_source: $("settings-marker-text-source")?.value || "score",
       duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
-      quadrant: $("settings-marker-quadrant")?.value || "middle_middle",
+      quadrant: $("settings-marker-quadrant")?.value || projectPopupTemplate.quadrant || "middle_middle",
       width: Number($("settings-marker-width")?.value || 0),
       height: Number($("settings-marker-height")?.value || 0),
       follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
@@ -11100,6 +11472,23 @@ function wireEvents() {
   $("import-practiscore").addEventListener("click", () => {
     setStatus("Select a PractiScore results file (.csv or .txt).");
     openHiddenFileInput("practiscore-file-input");
+  });
+  $("connect-practiscore")?.addEventListener("click", async () => {
+    await connectPractiScore();
+  });
+  $("clear-practiscore-session")?.addEventListener("click", async () => {
+    await clearPractiScoreSession();
+  });
+  $("practiscore-remote-match")?.addEventListener("change", () => {
+    if (!state) return;
+    state.practiscore_sync = normalizePractiScoreSyncPayload({
+      ...practiScoreSyncPayload(),
+      selected_remote_id: $("practiscore-remote-match")?.value || null,
+    });
+    requestRender();
+  });
+  $("import-practiscore-selected")?.addEventListener("click", async () => {
+    await importSelectedPractiScoreMatch();
   });
   $("practiscore-file-input").addEventListener("change", async (event) => {
     const payload = validatePractiScoreSelection();
@@ -11371,7 +11760,6 @@ function wireEvents() {
   [
     "popup-template-content-type",
     "popup-template-text-source",
-    "popup-template-quadrant",
   ].forEach((id) => $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() })));
   [
     "popup-template-enabled",
@@ -11420,7 +11808,6 @@ function wireEvents() {
     "settings-export-ffmpeg-preset",
     "settings-marker-content-type",
     "settings-marker-text-source",
-    "settings-marker-quadrant",
     "settings-marker-enabled",
     "settings-marker-follow-motion",
     "settings-marker-background-color",

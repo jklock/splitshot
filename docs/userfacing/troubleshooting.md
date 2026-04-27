@@ -14,6 +14,26 @@ This page covers common SplitShot problems and the pane that owns the fix.
 - Paste the full path into `Primary Video`.
 - Press Enter.
 
+## PractiScore Connect Window Does Not Open
+
+- Open [panes/project.md](panes/project.md).
+- Click `Connect PractiScore` again.
+- If the PractiScore session looks wrong or stale, click `Clear PractiScore Session`, then connect again.
+- Wait for the visible PractiScore login window before retrying the import flow.
+
+## PractiScore Login Or Challenge Keeps Reappearing
+
+- Finish the login or challenge in the visible PractiScore window itself.
+- Do not retry the SplitShot import until the Project pane says the session is ready or the match list appears.
+- If the site keeps looping, use `Clear PractiScore Session`, then reconnect and try the login flow again.
+
+## PractiScore Match List Does Not Appear
+
+- Open [panes/project.md](panes/project.md).
+- Confirm the PractiScore status block shows the session as ready.
+- If the match list still stays empty, reconnect the session.
+- Use `Select PractiScore File` if remote sync is unavailable and you need to keep working.
+
 ## Missing Or Extra Shots
 
 - Open [panes/shotml.md](panes/shotml.md) before detailed manual edits.
@@ -32,7 +52,15 @@ This page covers common SplitShot problems and the pane that owns the fix.
 
 - Reopen [panes/project.md](panes/project.md).
 - Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
-- If the wrong file was loaded, click `Select PractiScore File` again.
+- If the wrong remote match was loaded, choose the correct `Remote match` and click `Import Selected Match` again.
+- If you want to overwrite the staged source directly, click `Select PractiScore File` again with the correct CSV/TXT export.
+
+## Need To Replace A PractiScore Source
+
+- Open [panes/project.md](panes/project.md).
+- Click `Select PractiScore File`.
+- Choose the replacement CSV/TXT export.
+- The latest file import replaces the previously staged source and updates the local PractiScore controls from that new file.
 
 ## Score Or Marker Text Looks Wrong
 
@@ -99,5 +127,5 @@ Metrics is read-only. Fix the source pane:
 - Use the pane guide for the active rail tool.
 - Review [../project/LIMITATIONS.md](../project/LIMITATIONS.md) if the issue may be a current product limitation.
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-04-27
+**Referenced files last updated:** 2026-04-27
