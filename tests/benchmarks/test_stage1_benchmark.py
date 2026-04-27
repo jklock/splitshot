@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from splitshot.analysis.detection import analyze_video_audio
 
 
-STAGE1_PATH = Path("Stage1.MP4")
+STAGE1_PATH = Path(".training") / "Stage1.MP4"
 EXPECTED_SHOT_COUNT = 18
 EXPECTED_DRAW_MS = 1950
 EXPECTED_STAGE_MS = 13650
@@ -32,8 +30,8 @@ EXPECTED_SPLITS_MS = [
 ]
 
 
-@pytest.mark.skipif(not STAGE1_PATH.exists(), reason="Stage1.MP4 benchmark file is not present")
 def test_stage1_benchmark_tracks_shotstreamer_reference() -> None:
+    assert STAGE1_PATH.exists(), f"Missing benchmark media: {STAGE1_PATH}"
     result = analyze_video_audio(str(STAGE1_PATH), threshold=0.5)
 
     assert result.beep_time_ms is not None

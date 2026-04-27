@@ -472,6 +472,24 @@ class PopupBubble:
     opacity: float = 0.9
     width: int = 0
     height: int = 0
+    content_type: str = "text"
+    image_path: str = ""
+    image_scale_mode: str = "contain"
+
+
+@dataclass(slots=True)
+class PopupTemplate:
+    enabled: bool = True
+    content_type: str = "text"
+    text_source: str = "score"
+    duration_ms: int = 1000
+    quadrant: str = "middle_middle"
+    width: int = 0
+    height: int = 0
+    follow_motion: bool = False
+    background_color: str = "#000000"
+    text_color: str = "#ffffff"
+    opacity: float = 0.9
 
 
 @dataclass(slots=True)
@@ -512,6 +530,7 @@ class UIState:
     inspector_width: int = 440
     waveform_height: int = 206
     scoring_shot_expansion: dict[str, bool] = field(default_factory=dict)
+    scoring_edit_shot_ids: list[str] = field(default_factory=list)
     waveform_shot_amplitudes: dict[str, float] = field(default_factory=dict)
     timing_edit_shot_ids: list[str] = field(default_factory=list)
     timing_column_widths: dict[str, float] = field(default_factory=dict)
@@ -536,6 +555,7 @@ class Project:
     scoring: ScoringState = field(default_factory=ScoringState)
     overlay: OverlaySettings = field(default_factory=OverlaySettings)
     popups: list[PopupBubble] = field(default_factory=list)
+    popup_template: PopupTemplate = field(default_factory=PopupTemplate)
     merge: MergeSettings = field(default_factory=MergeSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     ui_state: UIState = field(default_factory=UIState)
@@ -636,7 +656,9 @@ _UI_STATE_ACTIVE_TOOLS = {
     "merge",
     "overlay",
     "review",
+    "markers",
     "popup",
+    "settings",
     "export",
     "metrics",
 }
@@ -706,6 +728,8 @@ def _normalize_popup_motion_path(data: Any) -> list[PopupMotionPoint]:
 
 def _normalize_ui_state_active_tool(value: Any) -> str:
     normalized = str(value or "project")
+    if normalized == "popup":
+        normalized = "markers"
     return normalized if normalized in _UI_STATE_ACTIVE_TOOLS else "project"
 
 
@@ -799,6 +823,23 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         opacity=max(0.0, min(1.0, float(data.get("opacity", 0.9)))),
         width=max(0, int(data.get("width", 0) or 0)),
         height=max(0, int(data.get("height", 0) or 0)),
+        content_type=str(data.get("content_type", "text") or "text"),
+        image_path=str(data.get("image_path", "") or ""),
+        image_scale_mode=str(data.get("image_scale_mode", "contain") or "contain"),
+    )
+
+
+def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
+    payload = data if isinstance(data, dict) else {}
+    return PopupTemplate(
+        enabled=bool(payload.get("enabled", True)),
+        content_type=str(payload.get("content_type", "text") or "text"),
+        text_source=str(payload.get("text_source", "score") or "score"),
+        duration_ms=max(1, int(payload.get("duration_ms", 1000) or 1000)),
+        quadrant=_normalize_popup_bubble_quadrant(payload.get("quadrant")),
+        width=max(0, int(payload.get("width", 0) or 0)),
+        height=max(0, int(payload.get("height", 0) or 0)),
+        follow_motion=bool(payload.get("follow_motion", False)),
     )
 
 
@@ -1154,6 +1195,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             for item in data.get("popups", [])
             if isinstance(item, dict)
         ],
+        popup_template=_popup_template_from_dict(data.get("popup_template")),
         overlay=OverlaySettings(
             position=OverlayPosition(overlay_data.get("position", OverlayPosition.BOTTOM.value)),
             badge_size=BadgeSize(overlay_data.get("badge_size", BadgeSize.M.value)),
@@ -1298,6 +1340,14 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             inspector_width=int(ui_data.get("inspector_width", 440)),
             waveform_height=int(ui_data.get("waveform_height", 206)),
             scoring_shot_expansion=_ui_state_bool_map(ui_data.get("scoring_shot_expansion")),
+            scoring_edit_shot_ids=_ui_state_string_list(
+                ui_data.get("scoring_edit_shot_ids")
+                or [
+                    key
+                    for key, value in _ui_state_bool_map(ui_data.get("scoring_shot_expansion")).items()
+                    if value
+                ]
+            ),
             waveform_shot_amplitudes=_ui_state_float_map(
                 ui_data.get("waveform_shot_amplitudes"),
                 minimum=0.25,

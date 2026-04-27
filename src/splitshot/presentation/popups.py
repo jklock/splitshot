@@ -119,6 +119,20 @@ def popup_bubble_display_text(project: Project, popup: object) -> str:
     return " | ".join(part for part in parts if part) or fallback_text
 
 
+def popup_bubble_content_type(popup: object) -> str:
+    value = str(_field(popup, "content_type", "text") or "text").strip().lower()
+    return value if value in {"text", "image", "text_image"} else "text"
+
+
+def popup_bubble_image_path(popup: object) -> str:
+    return str(_field(popup, "image_path", "") or "").strip()
+
+
+def popup_bubble_image_scale_mode(popup: object) -> str:
+    value = str(_field(popup, "image_scale_mode", "contain") or "contain").strip().lower()
+    return value if value in {"contain", "cover"} else "contain"
+
+
 def popup_bubble_motion_path(popup: object) -> list[tuple[int, float, float, str]]:
     raw_path = _field(popup, "motion_path", None) or []
     points: list[tuple[int, float, float, str]] = []

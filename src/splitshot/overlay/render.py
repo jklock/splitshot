@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project, overlay_text_boxes_for_render
 from splitshot.presentation.popups import (
+    popup_bubble_content_type,
     popup_bubble_display_text,
+    popup_bubble_image_path,
+    popup_bubble_image_scale_mode,
     popup_bubble_is_visible_at,
     popup_bubble_point,
 )
@@ -30,6 +33,8 @@ class Badge:
     height: int | None = None
     text_runs: tuple[tuple[str, str | None], ...] | None = None
     text_bias: str = "center"
+    image_path: str = ""
+    image_scale_mode: str = "contain"
 
 
 _FONT_SIZE = {
@@ -468,9 +473,13 @@ class OverlayRenderer:
             )
         for popup in project.popups:
             popup_text = popup_bubble_display_text(project, popup)
+            popup_content_type = popup_bubble_content_type(popup)
+            popup_image_path = popup_bubble_image_path(popup)
+            popup_has_text = popup_content_type in {"text", "text_image"} and bool(popup_text.strip())
+            popup_has_image = popup_content_type in {"image", "text_image"} and bool(popup_image_path)
             if (
                 not popup.enabled
-                or not popup_text.strip()
+                or (not popup_has_text and not popup_has_image)
                 or not popup_bubble_is_visible_at(project, popup, position_ms)
             ):
                 continue
@@ -485,10 +494,12 @@ class OverlayRenderer:
                 painter,
                 [
                     Badge(
-                        popup_text,
+                        popup_text if popup_has_text else "",
                         popup_style,
                         width=popup.width or None,
                         height=popup.height or None,
+                        image_path=popup_image_path,
+                        image_scale_mode=popup_bubble_image_scale_mode(popup),
                     )
                 ],
                 project,
@@ -549,6 +560,8 @@ class OverlayRenderer:
         painted_rects: list[QRectF] = []
         for index, badge in enumerate(badges):
             lines = badge.text.splitlines() or [""]
+            image = QImage(badge.image_path) if badge.image_path else QImage()
+            has_image = not image.isNull()
             if badge.text_runs:
                 text_width = sum(metrics.horizontalAdvance(segment_text) for segment_text, _segment_color in badge.text_runs)
             else:
@@ -559,8 +572,17 @@ class OverlayRenderer:
             text_height = line_height * max(1, len(lines))
             explicit_width = int(badge.width or (project.overlay.bubble_width if use_project_bubble_size else 0) or 0)
             explicit_height = int(badge.height or (project.overlay.bubble_height if use_project_bubble_size else 0) or 0)
-            badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else text_width + (padding_x * 2))
-            badge_height = explicit_height if explicit_height > 0 else (auto_badge_size[1] if auto_badge_size else text_height + (padding_y * 2))
+            fallback_width = text_width + (padding_x * 2)
+            fallback_height = text_height + (padding_y * 2)
+            if has_image:
+                fallback_width = max(fallback_width, min(320, max(220, image.width())))
+                image_height = min(220, max(124, image.height()))
+                fallback_height = max(
+                    fallback_height,
+                    image_height if not badge.text else image_height + text_height + 14,
+                )
+            badge_width = explicit_width if explicit_width > 0 else (auto_badge_size[0] if auto_badge_size else fallback_width)
+            badge_height = explicit_height if explicit_height > 0 else (auto_badge_size[1] if auto_badge_size else fallback_height)
             base_rect = previous_rect or after_rect
             if base_rect is None:
                 if quadrant_value == "custom":
@@ -623,6 +645,23 @@ class OverlayRenderer:
             else:
                 painter.drawRect(rect)
             text_rect = rect.adjusted(padding_x, padding_y, -padding_x, -padding_y)
+            if has_image:
+                image_rect = QRectF(text_rect)
+                if badge.text:
+                    image_rect.setBottom(max(image_rect.top(), image_rect.bottom() - line_height - 6))
+                source_rect = QRectF(0.0, 0.0, float(image.width()), float(image.height()))
+                if badge.image_scale_mode == "cover" and image_rect.width() > 0 and image_rect.height() > 0:
+                    source_ratio = image.width() / max(1.0, image.height())
+                    target_ratio = image_rect.width() / max(1.0, image_rect.height())
+                    if source_ratio > target_ratio:
+                        cropped_width = image.height() * target_ratio
+                        source_rect.setLeft((image.width() - cropped_width) / 2.0)
+                        source_rect.setWidth(cropped_width)
+                    else:
+                        cropped_height = image.width() / max(0.0001, target_ratio)
+                        source_rect.setTop((image.height() - cropped_height) / 2.0)
+                        source_rect.setHeight(cropped_height)
+                painter.drawImage(image_rect, image, source_rect)
             if badge.text_runs:
                 default_color = QColor(badge.text_color or badge.style.text_color)
                 total_text_width = sum(metrics.horizontalAdvance(segment_text) for segment_text, _segment_color in badge.text_runs)
