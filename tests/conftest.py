@@ -8,6 +8,8 @@ import numpy as np
 import pytest
 import subprocess
 
+import splitshot.config as splitshot_config
+
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -15,6 +17,24 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 @pytest.fixture(autouse=True)
 def _ensure_qapp(qapp):
     return qapp
+
+
+@pytest.fixture(autouse=True)
+def _isolate_splitshot_settings(tmp_path, monkeypatch):
+    home_dir = tmp_path / "home"
+    app_dir = home_dir / ".splitshot"
+    playwright_cache_candidates = [
+        Path.home() / "Library" / "Caches" / "ms-playwright",
+        Path.home() / ".cache" / "ms-playwright",
+    ]
+    home_dir.mkdir(parents=True, exist_ok=True)
+    for cache_dir in playwright_cache_candidates:
+        if cache_dir.exists():
+            monkeypatch.setenv("PLAYWRIGHT_BROWSERS_PATH", str(cache_dir))
+            break
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setattr(splitshot_config, "APP_DIR", app_dir)
+    monkeypatch.setattr(splitshot_config, "SETTINGS_PATH", app_dir / "settings.json")
 
 
 def _write_wav(path: Path, samples: np.ndarray, sample_rate: int) -> None:

@@ -11,16 +11,21 @@ let waveformPanDrag = null;
 let waveformNavigatorDrag = null;
 let timingRowEdits = new Set();
 let timingAdjustmentDrafts = new Map();
-let scoringShotExpansion = new Map();
+let scoringRowEdits = new Set();
 let reviewTextBoxExpansion = new Map();
 let popupBubbleExpansion = new Map();
 let mergeSourceExpansion = new Map();
 let shotMLSectionExpansion = new Map();
+let settingsSectionExpansion = new Map();
 let selectedPopupBubbleId = null;
 let selectedPopupKeyframeOffsetMs = 0;
 let popupFilterMode = window.localStorage.getItem("splitshot.popupFilterMode") || "all";
 let popupAuthoringCollapsed = false;
 let popupPlaybackWindow = null;
+let popupShotEditorOpen = false;
+let scoringWorkbenchExpanded = false;
+let overlayVisibilityPosition = "bottom";
+let railCollapsed = window.localStorage.getItem("splitshot.railCollapsed") === "true";
 let overlayStyleMode = "square";
 let overlaySpacing = 8;
 let overlayMargin = 8;
@@ -39,6 +44,7 @@ let timingColumnWidths = {};
 let timingColumnResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
+let exportDraft = {};
 let projectDetailsDraft = { name: null, description: null };
 let projectFolderProbeRequestId = 0;
 let secondaryPreviewSyncFrame = null;
@@ -93,20 +99,33 @@ const TIMING_COLUMN_DEFAULTS = Object.freeze({
   split: 112,
   total: 108,
   action: 240,
-  score: 80,
   confidence: 148,
   adjustment: 132,
   final: 108,
   delete: 92,
   restore: 104,
 });
+const SCORING_COLUMN_DEFAULTS = Object.freeze({
+  lock: 72,
+  shot: 144,
+  score: 132,
+  penalties: 184,
+  split: 112,
+  run: 108,
+  action: 196,
+  delete: 92,
+  restore: 104,
+});
 const TIMING_COLUMN_MIN_WIDTHS = Object.freeze({
   lock: 60,
   segment: 104,
+  shot: 104,
   split: 92,
   total: 88,
   action: 140,
-  score: 68,
+  score: 96,
+  penalties: 140,
+  run: 88,
   confidence: 128,
   adjustment: 112,
   final: 88,
@@ -115,7 +134,9 @@ const TIMING_COLUMN_MIN_WIDTHS = Object.freeze({
 });
 const TIMING_TABLE_COLUMN_ORDER = Object.freeze({
   "timing-table": ["segment", "split", "total", "action"],
-  "timing-workbench-table": ["lock", "segment", "split", "total", "action", "score", "confidence", "adjustment", "final", "delete", "restore"],
+  "timing-workbench-table": ["lock", "segment", "split", "total", "action", "confidence", "adjustment", "final", "delete", "restore"],
+  "scoring-table": ["shot", "score", "penalties", "split", "run", "action"],
+  "scoring-workbench-table": ["lock", "shot", "score", "penalties", "split", "run", "action", "delete", "restore"],
 });
 const POPUP_FILTER_OPTIONS = Object.freeze([
   "all",
@@ -128,7 +149,7 @@ const POPUP_FILTER_OPTIONS = Object.freeze([
   "visible",
 ]);
 const VALID_POPUP_FILTER_MODES = new Set(POPUP_FILTER_OPTIONS);
-const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "score", "confidence", "adjustment", "final"]);
+const TIMING_RESIZABLE_COLUMNS = new Set(["segment", "split", "total", "action", "confidence", "adjustment", "final", "shot", "score", "penalties", "run"]);
 const PIP_DEFAULTS_SECTION_ID = "pip-defaults";
 const METRICS_TABLE_COLUMNS = Object.freeze([
   ["Shot", "segment"],
@@ -175,7 +196,15 @@ const OVERLAY_BADGE_PADDING_X_PX = 10;
 const OVERLAY_BADGE_PADDING_Y_PX = 5;
 const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";
 const CUSTOM_QUADRANT_VALUE = "custom";
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "shotml", "merge", "overlay", "review", "popup", "export", "metrics"]);
+function normalizeToolId(tool) {
+  const normalized = String(tool || "project");
+  if (normalized === "popup") return "markers";
+  return normalized;
+}
+
+activeTool = normalizeToolId(activeTool);
+
+const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "settings", "shotml", "merge", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -208,7 +237,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   rail_width: Math.round(layoutSizes.railWidth),
   inspector_width: Math.round(layoutSizes.inspectorWidth),
   waveform_height: Math.round(layoutSizes.waveformHeight),
-  scoring_shot_expansion: {},
+  scoring_edit_shot_ids: [],
   waveform_shot_amplitudes: {},
   timing_edit_shot_ids: [],
   timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },
@@ -265,6 +294,71 @@ function mergeProjectDetailsDraft(project) {
       project.description = draftDescription;
     }
   }
+}
+
+function normalizeExportDraftValue(key, value) {
+  if (![
+    "quality",
+    "aspect_ratio",
+    "target_width",
+    "target_height",
+    "frame_rate",
+    "video_codec",
+    "video_bitrate_mbps",
+    "audio_codec",
+    "audio_sample_rate",
+    "audio_bitrate_kbps",
+    "color_space",
+    "two_pass",
+    "ffmpeg_preset",
+  ].includes(key)) {
+    return undefined;
+  }
+  if (value === undefined) return undefined;
+  if (key === "target_width" || key === "target_height") {
+    return value === "" || value === null ? null : Math.max(2, Number(value));
+  }
+  if (key === "video_bitrate_mbps") {
+    return Math.max(0.1, Number(value));
+  }
+  if (key === "audio_sample_rate") {
+    return Math.max(8000, Number(value));
+  }
+  if (key === "audio_bitrate_kbps") {
+    return Math.max(32, Number(value));
+  }
+  if (key === "two_pass") {
+    return Boolean(value);
+  }
+  return String(value ?? "");
+}
+
+function applyExportDraft(payload = {}) {
+  const exportState = state?.project?.export;
+  Object.entries(payload).forEach(([key, value]) => {
+    const normalized = normalizeExportDraftValue(key, value);
+    if (normalized === undefined) return;
+    const savedValue = normalizeExportDraftValue(key, exportState?.[key]);
+    if (normalized === savedValue) {
+      delete exportDraft[key];
+    } else {
+      exportDraft[key] = normalized;
+    }
+    if (exportState) exportState[key] = normalized;
+  });
+}
+
+function mergeExportDraft(project) {
+  const exportState = project?.export;
+  if (!exportState) return;
+  Object.entries(exportDraft).forEach(([key, value]) => {
+    const savedValue = normalizeExportDraftValue(key, exportState[key]);
+    if (value === savedValue) {
+      delete exportDraft[key];
+    } else {
+      exportState[key] = value;
+    }
+  });
 }
 
 function flushActivityQueue() {
@@ -1209,10 +1303,13 @@ function openColorPicker(control) {
 
 function closeColorPicker({ commit = true } = {}) {
   const modal = colorPickerModal();
+  const activeControl = activeColorPickerControl;
   if (!modal || modal.hidden) {
+    activeControl?.blur();
     activeColorPickerControl = null;
     return;
   }
+  activeControl?.blur();
   if (commit) flushOverlayColorCommit();
   modal.hidden = true;
   activeColorPickerControl = null;
@@ -1428,6 +1525,16 @@ function debounce(fn, delayMs = 250) {
     lastArgs = null;
   };
 
+  debounced.flush = () => {
+    if (timer === null) return false;
+    window.clearTimeout(timer);
+    timer = null;
+    const pendingArgs = lastArgs;
+    lastArgs = null;
+    fn(...(pendingArgs || []));
+    return true;
+  };
+
   return debounced;
 }
 
@@ -1467,7 +1574,7 @@ function normalizedUiStringList(data) {
 
 function resolvedTimingColumnWidths(data = {}) {
   const resolved = {};
-  Object.entries(TIMING_COLUMN_DEFAULTS).forEach(([columnId, defaultWidth]) => {
+  Object.entries({ ...TIMING_COLUMN_DEFAULTS, ...SCORING_COLUMN_DEFAULTS }).forEach(([columnId, defaultWidth]) => {
     const requestedWidth = Number(data?.[columnId]);
     const minimumWidth = TIMING_COLUMN_MIN_WIDTHS[columnId] || 72;
     resolved[columnId] = Number.isFinite(requestedWidth)
@@ -1482,10 +1589,13 @@ function timingGridTemplate(tableId) {
   const flex = {
     lock: 0.45,
     segment: 1.15,
+    shot: 0.95,
     split: 0.62,
     total: 0.62,
     action: 1.55,
-    score: 0.5,
+    score: 0.72,
+    penalties: 1.2,
+    run: 0.62,
     confidence: 1.05,
     adjustment: 0.9,
     final: 0.72,
@@ -1508,6 +1618,8 @@ function applyTimingTableColumns(table) {
 function syncTimingTableColumns() {
   applyTimingTableColumns($("timing-table"));
   applyTimingTableColumns($("timing-workbench-table"));
+  applyTimingTableColumns($("scoring-table"));
+  applyTimingTableColumns($("scoring-workbench-table"));
 }
 
 function beginTimingColumnResize(tableId, columnId, event) {
@@ -1553,8 +1665,9 @@ function endTimingColumnResize(event) {
 }
 
 function normalizeProjectUiState(uiState = {}) {
-  const normalizedActiveTool = VALID_TOOL_IDS.has(String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool))
-    ? String(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool)
+  const requestedActiveTool = normalizeToolId(uiState.active_tool || DEFAULT_PROJECT_UI_STATE.active_tool);
+  const normalizedActiveTool = VALID_TOOL_IDS.has(requestedActiveTool)
+    ? requestedActiveTool
     : DEFAULT_PROJECT_UI_STATE.active_tool;
   const normalizedWaveformMode = VALID_WAVEFORM_MODES.has(String(uiState.waveform_mode || DEFAULT_PROJECT_UI_STATE.waveform_mode))
     ? String(uiState.waveform_mode || DEFAULT_PROJECT_UI_STATE.waveform_mode)
@@ -1575,7 +1688,9 @@ function normalizeProjectUiState(uiState = {}) {
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
     inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
     waveform_height: Math.max(112, Math.round(Number(uiState.waveform_height ?? DEFAULT_PROJECT_UI_STATE.waveform_height) || DEFAULT_PROJECT_UI_STATE.waveform_height)),
-    scoring_shot_expansion: normalizedUiBooleanMap(uiState.scoring_shot_expansion),
+    scoring_edit_shot_ids: normalizedUiStringList(
+      uiState.scoring_edit_shot_ids || Object.keys(normalizedUiBooleanMap(uiState.scoring_shot_expansion)).filter((shotId) => uiState.scoring_shot_expansion?.[shotId]),
+    ),
     waveform_shot_amplitudes: normalizedUiFloatMap(uiState.waveform_shot_amplitudes, 0.25),
     timing_edit_shot_ids: normalizedUiStringList(uiState.timing_edit_shot_ids),
     timing_column_widths: resolvedTimingColumnWidths(normalizedUiFloatMap(uiState.timing_column_widths, 48)),
@@ -1609,9 +1724,7 @@ function readProjectUiStatePayload() {
     rail_width: Math.round(layoutSizes.railWidth),
     inspector_width: Math.round(layoutSizes.inspectorWidth),
     waveform_height: Math.round(layoutSizes.waveformHeight),
-    scoring_shot_expansion: Object.fromEntries(
-      [...scoringShotExpansion.entries()].filter(([shotId]) => Boolean(String(shotId || "").trim())),
-    ),
+    scoring_edit_shot_ids: [...scoringRowEdits].filter(Boolean),
     waveform_shot_amplitudes: { ...waveformShotAmplitudeById },
     timing_edit_shot_ids: [...timingRowEdits].filter(Boolean),
     timing_column_widths: { ...resolvedTimingColumnWidths(timingColumnWidths) },
@@ -1655,7 +1768,7 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   window.localStorage.setItem("splitshot.layout.inspectorWidth", String(layoutSizes.inspectorWidth));
   window.localStorage.setItem("splitshot.layout.waveformHeight", String(layoutSizes.waveformHeight));
   waveformShotAmplitudeById = { ...normalized.waveform_shot_amplitudes };
-  scoringShotExpansion = new Map(Object.entries(normalized.scoring_shot_expansion));
+  scoringRowEdits = new Set(normalized.scoring_edit_shot_ids);
   reviewTextBoxExpansion = new Map(Object.entries(normalized.review_text_box_expansion));
   popupBubbleExpansion = new Map(Object.entries(normalized.popup_bubble_expansion));
   popupAuthoringCollapsed = Boolean(normalized.popup_authoring_collapsed);
@@ -2479,6 +2592,29 @@ function renderCollapsibleInspectorSections() {
   }
 }
 
+function isSettingsSectionExpanded(sectionId) {
+  if (settingsSectionExpansion.has(sectionId)) return Boolean(settingsSectionExpansion.get(sectionId));
+  return false;
+}
+
+function setSettingsSectionExpanded(sectionId, expanded) {
+  if (!sectionId) return;
+  settingsSectionExpansion.set(sectionId, Boolean(expanded));
+}
+
+function renderSettingsSections() {
+  document.querySelectorAll("[data-settings-section]").forEach((section) => {
+    if (!(section instanceof HTMLElement)) return;
+    const sectionId = section.dataset.settingsSection || "";
+    const expanded = isSettingsSectionExpanded(sectionId);
+    section.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(section, expanded, () => {
+      setSettingsSectionExpanded(sectionId, !expanded);
+      renderSettingsSections();
+    });
+  });
+}
+
 function buildTextBoxCard(box, index) {
   const card = document.createElement("section");
   card.className = "text-box-card";
@@ -2782,7 +2918,41 @@ function normalizePopupBubble(bubble = {}) {
     opacity: clamp(Number(bubble.opacity ?? 0.9) || 0.9, 0, 1),
     width: Math.max(0, Math.round(Number(bubble.width ?? 0) || 0)),
     height: Math.max(0, Math.round(Number(bubble.height ?? 0) || 0)),
+    content_type: ["text", "image", "text_image"].includes(String(bubble.content_type || "text")) ? String(bubble.content_type || "text") : "text",
+    image_path: String(bubble.image_path || ""),
+    image_scale_mode: ["contain", "cover"].includes(String(bubble.image_scale_mode || "contain")) ? String(bubble.image_scale_mode || "contain") : "contain",
   };
+}
+
+function normalizePopupTemplate(template = {}) {
+  return {
+    enabled: Boolean(template.enabled ?? true),
+    content_type: ["text", "image", "text_image"].includes(String(template.content_type || "text")) ? String(template.content_type || "text") : "text",
+    text_source: ["score", "shot_label", "custom"].includes(String(template.text_source || "score")) ? String(template.text_source || "score") : "score",
+    duration_ms: Math.max(1, Math.round(Number(template.duration_ms ?? 1000) || 1000)),
+    quadrant: normalizePopupQuadrant(template.quadrant),
+    width: Math.max(0, Math.round(Number(template.width ?? 0) || 0)),
+    height: Math.max(0, Math.round(Number(template.height ?? 0) || 0)),
+    follow_motion: Boolean(template.follow_motion ?? false),
+    background_color: String(template.background_color || "#000000"),
+    text_color: String(template.text_color || "#ffffff"),
+    opacity: Math.max(0, Math.min(1, template.opacity === undefined || template.opacity === null || template.opacity === "" ? 0.9 : Number(template.opacity))),
+  };
+}
+
+function currentPopupTemplate() {
+  return normalizePopupTemplate(state?.project?.popup_template || state?.settings?.marker_template || {});
+}
+
+function popupTemplateTextForShot(shot) {
+  const template = currentPopupTemplate();
+  if (!shot) return defaultScoreLetter();
+  if (template.text_source === "shot_label") {
+    const shotIndex = orderedShotsByTime().findIndex((item) => item.id === shot.id);
+    return shotIndex >= 0 ? `Shot ${shotIndex + 1}` : "Shot";
+  }
+  if (template.text_source === "custom") return "";
+  return popupTextForShotId(shot.id) || defaultScoreLetter();
 }
 
 function popupBubbles() {
@@ -2888,6 +3058,17 @@ function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {
 
 function popupBubbleAutoSize(bubble) {
   const text = popupBubbleResolvedText(bubble).trim();
+  const hasImage = ["image", "text_image"].includes(String(bubble?.content_type || "")) && Boolean(bubble?.image_path);
+  if (hasImage) {
+    const imageHeight = 124;
+    const measurement = text ? measureOverlayBadgeContent(text) : { width: 0, height: 0 };
+    return {
+      width: Math.max(220, Math.ceil(measurement.width + (OVERLAY_BADGE_PADDING_X_PX * 2))),
+      height: text
+        ? Math.max(148, Math.ceil(imageHeight + measurement.height + 14))
+        : imageHeight,
+    };
+  }
   if (!text) return { width: 0, height: 0 };
   const measurement = measureOverlayBadgeContent(text);
   return {
@@ -2963,7 +3144,7 @@ function popupBubbleShotLabel(bubble) {
 }
 
 function popupBubbleResolvedText(bubble) {
-  if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
+  if (bubble?.anchor_mode === "shot" && bubble?.shot_id && bubble?.content_type === "text") {
     return popupTextForShotId(bubble.shot_id) || String(bubble?.text || "");
   }
   return String(bubble?.text || "");
@@ -2974,6 +3155,11 @@ function popupBubbleDisplayName(bubble, index) {
   if (explicitName) return explicitName;
   if (bubble?.anchor_mode === "shot") return popupBubbleShotLabel(bubble) || `Shot ${index + 1}`;
   return `Bubble ${index + 1}`;
+}
+
+function popupBubbleImageUrl(bubble) {
+  if (!bubble?.id || !String(bubble.image_path || "").trim()) return "";
+  return buildMediaUrl(`/media/popup/${encodeURIComponent(bubble.id)}`, bubble.image_path);
 }
 
 function popupBubbleSummaryText(bubble, index) {
@@ -3046,8 +3232,10 @@ function popupBubbleCardElement(bubbleId) {
 function revealPopupBubbleCard(bubbleId, { focus = false } = {}) {
   const card = popupBubbleCardElement(bubbleId);
   if (!(card instanceof HTMLElement)) return;
-  const list = $("popup-bubble-list");
-  if (list instanceof HTMLElement && list.contains(card)) {
+  const list = ["popup-bubble-list", "popup-shot-linked-list"]
+    .map((id) => $(id))
+    .find((element) => element instanceof HTMLElement && element.contains(card));
+  if (list instanceof HTMLElement) {
     const offset = card.getBoundingClientRect().top - list.getBoundingClientRect().top;
     list.scrollTop = Math.max(0, list.scrollTop + offset);
   } else {
@@ -3076,7 +3264,7 @@ function selectPopupBubble(
       popupBubbleExpansion.set(bubble.id, true);
     }
   }
-  if (activateTool) setActiveTool("popup");
+  if (activateTool) setActiveTool("markers");
   if (rerender) renderPopupEditors();
   if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
   if (reveal) window.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
@@ -3152,7 +3340,7 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
     }
-    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id) {
+    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id && nextBubble.content_type === "text") {
       nextBubble.text = popupTextForShotId(nextBubble.shot_id) || nextBubble.text;
     }
     return nextBubble;
@@ -3174,25 +3362,34 @@ function addPopupBubble() {
   const shot = selectedShot();
   const video = $("primary-video");
   const timeMs = shot ? shot.time_ms : Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+  const template = currentPopupTemplate();
   const nextBubble = normalizePopupBubble(
     shot
       ? {
-          text: popupTextForShotId(shot.id) || defaultScoreLetter(),
+          text: popupTemplateTextForShot(shot),
           anchor_mode: "shot",
           shot_id: shot.id,
           time_ms: timeMs,
-          duration_ms: 1000,
-          quadrant: "middle_middle",
+          duration_ms: template.duration_ms,
+          quadrant: template.quadrant,
           x: 0.5,
           y: 0.5,
+          width: template.width,
+          height: template.height,
+          follow_motion: template.follow_motion,
+          content_type: template.content_type,
         }
       : {
           text: defaultScoreLetter(),
           time_ms: timeMs,
-          duration_ms: 1000,
-          quadrant: "middle_middle",
+          duration_ms: template.duration_ms,
+          quadrant: template.quadrant,
           x: 0.5,
           y: 0.5,
+          width: template.width,
+          height: template.height,
+          follow_motion: template.follow_motion,
+          content_type: template.content_type,
         },
   );
   setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
@@ -3251,6 +3448,7 @@ function importShotPopups() {
     return importMode !== "all" && !targetShotIds.has(bubble.shot_id);
   });
   const existingShotBubbleByShotId = new Map();
+  const template = currentPopupTemplate();
   popupBubbles()
     .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
     .forEach((bubble) => {
@@ -3261,15 +3459,19 @@ function importShotPopups() {
     return normalizePopupBubble({
       ...(existingBubble || {}),
       id: existingBubble?.id || createPopupBubbleId(),
-      text: popupTextForShotId(shot.id) || defaultScoreLetter(),
+      text: popupTemplateTextForShot(shot),
       anchor_mode: "shot",
       shot_id: shot.id,
       time_ms: shot.time_ms,
-      duration_ms: existingBubble?.duration_ms || 1000,
-      quadrant: existingBubble?.quadrant || "middle_middle",
+      duration_ms: existingBubble?.duration_ms || template.duration_ms,
+      quadrant: existingBubble?.quadrant || template.quadrant,
       x: existingBubble?.x ?? 0.5,
       y: existingBubble?.y ?? 0.5,
       enabled: existingBubble?.enabled ?? true,
+      width: existingBubble?.width ?? template.width,
+      height: existingBubble?.height ?? template.height,
+      follow_motion: existingBubble?.follow_motion ?? template.follow_motion,
+      content_type: existingBubble?.content_type || template.content_type,
     });
   });
   setPopupBubbles([...preservedBubbles, ...importedBubbles], { commit: true, rerender: true });
@@ -3303,7 +3505,7 @@ function duplicatePopupBubble(bubbleId) {
     }),
   ], { commit: true, rerender: true });
   const duplicate = popupBubbles()[popupBubbles().length - 1];
-  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "popup", expand: true });
+  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "markers", expand: true });
 }
 
 function clearPopupBubbleMotionPath(bubbleId) {
@@ -3597,6 +3799,27 @@ function buildPopupBubbleCard(bubble, index) {
         <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
       </label>
       <div class="control-grid">
+        <label>Content
+          <select data-popup-field="content_type">
+            <option value="text">Text</option>
+            <option value="image">Image</option>
+            <option value="text_image">Text + Image</option>
+          </select>
+        </label>
+        <label>Image path
+          <div class="path-row">
+            <input data-popup-field="image_path" type="text" placeholder="/absolute/path/to/image.png" />
+            <button type="button" data-popup-action="browse_image">Browse</button>
+          </div>
+        </label>
+        <label>Scale
+          <select data-popup-field="image_scale_mode">
+            <option value="contain">Contain</option>
+            <option value="cover">Cover</option>
+          </select>
+        </label>
+      </div>
+      <div class="control-grid">
         <label>Start mode
           <select data-popup-field="anchor_mode">
             <option value="time">Time</option>
@@ -3686,6 +3909,9 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlChecked(card.querySelector('[data-popup-field="follow_motion"]'), bubble.follow_motion);
   syncControlValue(card.querySelector('[data-popup-field="name"]'), bubble.name);
   syncControlValue(card.querySelector('[data-popup-field="text"]'), resolvedText);
+  syncControlValue(card.querySelector('[data-popup-field="content_type"]'), bubble.content_type);
+  syncControlValue(card.querySelector('[data-popup-field="image_path"]'), bubble.image_path);
+  syncControlValue(card.querySelector('[data-popup-field="image_scale_mode"]'), bubble.image_scale_mode);
   syncControlValue(card.querySelector('[data-popup-field="anchor_mode"]'), bubble.anchor_mode);
   syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
   syncControlValue(card.querySelector('[data-popup-field="shot_id"]'), popupShotId);
@@ -3718,7 +3944,7 @@ function buildPopupBubbleCard(bubble, index) {
   const shotSelect = card.querySelector('[data-popup-field="shot_id"]');
   const textArea = card.querySelector('[data-popup-field="text"]');
   if (textArea instanceof HTMLTextAreaElement) {
-    textArea.disabled = usesShotScoreText;
+    textArea.disabled = usesShotScoreText && bubble.content_type === "text";
     textArea.placeholder = usesShotScoreText ? "Uses the shot score and penalties." : "-0";
     textArea.title = usesShotScoreText
       ? "This popup is tied to a shot, so its text follows that shot's score and penalties."
@@ -3802,7 +4028,7 @@ function buildPopupBubbleCard(bubble, index) {
       seek: true,
       reveal: true,
       focus: false,
-      activateTool: activeTool !== "popup",
+      activateTool: activeTool !== "markers",
       expand: false,
     });
   };
@@ -3827,7 +4053,7 @@ function buildPopupBubbleCard(bubble, index) {
           seek: true,
           reveal: false,
           focus: false,
-          activateTool: activeTool !== "popup",
+          activateTool: activeTool !== "markers",
           expand: false,
           rerender: false,
         });
@@ -3870,6 +4096,16 @@ function buildPopupBubbleCard(bubble, index) {
     event.preventDefault();
     event.stopPropagation();
     applyPopupBubbleMotionToVisibleShotLinked(bubble.id);
+  });
+  card.querySelector('[data-popup-action="browse_image"]')?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const imageInput = card.querySelector('[data-popup-field="image_path"]');
+    if (!(imageInput instanceof HTMLInputElement)) return;
+    await pickPathForElement("popup_image", imageInput, `popup-image-${bubble.id}`, async (path) => {
+      if (!path) return;
+      setPopupBubbleField(bubble.id, "image_path", path, { commit: true, rerender: true });
+    });
   });
   card.querySelector('[data-popup-action="remove"]')?.addEventListener("click", (event) => {
     event.preventDefault();
@@ -3922,6 +4158,8 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
   const authoringPanel = $("popup-authoring-panel");
   const collapsedNav = $("popup-collapsed-nav");
+  const timelineStrip = $("popup-timeline-strip");
+  const bubbleList = $("popup-bubble-list");
   const toggle = $("popup-toggle-authoring");
   const filter = $("popup-filter");
   if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
@@ -3932,12 +4170,23 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   const selected = selectedPopupBubble();
   const hasBubbles = allBubbles.length > 0;
   const hasSelectedBubble = Boolean(selected);
+  const template = currentPopupTemplate();
+  syncControlChecked($("popup-template-enabled"), template.enabled);
+  syncControlValue($("popup-template-content-type"), template.content_type);
+  syncControlValue($("popup-template-text-source"), template.text_source);
+  syncControlValue($("popup-template-duration-s"), precise(template.duration_ms));
+  syncControlValue($("popup-template-quadrant"), template.quadrant);
+  syncControlValue($("popup-template-width"), template.width);
+  syncControlValue($("popup-template-height"), template.height);
+  syncControlChecked($("popup-template-follow-motion"), template.follow_motion);
   if (authoringPanel instanceof HTMLElement) authoringPanel.hidden = popupAuthoringCollapsed;
-  if (collapsedNav instanceof HTMLElement) collapsedNav.hidden = !popupAuthoringCollapsed;
+  if (timelineStrip instanceof HTMLElement) timelineStrip.hidden = false;
+  if (bubbleList instanceof HTMLElement) bubbleList.hidden = false;
+  if (collapsedNav instanceof HTMLElement) collapsedNav.hidden = !popupAuthoringCollapsed || !hasBubbles;
   if (toggle instanceof HTMLButtonElement) {
     toggle.textContent = popupAuthoringCollapsed ? ">" : "v";
-    toggle.title = popupAuthoringCollapsed ? "Show popup controls" : "Hide popup controls";
-    toggle.setAttribute("aria-label", popupAuthoringCollapsed ? "Show popup controls" : "Hide popup controls");
+    toggle.title = popupAuthoringCollapsed ? "Show marker controls" : "Hide marker controls";
+    toggle.setAttribute("aria-label", popupAuthoringCollapsed ? "Show marker controls" : "Hide marker controls");
   }
   ["popup-prev-compact", "popup-next-compact", "popup-play-window", "popup-loop-window"].forEach((id) => {
     const button = $(id);
@@ -3956,6 +4205,23 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
     const selectedText = selected ? ` Selected: ${popupBubbleDisplayName(selected, allBubbles.findIndex((bubble) => bubble.id === selected.id))}.` : "";
     summary.textContent = `${visibleBubbles.length} of ${allBubbles.length} shown (${filterLabel}).${selectedText}`;
   }
+}
+
+function readPopupTemplatePayload() {
+  const current = currentPopupTemplate();
+  return normalizePopupTemplate({
+    enabled: $("popup-template-enabled")?.checked ?? true,
+    content_type: $("popup-template-content-type")?.value || "text",
+    text_source: $("popup-template-text-source")?.value || "score",
+    duration_ms: Math.max(1, Math.round((Number($("popup-template-duration-s")?.value || 1) || 1) * 1000)),
+    quadrant: $("popup-template-quadrant")?.value || "middle_middle",
+    width: Number($("popup-template-width")?.value || 0),
+    height: Number($("popup-template-height")?.value || 0),
+    follow_motion: $("popup-template-follow-motion")?.checked ?? false,
+    background_color: current.background_color,
+    text_color: current.text_color,
+    opacity: current.opacity,
+  });
 }
 
 function renderPopupTimeline(allBubbles = popupBubbles(), visibleBubbles = filteredPopupBubbles(allBubbles)) {
@@ -4026,6 +4292,26 @@ function selectAdjacentPopupBubble(direction) {
   return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
 }
 
+function setPopupShotEditorOpen(open) {
+  popupShotEditorOpen = Boolean(open);
+  renderPopupEditors();
+}
+
+function selectedShotLinkedPopupBubble() {
+  const selected = selectedPopupBubble();
+  if (selected?.anchor_mode === "shot" && selected.shot_id) return selected;
+  return filteredPopupBubbles(popupBubbles()).find((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id) || null;
+}
+
+function stepShotLinkedPopupBubble(direction) {
+  const bubbles = filteredPopupBubbles(popupBubbles()).filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id);
+  if (bubbles.length === 0) return false;
+  const current = selectedShotLinkedPopupBubble();
+  const currentIndex = bubbles.findIndex((bubble) => bubble.id === current?.id);
+  const nextIndex = currentIndex < 0 ? 0 : clamp(currentIndex + direction, 0, bubbles.length - 1);
+  return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
+}
+
 function playSelectedPopupWindow({ loop = false } = {}) {
   const bubble = selectedPopupBubble() || sortedPopupBubblesForTimeline(filteredPopupBubbles())[0] || null;
   const video = $("primary-video");
@@ -4066,8 +4352,9 @@ function syncPopupPlaybackWindow() {
 }
 
 function renderPopupEditors() {
-  const list = $("popup-bubble-list");
-  if (!list) return;
+  const timeList = $("popup-bubble-list");
+  const shotList = $("popup-shot-linked-list");
+  if (!timeList || !shotList) return;
   const bubbles = popupBubbles();
   const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
@@ -4080,25 +4367,67 @@ function renderPopupEditors() {
   renderPopupAuthoringControls(bubbles, visibleBubbles);
   renderPopupTimeline(bubbles, visibleBubbles);
   const originalIndexById = new Map(bubbles.map((bubble, index) => [bubble.id, index]));
-  withPreservedScrollState([list], () => {
-    list.innerHTML = "";
+  const visibleShotLinked = visibleBubbles.filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id);
+  const visibleTimeBased = visibleBubbles.filter((bubble) => bubble.anchor_mode !== "shot" || !bubble.shot_id);
+  withPreservedScrollState([timeList, shotList], () => {
+    timeList.innerHTML = "";
+    shotList.innerHTML = "";
     if (bubbles.length === 0) {
       const empty = document.createElement("div");
       empty.className = "hint";
-      empty.textContent = "No popup bubbles yet.";
-      list.appendChild(empty);
+      empty.textContent = "No markers yet.";
+      shotList.appendChild(empty.cloneNode(true));
+      timeList.appendChild(empty);
       return;
     }
     if (visibleBubbles.length === 0) {
       const empty = document.createElement("div");
       empty.className = "hint";
-      empty.textContent = "No popup bubbles match the current filter.";
-      list.appendChild(empty);
+      empty.textContent = "No markers match the current filter.";
+      shotList.appendChild(empty.cloneNode(true));
+      timeList.appendChild(empty);
       return;
     }
-    visibleBubbles.forEach((bubble, index) => {
-      list.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
-    });
+    if (visibleShotLinked.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No shot-linked markers shown.";
+      shotList.appendChild(empty);
+    } else {
+      visibleShotLinked.forEach((bubble, index) => {
+        shotList.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
+      });
+    }
+    if (visibleTimeBased.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "hint";
+      empty.textContent = "No time markers shown.";
+      timeList.appendChild(empty);
+    } else {
+      visibleTimeBased.forEach((bubble, index) => {
+        timeList.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
+      });
+    }
+    const editor = $("popup-shot-editor");
+    const editorCurrent = $("popup-shot-editor-current");
+    const selected = selectedPopupBubble();
+    const editorBubble = selected?.anchor_mode === "shot" && selected.shot_id ? selected : visibleShotLinked[0] || null;
+    if (editor instanceof HTMLElement) editor.hidden = !popupShotEditorOpen;
+    if (editorCurrent instanceof HTMLElement) {
+      editorCurrent.innerHTML = "";
+      if (popupShotEditorOpen) {
+        if (editorBubble) editorCurrent.appendChild(buildPopupBubbleCard(editorBubble, originalIndexById.get(editorBubble.id) ?? 0));
+        else {
+          const empty = document.createElement("p");
+          empty.className = "hint";
+          empty.textContent = "Select or import a shot-linked marker to edit it here.";
+          editorCurrent.appendChild(empty);
+        }
+      }
+    }
+    if (popupShotEditorOpen && editorBubble && editorBubble.id !== selectedPopupBubbleId) {
+      selectedPopupBubbleId = editorBubble.id;
+    }
   });
 }
 
@@ -4156,7 +4485,7 @@ function applyLayoutState() {
     inspectorWidth: clamp(layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
     waveformHeight: clamp(layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
   };
-  setCssPixels("--rail-width", layoutSizes.railWidth);
+  setCssPixels("--rail-width", railCollapsed ? 48 : layoutSizes.railWidth);
   setCssPixels("--inspector-width", layoutSizes.inspectorWidth);
   setCssPixels("--waveform-height", layoutSizes.waveformHeight);
   const shell = document.querySelector(".cockpit-shell");
@@ -4165,6 +4494,13 @@ function applyLayoutState() {
     shell.classList.toggle("layout-unlocked", !layoutLocked);
     shell.classList.toggle("resizing-layout", activeResize !== null);
     shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
+    shell.classList.toggle("rail-collapsed", railCollapsed);
+  }
+  const railToggle = $("toggle-rail");
+  if (railToggle) {
+    railToggle.textContent = railCollapsed ? "▶" : "◀";
+    railToggle.title = railCollapsed ? "Expand left rail" : "Minimize left rail";
+    railToggle.setAttribute("aria-label", railToggle.title);
   }
   document.querySelectorAll("[data-layout-lock-toggle]").forEach((toggle) => {
     const target = toggle.id.replace("toggle-layout-lock-", "");
@@ -4267,6 +4603,7 @@ function endLayoutResize(event) {
 }
 
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
+  tool = normalizeToolId(tool);
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
@@ -4275,8 +4612,23 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     || root?.classList.contains("metrics-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
-  if (changed || (collapseExpandedLayout && hadExpandedLayout)) {
+  let previousExpandedLayout = null;
+  const preservedExpandedLayout = state?.project?.ui_state ? {
+    waveform_expanded: state.project.ui_state.waveform_expanded,
+    timing_expanded: state.project.ui_state.timing_expanded,
+    metrics_expanded: state.project.ui_state.metrics_expanded,
+  } : null;
+  if (collapseExpandedLayout && hadExpandedLayout) {
+    previousExpandedLayout = {
+      waveform_expanded: root?.classList.contains("waveform-expanded") || false,
+      timing_expanded: root?.classList.contains("timing-expanded") || false,
+      metrics_expanded: root?.classList.contains("metrics-expanded") || false,
+    };
+  }
+  if (changed) {
     collapseMinimizableInspectorItems({ persistUiState, rerender: false });
+  }
+  if (previousExpandedLayout) {
     root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
@@ -4293,14 +4645,32 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   });
   if (tool === "merge") {
     $("add-merge-media")?.focus();
-  } else if (tool === "popup") {
+  } else if (tool === "markers") {
     if (selectedPopupBubbleId) {
       window.requestAnimationFrame(() => revealPopupBubbleCard(selectedPopupBubbleId, { focus: false }));
     }
   }
   if (changed) activity("ui.tool.active", { tool });
   syncLocalProjectUiState();
+  if (previousExpandedLayout && state?.project?.ui_state) {
+    state.project.ui_state.waveform_expanded = previousExpandedLayout.waveform_expanded;
+    state.project.ui_state.timing_expanded = previousExpandedLayout.timing_expanded;
+    state.project.ui_state.metrics_expanded = previousExpandedLayout.metrics_expanded;
+  } else if (preservedExpandedLayout && state?.project?.ui_state) {
+    state.project.ui_state.waveform_expanded = preservedExpandedLayout.waveform_expanded;
+    state.project.ui_state.timing_expanded = preservedExpandedLayout.timing_expanded;
+    state.project.ui_state.metrics_expanded = preservedExpandedLayout.metrics_expanded;
+  }
   if (persistUiState) scheduleProjectUiStateApply();
+  if (tool === "waveform" && state?.project?.ui_state?.waveform_expanded) {
+    setWaveformExpanded(true, { persistUiState: false });
+  }
+  if (tool === "timing" && state?.project?.ui_state?.timing_expanded) {
+    setTimingExpanded(true, { persistUiState: false });
+  }
+  if (tool === "metrics" && state?.project?.ui_state?.metrics_expanded) {
+    setMetricsExpanded(true, { persistUiState: false });
+  }
   renderLiveOverlay();
 }
 
@@ -4422,6 +4792,34 @@ async function pickPath(kind, targetId, afterSelect = null) {
   }
 }
 
+async function pickPathForElement(kind, target, targetLabel, afterSelect = null) {
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return "";
+  activity("dialog.path.request", { kind, target: targetLabel, current: target.value });
+  try {
+    const response = await fetch("/api/dialog/path", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind, current: target.value }),
+    });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+    if (data.path) {
+      target.value = data.path;
+      activity("dialog.path.selected", { kind, target: targetLabel, path: data.path });
+      if (afterSelect) {
+        await afterSelect(data.path);
+      }
+    } else {
+      activity("dialog.path.cancelled", { kind, target: targetLabel });
+    }
+    return data.path || "";
+  } catch (error) {
+    setStatus(error.message);
+    activity("dialog.path.error", { kind, target: targetLabel, error: error.message });
+    return "";
+  }
+}
+
 async function refresh() {
   activity("api.refresh", {});
   try {
@@ -4460,7 +4858,10 @@ function applyRemoteState(nextState) {
     remoteSelectedShotId,
   );
   nextState.project.ui_state = nextUiState;
-  if (isSameProject) mergeProjectDetailsDraft(nextState.project);
+  if (isSameProject) {
+    mergeProjectDetailsDraft(nextState.project);
+    mergeExportDraft(nextState.project);
+  }
   currentProjectId = nextProjectId;
   state = nextState;
   applyProjectUiState(nextUiState);
@@ -4494,11 +4895,12 @@ function resetLocalProjectView() {
   draggingShotPointerId = null;
   pendingDragTimeMs = null;
   exportPathDraft = "";
+  exportDraft = {};
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
   timingRowEdits = new Set();
   timingAdjustmentDrafts = new Map();
-  scoringShotExpansion = new Map();
+  scoringRowEdits = new Set();
   applyProjectUiState({
     ...DEFAULT_PROJECT_UI_STATE,
     active_tool: "project",
@@ -4992,10 +5394,6 @@ function renderHeader() {
   $("current-file").textContent = primaryName;
   const statusCopy = $("status-copy");
   if (statusCopy) statusCopy.textContent = state.status;
-  const inspectorFile = $("inspector-file");
-  if (inspectorFile) inspectorFile.textContent = primaryName;
-  const inspectorStatusCopy = $("inspector-status-copy");
-  if (inspectorStatusCopy) inspectorStatusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
   $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/My Match`;
@@ -5006,10 +5404,268 @@ function renderHeader() {
 }
 
 function renderStats() {
-  $("timing-summary").textContent = state.metrics.raw_time_ms
-    ? "Click Edit and Unlock to change shot values."
+  $("timing-summary").textContent = (state.metrics.total_shots || 0) > 0
+    ? "Use Splits to edit timing values."
     : "No timing data.";
   $("apply-threshold").disabled = !state?.project?.primary_video?.path;
+}
+
+function currentSettings() {
+  return state?.settings || {};
+}
+
+function readNumberSetting(id, defaultValue) {
+  const element = $(id);
+  if (!element) return defaultValue;
+  const value = element.value;
+  if (value === "") return defaultValue;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : defaultValue;
+}
+
+function syncSettingsBadgeStyle(prefix, style = {}) {
+  syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
+  syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
+  syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
+}
+
+function readSettingsBadgeStyle(prefix) {
+  return {
+    background_color: $(`${prefix}-background-color`)?.value || "#000000",
+    text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
+    opacity: readNumberSetting(`${prefix}-opacity`, 0.9),
+  };
+}
+
+function syncSettingsMarkerTemplate(template = {}) {
+  syncControlChecked($("settings-marker-enabled"), Boolean(template.enabled ?? true));
+  syncControlValue($("settings-marker-content-type"), template.content_type ?? "text");
+  syncControlValue($("settings-marker-text-source"), template.text_source ?? "score");
+  syncControlValue($("settings-marker-duration"), (Number(template.duration_ms ?? 1000) / 1000).toFixed(3));
+  syncControlValue($("settings-marker-quadrant"), template.quadrant ?? "middle_middle");
+  syncControlValue($("settings-marker-width"), template.width ?? 0);
+  syncControlValue($("settings-marker-height"), template.height ?? 0);
+  syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
+  syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
+  syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
+  syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
+}
+
+const SETTINGS_LAYER_FIELDS = [
+  { label: "Landing pane", path: ["default_tool"] },
+  { label: "Reopen last pane", path: ["reopen_last_tool"] },
+  { label: "Overlay position", path: ["overlay_position"] },
+  { label: "Badge size", path: ["badge_size"] },
+  { label: "PiP layout", path: ["merge_layout"] },
+  { label: "PiP size", path: ["pip_size"] },
+  { label: "Export quality", path: ["export_quality"] },
+  { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
+  {
+    label: "Marker enabled",
+    path: ["marker_template", "enabled"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "enabled"],
+  },
+  {
+    label: "Marker content",
+    path: ["marker_template", "content_type"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "content_type"],
+  },
+  {
+    label: "Marker text source",
+    path: ["marker_template", "text_source"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "text_source"],
+  },
+  {
+    label: "Marker duration ms",
+    path: ["marker_template", "duration_ms"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "duration_ms"],
+  },
+  {
+    label: "Marker quadrant",
+    path: ["marker_template", "quadrant"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "quadrant"],
+  },
+  {
+    label: "Marker width",
+    path: ["marker_template", "width"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "width"],
+  },
+  {
+    label: "Marker height",
+    path: ["marker_template", "height"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "height"],
+  },
+  {
+    label: "Marker follow motion",
+    path: ["marker_template", "follow_motion"],
+    usesProjectTemplate: true,
+    projectPath: ["project", "popup_template", "follow_motion"],
+  },
+];
+
+function settingsValueAtPath(value, path) {
+  let current = value;
+  for (const key of path) {
+    if (!(current && typeof current === "object" && key in current)) return undefined;
+    current = current[key];
+  }
+  return current;
+}
+
+function settingsHasPath(value, path) {
+  let current = value;
+  for (const key of path) {
+    if (!(current && typeof current === "object" && key in current)) return false;
+    current = current[key];
+  }
+  return true;
+}
+
+function sameSettingsValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function settingsSourceLabel(source) {
+  return {
+    project: "Project",
+    folder: "Folder",
+    app: "App",
+    effective: "Effective",
+  }[source] || "Effective";
+}
+
+function formatSettingsValue(value) {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
+  return String(value);
+}
+
+function settingFieldCurrentValue(field, settings, markerTemplate) {
+  if (!field.usesProjectTemplate) return settingsValueAtPath(settings, field.path);
+  const markerKey = field.path[field.path.length - 1];
+  return markerTemplate?.[markerKey];
+}
+
+function settingFieldSource(field, currentValue, layers) {
+  const effectivePath = ["effective", ...field.path];
+  const appPath = ["app", ...field.path];
+  const folderPath = ["folder", ...field.path];
+  const effectiveValue = settingsValueAtPath(layers, effectivePath);
+  if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
+    const projectValue = settingsValueAtPath(layers, field.projectPath);
+    if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
+      return "project";
+    }
+  }
+  if (settingsHasPath(layers, folderPath)) {
+    const folderValue = settingsValueAtPath(layers, folderPath);
+    if (sameSettingsValue(folderValue, currentValue)) return "folder";
+  }
+  if (settingsHasPath(layers, appPath)) {
+    const appValue = settingsValueAtPath(layers, appPath);
+    if (sameSettingsValue(appValue, currentValue)) return "app";
+  }
+  return "effective";
+}
+
+function renderSettingsLayerSummary(settings, markerTemplate, layers) {
+  const container = $("settings-layer-summary");
+  if (!container) return;
+  const table = document.createElement("table");
+  table.className = "data-table";
+  table.setAttribute("aria-label", "Settings layer summary");
+  table.innerHTML = "<thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>";
+  const body = document.createElement("tbody");
+  SETTINGS_LAYER_FIELDS.forEach((field) => {
+    const currentValue = settingFieldCurrentValue(field, settings, markerTemplate);
+    const source = settingFieldSource(field, currentValue, layers);
+    const row = document.createElement("tr");
+    const labelCell = document.createElement("td");
+    labelCell.textContent = field.label;
+    const valueCell = document.createElement("td");
+    valueCell.textContent = formatSettingsValue(currentValue);
+    const sourceCell = document.createElement("td");
+    sourceCell.textContent = settingsSourceLabel(source);
+    row.append(labelCell, valueCell, sourceCell);
+    body.appendChild(row);
+  });
+  table.appendChild(body);
+  container.replaceChildren(table);
+}
+
+function renderSettingsPane() {
+  const settings = currentSettings();
+  const layers = state?.settings_layers || {};
+  const hasProjectPath = Boolean(state?.project?.path);
+  const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
+  const projectOverlay = state?.project?.overlay || {};
+  const projectExport = state?.project?.export || {};
+  const projectScoring = state?.project?.scoring || {};
+  const projectAnalysis = state?.project?.analysis || {};
+  const markerTemplate = normalizePopupTemplate(settings.marker_template || state?.project?.popup_template || {});
+  const scopeSelect = $("settings-scope");
+  const scopeStatus = $("settings-scope-status");
+  if (scopeSelect) {
+    const folderOption = scopeSelect.querySelector('option[value="folder"]');
+    if (folderOption) folderOption.disabled = !hasProjectPath;
+    if (!hasProjectPath && scopeSelect.value === "folder") syncControlValue(scopeSelect, "app");
+    if (hasProjectPath && !scopeSelect.value) syncControlValue(scopeSelect, "folder");
+  }
+  if (scopeStatus) {
+    const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
+    scopeStatus.textContent = folderSettingsError
+      ? folderSettingsError
+      : !hasProjectPath
+      ? "No project folder is open. App defaults are the global template."
+      : (hasFolderLayer
+        ? "Folder defaults are active for this project and override the global template here."
+        : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
+  }
+  const shotmlDefaults = settings.shotml_defaults || {};
+  renderExportPresetOptions("settings-export-preset", null, settings.export_preset ?? projectExport.preset ?? "source");
+  syncControlValue($("settings-default-match-type"), settings.default_match_type ?? projectScoring.match_type ?? "uspsa");
+  syncControlValue($("settings-overlay-position"), settings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
+  syncControlValue($("settings-badge-size"), settings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
+  syncControlValue($("settings-overlay-custom-background-color"), settings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
+  syncControlValue($("settings-overlay-custom-text-color"), settings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
+  syncControlValue($("settings-overlay-custom-opacity"), settings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+  syncSettingsBadgeStyle("settings-timer-badge", settings.timer_badge || projectOverlay.timer_badge || {});
+  syncSettingsBadgeStyle("settings-shot-badge", settings.shot_badge || projectOverlay.shot_badge || {});
+  syncSettingsBadgeStyle("settings-current-shot-badge", settings.current_shot_badge || projectOverlay.current_shot_badge || {});
+  syncSettingsBadgeStyle("settings-hit-factor-badge", settings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
+  syncControlValue($("settings-merge-layout"), settings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
+  syncControlValue($("settings-pip-size"), settings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
+  syncControlValue($("settings-merge-pip-x"), settings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
+  syncControlValue($("settings-merge-pip-y"), settings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
+  syncControlValue($("settings-export-quality"), settings.export_quality ?? state?.project?.export?.quality ?? "high");
+  syncControlValue($("settings-export-frame-rate"), settings.export_frame_rate ?? projectExport.frame_rate ?? "source");
+  syncControlValue($("settings-export-video-codec"), settings.export_video_codec ?? projectExport.video_codec ?? "h264");
+  syncControlValue($("settings-export-audio-codec"), settings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
+  syncControlValue($("settings-export-color-space"), settings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
+  syncControlChecked($("settings-export-two-pass"), Boolean(settings.export_two_pass ?? projectExport.two_pass ?? false));
+  syncControlValue($("settings-export-ffmpeg-preset"), settings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
+  syncControlValue($("settings-default-tool"), settings.default_tool ?? "project");
+  syncControlChecked($("settings-reopen-last-tool"), Boolean(settings.reopen_last_tool ?? true));
+  syncControlValue(
+    $("settings-shotml-threshold"),
+    Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
+  );
+  syncSettingsMarkerTemplate(markerTemplate);
+  const markerSource = $("settings-marker-source");
+  if (markerSource) {
+    markerSource.textContent = hasProjectPath
+      ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
+      : "App template";
+  }
+  renderSettingsSections();
 }
 
 function mergeSourcePipRect(source, frameRect, pipSizeValue = null) {
@@ -5651,7 +6307,6 @@ function endWaveformNavigatorDrag(event) {
 function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
   const nextShotId = stateHasShot(state, shotId) ? shotId : null;
   selectedShotId = nextShotId;
-  if (nextShotId && !scoringShotExpansion.has(nextShotId)) scoringShotExpansion.set(nextShotId, true);
   if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = nextShotId;
   activity("shot.select", { shot_id: nextShotId });
   const shot = selectedShot();
@@ -5662,7 +6317,7 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
   }
   if (shot) {
     let revealedPopup = false;
-    if (activeTool === "popup") {
+    if (activeTool === "markers") {
       const activePopup = selectedPopupBubble();
       if (activePopup?.anchor_mode === "shot" && activePopup.shot_id === shot.id) {
         revealedPopup = selectPopupBubble(activePopup.id, {
@@ -5935,7 +6590,7 @@ function deleteShotById(shotId, source = "selected") {
   }
   timingAdjustmentDrafts.delete(shotId);
   timingRowEdits.delete(shotId);
-  scoringShotExpansion.delete(shotId);
+  scoringRowEdits.delete(shotId);
   if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
   activity(source === "selected" ? "shot.delete_selected" : "shot.delete_row", { shot_id: shotId, source });
   callApi("/api/shots/delete", { shot_id: shotId });
@@ -6181,7 +6836,6 @@ function renderTimingTable(tableId = "timing-table") {
     } else {
       table.style.removeProperty("--timing-action-chip-chars");
     }
-    const defaultScore = defaultScoreLetter();
     const headers = expandedTable
       ? [
         { label: "Edit", columnId: "lock", resizable: false },
@@ -6189,7 +6843,6 @@ function renderTimingTable(tableId = "timing-table") {
         { label: "Split", columnId: "split", resizable: true },
         { label: "Total", columnId: "total", resizable: true },
         { label: "Action", columnId: "action", resizable: true },
-        { label: "Score", columnId: "score", resizable: true },
         { label: "ShotML Confidence %", columnId: "confidence", resizable: true },
         { label: "Adjustment", columnId: "adjustment", resizable: true },
         { label: "Final Time", columnId: "final", resizable: true },
@@ -6254,13 +6907,6 @@ function renderTimingTable(tableId = "timing-table") {
       if (row.shot_id === selectedShotId) actionCell.classList.add("selected");
       if (canEdit) actionCell.addEventListener("click", () => selectShot(row.shot_id));
       table.appendChild(actionCell);
-
-      if (expandedTable) {
-        const scoreCell = document.createElement("div");
-        scoreCell.textContent = row.score_letter || defaultScore;
-        if (canEdit) scoreCell.addEventListener("click", () => selectShot(row.shot_id));
-        table.appendChild(scoreCell);
-      }
 
       if (!expandedTable) return;
 
@@ -6329,151 +6975,197 @@ function renderSelection() {
   $("selected-timing-shot").textContent = selectedLabel;
 }
 
-function renderScoreOptions(summary) {
-  const options = summary.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
-  const grid = $("score-option-grid");
-  if (!grid) return;
-  grid.innerHTML = "";
-  options.forEach((letter) => {
-    const value = summary.score_values?.[letter] ?? 0;
-    const penalty = summary.score_penalties?.[letter] ?? 0;
-    const item = document.createElement("span");
-    const description = {
-      A: "A-zone / full points",
-      C: "C-zone hit",
-      D: "D-zone hit",
-      M: "Miss",
-      NS: "No-shoot",
-      "M+NS": "Miss and no-shoot",
-      "-0": "Down-zero",
-      "-1": "Down-one",
-      "-3": "Down-three",
-      HIT: "Steel hit",
-      STOP: "Stop plate failure",
-      "0": "GPA zero-down",
-      "+1": "GPA plus-one",
-      "+3": "GPA plus-three",
-      "+10": "GPA plus-ten",
-    }[letter] || letter;
-    item.textContent = penalty ? `${letter} ${description} • ${value} / -${penalty}` : `${letter} ${description} • ${value}`;
-    item.title = description;
-    grid.appendChild(item);
+function scoringWorkbenchShown() {
+  return Boolean(scoringWorkbenchExpanded);
+}
+
+function setScoringWorkbenchExpanded(expanded) {
+  scoringWorkbenchExpanded = Boolean(expanded);
+  const section = $("scoring-workbench");
+  if (section instanceof HTMLElement) section.hidden = !scoringWorkbenchExpanded;
+}
+
+function scoringPenaltySummary(segment, penaltyFields = state.scoring_summary?.penalty_fields || []) {
+  const counts = segment?.penalty_counts || {};
+  const parts = penaltyFields
+    .map((field) => {
+      const count = Number(counts[field.id] || 0);
+      return count > 0 ? `${penaltyFieldLabel(field.id, field.label)} ${count}` : "";
+    })
+    .filter(Boolean);
+  return parts.join(" • ") || "--";
+}
+
+function toggleScoringRowEdit(shotId) {
+  if (!shotId) return;
+  if (scoringRowEdits.has(shotId)) scoringRowEdits.delete(shotId);
+  else scoringRowEdits.add(shotId);
+  syncLocalProjectUiState();
+  scheduleProjectUiStateApply();
+  renderScoringTables();
+}
+
+function applyShotScoringUpdate(shotId, scope) {
+  const shot = (state?.timing_segments || []).find((segment) => segment.shot_id === shotId);
+  if (!shot) return Promise.resolve(null);
+  const controlScope = (
+    scope?.querySelector?.(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)
+      ? scope
+      : ($("scoring-workbench-table") || document)
+  );
+  selectedShotId = shotId;
+  return callApi("/api/scoring/score", {
+    shot_id: shotId,
+    letter: controlScope.querySelector(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)?.value || defaultScoreLetter(),
+    penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-input[data-penalty-id][data-score-shot-id="${shotId}"]`),
+  }).then((result) => {
+    if (result) refreshReviewMediaFrame();
+    return result;
   });
 }
 
-function isScoringShotExpanded(shotId, activeShotId = null) {
-  if (!shotId) return false;
-  if (scoringShotExpansion.has(shotId)) return Boolean(scoringShotExpansion.get(shotId));
-  return shotId === activeShotId;
+function buildScoringRowControlCell(segment, editing) {
+  const cell = document.createElement("div");
+  cell.className = "timing-lock-cell";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = `lock-button ${editing ? "unlocked" : "locked"}`;
+  button.textContent = editing ? "Lock" : "Unlock";
+  button.title = editing ? "Lock row" : "Unlock row";
+  button.addEventListener("click", () => toggleScoringRowEdit(segment.shot_id));
+  cell.appendChild(button);
+  return cell;
 }
 
-function setScoringShotExpanded(shotId, expanded) {
-  if (!shotId) return;
-  scoringShotExpansion.set(shotId, Boolean(expanded));
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+function buildScoringDeleteCell(segment) {
+  const cell = document.createElement("div");
+  cell.className = "timing-row-button-cell";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "danger-button restore-button";
+  button.textContent = "Delete";
+  button.title = "Delete this shot from the run.";
+  button.addEventListener("click", () => deleteShotById(segment.shot_id, "scoring_row"));
+  cell.appendChild(button);
+  return cell;
 }
 
-function renderScoringShotList() {
-  const list = $("scoring-shot-list");
-  if (!list) return;
-  withPreservedScrollState([list], () => {
-    list.innerHTML = "";
-    const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
-    const penaltyFields = state.scoring_summary?.penalty_fields || [];
-    const defaultScore = scoreOptions[0] || "A";
-    const ruleset = activeScoringRuleset();
-    const activeShotId = selectedShotId || state.project.ui_state.selected_shot_id || state.timing_segments?.[0]?.shot_id || null;
-    const visibleShotIds = new Set((state.timing_segments || []).map((segment) => segment.shot_id));
-    [...scoringShotExpansion.keys()].forEach((shotId) => {
-      if (!visibleShotIds.has(shotId)) scoringShotExpansion.delete(shotId);
-    });
-    (state.timing_segments || []).forEach((segment) => {
-      const expanded = isScoringShotExpanded(segment.shot_id, activeShotId);
-      const row = document.createElement("div");
-      row.className = `scoring-shot-row ${segment.shot_id === activeShotId ? "selected" : ""}`;
-      row.dataset.shotId = segment.shot_id;
-      row.classList.toggle("collapsed", !expanded);
-      if (isLowConfidence(segment.confidence, segment.source)) row.classList.add("low-confidence");
+function buildScoringRestoreCell(segment) {
+  const cell = document.createElement("div");
+  cell.className = "timing-row-button-cell";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "restore-button";
+  button.textContent = "Restore";
+  button.title = "Restore this shot score and penalties to their original values.";
+  button.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
+  cell.appendChild(button);
+  return cell;
+}
 
-      const header = document.createElement("div");
-      header.className = "scoring-shot-header";
-
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "scoring-shot-button";
-      const title = document.createElement("strong");
-      title.textContent = expanded
-        ? `Shot ${segment.shot_number}`
-        : `Shot ${segment.shot_number} | ${compactScoreDisplay(segment.score_letter || defaultScore, ruleset)}`;
-      button.append(title);
-      button.title = segment.source === "manual"
-        ? "Manual shot marker."
-        : isLowConfidence(segment.confidence, segment.source)
-          ? `Low-confidence ShotML marker (${formatConfidenceValue(segment.confidence)}).`
-          : "ShotML-detected shot.";
-      button.addEventListener("click", () => selectShot(segment.shot_id));
-      header.appendChild(button);
-
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "scoring-shot-toggle";
-      toggle.textContent = expanded ? "v" : ">";
-      toggle.title = expanded ? "Hide score controls" : "Show score controls";
-      toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} score controls for shot ${segment.shot_number}`);
-      toggle.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        preserveElementViewportAnchor(
-          () => document.querySelector(`.scoring-shot-row[data-shot-id="${segment.shot_id}"]`),
-          () => {
-          setScoringShotExpanded(segment.shot_id, !expanded);
-          renderScoringShotList();
-          },
-        );
-      });
-      header.appendChild(toggle);
-
-      const controls = document.createElement("div");
-      controls.className = "scoring-shot-controls";
-      controls.hidden = !expanded;
-
-      const select = document.createElement("select");
-      select.className = "shot-score-select";
-      select.setAttribute("aria-label", `Score shot ${segment.shot_number}`);
-      scoreOptions.forEach((letter) => {
-        const option = document.createElement("option");
-        option.value = letter;
-        const value = state.scoring_summary?.score_values?.[letter] ?? 0;
-        const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
-        option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
-        select.appendChild(option);
-      });
-      select.value = segment.score_letter || defaultScore;
-
-      const applyShotScoring = async () => {
-        selectedShotId = segment.shot_id;
-        const result = await callApi("/api/scoring/score", {
-          shot_id: segment.shot_id,
-          letter: select.value || defaultScore,
-          penalty_counts: collectPenaltyCounts(controls),
+function renderScoringTable(tableId = "scoring-table") {
+  const table = $(tableId);
+  if (!table) return;
+  const expandedTable = tableId === "scoring-workbench-table";
+  const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
+  const penaltyFields = state.scoring_summary?.penalty_fields || [];
+  const defaultScore = scoreOptions[0] || "A";
+  withPreservedScrollState([table], () => {
+    table.innerHTML = "";
+    table.classList.toggle("timing-resizable-table", expandedTable);
+    applyTimingTableColumns(table);
+    const headers = expandedTable
+      ? [
+        { label: "Edit", columnId: "lock", resizable: false },
+        { label: "Shot", columnId: "shot", resizable: true },
+        { label: "Current Score", columnId: "score", resizable: true },
+        { label: "Penalties", columnId: "penalties", resizable: true },
+        { label: "Split", columnId: "split", resizable: true },
+        { label: "Run", columnId: "run", resizable: true },
+        { label: "Action", columnId: "action", resizable: true },
+        { label: "Delete", columnId: "delete", resizable: false },
+        { label: "Restore", columnId: "restore", resizable: false },
+      ]
+      : [
+        { label: "Shot", columnId: "shot", resizable: false },
+        { label: "Score", columnId: "score", resizable: false },
+        { label: "Penalties", columnId: "penalties", resizable: false },
+        { label: "Split", columnId: "split", resizable: false },
+        { label: "Run", columnId: "run", resizable: false },
+        { label: "Action", columnId: "action", resizable: false },
+      ];
+    headers.forEach((header) => {
+      const cell = document.createElement("div");
+      cell.className = "head";
+      cell.dataset.timingColumn = header.columnId;
+      const label = document.createElement("span");
+      label.className = "timing-header-label";
+      label.textContent = header.label;
+      cell.appendChild(label);
+      if (header.resizable && window.innerWidth > 680) {
+        const handle = document.createElement("button");
+        handle.type = "button";
+        handle.className = "timing-column-resize";
+        handle.setAttribute("aria-label", `Resize ${header.label} column`);
+        handle.title = `Resize ${header.label} column`;
+        handle.addEventListener("pointerdown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          beginTimingColumnResize(tableId, header.columnId, event);
         });
-        if (result) refreshReviewMediaFrame();
-      };
-      select.addEventListener("change", applyShotScoring);
+        cell.appendChild(handle);
+      }
+      table.appendChild(cell);
+    });
 
-      const scoreField = document.createElement("div");
-      scoreField.className = "shot-score-field";
-      scoreField.appendChild(select);
-      controls.appendChild(scoreField);
+    (state.timing_segments || []).forEach((segment) => {
+      const splitRow = splitRowForShot(segment.shot_id);
+      const editing = expandedTable && scoringRowEdits.has(segment.shot_id);
+      const lowConfidence = isLowConfidence(segment.confidence, segment.source);
+      const rowScope = document.createElement("div");
+      rowScope.className = "scoring-row-scope";
+      rowScope.dataset.shotId = segment.shot_id;
 
-      if (penaltyFields.length > 0) {
-        const penaltyGrid = document.createElement("div");
-        penaltyGrid.className = "shot-penalty-fields";
+      if (expandedTable) table.appendChild(buildScoringRowControlCell(segment, editing));
+
+      const shotCell = document.createElement("div");
+      shotCell.className = "timeline-segment-cell";
+      shotCell.textContent = `Shot ${segment.shot_number}`;
+      if (segment.shot_id === selectedShotId) shotCell.classList.add("selected");
+      if (lowConfidence) shotCell.classList.add("low-confidence");
+      shotCell.addEventListener("click", () => selectShot(segment.shot_id));
+      table.appendChild(shotCell);
+
+      const scoreCell = document.createElement("div");
+      if (editing) {
+        const select = document.createElement("select");
+        select.dataset.scoreField = "letter";
+        select.dataset.scoreShotId = segment.shot_id;
+        select.className = "shot-score-select";
+        scoreOptions.forEach((letter) => {
+          const option = document.createElement("option");
+          option.value = letter;
+          const value = state.scoring_summary?.score_values?.[letter] ?? 0;
+          const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
+          option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
+          select.appendChild(option);
+        });
+        select.value = segment.score_letter || defaultScore;
+        select.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
+        rowScope.appendChild(select);
+        scoreCell.appendChild(select);
+      } else {
+        scoreCell.textContent = compactScoreDisplay(segment.score_letter || defaultScore, activeScoringRuleset()) || defaultScore;
+      }
+      table.appendChild(scoreCell);
+
+      const penaltiesCell = document.createElement("div");
+      if (editing && penaltyFields.length > 0) {
+        const grid = document.createElement("div");
+        grid.className = "scoring-inline-penalties";
         penaltyFields.forEach((field) => {
           const label = document.createElement("label");
           label.className = "shot-penalty-field";
-          label.title = [field.label, field.description].filter(Boolean).join(" - ");
           const text = document.createElement("span");
           text.textContent = penaltyFieldLabel(field.id, field.label);
           const input = document.createElement("input");
@@ -6482,40 +7174,44 @@ function renderScoringShotList() {
           input.step = "1";
           input.value = segment.penalty_counts?.[field.id] ?? 0;
           input.dataset.penaltyId = field.id;
+          input.dataset.scoreShotId = segment.shot_id;
           input.className = "shot-penalty-input";
-          input.setAttribute("aria-label", `${field.label} for shot ${segment.shot_number}`);
-          input.title = label.title;
-          input.addEventListener("change", applyShotScoring);
+          input.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
           label.append(text, input);
-          penaltyGrid.appendChild(label);
+          grid.appendChild(label);
         });
-        controls.appendChild(penaltyGrid);
+        rowScope.appendChild(grid);
+        penaltiesCell.appendChild(grid);
+      } else {
+        penaltiesCell.textContent = scoringPenaltySummary(segment, penaltyFields);
       }
+      table.appendChild(penaltiesCell);
 
-      const actions = document.createElement("div");
-      actions.className = "scoring-shot-actions";
+      const splitCell = document.createElement("div");
+      splitCell.textContent = splitSeconds(splitRowShotMLSplitMs(splitRow));
+      table.appendChild(splitCell);
 
-      const restore = document.createElement("button");
-      restore.type = "button";
-      restore.className = "restore-button";
-      restore.textContent = "Restore";
-      restore.title = "Restore this shot score and penalties to their original values.";
-      restore.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
-      actions.appendChild(restore);
+      const runCell = document.createElement("div");
+      runCell.textContent = splitSeconds(splitRowSequenceTotalMs(splitRow));
+      table.appendChild(runCell);
 
-      const deleteShot = document.createElement("button");
-      deleteShot.type = "button";
-      deleteShot.className = "danger-button restore-button";
-      deleteShot.textContent = "Delete";
-      deleteShot.title = "Delete this shot from the run.";
-      deleteShot.addEventListener("click", () => deleteShotById(segment.shot_id, "scoring_row"));
-      actions.appendChild(deleteShot);
-      controls.appendChild(actions);
+      const actionCell = buildSplitRowActionCell(splitRow || {}, expandedTable);
+      if (segment.shot_id === selectedShotId) actionCell.classList.add("selected");
+      actionCell.addEventListener("click", () => selectShot(segment.shot_id));
+      table.appendChild(actionCell);
 
-      row.append(header, controls);
-      list.appendChild(row);
+      if (!expandedTable) return;
+      table.appendChild(buildScoringDeleteCell(segment));
+      table.appendChild(buildScoringRestoreCell(segment));
     });
   });
+  applyTimingTableColumns(table);
+}
+
+function renderScoringTables() {
+  setScoringWorkbenchExpanded(scoringWorkbenchExpanded);
+  renderScoringTable("scoring-table");
+  renderScoringTable("scoring-workbench-table");
 }
 
 function renderScoringPresetOptions() {
@@ -6536,8 +7232,7 @@ function renderScoringPresetOptions() {
   const summary = state.scoring_summary;
   $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "Choose a scoring preset.";
   $("scoring-result").textContent = `${summary.display_label}: ${summary.display_value}`;
-  renderScoreOptions(summary);
-  renderScoringShotList();
+  renderScoringTables();
   if (previousLength === 0) select.addEventListener("change", renderScoringPresetDescription);
 }
 
@@ -6601,9 +7296,9 @@ function renderPractiScoreSummaries() {
   ]);
 }
 
-function renderExportPresetOptions() {
-  const select = $("export-preset");
-  const selected = state.project.export.preset;
+function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = state?.project?.export?.preset) {
+  const select = $(selectId);
+  if (!select) return;
   select.innerHTML = "";
   (state.export_presets || []).forEach((preset) => {
     const option = document.createElement("option");
@@ -6615,10 +7310,13 @@ function renderExportPresetOptions() {
   custom.value = "custom";
   custom.textContent = "Custom";
   select.appendChild(custom);
-  const hasSelected = Array.from(select.options).some((option) => option.value === selected);
-  select.value = hasSelected ? selected : "custom";
-  const preset = (state.export_presets || []).find((item) => item.id === select.value);
-  $("export-preset-description").textContent = preset ? preset.description : "Manual custom export settings.";
+  const hasSelected = Array.from(select.options).some((option) => option.value === selectedValue);
+  select.value = hasSelected ? selectedValue : "custom";
+  if (descriptionId) {
+    const preset = (state.export_presets || []).find((item) => item.id === select.value);
+    const description = $(descriptionId);
+    if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
+  }
 }
 
 function renderExportLog() {
@@ -6934,49 +7632,161 @@ function downloadTextFile(filename, text, mimeType = "text/plain") {
 function buildMetricsCsv() {
   const summary = state.scoring_summary || {};
   const rows = buildMetricsRows();
-  const headers = [
-    "project",
-    "primary_video",
-    "result_label",
-    "result_value",
-    "raw_time_s",
-    "shot_number",
-    "segment_label",
-    "interval_label",
-    "actions",
-    "shotml_split_s",
-    "adjustment_s",
-    "absolute_s",
-    "split_s",
-    "cumulative_s",
-    "practiscore_raw_s",
-    "raw_delta_s",
-    "score_letter",
-    "penalties",
-    "shotml_confidence",
-  ];
-  const metricsRows = rows.map((entry) => [
-    state.project.name || "",
-    fileName(state.project.primary_video.path || ""),
-    summary.display_label || "Result",
-    summary.display_value || "",
-    summary.raw_seconds ?? "",
-    entry.shotNumber || "",
-    entry.label || "",
-    entry.intervalLabel || "",
-    entry.actionSummary || "",
-    entry.shotmlSplitMs === null || entry.shotmlSplitMs === undefined ? "" : precise(entry.shotmlSplitMs),
-    entry.adjustmentMs === null || entry.adjustmentMs === undefined ? "" : precise(entry.adjustmentMs),
-    entry.absoluteMs === null ? "" : precise(entry.absoluteMs),
-    entry.splitMs === null || entry.splitMs === undefined ? "" : precise(entry.splitMs),
-    entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : precise(entry.cumulativeMs),
-    entry.practiscoreMs === null || entry.practiscoreMs === undefined ? "" : precise(entry.practiscoreMs),
-    entry.rawDeltaMs === null || entry.rawDeltaMs === undefined ? "" : precise(entry.rawDeltaMs),
-    entry.scoreLetter || "",
-    entry.penaltyText || "",
-    entry.confidence ?? "",
+  const imported = summary.imported_stage || {};
+  const comparisonShooters = Array.isArray(state?.practiscore_options?.competitors)
+    ? state.practiscore_options.competitors
+    : [];
+  const penaltyFieldRows = (summary.penalty_fields || []).map((field) => [
+    field.id || "",
+    field.label || "",
+    field.unit || "",
+    field.count ?? "",
+    field.value ?? "",
+    (Number(field.count || 0) * Number(field.value || 0)) || "",
   ]);
-  return [headers.join(","), ...metricsRows.map((row) => row.map(csvEscape).join(","))].join("\n");
+  const sections = [
+    {
+      name: "run_summary",
+      headers: [
+        "project_name",
+        "video_file",
+        "shooter_name",
+        "stage_number",
+        "stage_name",
+        "match_type",
+        "ruleset",
+        "sport",
+        "competitor_place",
+        "stage_place",
+        "class_place",
+        "result_label",
+        "result_value",
+        "raw_time_s",
+        "raw_delta_s",
+        "final_time_s",
+        "final_delta_s",
+        "shot_points",
+        "shot_penalties",
+        "field_penalties",
+        "total_penalties",
+        "hit_factor",
+      ],
+      rows: [[
+        state.project.name || "",
+        fileName(state.project.primary_video.path || ""),
+        imported.competitor_name || state.project.scoring.competitor_name || "",
+        imported.stage_number ?? state.project.scoring.stage_number ?? "",
+        imported.stage_name || "",
+        imported.match_type || state?.practiscore_options?.detected_match_type || state.project.scoring.match_type || "",
+        summary.ruleset || "",
+        summary.sport || "",
+        imported.competitor_place ?? state.project.scoring.competitor_place ?? "",
+        imported.stage_place ?? "",
+        imported.class_place ?? "",
+        summary.display_label || "Result",
+        summary.display_value || "",
+        summary.raw_seconds ?? "",
+        summary.raw_delta_seconds ?? "",
+        summary.final_time ?? "",
+        summary.final_delta_seconds ?? "",
+        summary.shot_points ?? "",
+        summary.shot_penalties ?? "",
+        summary.field_penalties ?? "",
+        summary.total_penalties ?? "",
+        summary.hit_factor ?? "",
+      ]],
+    },
+    {
+      name: "comparison_context",
+      headers: [
+        "competitor",
+        "class",
+        "division",
+        "overall_place",
+        "class_place",
+        "stage_place",
+        "raw_time_s",
+        "final_time_s",
+        "points",
+        "stage_points",
+        "hit_factor",
+        "delta_to_selected_s",
+      ],
+      rows: comparisonShooters.length > 0
+        ? comparisonShooters.map((competitor) => [
+          competitor.name || "",
+          competitor.class || "",
+          competitor.division || "",
+          competitor.place ?? "",
+          competitor.class_place ?? "",
+          competitor.stage_place ?? "",
+          competitor.raw_seconds ?? "",
+          competitor.final_time ?? "",
+          competitor.points ?? "",
+          competitor.stage_points ?? "",
+          competitor.hit_factor ?? "",
+          "",
+        ])
+        : [["", "", "", "", "", "", "", "", "", "", "", ""]],
+    },
+    {
+      name: "per_shot_metrics",
+      headers: [
+        "shot_number",
+        "segment_label",
+        "interval_label",
+        "actions",
+        "shotml_split_s",
+        "adjustment_s",
+        "absolute_s",
+        "split_s",
+        "run_s",
+        "cumulative_s",
+        "practiscore_raw_s",
+        "raw_delta_s",
+        "score_letter",
+        "penalties",
+        "shotml_confidence",
+      ],
+      rows: rows.map((entry) => [
+        entry.shotNumber || "",
+        entry.label || "",
+        entry.intervalLabel || "",
+        entry.actionSummary || "",
+        entry.shotmlSplitMs === null || entry.shotmlSplitMs === undefined ? "" : precise(entry.shotmlSplitMs),
+        entry.adjustmentMs === null || entry.adjustmentMs === undefined ? "" : precise(entry.adjustmentMs),
+        entry.absoluteMs === null ? "" : precise(entry.absoluteMs),
+        entry.splitMs === null || entry.splitMs === undefined ? "" : precise(entry.splitMs),
+        entry.sequenceTotalMs === null || entry.sequenceTotalMs === undefined ? "" : precise(entry.sequenceTotalMs),
+        entry.cumulativeMs === null || entry.cumulativeMs === undefined ? "" : precise(entry.cumulativeMs),
+        entry.practiscoreMs === null || entry.practiscoreMs === undefined ? "" : precise(entry.practiscoreMs),
+        entry.rawDeltaMs === null || entry.rawDeltaMs === undefined ? "" : precise(entry.rawDeltaMs),
+        entry.scoreLetter || "",
+        entry.penaltyText || "",
+        entry.confidence ?? "",
+      ]),
+    },
+    {
+      name: "scoring_breakdown",
+      headers: ["penalty_id", "label", "unit", "count", "value", "total"],
+      rows: [
+        ...penaltyFieldRows,
+        ["shot_points", "Shot Points", "points", "", summary.shot_points ?? "", summary.shot_points ?? ""],
+        ["shot_penalties", "Shot Penalties", "points", "", summary.shot_penalties ?? "", summary.shot_penalties ?? ""],
+        ["field_penalties", "Field Penalties", "points", "", summary.field_penalties ?? "", summary.field_penalties ?? ""],
+        ["total_penalties", summary.penalty_label || "Total Penalties", "points", "", summary.total_penalties ?? "", summary.total_penalties ?? ""],
+      ],
+    },
+  ];
+
+  const output = [];
+  sections.forEach((section, index) => {
+    output.push(csvEscape(`# ${section.name}`));
+    output.push(section.headers.map(csvEscape).join(","));
+    section.rows.forEach((row) => output.push(row.map(csvEscape).join(",")));
+    if (index < sections.length - 1) output.push("");
+  });
+  return output.join("\n");
 }
 
 function buildMetricsText() {
@@ -7187,7 +7997,13 @@ function renderControls() {
   $("pip-size-label").textContent = `${pipValue}%`;
   syncControlValue($("pip-x"), state.project.merge.pip_x ?? 1);
   syncControlValue($("pip-y"), state.project.merge.pip_y ?? 1);
-  syncControlValue($("overlay-position"), state.project.overlay.position);
+  const overlayPosition = state.project.overlay.position || "none";
+  if (overlayPosition !== "none") {
+    overlayVisibilityPosition = overlayPosition;
+  } else if (!overlayVisibilityPosition || overlayVisibilityPosition === "none") {
+    overlayVisibilityPosition = state.settings?.overlay_position || "bottom";
+  }
+  syncControlChecked($("show-overlay"), overlayPosition !== "none");
   syncControlValue($("badge-size"), state.project.overlay.badge_size);
   overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
@@ -7242,6 +8058,7 @@ function renderControls() {
   renderPractiScoreSummaries();
   renderExportPresetOptions();
   renderExportLog();
+  renderSettingsPane();
   renderMetricsPanel();
   renderStyleControls();
   renderMergeMediaList();
@@ -8907,13 +9724,17 @@ function overlayRenderPositionMs(video, mediaTimeS = null) {
 function visiblePopupBubbles(positionMs) {
   return popupBubbles().flatMap((bubble) => {
     const resolvedText = popupBubbleResolvedText(bubble).trim();
-    if (!bubble.enabled || !resolvedText) return [];
+    const hasImage = ["image", "text_image"].includes(bubble.content_type) && Boolean(String(bubble.image_path || "").trim());
+    const hasText = ["text", "text_image"].includes(bubble.content_type) && Boolean(resolvedText);
+    if (!bubble.enabled || (!hasImage && !hasText)) return [];
     const isVisible = popupBubbleIsVisibleAtPosition(bubble, positionMs);
-    const isSelectedEditorBubble = activeTool === "popup" && bubble.id === selectedPopupBubbleId;
+    const isSelectedEditorBubble = activeTool === "markers" && bubble.id === selectedPopupBubbleId;
     if (!isVisible && !isSelectedEditorBubble) return [];
     return [{
       bubble,
       text: resolvedText,
+      hasImage,
+      hasText,
       positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),
       selected: isSelectedEditorBubble,
       outsideWindow: !isVisible,
@@ -8990,21 +9811,41 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     const bubble = entry.bubble;
     const point = popupBubblePoint(bubble, entry.positionMs);
     const popupSize = resolvedPopupBubbleSize(bubble);
-    const badge = badgeElement(
-      entry.text,
-      {
-        background_color: bubble.background_color,
-        text_color: bubble.text_color,
-        opacity: bubble.opacity,
-      },
-      size,
-      null,
-      popupSize.width,
-      popupSize.height,
-      "center",
-      overlayScale,
-      popupSize,
-    );
+    const badge = document.createElement("div");
+    badge.className = "overlay-badge popup-overlay-badge";
+    badge.style.minWidth = `${Math.max(1, popupSize.width)}px`;
+    badge.style.minHeight = `${Math.max(1, popupSize.height)}px`;
+    badge.style.width = `${Math.max(1, popupSize.width)}px`;
+    badge.style.height = `${Math.max(1, popupSize.height)}px`;
+    badge.style.backgroundColor = rgba(bubble.background_color, bubble.opacity);
+    badge.style.color = bubble.text_color;
+    badge.style.opacity = `${bubble.opacity}`;
+    badge.style.display = "flex";
+    badge.style.flexDirection = "column";
+    badge.style.alignItems = "center";
+    badge.style.justifyContent = "center";
+    badge.style.gap = "6px";
+    badge.style.padding = "8px 10px";
+    badge.style.boxSizing = "border-box";
+    badge.style.textAlign = "center";
+    if (entry.hasImage) {
+      const image = document.createElement("img");
+      image.src = popupBubbleImageUrl(bubble);
+      image.alt = "";
+      image.style.width = "100%";
+      image.style.height = entry.hasText ? "calc(100% - 28px)" : "100%";
+      image.style.objectFit = bubble.image_scale_mode === "cover" ? "cover" : "contain";
+      image.style.pointerEvents = "none";
+      badge.appendChild(image);
+    }
+    if (entry.hasText) {
+      const text = document.createElement("div");
+      text.textContent = entry.text;
+      text.style.fontWeight = "700";
+      text.style.lineHeight = "1.1";
+      text.style.pointerEvents = "none";
+      badge.appendChild(text);
+    }
     badge.dataset.popupDrag = "true";
     badge.dataset.popupId = bubble.id;
     badge.classList.toggle("popup-selected", Boolean(entry.selected));
@@ -9558,8 +10399,11 @@ function readOverlayPayload() {
   });
   const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));
   const primaryTextBox = preferredLegacyTextBox(textBoxes);
+  const showOverlay = $("show-overlay")?.checked ?? true;
+  const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";
+  if (showOverlay && position !== "none") overlayVisibilityPosition = position;
   return {
-    position: $("overlay-position").value,
+    position,
     badge_size: $("badge-size").value,
     styles,
     scoring_colors: scoringColors,
@@ -9742,9 +10586,66 @@ function cancelPendingExportDrafts() {
   autoApplyExportSettings.cancel?.();
 }
 
+window.pendingSettingsDefaultsPromise = null;
+window.settingsDefaultsApplyGeneration = 0;
+
+async function flushPendingSettingsDefaults() {
+  if (scheduleSettingsDefaultsApply.flush?.()) {
+    await Promise.resolve();
+  }
+  if (!window.pendingSettingsDefaultsPromise) {
+    scheduleSettingsDefaultsApply.cancel?.();
+    return;
+  }
+  try {
+    await window.pendingSettingsDefaultsPromise;
+  } finally {
+    window.pendingSettingsDefaultsPromise = null;
+    scheduleSettingsDefaultsApply.cancel?.();
+  }
+}
+
+async function applySettingsDefaults(options = {}) {
+  if (options.scheduled && options.scheduledGeneration !== window.settingsDefaultsApplyGeneration) {
+    return window.pendingSettingsDefaultsPromise || null;
+  }
+  if (!options.scheduled) {
+    window.settingsDefaultsApplyGeneration += 1;
+  }
+  scheduleSettingsDefaultsApply.cancel?.();
+  if (window.pendingSettingsDefaultsPromise) {
+    try {
+      await window.pendingSettingsDefaultsPromise;
+    } catch {
+      // Ignore prior failure; continue with the latest update.
+    }
+  }
+  const payload = readSettingsDefaultsPayload(options);
+  const promise = callApi("/api/settings", payload);
+  const finalPromise = promise.then((result) => {
+    if (result && !options.scheduled) {
+      window.lastAppliedSettingsDefaultsPayload = payload;
+    }
+    return result;
+  }).finally(() => {
+    if (window.pendingSettingsDefaultsPromise === finalPromise) {
+      window.pendingSettingsDefaultsPromise = null;
+    }
+  });
+  window.pendingSettingsDefaultsPromise = finalPromise;
+  return finalPromise;
+}
+
+function applySettingsShotMLDefaults() {
+  const threshold = readNumberSetting("settings-shotml-threshold", 0.35);
+  if (!Number.isFinite(threshold)) return;
+  return applySettingsDefaults();
+}
+
 async function flushPendingProjectDrafts() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
+  await flushPendingSettingsDefaults();
   await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   await callApi("/api/project/details", readProjectDetailsPayload());
   await callApi("/api/project/practiscore", readPractiScoreContextPayload());
@@ -9876,17 +10777,28 @@ async function createNewProject(path = $("project-path").value.trim()) {
       return null;
     }
 
-    await flushPendingProjectDrafts();
+    await flushPendingSettingsDefaults();
+    scheduleSettingsDefaultsApply.cancel?.();
     const resetResult = await callApi("/api/project/new", {});
     if (!resetResult) return null;
+    await flushPendingProjectDrafts();
     const savedResult = await callApi("/api/project/save", { path: projectPath });
-    if (savedResult) setActiveTool("project");
+    if (savedResult) await applyConfiguredProjectLandingTool();
     return savedResult;
   } catch (error) {
     setStatus(error.message);
     activity("api.error", { path: "/api/project/new", error: error.message });
     return null;
   }
+}
+
+async function applyConfiguredProjectLandingTool() {
+  const reopenLastTool = Boolean(state?.settings?.reopen_last_tool ?? true);
+  const configuredTool = reopenLastTool
+    ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
+    : "project";
+  setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
+  return callApi("/api/project/ui-state", readProjectUiStatePayload());
 }
 
 async function useProjectFolder(path = $("project-path").value.trim()) {
@@ -9901,7 +10813,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
   const currentPath = normalizeProjectFolderInput(state?.project?.path || "");
   if (currentPath && sameProjectFolderPath(currentPath, targetPath)) {
     const result = await callApi("/api/project/save", { path: targetPath });
-    if (result) setActiveTool("project");
+    if (result) await applyConfiguredProjectLandingTool();
     return result;
   }
 
@@ -9919,7 +10831,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
         return null;
       }
       const result = await callApi("/api/project/save", { path: projectPath });
-      if (result) setActiveTool("project");
+      if (result) await applyConfiguredProjectLandingTool();
       return result;
     }
 
@@ -9928,7 +10840,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
       return null;
     }
     const result = await callApi("/api/project/open", { path: projectPath });
-    if (result) setActiveTool("project");
+    if (result) await applyConfiguredProjectLandingTool();
     return result;
   } catch (error) {
     setStatus(error.message);
@@ -10041,11 +10953,15 @@ function scheduleMergeApply() {
 }
 
 function scheduleExportLayoutApply() {
-  autoApplyExportLayout(readExportLayoutPayload());
+  const payload = readExportLayoutPayload();
+  applyExportDraft(payload);
+  autoApplyExportLayout(payload);
 }
 
 function scheduleExportSettingsApply() {
-  autoApplyExportSettings(readExportSettingsPayload());
+  const payload = readExportSettingsPayload();
+  applyExportDraft(payload);
+  autoApplyExportSettings(payload);
 }
 
 function scheduleScoringApply() {
@@ -10055,10 +10971,75 @@ function scheduleScoringApply() {
   });
 }
 
+const scheduleSettingsDefaultsApply = debounce((options = {}) => {
+  activity("auto_apply.settings_defaults", {});
+  applySettingsDefaults({ ...options, scheduled: true });
+}, 300);
+
 const handleViewportLayoutChange = debounce(() => {
   renderViewportLayout();
   syncTimingTableColumns();
 }, 120);
+
+const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
+  const projectOverlay = state?.project?.overlay || {};
+  const projectExport = state?.project?.export || {};
+  const projectScoring = state?.project?.scoring || {};
+  const projectAnalysis = state?.project?.analysis || {};
+  const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || {});
+  const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
+  const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
+  const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
+  const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
+  const markerTemplate = projectDefaults
+    ? projectPopupTemplate
+    : normalizePopupTemplate({
+      enabled: $("settings-marker-enabled")?.checked ?? true,
+      content_type: $("settings-marker-content-type")?.value || "text",
+      text_source: $("settings-marker-text-source")?.value || "score",
+      duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
+      quadrant: $("settings-marker-quadrant")?.value || "middle_middle",
+      width: Number($("settings-marker-width")?.value || 0),
+      height: Number($("settings-marker-height")?.value || 0),
+      follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
+      background_color: $("settings-marker-background-color")?.value || "#000000",
+      text_color: $("settings-marker-text-color")?.value || "#ffffff",
+      opacity: readNumberSetting("settings-marker-opacity", 0.9),
+    });
+  return {
+    scope: $("settings-scope")?.value || "app",
+    settings: {
+      default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
+      overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
+      badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
+      overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
+      overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
+      overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+      timer_badge: timerBadge,
+      shot_badge: shotBadge,
+      current_shot_badge: currentShotBadge,
+      hit_factor_badge: hitFactorBadge,
+      merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
+      pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
+      merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
+      merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+      export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
+      export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
+      export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
+      export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
+      export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
+      export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
+      export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
+      export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
+      default_tool: $("settings-default-tool")?.value || "project",
+      reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
+      detection_threshold: projectDefaults
+        ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
+        : readNumberSetting("settings-shotml-threshold", 0.35),
+      marker_template: markerTemplate,
+    },
+  };
+};
 
 function wireEvents() {
   document.querySelectorAll("[data-tool]").forEach((item) => {
@@ -10089,6 +11070,11 @@ function wireEvents() {
     const result = await callApi("/api/import/primary", { path });
     if (result) setActiveTool("project");
   }));
+  $("toggle-rail")?.addEventListener("click", () => {
+    railCollapsed = !railCollapsed;
+    window.localStorage.setItem("splitshot.railCollapsed", String(railCollapsed));
+    requestRender();
+  });
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
       await flushPendingProjectDrafts();
@@ -10185,14 +11171,14 @@ function wireEvents() {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
-    if (activeTool === "popup") renderPopupTimeline();
+    if (activeTool === "markers") renderPopupTimeline();
   });
   $("primary-video").addEventListener("timeupdate", () => {
     if (overlayFrame !== null) return;
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
     syncPopupPlaybackWindow();
-    if (activeTool === "popup") {
+    if (activeTool === "markers") {
       if (popupFilterMode === "visible") renderPopupEditors();
       else renderPopupTimeline();
     }
@@ -10210,6 +11196,11 @@ function wireEvents() {
   $("reset-waveform-view").addEventListener("click", resetWaveformView);
   $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
   $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
+  $("expand-scoring")?.addEventListener("click", () => {
+    setScoringWorkbenchExpanded(true);
+    $("scoring-workbench")?.scrollIntoView({ block: "start" });
+  });
+  $("collapse-scoring")?.addEventListener("click", () => setScoringWorkbenchExpanded(false));
   $("expand-metrics")?.addEventListener("click", () => setMetricsExpanded(true));
   $("collapse-metrics")?.addEventListener("click", () => setMetricsExpanded(false));
   $("waveform").addEventListener("pointerdown", handleWaveformPointerDown);
@@ -10304,7 +11295,7 @@ function wireEvents() {
   });
   [
     "max-visible-shots",
-    "overlay-position",
+    "show-overlay",
     "shot-quadrant",
     "shot-direction",
     "overlay-custom-x",
@@ -10351,6 +11342,18 @@ function wireEvents() {
   });
   $("popup-import-shots")?.addEventListener("click", importShotPopups);
   $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
+  $("popup-open-shot-editor")?.addEventListener("click", () => setPopupShotEditorOpen(true));
+  $("popup-shot-editor-done")?.addEventListener("click", () => setPopupShotEditorOpen(false));
+  $("popup-shot-editor-prev")?.addEventListener("click", () => stepShotLinkedPopupBubble(-1));
+  $("popup-shot-editor-next")?.addEventListener("click", () => stepShotLinkedPopupBubble(1));
+  $("popup-shot-editor-duplicate")?.addEventListener("click", () => {
+    const bubble = selectedShotLinkedPopupBubble();
+    if (bubble) duplicatePopupBubble(bubble.id);
+  });
+  $("popup-shot-editor-delete")?.addEventListener("click", () => {
+    const bubble = selectedShotLinkedPopupBubble();
+    if (bubble) removePopupBubble(bubble.id);
+  });
   $("popup-toggle-authoring")?.addEventListener("click", () => setPopupAuthoringCollapsed(!popupAuthoringCollapsed));
   $("popup-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
   $("popup-prev-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
@@ -10364,6 +11367,93 @@ function wireEvents() {
       return;
     }
     playSelectedPopupWindow({ loop: true });
+  });
+  [
+    "popup-template-content-type",
+    "popup-template-text-source",
+    "popup-template-quadrant",
+  ].forEach((id) => $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() })));
+  [
+    "popup-template-enabled",
+    "popup-template-follow-motion",
+  ].forEach((id) => $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() })));
+  [
+    "popup-template-duration-s",
+    "popup-template-width",
+    "popup-template-height",
+  ].forEach((id) => {
+    $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
+    $(id)?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() });
+    });
+  });
+
+  $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
+  [
+    "settings-scope",
+    "settings-default-tool",
+    "settings-reopen-last-tool",
+    "settings-default-match-type",
+    "settings-overlay-position",
+    "settings-badge-size",
+    "settings-overlay-custom-background-color",
+    "settings-overlay-custom-text-color",
+    "settings-timer-badge-background-color",
+    "settings-timer-badge-text-color",
+    "settings-shot-badge-background-color",
+    "settings-shot-badge-text-color",
+    "settings-current-shot-badge-background-color",
+    "settings-current-shot-badge-text-color",
+    "settings-hit-factor-badge-background-color",
+    "settings-hit-factor-badge-text-color",
+    "settings-merge-layout",
+    "settings-pip-size",
+    "settings-export-quality",
+    "settings-export-preset",
+    "settings-export-frame-rate",
+    "settings-export-video-codec",
+    "settings-export-audio-codec",
+    "settings-export-color-space",
+    "settings-export-two-pass",
+    "settings-export-ffmpeg-preset",
+    "settings-marker-content-type",
+    "settings-marker-text-source",
+    "settings-marker-quadrant",
+    "settings-marker-enabled",
+    "settings-marker-follow-motion",
+    "settings-marker-background-color",
+    "settings-marker-text-color",
+  ].forEach((id) => $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply()));
+  [
+    "settings-overlay-custom-opacity",
+    "settings-timer-badge-opacity",
+    "settings-shot-badge-opacity",
+    "settings-current-shot-badge-opacity",
+    "settings-hit-factor-badge-opacity",
+    "settings-merge-pip-x",
+    "settings-merge-pip-y",
+    "settings-marker-opacity",
+    "settings-marker-duration",
+    "settings-marker-width",
+    "settings-marker-height",
+  ].forEach((id) => {
+    $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply());
+    $(id)?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      scheduleSettingsDefaultsApply();
+    });
+  });
+  $("settings-shotml-threshold")?.addEventListener("change", () => scheduleSettingsDefaultsApply());
+  $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    scheduleSettingsDefaultsApply();
+  });
+  $("settings-reset-defaults")?.addEventListener("click", async () => {
+    await callApi("/api/settings/reset-defaults", {});
   });
   $("badge-style-grid").addEventListener("input", (event) => {
     const target = event.target;
@@ -10466,9 +11556,11 @@ function wireEvents() {
   $("export-video").addEventListener("click", async () => {
     const path = requireValue("export-path", "Output video path");
     exportPathDraft = path;
+    const payload = buildExportPayload(path);
+    applyExportDraft(payload);
     cancelPendingExportDrafts();
     await flushPendingMergeSourceCommits();
-    await callApi("/api/export", buildExportPayload(path));
+    await callApi("/api/export", payload);
   });
   $("show-export-log")?.addEventListener("click", openExportLogModal);
   $("export-export-log")?.addEventListener("click", downloadExportLog);

@@ -10,7 +10,14 @@ from PySide6.QtCore import QObject, Signal
 
 from splitshot.analysis.detection import analyze_video_audio, timing_change_proposals_from_review_suggestions, TimingReviewSuggestion
 from splitshot.analysis.sync import compute_sync_offset
-from splitshot.config import AppSettings, load_settings, save_settings
+from splitshot.config import (
+    AppSettings,
+    delete_folder_settings,
+    load_folder_settings,
+    load_settings,
+    save_folder_settings,
+    save_settings,
+)
 from splitshot.domain.models import (
     BadgeSize,
     BadgeStyle,
@@ -97,6 +104,8 @@ _VALID_BROWSER_UI_TOOLS = {
     "overlay",
     "review",
     "popup",
+    "markers",
+    "settings",
     "export",
     "metrics",
 }
@@ -136,6 +145,62 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
         BadgeSize.L: 16,
         BadgeSize.XL: 20,
     }[size]
+
+
+def _badge_style_from_payload(style: BadgeStyle, payload: object) -> None:
+    if not isinstance(payload, dict):
+        return
+    if "background_color" in payload:
+        style.background_color = str(payload.get("background_color", style.background_color) or style.background_color)
+    if "text_color" in payload:
+        style.text_color = str(payload.get("text_color", style.text_color) or style.text_color)
+    if "opacity" in payload:
+        raw_opacity = payload.get("opacity")
+        if raw_opacity not in {None, ""}:
+            style.opacity = max(0.0, min(1.0, float(raw_opacity)))
+
+
+def _popup_template_from_payload(template: PopupTemplate, payload: object) -> None:
+    if not isinstance(payload, dict):
+        return
+    if "enabled" in payload:
+        template.enabled = bool(payload.get("enabled", template.enabled))
+    if "content_type" in payload:
+        template.content_type = str(payload.get("content_type", template.content_type) or template.content_type)
+    if "text_source" in payload:
+        template.text_source = str(payload.get("text_source", template.text_source) or template.text_source)
+    if "duration_ms" in payload:
+        raw_duration = payload.get("duration_ms")
+        if raw_duration not in {None, ""}:
+            template.duration_ms = max(1, int(raw_duration))
+    if "quadrant" in payload:
+        template.quadrant = str(payload.get("quadrant", template.quadrant) or template.quadrant)
+    if "width" in payload:
+        raw_width = payload.get("width")
+        if raw_width not in {None, ""}:
+            template.width = max(0, int(raw_width))
+    if "height" in payload:
+        raw_height = payload.get("height")
+        if raw_height not in {None, ""}:
+            template.height = max(0, int(raw_height))
+    if "follow_motion" in payload:
+        template.follow_motion = bool(payload.get("follow_motion", template.follow_motion))
+    if "background_color" in payload:
+        template.background_color = str(payload.get("background_color", template.background_color) or template.background_color)
+    if "text_color" in payload:
+        template.text_color = str(payload.get("text_color", template.text_color) or template.text_color)
+    if "opacity" in payload:
+        raw_opacity = payload.get("opacity")
+        if raw_opacity not in {None, ""}:
+            template.opacity = max(0.0, min(1.0, float(raw_opacity)))
+
+
+def _overlay_text_boxes_to_payload(boxes: list[OverlayTextBox]) -> list[dict[str, object]]:
+    return [asdict(box) for box in boxes]
+
+
+def _settings_template_payload(settings: AppSettings) -> dict[str, object]:
+    return settings.template_snapshot()
 
 
 def _practiscore_name_matches(input_name: str, candidate_name: str) -> bool:
@@ -475,6 +540,8 @@ class ProjectController(QObject):
     def __init__(self) -> None:
         super().__init__()
         self.settings: AppSettings = load_settings()
+        self.folder_settings: AppSettings | None = None
+        self.folder_settings_error: str | None = None
         self.project = self._new_project_with_settings_defaults()
         self.project_path: Path | None = None
         self._practiscore_source_path: Path | None = None
@@ -488,6 +555,8 @@ class ProjectController(QObject):
         self.project_changed.connect(self._autosave_project_if_needed)
 
     def new_project(self) -> None:
+        self.folder_settings = None
+        self.folder_settings_error = None
         self.project = self._new_project_with_settings_defaults()
         self.project_path = None
         self._clear_practiscore_source()
@@ -708,6 +777,191 @@ class ProjectController(QObject):
         practiscore_dir = self.project_path / PRACTISCORE_DIRNAME
         if not practiscore_dir.is_dir():
             return []
+        candidates: list[Path] = []
+        for path in practiscore_dir.iterdir():
+            if not path.is_file() or path.suffix.lower() not in _PRACTISCORE_FILE_SUFFIXES:
+                continue
+            candidates.append(path.resolve())
+        candidates.sort(key=lambda item: (item.stat().st_mtime_ns, item.name.lower()), reverse=True)
+        return candidates
+
+    def settings_template_names(self) -> list[str]:
+        names = [name for name in self.settings.settings_templates.keys() if str(name).strip()]
+        if not names:
+            names = [self.settings.active_template_name or "Default"]
+        if self.settings.active_template_name not in names:
+            names.insert(0, self.settings.active_template_name)
+        return names
+
+    def _settings_template_snapshot(self, template_name: str | None = None) -> dict[str, object]:
+        name = str(template_name or self.settings.active_template_name or "Default")
+        template = self.settings.settings_templates.get(name)
+        if isinstance(template, dict) and template:
+            return deepcopy(template)
+        return self.settings.template_snapshot()
+
+    def _apply_settings_template_snapshot(self, template_name: str, snapshot: dict[str, object]) -> None:
+        next_settings = AppSettings.from_dict({**snapshot, "recent_projects": self.settings.recent_projects})
+        next_settings.active_template_name = template_name
+        next_settings.settings_templates = deepcopy(self.settings.settings_templates)
+        next_settings.settings_templates[template_name] = deepcopy(snapshot)
+        next_settings.recent_projects = self.settings.recent_projects
+        self.settings = next_settings
+
+    def _sync_active_settings_template(self) -> None:
+        templates = deepcopy(self.settings.settings_templates)
+        templates[self.settings.active_template_name] = self.settings.template_snapshot()
+        self.settings.settings_templates = templates
+
+    def _save_settings_and_emit(self) -> None:
+        self._sync_active_settings_template()
+        save_settings(self.settings)
+        self.settings_changed.emit()
+
+    def _template_snapshot_from_current_project(self, snapshot: dict[str, object], section: str | None = None) -> dict[str, object]:
+        project_payload = project_to_dict(self.project)
+        current_settings = self.settings.config_dict()
+        next_snapshot = deepcopy(snapshot)
+        section_name = (section or "all").strip().lower()
+
+        def update_project_defaults() -> None:
+            scoring = project_payload.get("scoring", {})
+            if not isinstance(scoring, dict):
+                return
+            match_type = str(scoring.get("match_type") or current_settings.get("default_match_type") or "uspsa")
+            try:
+                default_match_type = normalize_match_type(match_type)
+            except ValueError:
+                default_match_type = str(current_settings.get("default_match_type") or "uspsa")
+            stage_number = scoring.get("stage_number")
+            competitor_name = str(scoring.get("competitor_name") or "")
+            competitor_place = scoring.get("competitor_place")
+            next_snapshot.update({
+                "default_match_type": default_match_type,
+                "default_stage_number": None if stage_number in {None, ""} else int(stage_number),
+                "default_competitor_name": competitor_name,
+                "default_competitor_place": None if competitor_place in {None, ""} else int(competitor_place),
+            })
+
+        def update_pip_defaults() -> None:
+            merge = project_payload.get("merge", {})
+            if not isinstance(merge, dict):
+                return
+            next_snapshot.update({
+                "merge_layout": str(merge.get("layout") or current_settings.get("merge_layout") or MergeLayout.SIDE_BY_SIDE.value),
+                "pip_size": str(merge.get("pip_size") or current_settings.get("pip_size") or PipSize.MEDIUM.value),
+                "merge_pip_x": float(merge.get("pip_x", current_settings.get("merge_pip_x", 1.0))),
+                "merge_pip_y": float(merge.get("pip_y", current_settings.get("merge_pip_y", 1.0))),
+            })
+
+        def update_marker_defaults() -> None:
+            popup_template = project_payload.get("popup_template", {})
+            if isinstance(popup_template, dict):
+                next_snapshot["marker_template"] = deepcopy(popup_template)
+
+        def update_overlay_defaults() -> None:
+            overlay = project_payload.get("overlay", {})
+            if not isinstance(overlay, dict):
+                return
+            mapping = {
+                "position": "overlay_position",
+                "badge_size": "badge_size",
+                "custom_box_background_color": "overlay_custom_box_background_color",
+                "custom_box_text_color": "overlay_custom_box_text_color",
+                "custom_box_opacity": "overlay_custom_box_opacity",
+                "timer_badge": "timer_badge",
+                "shot_badge": "shot_badge",
+                "current_shot_badge": "current_shot_badge",
+                "hit_factor_badge": "hit_factor_badge",
+            }
+            for source_key, target_key in mapping.items():
+                if source_key in overlay:
+                    next_snapshot[target_key] = deepcopy(overlay[source_key])
+
+        def update_review_defaults() -> None:
+            overlay = project_payload.get("overlay", {})
+            if isinstance(overlay, dict):
+                next_snapshot["review_text_boxes"] = deepcopy(overlay.get("text_boxes", []))
+
+        def update_export_defaults() -> None:
+            export = project_payload.get("export", {})
+            if not isinstance(export, dict):
+                return
+            for key in (
+                "quality",
+                "preset",
+                "frame_rate",
+                "video_codec",
+                "audio_codec",
+                "color_space",
+                "two_pass",
+                "ffmpeg_preset",
+            ):
+                if key in export:
+                    next_snapshot[f"export_{key}"] = deepcopy(export[key])
+
+        if section_name in {"all", "project"}:
+            update_project_defaults()
+        if section_name in {"all", "pip"}:
+            update_pip_defaults()
+        if section_name in {"all", "markers"}:
+            update_marker_defaults()
+        if section_name in {"all", "overlay"}:
+            update_overlay_defaults()
+        if section_name in {"all", "review"}:
+            update_review_defaults()
+        if section_name in {"all", "export"}:
+            update_export_defaults()
+        return next_snapshot
+
+    def select_settings_template(self, template_name: str) -> None:
+        template_name = str(template_name or "").strip()
+        if not template_name:
+            raise ValueError("Template name is required.")
+        snapshot = self._settings_template_snapshot(template_name)
+        self._apply_settings_template_snapshot(template_name, snapshot)
+        self._save_settings_and_emit()
+        self._set_status(f"Selected settings template {template_name}.")
+
+    def save_settings_template(self, template_name: str, *, section: str | None = None) -> None:
+        template_name = str(template_name or "").strip() or self.settings.active_template_name or "Default"
+        snapshot = self._settings_template_snapshot(template_name)
+        snapshot = self._template_snapshot_from_current_project(snapshot, section=section)
+        self._apply_settings_template_snapshot(template_name, snapshot)
+        self._save_settings_and_emit()
+        if section:
+            self._set_status(f"Saved {section} defaults to template {template_name}.")
+        else:
+            self._set_status(f"Saved current project defaults to template {template_name}.")
+
+    def duplicate_settings_template(self, template_name: str, duplicate_name: str) -> None:
+        source_name = str(template_name or "").strip() or self.settings.active_template_name
+        duplicate_name = str(duplicate_name or "").strip()
+        if not duplicate_name:
+            raise ValueError("Duplicate template name is required.")
+        snapshot = self._settings_template_snapshot(source_name)
+        self._apply_settings_template_snapshot(duplicate_name, snapshot)
+        self._save_settings_and_emit()
+        self._set_status(f"Duplicated settings template {source_name} to {duplicate_name}.")
+
+    def delete_settings_template(self, template_name: str) -> None:
+        template_name = str(template_name or "").strip()
+        if not template_name:
+            return
+        templates = deepcopy(self.settings.settings_templates)
+        if template_name not in templates:
+            return
+        if len(templates) <= 1:
+            templates = {"Default": self.settings.template_snapshot()}
+            template_name = "Default"
+        else:
+            templates.pop(template_name, None)
+        next_template_name = self.settings.active_template_name if template_name != self.settings.active_template_name else next(iter(templates.keys()))
+        snapshot = templates.get(next_template_name) or next(iter(templates.values()))
+        self._apply_settings_template_snapshot(next_template_name, snapshot)
+        self.settings.settings_templates = templates
+        self._save_settings_and_emit()
+        self._set_status(f"Deleted settings template {template_name}.")
 
         candidates: list[Path] = []
         for path in practiscore_dir.iterdir():
@@ -1338,6 +1592,8 @@ class ProjectController(QObject):
                 changed = True
         if "active_tool" in payload:
             next_active_tool = str(payload["active_tool"])
+            if next_active_tool == "popup":
+                next_active_tool = "markers"
             if next_active_tool not in _VALID_BROWSER_UI_TOOLS:
                 next_active_tool = "project"
             if ui_state.active_tool != next_active_tool:
@@ -1667,6 +1923,7 @@ class ProjectController(QObject):
 
     def set_overlay_display_options(self, payload: dict[str, object]) -> None:
         overlay = self.project.overlay
+        existing_text_boxes = list(overlay.text_boxes)
         valid_quadrants = {
             "above_final",
             "top_left",
@@ -1789,8 +2046,11 @@ class ProjectController(QObject):
             overlay.text_boxes = parsed_boxes
             sync_overlay_legacy_custom_box_fields(overlay)
         else:
-            legacy_box = legacy_custom_box_as_text_box(overlay)
-            overlay.text_boxes = [] if legacy_box is None else [legacy_box]
+            if existing_text_boxes:
+                overlay.text_boxes = existing_text_boxes
+            else:
+                legacy_box = legacy_custom_box_as_text_box(overlay)
+                overlay.text_boxes = [] if legacy_box is None else [legacy_box]
         self.project.touch()
         self.project_changed.emit()
 
@@ -1801,6 +2061,17 @@ class ProjectController(QObject):
                 continue
             parsed_popups.append(_popup_bubble_from_dict(item))
         self.project.popups = parsed_popups
+        template_payload = payload.get("popup_template")
+        if isinstance(template_payload, dict):
+            template = self.project.popup_template
+            template.enabled = bool(template_payload.get("enabled", template.enabled))
+            template.content_type = str(template_payload.get("content_type", template.content_type))
+            template.text_source = str(template_payload.get("text_source", template.text_source))
+            template.duration_ms = max(1, int(template_payload.get("duration_ms", template.duration_ms) or 1000))
+            template.quadrant = str(template_payload.get("quadrant", template.quadrant))
+            template.width = max(0, int(template_payload.get("width", template.width) or 0))
+            template.height = max(0, int(template_payload.get("height", template.height) or 0))
+            template.follow_motion = bool(template_payload.get("follow_motion", template.follow_motion))
         self.project.touch()
         self.project_changed.emit()
 
@@ -2079,6 +2350,7 @@ class ProjectController(QObject):
             raise ValueError("Project path is required")
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
+        self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
         self._restore_practiscore_source_from_project()
@@ -2092,6 +2364,7 @@ class ProjectController(QObject):
     def open_project(self, path: str) -> None:
         self.project = load_project(path)
         self.project_path = ensure_project_suffix(path)
+        self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path()
         loaded_snapshot = project_to_dict(self.project)
         recovered_media = self._restore_media_sources_from_project()
@@ -2123,18 +2396,177 @@ class ProjectController(QObject):
         self.new_project()
         self._set_status("Deleted the saved project folder.")
 
+    def effective_settings(self) -> AppSettings:
+        if self.folder_settings is None:
+            return AppSettings.from_dict(self.settings.to_dict())
+        merged = self.settings.config_dict()
+        folder_payload = self.folder_settings.config_dict()
+        for key, value in folder_payload.items():
+            merged[key] = value
+        merged["recent_projects"] = self.settings.recent_projects
+        merged["active_template_name"] = self.settings.active_template_name
+        merged["settings_templates"] = deepcopy(self.settings.settings_templates)
+        return AppSettings.from_dict(merged)
+
+    def settings_layers(self) -> dict[str, object]:
+        return {
+            "app": self.settings.config_dict(),
+            "folder": {} if self.folder_settings is None else self.folder_settings.config_dict(),
+            "effective": self.effective_settings().config_dict(),
+            "project": {
+                "path": "" if self.project_path is None else str(self.project_path),
+                "folder_settings_error": self.folder_settings_error or "",
+                "popup_template": {
+                    "enabled": self.project.popup_template.enabled,
+                    "content_type": self.project.popup_template.content_type,
+                    "text_source": self.project.popup_template.text_source,
+                    "duration_ms": self.project.popup_template.duration_ms,
+                    "quadrant": self.project.popup_template.quadrant,
+                    "width": self.project.popup_template.width,
+                    "height": self.project.popup_template.height,
+                    "follow_motion": self.project.popup_template.follow_motion,
+                },
+                "review_text_boxes": _overlay_text_boxes_to_payload(self.project.overlay.text_boxes),
+            },
+        }
+
+    def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
+        template_action = str(payload.get("template_action") or "").strip().lower()
+        if template_action:
+            template_name = str(payload.get("template_name") or self.settings.active_template_name or "Default").strip() or "Default"
+            if template_action == "select":
+                self.select_settings_template(template_name)
+                return
+            if template_action == "save":
+                self.save_settings_template(template_name)
+                return
+            if template_action == "save_section":
+                section = str(payload.get("section") or "").strip().lower()
+                if not section:
+                    raise ValueError("section is required")
+                self.save_settings_template(template_name, section=section)
+                return
+            if template_action == "duplicate":
+                duplicate_name = str(payload.get("duplicate_name") or "").strip()
+                if not duplicate_name:
+                    raise ValueError("duplicate_name is required")
+                self.duplicate_settings_template(template_name, duplicate_name)
+                return
+            if template_action == "delete":
+                self.delete_settings_template(template_name)
+                return
+        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        target = AppSettings.from_dict(base.to_dict())
+        if "default_match_type" in payload:
+            default_match_type = str(payload["default_match_type"] or "").strip().lower()
+            if default_match_type:
+                try:
+                    target.default_match_type = normalize_match_type(default_match_type)
+                except ValueError:
+                    pass
+        if "default_stage_number" in payload:
+            raw_stage_number = payload.get("default_stage_number")
+            if raw_stage_number in {None, ""}:
+                target.default_stage_number = None
+            else:
+                target.default_stage_number = max(1, int(raw_stage_number))
+        if "default_competitor_name" in payload:
+            target.default_competitor_name = str(payload.get("default_competitor_name", target.default_competitor_name) or target.default_competitor_name)
+        if "default_competitor_place" in payload:
+            raw_competitor_place = payload.get("default_competitor_place")
+            if raw_competitor_place in {None, ""}:
+                target.default_competitor_place = None
+            else:
+                target.default_competitor_place = int(raw_competitor_place)
+        if "overlay_position" in payload:
+            target.overlay_position = OverlayPosition(str(payload["overlay_position"]))
+        if "timer_badge" in payload:
+            _badge_style_from_payload(target.timer_badge, payload.get("timer_badge"))
+        if "shot_badge" in payload:
+            _badge_style_from_payload(target.shot_badge, payload.get("shot_badge"))
+        if "current_shot_badge" in payload:
+            _badge_style_from_payload(target.current_shot_badge, payload.get("current_shot_badge"))
+        if "hit_factor_badge" in payload:
+            _badge_style_from_payload(target.hit_factor_badge, payload.get("hit_factor_badge"))
+        if "overlay_custom_box_background_color" in payload:
+            target.overlay_custom_box_background_color = str(
+                payload.get("overlay_custom_box_background_color", target.overlay_custom_box_background_color)
+                or target.overlay_custom_box_background_color
+            )
+        if "overlay_custom_box_text_color" in payload:
+            target.overlay_custom_box_text_color = str(
+                payload.get("overlay_custom_box_text_color", target.overlay_custom_box_text_color)
+                or target.overlay_custom_box_text_color
+            )
+        if "overlay_custom_box_opacity" in payload:
+            raw_opacity = payload.get("overlay_custom_box_opacity")
+            if raw_opacity not in {None, ""}:
+                target.overlay_custom_box_opacity = max(0.0, min(1.0, float(raw_opacity)))
+        if "badge_size" in payload:
+            target.badge_size = BadgeSize(str(payload["badge_size"]))
+        if "merge_layout" in payload:
+            target.merge_layout = MergeLayout(str(payload["merge_layout"]))
+        if "merge_pip_x" in payload:
+            raw_pip_x = payload.get("merge_pip_x")
+            if raw_pip_x not in {None, ""}:
+                target.merge_pip_x = float(raw_pip_x)
+        if "merge_pip_y" in payload:
+            raw_pip_y = payload.get("merge_pip_y")
+            if raw_pip_y not in {None, ""}:
+                target.merge_pip_y = float(raw_pip_y)
+        if "pip_size" in payload:
+            target.pip_size = PipSize(str(payload["pip_size"]))
+        if "export_quality" in payload:
+            target.export_quality = ExportQuality(str(payload["export_quality"]))
+        if "export_preset" in payload:
+            target.export_preset = ExportPreset(str(payload["export_preset"]))
+        if "export_frame_rate" in payload:
+            target.export_frame_rate = ExportFrameRate(str(payload["export_frame_rate"]))
+        if "export_video_codec" in payload:
+            target.export_video_codec = ExportVideoCodec(str(payload["export_video_codec"]))
+        if "export_audio_codec" in payload:
+            target.export_audio_codec = ExportAudioCodec(str(payload["export_audio_codec"]))
+        if "export_color_space" in payload:
+            target.export_color_space = ExportColorSpace(str(payload["export_color_space"]))
+        if "export_two_pass" in payload:
+            target.export_two_pass = bool(payload["export_two_pass"])
+        if "export_ffmpeg_preset" in payload:
+            target.export_ffmpeg_preset = str(payload["export_ffmpeg_preset"] or "medium")
+        if "default_tool" in payload:
+            target.default_tool = str(payload["default_tool"] or "project")
+        if "reopen_last_tool" in payload:
+            target.reopen_last_tool = bool(payload["reopen_last_tool"])
+        if "detection_threshold" in payload:
+            threshold = float(payload["detection_threshold"])
+            target.detection_threshold = threshold
+            target.shotml_defaults.detection_threshold = threshold
+        marker_template_payload = payload.get("marker_template")
+        if isinstance(marker_template_payload, dict):
+            _popup_template_from_payload(target.marker_template, marker_template_payload)
+        if scope == "folder":
+            if self.project_path is None:
+                raise ValueError("Save the project before writing folder defaults.")
+            self.folder_settings = target
+            self.folder_settings_error = None
+            save_folder_settings(self.project_path, target)
+        else:
+            target.recent_projects = self.settings.recent_projects
+            target.active_template_name = self.settings.active_template_name
+            target.settings_templates = deepcopy(self.settings.settings_templates)
+            self.settings = target
+            self._sync_active_settings_template()
+            save_settings(self.settings)
+        self.settings_changed.emit()
+        self._set_status(f"Updated {'folder' if scope == 'folder' else 'app'} defaults.")
+
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
+        self.settings.settings_templates = {self.settings.active_template_name: self.settings.template_snapshot()}
         save_settings(self.settings)
-        self.project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
-        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
-        self.project.overlay.position = self.settings.overlay_position
-        self.project.merge.layout = self.settings.merge_layout
-        self.project.merge.pip_size = self.settings.pip_size
-        self.project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        self.project.export.quality = self.settings.export_quality
-        self.project.overlay.badge_size = self.settings.badge_size
-        self.project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        delete_folder_settings(self.project_path)
+        self.folder_settings = None
+        self.folder_settings_error = None
+        self._apply_effective_settings_to_project(self.project, self.effective_settings(), reset_tool=False)
         self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()
@@ -2223,17 +2655,64 @@ class ProjectController(QObject):
         return normalize_project_path(path)
 
     def _new_project_with_settings_defaults(self) -> Project:
+        effective = self.effective_settings()
         project = Project()
-        project.analysis.shotml_settings = ShotMLSettings(**asdict(self.settings.shotml_defaults))
-        project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
-        project.overlay.position = self.settings.overlay_position
-        project.merge.layout = self.settings.merge_layout
-        project.merge.pip_size = self.settings.pip_size
-        project.merge.pip_size_percent = _pip_size_percent_from_enum(self.settings.pip_size)
-        project.export.quality = self.settings.export_quality
-        project.overlay.badge_size = self.settings.badge_size
-        project.overlay.font_size = _badge_font_size_from_enum(self.settings.badge_size)
+        self._apply_effective_settings_to_project(project, effective, reset_tool=True)
         return project
+
+    def _apply_effective_settings_to_project(self, project: Project, effective: AppSettings, *, reset_tool: bool) -> None:
+        project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
+        project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
+        project.scoring.match_type = ""
+        try:
+            normalized_match_type = normalize_match_type(effective.default_match_type)
+        except ValueError:
+            normalized_match_type = ""
+        if normalized_match_type:
+            project.scoring.match_type = normalized_match_type
+            apply_scoring_preset(project, default_ruleset_for_match_type(normalized_match_type))
+        project.scoring.stage_number = effective.default_stage_number
+        project.scoring.competitor_name = effective.default_competitor_name
+        project.scoring.competitor_place = effective.default_competitor_place
+        project.overlay.position = effective.overlay_position
+        project.overlay.badge_size = effective.badge_size
+        project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
+        project.overlay.timer_badge = deepcopy(effective.timer_badge)
+        project.overlay.shot_badge = deepcopy(effective.shot_badge)
+        project.overlay.current_shot_badge = deepcopy(effective.current_shot_badge)
+        project.overlay.hit_factor_badge = deepcopy(effective.hit_factor_badge)
+        project.overlay.custom_box_background_color = effective.overlay_custom_box_background_color
+        project.overlay.custom_box_text_color = effective.overlay_custom_box_text_color
+        project.overlay.custom_box_opacity = effective.overlay_custom_box_opacity
+        project.merge.layout = effective.merge_layout
+        project.merge.pip_size = effective.pip_size
+        project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
+        project.merge.pip_x = effective.merge_pip_x
+        project.merge.pip_y = effective.merge_pip_y
+        project.export.quality = effective.export_quality
+        project.export.preset = effective.export_preset
+        project.export.frame_rate = effective.export_frame_rate
+        project.export.video_codec = effective.export_video_codec
+        project.export.audio_codec = effective.export_audio_codec
+        project.export.color_space = effective.export_color_space
+        project.export.two_pass = effective.export_two_pass
+        project.export.ffmpeg_preset = effective.export_ffmpeg_preset
+        project.popup_template = deepcopy(effective.marker_template)
+        project.overlay.text_boxes = [
+            OverlayTextBox(**box)
+            for box in effective.review_text_boxes
+            if isinstance(box, dict)
+        ]
+        if reset_tool:
+            project.ui_state.active_tool = effective.default_tool if effective.reopen_last_tool else "project"
+
+    def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
+        self.folder_settings_error = None
+        try:
+            return load_folder_settings(project_path)
+        except Exception as exc:  # noqa: BLE001
+            self.folder_settings_error = f"Folder defaults were ignored: {exc}"
+            return None
 
     def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
         if self.project_path is None:

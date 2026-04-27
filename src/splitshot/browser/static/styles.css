@@ -14,6 +14,8 @@
   --red: #f05252;
   --blue-video: #101a2a;
   --rail-width: 84px;
+  --rail-brand-height: 84px;
+  --rail-item-height: 56px;
   --topbar-height: 38px;
   --inspector-width: 440px;
   --resize-handle-size: 4px;
@@ -252,11 +254,15 @@ h3 {
   overflow: hidden;
 }
 
+.cockpit-shell.rail-collapsed {
+  --rail-width: 48px;
+}
+
 .tool-rail {
   background: linear-gradient(180deg, #151719, #0d0f11);
   border-right: 1px solid #252a30;
   display: grid;
-  grid-template-rows: var(--rail-width) minmax(0, 1fr);
+  grid-template-rows: var(--rail-brand-height) minmax(0, 1fr) auto;
   height: var(--app-height, 100vh);
   min-height: 0;
   overflow: hidden;
@@ -266,7 +272,7 @@ h3 {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: grid;
-  height: var(--rail-width);
+  height: var(--rail-brand-height);
   justify-items: center;
   overflow: hidden;
   padding: 0;
@@ -275,23 +281,51 @@ h3 {
 
 .rail-logo {
   display: block;
-  height: var(--rail-width);
+  height: var(--rail-brand-height);
   max-height: none;
   max-width: none;
   object-fit: cover;
   transform: scale(1.34);
-  width: var(--rail-width);
+  width: var(--rail-brand-height);
 }
 
 .tool-nav {
   display: grid;
   align-content: start;
-  grid-auto-rows: 56px;
+  grid-auto-rows: var(--rail-item-height);
   grid-template-rows: none;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+
+.tool-rail-footer {
+  align-items: center;
+  background: linear-gradient(180deg, rgba(14, 16, 18, 0), rgba(14, 16, 18, 0.92));
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  justify-content: center;
+  padding: 0.2rem 0.1rem 0.34rem;
+}
+
+.tool-rail-footer .tool-item {
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  width: 44px;
+}
+
+#settings-rail-button {
+  font-size: 1.28rem;
+  line-height: 1;
+}
+
+#toggle-rail {
+  font-size: 0.98rem;
+  line-height: 1;
 }
 
 .tool-item {
@@ -303,9 +337,17 @@ h3 {
   color: #e9edf2;
   display: grid;
   justify-items: center;
-  height: 56px;
+  height: var(--rail-item-height);
   min-height: 0;
   padding: 0.2rem 0.35rem;
+}
+
+.tool-item[data-tool="shotml"]:not(.active) {
+  color: #4ea7ff;
+}
+
+.tool-item[data-tool="metrics"]:not(.active) {
+  color: var(--accent);
 }
 
 .tool-item.active {
@@ -317,6 +359,42 @@ h3 {
   font-size: 0.7rem;
   font-weight: 950;
   line-height: 1;
+}
+
+.cockpit-shell.rail-collapsed .rail-brand small {
+  display: none;
+}
+
+.cockpit-shell.rail-collapsed .tool-nav {
+  grid-auto-rows: var(--rail-item-height);
+}
+
+.cockpit-shell.rail-collapsed .tool-item {
+  padding-left: 0.18rem;
+  padding-right: 0.18rem;
+}
+
+.cockpit-shell.rail-collapsed .tool-item b {
+  display: none;
+}
+
+.cockpit-shell.rail-collapsed .tool-item::after {
+  content: attr(data-short);
+  font-size: 0.64rem;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.cockpit-shell.rail-collapsed .tool-item[data-tool="settings"]::after {
+  content: none;
+}
+
+.cockpit-shell.rail-collapsed .rail-toggle-button::after {
+  content: none;
+}
+
+.tool-rail-divider {
+  display: none;
 }
 
 .cockpit {
@@ -1387,7 +1465,8 @@ button:disabled {
   .merge-media-list,
   .merge-media-card,
   .shotml-section,
-  .pip-defaults-section
+  .pip-defaults-section,
+  .settings-section
 ) {
   max-width: 100%;
   min-width: 0;
@@ -1404,12 +1483,12 @@ button:disabled {
   display: grid;
 }
 
-.inspector[data-active-tool="popup"] {
+.inspector[data-active-tool="markers"] {
   grid-template-rows: max-content minmax(0, 1fr);
   overflow-y: hidden;
 }
 
-.inspector[data-active-tool="popup"] .tool-pane[data-tool-pane="popup"].active {
+.inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
   align-content: stretch;
   display: flex;
   flex-direction: column;
@@ -1528,6 +1607,26 @@ button:disabled {
   display: grid;
   gap: 0.48rem;
   padding-top: 0.5rem;
+}
+
+.settings-section {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.48rem;
+  padding-top: 0.5rem;
+}
+
+.settings-section.collapsed {
+  gap: 0;
+}
+
+.settings-section.collapsed > :not(.section-header) {
+  display: none !important;
+}
+
+.settings-section .section-header button {
+  min-height: 26px;
+  padding: 0.2rem 0.55rem;
 }
 
 .shotml-section.collapsed,
@@ -1974,6 +2073,13 @@ button:disabled {
   gap: 0.42rem;
 }
 
+.popup-authoring-panel[hidden],
+.popup-collapsed-nav[hidden],
+.popup-timeline-strip[hidden],
+.popup-bubble-list[hidden] {
+  display: none !important;
+}
+
 .popup-authoring-bar .hint {
   grid-column: 1 / -1;
   margin: 0;
@@ -2003,6 +2109,49 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   position: relative;
+}
+
+.popup-list-section {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.42rem;
+  min-height: 0;
+  padding: 0.48rem;
+}
+
+.popup-shot-editor[hidden],
+.scoring-workbench[hidden] {
+  display: none !important;
+}
+
+.popup-shot-editor:not([hidden]) {
+  display: grid !important;
+  height: 100%;
+}
+
+.scoring-workbench:not([hidden]) {
+  display: grid;
+  height: 100%;
+}
+
+.popup-shot-editor .selected-shot-controls {
+  margin: 0;
+}
+
+.scoring-table,
+.scoring-workbench-table {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.scoring-inline-penalties {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.scoring-inline-penalties .shot-penalty-field {
+  align-items: center;
+  column-gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) 4.5rem;
 }
 
 .popup-timeline-empty {
@@ -2824,6 +2973,39 @@ button:disabled {
   font-size: 0.62rem;
 }
 
+.settings-badge-style-grid {
+  display: grid;
+  gap: 0.48rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.settings-badge-style-grid .badge-style-card {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.25rem;
+  min-height: 112px;
+  padding: 0.35rem;
+}
+
+.settings-badge-style-grid .badge-style-card h4 {
+  font-size: 0.68rem;
+  line-height: 1.05;
+  margin: 0;
+  min-height: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-badge-style-grid .badge-style-card label {
+  font-size: 0.62rem;
+  gap: 0.22rem;
+}
+
+@container (max-width: 460px) {
+  .settings-badge-style-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @container (max-width: 460px) {
   #badge-style-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3159,13 +3341,14 @@ button:disabled {
   }
 
   .cockpit-shell {
-    display: block;
+    grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);
     height: auto;
     min-height: var(--app-height, 100vh);
   }
 
   .resize-handle {
-    display: none;
+    pointer-events: none;
+    visibility: hidden;
   }
 
   .tool-rail {
@@ -3174,14 +3357,16 @@ button:disabled {
   }
 
   .tool-nav {
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(74px, 1fr);
-    grid-template-rows: none;
-    overflow-x: auto;
+    grid-auto-flow: unset;
+    grid-auto-columns: unset;
+    grid-auto-rows: 56px;
+    grid-template-columns: none;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .tool-item {
-    min-width: 80px;
+    min-width: 0;
   }
 
   .cockpit {

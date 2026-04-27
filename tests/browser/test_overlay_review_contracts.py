@@ -447,6 +447,52 @@ def test_popup_bubble_follow_motion_path_interpolates_between_points() -> None:
     assert end_center_x == pytest.approx(240, abs=8)
     assert end_center_y == pytest.approx(135, abs=8)
 
+    def test_popup_bubble_text_image_auto_size_renders_image_content(tmp_path: Path) -> None:
+        controller = ProjectController()
+        image_path = tmp_path / "popup-image.png"
+        source = QImage(80, 48, QImage.Format.Format_ARGB32)
+        source.fill(QColor("#22c55e"))
+        assert source.save(str(image_path))
+
+        controller.project.popups = [PopupBubble(
+            id="popup-image-text",
+            enabled=True,
+            text="Hit",
+            content_type="text_image",
+            image_path=str(image_path),
+            anchor_mode="time",
+            time_ms=0,
+            duration_ms=1000,
+            quadrant="middle_middle",
+            x=0.5,
+            y=0.5,
+            background_color="#000000",
+            text_color="#ffffff",
+            opacity=1.0,
+            width=0,
+            height=0,
+        )]
+
+        image = QImage(320, 180, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#000000"))
+        painter = QPainter(image)
+        OverlayRenderer().paint(painter, controller.project, 0, 320, 180)
+        painter.end()
+
+        green_pixels = [
+            (x, y)
+            for y in range(image.height())
+            for x in range(image.width())
+            if image.pixelColor(x, y).green() > 140
+            and image.pixelColor(x, y).green() > image.pixelColor(x, y).red() + 40
+            and image.pixelColor(x, y).green() > image.pixelColor(x, y).blue() + 40
+        ]
+
+        assert green_pixels
+        min_y = min(y for _x, y in green_pixels)
+        max_y = max(y for _x, y in green_pixels)
+        assert max_y - min_y >= 40
+
 
 def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync() -> None:
     js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")

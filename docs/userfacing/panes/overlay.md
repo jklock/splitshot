@@ -54,7 +54,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 - Review visibility toggles can hide individual badge types without changing the underlying style.
 - Export uses the same overlay style and placement you see in preview.
 - Score text colors affect the text token, not the badge background.
-- The same color picker modal is used by Overlay, PopUp, and Review color swatches.
+- The same color picker modal is used by Overlay, Markers, and Review color swatches.
 
 ## Common Fixes
 

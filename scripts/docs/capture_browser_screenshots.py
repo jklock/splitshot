@@ -130,7 +130,7 @@ def prepare_demo_state(page: Page) -> None:
 
           if (state?.project) {
             state.project.name = 'Stage 1 Review';
-            state.project.description = 'Documentation capture with scoring, overlays, PiP, popups, and review text boxes configured.';
+            state.project.description = 'Documentation capture with scoring, overlays, PiP, markers, and review text boxes configured.';
           }
 
           if (state?.project?.scoring) {
@@ -143,7 +143,7 @@ def prepare_demo_state(page: Page) -> None:
             state.project.export.last_log = [
               'SplitShot export preview log',
               'Input: TestVideo1.MP4',
-              'Overlay: timer, draw, shots, score, popups, and review boxes enabled',
+              'Overlay: timer, draw, shots, score, markers, and review boxes enabled',
               'PiP: 1 added media item, sync -2555 ms',
               'Output: /Users/klock/splitshot/output.mp4',
               'Status: ready to render'
@@ -221,7 +221,8 @@ def prepare_demo_state(page: Page) -> None:
           boxes.forEach((box) => reviewTextBoxExpansion.set(box.id, true));
 
           const shots = orderedShotsByTime();
-          shots.slice(0, 4).forEach((shot) => scoringShotExpansion.set(shot.id, true));
+          scoringRowEdits = new Set();
+          shots.slice(0, 4).forEach((shot) => scoringRowEdits.add(shot.id));
           if (shots[0]) selectedShotId = shots[0].id;
 
           const popupShot = shots[2] || shots[0] || null;
@@ -338,10 +339,15 @@ def capture_all(page: Page) -> None:
     page.locator("#close-color-picker").click()
     page.wait_for_function("() => document.getElementById('color-picker-modal')?.hidden === true")
 
-    click_tool(page, "popup")
+    click_tool(page, "markers")
     prepare_demo_state(page)
     screenshot(page, "PopUpPane.png", 0)
     screenshot(page, "PopUpPane2.png", 680)
+
+    click_tool(page, "settings")
+    prepare_demo_state(page)
+    screenshot(page, "SettingsPane.png", 0)
+    screenshot(page, "SettingsPane2.png", 760)
 
     click_tool(page, "review")
     prepare_demo_state(page)
