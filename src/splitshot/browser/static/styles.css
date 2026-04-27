@@ -2124,6 +2124,11 @@ button:disabled {
   display: none !important;
 }
 
+.popup-shot-editor:not([hidden]) {
+  display: grid !important;
+  height: 100%;
+}
+
 .scoring-workbench:not([hidden]) {
   display: grid;
   height: 100%;

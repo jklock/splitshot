@@ -17,9 +17,8 @@ EXPECTED_RAW_MS = {
 
 @pytest.mark.parametrize("filename, expected_raw_ms", EXPECTED_RAW_MS.items())
 def test_stage_suite_tracks_raw_time_reference(filename: str, expected_raw_ms: int) -> None:
-    path = Path(filename)
-    if not path.exists():
-        pytest.skip(f"{filename} benchmark file is not present")
+    path = Path(".training") / filename
+    assert path.exists(), f"Missing benchmark media: {path}"
 
     result = analyze_stage(path, threshold=0.5)
 

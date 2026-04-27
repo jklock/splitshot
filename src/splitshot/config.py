@@ -221,9 +221,8 @@ class AppSettings:
                 except (TypeError, ValueError):
                     shotml_values[item.name] = default_value
         shotml_defaults = ShotMLSettings(**shotml_values) if shotml_values else defaults
-        # Keep the canonical threshold at the artifact-backed factory value instead of
-        # treating a prior project's rerun threshold as a future app default.
-        shotml_defaults.detection_threshold = factory_threshold
+        # Preserve an explicit shotml_defaults threshold supplied in saved settings or templates.
+        # A factory default is only used when the payload omits the threshold entirely.
         review_text_boxes = _review_text_boxes_from_dict(data.get("review_text_boxes"))
         settings_templates = _settings_templates_from_dict(data.get("settings_templates"))
         active_template_name = str(data.get("active_template_name", "Default") or "Default")

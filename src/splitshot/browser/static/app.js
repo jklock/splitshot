@@ -44,6 +44,7 @@ let timingColumnWidths = {};
 let timingColumnResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
+let exportDraft = {};
 let projectDetailsDraft = { name: null, description: null };
 let projectFolderProbeRequestId = 0;
 let secondaryPreviewSyncFrame = null;
@@ -293,6 +294,71 @@ function mergeProjectDetailsDraft(project) {
       project.description = draftDescription;
     }
   }
+}
+
+function normalizeExportDraftValue(key, value) {
+  if (![
+    "quality",
+    "aspect_ratio",
+    "target_width",
+    "target_height",
+    "frame_rate",
+    "video_codec",
+    "video_bitrate_mbps",
+    "audio_codec",
+    "audio_sample_rate",
+    "audio_bitrate_kbps",
+    "color_space",
+    "two_pass",
+    "ffmpeg_preset",
+  ].includes(key)) {
+    return undefined;
+  }
+  if (value === undefined) return undefined;
+  if (key === "target_width" || key === "target_height") {
+    return value === "" || value === null ? null : Math.max(2, Number(value));
+  }
+  if (key === "video_bitrate_mbps") {
+    return Math.max(0.1, Number(value));
+  }
+  if (key === "audio_sample_rate") {
+    return Math.max(8000, Number(value));
+  }
+  if (key === "audio_bitrate_kbps") {
+    return Math.max(32, Number(value));
+  }
+  if (key === "two_pass") {
+    return Boolean(value);
+  }
+  return String(value ?? "");
+}
+
+function applyExportDraft(payload = {}) {
+  const exportState = state?.project?.export;
+  Object.entries(payload).forEach(([key, value]) => {
+    const normalized = normalizeExportDraftValue(key, value);
+    if (normalized === undefined) return;
+    const savedValue = normalizeExportDraftValue(key, exportState?.[key]);
+    if (normalized === savedValue) {
+      delete exportDraft[key];
+    } else {
+      exportDraft[key] = normalized;
+    }
+    if (exportState) exportState[key] = normalized;
+  });
+}
+
+function mergeExportDraft(project) {
+  const exportState = project?.export;
+  if (!exportState) return;
+  Object.entries(exportDraft).forEach(([key, value]) => {
+    const savedValue = normalizeExportDraftValue(key, exportState[key]);
+    if (value === savedValue) {
+      delete exportDraft[key];
+    } else {
+      exportState[key] = value;
+    }
+  });
 }
 
 function flushActivityQueue() {
@@ -1237,10 +1303,13 @@ function openColorPicker(control) {
 
 function closeColorPicker({ commit = true } = {}) {
   const modal = colorPickerModal();
+  const activeControl = activeColorPickerControl;
   if (!modal || modal.hidden) {
+    activeControl?.blur();
     activeColorPickerControl = null;
     return;
   }
+  activeControl?.blur();
   if (commit) flushOverlayColorCommit();
   modal.hidden = true;
   activeColorPickerControl = null;
@@ -1454,6 +1523,16 @@ function debounce(fn, delayMs = 250) {
     window.clearTimeout(timer);
     timer = null;
     lastArgs = null;
+  };
+
+  debounced.flush = () => {
+    if (timer === null) return false;
+    window.clearTimeout(timer);
+    timer = null;
+    const pendingArgs = lastArgs;
+    lastArgs = null;
+    fn(...(pendingArgs || []));
+    return true;
   };
 
   return debounced;
@@ -3065,7 +3144,7 @@ function popupBubbleShotLabel(bubble) {
 }
 
 function popupBubbleResolvedText(bubble) {
-  if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
+  if (bubble?.anchor_mode === "shot" && bubble?.shot_id && bubble?.content_type === "text") {
     return popupTextForShotId(bubble.shot_id) || String(bubble?.text || "");
   }
   return String(bubble?.text || "");
@@ -3261,7 +3340,7 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
     }
-    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id) {
+    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id && nextBubble.content_type === "text") {
       nextBubble.text = popupTextForShotId(nextBubble.shot_id) || nextBubble.text;
     }
     return nextBubble;
@@ -4533,8 +4612,23 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     || root?.classList.contains("metrics-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
-  if (changed || (collapseExpandedLayout && hadExpandedLayout)) {
+  let previousExpandedLayout = null;
+  const preservedExpandedLayout = state?.project?.ui_state ? {
+    waveform_expanded: state.project.ui_state.waveform_expanded,
+    timing_expanded: state.project.ui_state.timing_expanded,
+    metrics_expanded: state.project.ui_state.metrics_expanded,
+  } : null;
+  if (collapseExpandedLayout && hadExpandedLayout) {
+    previousExpandedLayout = {
+      waveform_expanded: root?.classList.contains("waveform-expanded") || false,
+      timing_expanded: root?.classList.contains("timing-expanded") || false,
+      metrics_expanded: root?.classList.contains("metrics-expanded") || false,
+    };
+  }
+  if (changed) {
     collapseMinimizableInspectorItems({ persistUiState, rerender: false });
+  }
+  if (previousExpandedLayout) {
     root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
@@ -4558,7 +4652,25 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   }
   if (changed) activity("ui.tool.active", { tool });
   syncLocalProjectUiState();
+  if (previousExpandedLayout && state?.project?.ui_state) {
+    state.project.ui_state.waveform_expanded = previousExpandedLayout.waveform_expanded;
+    state.project.ui_state.timing_expanded = previousExpandedLayout.timing_expanded;
+    state.project.ui_state.metrics_expanded = previousExpandedLayout.metrics_expanded;
+  } else if (preservedExpandedLayout && state?.project?.ui_state) {
+    state.project.ui_state.waveform_expanded = preservedExpandedLayout.waveform_expanded;
+    state.project.ui_state.timing_expanded = preservedExpandedLayout.timing_expanded;
+    state.project.ui_state.metrics_expanded = preservedExpandedLayout.metrics_expanded;
+  }
   if (persistUiState) scheduleProjectUiStateApply();
+  if (tool === "waveform" && state?.project?.ui_state?.waveform_expanded) {
+    setWaveformExpanded(true, { persistUiState: false });
+  }
+  if (tool === "timing" && state?.project?.ui_state?.timing_expanded) {
+    setTimingExpanded(true, { persistUiState: false });
+  }
+  if (tool === "metrics" && state?.project?.ui_state?.metrics_expanded) {
+    setMetricsExpanded(true, { persistUiState: false });
+  }
   renderLiveOverlay();
 }
 
@@ -4746,7 +4858,10 @@ function applyRemoteState(nextState) {
     remoteSelectedShotId,
   );
   nextState.project.ui_state = nextUiState;
-  if (isSameProject) mergeProjectDetailsDraft(nextState.project);
+  if (isSameProject) {
+    mergeProjectDetailsDraft(nextState.project);
+    mergeExportDraft(nextState.project);
+  }
   currentProjectId = nextProjectId;
   state = nextState;
   applyProjectUiState(nextUiState);
@@ -4780,6 +4895,7 @@ function resetLocalProjectView() {
   draggingShotPointerId = null;
   pendingDragTimeMs = null;
   exportPathDraft = "";
+  exportDraft = {};
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
   timingRowEdits = new Set();
@@ -5494,7 +5610,7 @@ function renderSettingsPane() {
   const projectExport = state?.project?.export || {};
   const projectScoring = state?.project?.scoring || {};
   const projectAnalysis = state?.project?.analysis || {};
-  const markerTemplate = normalizePopupTemplate(state?.project?.popup_template || settings.marker_template || {});
+  const markerTemplate = normalizePopupTemplate(settings.marker_template || state?.project?.popup_template || {});
   const scopeSelect = $("settings-scope");
   const scopeStatus = $("settings-scope-status");
   if (scopeSelect) {
@@ -6892,11 +7008,16 @@ function toggleScoringRowEdit(shotId) {
 function applyShotScoringUpdate(shotId, scope) {
   const shot = (state?.timing_segments || []).find((segment) => segment.shot_id === shotId);
   if (!shot) return Promise.resolve(null);
+  const controlScope = (
+    scope?.querySelector?.(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)
+      ? scope
+      : ($("scoring-workbench-table") || document)
+  );
   selectedShotId = shotId;
   return callApi("/api/scoring/score", {
     shot_id: shotId,
-    letter: scope.querySelector('[data-score-field="letter"]')?.value || defaultScoreLetter(),
-    penalty_counts: collectPenaltyCounts(scope, ".shot-penalty-input[data-penalty-id]"),
+    letter: controlScope.querySelector(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)?.value || defaultScoreLetter(),
+    penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-input[data-penalty-id][data-score-shot-id="${shotId}"]`),
   }).then((result) => {
     if (result) refreshReviewMediaFrame();
     return result;
@@ -7019,6 +7140,7 @@ function renderScoringTable(tableId = "scoring-table") {
       if (editing) {
         const select = document.createElement("select");
         select.dataset.scoreField = "letter";
+        select.dataset.scoreShotId = segment.shot_id;
         select.className = "shot-score-select";
         scoreOptions.forEach((letter) => {
           const option = document.createElement("option");
@@ -7052,6 +7174,7 @@ function renderScoringTable(tableId = "scoring-table") {
           input.step = "1";
           input.value = segment.penalty_counts?.[field.id] ?? 0;
           input.dataset.penaltyId = field.id;
+          input.dataset.scoreShotId = segment.shot_id;
           input.className = "shot-penalty-input";
           input.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
           label.append(text, input);
@@ -10463,9 +10586,66 @@ function cancelPendingExportDrafts() {
   autoApplyExportSettings.cancel?.();
 }
 
+window.pendingSettingsDefaultsPromise = null;
+window.settingsDefaultsApplyGeneration = 0;
+
+async function flushPendingSettingsDefaults() {
+  if (scheduleSettingsDefaultsApply.flush?.()) {
+    await Promise.resolve();
+  }
+  if (!window.pendingSettingsDefaultsPromise) {
+    scheduleSettingsDefaultsApply.cancel?.();
+    return;
+  }
+  try {
+    await window.pendingSettingsDefaultsPromise;
+  } finally {
+    window.pendingSettingsDefaultsPromise = null;
+    scheduleSettingsDefaultsApply.cancel?.();
+  }
+}
+
+async function applySettingsDefaults(options = {}) {
+  if (options.scheduled && options.scheduledGeneration !== window.settingsDefaultsApplyGeneration) {
+    return window.pendingSettingsDefaultsPromise || null;
+  }
+  if (!options.scheduled) {
+    window.settingsDefaultsApplyGeneration += 1;
+  }
+  scheduleSettingsDefaultsApply.cancel?.();
+  if (window.pendingSettingsDefaultsPromise) {
+    try {
+      await window.pendingSettingsDefaultsPromise;
+    } catch {
+      // Ignore prior failure; continue with the latest update.
+    }
+  }
+  const payload = readSettingsDefaultsPayload(options);
+  const promise = callApi("/api/settings", payload);
+  const finalPromise = promise.then((result) => {
+    if (result && !options.scheduled) {
+      window.lastAppliedSettingsDefaultsPayload = payload;
+    }
+    return result;
+  }).finally(() => {
+    if (window.pendingSettingsDefaultsPromise === finalPromise) {
+      window.pendingSettingsDefaultsPromise = null;
+    }
+  });
+  window.pendingSettingsDefaultsPromise = finalPromise;
+  return finalPromise;
+}
+
+function applySettingsShotMLDefaults() {
+  const threshold = readNumberSetting("settings-shotml-threshold", 0.35);
+  if (!Number.isFinite(threshold)) return;
+  return applySettingsDefaults();
+}
+
 async function flushPendingProjectDrafts() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
+  await flushPendingSettingsDefaults();
   await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   await callApi("/api/project/details", readProjectDetailsPayload());
   await callApi("/api/project/practiscore", readPractiScoreContextPayload());
@@ -10597,17 +10777,28 @@ async function createNewProject(path = $("project-path").value.trim()) {
       return null;
     }
 
-    await flushPendingProjectDrafts();
+    await flushPendingSettingsDefaults();
+    scheduleSettingsDefaultsApply.cancel?.();
     const resetResult = await callApi("/api/project/new", {});
     if (!resetResult) return null;
+    await flushPendingProjectDrafts();
     const savedResult = await callApi("/api/project/save", { path: projectPath });
-    if (savedResult) setActiveTool("project");
+    if (savedResult) await applyConfiguredProjectLandingTool();
     return savedResult;
   } catch (error) {
     setStatus(error.message);
     activity("api.error", { path: "/api/project/new", error: error.message });
     return null;
   }
+}
+
+async function applyConfiguredProjectLandingTool() {
+  const reopenLastTool = Boolean(state?.settings?.reopen_last_tool ?? true);
+  const configuredTool = reopenLastTool
+    ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
+    : "project";
+  setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
+  return callApi("/api/project/ui-state", readProjectUiStatePayload());
 }
 
 async function useProjectFolder(path = $("project-path").value.trim()) {
@@ -10622,7 +10813,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
   const currentPath = normalizeProjectFolderInput(state?.project?.path || "");
   if (currentPath && sameProjectFolderPath(currentPath, targetPath)) {
     const result = await callApi("/api/project/save", { path: targetPath });
-    if (result) setActiveTool("project");
+    if (result) await applyConfiguredProjectLandingTool();
     return result;
   }
 
@@ -10640,7 +10831,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
         return null;
       }
       const result = await callApi("/api/project/save", { path: projectPath });
-      if (result) setActiveTool("project");
+      if (result) await applyConfiguredProjectLandingTool();
       return result;
     }
 
@@ -10649,7 +10840,7 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
       return null;
     }
     const result = await callApi("/api/project/open", { path: projectPath });
-    if (result) setActiveTool("project");
+    if (result) await applyConfiguredProjectLandingTool();
     return result;
   } catch (error) {
     setStatus(error.message);
@@ -10762,11 +10953,15 @@ function scheduleMergeApply() {
 }
 
 function scheduleExportLayoutApply() {
-  autoApplyExportLayout(readExportLayoutPayload());
+  const payload = readExportLayoutPayload();
+  applyExportDraft(payload);
+  autoApplyExportLayout(payload);
 }
 
 function scheduleExportSettingsApply() {
-  autoApplyExportSettings(readExportSettingsPayload());
+  const payload = readExportSettingsPayload();
+  applyExportDraft(payload);
+  autoApplyExportSettings(payload);
 }
 
 function scheduleScoringApply() {
@@ -10776,10 +10971,75 @@ function scheduleScoringApply() {
   });
 }
 
+const scheduleSettingsDefaultsApply = debounce((options = {}) => {
+  activity("auto_apply.settings_defaults", {});
+  applySettingsDefaults({ ...options, scheduled: true });
+}, 300);
+
 const handleViewportLayoutChange = debounce(() => {
   renderViewportLayout();
   syncTimingTableColumns();
 }, 120);
+
+const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
+  const projectOverlay = state?.project?.overlay || {};
+  const projectExport = state?.project?.export || {};
+  const projectScoring = state?.project?.scoring || {};
+  const projectAnalysis = state?.project?.analysis || {};
+  const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || {});
+  const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
+  const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
+  const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
+  const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
+  const markerTemplate = projectDefaults
+    ? projectPopupTemplate
+    : normalizePopupTemplate({
+      enabled: $("settings-marker-enabled")?.checked ?? true,
+      content_type: $("settings-marker-content-type")?.value || "text",
+      text_source: $("settings-marker-text-source")?.value || "score",
+      duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
+      quadrant: $("settings-marker-quadrant")?.value || "middle_middle",
+      width: Number($("settings-marker-width")?.value || 0),
+      height: Number($("settings-marker-height")?.value || 0),
+      follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
+      background_color: $("settings-marker-background-color")?.value || "#000000",
+      text_color: $("settings-marker-text-color")?.value || "#ffffff",
+      opacity: readNumberSetting("settings-marker-opacity", 0.9),
+    });
+  return {
+    scope: $("settings-scope")?.value || "app",
+    settings: {
+      default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
+      overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
+      badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
+      overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
+      overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
+      overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+      timer_badge: timerBadge,
+      shot_badge: shotBadge,
+      current_shot_badge: currentShotBadge,
+      hit_factor_badge: hitFactorBadge,
+      merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
+      pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
+      merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
+      merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+      export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
+      export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
+      export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
+      export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
+      export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
+      export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
+      export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
+      export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
+      default_tool: $("settings-default-tool")?.value || "project",
+      reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
+      detection_threshold: projectDefaults
+        ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
+        : readNumberSetting("settings-shotml-threshold", 0.35),
+      marker_template: markerTemplate,
+    },
+  };
+};
 
 function wireEvents() {
   document.querySelectorAll("[data-tool]").forEach((item) => {
@@ -11129,71 +11389,7 @@ function wireEvents() {
       callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() });
     });
   });
-  const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
-    const projectOverlay = state?.project?.overlay || {};
-    const projectExport = state?.project?.export || {};
-    const projectScoring = state?.project?.scoring || {};
-    const projectAnalysis = state?.project?.analysis || {};
-    const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || settings.marker_template || {});
-    const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
-    const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
-    const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
-    const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
-    const markerTemplate = projectDefaults
-      ? projectPopupTemplate
-      : normalizePopupTemplate({
-        enabled: $("settings-marker-enabled")?.checked ?? true,
-        content_type: $("settings-marker-content-type")?.value || "text",
-        text_source: $("settings-marker-text-source")?.value || "score",
-        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
-        quadrant: $("settings-marker-quadrant")?.value || "middle_middle",
-        width: Number($("settings-marker-width")?.value || 0),
-        height: Number($("settings-marker-height")?.value || 0),
-        follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
-        background_color: $("settings-marker-background-color")?.value || "#000000",
-        text_color: $("settings-marker-text-color")?.value || "#ffffff",
-        opacity: readNumberSetting("settings-marker-opacity", 0.9),
-      });
-    return {
-      scope: $("settings-scope")?.value || "app",
-      settings: {
-        default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
-        overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
-        badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
-        overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
-        overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
-        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
-        timer_badge: timerBadge,
-        shot_badge: shotBadge,
-        current_shot_badge: currentShotBadge,
-        hit_factor_badge: hitFactorBadge,
-        merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
-        pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
-        merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
-        merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
-        export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
-        export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
-        export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
-        export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
-        export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
-        export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
-        export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
-        export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
-        default_tool: $("settings-default-tool")?.value || "project",
-        reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
-        detection_threshold: projectDefaults
-          ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
-          : readNumberSetting("settings-shotml-threshold", 0.35),
-        marker_template: markerTemplate,
-      },
-    };
-  };
-  const applySettingsDefaults = (options = {}) => callApi("/api/settings", readSettingsDefaultsPayload(options));
-  const applySettingsShotMLDefaults = () => {
-    const threshold = readNumberSetting("settings-shotml-threshold", 0.35);
-    if (!Number.isFinite(threshold)) return;
-    return applySettingsDefaults();
-  };
+
   $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
   [
     "settings-scope",
@@ -11204,6 +11400,14 @@ function wireEvents() {
     "settings-badge-size",
     "settings-overlay-custom-background-color",
     "settings-overlay-custom-text-color",
+    "settings-timer-badge-background-color",
+    "settings-timer-badge-text-color",
+    "settings-shot-badge-background-color",
+    "settings-shot-badge-text-color",
+    "settings-current-shot-badge-background-color",
+    "settings-current-shot-badge-text-color",
+    "settings-hit-factor-badge-background-color",
+    "settings-hit-factor-badge-text-color",
     "settings-merge-layout",
     "settings-pip-size",
     "settings-export-quality",
@@ -11221,7 +11425,7 @@ function wireEvents() {
     "settings-marker-follow-motion",
     "settings-marker-background-color",
     "settings-marker-text-color",
-  ].forEach((id) => $(id)?.addEventListener("change", () => applySettingsDefaults()));
+  ].forEach((id) => $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply()));
   [
     "settings-overlay-custom-opacity",
     "settings-timer-badge-opacity",
@@ -11235,18 +11439,18 @@ function wireEvents() {
     "settings-marker-width",
     "settings-marker-height",
   ].forEach((id) => {
-    $(id)?.addEventListener("change", () => applySettingsDefaults());
+    $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply());
     $(id)?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
       event.preventDefault();
-      applySettingsDefaults();
+      scheduleSettingsDefaultsApply();
     });
   });
-  $("settings-shotml-threshold")?.addEventListener("change", applySettingsShotMLDefaults);
+  $("settings-shotml-threshold")?.addEventListener("change", () => scheduleSettingsDefaultsApply());
   $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
-    applySettingsShotMLDefaults();
+    scheduleSettingsDefaultsApply();
   });
   $("settings-reset-defaults")?.addEventListener("click", async () => {
     await callApi("/api/settings/reset-defaults", {});
@@ -11352,9 +11556,11 @@ function wireEvents() {
   $("export-video").addEventListener("click", async () => {
     const path = requireValue("export-path", "Output video path");
     exportPathDraft = path;
+    const payload = buildExportPayload(path);
+    applyExportDraft(payload);
     cancelPendingExportDrafts();
     await flushPendingMergeSourceCommits();
-    await callApi("/api/export", buildExportPayload(path));
+    await callApi("/api/export", payload);
   });
   $("show-export-log")?.addEventListener("click", openExportLogModal);
   $("export-export-log")?.addEventListener("click", downloadExportLog);

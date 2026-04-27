@@ -106,7 +106,7 @@ def test_default_shotml_settings_match_legacy_threshold_call(synthetic_video_fac
     assert legacy.waveform == configured.waveform
 
 
-def test_saved_app_threshold_is_normalized_back_to_factory_default(monkeypatch) -> None:
+def test_saved_app_threshold_preserves_shotml_defaults_threshold(monkeypatch) -> None:
     settings = AppSettings.from_dict(
         {
             "detection_threshold": 0.75,
@@ -118,14 +118,14 @@ def test_saved_app_threshold_is_normalized_back_to_factory_default(monkeypatch) 
     )
 
     assert settings.detection_threshold == pytest.approx(0.35)
-    assert settings.shotml_defaults.detection_threshold == pytest.approx(0.35)
+    assert settings.shotml_defaults.detection_threshold == pytest.approx(0.75)
     assert settings.shotml_defaults.beep_onset_fraction == pytest.approx(0.31)
 
     monkeypatch.setattr("splitshot.ui.controller.load_settings", lambda: settings)
     controller = ProjectController()
 
-    assert controller.project.analysis.detection_threshold == pytest.approx(0.35)
-    assert controller.project.analysis.shotml_settings.detection_threshold == pytest.approx(0.35)
+    assert controller.project.analysis.detection_threshold == pytest.approx(0.75)
+    assert controller.project.analysis.shotml_settings.detection_threshold == pytest.approx(0.75)
     assert controller.project.analysis.shotml_settings.beep_onset_fraction == pytest.approx(0.31)
 
 
@@ -785,6 +785,41 @@ def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missin
     assert imported_box.height == 0
     assert controller.project.overlay.custom_box_enabled is True
     assert controller.project.overlay.custom_box_mode == "imported_summary"
+
+
+def test_overlay_legacy_only_updates_preserve_existing_review_text_box_ids() -> None:
+    controller = ProjectController()
+
+    controller.set_overlay_display_options(
+        {
+            "text_boxes": [
+                {
+                    "id": "manual-box",
+                    "enabled": True,
+                    "source": "manual",
+                    "text": "Stage note",
+                    "quadrant": "top_left",
+                    "background_color": "#000000",
+                    "text_color": "#ffffff",
+                    "opacity": 0.9,
+                    "width": 0,
+                    "height": 0,
+                }
+            ]
+        }
+    )
+
+    controller.set_overlay_display_options(
+        {
+            "custom_box_enabled": True,
+            "custom_box_text_color": "#112233",
+            "custom_box_opacity": 0.65,
+        }
+    )
+
+    assert len(controller.project.overlay.text_boxes) == 1
+    assert controller.project.overlay.text_boxes[0].id == "manual-box"
+    assert controller.project.overlay.text_boxes[0].text == "Stage note"
 
 
 def test_sync_offset_uses_detected_beeps(synthetic_video_factory) -> None:

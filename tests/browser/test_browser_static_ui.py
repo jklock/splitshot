@@ -514,7 +514,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
-    assert 'await callApi("/api/export", buildExportPayload(path));' in js
+    assert 'const payload = buildExportPayload(path);' in js
+    assert 'await callApi("/api/export", payload);' in js
     assert "saveProjectFlow" not in js
     assert "useProjectFolder" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
@@ -743,7 +744,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");' in js
     assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
     assert 'function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {' in js
-    assert 'if (changed || (collapseExpandedLayout && hadExpandedLayout)) {' in js
+    assert 'if (collapseExpandedLayout && hadExpandedLayout) {' in js
+    assert 'if (changed) {' in js
     assert 'setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });' in js
     assert 'setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });' in js
     assert js.index('setActiveTool(normalized.active_tool, { collapseExpandedLayout: false, persistUiState: false });') < js.index('setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });')
@@ -808,7 +810,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (editing && penaltyFields.length > 0) {' in js
     assert 'table.appendChild(buildScoringDeleteCell(segment));' in js
     assert 'table.appendChild(buildScoringRestoreCell(segment));' in js
-    assert 'penalty_counts: collectPenaltyCounts(scope, ".shot-penalty-input[data-penalty-id]"),' in js
+    assert 'penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-input[data-penalty-id][data-score-shot-id="${shotId}"]`),' in js
     assert 'updateTimingRowField(row.shot_id, "score_letter", select.value)' not in js
     assert 'let timingAdjustmentDrafts = new Map();' in js
     assert 'timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));' in js
@@ -1309,7 +1311,8 @@ def test_browser_client_validates_remote_state_shape_and_restores_server_selecti
     assert "nextState?.metrics" in js
     assert "nextState?.media" in js
     assert "const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;" in js
-    assert "if (isSameProject) mergeProjectDetailsDraft(nextState.project);" in js
+    assert "if (isSameProject) {" in js
+    assert "mergeProjectDetailsDraft(nextState.project);" in js
     assert "applyProjectUiState(nextUiState);" in js
     assert "selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;" in js
 
@@ -1350,8 +1353,10 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'autoApplyPractiScoreContext.cancel?.();' in js
     assert 'autoApplyOverlay(readOverlayPayload());' in js
     assert 'autoApplyMerge(readMergePayload());' in js
-    assert 'autoApplyExportLayout(readExportLayoutPayload());' in js
-    assert 'autoApplyExportSettings(readExportSettingsPayload());' in js
+    assert 'const payload = readExportLayoutPayload();' in js
+    assert 'autoApplyExportLayout(payload);' in js
+    assert 'const payload = readExportSettingsPayload();' in js
+    assert 'autoApplyExportSettings(payload);' in js
     assert '$("threshold").addEventListener("change", scheduleThresholdApply);' in js
     assert '$("apply-threshold").addEventListener("click", applyThresholdNow);' in js
     assert '$("new-project").addEventListener("click", async () => {\n    await createNewProject();' in js
