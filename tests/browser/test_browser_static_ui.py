@@ -76,6 +76,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<select id="match-competitor-place">' in html
     assert '<button id="browse-project-path" type="button">Select Project</button>' in html
     assert 'id="project-path" placeholder="Please create / select project" readonly' in html
+    assert 'id="primary-file-path" placeholder="Please select a video" readonly' in html
     assert '<button id="new-project" type="button">Create Project</button>' in html
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html

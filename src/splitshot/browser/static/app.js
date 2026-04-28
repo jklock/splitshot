@@ -5503,6 +5503,7 @@ function renderHeader() {
   const statusCopy = $("status-copy");
   if (statusCopy) statusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
+  $("primary-file-path").placeholder = "Please select a video";
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
   $("project-path").placeholder = "Please create / select project";
   syncControlValue($("project-path"), projectFolderLabel);
@@ -10909,7 +10910,7 @@ async function createNewProject(path = "") {
     await flushPendingProjectDrafts();
     const savedResult = await callApi("/api/project/save", { path: projectPath });
     if (savedResult) {
-      await applyConfiguredProjectLandingTool();
+      await applyConfiguredProjectLandingTool({ forceProjectTool: true });
       const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
       if (folderMessage) {
         window.alert(folderMessage);
@@ -10924,11 +10925,14 @@ async function createNewProject(path = "") {
   }
 }
 
-async function applyConfiguredProjectLandingTool() {
+async function applyConfiguredProjectLandingTool(options = {}) {
+  const forceProjectTool = Boolean(options?.forceProjectTool);
   const reopenLastTool = Boolean(state?.settings?.reopen_last_tool ?? true);
-  const configuredTool = reopenLastTool
-    ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
-    : "project";
+  const configuredTool = forceProjectTool
+    ? "project"
+    : reopenLastTool
+      ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
+      : "project";
   setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
   return callApi("/api/project/ui-state", readProjectUiStatePayload());
 }
@@ -10945,7 +10949,7 @@ async function useProjectFolder(path = "") {
   const currentPath = normalizeProjectFolderInput(state?.project?.path || "");
   if (currentPath && sameProjectFolderPath(currentPath, targetPath)) {
     const result = await callApi("/api/project/save", { path: targetPath });
-    if (result) await applyConfiguredProjectLandingTool();
+    if (result) await applyConfiguredProjectLandingTool({ forceProjectTool: true });
     return result;
   }
 
@@ -10962,9 +10966,11 @@ async function useProjectFolder(path = "") {
         setStatus("Project folder selection changed. Try again.");
         return null;
       }
+      const resetResult = await callApi("/api/project/new", {});
+      if (!resetResult) return null;
       const result = await callApi("/api/project/save", { path: projectPath });
       if (result) {
-        await applyConfiguredProjectLandingTool();
+        await applyConfiguredProjectLandingTool({ forceProjectTool: true });
         const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
         if (folderMessage) {
           window.alert(folderMessage);
@@ -10979,7 +10985,7 @@ async function useProjectFolder(path = "") {
       return null;
     }
     const result = await callApi("/api/project/open", { path: projectPath });
-    if (result) await applyConfiguredProjectLandingTool();
+    if (result) await applyConfiguredProjectLandingTool({ forceProjectTool: true });
     return result;
   } catch (error) {
     setStatus(error.message);
