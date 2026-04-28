@@ -81,7 +81,7 @@ command = "uv run splitshot --check"
 [[actions]]
 name = "Run tests"
 icon = "tool"
-command = "uv run pytest"
+command = "uv run python scripts/testing/run_test_suite.py --mode all-together --format table"
 
 [[actions]]
 name = "Run Grouped Suite"
