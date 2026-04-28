@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
@@ -70,11 +71,31 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert "let projectFolderProbeRequestId = 0;" in js
     assert "if (requestId !== projectFolderProbeRequestId)" in js
     assert "function sameProjectFolderPath(left, right) {" in js
+    assert "function hasActiveProject() {" in js
     assert 'await flushPendingProjectDrafts();\n  const currentPath = normalizeProjectFolderInput' in js
     assert 'const result = await callApi("/api/project/open", { path: projectPath });' in js
     assert 'const result = await callApi("/api/project/save", { path: projectPath });' in js
+    assert 'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());' in js
+    assert 'window.alert(folderMessage);' in js
     assert 'if (apiPath === "/api/import/primary") {\n    await flushPendingProjectDrafts();' in js
-    assert '$("primary-file-input").addEventListener("change", async (event) => {\n    await flushPendingProjectDrafts();' in js
+    assert '$("primary-file-input").addEventListener("change", async (event) => {' in js
+    assert 'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());\n      event.target.value = "";\n      return;\n    }\n    await flushPendingProjectDrafts();' in js
+
+
+def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> None:
+    opened_urls: list[str] = []
+    monkeypatch.setattr(browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True)
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/practiscore/dashboard/open", {})
+    finally:
+        server.shutdown()
+
+    assert payload["status"] == "Opened PractiScore dashboard in your browser."
+    assert payload["url"] == "https://practiscore.com/dashboard/home"
+    assert opened_urls == ["https://practiscore.com/dashboard/home"]
 
 
 def test_project_details_save_open_and_refresh_contract(tmp_path: Path) -> None:
@@ -120,7 +141,10 @@ def test_project_folder_probe_and_project_json_path_use_same_folder(tmp_path: Pa
     server.start_background(open_browser=False)
     try:
         probed = _post_json(f"{server.url}api/project/probe", {"path": str(metadata_path)})
-        assert probed == {"path": str(metadata_path), "has_project_file": True}
+        assert probed["path"] == str(metadata_path)
+        assert probed["normalized_path"] == str(project_path.resolve())
+        assert probed["has_project_file"] is True
+        assert probed["missing_required_dirs"] == []
 
         opened = _post_json(f"{server.url}api/project/open", {"path": str(metadata_path)})
         assert opened["project"]["path"] == str(project_path)
@@ -283,10 +307,29 @@ def test_lifecycle_new_open_save_delete_restore_order(tmp_path: Path) -> None:
 
         _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
         deleted = _post_json(f"{server.url}api/project/delete", {})
-        assert not project_path.exists()
+        assert project_path.exists()
+        assert not (project_path / "project.json").exists()
         assert deleted["project"]["path"] == ""
         assert deleted["project"]["ui_state"]["active_tool"] == "project"
         assert deleted["project"]["export"]["last_log"] == ""
-        assert deleted["status"] == "Deleted the saved project folder."
+        assert deleted["status"] == "Deleted the saved project metadata file."
     finally:
         server.shutdown()
+
+
+def test_project_probe_reports_missing_required_dirs_for_existing_partial_folder(tmp_path: Path) -> None:
+    project_path = tmp_path / "partial.ssproj"
+    project_path.mkdir(parents=True, exist_ok=True)
+    (project_path / "Input").mkdir()
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        probed = _post_json(f"{server.url}api/project/probe", {"path": str(project_path)})
+    finally:
+        server.shutdown()
+
+    assert probed["path"] == str(project_path)
+    assert probed["normalized_path"] == str(project_path.resolve())
+    assert probed["has_project_file"] is False
+    assert probed["missing_required_dirs"] == ["CSV", "Output"]

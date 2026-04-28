@@ -83,16 +83,12 @@ let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
 let pendingInteractionPreview = { video: false, waveform: false, overlay: false };
 let pendingSelectionFallback = null;
-let practiScoreSessionPollTimer = null;
-let practiScoreConnectFlowActive = false;
-
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
 const ACTIVITY_FLUSH_DELAY_MS = 160;
 const ACTIVITY_BATCH_SIZE = 48;
 const ACTIVITY_POLL_INTERVAL_MS = 1000;
-const PRACTISCORE_SESSION_POLL_INTERVAL_MS = 1000;
 const INSPECTOR_COMPACT_WIDTH = 700;
 const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;
 const WAVEFORM_WINDOW_HANDLE_MIN_PX = 18;
@@ -4697,172 +4693,37 @@ function practiScoreResponseErrorMessage(data, fallback) {
   return String(fallback || "Unexpected PractiScore response.");
 }
 
-async function requestPractiScorePayload(path, payload = null) {
-  activity("api.request", { path, payload });
-  const processing = processingForPath(path, payload);
+async function openPractiScoreDashboard() {
+  activity("api.request", { path: "/api/practiscore/dashboard/open", payload: {} });
+  const processing = processingForPath("/api/practiscore/dashboard/open", {});
   const finishProcessing = processing === null
     ? null
-    : beginProcessing(processing.message, processing.detail, path);
-  const options = payload === null
-    ? {}
-    : {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      };
+    : beginProcessing(processing.message, processing.detail, "/api/practiscore/dashboard/open");
   try {
-    const response = await fetch(path, options);
-    const data = await response.json();
-    if (!response.ok || data.error) {
-      throw new Error(practiScoreResponseErrorMessage(data, response.statusText));
-    }
-    activity("api.response", { path, status: data.status || data.message || "Ready.", shots: data.metrics?.total_shots });
-    if (finishProcessing) finishProcessing(data.status || data.message || "Ready.");
-    return data;
+    const response = await fetch("/api/practiscore/dashboard/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const result = await response.json();
+    if (!response.ok || result.error) throw new Error(result.error || response.statusText);
+    if (finishProcessing) finishProcessing(result.status || "Ready.");
+    setStatus(result.status || "Opened PractiScore dashboard in your browser.");
+    activity("api.response", { path: "/api/practiscore/dashboard/open", status: result.status || "Ready." });
+    return result;
   } catch (error) {
     if (finishProcessing) finishProcessing(error.message || "PractiScore request failed.");
     forceHideProcessingBar();
     setStatus(error.message);
-    activity("api.error", { path, error: error.message });
+    activity("api.error", { path: "/api/practiscore/dashboard/open", error: error.message });
     return null;
   }
-}
-
-function stopPractiScoreSessionPolling() {
-  practiScoreConnectFlowActive = false;
-  if (practiScoreSessionPollTimer === null) return;
-  window.clearTimeout(practiScoreSessionPollTimer);
-  practiScoreSessionPollTimer = null;
-}
-
-function schedulePractiScoreSessionPoll(delayMs = PRACTISCORE_SESSION_POLL_INTERVAL_MS) {
-  if (!practiScoreConnectFlowActive) return;
-  if (practiScoreSessionPollTimer !== null) {
-    window.clearTimeout(practiScoreSessionPollTimer);
-  }
-  practiScoreSessionPollTimer = window.setTimeout(() => {
-    practiScoreSessionPollTimer = null;
-    pollPractiScoreSessionStatus();
-  }, delayMs);
-}
-
-async function loadPractiScoreRemoteMatches() {
-  if (!state) return null;
-  state.practiscore_sync = normalizePractiScoreSyncPayload({
-    ...practiScoreSyncPayload(),
-    state: "discovering_matches",
-    message: "Discovering remote PractiScore matches...",
-  });
-  requestRender();
-  const payload = await requestPractiScorePayload("/api/practiscore/matches");
-  if (!payload) return null;
-  applyPractiScoreRoutePayload(payload);
-  requestRender();
-  setStatus(payload.practiscore_sync?.message || payload.practiscore_session?.message || "PractiScore matches updated.");
-  const matches = remotePractiScoreMatches();
-  if (matches.length === 1 && !state?.practiscore_options?.has_source && !selectedPractiScoreRemoteId()) {
-    state.practiscore_sync = normalizePractiScoreSyncPayload({
-      ...practiScoreSyncPayload(),
-      selected_remote_id: matches[0].remote_id,
-    });
-    requestRender();
-    await importSelectedPractiScoreMatch();
-  }
-  return payload;
-}
-
-async function pollPractiScoreSessionStatus() {
-  if (!practiScoreConnectFlowActive) return null;
-  const payload = await requestPractiScorePayload("/api/practiscore/session/status");
-  if (!payload) {
-    stopPractiScoreSessionPolling();
-    return null;
-  }
-  applyPractiScoreSessionPayload(payload);
-  requestRender();
-  setStatus(payload.message || "PractiScore session updated.");
-  if (payload.state === "authenticating") {
-    schedulePractiScoreSessionPoll();
-    return payload;
-  }
-  stopPractiScoreSessionPolling();
-  if (payload.state === "authenticated_ready") {
-    await loadPractiScoreRemoteMatches();
-  }
-  return payload;
-}
-
-async function connectPractiScore() {
-  stopPractiScoreSessionPolling();
-  practiScoreConnectFlowActive = true;
-  const payload = await requestPractiScorePayload("/api/practiscore/session/start", {});
-  if (!payload) {
-    practiScoreConnectFlowActive = false;
-    return null;
-  }
-  applyPractiScoreSessionPayload(payload);
-  requestRender();
-  setStatus(payload.message || "PractiScore session updated.");
-  if (payload.state === "authenticated_ready") {
-    stopPractiScoreSessionPolling();
-    return loadPractiScoreRemoteMatches();
-  }
-  if (payload.state === "authenticating") {
-    schedulePractiScoreSessionPoll(0);
-    return payload;
-  }
-  practiScoreConnectFlowActive = false;
-  return payload;
-}
-
-async function clearPractiScoreSession() {
-  stopPractiScoreSessionPolling();
-  const payload = await requestPractiScorePayload("/api/practiscore/session/clear", {});
-  if (!payload) return null;
-  applyPractiScoreSessionPayload(payload, { resetSync: true });
-  requestRender();
-  setStatus(payload.message || "PractiScore session cleared.");
-  return payload;
-}
-
-async function importSelectedPractiScoreMatch() {
-  if (!state) return null;
-  const remoteId = selectedPractiScoreRemoteId();
-  if (!remoteId) {
-    setStatus("Select a remote PractiScore match before importing.");
-    return null;
-  }
-  state.practiscore_sync = normalizePractiScoreSyncPayload({
-    ...practiScoreSyncPayload(),
-    state: "importing_selected_match",
-    message: "Importing selected remote PractiScore match...",
-    selected_remote_id: remoteId,
-  });
-  requestRender();
-  const payload = await requestPractiScorePayload("/api/practiscore/sync/start", { remote_id: remoteId });
-  if (!payload) return null;
-  applyPractiScoreRoutePayload(payload);
-  requestRender();
-  setStatus(payload.practiscore_sync?.message || payload.practiscore_session?.message || "PractiScore sync updated.");
-  if (payload.practiscore_sync?.state === "success") {
-    await refresh();
-  }
-  return payload;
 }
 
 function processingForPath(path, payload = null) {
   if (path === "/api/export") return { message: "Exporting video...", detail: "Running FFmpeg locally" };
-  if (path === "/api/practiscore/session/start") {
-    return { message: "Connecting PractiScore...", detail: "Checking your browser session or opening PractiScore in your browser" };
-  }
-  if (path === "/api/practiscore/session/clear") {
-    return { message: "Clearing PractiScore session...", detail: "Removing cached authentication state" };
-  }
-  if (path === "/api/practiscore/matches") {
-    return { message: "Loading remote PractiScore matches...", detail: "Reading the selected account's available matches" };
-  }
-  if (path === "/api/practiscore/sync/start") {
-    return { message: "Importing selected PractiScore match...", detail: "Downloading and staging the selected remote results" };
+  if (path === "/api/practiscore/dashboard/open") {
+    return { message: "Opening PractiScore dashboard...", detail: "Launching PractiScore in your system browser" };
   }
   if (path === "/api/import/primary") {
     return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
@@ -5352,39 +5213,6 @@ function applyPractiScoreRoutePayload(payload) {
   }
 }
 
-function formatPractiScoreStateLabel(value) {
-  const label = String(value || "").trim();
-  if (!label) return "Idle";
-  return label
-    .split("_")
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(" ");
-}
-
-function currentPractiScoreUiState() {
-  const sessionState = practiScoreSessionPayload().state;
-  const syncState = practiScoreSyncPayload().state;
-  if (sessionState === "expired") return "expired";
-  if (syncState === "error") return "error";
-  if (syncState === "success") return "success";
-  if (syncState === "importing_selected_match") return "importing_selected_match";
-  if (syncState === "match_list_ready") return "match_list_ready";
-  if (sessionState === "authenticated_ready") return "authenticated_ready";
-  if (sessionState === "authenticating") return "authenticating";
-  return "not_authenticated";
-}
-
-function remotePractiScoreMatches() {
-  return practiScoreSyncPayload().matches;
-}
-
-function selectedPractiScoreRemoteId() {
-  const control = $("practiscore-remote-match");
-  const selectedValue = control instanceof HTMLSelectElement ? String(control.value || "").trim() : "";
-  if (selectedValue) return selectedValue;
-  return String(practiScoreSyncPayload().selected_remote_id || "").trim();
-}
-
 function practiScoreCompetitors() {
   return Array.isArray(state?.practiscore_options?.competitors)
     ? state.practiscore_options.competitors
@@ -5517,107 +5345,6 @@ function syncPractiScoreSelectionFields(changedField) {
     competitor_name: nameSelect.value,
     competitor_place: placeSelect.value,
   });
-}
-
-function renderPractiScoreRemoteMatchOptions() {
-  const select = $("practiscore-remote-match");
-  if (!(select instanceof HTMLSelectElement)) return;
-  const sessionState = practiScoreSessionPayload().state;
-  const syncState = practiScoreSyncPayload();
-  const matches = remotePractiScoreMatches();
-  const activeValue = controlIsActive(select) ? String(select.value || "").trim() : "";
-  const selectedValue = activeValue || String(syncState.selected_remote_id || "").trim();
-  const emptyLabel = sessionState === "authenticated_ready"
-    ? (matches.length > 0 ? "Select a remote match" : "No remote matches available")
-    : sessionState === "authenticating"
-      ? "Waiting for PractiScore login..."
-      : "Connect PractiScore to load matches";
-  select.innerHTML = "";
-  const emptyOption = document.createElement("option");
-  emptyOption.value = "";
-  emptyOption.textContent = emptyLabel;
-  select.appendChild(emptyOption);
-  matches.forEach((match) => {
-    const option = document.createElement("option");
-    option.value = match.remote_id;
-    option.textContent = [
-      match.label || match.event_name || `Remote match ${match.remote_id}`,
-      match.match_type ? formatMatchType(match.match_type) : "",
-      match.event_date || "",
-    ].filter(Boolean).join(" | ");
-    select.appendChild(option);
-  });
-  select.value = selectedValue && matches.some((match) => match.remote_id === selectedValue) ? selectedValue : "";
-}
-
-function defaultPractiScoreRemoteMessage(uiState, sessionPayload, syncPayload) {
-  if (uiState === "importing_selected_match") {
-    return "SplitShot is downloading and staging the selected PractiScore match in the background.";
-  }
-  if (uiState === "match_list_ready") {
-    const matches = remotePractiScoreMatches();
-    if (matches.length === 0) {
-      return syncPayload.message || "No remote PractiScore matches were found for the authenticated session.";
-    }
-    if (!selectedPractiScoreRemoteId()) {
-      return `${syncPayload.message || "Remote PractiScore matches are ready."} Select a remote match, then click Import Selected Match.`;
-    }
-    return "Click Import Selected Match and SplitShot will download the selected PractiScore match in the background.";
-  }
-  if (uiState === "authenticated_ready") {
-    return "PractiScore is connected. SplitShot is loading the available remote matches.";
-  }
-  if (uiState === "authenticating") {
-    return sessionPayload.message || "Complete PractiScore login in your browser. SplitShot will continue in the background.";
-  }
-  if (uiState === "success") {
-    return syncPayload.message || "PractiScore match imported successfully.";
-  }
-  if (uiState === "error") {
-    return syncPayload.message || sessionPayload.message || "PractiScore sync failed.";
-  }
-  if (uiState === "expired") {
-    return sessionPayload.message || "PractiScore session expired. Connect again to continue.";
-  }
-  return "Connect PractiScore. If you are already logged into PractiScore in a supported browser, SplitShot will reuse that session. Otherwise finish login in your browser and SplitShot will continue in the background.";
-}
-
-function renderPractiScoreRemoteState() {
-  const panel = document.querySelector(".practiscore-remote-panel");
-  const statusBlock = $("practiscore-session-sync-status");
-  const sessionStatus = $("practiscore-session-status");
-  const syncStatus = $("practiscore-sync-status");
-  const syncMessage = $("practiscore-sync-message");
-  const sessionPayload = practiScoreSessionPayload();
-  const syncPayload = practiScoreSyncPayload();
-  const uiState = currentPractiScoreUiState();
-  const matches = remotePractiScoreMatches();
-  renderPractiScoreRemoteMatchOptions();
-  if (panel instanceof HTMLElement) panel.dataset.state = uiState;
-  if (statusBlock instanceof HTMLElement) statusBlock.dataset.state = uiState;
-  if (sessionStatus instanceof HTMLElement) {
-    sessionStatus.dataset.state = sessionPayload.state;
-    sessionStatus.textContent = formatPractiScoreStateLabel(sessionPayload.state);
-  }
-  if (syncStatus instanceof HTMLElement) {
-    syncStatus.dataset.state = syncPayload.state;
-    syncStatus.textContent = formatPractiScoreStateLabel(syncPayload.state);
-  }
-  if (syncMessage) syncMessage.textContent = defaultPractiScoreRemoteMessage(uiState, sessionPayload, syncPayload);
-  const connectButton = $("connect-practiscore");
-  if (connectButton) connectButton.disabled = uiState === "authenticating" || uiState === "importing_selected_match";
-  const clearButton = $("clear-practiscore-session");
-  if (clearButton) clearButton.disabled = uiState === "importing_selected_match";
-  const remoteMatchSelect = $("practiscore-remote-match");
-  if (remoteMatchSelect instanceof HTMLSelectElement) {
-    remoteMatchSelect.disabled = uiState === "authenticating" || uiState === "importing_selected_match" || matches.length === 0;
-  }
-  const importSelectedButton = $("import-practiscore-selected");
-  if (importSelectedButton) {
-    importSelectedButton.disabled = uiState === "importing_selected_match" || matches.length === 0 || !selectedPractiScoreRemoteId();
-  }
-  const importButton = $("import-practiscore");
-  if (importButton) importButton.disabled = uiState === "importing_selected_match";
 }
 
 function durationMs() {
@@ -5763,6 +5490,9 @@ function currentShotIndex(positionMs) {
 
 function renderHeader() {
   const projectName = normalizeProjectNameValue(state.project.name);
+  const projectPath = String(state?.project?.path || "").trim();
+  const hasProject = Boolean(projectPath);
+  const projectFolderLabel = hasProject ? fileName(projectPath.replace(/[\\/]+$/, "")) : "";
   $("project-title").textContent = projectName;
   $("rail-project").textContent = projectName;
   $("status").textContent = state.status;
@@ -5774,14 +5504,15 @@ function renderHeader() {
   if (statusCopy) statusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
-  $("project-path").placeholder = `${state.default_project_path || "~/splitshot"}/My Match`;
-  syncControlValue($("project-path"), state.project.path || "");
+  $("project-path").placeholder = "Please create / select project";
+  syncControlValue($("project-path"), projectFolderLabel);
   $("media-badge").textContent = state.media.primary_available
     ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
     : "No Video Selected";
 }
 
 function renderStats() {
+  setProjectActionAvailability();
   $("timing-summary").textContent = (state.metrics.total_shots || 0) > 0
     ? "Use Splits to edit timing values."
     : "No timing data.";
@@ -8357,7 +8088,6 @@ function renderControls() {
     competitor_name: state.project.scoring.competitor_name || "",
     competitor_place: state.project.scoring.competitor_place ?? "",
   });
-  renderPractiScoreRemoteState();
   syncControlChecked($("merge-enabled"), state.project.merge.enabled);
   syncControlValue($("merge-layout"), state.project.merge.layout);
   const pipValue = Number(
@@ -11086,6 +10816,28 @@ function normalizeProjectFolderInput(path) {
   return String(path || "").trim();
 }
 
+function hasActiveProject() {
+  return Boolean(String(state?.project?.path || "").trim());
+}
+
+function gatedProjectActionMessage() {
+  return "Please create / select project.";
+}
+
+function setProjectActionAvailability() {
+  const enabled = hasActiveProject();
+  ["open-practiscore-dashboard", "import-practiscore", "browse-primary-path", "primary-file-path"].forEach((id) => {
+    const control = $(id);
+    if ("disabled" in control) control.disabled = !enabled;
+  });
+}
+
+function createdProjectFoldersMessage(folderName, missingDirs) {
+  if (!Array.isArray(missingDirs) || missingDirs.length === 0) return "";
+  const suffix = missingDirs.length === 1 ? "folder" : "folders";
+  return `Project folder ${folderName} was missing ${missingDirs.join(", ")}. SplitShot created the missing ${suffix}.`;
+}
+
 function comparableProjectFolderPath(path) {
   let normalized = normalizeProjectFolderInput(path).replace(/[\\/]+$/, "");
   normalized = normalized.replace(/[\\/]project\.json$/i, "");
@@ -11116,6 +10868,7 @@ async function probeProjectFolder(path) {
     path: targetPath,
     normalized_path: comparableProjectFolderPath(data.normalized_path || data.path || targetPath),
     has_project_file: Boolean(data.has_project_file),
+    missing_required_dirs: Array.isArray(data.missing_required_dirs) ? data.missing_required_dirs.map((value) => String(value)) : [],
     request_id: requestId,
   };
 }
@@ -11126,7 +10879,7 @@ async function browseProjectPath() {
   });
 }
 
-async function createNewProject(path = $("project-path").value.trim()) {
+async function createNewProject(path = "") {
   const targetPath = normalizeProjectFolderInput(path);
   if (!targetPath) {
     return pickPath("project_folder", "project-path", async (selectedPath) => {
@@ -11155,7 +10908,14 @@ async function createNewProject(path = $("project-path").value.trim()) {
     if (!resetResult) return null;
     await flushPendingProjectDrafts();
     const savedResult = await callApi("/api/project/save", { path: projectPath });
-    if (savedResult) await applyConfiguredProjectLandingTool();
+    if (savedResult) {
+      await applyConfiguredProjectLandingTool();
+      const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
+      if (folderMessage) {
+        window.alert(folderMessage);
+        setStatus(folderMessage);
+      }
+    }
     return savedResult;
   } catch (error) {
     setStatus(error.message);
@@ -11173,7 +10933,7 @@ async function applyConfiguredProjectLandingTool() {
   return callApi("/api/project/ui-state", readProjectUiStatePayload());
 }
 
-async function useProjectFolder(path = $("project-path").value.trim()) {
+async function useProjectFolder(path = "") {
   const targetPath = normalizeProjectFolderInput(path);
   if (!targetPath) {
     return pickPath("project_folder", "project-path", async (selectedPath) => {
@@ -11203,7 +10963,14 @@ async function useProjectFolder(path = $("project-path").value.trim()) {
         return null;
       }
       const result = await callApi("/api/project/save", { path: projectPath });
-      if (result) await applyConfiguredProjectLandingTool();
+      if (result) {
+        await applyConfiguredProjectLandingTool();
+        const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
+        if (folderMessage) {
+          window.alert(folderMessage);
+          setStatus(folderMessage);
+        }
+      }
       return result;
     }
 
@@ -11426,6 +11193,10 @@ function wireEvents() {
   $("primary-file-path").addEventListener("keydown", async (event) => {
     if (event.key !== "Enter") return;
     event.preventDefault();
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      return;
+    }
     const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
     if (result) setActiveTool("project");
   });
@@ -11438,6 +11209,10 @@ function wireEvents() {
     scheduleExportSettingsApply();
   });
   $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      return;
+    }
     await flushPendingProjectDrafts();
     const result = await callApi("/api/import/primary", { path });
     if (result) setActiveTool("project");
@@ -11458,6 +11233,11 @@ function wireEvents() {
     item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
   });
   $("primary-file-input").addEventListener("change", async (event) => {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      event.target.value = "";
+      return;
+    }
     await flushPendingProjectDrafts();
     const result = await postFile("/api/files/primary", event.target.files[0]);
     if (result) setActiveTool("project");
@@ -11470,27 +11250,26 @@ function wireEvents() {
     event.target.value = "";
   });
   $("import-practiscore").addEventListener("click", () => {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      return;
+    }
     setStatus("Select a PractiScore results file (.csv or .txt).");
     openHiddenFileInput("practiscore-file-input");
   });
-  $("connect-practiscore")?.addEventListener("click", async () => {
-    await connectPractiScore();
-  });
-  $("clear-practiscore-session")?.addEventListener("click", async () => {
-    await clearPractiScoreSession();
-  });
-  $("practiscore-remote-match")?.addEventListener("change", () => {
-    if (!state) return;
-    state.practiscore_sync = normalizePractiScoreSyncPayload({
-      ...practiScoreSyncPayload(),
-      selected_remote_id: $("practiscore-remote-match")?.value || null,
-    });
-    requestRender();
-  });
-  $("import-practiscore-selected")?.addEventListener("click", async () => {
-    await importSelectedPractiScoreMatch();
+  $("open-practiscore-dashboard")?.addEventListener("click", async () => {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      return;
+    }
+    await openPractiScoreDashboard();
   });
   $("practiscore-file-input").addEventListener("change", async (event) => {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      event.target.value = "";
+      return;
+    }
     const payload = validatePractiScoreSelection();
     if (!payload) {
       event.target.value = "";
@@ -11507,7 +11286,7 @@ function wireEvents() {
   $("delete-project").addEventListener("click", async () => {
     const projectPath = (state?.project?.path || "").trim();
     if (!projectPath) return;
-    const shouldDelete = window.confirm(`Delete this project folder from disk?\n\n${projectPath}\n\nThis cannot be undone.`);
+    const shouldDelete = window.confirm(`Delete project metadata for:\n\n${projectPath}\n\nProject folders and files will be kept on disk.`);
     if (!shouldDelete) return;
     await flushPendingProjectDrafts();
     await callApi("/api/project/delete", {});

@@ -32,7 +32,12 @@ from splitshot.domain.models import (
 )
 from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
-from splitshot.persistence.projects import PROJECT_FILENAME, resolve_project_path
+from splitshot.persistence.projects import (
+    PROJECT_FILENAME,
+    missing_required_project_dirs,
+    normalize_project_path,
+    resolve_project_path,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -733,6 +738,9 @@ class BrowserControlServer:
                 if self.path == "/api/files/practiscore":
                     self._import_practiscore_file()
                     return
+                if self.path == "/api/practiscore/dashboard/open":
+                    self._open_practiscore_dashboard()
+                    return
                 if self.path == "/api/practiscore/session/start":
                     self._start_practiscore_session()
                     return
@@ -889,13 +897,20 @@ class BrowserControlServer:
                     normalized_target = str(controller.normalize_project_folder_path(target))
                     activity.log("api.project.probe.start", path=target, normalized_path=normalized_target)
                     has_project_file = controller.project_folder_has_project_file(normalized_target)
+                    missing_dirs = missing_required_project_dirs(normalized_target)
                     activity.log(
                         "api.project.probe.success",
                         path=target,
                         normalized_path=normalized_target,
                         has_project_file=has_project_file,
+                        missing_dirs=missing_dirs,
                     )
-                    self._send_json({"path": target, "has_project_file": has_project_file})
+                    self._send_json({
+                        "path": target,
+                        "normalized_path": str(normalize_project_path(normalized_target)),
+                        "has_project_file": has_project_file,
+                        "missing_required_dirs": missing_dirs,
+                    })
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.project.probe.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -952,6 +967,41 @@ class BrowserControlServer:
                             "reason": str(exc),
                         },
                     )
+
+            def _open_practiscore_dashboard(self) -> None:
+                dashboard_url = "https://practiscore.com/dashboard/home"
+                try:
+                    opened = bool(webbrowser.open(dashboard_url, new=2))
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.practiscore.dashboard.open.error", error=str(exc))
+                    self._send_structured_error(
+                        code="practiscore_dashboard_open_failed",
+                        message="Unable to open the PractiScore dashboard in your browser.",
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        details={
+                            "route": "/api/practiscore/dashboard/open",
+                            "reason": str(exc),
+                            "url": dashboard_url,
+                        },
+                    )
+                    return
+                if not opened:
+                    activity.log("api.practiscore.dashboard.open.error", error="browser open returned false")
+                    self._send_structured_error(
+                        code="practiscore_dashboard_open_failed",
+                        message="Unable to open the PractiScore dashboard in your browser.",
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        details={
+                            "route": "/api/practiscore/dashboard/open",
+                            "url": dashboard_url,
+                        },
+                    )
+                    return
+                activity.log("api.practiscore.dashboard.open", url=dashboard_url)
+                self._send_json({
+                    "status": "Opened PractiScore dashboard in your browser.",
+                    "url": dashboard_url,
+                })
 
             def _clear_practiscore_session(self) -> None:
                 with controller_lock:

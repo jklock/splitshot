@@ -74,20 +74,22 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<select id="match-stage-number">' in html
     assert '<select id="match-competitor-name">' in html
     assert '<select id="match-competitor-place">' in html
-    assert '<button id="browse-project-path" type="button">Choose Project</button>' in html
-    assert 'id="project-path" placeholder="~/splitshot/My Match" readonly' in html
+    assert '<button id="browse-project-path" type="button">Select Project</button>' in html
+    assert 'id="project-path" placeholder="Please create / select project" readonly' in html
+    assert '<button id="new-project" type="button">Create Project</button>' in html
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html
     assert 'id="import-practiscore"' in html
-    assert 'id="connect-practiscore"' in html
+    assert 'id="open-practiscore-dashboard"' in html
     assert 'id="practiscore-status"' in html
-    assert 'id="clear-practiscore-session"' in html
-    assert 'id="practiscore-remote-match"' in html
-    assert 'id="import-practiscore-selected"' in html
-    assert 'id="practiscore-session-sync-status"' in html
-    assert 'id="practiscore-session-status"' in html
-    assert 'id="practiscore-sync-status"' in html
-    assert 'id="practiscore-sync-message"' in html
+    assert 'id="connect-practiscore"' not in html
+    assert 'id="clear-practiscore-session"' not in html
+    assert 'id="practiscore-remote-match"' not in html
+    assert 'id="import-practiscore-selected"' not in html
+    assert 'id="practiscore-session-sync-status"' not in html
+    assert 'id="practiscore-session-status"' not in html
+    assert 'id="practiscore-sync-status"' not in html
+    assert 'id="practiscore-sync-message"' not in html
     assert 'id="practiscore-session-message"' not in html
     assert 'id="practiscore-import-summary"' in html
     assert 'id="current-file"' in html
@@ -123,9 +125,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="merge-media-input"' in html
     assert 'tool-item[data-tool="metrics"]:not(.active)' in css
     assert 'tool-item[data-tool="settings"]:not(.active)' not in css
-    assert '.practiscore-remote-panel {' in css
-    assert '.practiscore-remote-actions {' in css
-    assert '.practiscore-session-sync-status {' in css
+    assert '.practiscore-actions {' in css
+    assert '.practiscore-action-grid {' in css
+    assert '.practiscore-remote-panel {' not in css
+    assert '.practiscore-session-sync-status {' not in css
     rail_footer_css = css[css.index('.tool-rail-footer {') : css.index('.tool-rail-divider {')]
     assert 'display: flex;' in rail_footer_css
     assert 'flex-direction: column;' in rail_footer_css
@@ -141,11 +144,17 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'Default PiP size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
-    assert "Connect PractiScore" in html
-    assert "Clear PractiScore Session" in html
-    assert "Import Selected Match" in html
-    assert "Manual fallback:" in html
+    assert "Open PractiScore Dashboard" in html
+    assert "Select Project" in html
+    assert "Create Project" in html
+    assert "Connect PractiScore" not in html
+    assert "Clear PractiScore Session" not in html
+    assert "Import Selected Match" not in html
+    assert "Manual fallback:" not in html
     assert "Select Primary Video" in html
+    assert html.index("Project folder") < html.index("Project name")
+    assert html.index("Project name") < html.index("PractiScore Import")
+    assert html.index("PractiScore Import") < html.index("Primary Video")
     assert "John Klockenkemper" not in html
     assert 'id="match-stage-number-options"' not in html
     assert 'id="match-competitor-name-options"' not in html
@@ -517,8 +526,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'pickPath("project_folder", "project-path", async (selectedPath)' in js
     assert 'async function probeProjectFolder(path) {' in js
     assert 'await fetch("/api/project/probe", {' in js
-    assert 'async function createNewProject(path = $("project-path").value.trim()) {' in js
-    assert 'async function useProjectFolder(path = $("project-path").value.trim()) {' in js
+    assert 'async function createNewProject(path = "") {' in js
+    assert 'async function useProjectFolder(path = "") {' in js
     assert 'await flushPendingProjectDrafts();' in js
     assert 'return pickPath("project_open", "project-path");' not in js
     assert 'const kind = currentPath ? "project_open" : "project_save";' not in js
@@ -567,17 +576,20 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function openHiddenFileInput(inputId) {' in js
     assert 'if (typeof input.showPicker === "function") {' in js
     assert 'openHiddenFileInput("practiscore-file-input");' in js
-    assert 'function renderPractiScoreRemoteState() {' in js
-    assert 'function renderPractiScoreRemoteMatchOptions() {' in js
-    assert 'async function connectPractiScore() {' in js
-    assert 'async function clearPractiScoreSession() {' in js
-    assert 'async function importSelectedPractiScoreMatch() {' in js
-    assert '$("connect-practiscore")?.addEventListener("click", async () => {' in js
-    assert 'await connectPractiScore();' in js
-    assert '$("clear-practiscore-session")?.addEventListener("click", async () => {' in js
-    assert 'await clearPractiScoreSession();' in js
-    assert '$("import-practiscore-selected")?.addEventListener("click", async () => {' in js
-    assert 'await importSelectedPractiScoreMatch();' in js
+    assert 'async function openPractiScoreDashboard() {' in js
+    assert 'fetch("/api/practiscore/dashboard/open", {' in js
+    assert 'function hasActiveProject() {' in js
+    assert 'function setProjectActionAvailability() {' in js
+    assert 'window.alert(folderMessage);' in js
+    assert 'function renderPractiScoreRemoteState() {' not in js
+    assert 'function renderPractiScoreRemoteMatchOptions() {' not in js
+    assert 'async function connectPractiScore() {' not in js
+    assert 'async function clearPractiScoreSession() {' not in js
+    assert 'async function importSelectedPractiScoreMatch() {' not in js
+    assert '$("open-practiscore-dashboard")?.addEventListener("click", async () => {' in js
+    assert 'await openPractiScoreDashboard();' in js
+    assert '$("delete-project").addEventListener("click", async () => {' in js
+    assert 'Delete project metadata for:' in js
     assert 'document.addEventListener("fullscreenchange", handleStageFullscreenChange);' in js
     assert 'media.defaultMuted = false;' in js
     assert 'media.muted = false;' in js
@@ -1259,9 +1271,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "browse-primary-path",
         "new-project",
         "browse-project-path",
-        "connect-practiscore",
-        "clear-practiscore-session",
-        "import-practiscore-selected",
+        "open-practiscore-dashboard",
         "import-practiscore",
         "save-project",
         "open-project",
@@ -1393,7 +1403,7 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'const shouldReplace = window.confirm(`A SplitShot project already exists in:\\n${targetPath}\\n\\nReplace it with a new blank project?`);' in js
     assert 'const resetResult = await callApi("/api/project/new", {});' in js
     assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in js
-    assert 'const shouldDelete = window.confirm(`Delete this project folder from disk?\\n\\n${projectPath}\\n\\nThis cannot be undone.`);' in js
+    assert 'const shouldDelete = window.confirm(`Delete project metadata for:\\n\\n${projectPath}\\n\\nProject folders and files will be kept on disk.`);' in js
     assert 'if (!shouldDelete) return;\n    await flushPendingProjectDrafts();\n    await callApi("/api/project/delete", {});' in js
 
 

@@ -12,6 +12,7 @@ INPUT_DIRNAME = "Input"
 PRACTISCORE_DIRNAME = "CSV"
 OUTPUT_DIRNAME = "Output"
 POPUP_DIRNAME = "Markers"
+REQUIRED_PROJECT_DIRNAMES = (INPUT_DIRNAME, PRACTISCORE_DIRNAME, OUTPUT_DIRNAME)
 
 _BROWSER_UPLOAD_PREFIX = re.compile(r"^[A-Fa-f0-9]{32}_")
 
@@ -39,10 +40,19 @@ def project_has_metadata(path: str | Path) -> bool:
     return project_metadata_path(path).is_file()
 
 
+def missing_required_project_dirs(path: str | Path) -> list[str]:
+    project_path = resolve_project_path(path)
+    return [
+        dirname
+        for dirname in REQUIRED_PROJECT_DIRNAMES
+        if not (project_path / dirname).is_dir()
+    ]
+
+
 def ensure_project_structure(path: str | Path) -> Path:
     project_path = resolve_project_path(path)
     project_path.mkdir(parents=True, exist_ok=True)
-    for dirname in (INPUT_DIRNAME, PRACTISCORE_DIRNAME, OUTPUT_DIRNAME):
+    for dirname in REQUIRED_PROJECT_DIRNAMES:
         (project_path / dirname).mkdir(parents=True, exist_ok=True)
     return project_path
 
@@ -230,6 +240,6 @@ def load_project(bundle_path: str | Path) -> Project:
 
 
 def delete_project(bundle_path: str | Path) -> None:
-    project_path = resolve_project_path(bundle_path)
-    if project_path.exists():
-        shutil.rmtree(project_path)
+    metadata_path = project_metadata_path(bundle_path)
+    if metadata_path.exists():
+        metadata_path.unlink()

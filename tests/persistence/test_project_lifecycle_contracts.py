@@ -5,7 +5,11 @@ from pathlib import Path
 
 from splitshot.domain.models import ImportedStageScore, Project, VideoAsset
 from splitshot.persistence.projects import (
+    INPUT_DIRNAME,
+    OUTPUT_DIRNAME,
     PRACTISCORE_DIRNAME,
+    delete_project,
+    missing_required_project_dirs,
     normalize_project_path,
     project_has_metadata,
     save_project,
@@ -82,3 +86,27 @@ def test_save_project_preserves_details_and_primary_after_project_json_path_roun
     assert loaded.description == "Carry these settings forward"
     assert Path(loaded.primary_video.path).parent == (project_path / "Input").resolve()
     assert Path(loaded.primary_video.path).name == "primary.mp4"
+
+
+def test_missing_required_project_dirs_reports_only_missing_entries(tmp_path: Path) -> None:
+    project_path = tmp_path / "partial.ssproj"
+    project_path.mkdir(parents=True, exist_ok=True)
+    (project_path / INPUT_DIRNAME).mkdir()
+
+    assert missing_required_project_dirs(project_path) == [PRACTISCORE_DIRNAME, OUTPUT_DIRNAME]
+
+
+def test_delete_project_removes_only_project_metadata(tmp_path: Path) -> None:
+    project_path = tmp_path / "metadata-only-delete.ssproj"
+    save_project(Project(), project_path)
+    staged_csv = project_path / PRACTISCORE_DIRNAME / "results.csv"
+    staged_csv.write_text("data", encoding="utf-8")
+
+    delete_project(project_path)
+
+    assert project_path.exists()
+    assert not (project_path / "project.json").exists()
+    assert (project_path / INPUT_DIRNAME).is_dir()
+    assert (project_path / PRACTISCORE_DIRNAME).is_dir()
+    assert (project_path / OUTPUT_DIRNAME).is_dir()
+    assert staged_csv.read_text(encoding="utf-8") == "data"
