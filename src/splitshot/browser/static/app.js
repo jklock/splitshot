@@ -5504,7 +5504,7 @@ function renderHeader() {
   if (statusCopy) statusCopy.textContent = state.status;
   const mergeCount = (state.project.merge_sources || []).length;
   $("primary-file-path").placeholder = "Please select a video";
-  syncControlValue($("primary-file-path"), state.project.primary_video.path || "");
+  syncControlValue($("primary-file-path"), state.project.primary_video.path ? fileName(state.project.primary_video.path) : "");
   $("project-path").placeholder = "Please create / select project";
   syncControlValue($("project-path"), projectFolderLabel);
   $("media-badge").textContent = state.media.primary_available
