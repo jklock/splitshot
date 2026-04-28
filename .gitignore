@@ -1,4 +1,5 @@
 .DS_Store
+.codex/config.toml
 .pytest_cache/
 .ruff_cache/
 .venv/
