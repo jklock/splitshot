@@ -66,6 +66,7 @@ The Project pane is the setup surface for a SplitShot run. It names the project,
 | The video path changed but nothing imported. | Press Enter in `Primary Video`, or use `Select Primary Video`. |
 | A large file imports slowly through the browser picker. | Paste the direct local path instead. |
 | PractiScore does not connect. | Click `Connect PractiScore` again. If the browser session looks wrong, use `Clear PractiScore Session` first, then reconnect so SplitShot reimports the browser session. |
+| SplitShot never sees my PractiScore login. | Stay logged in to PractiScore in a **supported system browser** (Chrome, Edge, Firefox, Safari, and several Chromium variants). On some systems the browser’s cookie database is locked while the browser is open—try quitting that browser once, then connect again. If you use several browsers, SplitShot picks the session with the most PractiScore cookies; use `Clear PractiScore Session` and log in only in the browser you want to use, then reconnect. |
 | The imported result is for the wrong run. | Pick the correct `Remote match` and click `Import Selected Match` again, or use `Select PractiScore File` to replace the staged source manually. |
 | The imported stage is right but the competitor row is wrong. | Recheck `Match type`, `Stage #`, `Competitor name`, and `Place`. |
 | A previous project reopened unexpectedly. | Confirm the `Project folder` before using `Choose Project`. |

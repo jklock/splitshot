@@ -8,7 +8,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
 
     assert "It is not a claim that every button or field has its own direct behavior test." in matrix
     assert "If a control is missing from this matrix, it does not have an explicit owner yet." in matrix
-    assert "| Project / import | project details, choose/open project, primary import, remote PractiScore connect, remote match select, selected-match import, clear session, manual fallback file import, delete project |" in matrix
+    assert "| Project / import | project details, choose/open project, primary import, remote PractiScore browser-session connect, remote match select, selected-match import, clear session, manual fallback file import, delete project |" in matrix
     assert "| Splits / waveform | timing edit, selected shot actions, add/delete/move/nudge, waveform expand/zoom/amplitude, waveform pan |" in matrix
     assert "| Markers / Review / Overlay | marker import, marker template defaults, playback window, collapsed nav, timeline selectors, time-marker list cards, bubble enabled, bubble card actions, show overlay checkbox, badge size, style, locks, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, color pickers, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
     assert "tests/browser/test_browser_interactions.py" in matrix
