@@ -14,25 +14,12 @@ This page covers common SplitShot problems and the pane that owns the fix.
 - Paste the full path into `Primary Video`.
 - Press Enter.
 
-## PractiScore Connect Or Browser Tab Does Not Open
+## PractiScore Dashboard Does Not Open
 
 - Open [panes/project.md](panes/project.md).
-- Click `Connect PractiScore` again.
-- If the PractiScore session looks wrong or stale, click `Clear PractiScore Session`, then connect again.
-- When SplitShot needs a fresh login, it opens PractiScore in your **system default browser**. Complete login there, then return to SplitShot and connect again if the status has not updated yet.
-
-## PractiScore Login Or Challenge Keeps Reappearing
-
-- Finish the login or challenge in the **system browser tab** that SplitShot opened (or open PractiScore yourself in Chrome, Edge, Firefox, or Safari and sign in, then use `Connect PractiScore` again).
-- Do not retry the remote import until the Project pane says the session is ready or the match list appears.
-- If the site keeps looping, use `Clear PractiScore Session`, then reconnect and try the login flow again.
-
-## PractiScore Match List Does Not Appear
-
-- Open [panes/project.md](panes/project.md).
-- Confirm the PractiScore status block shows the session as ready.
-- If the match list still stays empty, reconnect the session.
-- Use `Select PractiScore File` if remote sync is unavailable and you need to keep working.
+- Click `Open PractiScore Dashboard` again.
+- If your browser blocks the launch, open [PractiScore Dashboard](https://practiscore.com/dashboard/home) manually.
+- Download the relevant PractiScore CSV/TXT export in your browser, then return to SplitShot and use `Select PractiScore File`.
 
 ## Missing Or Extra Shots
 
@@ -52,7 +39,6 @@ This page covers common SplitShot problems and the pane that owns the fix.
 
 - Reopen [panes/project.md](panes/project.md).
 - Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
-- If the wrong remote match was loaded, choose the correct `Remote match` and click `Import Selected Match` again.
 - If you want to overwrite the staged source directly, click `Select PractiScore File` again with the correct CSV/TXT export.
 
 ## Need To Replace A PractiScore Source
@@ -117,9 +103,9 @@ Metrics is read-only. Fix the source pane:
 
 ## Project Folder Confusion
 
-- `Choose Project` opens an existing bundle or chooses a bundle location.
-- `New Project` clears the current session.
-- `Delete Project` removes the saved bundle from disk.
+- `Select Project` opens an existing bundle or adopts a bundle location.
+- `Create Project` clears the current session and saves fresh metadata into the selected folder.
+- `Delete Project` removes only `project.json` and leaves the folders plus files on disk.
 
 ## If You Still Need Help
 

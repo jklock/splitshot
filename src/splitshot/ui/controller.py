@@ -2740,7 +2740,7 @@ class ProjectController(QObject):
             return
         delete_project(self.project_path)
         self.new_project()
-        self._set_status("Deleted the saved project folder.")
+        self._set_status("Deleted the saved project metadata file.")
 
     def effective_settings(self) -> AppSettings:
         if self.folder_settings is None:

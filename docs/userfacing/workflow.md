@@ -12,15 +12,15 @@ This is the recommended path from raw stage video to finished local export.
 ## End-To-End Flow
 
 1. Open [panes/project.md](panes/project.md).
-2. Name the project, add a description, and import the primary video.
-3. Wait for analysis to finish.
-4. If needed, open [panes/shotml.md](panes/shotml.md), tune detector settings, and click `Re-run ShotML`.
-5. Use `Generate Proposals` only when ShotML suggestions should become explicit reviewable changes.
-6. Open [panes/splits.md](panes/splits.md) and confirm the shot count, beep, first shot, and waveform markers.
-7. Nudge, drag, add, or delete shots until the timeline matches the video.
-8. If official match context is needed, open [panes/project.md](panes/project.md) and click `Connect PractiScore`.
-9. If SplitShot does not already see your PractiScore login, finish the login or challenge in your **system browser** (the tab SplitShot opens or a browser where you are signed in), then let SplitShot load the available remote matches.
-10. If only one remote match is available and nothing is staged yet, SplitShot imports it automatically. Otherwise choose the correct `Remote match` and click `Import Selected Match`.
+2. Click `Create Project` or `Select Project`.
+3. Name the project, add a description, and import the primary video.
+4. Wait for analysis to finish.
+5. If needed, open [panes/shotml.md](panes/shotml.md), tune detector settings, and click `Re-run ShotML`.
+6. Use `Generate Proposals` only when ShotML suggestions should become explicit reviewable changes.
+7. Open [panes/splits.md](panes/splits.md) and confirm the shot count, beep, first shot, and waveform markers.
+8. Nudge, drag, add, or delete shots until the timeline matches the video.
+9. If official match context is needed, open [panes/project.md](panes/project.md) and click `Open PractiScore Dashboard`.
+10. Download the relevant PractiScore CSV/TXT result in your browser, then return to SplitShot and click `Select PractiScore File`.
 11. Continue in the existing local `Match type`, `Stage #`, `Competitor name`, and `Place` controls.
 12. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.
 13. Open [panes/pip.md](panes/pip.md) if added media is needed; sync and place each item.

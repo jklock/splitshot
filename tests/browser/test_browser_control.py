@@ -85,6 +85,7 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/dialog/path",
     "/api/project/probe",
     "/api/settings",
+    "/api/practiscore/dashboard/open",
     "/api/practiscore/session/start",
     "/api/practiscore/session/clear",
     "/api/practiscore/sync/start",
@@ -1078,9 +1079,10 @@ def test_browser_control_api_covers_remaining_browser_routes(synthetic_video_fac
         assert state["project"]["name"] == "Delete Me"
 
         state = _post_json(f"{server.url}api/project/delete", {})
-        assert not bundle_path.exists()
+        assert bundle_path.exists()
+        assert not (bundle_path / "project.json").exists()
         assert state["project"]["name"] == "Untitled Project"
-        assert state["status"] == "Deleted the saved project folder."
+        assert state["status"] == "Deleted the saved project metadata file."
     finally:
         server.shutdown()
 
@@ -1284,14 +1286,24 @@ def test_browser_project_probe_reports_project_metadata_state(tmp_path) -> None:
         assert _post_json(
             f"{server.url}api/project/probe",
             {"path": str(project_path)},
-        ) == {"path": str(project_path), "has_project_file": False}
+        ) == {
+            "path": str(project_path),
+            "normalized_path": str(project_path.resolve()),
+            "has_project_file": False,
+            "missing_required_dirs": ["Input", "CSV", "Output"],
+        }
 
         (project_path / "project.json").write_text("{}", encoding="utf-8")
 
         assert _post_json(
             f"{server.url}api/project/probe",
             {"path": str(project_path)},
-        ) == {"path": str(project_path), "has_project_file": True}
+        ) == {
+            "path": str(project_path),
+            "normalized_path": str(project_path.resolve()),
+            "has_project_file": True,
+            "missing_required_dirs": ["Input", "CSV", "Output"],
+        }
     finally:
         server.shutdown()
 

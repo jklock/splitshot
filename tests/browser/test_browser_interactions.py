@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
+import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch, SelectedRemoteMatchArtifacts
 import splitshot.ui.controller as controller_module
@@ -25,6 +26,10 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "browser-test.ssproj")
+        page.evaluate(f"() => createNewProject({json.dumps(project_path)})")
+        page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
 
@@ -189,134 +194,65 @@ def _build_remote_match_artifacts(tmp_path: Path, remote_id: str) -> SelectedRem
     )
 
 
-def test_project_pane_practiscore_connect_match_list_and_selected_match_import_flow(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        controller_module,
-        "discover_remote_matches",
-        lambda browser_context: [
-            RemotePractiScoreMatch(
-                remote_id="match-100",
-                label="April USPSA Night Match",
-                match_type="uspsa",
-                event_name="April USPSA Night Match",
-                event_date="2026-04-21",
-            ),
-            RemotePractiScoreMatch(
-                remote_id="match-200",
-                label="Remote IDPA Match",
-                match_type="idpa",
-                event_name="Remote IDPA Match",
-                event_date="2026-04-21",
-            ),
-        ],
-    )
-    monkeypatch.setattr(
-        controller_module,
-        "download_remote_match_artifacts",
-        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_remote_match_artifacts(tmp_path, remote_id),
-    )
-
+def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypatch) -> None:
+    opened_urls: list[str] = []
+    monkeypatch.setattr(browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True)
     server = BrowserControlServer(controller=ProjectController(), port=0)
-    server.practiscore_session = _BrowserFakeSessionManager(
-        tmp_path,
-        start_state="authenticating",
-        poll_states=["authenticated_ready"],
-    )
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
                 _open_tool(page, "project")
-
-                page.locator("#connect-practiscore").click()
-                page.wait_for_function(
-                    "() => state?.practiscore_sync?.state === 'match_list_ready' && (state?.practiscore_sync?.matches || []).length === 2"
-                )
-
-                assert page.locator("#practiscore-session-status").text_content().strip() == "Authenticated Ready"
-                assert page.locator("#practiscore-sync-status").text_content().strip() == "Match List Ready"
-
-                page.locator("#practiscore-remote-match").select_option("match-200")
-                page.wait_for_function(
-                    "() => document.getElementById('import-practiscore-selected') && !document.getElementById('import-practiscore-selected').disabled"
-                )
-
-                page.locator("#import-practiscore-selected").click()
-                page.wait_for_function("() => state?.practiscore_sync?.state === 'success'")
-                page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
-                page.wait_for_function("() => state?.practiscore_options?.has_source === true")
-
-                assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
-                assert "imported remote practiscore match" in (page.locator("#practiscore-sync-message").text_content() or "").lower()
-                assert page.locator("#match-competitor-name option").count() > 1
+                assert page.locator("#open-practiscore-dashboard").is_disabled() is True
+                assert opened_urls == []
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_project_pane_practiscore_expired_session_state_disables_selected_match_import(tmp_path: Path) -> None:
+def test_project_pane_practiscore_and_primary_controls_enable_after_project_create(tmp_path: Path) -> None:
+    notices: list[str] = []
     server = BrowserControlServer(controller=ProjectController(), port=0)
-    server.practiscore_session = _BrowserFakeSessionManager(tmp_path, start_state="expired")
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
+            dialogs: list[str] = []
+            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
             try:
                 _open_tool(page, "project")
+                assert page.locator("#project-path").input_value() == ""
+                assert page.locator("#project-path").get_attribute("placeholder") == "Please create / select project"
+                assert page.locator("#open-practiscore-dashboard").is_disabled() is True
+                assert page.locator("#import-practiscore").is_disabled() is True
+                assert page.locator("#browse-primary-path").is_disabled() is True
 
-                page.locator("#connect-practiscore").click()
-                page.wait_for_function("() => state?.practiscore_session?.state === 'expired'")
-
-                assert page.locator("#practiscore-session-status").text_content().strip() == "Expired"
-                assert page.locator("#practiscore-sync-status").text_content().strip() == "Idle"
-                assert page.locator("#import-practiscore-selected").is_disabled() is True
-                assert "expired" in (page.locator("#practiscore-sync-message").text_content() or "").lower()
+                page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'created-project.ssproj'))})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                assert page.locator("#open-practiscore-dashboard").is_disabled() is False
+                assert page.locator("#import-practiscore").is_disabled() is False
+                assert page.locator("#browse-primary-path").is_disabled() is False
+                assert page.locator("#project-path").input_value() == "created-project.ssproj"
+                notices.extend(dialogs)
+                assert any("missing Input, CSV, Output" in message for message in notices)
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_project_pane_manual_practiscore_file_import_remains_functional_with_remote_controls(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        controller_module,
-        "discover_remote_matches",
-        lambda browser_context: [
-            RemotePractiScoreMatch(
-                remote_id="match-100",
-                label="April USPSA Night Match",
-                match_type="uspsa",
-                event_name="April USPSA Night Match",
-                event_date="2026-04-21",
-            ),
-            RemotePractiScoreMatch(
-                remote_id="match-200",
-                label="Remote IDPA Match",
-                match_type="idpa",
-                event_name="Remote IDPA Match",
-                event_date="2026-04-21",
-            ),
-        ],
-    )
-
+def test_project_pane_manual_practiscore_file_import_remains_functional_with_active_project(tmp_path: Path) -> None:
     server = BrowserControlServer(controller=ProjectController(), port=0)
-    server.practiscore_session = _BrowserFakeSessionManager(
-        tmp_path,
-        start_state="authenticating",
-        poll_states=["authenticated_ready"],
-    )
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
                 _open_tool(page, "project")
-
-                page.locator("#connect-practiscore").click()
-                page.wait_for_function("() => state?.practiscore_sync?.state === 'match_list_ready'")
-
+                page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'manual-import.ssproj'))})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
                 page.locator("#practiscore-file-input").set_input_files(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"))
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
@@ -324,6 +260,33 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_rem
                 assert page.locator("#import-practiscore").is_enabled() is True
                 assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
                 assert page.locator("#match-competitor-name option").count() > 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing(tmp_path: Path) -> None:
+    project_path = tmp_path / "partial.ssproj"
+    project_path.mkdir(parents=True, exist_ok=True)
+    (project_path / "Input").mkdir()
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            dialogs: list[str] = []
+            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+            try:
+                _open_tool(page, "project")
+                page.evaluate(f"() => useProjectFolder({json.dumps(str(project_path))})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                assert (project_path / "Input").is_dir()
+                assert (project_path / "CSV").is_dir()
+                assert (project_path / "Output").is_dir()
+                assert page.locator("#project-path").input_value() == "partial.ssproj"
+                assert any("missing CSV, Output" in message for message in dialogs)
             finally:
                 browser.close()
     finally:
