@@ -3,7 +3,6 @@
 ## Purpose
 
 This file contains repository-specific instructions only.
-
 Global behavior is defined in `~/.codex/AGENTS.md`.
 
 ## Project
@@ -70,6 +69,26 @@ Update documentation only when the change affects:
 - troubleshooting
 
 Do not over-document obvious code.
+
+## SplitShot Testing
+
+Prefer this order:
+
+1. Direct targeted pytest for touched code.
+2. Relevant suite:
+   - Browser changes: `uv run pytest tests/browser/`
+   - Analysis changes: `uv run pytest tests/analysis/`
+3. Canonical runner:
+   - `uv run python scripts/testing/run_test_suite.py --mode all-together --format table`
+4. Full isolation only when needed:
+   - `uv run python scripts/testing/run_test_suite.py --mode one-by-one --format json --json-output artifacts/test-run.json --stop-on-failure`
+
+Keep test output compact:
+
+- Use table/JSON artifacts instead of long console logs.
+- Report only failing suite/test, key traceback line, and artifact path.
+- Do not run browser audits unless browser UI/routes/controller behavior changed.
+- Do not run ShotML pipeline scripts unless analysis/timing behavior changed.
 
 ## Verification
 
