@@ -64,6 +64,19 @@ Done means:
 - Browser UI/server/controller changes include browser-specific verification.
 - The final report includes proof.
 
+## Token Budget
+
+Testing can be expensive. Minimize output.
+
+Rules:
+
+- Run targeted tests before broad suites.
+- Use `--format table` or `--json-output artifacts/...` when available.
+- Do not include full logs in responses.
+- Summarize failures by suite, test name, and key error only.
+- Do not rerun unchanged failures.
+- Escalate to full suite only after targeted checks pass or when requested.
+
 Report:
 Changed:
 Verified:
