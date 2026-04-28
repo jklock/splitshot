@@ -2,7 +2,7 @@
 
 1. Open SplitShot and go to the Project pane.
 2. Click `Connect PractiScore`.
-3. Complete the PractiScore login or challenge in the visible PractiScore browser window.
+3. If SplitShot does not already detect your PractiScore session from a supported system browser, complete the login or challenge in the browser tab SplitShot opens (or sign in first in Chrome, Edge, Firefox, or Safari, then connect again).
 4. Wait until SplitShot shows that the session is ready.
 5. Choose one remote match from the available match list.
 6. Click `Import Selected Match`.

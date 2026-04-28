@@ -7,7 +7,7 @@ This project is designed to be run directly from source with `uv` and Python 3.1
 - Python version: 3.12
 - Package manager / runner: `uv`
 - Required media tools: `ffmpeg` and `ffprobe`
-- PractiScore remote sync in the live app uses PySide6 Qt WebEngine. Playwright is only a dev/test dependency for the browser test suite.
+- PractiScore remote sync in the live app uses PySide6 Qt WebEngine for background fetch after cookies are imported. **Automated browser UI tests** under `tests/browser/` use **Playwright** (typically headless Chromium via `sync_playwright`). Playwright is a dev/test dependency; it is not the runtime PractiScore engine.
 
 The runtime locates media binaries from `PATH` first, then from bundled resources, and it also honors `SPLITSHOT_FFMPEG_DIR`.
 
@@ -42,6 +42,8 @@ uv run python scripts/export/export_stage_suite_csv.py --output artifacts/stage_
 
 The repository uses `pytest` with `qt_api = pyside6`.
 
+- **Browser tests** exercise the SplitShot control UI by driving a real browser through **Playwright** (`tests/browser/test_browser_interactions.py`, `test_browser_control.py`, and others use `sync_playwright` and `chromium.launch(headless=True)`). They are the authoritative automated check for Project-pane behavior, including PractiScore controls, alongside route-level tests that hit `BrowserControlServer` over HTTP.
+- The editor’s **Simple Browser** (or any desktop browser tab on `http://127.0.0.1:8765`) is useful for quick manual inspection; it does **not** replace the Playwright suite or the PractiScore session route tests.
 - Run the full suite with `uv run pytest`.
 - Use `uv run python scripts/testing/run_test_suite.py --mode all-together --format table` for the canonical grouped test run.
 - Use `uv run python scripts/testing/run_test_suite.py --mode one-by-one --format json --json-output artifacts/test-run.json` when you need per-file execution and a machine-readable report.
@@ -52,14 +54,13 @@ The repository uses `pytest` with `qt_api = pyside6`.
 - Use real media for browser review changes. The development validation set used a primary stage video, a merge stage video, and `example_data/IDPA/IDPA.csv`. If your local `Stage1.MP4` / `Stage2.MP4` files are not available, substitute equivalent real clips rather than synthetic placeholders.
 - Use `uv run python scripts/analysis/analyze_video_shots.py /path/to/video.mp4` when you want to inspect split timing, confidence, and a recommended starting sensitivity threshold before importing a clip into the browser shell.
 - The audit defaults to the available Chromium, Firefox, and Safari-class WebKit targets and also picks up installed Chrome or Edge channels when present.
-- The VS Code integrated browser is useful for Chromium-class debugging, but actual cross-browser validation should run from the VS Code terminal through Playwright.
+- The VS Code / Cursor **Simple Browser** is useful for Chromium-class debugging of the local shell, but regression validation for browser workflows should run from the terminal through **pytest + Playwright** (and the audit scripts below when you need Firefox/WebKit or real media).
 
 ### PractiScore Session Smoke Check
 
-- Start the browser server with `uv run splitshot --no-open`.
-- Trigger `POST /api/practiscore/session/start` from a REST client or the browser control surface and confirm a visible SplitShot-owned PractiScore window opens.
-- Complete login or any challenge only inside that SplitShot PractiScore window. Do not add or use SplitShot credential fields for PractiScore username, password, or MFA.
-- Confirm `GET /api/practiscore/session/status` transitions through the expected stable states and that `POST /api/practiscore/session/clear` removes the persisted profile when you need a fresh login.
+- **Automated:** `uv run pytest tests/browser/test_practiscore_session_api.py` (HTTP + faked Qt runtime; no Playwright). For UI wiring, also run PractiScore-related slices in `tests/browser/test_browser_interactions.py` and `tests/browser/test_practiscore_sync_controller.py` — those use **Playwright** against the live `BrowserControlServer`.
+- **Manual:** Start the browser server with `uv run splitshot --no-open`. Open the SplitShot UI in your desktop browser or the editor **Simple Browser** at `http://127.0.0.1:8765/`. Click **Connect PractiScore**. With a PractiScore login already present in a supported system browser, the session should become ready without credential fields inside SplitShot. If SplitShot opens PractiScore in the system browser, complete login or any challenge **there** (not inside SplitShot form fields). Do not add or use SplitShot UI fields for PractiScore username, password, or MFA.
+- Confirm `GET /api/practiscore/session/status` transitions through the expected stable states and that `POST /api/practiscore/session/clear` resets cached session state when you need a fresh connect.
 
 ## Script Layout
 

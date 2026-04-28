@@ -14,17 +14,17 @@ This page covers common SplitShot problems and the pane that owns the fix.
 - Paste the full path into `Primary Video`.
 - Press Enter.
 
-## PractiScore Connect Window Does Not Open
+## PractiScore Connect Or Browser Tab Does Not Open
 
 - Open [panes/project.md](panes/project.md).
 - Click `Connect PractiScore` again.
 - If the PractiScore session looks wrong or stale, click `Clear PractiScore Session`, then connect again.
-- Wait for the visible PractiScore login window before retrying the import flow.
+- When SplitShot needs a fresh login, it opens PractiScore in your **system default browser**. Complete login there, then return to SplitShot and connect again if the status has not updated yet.
 
 ## PractiScore Login Or Challenge Keeps Reappearing
 
-- Finish the login or challenge in the visible PractiScore window itself.
-- Do not retry the SplitShot import until the Project pane says the session is ready or the match list appears.
+- Finish the login or challenge in the **system browser tab** that SplitShot opened (or open PractiScore yourself in Chrome, Edge, Firefox, or Safari and sign in, then use `Connect PractiScore` again).
+- Do not retry the remote import until the Project pane says the session is ready or the match list appears.
 - If the site keeps looping, use `Clear PractiScore Session`, then reconnect and try the login flow again.
 
 ## PractiScore Match List Does Not Appear

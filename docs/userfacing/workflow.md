@@ -19,7 +19,7 @@ This is the recommended path from raw stage video to finished local export.
 6. Open [panes/splits.md](panes/splits.md) and confirm the shot count, beep, first shot, and waveform markers.
 7. Nudge, drag, add, or delete shots until the timeline matches the video.
 8. If official match context is needed, open [panes/project.md](panes/project.md) and click `Connect PractiScore`.
-9. Finish the login or challenge in the visible PractiScore window, then let SplitShot load the available remote matches.
+9. If SplitShot does not already see your PractiScore login, finish the login or challenge in your **system browser** (the tab SplitShot opens or a browser where you are signed in), then let SplitShot load the available remote matches.
 10. If only one remote match is available and nothing is staged yet, SplitShot imports it automatically. Otherwise choose the correct `Remote match` and click `Import Selected Match`.
 11. Continue in the existing local `Match type`, `Stage #`, `Competitor name`, and `Place` controls.
 12. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.

@@ -85,6 +85,9 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/dialog/path",
     "/api/project/probe",
     "/api/settings",
+    "/api/practiscore/session/start",
+    "/api/practiscore/session/clear",
+    "/api/practiscore/sync/start",
 }
 
 
