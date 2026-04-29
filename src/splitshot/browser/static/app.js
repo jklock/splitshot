@@ -231,7 +231,11 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   waveform_mode: waveformMode,
   waveform_expanded: false,
   timing_expanded: false,
+  timing_enabled: true,
+  review_show_markers: true,
+  review_show_pip: true,
   metrics_expanded: false,
+  scoring_expanded: false,
   layout_locked: layoutLocked,
   rail_width: Math.round(layoutSizes.railWidth),
   inspector_width: Math.round(layoutSizes.inspectorWidth),
@@ -820,10 +824,16 @@ function numberInputValue(input, fallback = 0) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
-function collectPenaltyCounts(scope, selector = ".shot-penalty-input[data-penalty-id]") {
+function collectPenaltyCounts(scope, selector = ".shot-penalty-entry-control[data-penalty-id]") {
   const penaltyCounts = {};
   scope.querySelectorAll(selector).forEach((input) => {
-    penaltyCounts[input.dataset.penaltyId] = numberInputValue(input, 0);
+    const penaltyId = String(input.dataset.penaltyId || input.value || "").trim();
+    if (!penaltyId) return;
+    if (input instanceof HTMLSelectElement) {
+      penaltyCounts[penaltyId] = (penaltyCounts[penaltyId] || 0) + 1;
+      return;
+    }
+    penaltyCounts[penaltyId] = numberInputValue(input, 0);
   });
   return penaltyCounts;
 }
@@ -1577,7 +1587,7 @@ function resolvedTimingColumnWidths(data = {}) {
     const requestedWidth = Number(data?.[columnId]);
     const minimumWidth = TIMING_COLUMN_MIN_WIDTHS[columnId] || 72;
     resolved[columnId] = Number.isFinite(requestedWidth)
-      ? Math.max(minimumWidth, Math.round(requestedWidth))
+      ? Math.max(minimumWidth, requestedWidth)
       : defaultWidth;
   });
   return resolved;
@@ -1604,13 +1614,55 @@ function timingGridTemplate(tableId) {
   return columns.map((columnId) => `minmax(0, ${flex[columnId] || 1}fr)`).join(" ");
 }
 
+function scoringWorkbenchGridTemplate(table) {
+  if (!(table instanceof HTMLElement)) return "";
+  const columns = TIMING_TABLE_COLUMN_ORDER["scoring-workbench-table"] || [];
+  const weights = {
+    lock: 0.7,
+    shot: 1.7,
+    score: 1.5,
+    penalties: 1.8,
+    split: 1.2,
+    run: 1.2,
+    action: 2.5,
+    delete: 1.1,
+    restore: 1.1,
+  };
+  const minimums = {
+    lock: 84,
+    shot: 122,
+    score: 122,
+    penalties: 132,
+    split: 108,
+    run: 108,
+    action: 168,
+    delete: 108,
+    restore: 108,
+  };
+  const containerWidth = table.parentElement instanceof HTMLElement
+    ? Math.max(table.parentElement.clientWidth, table.parentElement.getBoundingClientRect().width || 0)
+    : 0;
+  const tableWidth = Math.max(containerWidth, table.clientWidth, table.getBoundingClientRect().width || 0);
+  const totalMinimum = columns.reduce((sum, columnId) => sum + (minimums[columnId] || 96), 0);
+  const totalWeight = columns.reduce((sum, columnId) => sum + (weights[columnId] || 1), 0);
+  const extraWidth = Math.max(0, tableWidth - totalMinimum);
+  return columns.map((columnId) => {
+    const minimum = minimums[columnId] || 96;
+    const weight = weights[columnId] || 1;
+    const width = minimum + ((extraWidth * weight) / totalWeight);
+    return `minmax(${minimum}px, ${width}px)`;
+  }).join(" ");
+}
+
 function applyTimingTableColumns(table) {
   if (!table) return;
   if (window.innerWidth <= 680) {
     table.style.removeProperty("grid-template-columns");
     return;
   }
-  const template = timingGridTemplate(table.id);
+  const template = table.id === "scoring-workbench-table"
+    ? scoringWorkbenchGridTemplate(table)
+    : timingGridTemplate(table.id);
   if (template) table.style.gridTemplateColumns = template;
 }
 
@@ -1682,7 +1734,11 @@ function normalizeProjectUiState(uiState = {}) {
     waveform_mode: normalizedWaveformMode,
     waveform_expanded: Boolean(uiState.waveform_expanded ?? DEFAULT_PROJECT_UI_STATE.waveform_expanded),
     timing_expanded: Boolean(uiState.timing_expanded ?? DEFAULT_PROJECT_UI_STATE.timing_expanded),
+    timing_enabled: Boolean(uiState.timing_enabled ?? DEFAULT_PROJECT_UI_STATE.timing_enabled),
+    review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),
+    review_show_pip: Boolean(uiState.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip),
     metrics_expanded: Boolean(uiState.metrics_expanded ?? DEFAULT_PROJECT_UI_STATE.metrics_expanded),
+    scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
     inspector_width: Math.max(320, Math.round(Number(uiState.inspector_width ?? DEFAULT_PROJECT_UI_STATE.inspector_width) || DEFAULT_PROJECT_UI_STATE.inspector_width)),
@@ -1718,7 +1774,11 @@ function readProjectUiStatePayload() {
     waveform_mode: waveformMode,
     waveform_expanded: Boolean(root?.classList.contains("waveform-expanded")),
     timing_expanded: Boolean(root?.classList.contains("timing-expanded")),
+    timing_enabled: $("timing-enabled")?.checked ?? DEFAULT_PROJECT_UI_STATE.timing_enabled,
+    review_show_markers: $("show-markers")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_markers,
+    review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,
     metrics_expanded: Boolean(root?.classList.contains("metrics-expanded")),
+    scoring_expanded: Boolean(root?.classList.contains("scoring-expanded")),
     layout_locked: layoutLocked,
     rail_width: Math.round(layoutSizes.railWidth),
     inspector_width: Math.round(layoutSizes.inspectorWidth),
@@ -1782,7 +1842,11 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   setWaveformMode(normalized.waveform_mode, { persistUiState: false });
   setWaveformExpanded(normalized.waveform_expanded, { persistUiState: false });
   setTimingExpanded(normalized.timing_expanded, { persistUiState: false });
+  syncControlChecked($("timing-enabled"), normalized.timing_enabled);
+  syncControlChecked($("show-markers"), normalized.review_show_markers);
+  syncControlChecked($("show-pip"), normalized.review_show_pip);
   setMetricsExpanded(normalized.metrics_expanded, { persistUiState: false });
+  setScoringWorkbenchExpanded(normalized.scoring_expanded, { persistUiState: false });
   if (state?.project) state.project.ui_state = normalized;
   return normalized;
 }
@@ -2540,6 +2604,7 @@ function setShotMLSectionExpanded(sectionId, expanded) {
 function ensureSectionToggle(section, expanded, onToggle) {
   const header = section?.querySelector(":scope > .section-header");
   if (!(header instanceof HTMLElement)) return;
+  header.classList.add("section-header-with-toggle");
   let actions = header.querySelector(":scope > .section-header-actions");
   if (!(actions instanceof HTMLElement)) {
     actions = document.createElement("div");
@@ -2636,12 +2701,6 @@ function buildTextBoxCard(box, index) {
       </div>
     </div>
     <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
-      <label>Content Source
-        <select data-text-box-field="source">
-          <option value="manual">Custom text</option>
-          <option value="imported_summary">Imported summary</option>
-        </select>
-      </label>
       <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
       <p class="hint" data-text-box-hint="true"></p>
       <label>Box text
@@ -2709,7 +2768,6 @@ function buildTextBoxCard(box, index) {
   if (body) body.hidden = !expanded;
   syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
   syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
-  syncControlValue(card.querySelector('[data-text-box-field="source"]'), box.source);
   syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
   syncControlValue(card.querySelector('[data-text-box-field="x"]'), displayedCoordinates?.x ?? box.x ?? "");
   syncControlValue(card.querySelector('[data-text-box-field="y"]'), displayedCoordinates?.y ?? box.y ?? "");
@@ -4586,30 +4644,35 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   const root = $("cockpit-root");
   const hadExpandedLayout = root?.classList.contains("waveform-expanded")
     || root?.classList.contains("timing-expanded")
-    || root?.classList.contains("metrics-expanded");
+    || root?.classList.contains("metrics-expanded")
+    || root?.classList.contains("scoring-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
   let previousExpandedLayout = null;
   const preservedExpandedLayout = state?.project?.ui_state ? {
-    waveform_expanded: state.project.ui_state.waveform_expanded,
-    timing_expanded: state.project.ui_state.timing_expanded,
-    metrics_expanded: state.project.ui_state.metrics_expanded,
-  } : null;
+      waveform_expanded: state.project.ui_state.waveform_expanded,
+      timing_expanded: state.project.ui_state.timing_expanded,
+      metrics_expanded: state.project.ui_state.metrics_expanded,
+      scoring_expanded: state.project.ui_state.scoring_expanded,
+    } : null;
   if (collapseExpandedLayout && hadExpandedLayout) {
     previousExpandedLayout = {
       waveform_expanded: root?.classList.contains("waveform-expanded") || false,
       timing_expanded: root?.classList.contains("timing-expanded") || false,
       metrics_expanded: root?.classList.contains("metrics-expanded") || false,
+      scoring_expanded: root?.classList.contains("scoring-expanded") || false,
     };
   }
   if (changed) {
     collapseMinimizableInspectorItems({ persistUiState, rerender: false });
   }
   if (previousExpandedLayout) {
-    root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
+    setWaveformExpanded(false, { persistUiState: false });
+    setTimingExpanded(false, { persistUiState: false });
+    setMetricsExpanded(false, { persistUiState: false });
+    setScoringWorkbenchExpanded(false, { persistUiState: false });
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
-    if (hadExpandedLayout) scheduleReviewStageRestore();
   }
   root.classList.toggle("scoring-active", tool === "scoring");
   const inspector = document.querySelector(".inspector");
@@ -4633,10 +4696,12 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     state.project.ui_state.waveform_expanded = previousExpandedLayout.waveform_expanded;
     state.project.ui_state.timing_expanded = previousExpandedLayout.timing_expanded;
     state.project.ui_state.metrics_expanded = previousExpandedLayout.metrics_expanded;
+    state.project.ui_state.scoring_expanded = previousExpandedLayout.scoring_expanded;
   } else if (preservedExpandedLayout && state?.project?.ui_state) {
     state.project.ui_state.waveform_expanded = preservedExpandedLayout.waveform_expanded;
     state.project.ui_state.timing_expanded = preservedExpandedLayout.timing_expanded;
     state.project.ui_state.metrics_expanded = preservedExpandedLayout.metrics_expanded;
+    state.project.ui_state.scoring_expanded = preservedExpandedLayout.scoring_expanded;
   }
   if (persistUiState) scheduleProjectUiStateApply();
   if (tool === "waveform" && state?.project?.ui_state?.waveform_expanded) {
@@ -4647,6 +4712,9 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   }
   if (tool === "metrics" && state?.project?.ui_state?.metrics_expanded) {
     setMetricsExpanded(true, { persistUiState: false });
+  }
+  if (tool === "scoring" && state?.project?.ui_state?.scoring_expanded) {
+    setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
   renderLiveOverlay();
 }
@@ -4942,10 +5010,7 @@ function resetLocalProjectView() {
     "practiscore-status",
     "current-file",
     "timing-summary",
-    "selected-shot-copy",
-    "selected-timing-shot",
     "scoring-result",
-    "scoring-imported-caption",
     "status",
     "processing-message",
     "processing-detail",
@@ -4964,14 +5029,8 @@ function resetLocalProjectView() {
       element.textContent = "No Video Selected";
     } else if (id === "timing-summary") {
       element.textContent = "No timing data.";
-    } else if (id === "selected-shot-copy") {
-      element.textContent = "No shot selected.";
-    } else if (id === "selected-timing-shot") {
-      element.textContent = "No shot selected";
     } else if (id === "scoring-result") {
       element.textContent = "--";
-    } else if (id === "scoring-imported-caption") {
-      element.textContent = "No PractiScore stage imported.";
     } else if (id === "status" || id === "processing-message") {
       element.textContent = "Ready.";
     } else if (id === "processing-detail") {
@@ -5043,7 +5102,6 @@ function restoreReviewStage() {
   renderVideo();
   renderWaveform();
   renderTimingTables();
-  renderSelection();
   renderLiveOverlay();
   scheduleSecondaryPreviewSync();
   restoreVideoElementFrame($("primary-video"));
@@ -5514,10 +5572,34 @@ function renderHeader() {
 
 function renderStats() {
   setProjectActionAvailability();
-  $("timing-summary").textContent = (state.metrics.total_shots || 0) > 0
-    ? "Use Splits to edit timing values."
-    : "No timing data.";
+  renderTimingSummary();
   $("apply-threshold").disabled = !state?.project?.primary_video?.path;
+}
+
+function timingSummaryRows() {
+  return [
+    ["Draw", splitSeconds(state.metrics.draw_ms)],
+    ["Raw", splitSeconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms)],
+    ["Shots", String(state.metrics.total_shots || 0)],
+    ["Avg Split", splitSeconds(state.metrics.average_split_ms)],
+    ["Beep", splitSeconds(state.metrics.beep_ms)],
+  ];
+}
+
+function renderTimingSummary() {
+  const enabled = $("timing-enabled")?.checked ?? true;
+  const totalShots = Number(state?.metrics?.total_shots || 0);
+  const result = $("timing-result");
+  const summary = $("timing-summary");
+  if (result) result.textContent = enabled ? splitSeconds(state.metrics.stage_time_ms ?? state.metrics.raw_time_ms) : "--";
+  if (summary) {
+    summary.textContent = !enabled
+      ? "Splits disabled."
+      : totalShots > 0
+      ? "Current split timing."
+      : "No timing data.";
+  }
+  renderDetailsList("timing-imported-summary", enabled && totalShots > 0 ? timingSummaryRows() : []);
 }
 
 function currentSettings() {
@@ -5852,6 +5934,11 @@ function ensureMergePreviewItem(layer, source) {
 function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
   const layer = $("merge-preview-layer");
   if (!layer) return;
+  if (!($("show-pip")?.checked ?? true)) {
+    layer.hidden = true;
+    layer.innerHTML = "";
+    return;
+  }
   const frameRect = previewFrameGeometry(video, stage)?.frameRect;
   if (!frameRect || mergeSources.length === 0) {
     layer.hidden = true;
@@ -6931,6 +7018,11 @@ function renderTimingTable(tableId = "timing-table") {
   withPreservedScrollState([table], () => {
     table.innerHTML = "";
     const expandedTable = tableId === "timing-workbench-table";
+    const compactEnabled = $("timing-enabled")?.checked ?? true;
+    if (!expandedTable && !compactEnabled) {
+      applyTimingTableColumns(table);
+      return;
+    }
     table.classList.toggle("interval-timeline-table", true);
     table.classList.toggle("timing-resizable-table", expandedTable);
     applyTimingTableColumns(table);
@@ -6999,11 +7091,11 @@ function renderTimingTable(tableId = "timing-table") {
       table.appendChild(entryCell);
 
       const splitCell = document.createElement("div");
-      splitCell.textContent = splitSeconds(splitRowShotMLSplitMs(row));
+      splitCell.textContent = splitSeconds(numericMs(row.split_ms));
       table.appendChild(splitCell);
 
       const totalCell = document.createElement("div");
-      totalCell.textContent = splitSeconds(splitRowShotMLCumulativeMs(row));
+      totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));
       table.appendChild(totalCell);
 
       const actionCell = buildSplitRowActionCell(row, expandedTable);
@@ -7058,34 +7150,34 @@ function renderTimingTable(tableId = "timing-table") {
 }
 
 function renderTimingTables() {
+  renderTimingSummary();
   renderTimingTable("timing-table");
   renderTimingTable("timing-workbench-table");
   renderTimingEventEditor();
-}
-
-function renderSelection() {
-  syncSelectedShotId();
-  const segment = (state.timing_segments || []).find((item) => item.shot_id === selectedShotId);
-  const selectedLabel = segment ? `Shot ${segment.shot_number}` : "No shot selected";
-  const splitRow = segment ? splitRowForShot(segment.shot_id) : null;
-  const selectedSplitMs = segment ? resolvedSplitMsForShot(segment.shot_id, segment.shot_number, segment.absolute_ms) : null;
-  const runMs = splitRowSequenceTotalMs(splitRow);
-  const stageMs = numericMs(splitRow?.cumulative_ms) ?? numericMs(segment?.cumulative_ms);
-  const intervalLabel = splitRowIntervalLabel(splitRow);
-  $("selected-shot-copy").textContent = segment
-    ? `${selectedLabel}: ${intervalLabel} ${seconds(selectedSplitMs)}s, ${seconds(runMs)}s since last reset, ${seconds(stageMs)}s from beep.`
-    : "No shot selected.";
-  $("selected-timing-shot").textContent = selectedLabel;
 }
 
 function scoringWorkbenchShown() {
   return Boolean(scoringWorkbenchExpanded);
 }
 
-function setScoringWorkbenchExpanded(expanded) {
+function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {
   scoringWorkbenchExpanded = Boolean(expanded);
+  const root = $("cockpit-root");
+  root?.classList.toggle("scoring-expanded", scoringWorkbenchExpanded);
+  if (scoringWorkbenchExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
   const section = $("scoring-workbench");
   if (section instanceof HTMLElement) section.hidden = !scoringWorkbenchExpanded;
+  activity("scoring.expand", { expanded: scoringWorkbenchExpanded });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
+  if (scoringWorkbenchExpanded) {
+    window.requestAnimationFrame(() => {
+      applyTimingTableColumns($("scoring-workbench-table"));
+      window.requestAnimationFrame(() => applyTimingTableColumns($("scoring-workbench-table")));
+    });
+  } else {
+    scheduleReviewStageRestore();
+  }
 }
 
 function scoringPenaltySummary(segment, penaltyFields = state.scoring_summary?.penalty_fields || []) {
@@ -7120,7 +7212,7 @@ function applyShotScoringUpdate(shotId, scope) {
   return callApi("/api/scoring/score", {
     shot_id: shotId,
     letter: controlScope.querySelector(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)?.value || defaultScoreLetter(),
-    penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-input[data-penalty-id][data-score-shot-id="${shotId}"]`),
+    penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-entry-control[data-score-shot-id="${shotId}"]`),
   }).then((result) => {
     if (result) refreshReviewMediaFrame();
     return result;
@@ -7166,6 +7258,67 @@ function buildScoringRestoreCell(segment) {
   return cell;
 }
 
+function buildScoringPenaltyEditor(segment, rowScope, penaltyFields) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "scoring-penalty-editor";
+  const list = document.createElement("div");
+  list.className = "scoring-penalty-list";
+  const existingEntries = [];
+  penaltyFields.forEach((field) => {
+    const count = Number(segment.penalty_counts?.[field.id] || 0);
+    for (let index = 0; index < count; index += 1) existingEntries.push(field.id);
+  });
+
+  function appendPenaltyRow(selectedPenaltyId = "") {
+    const row = document.createElement("div");
+    row.className = "scoring-penalty-entry";
+    const select = document.createElement("select");
+    select.className = "shot-penalty-select shot-penalty-entry-control";
+    select.dataset.scoreShotId = segment.shot_id;
+    select.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
+
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "Select penalty";
+    select.appendChild(blank);
+    penaltyFields.forEach((field) => {
+      const option = document.createElement("option");
+      option.value = field.id;
+      option.dataset.penaltyId = field.id;
+      option.textContent = penaltyFieldLabel(field.id, field.label);
+      select.appendChild(option);
+    });
+    select.value = selectedPenaltyId;
+    select.dataset.penaltyId = selectedPenaltyId;
+    select.addEventListener("change", () => {
+      select.dataset.penaltyId = select.value;
+    });
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-penalty-button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", () => {
+      row.remove();
+      if (list.childElementCount === 0) appendPenaltyRow("");
+      applyShotScoringUpdate(segment.shot_id, rowScope);
+    });
+    row.append(select, remove);
+    list.appendChild(row);
+  }
+
+  if (existingEntries.length > 0) existingEntries.forEach((penaltyId) => appendPenaltyRow(penaltyId));
+  else appendPenaltyRow("");
+
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "add-penalty-button";
+  add.textContent = "Add Penalty";
+  add.addEventListener("click", () => appendPenaltyRow(""));
+  wrapper.append(list, add);
+  return wrapper;
+}
+
 function renderScoringTable(tableId = "scoring-table") {
   const table = $(tableId);
   if (!table) return;
@@ -7175,17 +7328,17 @@ function renderScoringTable(tableId = "scoring-table") {
   const defaultScore = scoreOptions[0] || "A";
   withPreservedScrollState([table], () => {
     table.innerHTML = "";
-    table.classList.toggle("timing-resizable-table", expandedTable);
+    table.classList.toggle("timing-resizable-table", expandedTable && tableId !== "scoring-workbench-table");
     applyTimingTableColumns(table);
     const headers = expandedTable
       ? [
         { label: "Edit", columnId: "lock", resizable: false },
-        { label: "Shot", columnId: "shot", resizable: true },
-        { label: "Current Score", columnId: "score", resizable: true },
-        { label: "Penalties", columnId: "penalties", resizable: true },
-        { label: "Split", columnId: "split", resizable: true },
-        { label: "Run", columnId: "run", resizable: true },
-        { label: "Action", columnId: "action", resizable: true },
+        { label: "Shot", columnId: "shot", resizable: false },
+        { label: "Current Score", columnId: "score", resizable: false },
+        { label: "Penalties", columnId: "penalties", resizable: false },
+        { label: "Split", columnId: "split", resizable: false },
+        { label: "Run", columnId: "run", resizable: false },
+        { label: "Action", columnId: "action", resizable: false },
         { label: "Delete", columnId: "delete", resizable: false },
         { label: "Restore", columnId: "restore", resizable: false },
       ]
@@ -7264,27 +7417,9 @@ function renderScoringTable(tableId = "scoring-table") {
 
       const penaltiesCell = document.createElement("div");
       if (editing && penaltyFields.length > 0) {
-        const grid = document.createElement("div");
-        grid.className = "scoring-inline-penalties";
-        penaltyFields.forEach((field) => {
-          const label = document.createElement("label");
-          label.className = "shot-penalty-field";
-          const text = document.createElement("span");
-          text.textContent = penaltyFieldLabel(field.id, field.label);
-          const input = document.createElement("input");
-          input.type = "number";
-          input.min = "0";
-          input.step = "1";
-          input.value = segment.penalty_counts?.[field.id] ?? 0;
-          input.dataset.penaltyId = field.id;
-          input.dataset.scoreShotId = segment.shot_id;
-          input.className = "shot-penalty-input";
-          input.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
-          label.append(text, input);
-          grid.appendChild(label);
-        });
-        rowScope.appendChild(grid);
-        penaltiesCell.appendChild(grid);
+        const editor = buildScoringPenaltyEditor(segment, rowScope, penaltyFields);
+        rowScope.appendChild(editor);
+        penaltiesCell.appendChild(editor);
       } else {
         penaltiesCell.textContent = scoringPenaltySummary(segment, penaltyFields);
       }
@@ -7355,7 +7490,6 @@ function renderPractiScoreSummaries() {
   const stagedCompetitorCount = practiScoreCompetitors().length;
   if (!imported) {
     $("practiscore-status").textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
-    $("scoring-imported-caption").textContent = "No PractiScore stage imported.";
     renderDetailsList("practiscore-import-summary", stagedSource ? [
       ["Source File", stagedSource],
       ["Match Type", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
@@ -7378,7 +7512,6 @@ function renderPractiScoreSummaries() {
   const currentResultLabel = state.scoring_summary?.display_label || "Result";
   const currentResultValue = state.scoring_summary?.display_value || "";
   $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
-  $("scoring-imported-caption").textContent = `Imported ${formatMatchType(imported.match_type)} data for ${imported.competitor_name}.`;
   renderDetailsList("practiscore-import-summary", [
     ["Source File", importedSourceFile],
     ["Match Type", importedMatchType],
@@ -8107,6 +8240,8 @@ function renderControls() {
     overlayVisibilityPosition = state.settings?.overlay_position || "bottom";
   }
   syncControlChecked($("show-overlay"), overlayPosition !== "none");
+  syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);
+  syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);
   syncControlValue($("badge-size"), state.project.overlay.badge_size);
   overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
   overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
@@ -8306,7 +8441,7 @@ function renderMergeMediaList() {
   const mergeSources = state?.project?.merge_sources || [];
   const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
   [...mergeSourceExpansion.keys()].forEach((sourceId) => {
-    if (!validSourceIds.has(sourceId)) mergeSourceExpansion.delete(sourceId);
+    if (sourceId !== PIP_DEFAULTS_SECTION_ID && !validSourceIds.has(sourceId)) mergeSourceExpansion.delete(sourceId);
   });
   withPreservedScrollState([list], () => {
     list.innerHTML = "";
@@ -8329,6 +8464,7 @@ function renderMergeMediaList() {
 
       const header = document.createElement("div");
       header.className = "merge-media-card-header";
+      header.classList.add("section-header-with-toggle");
       const title = document.createElement("strong");
       title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
 
@@ -8363,8 +8499,8 @@ function renderMergeMediaList() {
 
       const headerActions = document.createElement("div");
       headerActions.className = "merge-media-card-actions";
-      headerActions.append(toggle, remove);
-      header.append(title, headerActions);
+      headerActions.append(remove);
+      header.append(toggle, title, headerActions);
 
       const meta = document.createElement("small");
       meta.className = "merge-media-card-meta";
@@ -8488,7 +8624,7 @@ function renderMergeMediaList() {
       [-10, -1, 1, 10].forEach((deltaMs) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs} ms`;
+        button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;
         button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
         button.addEventListener("click", () => {
           const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
@@ -9905,6 +10041,12 @@ function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
 
 function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {
   if (!popupOverlay) return;
+  if (!($("show-markers")?.checked ?? true)) {
+    popupOverlay.hidden = true;
+    popupOverlay.innerHTML = "";
+    return;
+  }
+  popupOverlay.hidden = false;
   popupOverlay.innerHTML = "";
   popupOverlay.style.left = `${frameRect.left}px`;
   popupOverlay.style.top = `${frameRect.top}px`;
@@ -10200,7 +10342,6 @@ function render() {
     renderWaveform();
     renderTimingTables();
     renderControls();
-    renderSelection();
     renderLiveOverlay();
     setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
   });
@@ -10266,7 +10407,7 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
 function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
-  if (expanded) root.classList.remove("timing-expanded", "metrics-expanded");
+  if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
   syncLocalProjectUiState();
@@ -10339,7 +10480,7 @@ function resetWaveformView() {
 function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("timing-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");
+  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("timing.expand", { expanded });
   syncLocalProjectUiState();
@@ -10354,7 +10495,7 @@ function setTimingExpanded(expanded, { persistUiState = true } = {}) {
 function setMetricsExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("metrics-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded", "timing-expanded");
+  if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("metrics.expand", { expanded });
   syncLocalProjectUiState();
@@ -11370,6 +11511,11 @@ function wireEvents() {
   $("reset-waveform-view").addEventListener("click", resetWaveformView);
   $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
   $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
+  $("timing-enabled")?.addEventListener("change", () => {
+    syncLocalProjectUiState();
+    scheduleProjectUiStateApply();
+    renderTimingTables();
+  });
   $("expand-scoring")?.addEventListener("click", () => {
     setScoringWorkbenchExpanded(true);
     $("scoring-workbench")?.scrollIntoView({ block: "start" });
@@ -11400,17 +11546,6 @@ function wireEvents() {
   window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));
   window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
   document.querySelector(".inspector")?.addEventListener("scroll", rememberInspectorScrollPosition, { passive: true });
-  $("delete-selected").addEventListener("click", deleteSelectedShot);
-  document.querySelectorAll("[data-nudge]").forEach((button) => {
-    button.addEventListener("click", () => {
-      if (!selectedShotId) return;
-      const shot = state.project.analysis.shots.find((item) => item.id === selectedShotId);
-      if (shot) {
-        activity("shot.button_nudge", { shot_id: selectedShotId, delta_ms: Number(button.dataset.nudge) });
-        callApi("/api/shots/move", { shot_id: selectedShotId, time_ms: shot.time_ms + Number(button.dataset.nudge), preserve_following_splits: true });
-      }
-    });
-  });
   $("threshold").addEventListener("input", scheduleThresholdApply);
   $("threshold").addEventListener("change", scheduleThresholdApply);
   $("threshold").addEventListener("keydown", (event) => {
@@ -11426,6 +11561,7 @@ function wireEvents() {
   });
   $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
   $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
+  $("restore-merge-defaults")?.addEventListener("click", () => callApi("/api/merge/reset-defaults", {}));
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
@@ -11465,6 +11601,17 @@ function wireEvents() {
       syncOverlayPreviewStateFromControls();
       renderLiveOverlay();
       scheduleOverlayApply();
+    });
+  });
+  [
+    "show-markers",
+    "show-pip",
+  ].forEach((id) => {
+    $(id).addEventListener("change", () => {
+      syncLocalProjectUiState();
+      scheduleProjectUiStateApply();
+      renderVideo();
+      renderLiveOverlay();
     });
   });
   [

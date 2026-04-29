@@ -165,6 +165,8 @@ def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
     assert "syncSelectedShotId();" in app_js
     assert "pendingSelectionFallback = shotSelectionContext(selectedShotId, state, \"time\");" in app_js
     assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in app_js
+    assert "splitCell.textContent = splitSeconds(numericMs(row.split_ms));" in app_js
+    assert "totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));" in app_js
 
 
 def _open_test_page(playwright, server: BrowserControlServer):

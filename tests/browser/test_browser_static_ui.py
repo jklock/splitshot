@@ -99,7 +99,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="inspector-status-copy"' not in html
     assert 'id="processing-bar"' in html
     assert '<span id="media-badge">No Video Selected</span>' in html
-    assert 'id="selected-shot-panel"' in html
+    assert 'id="selected-shot-panel"' not in html
     assert 'id="split-card-grid"' not in html
     assert 'class="video-status"' not in html
     assert "No video open" not in html
@@ -122,7 +122,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "cloud upload" not in html.lower()
     assert "Add Second Angle" not in html
     assert "Add Second Video" not in html
-    assert "Add PiP Media" in html
+    assert "Add Media" in html
     assert 'id="merge-media-input"' in html
     assert 'tool-item[data-tool="metrics"]:not(.active)' in css
     assert 'tool-item[data-tool="settings"]:not(.active)' not in css
@@ -142,6 +142,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
+    assert '>Add Media</button>' in html
     assert 'Default PiP size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
@@ -173,6 +174,16 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="text-box-manager"' in html
     assert 'id="review-add-text-box"' in html
     assert 'id="review-add-imported-box"' in html
+    assert "Add Custom Box" in html
+    assert "Add Summary Box" in html
+    assert "Show Boxes" in html
+    assert "Every viewable overlay condition" in html
+    assert 'class="review-visibility-manager"' in html
+    assert 'class="check-row review-visibility-option"' in html
+    assert 'id="show-markers"' in html
+    assert 'id="show-pip"' in html
+    assert "Show markers" in html
+    assert "Show PiP" in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="markers"' in html
     assert 'data-tool-pane="settings"' in html
@@ -325,6 +336,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    css = (STATIC_ROOT / "styles.css").read_text()
 
     assert html.index('class="video-stage"') < html.index('class="waveform-panel"')
     assert html.index('class="waveform-panel"') < html.index('class="inspector"')
@@ -359,12 +371,23 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="waveform-window-handle"' in html
     assert 'id="waveform-shot-list"' in html
     assert 'id="timing-workbench"' in html
+    assert 'id="timing-result"' in html
+    assert 'id="timing-enabled"' in html
+    assert 'id="timing-imported-summary"' in html
     assert 'id="expand-timing"' in html
     assert '<button id="expand-timing" type="button">Edit</button>' in html
+    assert '<label class="check-row"><input id="timing-enabled" type="checkbox" /> Enable Splits</label>' in html
     assert 'aria-label="Use waveform select mode"' in html
     assert 'aria-label="Use waveform add shot mode"' in html
-    assert 'id="selected-shot-copy"' in html
-    assert html.index('id="timing-table"') > html.index('id="selected-shot-panel"')
+    assert 'id="selected-shot-panel"' not in html
+    assert 'id="selected-shot-copy"' not in html
+    assert 'id="selected-timing-shot"' not in html
+    assert 'data-nudge=' not in html
+    assert 'id="delete-selected"' not in html
+    assert html.index('id="timing-enabled"') < html.index('id="expand-timing"')
+    assert html.index('id="expand-timing"') < html.index('id="timing-summary"')
+    assert html.index('id="timing-summary"') < html.index('id="timing-imported-summary"')
+    assert html.index('id="timing-imported-summary"') < html.index('id="timing-table"')
     assert html.index('id="timing-table"') < html.index('id="threshold"')
     timing_start = html.index('data-tool-pane="timing"')
     shotml_start = html.index('data-tool-pane="shotml"')
@@ -385,8 +408,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="add-merge-media"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
-    assert 'aria-label="Move selected shot earlier by 10 milliseconds"' in html
-    assert 'Each PiP card below has its own size, placement, transparency, and sync nudges.' in html
+    assert 'PiP Default Settings' in html
+    assert 'id="restore-merge-defaults"' in html
+    assert 'Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.' not in html
+    assert 'PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.' not in html
+    assert 'Each PiP card below has its own size, placement, transparency, and sync nudges.' not in html
     assert 'id="max-visible-shots"' in html
     assert 'id="shot-quadrant"' in html
     assert '<option value="custom">Custom</option>' in html
@@ -412,13 +438,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'data-field="opacity" min="0" max="100" step="1" value="90"' in js
     assert 'id="layout-threshold"' not in html
     assert 'id="scoring-preset"' in html
-    assert 'id="scoring-imported-caption"' in html
+    assert 'class="scoring-toggle-row"' in html
     assert 'id="scoring-imported-summary"' in html
     assert 'id="scoring-table"' in html
     assert 'id="scoring-workbench-table"' in html
+    assert html.index('id="scoring-enabled"') < html.index('id="expand-scoring"')
+    assert html.index('id="expand-scoring"') < html.index('id="scoring-preset"')
     assert 'Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits.' not in html
     assert 'Common shorthand: M miss, NS no-shoot, PE procedural error' not in html
-    assert html.index('id="scoring-table"') < html.index('id="scoring-workbench-table"')
+    assert html.index('id="scoring-workbench"') < html.index('class="inspector"')
     assert 'id="scoring-penalty-grid"' not in html
     assert 'id="score-letter"' not in html
     assert 'id="timer-x"' in html
@@ -488,7 +516,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const INSPECTOR_COMPACT_WIDTH = 700;' in js
     assert 'shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in js
     assert 'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in js
-    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs} ms`;' in js
+    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in js
     assert 'text.textContent = "PiP opacity";' in js
     assert 'pip_size_percent: nextSize,' in js
     assert 'let exportPathDraft = "";' in js
@@ -537,6 +565,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'merge: {' in js
     assert 'scoring: {' in js
     assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
+    assert 'review_show_markers: true,' in js
+    assert 'review_show_pip: true,' in js
+    assert 'review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),' in js
+    assert 'review_show_pip: Boolean(uiState.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip),' in js
+    assert 'review_show_markers: $("show-markers")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_markers,' in js
+    assert 'review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,' in js
+    assert 'syncControlChecked($("show-markers"), normalized.review_show_markers);' in js
+    assert 'syncControlChecked($("show-pip"), normalized.review_show_pip);' in js
     assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
@@ -780,9 +816,25 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'deleteShotById(segment.shot_id, "scoring_row")' in js
     assert 'function refreshReviewMediaFrame() {' in js
     assert 'if (result) refreshReviewMediaFrame();' in js
-    assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded");' in js
-    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded");' in js
+    assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded");' in js
     assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
+    assert 'function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {' in js
+    assert 'timing_enabled: true,' in js
+    assert 'timing_enabled: Boolean(uiState.timing_enabled ?? DEFAULT_PROJECT_UI_STATE.timing_enabled),' in js
+    assert 'timing_enabled: $("timing-enabled")?.checked ?? DEFAULT_PROJECT_UI_STATE.timing_enabled,' in js
+    assert 'syncControlChecked($("timing-enabled"), normalized.timing_enabled);' in js
+    assert 'function timingSummaryRows() {' in js
+    assert 'function renderTimingSummary() {' in js
+    assert 'renderDetailsList("timing-imported-summary", enabled && totalShots > 0 ? timingSummaryRows() : []);' in js
+    assert 'summary.textContent = !enabled' in js
+    assert 'function renderSelection() {' not in js
+    assert '"selected-shot-copy"' not in js
+    assert '"selected-timing-shot"' not in js
+    assert '$("delete-selected").addEventListener("click", deleteSelectedShot);' not in js
+    assert 'document.querySelectorAll("[data-nudge]")' not in js
+    assert 'root?.classList.toggle("scoring-expanded", scoringWorkbenchExpanded);' in js
     assert 'function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {' in js
     assert 'if (collapseExpandedLayout && hadExpandedLayout) {' in js
     assert 'if (changed) {' in js
@@ -817,7 +869,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '[currentResultLabel, currentResultValue],' in js
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
+    assert 'syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
+    assert 'syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);' in js
     assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
+    assert 'if (!($("show-markers")?.checked ?? true)) {' in js
+    assert 'if (!($("show-pip")?.checked ?? true)) {' in js
     assert 'const badgeDisplayLabels = {' in js
     assert 'card.className = "style-card badge-style-card";' in js
     assert '<span class="style-card-label">Bg</span>' in js
@@ -840,17 +896,35 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "scoring-workbench-table" in js
     assert "toggleScoringRowEdit" in js
     assert 'scoringWorkbenchExpanded = Boolean(expanded);' in js
+    assert 'scoring_expanded: false,' in js
+    assert 'scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),' in js
+    assert 'scoring_expanded: Boolean(root?.classList.contains("scoring-expanded")),' in js
+    assert 'function scoringWorkbenchGridTemplate(table) {' in js
+    assert 'const containerWidth = table.parentElement instanceof HTMLElement' in js
+    assert 'const tableWidth = Math.max(containerWidth, table.clientWidth, table.getBoundingClientRect().width || 0);' in js
+    assert 'const template = table.id === "scoring-workbench-table"' in js
+    assert '? scoringWorkbenchGridTemplate(table)' in js
+    assert 'table.classList.toggle("timing-resizable-table", expandedTable && tableId !== "scoring-workbench-table");' in js
     assert 'function renderScoringTable(tableId = "scoring-table") {' in js
     assert 'function compactScoreDisplay(letter, ruleset = activeScoringRuleset()) {' in js
     assert 'A (-0)' not in js
     assert 'if (normalizedRuleset === "idpa_time_plus") return "-0";' in js
     assert 'scoreCell.textContent = compactScoreDisplay(segment.score_letter || defaultScore, activeScoringRuleset()) || defaultScore;' in js
+    assert '{ label: "Current Score", columnId: "score", resizable: false },' in js
+    assert 'window.requestAnimationFrame(() => {' in js
+    assert 'applyTimingTableColumns($("scoring-workbench-table"));' in js
+    assert 'function buildScoringPenaltyEditor(segment, rowScope, penaltyFields) {' in js
+    assert 'select.className = "shot-penalty-select shot-penalty-entry-control";' in js
+    assert 'add.textContent = "Add Penalty";' in js
+    assert 'penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-entry-control[data-score-shot-id="${shotId}"]`),' in js
     assert 'toggle.className = "scoring-shot-toggle";' in js
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert 'if (editing && penaltyFields.length > 0) {' in js
     assert 'table.appendChild(buildScoringDeleteCell(segment));' in js
     assert 'table.appendChild(buildScoringRestoreCell(segment));' in js
-    assert 'penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-input[data-penalty-id][data-score-shot-id="${shotId}"]`),' in js
+    assert '.scoring-penalty-entry {' in css
+    assert '.shot-penalty-select {' in css
+    assert '.add-penalty-button,' in css
     assert 'updateTimingRowField(row.shot_id, "score_letter", select.value)' not in js
     assert 'let timingAdjustmentDrafts = new Map();' in js
     assert 'timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));' in js
@@ -981,6 +1055,11 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "max-height: none;" in css
     assert "display: none;" in css
     assert ".cockpit.timing-expanded .timing-workbench" in css
+    assert ".cockpit.scoring-expanded .scoring-workbench" in css
+    assert ".cockpit.scoring-expanded .inspector" in css
+    assert ".scoring-toggle-row" in css
+    assert ".review-visibility-manager" in css
+    assert ".review-visibility-option" in css
     assert "grid-template-rows: auto auto minmax(0, 1fr) auto;" in css
     assert ".scoring-shot-toggle" in css
     assert ".scoring-shot-controls[hidden] {\n  display: none !important;" in css
@@ -1159,7 +1238,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert '$("waveform-window-track").addEventListener("pointerdown", handleWaveformNavigatorPointerDown);' in js
     assert 'bindOverlayColorInput(card.querySelector(\'[data-field="background_color"]\'));' in js
     assert 'setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });' in js
-    assert 'if (hadExpandedLayout) scheduleReviewStageRestore();' in js
+    assert 'setScoringWorkbenchExpanded(false, { persistUiState: false });' in js
     assert 'if (isColorInput(event.target)) return;' in js
     assert 'target: customOverlay,' in js
 
@@ -1260,12 +1339,14 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
                 "popup-shot-editor-duplicate",
                 "popup-shot-editor-delete",
                 "show-overlay",
+                "show-markers",
+                "show-pip",
             "expand-scoring",
             "collapse-scoring",
                 "settings-import-current",
             "settings-reset-defaults",
             "add-timing-event",
-        "delete-selected",
+        "timing-enabled",
         "expand-timing",
         "export-video",
         "browse-export-path",
@@ -1286,18 +1367,18 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "close-color-picker",
         "metrics-export-csv",
         "metrics-export-text",
-        "generate-shotml-proposals",
-        "reset-shotml-defaults",
-        "toggle-layout-lock-video",
-        "toggle-rail",
-        "resize-rail",
+            "generate-shotml-proposals",
+            "reset-shotml-defaults",
+            "restore-merge-defaults",
+            "toggle-layout-lock-video",
+            "toggle-rail",
+            "resize-rail",
         "resize-sidebar",
         "resize-waveform",
     }
     behavior_attributes = (
         "data-tool=",
         "data-waveform-mode=",
-        "data-nudge=",
         "data-sync=",
         "data-open-merge-media",
         "data-layout-lock-toggle",

@@ -424,11 +424,7 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.secondary_video = None
     project.merge_sources = []
     project.merge.enabled = False
-    project.merge.layout = MergeLayout.SIDE_BY_SIDE
-    project.merge.pip_size = PipSize.MEDIUM
-    project.merge.pip_size_percent = _pip_size_percent_from_enum(PipSize.MEDIUM)
-    project.merge.pip_x = 1.0
-    project.merge.pip_y = 1.0
+    _reset_project_merge_defaults(project)
     project.merge.primary_is_left_or_top = True
     project.overlay.custom_box_text = ""
     for text_box in project.overlay.text_boxes:
@@ -438,6 +434,14 @@ def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.export.last_log = ""
     project.export.last_error = None
     project.ui_state.selected_shot_id = None
+
+
+def _reset_project_merge_defaults(project: Project) -> None:
+    project.merge.layout = MergeLayout.SIDE_BY_SIDE
+    project.merge.pip_size = PipSize.MEDIUM
+    project.merge.pip_size_percent = _pip_size_percent_from_enum(PipSize.MEDIUM)
+    project.merge.pip_x = 1.0
+    project.merge.pip_y = 1.0
     project.ui_state.timeline_offset_ms = 0
     project.ui_state.scoring_shot_expansion = {}
     project.ui_state.waveform_shot_amplitudes = {}
@@ -2523,6 +2527,13 @@ class ProjectController(QObject):
             self.project_changed.emit()
             return
         raise ValueError("Merge source not found")
+
+    def reset_merge_defaults(self) -> None:
+        self.project.merge.enabled = False
+        _reset_project_merge_defaults(self.project)
+        self.project.touch()
+        self._set_status("Restored PiP defaults.")
+        self.project_changed.emit()
 
     def adjust_merge_source_sync_offset(self, source_id: str, delta_ms: int) -> None:
         for source in self.project.merge_sources:

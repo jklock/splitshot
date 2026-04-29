@@ -285,6 +285,7 @@ Direct browser coverage now proves these headers toggle and keep their collapse 
 | PiP size select | behavioral | Keep the defaults-state coverage and add a fresh-project proof for the preset sizes. |
 | PiP X input | smoke | Add a default-position test for the X coordinate. |
 | PiP Y input | smoke | Add a default-position test for the Y coordinate. |
+| PiP defaults Restore button | behavioral | Verify it restores the standard PiP defaults without reopening the collapsed defaults section. |
 
 ### Overlay Defaults
 
