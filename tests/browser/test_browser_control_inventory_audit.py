@@ -126,7 +126,7 @@ id:color-picker-lightness
 id:color-picker-saturation
 id:color-space
 id:delete-project
-id:delete-selected
+id:timing-enabled
 id:draw-lock-to-stack
 id:draw-x
 id:draw-y
@@ -196,6 +196,7 @@ id:project-name
 id:project-path
 id:quality
 id:reset-shotml-defaults
+id:restore-merge-defaults
 id:reset-waveform-view
 id:resize-rail
 id:resize-sidebar
@@ -258,7 +259,9 @@ id:shot-direction
 id:shot-quadrant
 id:show-draw
 id:show-export-log
+id:show-markers
 id:show-overlay
+id:show-pip
 id:show-score
 id:show-shots
 id:show-timer
@@ -333,7 +336,7 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
     assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
-    assert len(actual_identifiers) == 267
+    assert len(actual_identifiers) == 270
 
 
 def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:

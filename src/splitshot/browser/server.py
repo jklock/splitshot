@@ -789,6 +789,7 @@ class BrowserControlServer:
                     "/api/events/add": self._add_event,
                     "/api/events/delete": self._delete_event,
                     "/api/merge/remove": self._remove_merge_source,
+                    "/api/merge/reset-defaults": self._reset_merge_defaults,
                     "/api/merge/source": self._set_merge_source,
                     "/api/overlay": self._set_overlay,
                     "/api/popups": self._set_popups,
@@ -1639,6 +1640,9 @@ class BrowserControlServer:
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
+
+            def _reset_merge_defaults(self, payload: dict[str, Any]) -> None:
+                controller.reset_merge_defaults()
 
             def _add_event(self, payload: dict[str, Any]) -> None:
                 controller.add_timing_event(

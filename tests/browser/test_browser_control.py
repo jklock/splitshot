@@ -64,6 +64,7 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
     "/api/overlay": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/popups": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
+    "/api/merge/reset-defaults": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge/remove": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/merge/source": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),
     "/api/sync": ("test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",),

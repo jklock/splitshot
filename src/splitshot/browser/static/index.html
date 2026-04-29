@@ -131,6 +131,14 @@
               <p class="hint">Adjusted split values are compared against the imported PractiScore stage result.</p>
               <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
             </section>
+
+            <section id="scoring-workbench" class="timing-workbench scoring-workbench" aria-label="Expanded scoring editor">
+              <div class="section-header">
+                <h2>Score</h2>
+                <button id="collapse-scoring" type="button">Collapse</button>
+              </div>
+              <div id="scoring-workbench-table" class="data-table timing-workbench-table scoring-workbench-table"></div>
+            </section>
           </section>
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
@@ -140,10 +148,20 @@
                 <h3>Review</h3>
                 <span>Preview artifacts</span>
               </div>
-              <label class="check-row"><input id="show-timer" type="checkbox" /> Show timer badge</label>
-              <label class="check-row"><input id="show-draw" type="checkbox" /> Show draw badge</label>
-              <label class="check-row"><input id="show-shots" type="checkbox" /> Show split badges</label>
-              <label class="check-row"><input id="show-score" type="checkbox" /> Show scoring summary</label>
+              <section class="review-visibility-manager">
+                <div class="section-header sub-section-header">
+                  <h3>Show Boxes</h3>
+                  <span>Every viewable overlay condition</span>
+                </div>
+                <div class="button-grid two-up review-visibility-grid">
+                  <label class="check-row review-visibility-option"><input id="show-markers" type="checkbox" /> Show markers</label>
+                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show PiP</label>
+                  <label class="check-row review-visibility-option"><input id="show-timer" type="checkbox" /> Show timer badge</label>
+                  <label class="check-row review-visibility-option"><input id="show-draw" type="checkbox" /> Show draw badge</label>
+                  <label class="check-row review-visibility-option"><input id="show-shots" type="checkbox" /> Show split badges</label>
+                  <label class="check-row review-visibility-option"><input id="show-score" type="checkbox" /> Show scoring summary</label>
+                </div>
+              </section>
               <section class="text-box-manager">
                 <div class="section-header sub-section-header">
                   <h3>Review Text Boxes</h3>
@@ -184,25 +202,16 @@
             <section class="tool-pane active" data-tool-pane="timing">
               <div class="section-header">
                 <h3>Splits</h3>
-                <div class="section-header-actions">
-                  <button id="expand-timing" type="button">Edit</button>
+                <div class="section-header-actions scoring-header-actions">
+                  <strong id="timing-result">--</strong>
                 </div>
               </div>
-              <span id="timing-summary">No timing data.</span>
-              <section id="selected-shot-panel" class="selected-shot-controls">
-                <div class="section-header">
-                  <h3>Selected Shot</h3>
-                  <span id="selected-timing-shot">No shot selected</span>
-                </div>
-                <p id="selected-shot-copy">No shot selected.</p>
-                <div class="button-grid">
-                  <button data-nudge="-10" type="button" aria-label="Move selected shot earlier by 10 milliseconds">-10 ms</button>
-                  <button data-nudge="-1" type="button" aria-label="Move selected shot earlier by 1 millisecond">-1 ms</button>
-                  <button data-nudge="1" type="button" aria-label="Move selected shot later by 1 millisecond">+1 ms</button>
-                  <button data-nudge="10" type="button" aria-label="Move selected shot later by 10 milliseconds">+10 ms</button>
-                </div>
-                <button id="delete-selected" class="danger-button" type="button">Delete Selected Shot</button>
-              </section>
+              <div class="scoring-toggle-row">
+                <label class="check-row"><input id="timing-enabled" type="checkbox" /> Enable Splits</label>
+                <button id="expand-timing" type="button">Edit</button>
+              </div>
+              <p id="timing-summary" class="hint">No timing data.</p>
+              <dl id="timing-imported-summary" class="details"></dl>
               <div id="timing-table" class="data-table"></div>
             </section>
 
@@ -353,25 +362,19 @@
               <div class="section-header">
                 <h3>Score</h3>
                 <div class="section-header-actions scoring-header-actions">
-                  <button id="expand-scoring" type="button">Edit</button>
                   <strong id="scoring-result">--</strong>
                 </div>
               </div>
-              <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
+              <div class="scoring-toggle-row">
+                <label class="check-row"><input id="scoring-enabled" type="checkbox" /> Enable scoring</label>
+                <button id="expand-scoring" type="button">Edit</button>
+              </div>
               <label>Preset
                 <select id="scoring-preset"></select>
               </label>
               <p id="scoring-description" class="hint">Choose a scoring preset.</p>
-              <p id="scoring-imported-caption" class="hint">No PractiScore stage imported.</p>
               <dl id="scoring-imported-summary" class="details"></dl>
               <div id="scoring-table" class="data-table scoring-table" aria-label="Score table"></div>
-              <section id="scoring-workbench" class="timing-workbench scoring-workbench" aria-label="Expanded scoring editor">
-                <div class="section-header">
-                  <h2>Score</h2>
-                  <button id="collapse-scoring" type="button">Collapse</button>
-                </div>
-                <div id="scoring-workbench-table" class="data-table timing-workbench-table scoring-workbench-table"></div>
-              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="overlay">
@@ -611,12 +614,11 @@
                 <h3>PiP</h3>
                 <strong id="sync-offset">Defaults only</strong>
               </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add PiP Media</button>
-              <p class="hint">Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.</p>
+              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                 <div class="section-header sub-section-header">
-                  <h3>PiP Defaults</h3>
-                  <span>Used for new items</span>
+                  <h3>PiP Default Settings</h3>
+                  <button id="restore-merge-defaults" type="button">Restore</button>
                 </div>
                 <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
                 <label>Layout
@@ -640,8 +642,6 @@
                     <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
-                <p class="hint">PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.</p>
-                <p class="hint">Each PiP card below has its own size, placement, transparency, and sync nudges.</p>
               </section>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
             </section>

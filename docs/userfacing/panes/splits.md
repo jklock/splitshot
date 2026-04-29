@@ -17,10 +17,10 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 | Control | What it does |
 | --- | --- |
 | `Edit` | Opens the expanded timing table. |
-| `Selected Shot` | Shows the active shot number, split, total time, and time since beep. |
+| `Selected Shot` | Shows the active shot row. The first row is the draw from the beep to Shot 1; later rows are shot-to-shot splits. |
 | `-10 ms`, `-1 ms`, `+1 ms`, `+10 ms` | Nudges the selected shot earlier or later. |
 | `Delete Selected Shot` | Removes the active shot. |
-| Timing table | Lists segment name, split, total, and action context for every row. |
+| Timing table | Lists the current live segment name, split, total, and action context for every row. |
 
 ## Waveform Controls
 
@@ -49,7 +49,8 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 | `Position` | Anchors the event before, between, or after shots. |
 | `Add Event` | Inserts the timing event. |
 | `Unlock` | Enables inline row editing for direct timing changes. |
-| `Segment`, `Split`, `Total`, `Action` | Show the timing row, interval, cumulative time, and event context. |
+| `Segment`, `Split`, `Total`, `Action` | Show the current timing row, interval, cumulative time since beep, and event context. |
+| `Adjustment`, `Final Time` | Compare the current row against the original ShotML timing baseline. |
 | `Score`, `Confidence`, `Source` | Mirror scoring value, ShotML confidence/manual state, and row origin. |
 
 ## How To Use It
@@ -62,6 +63,13 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 6. Use `Delete Selected Shot` for false detections.
 7. Use `Edit` for detailed timing rows and event insertion.
 8. Use the waveform `Expand` state when you need more room to inspect peaks.
+
+## Split Definitions
+
+- `Draw` is the time from the beep to Shot 1.
+- `Split` after Shot 1 is always the time from the previous shot to the current shot.
+- `Total` is the cumulative time since the beep.
+- Reload or malfunction events relabel the interval before the following shot, but they do not change which timestamps are subtracted.
 
 ## Common Fixes
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,10 @@ def _open_test_page(playwright, server: BrowserControlServer, *, accept_download
 
 
 def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "browser-test.ssproj")
+        page.evaluate(f"() => createNewProject({json.dumps(project_path)})")
+        page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
 
@@ -582,6 +587,10 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                 _set_input_value(page.locator('#pip-x'), '0.25')
                 _set_input_value(page.locator('#pip-y'), '0.75')
                 assert page.locator('#pip-size-label').text_content().strip() == '50%'
+                page.locator('[data-inspector-section="pip-defaults"] button[aria-label="Hide section"]').click()
+                page.wait_for_function(
+                    "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
+                )
 
                 first_card = page.locator('.merge-media-card').first
                 first_body = first_card.locator('.merge-media-card-body')
@@ -603,6 +612,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=source_id,
                     )
+                page.wait_for_function(
+                    "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
+                )
                 first_body.wait_for(state='visible')
 
                 _set_input_value(first_card.locator('[data-merge-source-field="size"]'), '60')
@@ -610,8 +622,8 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                 _set_input_value(first_card.locator('[data-merge-source-field="x"]'), '0.1')
                 _set_input_value(first_card.locator('[data-merge-source-field="y"]'), '0.2')
 
-                for label, expected in [('-10 ms', -10), ('-1 ms', -11), ('+1 ms', -10), ('+10 ms', 0)]:
-                    first_card.get_by_role('button', name=label).click()
+                for label, expected in [('-10', -10), ('-1', -11), ('+1', -10), ('+10', 0)]:
+                    first_card.get_by_role('button', name=label, exact=True).click()
                     page.wait_for_function(
                         "(payload) => (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId)?.sync_offset_ms === payload.expected",
                         arg={'sourceId': first_card.get_attribute('data-source-id'), 'expected': expected},

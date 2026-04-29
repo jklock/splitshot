@@ -8,16 +8,17 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
 
     assert "It is not a claim that every button or field has its own direct behavior test." in matrix
     assert "If a control is missing from this matrix, it does not have an explicit owner yet." in matrix
-    assert "| Project / import | project details, choose/open project, primary import, remote PractiScore browser-session connect, remote match select, selected-match import, clear session, manual fallback file import, delete project |" in matrix
-    assert "| Splits / waveform | timing edit, selected shot actions, add/delete/move/nudge, waveform expand/zoom/amplitude, waveform pan |" in matrix
-    assert "| Markers / Review / Overlay | marker import, marker template defaults, playback window, collapsed nav, timeline selectors, time-marker list cards, bubble enabled, bubble card actions, show overlay checkbox, badge size, style, locks, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, color pickers, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
+    assert "| Project / import | project details, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, gated primary import, metadata-only delete |" in matrix
+    assert "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls |" in matrix
+    assert "| Splits / waveform | split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |" in matrix
+    assert "| Markers / Review / Overlay | marker import, marker template defaults, playback window, collapsed nav, timeline selectors, time-marker list cards, bubble enabled, bubble card actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size, style, locks, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, color pickers, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
     assert "tests/browser/test_browser_interactions.py" in matrix
     assert "tests/browser/test_metrics_e2e.py" in matrix
     assert "tests/browser/test_settings_e2e.py" in matrix
-    assert "match-list load" in matrix
-    assert "selected-match import" in matrix
-    assert "expired-session rendering" in matrix
-    assert "manual fallback parity" in matrix
+    assert "dashboard-open action" in matrix
+    assert "manual file import parity" in matrix
+    assert "missing-folder creation notice" in matrix
+    assert "metadata-only delete safety" in matrix
     assert "waveform expand/zoom/amplitude" in matrix
     assert "waveform pan and shot movement" in matrix
     assert "marker import-selected-shot seek" in matrix
@@ -34,8 +35,10 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "overlay bubble size override" in matrix
     assert "font size, bold/italic controls" in matrix
     assert "export log modal open/close/backdrop and download" in matrix
+    assert "review show-box selectors for markers/PiP/timer/draw/splits/score" in matrix
     assert "review text-box background/text color and opacity" in matrix
     assert "review text-box background/text/opacity preview" in matrix
+    assert "review show-box selector state" in matrix
     assert "review source-switch after-final render" in matrix
     assert "review custom placement or size" in matrix
     assert "review stack-lock editor behavior" in matrix
@@ -66,6 +69,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     for surface in [
         "Shared shell",
         "Project / import",
+        "PiP",
         "Score",
         "Splits / waveform",
         "Markers / Review / Overlay",

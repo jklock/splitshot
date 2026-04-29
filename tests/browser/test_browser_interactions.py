@@ -1782,6 +1782,28 @@ def test_merge_default_pip_controls_commit_to_state_and_label(synthetic_video_fa
                 )
                 assert page.locator("#pip-x").input_value() == "0.25"
                 assert page.locator("#pip-y").input_value() == "0.75"
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.locator("#restore-merge-defaults").click()
+                page.wait_for_function(
+                    """() => {
+                        const merge = state?.project?.merge;
+                        return Boolean(merge)
+                            && merge.enabled === false
+                            && merge.layout === 'side_by_side'
+                            && merge.pip_size_percent === 35
+                            && merge.pip_x === 1
+                            && merge.pip_y === 1;
+                    }"""
+                )
+                assert page.locator("#merge-enabled").is_checked() is False
+                assert page.locator("#merge-layout").input_value() == "side_by_side"
+                assert page.locator("#pip-size").input_value() == "35"
+                assert page.locator("#pip-size-label").text_content().strip() == "35%"
+                assert page.locator("#pip-x").input_value() == "1"
+                assert page.locator("#pip-y").input_value() == "1"
             finally:
                 browser.close()
     finally:
@@ -2729,8 +2751,13 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 assert selected_preset is not None
 
                 page.locator("#expand-scoring").click()
-                page.wait_for_timeout(150)
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === true"
+                )
                 page.locator("#scoring-workbench").wait_for(state="visible")
+                assert page.locator(".inspector").is_visible() is False
+                assert page.locator(".video-stage").is_visible() is False
+                assert page.locator(".waveform-panel").is_visible() is False
 
                 first_shot_id = page.evaluate("state.timing_segments[0].shot_id")
                 second_shot_id = page.evaluate("state.timing_segments[1].shot_id")
@@ -2739,23 +2766,28 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 lock_button.click()
                 score_select.wait_for(state="visible")
                 original_letter = score_select.input_value()
-                original_penalty = int(
-                    page.locator("#scoring-workbench-table .shot-penalty-input").first.input_value()
-                )
                 score_values = score_select.evaluate(
                     "select => [...select.options].map((option) => option.value)"
                 )
                 next_letter = next((value for value in score_values if value != original_letter), original_letter)
+                penalty_select = page.locator("#scoring-workbench-table .shot-penalty-select").first
+                penalty_options = penalty_select.evaluate(
+                    "select => [...select.options].map((option) => option.value).filter(Boolean)"
+                )
+                assert penalty_options
 
                 score_select.select_option(next_letter)
-                penalty_input = page.locator("#scoring-workbench-table .shot-penalty-input").first
-                penalty_input.fill(str(original_penalty + 1))
-                penalty_input.dispatch_event("change")
+                penalty_select.select_option(penalty_options[0])
 
                 page.wait_for_timeout(250)
                 lock_button.click()
                 updated_letter = page.evaluate("(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.score_letter ?? null", first_shot_id)
                 assert updated_letter == next_letter
+                updated_penalties = page.evaluate(
+                    "(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.penalty_counts ?? {}",
+                    first_shot_id,
+                )
+                assert updated_penalties[penalty_options[0]] == 1
 
                 page.locator("#scoring-workbench-table button.restore-button:not(.danger-button)").first.click()
                 page.wait_for_function(
@@ -2783,6 +2815,66 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     second_shot_id,
                 ) is True
+
+                page.locator("#collapse-scoring").click()
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === false"
+                )
+                assert page.evaluate("activeTool") == "scoring"
+                assert page.locator(".inspector").is_visible() is True
+
+                page.locator("#expand-scoring").click()
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === true"
+                )
+                page.locator('button[data-tool="project"]').click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === false && activeTool === 'project'"
+                )
+                assert page.locator(".video-stage").is_visible() is True
+                assert page.locator(".waveform-panel").is_visible() is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_scoring_workbench_uses_fixed_full_width_columns(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="scoring-workbench-fixed-columns"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "scoring")
+                page.locator("#scoring-enabled").check()
+                page.locator("#expand-scoring").click()
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === true"
+                )
+                layout = page.evaluate(
+                    """() => {
+                        const table = document.getElementById("scoring-workbench-table");
+                        const headers = Array.from(table?.querySelectorAll(".head[data-timing-column]") || []).map((cell) => ({
+                            columnId: cell.dataset.timingColumn || "",
+                            width: cell.getBoundingClientRect().width,
+                        }));
+                        return {
+                            template: table?.style.gridTemplateColumns || "",
+                            tableWidth: table?.getBoundingClientRect().width || 0,
+                            handleCount: table?.querySelectorAll(".timing-column-resize").length || 0,
+                            headers,
+                        };
+                    }"""
+                )
+                assert layout["handleCount"] == 0
+                assert layout["tableWidth"] > 0
+                assert "minmax(" in layout["template"]
+                assert len(layout["headers"]) == 9
+                assert all(header["width"] >= 80 for header in layout["headers"])
+                assert sum(header["width"] for header in layout["headers"]) >= layout["tableWidth"] - 180
             finally:
                 browser.close()
     finally:
