@@ -444,6 +444,7 @@ def _reset_project_merge_defaults(project: Project) -> None:
     project.merge.pip_y = 1.0
     project.ui_state.timeline_offset_ms = 0
     project.ui_state.scoring_shot_expansion = {}
+    project.ui_state.scoring_edit_shot_ids = []
     project.ui_state.waveform_shot_amplitudes = {}
     project.ui_state.timing_edit_shot_ids = []
     project.ui_state.review_text_box_expansion = {}
@@ -522,6 +523,13 @@ def _revalidate_timing_ui_state(
     }
     if ui_state.scoring_shot_expansion != next_scoring_expansion:
         ui_state.scoring_shot_expansion = next_scoring_expansion
+        changed = True
+
+    next_scoring_edit_shot_ids = [
+        shot_id for shot_id in ui_state.scoring_edit_shot_ids if shot_id in valid_shot_ids
+    ]
+    if ui_state.scoring_edit_shot_ids != next_scoring_edit_shot_ids:
+        ui_state.scoring_edit_shot_ids = next_scoring_edit_shot_ids
         changed = True
 
     next_waveform_amplitudes = {
@@ -1920,12 +1928,11 @@ class ProjectController(QObject):
     def set_ui_state(self, payload: dict[str, object]) -> None:
         ui_state = self.project.ui_state
         changed = False
+        valid_shot_ids = {shot.id for shot in self.project.analysis.shots}
 
         if "selected_shot_id" in payload:
             next_shot_id = None if payload.get("selected_shot_id") in {None, ""} else str(payload["selected_shot_id"])
-            if next_shot_id is not None and not any(
-                shot.id == next_shot_id for shot in self.project.analysis.shots
-            ):
+            if next_shot_id is not None and next_shot_id not in valid_shot_ids:
                 next_shot_id = None
             if ui_state.selected_shot_id != next_shot_id:
                 ui_state.selected_shot_id = next_shot_id
@@ -1964,6 +1971,12 @@ class ProjectController(QObject):
             if next_waveform_expanded and ui_state.timing_expanded:
                 ui_state.timing_expanded = False
                 changed = True
+            if next_waveform_expanded and ui_state.metrics_expanded:
+                ui_state.metrics_expanded = False
+                changed = True
+            if next_waveform_expanded and ui_state.scoring_expanded:
+                ui_state.scoring_expanded = False
+                changed = True
         if "timing_expanded" in payload:
             next_timing_expanded = bool(payload["timing_expanded"])
             if ui_state.timing_expanded != next_timing_expanded:
@@ -1974,6 +1987,24 @@ class ProjectController(QObject):
                 changed = True
             if next_timing_expanded and ui_state.metrics_expanded:
                 ui_state.metrics_expanded = False
+                changed = True
+            if next_timing_expanded and ui_state.scoring_expanded:
+                ui_state.scoring_expanded = False
+                changed = True
+        if "timing_enabled" in payload:
+            next_timing_enabled = bool(payload["timing_enabled"])
+            if ui_state.timing_enabled != next_timing_enabled:
+                ui_state.timing_enabled = next_timing_enabled
+                changed = True
+        if "review_show_markers" in payload:
+            next_review_show_markers = bool(payload["review_show_markers"])
+            if ui_state.review_show_markers != next_review_show_markers:
+                ui_state.review_show_markers = next_review_show_markers
+                changed = True
+        if "review_show_pip" in payload:
+            next_review_show_pip = bool(payload["review_show_pip"])
+            if ui_state.review_show_pip != next_review_show_pip:
+                ui_state.review_show_pip = next_review_show_pip
                 changed = True
         if "metrics_expanded" in payload:
             next_metrics_expanded = bool(payload["metrics_expanded"])
@@ -1986,13 +2017,35 @@ class ProjectController(QObject):
             if next_metrics_expanded and ui_state.timing_expanded:
                 ui_state.timing_expanded = False
                 changed = True
+            if next_metrics_expanded and ui_state.scoring_expanded:
+                ui_state.scoring_expanded = False
+                changed = True
+        if "markers_expanded" in payload:
+            next_markers_expanded = bool(payload["markers_expanded"])
+            if ui_state.markers_expanded != next_markers_expanded:
+                ui_state.markers_expanded = next_markers_expanded
+                changed = True
+        if "scoring_expanded" in payload:
+            next_scoring_expanded = bool(payload["scoring_expanded"])
+            if ui_state.scoring_expanded != next_scoring_expanded:
+                ui_state.scoring_expanded = next_scoring_expanded
+                changed = True
+            if next_scoring_expanded and ui_state.waveform_expanded:
+                ui_state.waveform_expanded = False
+                changed = True
+            if next_scoring_expanded and ui_state.timing_expanded:
+                ui_state.timing_expanded = False
+                changed = True
+            if next_scoring_expanded and ui_state.metrics_expanded:
+                ui_state.metrics_expanded = False
+                changed = True
         if "layout_locked" in payload:
             next_layout_locked = bool(payload["layout_locked"])
             if ui_state.layout_locked != next_layout_locked:
                 ui_state.layout_locked = next_layout_locked
                 changed = True
         for field_name, minimum, maximum in (
-            ("rail_width", 48, 72),
+            ("rail_width", 84, 104),
             ("inspector_width", 320, 4096),
             ("waveform_height", 112, 4096),
         ):
@@ -2008,10 +2061,29 @@ class ProjectController(QObject):
             if isinstance(raw_expansion, dict):
                 for key, value in raw_expansion.items():
                     clean_key = str(key).strip()
-                    if clean_key:
+                    if clean_key and clean_key in valid_shot_ids:
                         next_expansion[clean_key] = bool(value)
             if ui_state.scoring_shot_expansion != next_expansion:
                 ui_state.scoring_shot_expansion = next_expansion
+                changed = True
+            next_scoring_edit_ids = [shot_id for shot_id, expanded in next_expansion.items() if expanded]
+            if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
+                ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
+                changed = True
+        if "scoring_edit_shot_ids" in payload:
+            next_scoring_edit_ids: list[str] = []
+            raw_scoring_edit_ids = payload.get("scoring_edit_shot_ids")
+            if isinstance(raw_scoring_edit_ids, list):
+                for value in raw_scoring_edit_ids:
+                    clean_value = str(value).strip()
+                    if clean_value and clean_value in valid_shot_ids and clean_value not in next_scoring_edit_ids:
+                        next_scoring_edit_ids.append(clean_value)
+            if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
+                ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
+                changed = True
+            next_scoring_shot_expansion = {shot_id: True for shot_id in next_scoring_edit_ids}
+            if ui_state.scoring_shot_expansion != next_scoring_shot_expansion:
+                ui_state.scoring_shot_expansion = next_scoring_shot_expansion
                 changed = True
         if "waveform_shot_amplitudes" in payload:
             next_amplitudes: dict[str, float] = {}
@@ -2033,7 +2105,6 @@ class ProjectController(QObject):
             next_timing_edit_ids: list[str] = []
             raw_timing_edit_ids = payload.get("timing_edit_shot_ids")
             if isinstance(raw_timing_edit_ids, list):
-                valid_shot_ids = {shot.id for shot in self.project.analysis.shots}
                 for value in raw_timing_edit_ids:
                     clean_value = str(value).strip()
                     if clean_value and clean_value in valid_shot_ids:
@@ -2093,6 +2164,11 @@ class ProjectController(QObject):
                         next_expansion[clean_key] = bool(value)
             if ui_state.popup_bubble_expansion != next_expansion:
                 ui_state.popup_bubble_expansion = next_expansion
+                changed = True
+        if "popup_authoring_collapsed" in payload:
+            next_popup_authoring_collapsed = bool(payload["popup_authoring_collapsed"])
+            if ui_state.popup_authoring_collapsed != next_popup_authoring_collapsed:
+                ui_state.popup_authoring_collapsed = next_popup_authoring_collapsed
                 changed = True
         if "merge_source_expansion" in payload:
             next_expansion: dict[str, bool] = {}
@@ -2422,6 +2498,11 @@ class ProjectController(QObject):
             template.width = max(0, int(template_payload.get("width", template.width) or 0))
             template.height = max(0, int(template_payload.get("height", template.height) or 0))
             template.follow_motion = bool(template_payload.get("follow_motion", template.follow_motion))
+            template.background_color = str(template_payload.get("background_color", template.background_color) or template.background_color)
+            template.text_color = str(template_payload.get("text_color", template.text_color) or template.text_color)
+            raw_opacity = template_payload.get("opacity")
+            if raw_opacity not in {None, ""}:
+                template.opacity = max(0.0, min(1.0, float(raw_opacity)))
         self.project.touch()
         self.project_changed.emit()
 
@@ -2782,6 +2863,9 @@ class ProjectController(QObject):
                     "width": self.project.popup_template.width,
                     "height": self.project.popup_template.height,
                     "follow_motion": self.project.popup_template.follow_motion,
+                    "background_color": self.project.popup_template.background_color,
+                    "text_color": self.project.popup_template.text_color,
+                    "opacity": self.project.popup_template.opacity,
                 },
                 "review_text_boxes": _overlay_text_boxes_to_payload(self.project.overlay.text_boxes),
             },

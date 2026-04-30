@@ -130,7 +130,9 @@ id:timing-enabled
 id:draw-lock-to-stack
 id:draw-x
 id:draw-y
+id:collapse-markers
 id:expand-metrics
+id:expand-markers
 id:expand-scoring
 id:expand-timing
 id:expand-waveform
@@ -148,6 +150,7 @@ id:match-competitor-place
 id:match-stage-number
 id:match-type
 id:max-visible-shots
+id:markers-workbench-filter
 id:merge-enabled
 id:merge-layout
 id:merge-media-input
@@ -167,19 +170,20 @@ id:pip-size
 id:pip-x
 id:pip-y
 id:popup-add-bubble
+id:popup-add-bubble-workbench
+id:popup-edit-selected
 id:popup-filter
 id:popup-import-mode
 id:popup-import-shots
+id:popup-import-shots-workbench
 id:popup-loop-window
+id:popup-loop-window-workbench
 id:popup-next-compact
-id:popup-open-shot-editor
+id:popup-next-workbench
 id:popup-play-window
+id:popup-play-window-workbench
 id:popup-prev-compact
-id:popup-shot-editor-delete
-id:popup-shot-editor-done
-id:popup-shot-editor-duplicate
-id:popup-shot-editor-next
-id:popup-shot-editor-prev
+id:popup-prev-workbench
 id:popup-template-content-type
 id:popup-template-duration-s
 id:popup-template-enabled
@@ -188,6 +192,13 @@ id:popup-template-height
 id:popup-template-text-source
 id:popup-template-width
 id:popup-toggle-authoring
+id:popup-add-selected-shot
+id:popup-add-selected-shot-workbench
+id:popup-template-background-color
+id:popup-template-text-color
+id:popup-template-opacity
+id:popup-apply-template-to-selected
+id:popup-apply-selected-style-visible
 id:practiscore-file-input
 id:primary-file-input
 id:primary-file-path
@@ -336,7 +347,7 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
     assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
-    assert len(actual_identifiers) == 270
+    assert len(actual_identifiers) == 281
 
 
 def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:

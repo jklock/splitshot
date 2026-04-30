@@ -64,8 +64,9 @@ Scope of this reference:
 - Control surface:
   - #popup-template-enabled
   - #popup-import-shots
+  - #popup-edit-selected
   - data-popup-field controls: name, content_type, text, image_path, image_scale_mode, anchor_mode, shot_id, duration_s, x, y, width, height, quadrant, follow_motion
-  - data-popup-action controls: browse_image, add_keyframe, prev_keyframe, next_keyframe, copy_motion_prev, apply_motion_visible, clear_motion_path
+  - data-popup-action controls: browse_image, add_keyframe, prev_keyframe, next_keyframe, copy_motion_prev, apply_motion_visible, auto_trace_motion, clear_motion_path
 - State/function assertions:
   - state.project.popups[] field updates
   - selectedPopupKeyframeOffsetMs
@@ -546,36 +547,37 @@ Scope of this reference:
 - Validates: marker import aligns with selected shot and seek behavior.
 - Controls:
   - #popup-import-shots
-  - shot-linked marker list and timeline bars
+  - marker list and selected-marker status text
 - State/assertions:
   - selectedPopupBubbleId ties to selected shot marker
   - video current time matches selected marker shot time
 
-#### test_marker_collapsed_navigation_and_timeline_bar_select_visible_markers
+#### test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync
 
-- Validates: collapsed marker authoring nav and timeline selection.
+- Validates: compact marker navigation and unified-list selection.
 - Controls:
-  - #popup-toggle-authoring
   - #popup-next-compact / #popup-prev-compact
-  - popup timeline bar buttons
+  - popup marker list buttons
 - State/assertions:
   - selectedPopupBubbleId changes as expected
 
-#### test_marker_shot_editor_steps_duplicate_delete_and_close
+#### test_marker_workbench_steps_duplicate_delete_and_close
 
-- Validates: shot editor previous/next/duplicate/delete/done flow.
+- Validates: selected-marker workbench opens the right-side editor, keeps marker navigation in the right toolbar, and preserves duplicate/remove flow.
 - Controls:
-  - #popup-open-shot-editor
-  - #popup-shot-editor-prev/next/duplicate/delete/done
+  - #popup-edit-selected
+  - #popup-prev-compact / #popup-next-compact
+  - #markers-workbench-editor [data-popup-action="duplicate"] / [data-popup-action="remove"]
+  - #collapse-markers
 - State/assertions:
-  - popup counts and selected popup transitions
+  - popup counts, selected popup transitions, lower marker-list presence, and right-side editor continuity
 
 #### test_marker_template_controls_drive_new_shot_marker_defaults
 
 - Validates: template controls define defaults for new shot-linked markers.
 - Controls:
-  - #popup-template-text-source/content-type/duration/quadrant/width/height/follow-motion
-  - #popup-add-bubble
+  - #popup-template-text-source/content-type/duration/quadrant/width/height/follow-motion/background-color/text-color/opacity
+  - #popup-add-selected-shot
 - State/assertions:
   - new popup fields inherit template settings
 
@@ -607,11 +609,12 @@ Scope of this reference:
   - bubble.enabled
   - badge present/absent in #popup-overlay
 
-#### test_popup_bubble_card_actions_toggle_duplicate_and_remove_markers
+#### test_popup_selected_marker_editor_duplicate_and_remove_markers
 
-- Validates: card toggle/duplicate/remove actions and timeline rerender coherence.
+- Validates: selected-marker workbench duplicate/remove actions and unified-list rerender coherence.
 - Controls:
-  - data-popup-action="toggle"/"duplicate"/"remove"
+  - #popup-edit-selected
+  - #markers-workbench-editor [data-popup-action="duplicate"] / [data-popup-action="remove"]
 - State/assertions:
   - popup collection count and selected popup behavior
 

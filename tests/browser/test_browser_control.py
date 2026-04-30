@@ -1452,22 +1452,34 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
                 "selected_shot_id": selected_shot_id,
                 "timeline_zoom": 9.5,
                 "timeline_offset_ms": 420,
-                "active_tool": "timing",
+                "active_tool": "scoring",
                 "waveform_mode": "add",
                 "waveform_expanded": False,
-                "timing_expanded": True,
+                "timing_expanded": False,
+                "timing_enabled": False,
+                "review_show_markers": False,
+                "review_show_pip": False,
+                "scoring_expanded": True,
                 "layout_locked": False,
-                "rail_width": 70,
+                "rail_width": 92,
                 "inspector_width": 512,
                 "waveform_height": 260,
-                "scoring_shot_expansion": {selected_shot_id: True},
+                "scoring_edit_shot_ids": [selected_shot_id],
                 "waveform_shot_amplitudes": {selected_shot_id: 1.5},
                 "timing_edit_shot_ids": [selected_shot_id],
                 "timing_column_widths": {"segment": 128, "split": 224, "action": 244},
+                "popup_authoring_collapsed": True,
             },
         )
-        assert ui_state["project"]["ui_state"]["active_tool"] == "timing"
-        assert ui_state["project"]["ui_state"]["timing_expanded"] is True
+        assert ui_state["project"]["ui_state"]["active_tool"] == "scoring"
+        assert ui_state["project"]["ui_state"]["timing_expanded"] is False
+        assert ui_state["project"]["ui_state"]["timing_enabled"] is False
+        assert ui_state["project"]["ui_state"]["review_show_markers"] is False
+        assert ui_state["project"]["ui_state"]["review_show_pip"] is False
+        assert ui_state["project"]["ui_state"]["scoring_expanded"] is True
+        assert ui_state["project"]["ui_state"]["scoring_edit_shot_ids"] == [selected_shot_id]
+        assert ui_state["project"]["ui_state"]["scoring_shot_expansion"] == {selected_shot_id: True}
+        assert ui_state["project"]["ui_state"]["popup_authoring_collapsed"] is True
 
         export_state = _post_json(
             f"{server.url}api/export/settings",
@@ -1486,20 +1498,26 @@ def test_browser_project_open_restores_ui_state_and_export_output_path(
         assert reopened["project"]["ui_state"]["selected_shot_id"] == selected_shot_id
         assert reopened["project"]["ui_state"]["timeline_zoom"] == pytest.approx(9.5)
         assert reopened["project"]["ui_state"]["timeline_offset_ms"] == 420
-        assert reopened["project"]["ui_state"]["active_tool"] == "timing"
+        assert reopened["project"]["ui_state"]["active_tool"] == "scoring"
         assert reopened["project"]["ui_state"]["waveform_mode"] == "add"
         assert reopened["project"]["ui_state"]["waveform_expanded"] is False
-        assert reopened["project"]["ui_state"]["timing_expanded"] is True
+        assert reopened["project"]["ui_state"]["timing_expanded"] is False
+        assert reopened["project"]["ui_state"]["timing_enabled"] is False
+        assert reopened["project"]["ui_state"]["review_show_markers"] is False
+        assert reopened["project"]["ui_state"]["review_show_pip"] is False
+        assert reopened["project"]["ui_state"]["scoring_expanded"] is True
         assert reopened["project"]["ui_state"]["layout_locked"] is False
-        assert reopened["project"]["ui_state"]["rail_width"] == 70
+        assert reopened["project"]["ui_state"]["rail_width"] == 92
         assert reopened["project"]["ui_state"]["inspector_width"] == 512
         assert reopened["project"]["ui_state"]["waveform_height"] == 260
+        assert reopened["project"]["ui_state"]["scoring_edit_shot_ids"] == [selected_shot_id]
         assert reopened["project"]["ui_state"]["scoring_shot_expansion"] == {selected_shot_id: True}
         assert reopened["project"]["ui_state"]["waveform_shot_amplitudes"] == {selected_shot_id: 1.5}
         assert reopened["project"]["ui_state"]["timing_edit_shot_ids"] == [selected_shot_id]
         assert reopened["project"]["ui_state"]["timing_column_widths"]["segment"] == 128
         assert reopened["project"]["ui_state"]["timing_column_widths"]["split"] == 224
         assert reopened["project"]["ui_state"]["timing_column_widths"]["action"] == 244
+        assert reopened["project"]["ui_state"]["popup_authoring_collapsed"] is True
         assert reopened["project"]["export"]["output_path"] == str(output_path)
         assert reopened["project"]["export"]["preset"] == original_preset
     finally:
@@ -1640,38 +1658,49 @@ def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_pro
                 "selected_shot_id": first_shot_id,
                 "timeline_zoom": 9.5,
                 "timeline_offset_ms": 420,
-                "active_tool": "timing",
+                "active_tool": "scoring",
                 "waveform_mode": "add",
                 "waveform_expanded": False,
-                "timing_expanded": True,
+                "timing_expanded": False,
+                "timing_enabled": False,
+                "review_show_markers": False,
+                "review_show_pip": False,
+                "scoring_expanded": True,
                 "layout_locked": False,
-                "rail_width": 70,
+                "rail_width": 92,
                 "inspector_width": 512,
                 "waveform_height": 260,
-                "scoring_shot_expansion": {first_shot_id: True},
+                "scoring_edit_shot_ids": [first_shot_id],
                 "waveform_shot_amplitudes": {first_shot_id: 1.5},
                 "timing_edit_shot_ids": [first_shot_id],
                 "timing_column_widths": {"segment": 128, "split": 224, "action": 244},
+                "popup_authoring_collapsed": True,
             },
         )
         saved = _read_project_json(project_path)
         assert saved["ui_state"]["selected_shot_id"] == first_shot_id
         assert saved["ui_state"]["timeline_zoom"] == pytest.approx(9.5)
         assert saved["ui_state"]["timeline_offset_ms"] == 420
-        assert saved["ui_state"]["active_tool"] == "timing"
+        assert saved["ui_state"]["active_tool"] == "scoring"
         assert saved["ui_state"]["waveform_mode"] == "add"
         assert saved["ui_state"]["waveform_expanded"] is False
-        assert saved["ui_state"]["timing_expanded"] is True
+        assert saved["ui_state"]["timing_expanded"] is False
+        assert saved["ui_state"]["timing_enabled"] is False
+        assert saved["ui_state"]["review_show_markers"] is False
+        assert saved["ui_state"]["review_show_pip"] is False
+        assert saved["ui_state"]["scoring_expanded"] is True
         assert saved["ui_state"]["layout_locked"] is False
-        assert saved["ui_state"]["rail_width"] == 70
+        assert saved["ui_state"]["rail_width"] == 92
         assert saved["ui_state"]["inspector_width"] == 512
         assert saved["ui_state"]["waveform_height"] == 260
+        assert saved["ui_state"]["scoring_edit_shot_ids"] == [first_shot_id]
         assert saved["ui_state"]["scoring_shot_expansion"] == {first_shot_id: True}
         assert saved["ui_state"]["waveform_shot_amplitudes"] == {first_shot_id: 1.5}
         assert saved["ui_state"]["timing_edit_shot_ids"] == [first_shot_id]
         assert saved["ui_state"]["timing_column_widths"]["segment"] == 128
         assert saved["ui_state"]["timing_column_widths"]["split"] == 224
         assert saved["ui_state"]["timing_column_widths"]["action"] == 244
+        assert saved["ui_state"]["popup_authoring_collapsed"] is True
 
         _post_json(f"{server.url}api/shots/move", {"shot_id": first_shot_id, "time_ms": 830})
         saved = _read_project_json(project_path)
@@ -2075,6 +2104,12 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["overlay"]["custom_box_text"] == "Export Summary"
         assert saved["merge"]["layout"] == "pip"
         assert _merge_source_from_project_json(saved, first_source_id)["sync_offset_ms"] == 15
+
+        _post_json(f"{server.url}api/merge/reset-defaults", {})
+        saved = _read_project_json(project_path)
+        assert saved["merge"]["enabled"] is False
+        assert saved["merge"]["layout"] == "side_by_side"
+        assert saved["merge"]["pip_size_percent"] == 35
     finally:
         server.shutdown()
 

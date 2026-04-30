@@ -19,6 +19,10 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "browser-test.ssproj")
+        page.evaluate("(path) => createNewProject(path)", project_path)
+        page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
 
@@ -139,19 +143,18 @@ def _exercise_markers_review_overlay(page) -> None:
     page.locator("#popup-play-window").click()
     page.locator("#popup-loop-window").click()
 
-    page.locator("#popup-open-shot-editor").click()
-    page.wait_for_function("() => document.getElementById('popup-shot-editor')?.hidden === false")
-    page.locator("#popup-shot-editor-next").click()
-    page.locator("#popup-shot-editor-prev").click()
-    page.locator("#popup-shot-editor-duplicate").click()
+    page.locator("#popup-edit-selected").click()
+    page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+    page.wait_for_function("() => document.querySelector('.popup-selected-editor-panel') !== null")
+    page.locator("#popup-next-compact").click()
+    page.locator("#popup-prev-compact").click()
+    page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
     page.wait_for_function("() => (state?.project?.popups || []).length > 1")
-    page.locator("#popup-shot-editor-delete").click()
-    page.wait_for_function("() => document.getElementById('popup-shot-editor')?.hidden === false")
-    page.locator("#popup-shot-editor-done").click()
-    page.wait_for_function("() => document.getElementById('popup-shot-editor')?.hidden === true")
+    page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
+    page.wait_for_function("() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null")
 
-    page.locator("#popup-toggle-authoring").click()
-    page.wait_for_function("() => document.getElementById('popup-authoring-panel')?.hidden === true")
+    page.locator("#collapse-markers").click()
+    page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
 
     page.locator("#popup-next-compact").click()
     page.wait_for_function("() => selectedPopupBubbleId !== null")

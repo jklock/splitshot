@@ -137,9 +137,9 @@ Goal: close the largest remaining browser-surface gap and prove authoring contro
 
 Surfaces:
 
-- marker authoring collapse, playback window, loop, previous, next, and timeline selectors
+- compact marker controls, workbench open/close, playback window, loop, and previous/next navigation
 - shot-linked marker cards and time-marker cards
-- shot marker editor actions
+- markers workbench actions
 - popup template controls
 - popup bubble card controls, including motion editing
 - review text-box source, stack lock, placement, size, colors, opacity, and stage drag

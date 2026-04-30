@@ -66,6 +66,54 @@ def _import_shot_linked_markers(page) -> None:
     )
 
 
+def _open_markers_workbench(page) -> None:
+    if not page.evaluate("() => document.getElementById('markers-workbench')?.hidden === false"):
+        page.locator("#popup-edit-selected").click()
+    page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+    page.wait_for_function("() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null")
+
+
+def _drag_popup_badge(page, popup_id: str, delta_x: float, delta_y: float) -> None:
+    page.evaluate(
+        """({ popupId, deltaX, deltaY }) => {
+          const badge = document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`);
+          if (!(badge instanceof HTMLElement)) return false;
+          const rect = badge.getBoundingClientRect();
+          const startX = rect.left + 40;
+          const startY = rect.top + 20;
+          badge.dispatchEvent(new MouseEvent('mousedown', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: 1,
+            clientX: startX,
+            clientY: startY,
+          }));
+          for (let step = 1; step <= 6; step += 1) {
+            const progress = step / 6;
+            document.dispatchEvent(new MouseEvent('mousemove', {
+              bubbles: true,
+              cancelable: true,
+              button: 0,
+              buttons: 1,
+              clientX: startX + (deltaX * progress),
+              clientY: startY + (deltaY * progress),
+            }));
+          }
+          document.dispatchEvent(new MouseEvent('mouseup', {
+            bubbles: true,
+            cancelable: true,
+            button: 0,
+            buttons: 0,
+            clientX: startX + deltaX,
+            clientY: startY + deltaY,
+          }));
+          return true;
+        }""",
+        {"popupId": popup_id, "deltaX": delta_x, "deltaY": delta_y},
+    )
+
+
 def _ensure_overlay_visible(page) -> None:
     if page.locator("#show-overlay").is_checked():
         return
@@ -1139,16 +1187,14 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 assert selected_popup["shotId"] == selected_shot["id"]
 
                 selected_card = page.locator(
-                    f'#popup-shot-linked-list .popup-bubble-card[data-popup-id="{selected_popup["id"]}"]'
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{selected_popup["id"]}"]'
                 )
                 selected_card.wait_for(state="visible")
                 assert selected_card.evaluate("card => card.classList.contains('selected')") is True
-
-                selected_bar = page.locator(
-                    f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{selected_popup["id"]}"]'
-                )
-                selected_bar.wait_for(state="visible")
-                assert selected_bar.evaluate("button => button.classList.contains('selected')") is True
+                assert page.locator("#popup-timeline-strip").count() == 0
+                assert page.locator("#popup-pane-status").inner_text() == f"{total_shots} enabled"
+                assert page.locator("#popup-list-status").inner_text().startswith(f"{total_shots} shown")
+                assert "Select a marker" not in page.locator("#popup-selected-summary").inner_text()
 
                 page.wait_for_function(
                     """(targetMs) => {
@@ -1163,7 +1209,7 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
         server.shutdown()
 
 
-def test_marker_collapsed_navigation_and_timeline_bar_select_visible_markers(synthetic_video_factory) -> None:
+def test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-nav-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1179,9 +1225,7 @@ def test_marker_collapsed_navigation_and_timeline_bar_select_visible_markers(syn
                 initial_popup_id = page.evaluate("selectedPopupBubbleId")
                 assert initial_popup_id is not None
 
-                page.locator("#popup-toggle-authoring").click()
-                page.wait_for_function("() => document.getElementById('popup-authoring-panel').hidden === true")
-                assert page.locator("#popup-collapsed-nav").is_visible() is True
+                assert page.locator("#popup-timeline-strip").count() == 0
 
                 page.locator("#popup-next-compact").click()
                 page.wait_for_function(
@@ -1195,33 +1239,34 @@ def test_marker_collapsed_navigation_and_timeline_bar_select_visible_markers(syn
                 page.locator("#popup-prev-compact").click()
                 page.wait_for_function("(expectedId) => selectedPopupBubbleId === expectedId", arg=initial_popup_id)
 
-                timeline_target_id = page.evaluate(
+                list_target_id = page.evaluate(
                     """(currentId) => {
-                      const ids = [...document.querySelectorAll('#popup-timeline-strip .popup-timeline-bar[data-popup-id]')]
+                      const ids = [...document.querySelectorAll('#popup-marker-list .popup-marker-row[data-popup-id]')]
                         .map((element) => element.dataset.popupId)
                         .filter(Boolean);
                       return ids.find((id) => id !== currentId) || null;
                     }""",
                     initial_popup_id,
                 )
-                assert timeline_target_id is not None
+                assert list_target_id is not None
 
                 page.locator(
-                    f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{timeline_target_id}"]'
-                ).click(force=True)
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=timeline_target_id)
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{list_target_id}"] .popup-marker-select'
+                ).click()
+                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=list_target_id)
 
-                selected_bar = page.locator(
-                    f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{timeline_target_id}"]'
+                selected_card = page.locator(
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{list_target_id}"]'
                 )
-                assert selected_bar.evaluate("button => button.classList.contains('selected')") is True
+                assert selected_card.evaluate("card => card.classList.contains('selected')") is True
+                assert page.locator("#popup-selected-summary").inner_text() != "Select a marker to edit it, or create one below."
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_marker_shot_editor_steps_duplicate_delete_and_close(synthetic_video_factory) -> None:
+def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-editor-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1248,11 +1293,12 @@ def test_marker_shot_editor_steps_duplicate_delete_and_close(synthetic_video_fac
                 )
                 assert selected_before is not None
 
-                page.locator("#popup-open-shot-editor").click()
-                page.wait_for_function("() => document.getElementById('popup-shot-editor').hidden === false")
-                assert page.locator("#popup-shot-editor-current .popup-bubble-card").count() == 1
+                _open_markers_workbench(page)
+                assert page.locator(".popup-selected-editor-panel").is_visible()
+                assert page.locator("#markers-workbench-editor .popup-bubble-card").count() == 1
+                assert page.locator("#markers-workbench-list .popup-marker-row").count() >= 1
 
-                page.evaluate("document.getElementById('popup-shot-editor-next').click()")
+                page.locator("#popup-next-compact").click()
                 page.wait_for_function(
                     "(beforeId) => Boolean(selectedPopupBubbleId) && selectedPopupBubbleId !== beforeId",
                     arg=selected_before["id"],
@@ -1260,10 +1306,10 @@ def test_marker_shot_editor_steps_duplicate_delete_and_close(synthetic_video_fac
                 stepped_popup_id = page.evaluate("selectedPopupBubbleId")
                 assert stepped_popup_id is not None
 
-                page.evaluate("document.getElementById('popup-shot-editor-prev').click()")
+                page.locator("#popup-prev-compact").click()
                 page.wait_for_function("(expectedId) => selectedPopupBubbleId === expectedId", arg=selected_before["id"])
 
-                page.evaluate("document.getElementById('popup-shot-editor-duplicate').click()")
+                page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
                 page.wait_for_function(
                     "(beforeCount) => (state?.project?.popups || []).filter((item) => item.anchor_mode === 'shot' && item.shot_id).length === beforeCount + 1",
                     arg=shot_linked_before,
@@ -1288,14 +1334,14 @@ def test_marker_shot_editor_steps_duplicate_delete_and_close(synthetic_video_fac
                 page.evaluate(
                     """(popupId) => {
                       document
-                        .querySelector(`#popup-shot-linked-list .popup-bubble-card[data-popup-id="${popupId}"] .popup-bubble-button`)
+                        .querySelector(`#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] .popup-marker-select`)
                         ?.click();
                     }""",
                     duplicated_popup["id"],
                 )
                 page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=duplicated_popup["id"])
 
-                page.evaluate("document.getElementById('popup-shot-editor-delete').click()")
+                page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
                 page.wait_for_function(
                     "(deletedId) => !(state?.project?.popups || []).some((item) => item.id === deletedId)",
                     arg=duplicated_popup["id"],
@@ -1303,11 +1349,157 @@ def test_marker_shot_editor_steps_duplicate_delete_and_close(synthetic_video_fac
                 page.wait_for_function("() => Boolean(selectedPopupBubbleId)")
                 assert _shot_linked_popup_count(page) == shot_linked_before
                 assert page.evaluate("selectedPopupBubbleId") != duplicated_popup["id"]
-                assert page.locator("#popup-shot-editor-current .popup-bubble-card").count() == 1
+                assert page.locator("#markers-workbench-editor .popup-bubble-card").count() == 1
 
-                page.evaluate("document.getElementById('popup-shot-editor-done').click()")
-                page.wait_for_function("() => document.getElementById('popup-shot-editor').hidden === true")
+                page.locator("#collapse-markers").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function("() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Open Workbench'")
+
                 assert page.evaluate("selectedPopupBubbleId") is not None
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-badge-drag-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+                _import_shot_linked_markers(page)
+                popup_id = page.evaluate("selectedPopupBubbleId")
+                assert popup_id is not None
+
+                badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
+                badge.wait_for(state="visible")
+                before = page.evaluate(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      const badge = document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`);
+                      const rect = badge?.getBoundingClientRect();
+                      return bubble && rect ? {
+                        x: bubble.x,
+                        y: bubble.y,
+                        quadrant: bubble.quadrant,
+                        left: rect.left,
+                        top: rect.top,
+                      } : null;
+                    }""",
+                    popup_id,
+                )
+                assert before is not None
+                _drag_popup_badge(page, popup_id, 120, 60)
+
+                page.wait_for_function(
+                    """(payload) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === payload.popupId);
+                      return Boolean(bubble)
+                        && bubble.quadrant === 'custom'
+                        && Math.abs((bubble.x || 0) - payload.x) > 0.02
+                        && Math.abs((bubble.y || 0) - payload.y) > 0.02;
+                    }""",
+                    arg={"popupId": popup_id, "x": before["x"], "y": before["y"]},
+                )
+                after = page.evaluate(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      const badge = document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`);
+                      const rect = badge?.getBoundingClientRect();
+                      return bubble && rect ? {
+                        x: bubble.x,
+                        y: bubble.y,
+                        left: rect.left,
+                        top: rect.top,
+                      } : null;
+                    }""",
+                    popup_id,
+                )
+                assert after is not None
+                assert after["left"] > before["left"] + 40
+                assert after["top"] > before["top"] + 20
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-base-vs-keyframe-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+                _import_shot_linked_markers(page)
+                popup_id = page.evaluate("selectedPopupBubbleId")
+                assert popup_id is not None
+
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """() => {
+                      const checkbox = document.querySelector('#markers-workbench-editor .popup-bubble-card [data-popup-field="follow_motion"]');
+                      checkbox.checked = true;
+                      checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_function(
+                    "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.follow_motion === true",
+                    arg=popup_id,
+                )
+                page.evaluate(
+                    """() => {
+                      const video = document.getElementById('primary-video');
+                      video.currentTime = 1.2;
+                      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                    }"""
+                )
+                page.locator('#markers-workbench-editor .popup-bubble-card [data-popup-action="add_keyframe"]').click()
+                page.wait_for_function(
+                    "(popupId) => ((state?.project?.popups || []).find((item) => item.id === popupId)?.motion_path || []).length === 1",
+                    arg=popup_id,
+                )
+                motion_before = page.evaluate(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      return bubble ? JSON.stringify(bubble.motion_path || []) : '[]';
+                    }""",
+                    popup_id,
+                )
+
+                badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
+                badge.wait_for(state="visible")
+                before_rect = page.evaluate(
+                    """(popupId) => {
+                      const badge = document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`);
+                      const rect = badge?.getBoundingClientRect();
+                      return rect ? { left: rect.left, top: rect.top } : null;
+                    }""",
+                    popup_id,
+                )
+                assert before_rect is not None
+                _drag_popup_badge(page, popup_id, 130, 65)
+
+                page.wait_for_function(
+                    "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.quadrant === 'custom'",
+                    arg=popup_id,
+                )
+                motion_after = page.evaluate(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      return bubble ? JSON.stringify(bubble.motion_path || []) : '[]';
+                    }""",
+                    popup_id,
+                )
+                assert motion_after == motion_before
             finally:
                 browser.close()
     finally:
@@ -1340,6 +1532,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                             anchorMode: bubble.anchor_mode,
                             shotId: bubble.shot_id,
                             text: bubble.text,
+                            backgroundColor: bubble.background_color,
+                            textColor: bubble.text_color,
+                            opacity: bubble.opacity,
                           }
                         : null;
                     }"""
@@ -1347,11 +1542,51 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 assert score_popup is not None
                 assert score_popup["anchorMode"] == "shot"
                 assert score_popup["shotId"] == selected_shot["id"]
+                assert score_popup["backgroundColor"] == "#000000"
+                assert score_popup["textColor"] == "#ffffff"
+                assert score_popup["opacity"] == pytest.approx(0.9)
                 expected_score_text = page.evaluate(
                     """(shotId) => popupTextForShotId(shotId) || defaultScoreLetter()""",
                     selected_shot["id"],
                 )
                 assert score_popup["text"] == expected_score_text
+                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=score_popup["id"])
+                score_popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{score_popup["id"]}"]')
+                score_popup_badge.wait_for(state="visible")
+                default_score_badge_style = score_popup_badge.evaluate(
+                    """badge => {
+                        const style = getComputedStyle(badge);
+                        const rect = badge.getBoundingClientRect();
+                        const text = badge.querySelector('div');
+                        const textRect = text?.getBoundingClientRect() || null;
+                        const badgeCenterX = rect.left + (rect.width / 2);
+                        const badgeCenterY = rect.top + (rect.height / 2);
+                        return {
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height),
+                            borderRadius: style.borderRadius,
+                            background: style.backgroundColor,
+                            color: style.color,
+                            borderColor: style.borderColor,
+                            justifyContent: style.justifyContent,
+                            alignItems: style.alignItems,
+                            text: text?.textContent || '',
+                            textCentered: textRect
+                                ? Math.abs((textRect.left + (textRect.width / 2)) - badgeCenterX) <= 2
+                                    && Math.abs((textRect.top + (textRect.height / 2)) - badgeCenterY) <= 2
+                                : false,
+                        };
+                    }"""
+                )
+                assert abs(default_score_badge_style["width"] - default_score_badge_style["height"]) <= 2
+                assert default_score_badge_style["borderRadius"].endswith("px")
+                assert "255, 123, 34" in default_score_badge_style["background"]
+                assert default_score_badge_style["color"] == "rgb(17, 17, 17)"
+                assert default_score_badge_style["borderColor"] == "rgb(5, 6, 7)"
+                assert default_score_badge_style["justifyContent"] == "center"
+                assert default_score_badge_style["alignItems"] == "center"
+                assert default_score_badge_style["text"] == expected_score_text
+                assert default_score_badge_style["textCentered"] is True
 
                 page.locator("#popup-template-text-source").select_option("shot_label")
                 page.wait_for_function("() => state?.project?.popup_template?.text_source === 'shot_label'")
@@ -1374,16 +1609,35 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 page.wait_for_function("() => state?.project?.popup_template?.height === 96")
 
                 if page.locator("#popup-template-follow-motion").count() == 1:
-                                page.evaluate(
-                                        """() => {
-                                            const checkbox = document.getElementById('popup-template-follow-motion');
-                                            checkbox.checked = true;
-                                            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                                        }"""
-                                )
+                    page.evaluate(
+                        """() => {
+                            const checkbox = document.getElementById('popup-template-follow-motion');
+                            checkbox.checked = true;
+                            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                        }"""
+                    )
                 page.wait_for_function("() => state?.project?.popup_template?.follow_motion === true")
+                page.evaluate(
+                    """() => {
+                      const input = document.getElementById('popup-template-background-color');
+                      input.value = '#224466';
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_function("() => state?.project?.popup_template?.background_color === '#224466'")
+                page.evaluate(
+                    """() => {
+                      const input = document.getElementById('popup-template-text-color');
+                      input.value = '#fefefe';
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_function("() => state?.project?.popup_template?.text_color === '#fefefe'")
+                page.locator("#popup-template-opacity").fill("65")
+                page.locator("#popup-template-opacity").press("Enter")
+                page.wait_for_function("() => Math.abs((state?.project?.popup_template?.opacity || 0) - 0.65) < 0.001")
 
-                page.locator("#popup-add-bubble").click()
+                page.locator("#popup-add-selected-shot").click()
                 page.wait_for_function("() => (state?.project?.popups || []).length === 2")
                 labeled_popup = page.evaluate(
                     """() => {
@@ -1399,6 +1653,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                             width: bubble.width,
                             height: bubble.height,
                             followMotion: bubble.follow_motion,
+                            backgroundColor: bubble.background_color,
+                            textColor: bubble.text_color,
+                            opacity: bubble.opacity,
                           }
                         : null;
                     }"""
@@ -1411,25 +1668,66 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 assert labeled_popup["width"] == 320
                 assert labeled_popup["height"] == 96
                 assert labeled_popup["followMotion"] is True
+                assert labeled_popup["backgroundColor"] == "#224466"
+                assert labeled_popup["textColor"] == "#fefefe"
+                assert labeled_popup["opacity"] == pytest.approx(0.65)
 
                 page.evaluate(
                     """(popupId) => {
                       document
-                        .querySelector(`#popup-shot-linked-list .popup-bubble-card[data-popup-id="${popupId}"] .popup-bubble-button`)
+                        .querySelector(`#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] .popup-marker-select`)
                         ?.click();
                     }""",
                     labeled_popup["id"],
                 )
                 page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=labeled_popup["id"])
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """(timeMs) => {
+                        const video = document.getElementById('primary-video');
+                        video.currentTime = timeMs / 1000;
+                        video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                    }""",
+                    selected_shot["timeMs"] + 240,
+                )
+                page.locator('#markers-workbench-editor .popup-bubble-card [data-popup-action="add_keyframe"]').click()
+                page.wait_for_function(
+                    """(popupId) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      return selectedPopupBubbleId === popupId
+                        && selectedPopupPlacementMode === 'keyframe'
+                        && selectedPopupKeyframeOffsetMs > 0
+                        && ((bubble?.motion_path || []).length === 1);
+                    }""",
+                    arg=labeled_popup["id"],
+                )
                 popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{labeled_popup["id"]}"]')
                 popup_badge.wait_for(state="visible")
+                expected_badge_size = page.evaluate(
+                    """(popupId) => {
+                        const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                        const video = document.getElementById('primary-video');
+                        const stage = document.getElementById('video-stage');
+                        const frameGeometry = previewFrameGeometry(video, stage);
+                        const frameRect = frameGeometry?.frameRect || stage?.getBoundingClientRect();
+                        const scale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
+                        return {
+                            width: `${scaledOverlayPixelValue(bubble?.width || 0, scale, 1)}px`,
+                            height: `${scaledOverlayPixelValue(bubble?.height || 0, scale, 1)}px`,
+                        };
+                    }""",
+                    labeled_popup["id"],
+                )
                 popup_badge_style = popup_badge.evaluate(
-                    "badge => ({ width: badge.style.width, height: badge.style.height, text: badge.innerText })"
+                    "badge => ({ width: badge.style.width, height: badge.style.height, text: badge.innerText, opacity: badge.style.opacity || '', background: badge.style.backgroundColor, color: badge.style.color })"
                 )
                 assert popup_badge_style == {
-                    "width": "320px",
-                    "height": "96px",
+                    "width": expected_badge_size["width"],
+                    "height": expected_badge_size["height"],
                     "text": labeled_popup["text"],
+                    "opacity": "",
+                    "background": "rgba(34, 68, 102, 0.65)",
+                    "color": "rgb(254, 254, 254)",
                 }
 
                 page.locator("#popup-template-text-source").select_option("custom")
@@ -2026,7 +2324,7 @@ def test_time_marker_list_cards_select_marker_and_seek_video(synthetic_video_fac
 
                 first_popup_id = time_popups[0]["id"]
                 first_popup_button = page.locator(
-                    f'#popup-bubble-list .popup-bubble-card[data-popup-id="{first_popup_id}"] .popup-bubble-button'
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{first_popup_id}"] .popup-marker-select'
                 )
                 first_popup_button.wait_for(state="visible")
                 first_popup_button.click()
@@ -2040,9 +2338,57 @@ def test_time_marker_list_cards_select_marker_and_seek_video(synthetic_video_fac
                 )
 
                 selected_card = page.locator(
-                    f'#popup-bubble-list .popup-bubble-card[data-popup-id="{first_popup_id}"]'
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{first_popup_id}"]'
                 )
                 assert selected_card.evaluate("card => card.classList.contains('selected')") is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_markers_clicking_video_stage_does_not_create_marker(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-stage-click-disabled-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+
+                page.evaluate(
+                    """() => {
+                      selectedShotId = null;
+                      const video = document.getElementById('primary-video');
+                      video.pause();
+                      video.currentTime = 1.25;
+                      video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                    }"""
+                )
+
+                page.locator("#video-stage").click(position={"x": 320, "y": 180}, force=True)
+                page.wait_for_timeout(150)
+                assert page.evaluate("() => (state?.project?.popups || []).length") == 0
+
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+
+                popup_snapshot = page.evaluate(
+                    """() => {
+                      const bubble = (state?.project?.popups || [])[0] || null;
+                      return bubble
+                        ? {
+                            anchorMode: bubble.anchor_mode,
+                            shotId: bubble.shot_id,
+                          }
+                        : null;
+                    }"""
+                )
+                assert popup_snapshot is not None
+                assert popup_snapshot["anchorMode"] == "time"
+                assert popup_snapshot["shotId"] is None
             finally:
                 browser.close()
     finally:
@@ -2082,7 +2428,7 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_v
                                 page.evaluate(
                                         """(popupId) => {
                                             const checkbox = document.querySelector(
-                                                `#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
+                                                `#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
                                             );
                                             if (!(checkbox instanceof HTMLInputElement)) return;
                                             checkbox.checked = false;
@@ -2107,7 +2453,7 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_v
                                 page.evaluate(
                                         """(popupId) => {
                                             const checkbox = document.querySelector(
-                                                `#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
+                                                `#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
                                             );
                                             if (!(checkbox instanceof HTMLInputElement)) return;
                                             checkbox.checked = true;
@@ -2129,111 +2475,93 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_v
                 server.shutdown()
 
 
-def test_popup_bubble_card_actions_toggle_duplicate_and_remove_markers(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-card-actions-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "markers")
+def test_popup_selected_marker_editor_duplicate_and_remove_markers(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-card-actions-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
 
-                                page.evaluate(
-                                        """(timeMs) => {
-                                            selectedShotId = null;
-                                            const video = document.getElementById('primary-video');
-                                            video.currentTime = timeMs / 1000;
-                                            video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
-                                        }""",
-                                        950,
-                                )
-                                page.locator("#popup-add-bubble").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                page.evaluate(
+                    """(timeMs) => {
+                        selectedShotId = null;
+                        const video = document.getElementById('primary-video');
+                        video.currentTime = timeMs / 1000;
+                        video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                    }""",
+                    950,
+                )
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
 
-                                original_popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")
-                                assert original_popup_id is not None
+                original_popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")
+                assert original_popup_id is not None
 
-                                original_card = page.locator(
-                                        f'#popup-bubble-list .popup-bubble-card[data-popup-id="{original_popup_id}"]'
-                                )
-                                original_card.wait_for(state="visible")
-                                assert page.locator(f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{original_popup_id}"]').count() == 1
+                original_card = page.locator(
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"]'
+                )
+                original_card.wait_for(state="visible")
+                assert page.locator("#popup-timeline-strip").count() == 0
 
-                                page.evaluate(
-                                        """(popupId) => {
-                                            document
-                                                .querySelector(`#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] [data-popup-action="toggle"]`)
-                                                ?.click();
-                                        }""",
-                                        original_popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
-                                            const body = document.querySelector(
-                                                `#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] .text-box-card-body`
-                                            );
-                                            return body instanceof HTMLElement && body.hidden === true && selectedPopupBubbleId === popupId;
-                                        }""",
-                                        arg=original_popup_id,
-                                )
+                page.locator(
+                    f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"] .popup-marker-select'
+                ).click()
+                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=original_popup_id)
 
-                                page.evaluate(
-                                        """(popupId) => {
-                                            document
-                                                .querySelector(`#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] [data-popup-action="toggle"]`)
-                                                ?.click();
-                                        }""",
-                                        original_popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
-                                            const body = document.querySelector(
-                                                `#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] .text-box-card-body`
-                                            );
-                                            return body instanceof HTMLElement && body.hidden === false && selectedPopupBubbleId === popupId;
-                                        }""",
-                                        arg=original_popup_id,
-                                )
+                page.locator("#popup-edit-selected").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Collapse Workbench'"
+                )
 
-                                page.evaluate(
-                                        """(popupId) => {
-                                            document
-                                                .querySelector(`#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] [data-popup-action="duplicate"]`)
-                                                ?.click();
-                                        }""",
-                                        original_popup_id,
-                                )
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 2")
-                                popup_ids_after_duplicate = page.evaluate("(state?.project?.popups || []).map((bubble) => bubble.id)")
-                                duplicate_ids = [popup_id for popup_id in popup_ids_after_duplicate if popup_id != original_popup_id]
-                                assert len(duplicate_ids) == 1
-                                duplicate_popup_id = duplicate_ids[0]
-                                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=duplicate_popup_id)
-                                assert page.locator(f'#popup-bubble-list .popup-bubble-card[data-popup-id="{duplicate_popup_id}"]').count() == 1
-                                assert page.locator(f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{duplicate_popup_id}"]').count() == 1
+                page.locator("#collapse-markers").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Open Workbench'"
+                )
 
-                                page.evaluate(
-                                        """(popupId) => {
-                                            document
-                                                .querySelector(`#popup-bubble-list .popup-bubble-card[data-popup-id="${popupId}"] [data-popup-action="remove"]`)
-                                                ?.click();
-                                        }""",
-                                        duplicate_popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => !(state?.project?.popups || []).some((bubble) => bubble.id === popupId)""",
-                                        arg=duplicate_popup_id,
-                                )
-                                assert page.locator(f'#popup-bubble-list .popup-bubble-card[data-popup-id="{duplicate_popup_id}"]').count() == 0
-                                assert page.locator(f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{duplicate_popup_id}"]').count() == 0
-                                assert page.locator(f'#popup-bubble-list .popup-bubble-card[data-popup-id="{original_popup_id}"]').count() == 1
-                                assert page.locator(f'#popup-timeline-strip .popup-timeline-bar[data-popup-id="{original_popup_id}"]').count() == 1
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                page.locator("#popup-edit-selected").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+                page.wait_for_function(
+                    """(popupId) => {
+                        const card = document.querySelector('#markers-workbench-editor .popup-bubble-card');
+                        const body = card?.querySelector('.text-box-card-body');
+                        return card instanceof HTMLElement && card.dataset.popupId === popupId
+                          && body instanceof HTMLElement && body.hidden === false;
+                    }""",
+                    arg=original_popup_id,
+                )
+                page.wait_for_function(
+                    """() => {
+                        const sections = [...document.querySelectorAll('#markers-workbench-editor [data-popup-editor-section]')];
+                        return sections.length >= 4 && sections.every((section) => section.querySelector('.section-header'));
+                    }"""
+                )
+
+                page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 2")
+                popup_ids_after_duplicate = page.evaluate("(state?.project?.popups || []).map((bubble) => bubble.id)")
+                duplicate_ids = [popup_id for popup_id in popup_ids_after_duplicate if popup_id != original_popup_id]
+                assert len(duplicate_ids) == 1
+                duplicate_popup_id = duplicate_ids[0]
+                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=duplicate_popup_id)
+                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]').count() == 1
+
+                page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
+                page.wait_for_function(
+                    """(popupId) => !(state?.project?.popups || []).some((bubble) => bubble.id === popupId)""",
+                    arg=duplicate_popup_id,
+                )
+                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]').count() == 0
+                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"]').count() == 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selected_hex(synthetic_video_factory) -> None:

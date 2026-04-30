@@ -23,7 +23,7 @@ Important ids and data attributes include:
 
 - `primary-file-input`, `merge-media-input`, `project-path`, `export-path`, and `practiscore-file-input`
 - `timing-table`, `timing-workbench-table`, `timing-event-list`, `score-option-grid`, and `scoring-shot-list`
-- `review-text-box-list`, `popup-bubble-list`, `popup-shot-linked-list`, `settings-layer-summary`, `metrics-summary-grid`, `metrics-trend-list`, and `metrics-score-summary`
+- `review-text-box-list`, `popup-marker-list`, `markers-workbench`, `markers-workbench-list`, `markers-workbench-editor`, `settings-scope-status`, `metrics-summary-grid`, `metrics-trend-list`, and `metrics-score-summary`
 - `show-export-log`, `export-log-modal`, `export-log-output`, and `export-log-error`
 - `color-picker-modal`, `color-picker-hue`, `color-picker-saturation`, `color-picker-lightness`, and `color-picker-hex`
 - `toggle-layout-lock-video`, `toggle-layout-lock-waveform`, `toggle-layout-lock-inspector`, `resize-rail`, `resize-waveform`, and `resize-sidebar`
@@ -55,7 +55,7 @@ The main loop is:
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
-- Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following.
+- Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.
 - Export progress uses the processing bar plus the live export log modal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
@@ -64,5 +64,5 @@ The main loop is:
 - The browser shell depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-04-30
+**Referenced files last updated:** 2026-04-30

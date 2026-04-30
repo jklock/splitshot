@@ -20,7 +20,7 @@ Already covered in focused browser tests today:
 
 - Primary rail tool-button routing and active-tool reload persistence.
 - Waveform expand, zoom, amplitude, pan, and shot movement.
-- Marker import-selected-shot seek, collapsed navigation, timeline selection, and shot-editor step, duplicate, delete, and close coverage.
+- Marker import-selected-shot seek, collapsed navigation, unified-list selection, and shot-editor step, duplicate, delete, and close coverage.
 - Marker template content, text source, duration, placement, size, and follow-motion defaults on fresh shot-linked markers.
 - Review text-box source switching to imported summary, after-final render overrides, custom placement and size, and lock-to-stack editor behavior.
 - Layout lock toggle plus rail, waveform, and sidebar resize handle persistence.
@@ -101,19 +101,19 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | --- | --- | --- |
 | Markers Import Shots | behavioral | Keep the selected-shot import and seek coverage, and extend it if staged-shot selection changes. |
 | Markers Add Time Marker | behavioral | Keep the add-marker path covered through the existing browser control tests. |
-| Marker authoring collapse toggle | behavioral | Keep the collapse-to-compact-nav coverage and extend it only if expand-state persistence changes. |
+| Expand Markers | behavioral | Keep the compact-to-workbench launch coverage and extend it if expanded-layout routing changes. |
+| Marker defaults collapse toggle | behavioral | Keep the defaults-column show-or-hide coverage and extend it only if expand-state persistence changes. |
 | Play Window | behavioral | Keep the selected-marker playback-window coverage and extend it if playback uses a different seek or stop path. |
-| Loop | behavioral | Keep the looping-window wrap or stop coverage and extend it if loop state moves out of the timeline controls. |
+| Loop | behavioral | Keep the looping-window wrap or stop coverage and extend it if loop state moves out of the marker playback controls. |
 | Previous / Next compact buttons | behavioral | Keep the collapsed-navigation coverage if filter ordering or wrap behavior changes. |
-| Popup timeline bars | behavioral | Keep the timeline selection coverage if bar ordering or selection styling changes. |
+| Marker pane enabled count | static | Keep the header-status coverage if enabled-marker summary text or placement changes. |
 | Shot-linked marker list cards | behavioral | Keep the list-card selection coverage if marker reveal or seek behavior changes. |
 | Time marker list cards | behavioral | Keep the time-marker list-card select-and-seek coverage and extend it if card sorting or seek timing changes. |
-| Open Editor | behavioral | Keep the open-editor coverage if the shot-linked marker editor moves or rerenders differently. |
-| Shot Marker Editor Done | behavioral | Keep the close-editor coverage and extend it if selection preservation rules change. |
-| Shot Marker Editor Previous Shot | behavioral | Keep the previous-shot stepping coverage if shot-linked editor ordering changes. |
-| Shot Marker Editor Next Shot | behavioral | Keep the next-shot stepping coverage if shot-linked editor ordering changes. |
-| Shot Marker Editor Duplicate Marker | behavioral | Keep the duplicate-marker coverage if clone selection or placement semantics change. |
-| Shot Marker Editor Delete Marker | behavioral | Keep the delete-marker coverage if selection fallback or rerender semantics change. |
+| Open Workbench | behavioral | Keep the selected-marker workbench launch coverage if the selected-marker action moves or rerenders differently. |
+| Workbench Collapse | behavioral | Keep the close-workbench coverage and extend it if selection preservation rules change. |
+| Workbench Previous / Next | behavioral | Keep the stepping coverage if filtered ordering changes. |
+| Workbench Duplicate Marker | behavioral | Keep the duplicate-marker coverage if clone selection or placement semantics change. |
+| Workbench Delete Marker | behavioral | Keep the delete-marker coverage if selection fallback or rerender semantics change. |
 
 ### Popup Template Controls
 
@@ -133,8 +133,8 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Bubble header button | behavioral | Keep the time-marker card header select-and-seek coverage and extend it if card selection routing changes. |
 | Bubble enabled checkbox | behavioral | Keep the live-badge hide-or-show coverage and extend it if disabled bubbles still render elsewhere. |
 | Bubble expand/collapse toggle | behavioral | Keep the card-body collapse-or-expand coverage and extend it if toggle actions stop preserving selection. |
-| Duplicate | behavioral | Keep the duplicate-card coverage and extend it if cloned popups stop selecting or rendering in the timeline. |
-| Remove | behavioral | Keep the remove-card coverage and extend it if deletion fallback or timeline rerender rules change. |
+| Duplicate | behavioral | Keep the selected-editor duplicate coverage and extend it if cloned popups stop selecting or rerendering in the unified list. |
+| Remove | behavioral | Keep the selected-editor remove coverage and extend it if deletion fallback or list rerender rules change. |
 | Bubble name input | missing | Add a name-edit commit test. |
 | Bubble text textarea | missing | Add a text-edit commit test. |
 | Content type select | missing | Add a content-type switch test. |

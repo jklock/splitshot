@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260427b" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260430c" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -80,6 +80,7 @@
                 </div>
               </div>
               <canvas id="waveform" width="1600" height="260" tabindex="0" aria-label="Waveform editor"></canvas>
+              <div id="waveform-playhead" class="waveform-playhead" aria-hidden="true" hidden></div>
               <div id="waveform-window" class="waveform-window" hidden>
                 <div id="waveform-window-track" class="waveform-window-track" aria-label="Waveform viewport window">
                   <div id="waveform-window-handle" class="waveform-window-handle"></div>
@@ -129,6 +130,7 @@
                 <button id="collapse-metrics" type="button">Collapse</button>
               </div>
               <p class="hint">Adjusted split values are compared against the imported PractiScore stage result.</p>
+              <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench" aria-label="Expanded metrics graphs"></div>
               <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
             </section>
 
@@ -139,6 +141,120 @@
               </div>
               <div id="scoring-workbench-table" class="data-table timing-workbench-table scoring-workbench-table"></div>
             </section>
+
+            <section id="markers-workbench" class="markers-workbench" aria-label="Expanded marker editor" hidden>
+              <div class="section-header">
+                <h2>Markers</h2>
+                <div class="section-header-actions">
+                  <span id="markers-workbench-status">0 shown</span>
+                  <button id="collapse-markers" type="button">Collapse</button>
+                </div>
+              </div>
+              <section class="markers-workbench-toolbar" aria-label="Expanded marker controls">
+                <div class="markers-workbench-toolbar-row">
+                  <button id="popup-add-bubble-workbench" class="primary-button" type="button">Add Time Marker</button>
+                  <button id="popup-add-selected-shot-workbench" type="button">Add Selected Shot</button>
+                  <button id="popup-import-shots-workbench" type="button">Import Visible Shots</button>
+                  <button id="popup-toggle-authoring" type="button">Hide Defaults</button>
+                  <button id="popup-prev-workbench" type="button">Previous</button>
+                  <button id="popup-next-workbench" type="button">Next</button>
+                  <button id="popup-play-window-workbench" type="button">Play Window</button>
+                  <button id="popup-loop-window-workbench" type="button">Loop</button>
+                </div>
+                <div class="markers-workbench-toolbar-row markers-workbench-toolbar-row-meta">
+                  <label>Filter
+                    <select id="markers-workbench-filter">
+                      <option value="all">All</option>
+                      <option value="enabled">Enabled</option>
+                      <option value="disabled">Disabled</option>
+                      <option value="shot">Shot-linked</option>
+                      <option value="time">Time-based</option>
+                      <option value="motion">Has motion</option>
+                      <option value="missing_text">Missing text</option>
+                      <option value="visible">Visible now</option>
+                    </select>
+                  </label>
+                  <p id="markers-workbench-selected-summary" class="hint">Select a marker to edit it here.</p>
+                </div>
+              </section>
+              <div class="markers-workbench-body">
+                <section class="markers-workbench-column markers-workbench-list-panel">
+                  <div class="section-header sub-section-header">
+                    <h3>Markers</h3>
+                    <span id="markers-workbench-list-status">No markers yet.</span>
+                  </div>
+                  <div id="markers-workbench-list" class="text-box-list popup-marker-list markers-workbench-list" aria-label="Expanded marker navigator"></div>
+                </section>
+                <section id="popup-authoring-panel" class="markers-workbench-column popup-authoring-panel">
+                  <p class="hint">Defaults apply to imported and new shot-linked markers. Use the selected marker editor for per-marker changes.</p>
+                  <section class="text-box-manager popup-bulk-marker-panel">
+                    <div class="section-header sub-section-header">
+                      <h3>Marker Actions</h3>
+                      <span>Import or create shot-linked markers</span>
+                    </div>
+                    <div class="control-grid">
+                      <label>Import
+                        <select id="popup-import-mode">
+                          <option value="all">All shots</option>
+                          <option value="scored">Scored shots</option>
+                          <option value="penalty">Penalty / miss shots</option>
+                        </select>
+                      </label>
+                    </div>
+                  </section>
+                  <section class="text-box-manager popup-template-panel">
+                    <div class="section-header sub-section-header">
+                      <h3>Shot Marker Defaults</h3>
+                      <span>Used for imported and new shot-linked markers</span>
+                    </div>
+                    <div class="control-grid">
+                      <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
+                      <label>Content
+                        <select id="popup-template-content-type">
+                          <option value="text">Text</option>
+                          <option value="image">Image</option>
+                          <option value="text_image">Text + image</option>
+                        </select>
+                      </label>
+                      <label>Text source
+                        <select id="popup-template-text-source">
+                          <option value="score">Shot score</option>
+                          <option value="shot_label">Shot label</option>
+                          <option value="custom">Custom text</option>
+                        </select>
+                      </label>
+                      <label>Duration
+                        <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
+                      </label>
+                      <label>Width
+                        <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
+                      </label>
+                      <label>Height
+                        <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
+                      </label>
+                      <label class="check-row"><input id="popup-template-follow-motion" type="checkbox" /> Follow motion</label>
+                      <label>Background
+                        <input id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" />
+                      </label>
+                      <label>Text color
+                        <input id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF" />
+                      </label>
+                      <label>Background alpha
+                        <input id="popup-template-opacity" type="number" min="0" max="100" step="1" value="90" />
+                      </label>
+                    </div>
+                  </section>
+                  <div class="popup-authoring-bar" aria-label="Popup authoring controls">
+                    <div class="popup-authoring-actions">
+                      <button id="popup-apply-template-to-selected" type="button">Apply Defaults To Selected</button>
+                      <button id="popup-apply-selected-style-visible" type="button">Apply Selected Style To Shown Shot Markers</button>
+                    </div>
+                    <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
+                  </div>
+                </section>
+              </div>
+            </section>
+
           </section>
 
           <button id="resize-sidebar" class="resize-handle resize-handle-sidebar" type="button" aria-label="Resize inspector"></button>
@@ -183,16 +299,21 @@
               </div>
               <p class="hint">Built from the current metrics, split rows, timing segments, and scoring summary so timing and score context stay in one view.</p>
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
-              <div class="section-header sub-section-header">
-                <h3>Trend Snapshot</h3>
-                <span>Splits and confidence</span>
-              </div>
-              <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
-              <div class="section-header sub-section-header">
-                <h3>Scoring Context</h3>
-                <span id="metrics-score-status">No scoring data.</span>
-              </div>
-              <dl id="metrics-score-summary" class="details metrics-details"></dl>
+              <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
+                <div class="section-header sub-section-header">
+                  <h3>Trend Snapshot</h3>
+                  <span>Splits and confidence</span>
+                </div>
+                <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
+                <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
+              </section>
+              <section class="settings-section metrics-section" data-metrics-section="scoring-context">
+                <div class="section-header sub-section-header">
+                  <h3>Scoring Context</h3>
+                  <span id="metrics-score-status">No scoring data.</span>
+                </div>
+                <dl id="metrics-score-summary" class="details metrics-details"></dl>
+              </section>
               <div class="button-grid two-up">
                 <button id="metrics-export-csv" type="button">Export CSV</button>
                 <button id="metrics-export-text" type="button">Export Text</button>
@@ -508,55 +629,19 @@
             <section class="tool-pane" data-tool-pane="markers">
               <div class="section-header">
                 <h3>Markers</h3>
-                <div class="section-header-actions popup-pane-actions">
-                  <button id="popup-import-shots" type="button">Import Shots</button>
-                  <button id="popup-add-bubble" type="button">Add Time Marker</button>
-                  <button id="popup-toggle-authoring" type="button" class="scoring-shot-toggle" aria-label="Hide marker controls">v</button>
+                <div class="section-header-actions">
+                  <span id="popup-pane-status">0 enabled</span>
+                  <button id="expand-markers" type="button">Expand</button>
                 </div>
               </div>
-              <div id="popup-authoring-panel" class="popup-authoring-panel">
-                <p class="hint">Template defaults drive imported shot markers. Drag a rendered marker on the video, or tune one marker at a time below.</p>
-                <section class="text-box-manager popup-template-panel">
-                  <div class="section-header sub-section-header">
-                    <h3>Shot Marker Template</h3>
-                    <span>Used for imported shot markers</span>
-                  </div>
-                  <div class="control-grid">
-                    <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
-                    <label>Content
-                      <select id="popup-template-content-type">
-                        <option value="text">Text</option>
-                        <option value="image">Image</option>
-                        <option value="text_image">Text + image</option>
-                      </select>
-                    </label>
-                    <label>Text source
-                      <select id="popup-template-text-source">
-                        <option value="score">Shot score</option>
-                        <option value="shot_label">Shot label</option>
-                        <option value="custom">Custom text</option>
-                      </select>
-                    </label>
-                    <label>Duration
-                      <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
-                    </label>
-                    <label>Width
-                      <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
-                    </label>
-                    <label>Height
-                      <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
-                    </label>
-                    <label class="check-row"><input id="popup-template-follow-motion" type="checkbox" /> Follow motion</label>
-                  </div>
-                </section>
-                <div class="popup-authoring-bar" aria-label="Popup authoring controls">
-                  <label>Import
-                    <select id="popup-import-mode">
-                      <option value="all">All shots</option>
-                      <option value="scored">Scored shots</option>
-                      <option value="penalty">Penalty / miss shots</option>
-                    </select>
-                  </label>
+              <section id="popup-marker-toolbar" class="text-box-manager popup-marker-toolbar">
+                <div class="popup-toolbar-row" aria-label="Marker toolbar">
+                  <button id="popup-edit-selected" class="primary-button" type="button">Open Workbench</button>
+                  <button id="popup-add-bubble" type="button">Add Time Marker</button>
+                  <button id="popup-add-selected-shot" type="button">Add Selected Shot</button>
+                  <button id="popup-import-shots" type="button">Import Visible Shots</button>
+                </div>
+                <div class="popup-toolbar-row popup-toolbar-row-secondary" aria-label="Marker navigation">
                   <label>Filter
                     <select id="popup-filter">
                       <option value="all">All</option>
@@ -569,43 +654,26 @@
                       <option value="visible">Visible now</option>
                     </select>
                   </label>
-                  <div class="popup-authoring-actions">
-                    <button id="popup-play-window" type="button">Play Window</button>
-                    <button id="popup-loop-window" type="button">Loop</button>
-                  </div>
-                  <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
+                  <button id="popup-prev-compact" type="button">Previous</button>
+                  <button id="popup-next-compact" type="button">Next</button>
+                  <button id="popup-play-window" type="button">Play Window</button>
+                  <button id="popup-loop-window" type="button">Loop</button>
                 </div>
-              </div>
-              <div id="popup-collapsed-nav" class="popup-collapsed-nav" hidden>
-                <button id="popup-prev-compact" type="button">Previous</button>
-                <button id="popup-next-compact" type="button">Next</button>
-              </div>
-              <div id="popup-timeline-strip" class="popup-timeline-strip" aria-label="Markers timeline"></div>
-              <section class="popup-list-section">
-                <div class="section-header sub-section-header">
-                  <h3>Shot-linked Markers</h3>
-                  <button id="popup-open-shot-editor" type="button">Open Editor</button>
-                </div>
-                <div id="popup-shot-linked-list" class="text-box-list popup-bubble-list" aria-label="Shot-linked markers"></div>
+                <p id="popup-selected-summary" class="hint">Select a marker to edit it in the workbench, or create one below.</p>
               </section>
-              <section class="popup-list-section">
+              <section class="popup-list-section popup-list-section-unified">
                 <div class="section-header sub-section-header">
-                  <h3>Time Markers</h3>
+                  <h3>Markers</h3>
+                  <span id="popup-list-status">No markers yet.</span>
                 </div>
-                <div id="popup-bubble-list" class="text-box-list popup-bubble-list" aria-label="Time markers"></div>
+                <div id="popup-marker-list" class="text-box-list popup-marker-list" aria-label="Marker navigator"></div>
               </section>
-              <section id="popup-shot-editor" class="timing-workbench popup-shot-editor" aria-label="Shot-linked marker editor" hidden>
-                <div class="section-header">
-                  <h2>Shot Marker Editor</h2>
-                  <button id="popup-shot-editor-done" type="button">Done</button>
+              <section class="popup-list-section popup-selected-editor-panel">
+                <div class="section-header sub-section-header">
+                  <h3>Selected Marker</h3>
+                  <span id="markers-workbench-editor-status">No marker selected.</span>
                 </div>
-                <div id="popup-shot-editor-current" class="selected-shot-controls"></div>
-                <div class="button-grid compact popup-shot-editor-actions">
-                  <button id="popup-shot-editor-prev" type="button">Previous Shot</button>
-                  <button id="popup-shot-editor-next" type="button">Next Shot</button>
-                  <button id="popup-shot-editor-duplicate" type="button">Duplicate Marker</button>
-                  <button id="popup-shot-editor-delete" type="button">Delete Marker</button>
-                </div>
+                <div id="markers-workbench-editor" class="markers-workbench-editor popup-selected-editor" aria-label="Selected marker editor"></div>
               </section>
             </section>
 
@@ -1179,6 +1247,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260427b"></script>
+    <script src="/static/app.js?v=20260430b"></script>
   </body>
 </html>
