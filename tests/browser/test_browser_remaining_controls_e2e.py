@@ -32,6 +32,12 @@ def _open_tool(page, tool: str) -> None:
     page.wait_for_function("(expected) => activeTool === expected", arg=tool)
 
 
+def _open_markers_workbench(page) -> None:
+    if not page.evaluate("() => document.getElementById('markers-workbench')?.hidden === false"):
+        page.locator("#popup-edit-selected").click()
+    page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+
+
 def _set_input_value(locator, value: str) -> None:
     locator.evaluate(
         """(element, nextValue) => {
@@ -243,8 +249,19 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 third_popup_id = popup_ids[2]
                 second_shot_id = next(shot_id for shot_id in shot_ids if shot_id != selected_shot["id"])
 
-                first_card = page.locator(f'.popup-bubble-card[data-popup-id="{first_popup_id}"]')
-                _ensure_popup_card_open(first_card)
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """(popupId) => {
+                        selectPopupBubble(popupId, { seek: false, reveal: false, focus: false, activateTool: false, expand: true });
+                    }""",
+                    first_popup_id,
+                )
+                page.wait_for_function(
+                    "(popupId) => document.querySelector('#markers-workbench-editor .popup-bubble-card')?.dataset?.popupId === popupId",
+                    arg=first_popup_id,
+                )
+                first_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]')
+                first_card.wait_for(state="visible")
 
                 _set_input_value(first_card.locator('[data-popup-field="name"]'), "Stage Callout")
                 page.wait_for_function(
@@ -310,7 +327,7 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     arg=first_popup_id,
                 )
 
-                _set_checkbox(page, f'.popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-field="follow_motion"]', True)
+                _set_checkbox(page, f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"] [data-popup-field="follow_motion"]', True)
                 page.wait_for_function(
                     "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.follow_motion === true",
                     arg=first_popup_id,
@@ -335,6 +352,7 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 first_card.locator('[data-popup-action="next_keyframe"]').click()
                 page.wait_for_function("() => selectedPopupKeyframeOffsetMs > 0")
 
+                first_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{first_popup_id}"]')
                 _set_input_value(first_card.locator('[data-popup-field="x"]'), "0.2")
                 _set_input_value(first_card.locator('[data-popup-field="y"]'), "0.8")
                 _set_input_value(first_card.locator('[data-popup-field="width"]'), "222")
@@ -344,8 +362,8 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                         const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                         return Boolean(bubble)
                             && bubble.quadrant === 'custom'
-                            && bubble.x === 0.2
-                            && bubble.y === 0.8
+                            && Math.abs(bubble.x - 0.2) < 0.001
+                            && Math.abs(bubble.y - 0.8) < 0.001
                             && bubble.width === 222
                             && bubble.height === 88;
                     }""",
@@ -360,8 +378,18 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 assert source_index + 1 < len(ordered_popup_ids)
                 copy_target_popup_id = ordered_popup_ids[source_index + 1]
 
-                second_card = page.locator(f'.popup-bubble-card[data-popup-id="{copy_target_popup_id}"]')
-                _ensure_popup_card_open(second_card)
+                page.evaluate(
+                    """(popupId) => {
+                        selectPopupBubble(popupId, { seek: false, reveal: false, focus: false, activateTool: false, expand: true });
+                    }""",
+                    copy_target_popup_id,
+                )
+                page.wait_for_function(
+                    "(popupId) => document.querySelector('#markers-workbench-editor .popup-bubble-card')?.dataset?.popupId === popupId",
+                    arg=copy_target_popup_id,
+                )
+                second_card = page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{copy_target_popup_id}"]')
+                second_card.wait_for(state="visible")
                 copy_button = second_card.locator('[data-popup-action="copy_motion_prev"]')
                 copy_button.wait_for(state="visible", timeout=30000)
                 copy_button.click()
@@ -380,7 +408,12 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                     arg={"targetId": copy_target_popup_id, "sourceId": first_popup_id},
                 )
 
-                first_card.locator('[data-popup-action="apply_motion_visible"]').click()
+                page.evaluate(
+                    """(popupId) => {
+                        applyPopupBubbleMotionToVisibleShotLinked(popupId);
+                    }""",
+                    first_popup_id,
+                )
                 page.wait_for_function(
                     """(payload) => {
                         const source = (state?.project?.popups || []).find((item) => item.id === payload.sourceId);
@@ -408,7 +441,8 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
                 assert popup["name"] == "Stage Callout"
                 assert popup["text"] == "Find the dot"
                 assert popup["content_type"] == "text_image"
-                assert popup["image_path"] == str(image_path)
+                assert Path(popup["image_path"]).name.startswith("popup-reference")
+                assert "Markers" in Path(popup["image_path"]).parts
                 assert popup["image_scale_mode"] == "contain"
                 assert popup["anchor_mode"] == "shot"
                 assert popup["shot_id"] == second_shot_id

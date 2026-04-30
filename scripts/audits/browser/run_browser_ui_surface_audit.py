@@ -149,13 +149,21 @@ def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, head
 
 def show_project_tool(page: Page) -> None:
     page.locator("[data-tool='project']").click()
-    page.wait_for_selector("#primary-file-path", state="visible")
+    page.wait_for_selector("#primary-file-input", state="attached")
 
 
 def import_primary_video(page: Page, primary_video: Path) -> None:
     show_project_tool(page)
-    page.locator("#primary-file-path").fill(str(primary_video))
-    page.locator("#primary-file-path").press("Enter")
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_video.parent / "browser-audit.ssproj")
+        page.evaluate(
+            f"""async () => {{
+                await callApi("/api/project/new", {{}});
+                await callApi("/api/project/save", {{ path: {json.dumps(project_path)} }});
+            }}"""
+        )
+        page.wait_for_function("() => Boolean(state?.project?.path)")
+    page.locator("#primary-file-input").set_input_files(str(primary_video))
     page.wait_for_function(
         "() => (state?.project?.analysis?.shots?.length || 0) > 0",
         timeout=120_000,
@@ -542,35 +550,24 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
 
 def audit_popup_card_interactions(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
-    page.locator("[data-tool='popup']").click()
+    page.locator("[data-tool='markers']").click()
     page.locator("#popup-import-shots").click()
     page.wait_for_function(
-        "() => document.querySelectorAll('.popup-bubble-card').length > 0 && (state?.project?.popups || []).length > 0",
+        "() => document.querySelectorAll('.popup-marker-row').length > 0 && (state?.project?.popups || []).length > 0",
         timeout=30_000,
     )
-    page.evaluate(
-        """
-        () => {
-          popupBubbleExpansion = new Map((state?.project?.popups || []).map((bubble) => [bubble.id, false]));
-          renderPopupEditors();
-        }
-        """
-    )
-    page.wait_for_timeout(100)
-    page.locator(".popup-bubble-card .popup-bubble-button").first.click()
+    page.locator(".popup-marker-row .popup-marker-select").first.click()
     page.wait_for_timeout(250)
     card_click = page.evaluate(
         """
         () => {
-          const card = document.querySelector(".popup-bubble-card");
-          const id = card?.dataset.popupId;
+          const row = document.querySelector(".popup-marker-row.selected");
+          const id = row?.dataset.popupId;
           const bubble = popupBubbles().find((item) => item.id === id);
           const overlayBubble = document.querySelector(`#popup-overlay [data-popup-id="${id}"]`);
           return {
             id,
             selected: selectedPopupBubbleId === id,
-            expanded: isPopupBubbleExpanded(id),
-            body_hidden: card?.querySelector(".text-box-card-body")?.hidden === true,
             overlay_visible: Boolean(overlayBubble),
             current_ms: Math.round((document.getElementById("primary-video")?.currentTime || 0) * 1000),
             expected_ms: popupBubbleSeekTimeMs(bubble),
@@ -578,31 +575,22 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         }
         """
     )
-    timeline = page.evaluate(
+    marker_shell = page.evaluate(
         """
         () => {
-          const bars = Array.from(document.querySelectorAll("#popup-timeline-strip .popup-timeline-bar"));
-          const selected = document.querySelector("#popup-timeline-strip .popup-timeline-bar.selected");
+          const rows = Array.from(document.querySelectorAll("#popup-marker-list .popup-marker-row[data-popup-id]"));
+          const selected = document.querySelector("#popup-marker-list .popup-marker-row.selected");
           const filter = document.querySelector("#popup-filter");
           return {
-            bar_count: bars.length,
+            row_count: rows.length,
             selected_id: selected?.dataset.popupId || "",
             filter_value: filter?.value || "",
             summary_text: document.querySelector("#popup-authoring-summary")?.textContent || "",
+            pane_status: document.querySelector("#popup-pane-status")?.textContent || "",
+            list_status: document.querySelector("#popup-list-status")?.textContent || "",
+            selected_summary: document.querySelector("#popup-selected-summary")?.textContent || "",
           };
         }
-        """
-    )
-    page.locator("#popup-toggle-authoring").click()
-    page.wait_for_timeout(150)
-    collapsed = page.evaluate(
-        """
-        () => ({
-          authoring_hidden: document.querySelector("#popup-authoring-panel")?.hidden === true,
-          compact_hidden: document.querySelector("#popup-collapsed-nav")?.hidden === true,
-          toggle_text: document.querySelector("#popup-toggle-authoring")?.textContent || "",
-          timeline_height: Math.round(document.querySelector("#popup-timeline-strip")?.getBoundingClientRect()?.height || 0),
-        })
         """
     )
     page.locator("#popup-next-compact").click()
@@ -610,45 +598,33 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
     next_control = page.evaluate(
         """
         () => {
-          const list = document.querySelector("#popup-bubble-list");
+          const list = document.querySelector("#popup-marker-list");
           const listRect = list?.getBoundingClientRect();
-          const selectedCard = document.querySelector(".popup-bubble-card.selected");
+          const selectedCard = document.querySelector(".popup-marker-row.selected");
           const cardRect = selectedCard?.getBoundingClientRect();
-          const selectedBar = document.querySelector("#popup-timeline-strip .popup-timeline-bar.selected");
           const bubble = popupBubbles().find((item) => item.id === selectedPopupBubbleId);
           return {
             selected_id: selectedPopupBubbleId,
             selected_card_id: selectedCard?.dataset.popupId || "",
-            selected_bar_id: selectedBar?.dataset.popupId || "",
             current_ms: Math.round((document.getElementById("primary-video")?.currentTime || 0) * 1000),
             expected_ms: popupBubbleSeekTimeMs(bubble),
             inspector_scroll_top: Math.round(document.querySelector(".inspector")?.scrollTop || 0),
             list_scroll_top: Math.round(list?.scrollTop || 0),
             list_scrollable: Boolean(list && list.scrollHeight > list.clientHeight + 2),
             selected_card_top: listRect && cardRect ? Math.round(cardRect.top - listRect.top) : null,
+            selected_card_bottom: listRect && cardRect ? Math.round(cardRect.bottom - listRect.top) : null,
+            list_client_height: Math.round(list?.clientHeight || 0),
           };
         }
         """
     )
-    page.locator("#popup-toggle-authoring").click()
-    page.wait_for_timeout(250)
-    reopened = page.evaluate(
-        """
-        () => {
-          return {
-            authoring_hidden: document.querySelector("#popup-authoring-panel")?.hidden === true,
-            compact_hidden: document.querySelector("#popup-collapsed-nav")?.hidden === true,
-            toggle_text: document.querySelector("#popup-toggle-authoring")?.textContent || "",
-          };
-        }
-        """
-    )
-    page.locator(".popup-bubble-card.selected [data-popup-action='toggle']").click()
+    page.locator("#popup-edit-selected").click()
+    page.wait_for_selector("#markers-workbench-editor .popup-bubble-card")
     page.wait_for_timeout(150)
     opened = page.evaluate(
         """
         () => {
-          const card = document.querySelector(".popup-bubble-card.selected");
+          const card = document.querySelector("#markers-workbench-editor .popup-bubble-card");
           const id = card?.dataset.popupId;
           const fields = Array.from(card.querySelectorAll(".popup-style-card .color-field"))
             .map((field) => field.getBoundingClientRect());
@@ -656,11 +632,28 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
             .map((field) => field.getBoundingClientRect());
           return {
             selected: selectedPopupBubbleId === id,
-            expanded: isPopupBubbleExpanded(id),
-            body_hidden: card?.querySelector(".text-box-card-body")?.hidden === true,
+            workbench_visible: document.getElementById("markers-workbench")?.hidden === false,
+            body_visible: card?.querySelector(".text-box-card-body")?.hidden === false,
             color_field_count: fields.length,
             color_fields_same_row: fields.length >= 2 && Math.abs(fields[0].top - fields[1].top) < 3,
             hex_widths: hexes.map((rect) => Math.round(rect.width)),
+          };
+        }
+        """
+    )
+    expanded_layout = page.evaluate(
+        """
+        () => {
+          const rightEditor = document.querySelector('.popup-selected-editor-panel');
+          const compactList = document.querySelector('[data-tool-pane="markers"] > .popup-list-section.popup-list-section-unified');
+          const defaultsPanel = document.querySelector('#popup-authoring-panel');
+          const bottomList = document.querySelector('#markers-workbench-list');
+          return {
+            workbench_visible: document.getElementById('markers-workbench')?.hidden === false,
+            right_editor_visible: Boolean(rightEditor) && getComputedStyle(rightEditor).display !== 'none',
+            compact_list_hidden: Boolean(compactList) && getComputedStyle(compactList).display === 'none',
+            defaults_hidden: Boolean(defaultsPanel) && getComputedStyle(defaultsPanel).display === 'none',
+            bottom_list_visible: Boolean(bottomList) && getComputedStyle(bottomList).display !== 'none',
           };
         }
         """
@@ -675,14 +668,20 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         """
     )
     page.wait_for_timeout(150)
-    page.locator(".popup-bubble-card.selected [data-popup-field='follow_motion']").check()
+    page.locator("#markers-workbench-editor .popup-bubble-card [data-popup-field='follow_motion']").check()
     page.wait_for_timeout(150)
-    page.locator(".popup-bubble-card.selected [data-popup-action='add_keyframe']").click()
+    page.evaluate(
+        """
+        () => {
+          document.querySelector("#markers-workbench-editor .popup-bubble-card [data-popup-action='add_keyframe']")?.click();
+        }
+        """
+    )
     page.wait_for_timeout(250)
     keyframes = page.evaluate(
         """
         () => {
-          const card = document.querySelector(".popup-bubble-card.selected");
+          const card = document.querySelector("#markers-workbench-editor .popup-bubble-card");
           const dots = Array.from(document.querySelectorAll("#popup-overlay .popup-keyframe-dot"));
           const selectedDot = document.querySelector("#popup-overlay .popup-keyframe-dot.selected");
           const paths = document.querySelectorAll("#popup-overlay .popup-keyframe-path");
@@ -697,17 +696,15 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         }
         """
     )
-    page.locator(".popup-bubble-card.selected [data-popup-action='toggle']").click()
-    page.wait_for_timeout(150)
     closed = page.evaluate(
         """
         () => {
-          const card = document.querySelector(".popup-bubble-card.selected");
+          const card = document.querySelector("#markers-workbench-editor .popup-bubble-card");
           const id = card?.dataset.popupId;
           return {
             selected: selectedPopupBubbleId === id,
-            expanded: isPopupBubbleExpanded(id),
-            body_hidden: card?.querySelector(".text-box-card-body")?.hidden === true,
+            workbench_visible: document.getElementById("markers-workbench")?.hidden === false,
+            body_visible: card?.querySelector(".text-box-card-body")?.hidden === false,
           };
         }
         """
@@ -716,30 +713,34 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
     next_seek_delta_ms = abs((next_control["current_ms"] or 0) - (next_control["expected_ms"] or 0))
     passed = (
         card_click["selected"]
-        and not card_click["expanded"]
-        and card_click["body_hidden"]
         and card_click["overlay_visible"]
         and seek_delta_ms < 300
-        and timeline["bar_count"] > 0
-        and timeline["selected_id"] == card_click["id"]
-        and timeline["filter_value"] == "all"
-        and "shown" in timeline["summary_text"]
-        and collapsed["authoring_hidden"]
-        and not collapsed["compact_hidden"]
-        and collapsed["toggle_text"] == ">"
-        and collapsed["timeline_height"] >= 56
-        and next_control["selected_id"] == next_control["selected_card_id"] == next_control["selected_bar_id"]
+      and marker_shell["row_count"] > 0
+      and marker_shell["selected_id"] == card_click["id"]
+      and marker_shell["filter_value"] == "all"
+      and "shown" in marker_shell["summary_text"]
+      and "enabled" in marker_shell["pane_status"]
+      and "shown" in marker_shell["list_status"]
+      and "Select a marker" not in marker_shell["selected_summary"]
+      and expanded_layout["workbench_visible"]
+      and expanded_layout["right_editor_visible"]
+      and expanded_layout["compact_list_hidden"]
+      and expanded_layout["defaults_hidden"]
+      and expanded_layout["bottom_list_visible"]
+      and next_control["selected_id"] == next_control["selected_card_id"]
         and next_seek_delta_ms < 300
         and (
             not next_control["list_scrollable"]
-            or (next_control["selected_card_top"] is not None and 0 <= next_control["selected_card_top"] <= 24)
+        or (
+          next_control["selected_card_top"] is not None
+          and next_control["selected_card_bottom"] is not None
+          and 0 <= next_control["selected_card_top"]
+          and next_control["selected_card_bottom"] <= next_control["list_client_height"] + 2
         )
-        and not reopened["authoring_hidden"]
-        and reopened["compact_hidden"]
-        and reopened["toggle_text"] == "v"
+        )
         and opened["selected"]
-        and opened["expanded"]
-        and not opened["body_hidden"]
+        and opened["workbench_visible"]
+        and opened["body_visible"]
         and opened["color_field_count"] == 2
         and opened["color_fields_same_row"]
         and all(24 <= width <= 180 for width in opened["hex_widths"])
@@ -749,19 +750,18 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         and keyframes["path_count"] >= 1
         and keyframes["selected_offset"] >= 300
         and closed["selected"]
-        and not closed["expanded"]
-        and closed["body_hidden"]
+        and closed["workbench_visible"]
+        and closed["body_visible"]
     )
     return expect(
         passed,
         "popup_card_interactions_are_stable",
-        "Popup card click, chevron toggle, selected preview, and compact color controls should keep stable behavior.",
+      "Markers list, selected-marker editor, and motion-path controls should keep stable behavior.",
         {
             "card_click": card_click,
-            "timeline": timeline,
-            "collapsed": collapsed,
+          "marker_shell": marker_shell,
+          "expanded_layout": expanded_layout,
             "next_control": next_control,
-            "reopened": reopened,
             "opened": opened,
             "keyframes": keyframes,
             "closed": closed,

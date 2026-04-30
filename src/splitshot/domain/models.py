@@ -308,7 +308,7 @@ class ImportedStageScore:
 
 @dataclass(slots=True)
 class ScoringState:
-    enabled: bool = False
+    enabled: bool = True
     ruleset: str = "uspsa_minor"
     match_type: str = ""
     stage_number: int | None = None
@@ -418,7 +418,7 @@ class OverlaySettings:
 
 @dataclass(slots=True)
 class MergeSettings:
-    enabled: bool = False
+    enabled: bool = True
     layout: MergeLayout = MergeLayout.SIDE_BY_SIDE
     pip_size: PipSize = PipSize.MEDIUM
     pip_size_percent: int = 35
@@ -430,7 +430,7 @@ class MergeSettings:
 @dataclass(slots=True)
 class OverlayTextBox:
     id: str = field(default_factory=lambda: uuid4().hex)
-    enabled: bool = False
+    enabled: bool = True
     lock_to_stack: bool = False
     source: str = "manual"
     text: str = ""
@@ -524,9 +524,14 @@ class UIState:
     waveform_mode: str = "select"
     waveform_expanded: bool = False
     timing_expanded: bool = False
+    timing_enabled: bool = True
+    review_show_markers: bool = True
+    review_show_pip: bool = True
     metrics_expanded: bool = False
+    markers_expanded: bool = False
+    scoring_expanded: bool = False
     layout_locked: bool = True
-    rail_width: int = 64
+    rail_width: int = 84
     inspector_width: int = 440
     waveform_height: int = 206
     scoring_shot_expansion: dict[str, bool] = field(default_factory=dict)
@@ -781,7 +786,7 @@ def _ui_state_string_list(data: Any) -> list[str]:
 def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool = False) -> OverlayTextBox:
     box = OverlayTextBox(
         id=str(data.get("id") or uuid4().hex),
-        enabled=bool(data.get("enabled", False)),
+        enabled=bool(data.get("enabled", True)),
         lock_to_stack=bool(data.get("lock_to_stack", legacy_lock_to_stack)),
         source=_normalize_text_box_source(data.get("source")),
         text=str(data.get("text", ""))[:500],
@@ -840,6 +845,9 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),
         follow_motion=bool(payload.get("follow_motion", False)),
+        background_color=str(payload.get("background_color", "#000000") or "#000000"),
+        text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
+        opacity=max(0.0, min(1.0, float(payload.get("opacity", 0.9)))),
     )
 
 
@@ -1160,7 +1168,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ],
         ),
         scoring=ScoringState(
-            enabled=bool(scoring_data.get("enabled", False)),
+            enabled=bool(scoring_data.get("enabled", True)),
             ruleset=str(scoring_data.get("ruleset", "uspsa_minor")),
             match_type=str(scoring_data.get("match_type", "")),
             stage_number=(
@@ -1291,7 +1299,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             },
         ),
         merge=MergeSettings(
-            enabled=bool(merge_data.get("enabled", False)),
+            enabled=bool(merge_data.get("enabled", True)),
             layout=MergeLayout(merge_data.get("layout", MergeLayout.SIDE_BY_SIDE.value)),
             pip_size=merge_pip_enum,
             pip_size_percent=int(merge_data.get("pip_size_percent", merge_pip_percent_default)),
@@ -1334,9 +1342,14 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             waveform_mode=_normalize_ui_state_waveform_mode(ui_data.get("waveform_mode")),
             waveform_expanded=bool(ui_data.get("waveform_expanded", False)),
             timing_expanded=bool(ui_data.get("timing_expanded", False)),
+            timing_enabled=bool(ui_data.get("timing_enabled", True)),
+            review_show_markers=bool(ui_data.get("review_show_markers", True)),
+            review_show_pip=bool(ui_data.get("review_show_pip", True)),
             metrics_expanded=bool(ui_data.get("metrics_expanded", False)),
+            markers_expanded=bool(ui_data.get("markers_expanded", False)),
+            scoring_expanded=bool(ui_data.get("scoring_expanded", False)),
             layout_locked=bool(ui_data.get("layout_locked", True)),
-            rail_width=int(ui_data.get("rail_width", 64)),
+            rail_width=int(ui_data.get("rail_width", 84)),
             inspector_width=int(ui_data.get("inspector_width", 440)),
             waveform_height=int(ui_data.get("waveform_height", 206)),
             scoring_shot_expansion=_ui_state_bool_map(ui_data.get("scoring_shot_expansion")),

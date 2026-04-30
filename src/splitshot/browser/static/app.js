@@ -19,10 +19,14 @@ let shotMLSectionExpansion = new Map();
 let settingsSectionExpansion = new Map();
 let selectedPopupBubbleId = null;
 let selectedPopupKeyframeOffsetMs = 0;
+let selectedPopupPlacementMode = "base";
 let popupFilterMode = window.localStorage.getItem("splitshot.popupFilterMode") || "all";
 let popupAuthoringCollapsed = false;
 let popupPlaybackWindow = null;
-let popupShotEditorOpen = false;
+let popupEditorVisible = false;
+let popupEditorCollapsed = false;
+let popupEditorSectionExpansion = new Map();
+let popupAutoTraceBubbleId = null;
 let scoringWorkbenchExpanded = false;
 let overlayVisibilityPosition = "bottom";
 let railCollapsed = window.localStorage.getItem("splitshot.railCollapsed") === "true";
@@ -34,10 +38,20 @@ let waveformShotAmplitudeById = {};
 let waveformOffsetMs = Math.max(0, Number(window.localStorage.getItem("splitshot.waveform.offsetMs")) || 0);
 let busyCount = 0;
 let layoutLocked = window.localStorage.getItem("splitshot.layoutLocked") !== "false";
+const DEFAULT_LAYOUT_SIZES = Object.freeze({
+  railWidth: 84,
+  inspectorWidth: 440,
+  waveformHeight: 206,
+});
 let layoutSizes = {
-  railWidth: clamp(savedNumber("splitshot.layout.railWidth", 84), 84, 104),
-  inspectorWidth: savedNumber("splitshot.layout.inspectorWidth", 440),
-  waveformHeight: savedNumber("splitshot.layout.waveformHeight", 206),
+  railWidth: clamp(savedNumber("splitshot.layout.railWidth", DEFAULT_LAYOUT_SIZES.railWidth), 84, 104),
+  inspectorWidth: savedNumber("splitshot.layout.inspectorWidth", DEFAULT_LAYOUT_SIZES.inspectorWidth),
+  waveformHeight: savedNumber("splitshot.layout.waveformHeight", DEFAULT_LAYOUT_SIZES.waveformHeight),
+};
+let layoutSizePinned = {
+  railWidth: window.localStorage.getItem("splitshot.layout.railWidth") !== null,
+  inspectorWidth: window.localStorage.getItem("splitshot.layout.inspectorWidth") !== null,
+  waveformHeight: window.localStorage.getItem("splitshot.layout.waveformHeight") !== null,
 };
 let activeResize = null;
 let timingColumnWidths = {};
@@ -73,11 +87,16 @@ let overlayAutoBubbleCacheKey = null;
 let overlayAutoBubbleCache = { width: 0, height: 0 };
 let customOverlayRenderKey = "";
 let textBoxRenderedPositionById = new Map();
+let metricsSectionExpansion = new Map([
+  ["trend-snapshot", true],
+  ["scoring-context", true],
+]);
 let pendingInspectorScrollTop = null;
 let lastInspectorUserScrollTop = 0;
 let lastInspectorUserScrollTs = 0;
 let renderDeferredForInteraction = false;
 let pendingProjectUiStatePayload = null;
+let lastSubmittedProjectUiStatePayloadKey = null;
 let pendingMergeSourcePayloads = new Map();
 let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
@@ -193,6 +212,18 @@ const BADGE_FONT_SIZES = {
 };
 const OVERLAY_BADGE_PADDING_X_PX = 10;
 const OVERLAY_BADGE_PADDING_Y_PX = 5;
+const POPUP_SELECTOR_TEXT_MAX_LENGTH = 3;
+const POPUP_SELECTOR_MIN_DIAMETER_PX = 28;
+const POPUP_SELECTOR_MAX_DIAMETER_PX = 32;
+const POPUP_SELECTOR_FILL = "#ff7b22";
+const POPUP_SELECTOR_TEXT = "#111111";
+const POPUP_SELECTOR_BORDER = "#050607";
+const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
+  content: true,
+  timing: false,
+  motion: false,
+  style: false,
+});
 const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";
 const CUSTOM_QUADRANT_VALUE = "custom";
 function normalizeToolId(tool) {
@@ -235,6 +266,7 @@ const DEFAULT_PROJECT_UI_STATE = Object.freeze({
   review_show_markers: true,
   review_show_pip: true,
   metrics_expanded: false,
+  markers_expanded: false,
   scoring_expanded: false,
   layout_locked: layoutLocked,
   rail_width: Math.round(layoutSizes.railWidth),
@@ -895,7 +927,7 @@ function withPreservedScrollState(elements, callback) {
 
 function scrollContainerForElement(element) {
   if (!(element instanceof HTMLElement)) return null;
-  return element.closest(".popup-bubble-list, .text-box-list, .merge-media-list, .inspector");
+  return element.closest(".popup-marker-list, .popup-bubble-list, .text-box-list, .merge-media-list, .inspector");
 }
 
 function preserveElementViewportAnchor(elementOrResolver, callback) {
@@ -1738,6 +1770,7 @@ function normalizeProjectUiState(uiState = {}) {
     review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),
     review_show_pip: Boolean(uiState.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip),
     metrics_expanded: Boolean(uiState.metrics_expanded ?? DEFAULT_PROJECT_UI_STATE.metrics_expanded),
+    markers_expanded: Boolean(uiState.markers_expanded ?? DEFAULT_PROJECT_UI_STATE.markers_expanded),
     scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),
     layout_locked: Boolean(uiState.layout_locked ?? DEFAULT_PROJECT_UI_STATE.layout_locked),
     rail_width: clamp(Math.round(Number(uiState.rail_width ?? DEFAULT_PROJECT_UI_STATE.rail_width) || DEFAULT_PROJECT_UI_STATE.rail_width), 84, 104),
@@ -1764,6 +1797,14 @@ function mergeProjectUiState(remoteUiState = {}, localUiState = {}) {
   });
 }
 
+function projectUiStatePayloadKey(payload = {}) {
+  return JSON.stringify(normalizeProjectUiState(payload));
+}
+
+function shouldApplyProjectUiStatePayload(payload) {
+  return projectUiStatePayloadKey(payload) !== lastSubmittedProjectUiStatePayloadKey;
+}
+
 function readProjectUiStatePayload() {
   const root = $("cockpit-root");
   return normalizeProjectUiState({
@@ -1778,6 +1819,7 @@ function readProjectUiStatePayload() {
     review_show_markers: $("show-markers")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_markers,
     review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,
     metrics_expanded: Boolean(root?.classList.contains("metrics-expanded")),
+    markers_expanded: Boolean(root?.classList.contains("markers-expanded")),
     scoring_expanded: Boolean(root?.classList.contains("scoring-expanded")),
     layout_locked: layoutLocked,
     rail_width: Math.round(layoutSizes.railWidth),
@@ -1820,6 +1862,12 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
     inspectorWidth: normalized.inspector_width,
     waveformHeight: normalized.waveform_height,
   };
+  layoutSizePinned = {
+    railWidth: layoutSizePinned.railWidth || normalized.rail_width !== DEFAULT_LAYOUT_SIZES.railWidth,
+    inspectorWidth: layoutSizePinned.inspectorWidth || normalized.inspector_width !== DEFAULT_LAYOUT_SIZES.inspectorWidth,
+    waveformHeight: layoutSizePinned.waveformHeight || normalized.waveform_height !== DEFAULT_LAYOUT_SIZES.waveformHeight,
+  };
+  maybeApplyRecommendedLayout();
   window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
   window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
   window.localStorage.setItem("splitshot.layoutLocked", String(layoutLocked));
@@ -1846,6 +1894,7 @@ function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   syncControlChecked($("show-markers"), normalized.review_show_markers);
   syncControlChecked($("show-pip"), normalized.review_show_pip);
   setMetricsExpanded(normalized.metrics_expanded, { persistUiState: false });
+  setMarkersExpanded(normalized.markers_expanded, { persistUiState: false });
   setScoringWorkbenchExpanded(normalized.scoring_expanded, { persistUiState: false });
   if (state?.project) state.project.ui_state = normalized;
   return normalized;
@@ -3201,10 +3250,37 @@ function popupBubbleShotLabel(bubble) {
 }
 
 function popupBubbleResolvedText(bubble) {
-  if (bubble?.anchor_mode === "shot" && bubble?.shot_id && bubble?.content_type === "text") {
-    return popupTextForShotId(bubble.shot_id) || String(bubble?.text || "");
+  const explicitText = String(bubble?.text || "");
+  if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
+    if (bubble?.content_type === "text") {
+      return popupTextForShotId(bubble.shot_id) || explicitText;
+    }
+    if (bubble?.content_type === "text_image" && !String(bubble?.image_path || "").trim() && !explicitText.trim()) {
+      return popupTextForShotId(bubble.shot_id) || popupBubbleShotLabel(bubble) || "Marker";
+    }
   }
-  return String(bubble?.text || "");
+  return explicitText;
+}
+
+function popupBubblePlacementSelectorStyle(bubble) {
+  if (!bubble) return null;
+  return {
+    show_text: false,
+    width: 18,
+    height: 18,
+    background_color: POPUP_SELECTOR_FILL,
+    text_color: POPUP_SELECTOR_TEXT,
+    border_color: POPUP_SELECTOR_BORDER,
+    font_weight: "900",
+  };
+}
+
+function popupBubbleRenderStyle(bubble) {
+  return {
+    background_color: bubble?.background_color || "#000000",
+    text_color: bubble?.text_color || "#ffffff",
+    font_weight: "700",
+  };
 }
 
 function popupBubbleDisplayName(bubble, index) {
@@ -3220,11 +3296,14 @@ function popupBubbleImageUrl(bubble) {
 }
 
 function popupBubbleSummaryText(bubble, index) {
-  const parts = [popupBubbleDisplayName(bubble, index)];
+  const parts = [];
+  const displayName = popupBubbleDisplayName(bubble, index).trim();
   if (bubble?.anchor_mode === "shot" && bubble?.shot_id) {
     const resolvedText = popupBubbleResolvedText(bubble).trim();
-    parts.push(popupBubbleShotLabel(bubble) || "Shot anchor");
-    if (resolvedText) parts.push(resolvedText);
+    const shotLabel = popupBubbleShotLabel(bubble).trim();
+    if (shotLabel && shotLabel !== displayName) parts.push(shotLabel);
+    if (resolvedText && resolvedText !== displayName && resolvedText !== shotLabel) parts.push(resolvedText);
+    if (parts.length === 0) parts.push("Shot-linked");
   } else {
     parts.push(`${precise(popupBubbleEffectiveTimeMs(bubble))}s`);
   }
@@ -3242,6 +3321,44 @@ function setPopupBubbleExpanded(bubbleId, expanded) {
   popupBubbleExpansion.set(bubbleId, Boolean(expanded));
   syncLocalProjectUiState();
   scheduleProjectUiStateApply();
+}
+
+function popupEditorSectionDefaultExpanded(sectionId, bubble = null) {
+  if (!sectionId) return true;
+  if (sectionId === "motion") {
+    return Boolean(
+      popupAutoTraceBubbleId === bubble?.id
+      || bubble?.follow_motion
+      || popupBubbleMotionPath(bubble).length > 0
+      || selectedPopupPlacementMode === "keyframe"
+    );
+  }
+  return DEFAULT_POPUP_EDITOR_SECTION_EXPANSION[sectionId] ?? false;
+}
+
+function isPopupEditorSectionExpanded(sectionId, bubble = null) {
+  if (!sectionId) return true;
+  if (popupEditorSectionExpansion.has(sectionId)) return Boolean(popupEditorSectionExpansion.get(sectionId));
+  return popupEditorSectionDefaultExpanded(sectionId, bubble);
+}
+
+function setPopupEditorSectionExpanded(sectionId, expanded) {
+  if (!sectionId) return;
+  popupEditorSectionExpansion.set(sectionId, Boolean(expanded));
+}
+
+function renderPopupEditorSectionToggles(card, bubble) {
+  if (!(card instanceof HTMLElement)) return;
+  card.querySelectorAll("[data-popup-editor-section]").forEach((section) => {
+    if (!(section instanceof HTMLElement)) return;
+    const sectionId = section.dataset.popupEditorSection || "";
+    const expanded = isPopupEditorSectionExpanded(sectionId, bubble);
+    section.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(section, expanded, () => {
+      setPopupEditorSectionExpanded(sectionId, !expanded);
+      renderPopupEditors();
+    });
+  });
 }
 
 function collapseMinimizableInspectorItems({ syncUiState: shouldSyncUiState = true, persistUiState = true, rerender = false } = {}) {
@@ -3282,24 +3399,51 @@ function collapseMinimizableInspectorItems({ syncUiState: shouldSyncUiState = tr
   }
 }
 
+function popupBubbleNavigatorElement(bubbleId) {
+  if (!bubbleId) return null;
+  const preferredSelectors = markersWorkbenchShown()
+    ? [
+        `#markers-workbench-list .popup-marker-row[data-popup-id="${bubbleId}"]`,
+        `#popup-marker-list .popup-marker-row[data-popup-id="${bubbleId}"]`,
+      ]
+    : [
+        `#popup-marker-list .popup-marker-row[data-popup-id="${bubbleId}"]`,
+        `#markers-workbench-list .popup-marker-row[data-popup-id="${bubbleId}"]`,
+      ];
+  return preferredSelectors
+    .map((selector) => document.querySelector(selector))
+    .find((element) => element instanceof HTMLElement) || null;
+}
+
+function popupBubbleEditorCardElement(bubbleId) {
+  if (!bubbleId) return null;
+  return document.querySelector(`#markers-workbench-editor .popup-bubble-card[data-popup-id="${bubbleId}"]`)
+    || document.querySelector(`.popup-bubble-card[data-popup-id="${bubbleId}"]`);
+}
+
 function popupBubbleCardElement(bubbleId) {
-  return document.querySelector(`.popup-bubble-card[data-popup-id="${bubbleId}"]`);
+  return popupBubbleNavigatorElement(bubbleId) || popupBubbleEditorCardElement(bubbleId);
 }
 
 function revealPopupBubbleCard(bubbleId, { focus = false } = {}) {
-  const card = popupBubbleCardElement(bubbleId);
+  const card = popupBubbleNavigatorElement(bubbleId) || popupBubbleCardElement(bubbleId);
   if (!(card instanceof HTMLElement)) return;
-  const list = ["popup-bubble-list", "popup-shot-linked-list"]
+  const list = ["markers-workbench-list", "popup-marker-list"]
     .map((id) => $(id))
     .find((element) => element instanceof HTMLElement && element.contains(card));
   if (list instanceof HTMLElement) {
-    const offset = card.getBoundingClientRect().top - list.getBoundingClientRect().top;
-    list.scrollTop = Math.max(0, list.scrollTop + offset);
+    const listRect = list.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    if (cardRect.top < listRect.top) {
+      list.scrollTop = Math.max(0, list.scrollTop + (cardRect.top - listRect.top) - 8);
+    } else if (cardRect.bottom > listRect.bottom) {
+      list.scrollTop = Math.max(0, list.scrollTop + (cardRect.bottom - listRect.bottom) + 8);
+    }
   } else {
     card.scrollIntoView({ block: "nearest" });
   }
   if (focus) {
-    const button = card.querySelector(".popup-bubble-button");
+    const button = card.querySelector(".popup-marker-select, .popup-bubble-button");
     if (button instanceof HTMLElement) button.focus();
   }
 }
@@ -3308,12 +3452,15 @@ function selectPopupBubble(
   bubbleId,
   { seek = true, reveal = true, focus = false, activateTool = false, expand = false, rerender = true } = {},
 ) {
+  const previousBubbleId = selectedPopupBubbleId;
   const bubble = popupBubbles().find((item) => item.id === bubbleId) || null;
   if (!bubble) {
     selectedPopupBubbleId = null;
+    setSelectedPopupPlacementMode("base");
     return false;
   }
   selectedPopupBubbleId = bubble.id;
+  if (previousBubbleId !== bubble.id) setSelectedPopupPlacementMode("base");
   if (expand) {
     if (!popupBubbleExpansion.has(bubble.id)) {
       popupBubbleExpansion.set(bubble.id, true);
@@ -3338,6 +3485,23 @@ function selectPopupBubbleForShot(shotId, options = {}) {
 function selectedPopupBubble() {
   if (!selectedPopupBubbleId) return null;
   return popupBubbles().find((bubble) => bubble.id === selectedPopupBubbleId) || null;
+}
+
+function setSelectedPopupPlacementMode(mode, offsetMs = selectedPopupKeyframeOffsetMs) {
+  selectedPopupPlacementMode = mode === "keyframe" ? "keyframe" : "base";
+  if (selectedPopupPlacementMode === "keyframe") {
+    selectedPopupKeyframeOffsetMs = Math.max(0, Math.round(Number(offsetMs) || 0));
+  } else {
+    selectedPopupKeyframeOffsetMs = 0;
+  }
+}
+
+function popupPlacementSummary(bubble) {
+  if (!bubble) return "Base point";
+  if (selectedPopupPlacementMode !== "keyframe") return "Base point";
+  return selectedPopupKeyframeOffsetMs <= 0
+    ? "Base point"
+    : `Keyframe ${seconds(selectedPopupKeyframeOffsetMs)}s`;
 }
 
 function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
@@ -3378,6 +3542,7 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
     });
     if (field === "follow_motion") {
       nextBubble.follow_motion = Boolean(rawValue);
+      if (nextBubble.follow_motion) setPopupEditorSectionExpanded("motion", true);
     }
     if (field === "anchor_mode") {
       nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
@@ -3419,42 +3584,34 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
   }
 }
 
-function addPopupBubble() {
-  const shot = selectedShot();
-  const video = $("primary-video");
-  const timeMs = shot ? shot.time_ms : Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+function addPopupBubble(overrides = {}) {
   const template = currentPopupTemplate();
-  const nextBubble = normalizePopupBubble(
-    shot
-      ? {
-          text: popupTemplateTextForShot(shot),
-          anchor_mode: "shot",
-          shot_id: shot.id,
-          time_ms: timeMs,
-          duration_ms: template.duration_ms,
-          quadrant: template.quadrant,
-          x: 0.5,
-          y: 0.5,
-          width: template.width,
-          height: template.height,
-          follow_motion: template.follow_motion,
-          content_type: template.content_type,
-        }
-      : {
-          text: defaultScoreLetter(),
-          time_ms: timeMs,
-          duration_ms: template.duration_ms,
-          quadrant: template.quadrant,
-          x: 0.5,
-          y: 0.5,
-          width: template.width,
-          height: template.height,
-          follow_motion: template.follow_motion,
-          content_type: template.content_type,
-        },
-  );
+  const nextBubble = normalizePopupBubble({
+    id: createPopupBubbleId(),
+    name: "",
+    text: template.content_type === "image" ? "" : defaultScoreLetter(),
+    anchor_mode: "time",
+    shot_id: null,
+    time_ms: currentPrimaryVideoPositionMs(),
+    duration_ms: template.duration_ms,
+    quadrant: template.quadrant,
+    x: 0.5,
+    y: 0.5,
+    enabled: template.enabled,
+    width: template.width,
+    height: template.height,
+    follow_motion: template.follow_motion,
+    content_type: template.content_type,
+    image_path: template.image_path,
+    image_scale_mode: template.image_scale_mode,
+    background_color: template.background_color,
+    text_color: template.text_color,
+    opacity: template.opacity,
+    ...overrides,
+  });
   setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
   selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true, expand: true });
+  return nextBubble;
 }
 
 function popupShotPenaltyCounts(shotId) {
@@ -3533,6 +3690,11 @@ function importShotPopups() {
       height: existingBubble?.height ?? template.height,
       follow_motion: existingBubble?.follow_motion ?? template.follow_motion,
       content_type: existingBubble?.content_type || template.content_type,
+      image_path: existingBubble?.image_path ?? template.image_path,
+      image_scale_mode: existingBubble?.image_scale_mode ?? template.image_scale_mode,
+      background_color: existingBubble?.background_color ?? template.background_color,
+      text_color: existingBubble?.text_color ?? template.text_color,
+      opacity: existingBubble?.opacity ?? template.opacity,
     });
   });
   setPopupBubbles([...preservedBubbles, ...importedBubbles], { commit: true, rerender: true });
@@ -3540,8 +3702,97 @@ function importShotPopups() {
   if (focusShotId) selectPopupBubbleForShot(focusShotId, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
 }
 
+function createPopupBubbleForShot(shotId) {
+  if (!shotId) return false;
+  const shot = orderedShotsByTime().find((item) => item.id === shotId) || null;
+  if (!shot) {
+    setStatus("Select a shot before creating a shot-linked marker.");
+    return false;
+  }
+  const template = currentPopupTemplate();
+  const nextBubble = normalizePopupBubble({
+    id: createPopupBubbleId(),
+    name: "",
+    text: popupTemplateTextForShot(shot),
+    anchor_mode: "shot",
+    shot_id: shot.id,
+    time_ms: shot.time_ms,
+    duration_ms: template.duration_ms,
+    quadrant: template.quadrant,
+    x: template.x ?? 0.5,
+    y: template.y ?? 0.5,
+    enabled: template.enabled,
+    width: template.width,
+    height: template.height,
+    follow_motion: template.follow_motion,
+    content_type: template.content_type,
+    image_path: template.image_path,
+    image_scale_mode: template.image_scale_mode,
+    background_color: template.background_color,
+    text_color: template.text_color,
+    opacity: template.opacity,
+  });
+  setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
+  selectPopupBubble(nextBubble.id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
+  return true;
+}
+
+function applyTemplateStyleToSelectedPopupBubble() {
+  const bubble = selectedPopupBubble();
+  if (!bubble) return false;
+  const template = currentPopupTemplate();
+  setPopupBubbles(popupBubbles().map((item) => item.id === bubble.id
+    ? normalizePopupBubble({
+      ...item,
+      width: template.width,
+      height: template.height,
+      follow_motion: template.follow_motion,
+      background_color: template.background_color,
+      text_color: template.text_color,
+      opacity: template.opacity,
+    })
+    : item), { commit: true, rerender: true });
+  return true;
+}
+
+function applySelectedPopupStyleToVisibleShotLinked() {
+  const source = selectedPopupBubble();
+  if (!source) return false;
+  const visibleShotLinkedIds = new Set(
+    filteredPopupBubbles(popupBubbles())
+      .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
+      .map((bubble) => bubble.id),
+  );
+  if (visibleShotLinkedIds.size === 0) return false;
+  setPopupBubbles(popupBubbles().map((bubble) => visibleShotLinkedIds.has(bubble.id)
+    ? normalizePopupBubble({
+      ...bubble,
+      width: source.width,
+      height: source.height,
+      background_color: source.background_color,
+      text_color: source.text_color,
+      opacity: source.opacity,
+    })
+    : bubble), { commit: true, rerender: true });
+  return true;
+}
+
 function removePopupBubble(bubbleId) {
-  setPopupBubbles(popupBubbles().filter((bubble) => bubble.id !== bubbleId), { commit: true, rerender: true });
+  const currentBubbles = popupBubbles();
+  const removedIndex = currentBubbles.findIndex((bubble) => bubble.id === bubbleId);
+  if (removedIndex < 0) return;
+  const removingSelectedBubble = selectedPopupBubbleId === bubbleId;
+  const remainingBubbles = currentBubbles.filter((bubble) => bubble.id !== bubbleId);
+  setPopupBubbles(remainingBubbles, { commit: true, rerender: true });
+  if (!removingSelectedBubble) return;
+  const fallbackBubble = remainingBubbles[removedIndex] || remainingBubbles[removedIndex - 1] || null;
+  if (fallbackBubble) {
+    selectPopupBubble(fallbackBubble.id, { seek: false, reveal: true, focus: false, activateTool: activeTool === "markers", expand: false });
+    return;
+  }
+  selectedPopupBubbleId = null;
+  selectedPopupKeyframeOffsetMs = 0;
+  render();
 }
 
 function duplicatePopupBubble(bubbleId) {
@@ -3651,6 +3902,7 @@ function syncSelectedPopupKeyframeOffset(bubble) {
 
 function setSelectedPopupKeyframeOffset(offsetMs) {
   selectedPopupKeyframeOffsetMs = Math.max(0, Math.round(Number(offsetMs) || 0));
+  selectedPopupPlacementMode = selectedPopupKeyframeOffsetMs > 0 ? "keyframe" : "base";
 }
 
 function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
@@ -3668,6 +3920,7 @@ function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
     point.x,
     point.y,
   );
+  setPopupEditorSectionExpanded("motion", true);
   setSelectedPopupKeyframeOffset(offsetMs);
   setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
   return true;
@@ -3718,6 +3971,7 @@ function copyPopupBubbleMotionFromPrevious(bubbleId) {
     follow_motion: Boolean(source.follow_motion || popupBubbleMotionPath(source).length > 0),
     motion_path: popupBubbleMotionPath(source).map((point) => ({ ...point })),
   });
+  setPopupEditorSectionExpanded("motion", true);
   setSelectedPopupKeyframeOffset(popupBubbleMotionPath(nextTarget)[0]?.offset_ms ?? 0);
   setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId ? nextTarget : bubble), { commit: true, rerender: true });
   return true;
@@ -3745,6 +3999,364 @@ function applyPopupBubbleMotionToVisibleShotLinked(bubbleId) {
     : bubble), { commit: true, rerender: true });
   setStatus(`Applied motion path to ${targetIds.size} shot-linked popup${targetIds.size === 1 ? "" : "s"}.`);
   return true;
+}
+
+function popupTraceFrameSize(video, maxWidth = 480) {
+  const sourceWidth = Math.max(1, Math.round(Number(video?.videoWidth || 0) || 0));
+  const sourceHeight = Math.max(1, Math.round(Number(video?.videoHeight || 0) || 0));
+  if (sourceWidth <= 1 || sourceHeight <= 1) return null;
+  const scale = Math.min(1, maxWidth / sourceWidth);
+  return {
+    width: Math.max(96, Math.round(sourceWidth * scale)),
+    height: Math.max(96, Math.round(sourceHeight * scale)),
+  };
+}
+
+function popupTraceWaitForVideoFrame(video, timeoutMs = 1200) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = null;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      resolve();
+    };
+    timeoutId = window.setTimeout(finish, timeoutMs);
+    if (typeof video?.requestVideoFrameCallback === "function") {
+      video.requestVideoFrameCallback(() => finish());
+      return;
+    }
+    requestAnimationFrame(() => finish());
+  });
+}
+
+function popupTraceWaitForEvent(target, eventName, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    let timeoutId = null;
+    const cleanup = () => {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      target.removeEventListener(eventName, handleEvent);
+      target.removeEventListener("error", handleError);
+    };
+    const handleEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error(`${eventName} failed`));
+    };
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`${eventName} timed out`));
+    }, timeoutMs);
+    target.addEventListener(eventName, handleEvent, { once: true });
+    target.addEventListener("error", handleError, { once: true });
+  });
+}
+
+async function popupTraceSeekVideo(video, timeMs) {
+  if (!(video instanceof HTMLVideoElement)) return false;
+  const durationMs = Number.isFinite(video.duration) ? Math.max(0, Math.floor(video.duration * 1000)) : null;
+  const clampedMs = durationMs === null
+    ? Math.max(0, Math.floor(Number(timeMs) || 0))
+    : clamp(Math.floor(Number(timeMs) || 0), 0, durationMs);
+  const targetTimeS = clampedMs / 1000;
+  if (Math.abs((video.currentTime || 0) - targetTimeS) < 0.001) {
+    await popupTraceWaitForVideoFrame(video);
+    return true;
+  }
+  const seekPromise = popupTraceWaitForEvent(video, "seeked");
+  try {
+    video.currentTime = targetTimeS;
+  } catch {
+    return false;
+  }
+  try {
+    await seekPromise;
+    await popupTraceWaitForVideoFrame(video);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function popupTraceLumaFrame(ctx, width, height) {
+  const { data } = ctx.getImageData(0, 0, width, height);
+  const luma = new Uint8ClampedArray(width * height);
+  for (let index = 0, pixelIndex = 0; index < data.length; index += 4, pixelIndex += 1) {
+    luma[pixelIndex] = Math.round((data[index] * 0.299) + (data[index + 1] * 0.587) + (data[index + 2] * 0.114));
+  }
+  return luma;
+}
+
+function popupTraceClampCenter(value, halfSize, maxSize) {
+  const upper = Math.max(halfSize, maxSize - halfSize - 1);
+  return clamp(Math.round(Number(value) || 0), halfSize, upper);
+}
+
+function popupTracePatchMoments(samples) {
+  let sum = 0;
+  let sumSq = 0;
+  for (let index = 0; index < samples.length; index += 1) {
+    const value = samples[index];
+    sum += value;
+    sumSq += value * value;
+  }
+  const count = Math.max(1, samples.length);
+  const mean = sum / count;
+  const variance = Math.max(0, (sumSq / count) - (mean * mean));
+  return {
+    mean,
+    stdDev: Math.sqrt(variance),
+  };
+}
+
+function popupTraceExtractPatch(luma, frameWidth, frameHeight, centerX, centerY, patchSize = 28) {
+  const halfSize = Math.floor(patchSize / 2);
+  const clampedX = popupTraceClampCenter(centerX, halfSize, frameWidth);
+  const clampedY = popupTraceClampCenter(centerY, halfSize, frameHeight);
+  const patch = new Uint8ClampedArray(patchSize * patchSize);
+  let targetIndex = 0;
+  for (let y = clampedY - halfSize; y < clampedY + halfSize; y += 1) {
+    for (let x = clampedX - halfSize; x < clampedX + halfSize; x += 1) {
+      patch[targetIndex] = luma[(y * frameWidth) + x];
+      targetIndex += 1;
+    }
+  }
+  const moments = popupTracePatchMoments(patch);
+  return {
+    data: patch,
+    size: patchSize,
+    centerX: clampedX,
+    centerY: clampedY,
+    mean: moments.mean,
+    stdDev: moments.stdDev,
+  };
+}
+
+function popupTracePatchStrength(patch, referenceX, referenceY) {
+  const distance = Math.hypot(patch.centerX - referenceX, patch.centerY - referenceY);
+  return patch.stdDev - (distance * 0.35);
+}
+
+function popupTraceSelectPatch(luma, frameWidth, frameHeight, centerX, centerY, patchSize = 28, searchRadius = 18, step = 2) {
+  const halfSize = Math.floor(patchSize / 2);
+  const minX = popupTraceClampCenter(centerX - searchRadius, halfSize, frameWidth);
+  const maxX = popupTraceClampCenter(centerX + searchRadius, halfSize, frameWidth);
+  const minY = popupTraceClampCenter(centerY - searchRadius, halfSize, frameHeight);
+  const maxY = popupTraceClampCenter(centerY + searchRadius, halfSize, frameHeight);
+  let bestPatch = popupTraceExtractPatch(luma, frameWidth, frameHeight, centerX, centerY, patchSize);
+  let bestScore = popupTracePatchStrength(bestPatch, centerX, centerY);
+  for (let y = minY; y <= maxY; y += step) {
+    for (let x = minX; x <= maxX; x += step) {
+      const candidate = popupTraceExtractPatch(luma, frameWidth, frameHeight, x, y, patchSize);
+      const candidateScore = popupTracePatchStrength(candidate, centerX, centerY);
+      if (candidateScore > bestScore) {
+        bestPatch = candidate;
+        bestScore = candidateScore;
+      }
+    }
+  }
+  return bestPatch;
+}
+
+function popupTracePatchCorrelation(luma, frameWidth, patch, centerX, centerY) {
+  const halfSize = Math.floor(patch.size / 2);
+  let sum = 0;
+  let sumSq = 0;
+  for (let y = centerY - halfSize; y < centerY + halfSize; y += 1) {
+    for (let x = centerX - halfSize; x < centerX + halfSize; x += 1) {
+      const value = luma[(y * frameWidth) + x];
+      sum += value;
+      sumSq += value * value;
+    }
+  }
+  const count = Math.max(1, patch.data.length);
+  const mean = sum / count;
+  const variance = Math.max(0, (sumSq / count) - (mean * mean));
+  const stdDev = Math.sqrt(variance);
+  if (patch.stdDev < 1 || stdDev < 1) return Number.NEGATIVE_INFINITY;
+  let covariance = 0;
+  let patchIndex = 0;
+  for (let y = centerY - halfSize; y < centerY + halfSize; y += 1) {
+    for (let x = centerX - halfSize; x < centerX + halfSize; x += 1) {
+      covariance += (luma[(y * frameWidth) + x] - mean) * (patch.data[patchIndex] - patch.mean);
+      patchIndex += 1;
+    }
+  }
+  return covariance / (count * patch.stdDev * stdDev);
+}
+
+function popupTraceBestMatch(luma, frameWidth, frameHeight, patch, previousCenter, searchRadius = 36, step = 2) {
+  const halfSize = Math.floor(patch.size / 2);
+  const minX = popupTraceClampCenter(previousCenter.x - searchRadius, halfSize, frameWidth);
+  const maxX = popupTraceClampCenter(previousCenter.x + searchRadius, halfSize, frameWidth);
+  const minY = popupTraceClampCenter(previousCenter.y - searchRadius, halfSize, frameHeight);
+  const maxY = popupTraceClampCenter(previousCenter.y + searchRadius, halfSize, frameHeight);
+  let best = { x: previousCenter.x, y: previousCenter.y, score: Number.NEGATIVE_INFINITY };
+  for (let y = minY; y <= maxY; y += step) {
+    for (let x = minX; x <= maxX; x += step) {
+      const score = popupTracePatchCorrelation(luma, frameWidth, patch, x, y);
+      if (score > best.score) best = { x, y, score };
+    }
+  }
+  const refineMinX = popupTraceClampCenter(best.x - step, halfSize, frameWidth);
+  const refineMaxX = popupTraceClampCenter(best.x + step, halfSize, frameWidth);
+  const refineMinY = popupTraceClampCenter(best.y - step, halfSize, frameHeight);
+  const refineMaxY = popupTraceClampCenter(best.y + step, halfSize, frameHeight);
+  for (let y = refineMinY; y <= refineMaxY; y += 1) {
+    for (let x = refineMinX; x <= refineMaxX; x += 1) {
+      const score = popupTracePatchCorrelation(luma, frameWidth, patch, x, y);
+      if (score > best.score) best = { x, y, score };
+    }
+  }
+  return best;
+}
+
+function popupTraceOffsets(durationMs) {
+  const normalizedDuration = Math.max(1, Math.round(Number(durationMs) || 0));
+  const stepMs = Math.max(33, Math.floor(normalizedDuration / 20));
+  const offsets = [];
+  for (let offsetMs = stepMs; offsetMs < normalizedDuration; offsetMs += stepMs) {
+    offsets.push(offsetMs);
+  }
+  if (offsets.length === 0 || offsets[offsets.length - 1] !== normalizedDuration) offsets.push(normalizedDuration);
+  return offsets;
+}
+
+function popupTraceSimplifyPoints(points) {
+  if (!Array.isArray(points) || points.length === 0) return [];
+  const simplified = [];
+  points.forEach((point, index) => {
+    if (index === 0 || index === points.length - 1) {
+      simplified.push(point);
+      return;
+    }
+    const previous = simplified[simplified.length - 1] || points[index - 1];
+    if (Math.abs(point.x - previous.x) < 0.005 && Math.abs(point.y - previous.y) < 0.005) return;
+    simplified.push(point);
+  });
+  return normalizePopupMotionPath(simplified);
+}
+
+async function autoTracePopupBubbleMotion(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId) || null;
+  const video = $("primary-video");
+  if (!bubble) return false;
+  if (!(video instanceof HTMLVideoElement) || !state?.media?.primary_available || Number(video.videoWidth || 0) <= 0) {
+    setStatus("Load primary video before tracing marker motion.");
+    return false;
+  }
+  if (popupAutoTraceBubbleId) {
+    setStatus("Finish the current motion trace before starting another one.");
+    return false;
+  }
+  const frameSize = popupTraceFrameSize(video);
+  if (!frameSize) {
+    setStatus("Primary video is not ready for motion tracing yet.");
+    return false;
+  }
+  const restorePositionMs = currentPrimaryVideoPositionMs();
+  const shouldResumePlayback = !video.paused;
+  const startMs = popupBubbleEffectiveTimeMs(bubble);
+  const basePoint = popupBubblePoint(normalizePopupBubble({ ...bubble, follow_motion: false, motion_path: [] }), startMs);
+  const canvas = document.createElement("canvas");
+  canvas.width = frameSize.width;
+  canvas.height = frameSize.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) {
+    setStatus("Could not create a video frame surface for motion tracing.");
+    return false;
+  }
+  popupAutoTraceBubbleId = bubble.id;
+  setPopupEditorSectionExpanded("motion", true);
+  video.pause();
+  renderPopupEditors();
+  setStatus("Tracing motion…");
+  let tracedPoints = [];
+  let traceFailed = false;
+  let weakMatchCount = 0;
+  try {
+    const startSeekSucceeded = await popupTraceSeekVideo(video, startMs);
+    if (!startSeekSucceeded) throw new Error("Could not seek to the marker start time.");
+    ctx.drawImage(video, 0, 0, frameSize.width, frameSize.height);
+    const initialLuma = popupTraceLumaFrame(ctx, frameSize.width, frameSize.height);
+    const initialCenter = {
+      x: Math.round(clamp(basePoint.x, 0, 1) * (frameSize.width - 1)),
+      y: Math.round(clamp(basePoint.y, 0, 1) * (frameSize.height - 1)),
+    };
+    const patch = popupTraceSelectPatch(initialLuma, frameSize.width, frameSize.height, initialCenter.x, initialCenter.y);
+    if (patch.stdDev < 8) {
+      setStatus("Could not trace motion — move the marker base onto a more distinct detail, then try again.");
+      return false;
+    }
+    const featureOffset = {
+      x: (initialCenter.x - patch.centerX) / Math.max(1, frameSize.width - 1),
+      y: (initialCenter.y - patch.centerY) / Math.max(1, frameSize.height - 1),
+    };
+    let previousCenter = { x: patch.centerX, y: patch.centerY };
+    for (const offsetMs of popupTraceOffsets(bubble.duration_ms)) {
+      const seekSucceeded = await popupTraceSeekVideo(video, startMs + offsetMs);
+      if (!seekSucceeded) {
+        traceFailed = true;
+        break;
+      }
+      ctx.drawImage(video, 0, 0, frameSize.width, frameSize.height);
+      const luma = popupTraceLumaFrame(ctx, frameSize.width, frameSize.height);
+      const match = popupTraceBestMatch(luma, frameSize.width, frameSize.height, patch, previousCenter);
+      if (!Number.isFinite(match.score)) {
+        traceFailed = true;
+        break;
+      }
+      weakMatchCount = match.score < 0.08 ? weakMatchCount + 1 : 0;
+      if (weakMatchCount > 3) {
+        traceFailed = true;
+        break;
+      }
+      previousCenter = { x: match.x, y: match.y };
+      tracedPoints.push({
+        offset_ms: offsetMs,
+        x: clamp((match.x / Math.max(1, frameSize.width - 1)) + featureOffset.x, 0, 1),
+        y: clamp((match.y / Math.max(1, frameSize.height - 1)) + featureOffset.y, 0, 1),
+        easing: "linear",
+      });
+    }
+    const simplifiedPoints = popupTraceSimplifyPoints(tracedPoints);
+    if (simplifiedPoints.length === 0) {
+      setStatus(traceFailed
+        ? "Could not trace motion — move the marker base onto a more distinct detail, then try again."
+        : "Motion trace found no movement to record. Add a keyframe manually if you need a path.");
+      return false;
+    }
+    setPopupEditorSectionExpanded("motion", true);
+    setSelectedPopupKeyframeOffset(0);
+    setPopupBubbles(popupBubbles().map((item) => item.id === bubble.id
+      ? normalizePopupBubble({
+          ...item,
+          follow_motion: true,
+          motion_path: simplifiedPoints,
+        })
+      : item), { commit: true, rerender: true });
+    setStatus(traceFailed
+      ? `Traced ${simplifiedPoints.length} motion point${simplifiedPoints.length === 1 ? "" : "s"}. Review the later points before exporting.`
+      : `Traced ${simplifiedPoints.length} motion point${simplifiedPoints.length === 1 ? "" : "s"}.`);
+    return true;
+  } catch (error) {
+    console.error(error);
+    setStatus("Could not trace motion — move the marker base onto a more distinct detail, then try again.");
+    return false;
+  } finally {
+    popupAutoTraceBubbleId = null;
+    await popupTraceSeekVideo(video, restorePositionMs).catch(() => {});
+    renderPopupEditors();
+    renderLiveOverlay();
+    if (shouldResumePlayback) {
+      const playResult = video.play?.();
+      if (playResult?.catch) playResult.catch(() => {});
+    }
+  }
 }
 
 function renderPopupBubbleMotionGuide(card, bubble) {
@@ -3821,11 +4433,11 @@ function renderPopupBubbleMotionGuide(card, bubble) {
   });
 }
 
-function buildPopupBubbleCard(bubble, index) {
+function buildPopupBubbleCard(bubble, index, options = {}) {
   const card = document.createElement("section");
   card.className = "text-box-card popup-bubble-card";
   card.dataset.popupId = bubble.id;
-  const expanded = isPopupBubbleExpanded(bubble.id);
+  const expanded = options.forceExpanded ? true : isPopupBubbleExpanded(bubble.id);
   card.classList.toggle("collapsed", !expanded);
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   const displayedSize = resolvedPopupBubbleSize(bubble);
@@ -3839,6 +4451,15 @@ function buildPopupBubbleCard(bubble, index) {
   const selected = bubble.id === selectedPopupBubbleId;
   const resolvedText = popupBubbleResolvedText(bubble);
   const usesShotScoreText = bubble.anchor_mode === "shot" && Boolean(bubble.shot_id);
+  const tracingThisBubble = popupAutoTraceBubbleId === bubble.id;
+  const showCollapseAction = !options.forceExpanded;
+  const collapseActionMarkup = showCollapseAction
+    ? `<button type="button" class="scoring-shot-toggle" data-popup-action="toggle" aria-label="${expanded ? "Hide" : "Show"} popup bubble editor">${expanded ? "v" : ">"}</button>`
+    : "";
+  const autoTraceDisabled = tracingThisBubble
+    || popupAutoTraceBubbleId !== null
+    || !state?.media?.primary_available
+    || bubble.duration_ms < 100;
   card.innerHTML = `
     <div class="text-box-card-header">
       <button type="button" class="popup-bubble-button">
@@ -3846,108 +4467,131 @@ function buildPopupBubbleCard(bubble, index) {
       </button>
       <div class="text-box-card-actions">
         <label class="check-row popup-bubble-enabled"><input type="checkbox" data-popup-field="enabled" /> <span>On</span></label>
-        <button type="button" class="scoring-shot-toggle" data-popup-action="toggle" aria-label="${expanded ? "Hide" : "Show"} popup bubble editor">${expanded ? "v" : ">"}</button>
+        ${collapseActionMarkup}
         <button type="button" data-popup-action="duplicate">Duplicate</button>
         <button type="button" data-popup-action="remove">Remove</button>
       </div>
     </div>
     <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
-      <label>Bubble name
-        <input data-popup-field="name" type="text" maxlength="80" placeholder="Inherit shot name" />
-      </label>
-      <label>Text
-        <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
-      </label>
-      <div class="control-grid">
-        <label>Content
-          <select data-popup-field="content_type">
-            <option value="text">Text</option>
-            <option value="image">Image</option>
-            <option value="text_image">Text + Image</option>
-          </select>
-        </label>
-        <label>Image path
-          <div class="path-row">
-            <input data-popup-field="image_path" type="text" placeholder="/absolute/path/to/image.png" />
-            <button type="button" data-popup-action="browse_image">Browse</button>
-          </div>
-        </label>
-        <label>Scale
-          <select data-popup-field="image_scale_mode">
-            <option value="contain">Contain</option>
-            <option value="cover">Cover</option>
-          </select>
-        </label>
-      </div>
-      <div class="control-grid">
-        <label>Start mode
-          <select data-popup-field="anchor_mode">
-            <option value="time">Time</option>
-            <option value="shot">Shot</option>
-          </select>
-        </label>
-        <label>Start (seconds)
-          <input data-popup-field="time_s" type="number" min="0" step="0.001" />
-        </label>
-        <label>Shot
-          <select data-popup-field="shot_id"></select>
-        </label>
-        <label>Duration (seconds)
-          <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
-        </label>
-      </div>
-      <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
-      <p class="hint" data-popup-motion-hint="true"></p>
-      <section class="popup-motion-guide" data-popup-motion-guide hidden>
-        <div class="popup-keyframe-toolbar">
-          <button type="button" data-popup-action="add_keyframe">Add Keyframe</button>
-          <button type="button" data-popup-action="prev_keyframe">Previous Keyframe</button>
-          <button type="button" data-popup-action="next_keyframe">Next Keyframe</button>
-          <button type="button" data-popup-action="copy_motion_prev">Copy Prev Motion</button>
-          <button type="button" data-popup-action="apply_motion_visible">Apply To Shown Shot Popups</button>
-          <button type="button" data-popup-action="clear_motion_path">Clear path</button>
+      <section class="popup-editor-section" data-popup-editor-section="content">
+        <div class="section-header sub-section-header">
+          <h4>Content</h4>
         </div>
-        <div class="popup-motion-path-list popup-keyframe-list" data-popup-keyframe-list></div>
+        <label>Bubble name
+          <input data-popup-field="name" type="text" maxlength="80" placeholder="Inherit shot name" />
+        </label>
+        <label data-popup-section="text">Text
+          <textarea data-popup-field="text" rows="2" maxlength="500" placeholder="-0"></textarea>
+        </label>
+        <div class="control-grid">
+          <label>Content
+            <select data-popup-field="content_type">
+              <option value="text">Text</option>
+              <option value="image">Image</option>
+              <option value="text_image">Text + Image</option>
+            </select>
+          </label>
+          <label data-popup-media-field="image_path">Image path
+            <div class="path-row">
+              <input data-popup-field="image_path" type="text" placeholder="No image selected" readonly />
+              <button type="button" data-popup-action="browse_image">Browse</button>
+            </div>
+          </label>
+          <label data-popup-media-field="image_scale_mode">Scale
+            <select data-popup-field="image_scale_mode">
+              <option value="contain">Contain</option>
+              <option value="cover">Cover</option>
+            </select>
+          </label>
+        </div>
       </section>
-      <div class="control-grid">
-        <label>X (0 left, 1 right)
-          <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
-        </label>
-        <label>Y (0 top, 1 bottom)
-          <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
-        </label>
-        <label>Width
-          <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
-        </label>
-        <label>Height
-          <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
-        </label>
-      </div>
-      <div class="style-grid review-style-grid">
-        <section class="style-card popup-style-card compact-style-card">
-          <h4>Bubble Style</h4>
-          <label class="color-field"><span class="style-card-label">Bg</span>
-            <span class="color-control-pair">
-              <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
-              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
-            </span>
+      <section class="popup-editor-section" data-popup-editor-section="timing">
+        <div class="section-header sub-section-header">
+          <h4>Timing & Placement</h4>
+        </div>
+        <div class="control-grid">
+          <label>Start mode
+            <select data-popup-field="anchor_mode">
+              <option value="time">Time</option>
+              <option value="shot">Shot</option>
+            </select>
           </label>
-          <label class="color-field"><span class="style-card-label">Text</span>
-            <span class="color-control-pair">
-              <button data-popup-field="text_color" class="color-swatch-button" data-color-label="Popup text" type="button"></button>
-              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
-            </span>
+          <label>Start (seconds)
+            <input data-popup-field="time_s" type="number" min="0" step="0.001" />
           </label>
-          <label class="opacity-field"><span class="style-card-label">Alpha</span>
-            <span class="opacity-control-pair">
-              <span class="opacity-percent-field">
-                <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup opacity percent" />
-                <span class="opacity-percent-suffix">%</span>
-              </span>
-            </span>
+          <label>Shot
+            <select data-popup-field="shot_id"></select>
           </label>
+          <label>Duration (seconds)
+            <input data-popup-field="duration_s" type="number" min="0.001" step="0.001" />
+          </label>
+        </div>
+        <div class="control-grid">
+          <label>X (0 left, 1 right)
+            <input data-popup-field="x" type="number" min="0" max="1" step="0.01" />
+          </label>
+          <label>Y (0 top, 1 bottom)
+            <input data-popup-field="y" type="number" min="0" max="1" step="0.01" />
+          </label>
+          <label>Width
+            <input data-popup-field="width" type="number" min="0" max="1000" step="1" />
+          </label>
+          <label>Height
+            <input data-popup-field="height" type="number" min="0" max="1000" step="1" />
+          </label>
+        </div>
+      </section>
+      <section class="popup-editor-section" data-popup-editor-section="motion">
+        <div class="section-header sub-section-header">
+          <h4>Motion</h4>
+        </div>
+        <label class="check-row"><input data-popup-field="follow_motion" type="checkbox" /> Follow motion path</label>
+        <p class="hint" data-popup-motion-hint="true"></p>
+        <div class="popup-motion-actions">
+          <button type="button" data-popup-action="auto_trace_motion" ${autoTraceDisabled ? "disabled" : ""}>${tracingThisBubble ? "Tracing…" : "Auto Trace Motion"}</button>
+        </div>
+        <section class="popup-motion-guide" data-popup-motion-guide hidden>
+          <div class="popup-keyframe-toolbar">
+            <button type="button" data-popup-action="add_keyframe">Add Keyframe</button>
+            <button type="button" data-popup-action="prev_keyframe">Previous Keyframe</button>
+            <button type="button" data-popup-action="next_keyframe">Next Keyframe</button>
+            <button type="button" data-popup-action="copy_motion_prev">Copy Prev Motion</button>
+            <button type="button" data-popup-action="apply_motion_visible">Apply To Shown Shot Popups</button>
+            <button type="button" data-popup-action="clear_motion_path">Clear path</button>
+          </div>
+          <div class="popup-motion-path-list popup-keyframe-list" data-popup-keyframe-list></div>
         </section>
-      </div>
+      </section>
+      <section class="popup-editor-section" data-popup-editor-section="style">
+        <div class="section-header sub-section-header">
+          <h4>Style</h4>
+        </div>
+        <div class="style-grid review-style-grid">
+          <section class="style-card popup-style-card compact-style-card">
+            <h4>Bubble Style</h4>
+            <label class="color-field"><span class="style-card-label">Bg</span>
+              <span class="color-control-pair">
+                <button data-popup-field="background_color" class="color-swatch-button" data-color-label="Popup background" type="button"></button>
+                <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Popup background hex value" />
+              </span>
+            </label>
+            <label class="color-field"><span class="style-card-label">Text</span>
+              <span class="color-control-pair">
+                <button data-popup-field="text_color" class="color-swatch-button" data-color-label="Popup text" type="button"></button>
+                <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Popup text hex value" />
+              </span>
+            </label>
+            <label class="opacity-field"><span class="style-card-label">Background alpha</span>
+              <span class="opacity-control-pair">
+                <span class="opacity-percent-field">
+                  <input class="opacity-percent-input" data-popup-field="opacity_percent" type="number" min="0" max="100" step="1" value="90" aria-label="Popup background alpha percent" />
+                  <span class="opacity-percent-suffix">%</span>
+                </span>
+              </span>
+            </label>
+          </section>
+        </div>
+      </section>
     </div>
   `;
   card.classList.toggle("selected", selected);
@@ -3956,7 +4600,6 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="name"]'), bubble.name);
   syncControlValue(card.querySelector('[data-popup-field="text"]'), resolvedText);
   syncControlValue(card.querySelector('[data-popup-field="content_type"]'), bubble.content_type);
-  syncControlValue(card.querySelector('[data-popup-field="image_path"]'), bubble.image_path);
   syncControlValue(card.querySelector('[data-popup-field="image_scale_mode"]'), bubble.image_scale_mode);
   syncControlValue(card.querySelector('[data-popup-field="anchor_mode"]'), bubble.anchor_mode);
   syncControlValue(card.querySelector('[data-popup-field="time_s"]'), precise(popupTimeMs));
@@ -3969,23 +4612,36 @@ function buildPopupBubbleCard(bubble, index) {
   syncControlValue(card.querySelector('[data-popup-field="background_color"]'), bubble.background_color);
   syncControlValue(card.querySelector('[data-popup-field="text_color"]'), bubble.text_color);
   syncControlValue(card.querySelector('[data-popup-field="opacity_percent"]'), Math.round((bubble.opacity ?? 0.9) * 100));
+  const imagePathInput = card.querySelector('[data-popup-field="image_path"]');
+  if (imagePathInput instanceof HTMLInputElement) {
+    imagePathInput.dataset.popupSourcePath = bubble.image_path || "";
+    imagePathInput.title = bubble.image_path || "No image selected";
+    syncControlValue(imagePathInput, bubble.image_path ? fileName(bubble.image_path) : "");
+  }
   renderPopupBubbleMotionGuide(card, bubble);
   const motionHint = card.querySelector('[data-popup-motion-hint="true"]');
   if (motionHint) {
     if (bubble.follow_motion) {
       motionHint.textContent = motionPath.length > 0
-        ? `Add or select keyframes, then drag their on-video dots to preview the exact exported path.`
-        : "Turn on Follow motion, scrub to a point in time, then add a keyframe or drag the popup on the video.";
+        ? "Drag dots on the video to adjust the path."
+        : "Scrub to a position, then add a point to start a path.";
     } else {
       motionHint.textContent = motionPath.length > 0
-        ? `Motion keyframes are paused. Turn Follow motion back on to edit them.`
-        : "Enable this to add keyframes and keep the popup attached to movement.";
+        ? "Turn motion back on when you want to edit the saved keyframes."
+        : "Enable motion when this marker should move.";
     }
   }
+  renderPopupEditorSectionToggles(card, bubble);
   const clearMotionButton = card.querySelector('[data-popup-action="clear_motion_path"]');
   if (clearMotionButton instanceof HTMLButtonElement) {
     clearMotionButton.disabled = motionPath.length === 0;
   }
+  const showTextSection = bubble.content_type !== "image";
+  const showImageFields = bubble.content_type !== "text";
+  card.querySelector('[data-popup-section="text"]')?.toggleAttribute("hidden", !showTextSection);
+  card.querySelectorAll("[data-popup-media-field]").forEach((field) => {
+    field.toggleAttribute("hidden", !showImageFields);
+  });
   const shotSelect = card.querySelector('[data-popup-field="shot_id"]');
   const textArea = card.querySelector('[data-popup-field="text"]');
   if (textArea instanceof HTMLTextAreaElement) {
@@ -4024,6 +4680,7 @@ function buildPopupBubbleCard(bubble, index) {
       if (field === "time_s") return Math.round((Number(control.value) || 0) * 1000);
       if (field === "duration_s") return Math.round((Number(control.value) || 0) * 1000);
       if (field === "opacity_percent") return (Number(control.value) || 0) / 100;
+      if (field === "image_path") return control.dataset.popupSourcePath || "";
       return control.value;
     };
     const targetField = {
@@ -4133,6 +4790,11 @@ function buildPopupBubbleCard(bubble, index) {
     event.stopPropagation();
     applyPopupBubbleMotionToVisibleShotLinked(bubble.id);
   });
+  card.querySelector('[data-popup-action="auto_trace_motion"]')?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await autoTracePopupBubbleMotion(bubble.id);
+  });
   card.querySelector('[data-popup-action="browse_image"]')?.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -4140,6 +4802,9 @@ function buildPopupBubbleCard(bubble, index) {
     if (!(imageInput instanceof HTMLInputElement)) return;
     await pickPathForElement("popup_image", imageInput, `popup-image-${bubble.id}`, async (path) => {
       if (!path) return;
+      imageInput.dataset.popupSourcePath = path;
+      imageInput.title = path;
+      syncControlValue(imageInput, fileName(path));
       setPopupBubbleField(bubble.id, "image_path", path, { commit: true, rerender: true });
     });
   });
@@ -4151,6 +4816,82 @@ function buildPopupBubbleCard(bubble, index) {
   bindOverlayColorInput(card.querySelector('[data-popup-field="background_color"]'));
   bindOverlayColorInput(card.querySelector('[data-popup-field="text_color"]'));
   return card;
+}
+
+function buildPopupMarkerRow(bubble, index) {
+  const row = document.createElement("section");
+  row.className = "popup-marker-row";
+  row.dataset.popupId = bubble.id;
+  row.classList.toggle("selected", bubble.id === selectedPopupBubbleId);
+  const typeClass = bubble.anchor_mode === "shot" && bubble.shot_id ? "shot-linked" : "time-based";
+  const typeLabel = typeClass === "shot-linked" ? "Shot-linked" : "Time";
+  row.innerHTML = `
+    <div class="popup-marker-row-main">
+      <button type="button" class="popup-marker-select">
+        <span class="popup-marker-title">
+          <strong>${popupBubbleDisplayName(bubble, index)}</strong>
+          <span class="popup-marker-type-chip ${typeClass}">${typeLabel}</span>
+        </span>
+      </button>
+      <div class="popup-marker-meta">${popupBubbleSummaryText(bubble, index)}</div>
+    </div>
+    <div class="popup-marker-actions">
+      <label class="check-row popup-bubble-enabled"><input type="checkbox" data-popup-field="enabled" /> <span>On</span></label>
+    </div>
+  `;
+  syncControlChecked(row.querySelector('[data-popup-field="enabled"]'), bubble.enabled);
+  row.querySelector(".popup-marker-select")?.addEventListener("click", () => {
+    selectPopupBubble(bubble.id, { seek: true, reveal: false, focus: false, activateTool: true, expand: false });
+  });
+  row.querySelector('[data-popup-field="enabled"]')?.addEventListener("change", (event) => {
+    setPopupBubbleField(bubble.id, "enabled", event.target.checked, { commit: true, rerender: true });
+  });
+  return row;
+}
+
+function buildPopupFloatingEditor(bubble, index) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "text-box-manager popup-inline-editor";
+  const shotLinked = bubble.anchor_mode === "shot" && Boolean(bubble.shot_id);
+  wrapper.innerHTML = `
+    <div class="section-header">
+      <div class="popup-floating-header">
+        <h3>Marker Editor</h3>
+        <p>${popupBubbleDisplayName(bubble, index)} · ${popupBubbleSummaryText(bubble, index)}</p>
+      </div>
+    </div>
+    <div class="popup-inline-editor-body">
+      <div class="popup-floating-stepper four-up">
+        <button type="button" data-popup-floating-action="prev" ${shotLinked ? "" : "disabled"}>Previous Shot</button>
+        <button type="button" data-popup-floating-action="next" ${shotLinked ? "" : "disabled"}>Next Shot</button>
+        <button type="button" data-popup-floating-action="duplicate">Duplicate</button>
+        <button type="button" data-popup-floating-action="remove">Delete</button>
+      </div>
+      <div class="popup-floating-body" data-popup-editor-slot="form"></div>
+    </div>
+  `;
+  wrapper.querySelector('[data-popup-floating-action="prev"]')?.addEventListener("click", () => stepShotLinkedPopupBubble(-1));
+  wrapper.querySelector('[data-popup-floating-action="next"]')?.addEventListener("click", () => stepShotLinkedPopupBubble(1));
+  wrapper.querySelector('[data-popup-floating-action="duplicate"]')?.addEventListener("click", () => duplicatePopupBubble(bubble.id));
+  wrapper.querySelector('[data-popup-floating-action="remove"]')?.addEventListener("click", () => removePopupBubble(bubble.id));
+  const slot = wrapper.querySelector('[data-popup-editor-slot="form"]');
+  if (slot instanceof HTMLElement) slot.appendChild(buildPopupBubbleCard(bubble, index, { forceExpanded: true }));
+  return wrapper;
+}
+
+function renderPopupFloatingEditor(selected, originalIndexById) {
+  const container = $("popup-floating-editor");
+  if (!(container instanceof HTMLElement)) return;
+  if (!selected) {
+    popupEditorVisible = false;
+    popupEditorCollapsed = false;
+  }
+  const shouldShow = activeTool === "markers" && popupEditorVisible && Boolean(selected);
+  container.hidden = !shouldShow;
+  container.className = "popup-floating-editor";
+  container.innerHTML = "";
+  if (!shouldShow || !selected) return;
+  container.appendChild(buildPopupFloatingEditor(selected, originalIndexById.get(selected.id) ?? 0));
 }
 
 function currentPrimaryVideoPositionMs() {
@@ -4193,11 +4934,12 @@ function setPopupAuthoringCollapsed(collapsed, { persistUiState = true, rerender
 function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
   const authoringPanel = $("popup-authoring-panel");
-  const collapsedNav = $("popup-collapsed-nav");
-  const timelineStrip = $("popup-timeline-strip");
-  const bubbleList = $("popup-bubble-list");
+  const bubbleList = $("popup-marker-list");
   const toggle = $("popup-toggle-authoring");
   const filter = $("popup-filter");
+  const paneStatus = $("popup-pane-status");
+  const selectedSummary = $("popup-selected-summary");
+  const listStatus = $("popup-list-status");
   if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
   const importMode = $("popup-import-mode");
   if (importMode instanceof HTMLSelectElement && !["all", "scored", "penalty"].includes(importMode.value)) {
@@ -4214,19 +4956,53 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   syncControlValue($("popup-template-width"), template.width);
   syncControlValue($("popup-template-height"), template.height);
   syncControlChecked($("popup-template-follow-motion"), template.follow_motion);
+  syncControlValue($("popup-template-background-color"), template.background_color);
+  syncControlValue($("popup-template-text-color"), template.text_color);
+  syncControlValue($("popup-template-opacity"), Math.round((template.opacity ?? 0.9) * 100));
+  const textSourceControl = $("popup-template-text-source");
+  const textSourceLabel = textSourceControl instanceof HTMLElement ? textSourceControl.closest("label") : null;
+  if (textSourceControl instanceof HTMLSelectElement) textSourceControl.disabled = template.content_type === "image";
+  if (textSourceLabel instanceof HTMLElement) textSourceLabel.hidden = template.content_type === "image";
   if (authoringPanel instanceof HTMLElement) authoringPanel.hidden = popupAuthoringCollapsed;
-  if (timelineStrip instanceof HTMLElement) timelineStrip.hidden = false;
   if (bubbleList instanceof HTMLElement) bubbleList.hidden = false;
-  if (collapsedNav instanceof HTMLElement) collapsedNav.hidden = !popupAuthoringCollapsed || !hasBubbles;
+  const enabledCount = allBubbles.filter((bubble) => bubble.enabled).length;
+  if (paneStatus instanceof HTMLElement) paneStatus.textContent = `${enabledCount} enabled`;
   if (toggle instanceof HTMLButtonElement) {
-    toggle.textContent = popupAuthoringCollapsed ? ">" : "v";
-    toggle.title = popupAuthoringCollapsed ? "Show marker controls" : "Hide marker controls";
-    toggle.setAttribute("aria-label", popupAuthoringCollapsed ? "Show marker controls" : "Hide marker controls");
+    toggle.textContent = popupAuthoringCollapsed ? "Show Defaults" : "Hide Defaults";
+    toggle.title = popupAuthoringCollapsed ? "Show marker defaults" : "Hide marker defaults";
+    toggle.setAttribute("aria-label", popupAuthoringCollapsed ? "Show marker defaults" : "Hide marker defaults");
   }
   ["popup-prev-compact", "popup-next-compact", "popup-play-window", "popup-loop-window"].forEach((id) => {
     const button = $(id);
     if (button instanceof HTMLButtonElement) button.disabled = !hasBubbles || (id.includes("window") && !hasSelectedBubble);
   });
+  const addSelectedShotButton = $("popup-add-selected-shot");
+  if (addSelectedShotButton instanceof HTMLButtonElement) addSelectedShotButton.disabled = !selectedShotId;
+  const editSelectedButton = $("popup-edit-selected");
+  if (editSelectedButton instanceof HTMLButtonElement) {
+    editSelectedButton.disabled = !hasSelectedBubble;
+    const showingEditor = hasSelectedBubble && markersWorkbenchShown();
+    editSelectedButton.textContent = showingEditor ? "Collapse Workbench" : "Open Workbench";
+    editSelectedButton.title = showingEditor ? "Collapse the marker workbench" : "Open the selected marker in the workbench";
+    editSelectedButton.setAttribute("aria-label", editSelectedButton.title);
+  }
+  const applyTemplateButton = $("popup-apply-template-to-selected");
+  if (applyTemplateButton instanceof HTMLButtonElement) applyTemplateButton.disabled = !hasSelectedBubble;
+  const applyVisibleStyleButton = $("popup-apply-selected-style-visible");
+  if (applyVisibleStyleButton instanceof HTMLButtonElement) applyVisibleStyleButton.disabled = !hasSelectedBubble;
+  if (selectedSummary instanceof HTMLElement) {
+    if (!selected) {
+      selectedSummary.textContent = markersWorkbenchShown()
+        ? "Select a marker below to edit it on the right, or create one from the toolbar."
+        : "Select a marker to open it in the workbench, or create one below.";
+    } else {
+      const selectedIndex = allBubbles.findIndex((bubble) => bubble.id === selected.id);
+      const summaryParts = [popupBubbleSummaryText(selected, Math.max(0, selectedIndex))];
+      if (selected.follow_motion) summaryParts.push("Motion on");
+      if (!selected.enabled) summaryParts.push("Hidden");
+      selectedSummary.textContent = summaryParts.filter(Boolean).join(" • ");
+    }
+  }
   const loopButton = $("popup-loop-window");
   if (loopButton instanceof HTMLButtonElement) {
     loopButton.classList.toggle("active", Boolean(popupPlaybackWindow?.loop));
@@ -4239,6 +5015,9 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
       : "All";
     const selectedText = selected ? ` Selected: ${popupBubbleDisplayName(selected, allBubbles.findIndex((bubble) => bubble.id === selected.id))}.` : "";
     summary.textContent = `${visibleBubbles.length} of ${allBubbles.length} shown (${filterLabel}).${selectedText}`;
+    if (listStatus instanceof HTMLElement) listStatus.textContent = `${visibleBubbles.length} shown · ${filterLabel}`;
+  } else if (listStatus instanceof HTMLElement) {
+    listStatus.textContent = visibleBubbles.length === 0 ? "No markers shown." : `${visibleBubbles.length} shown`;
   }
 }
 
@@ -4253,9 +5032,9 @@ function readPopupTemplatePayload() {
     width: Number($("popup-template-width")?.value || 0),
     height: Number($("popup-template-height")?.value || 0),
     follow_motion: $("popup-template-follow-motion")?.checked ?? false,
-    background_color: current.background_color,
-    text_color: current.text_color,
-    opacity: current.opacity,
+    background_color: $("popup-template-background-color")?.value || current.background_color,
+    text_color: $("popup-template-text-color")?.value || current.text_color,
+    opacity: clamp((readNumberSetting("popup-template-opacity", (current.opacity ?? 0.9) * 100) / 100), 0, 1),
   });
 }
 
@@ -4314,6 +5093,135 @@ function setPopupFilterMode(nextMode) {
   renderPopupEditors();
 }
 
+function setPopupEditorVisible(visible, { rerender = true } = {}) {
+  popupEditorVisible = Boolean(visible);
+  if (!popupEditorVisible) popupEditorCollapsed = false;
+  if (rerender) renderPopupEditors();
+}
+
+function setPopupEditorCollapsed(collapsed, { rerender = true } = {}) {
+  popupEditorCollapsed = Boolean(collapsed);
+  if (rerender) renderPopupEditors();
+}
+
+function openSelectedPopupEditor({ focus = false } = {}) {
+  const bubble = selectedPopupBubble();
+  if (!bubble) {
+    setStatus("Select a marker before opening the editor.");
+    return false;
+  }
+  popupEditorVisible = false;
+  popupEditorCollapsed = false;
+  setActiveTool("markers", { collapseExpandedLayout: false });
+  setMarkersExpanded(true);
+  if (focus) {
+    window.requestAnimationFrame(() => {
+      const firstInput = document.querySelector("#markers-workbench-editor input, #markers-workbench-editor textarea, #markers-workbench-editor select");
+      if (firstInput instanceof HTMLElement) firstInput.focus();
+    });
+  }
+  return true;
+}
+
+function toggleSelectedPopupEditor({ focus = false } = {}) {
+  const bubble = selectedPopupBubble();
+  if (!bubble) {
+    setStatus("Select a marker before editing it.");
+    return false;
+  }
+  if (markersWorkbenchShown()) {
+    setMarkersExpanded(false);
+    return true;
+  }
+  return openSelectedPopupEditor({ focus });
+}
+
+function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIndexById) {
+  const section = $("markers-workbench");
+  const body = section?.querySelector?.(".markers-workbench-body") || null;
+  const list = $("markers-workbench-list");
+  const editor = $("markers-workbench-editor");
+  const editorPanel = editor?.closest?.(".popup-selected-editor-panel") || null;
+  const status = $("markers-workbench-status");
+  const listStatus = $("markers-workbench-list-status");
+  const editorStatus = $("markers-workbench-editor-status");
+  const selectedSummary = $("markers-workbench-selected-summary");
+  const filter = $("markers-workbench-filter");
+  const hasBubbles = allBubbles.length > 0;
+  const hasSelectedBubble = Boolean(selected);
+  if (section instanceof HTMLElement) section.hidden = !markersWorkbenchShown();
+  if (editorPanel instanceof HTMLElement) editorPanel.hidden = !markersWorkbenchShown();
+  if (body instanceof HTMLElement) body.classList.toggle("defaults-collapsed", popupAuthoringCollapsed);
+  if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
+  if (status instanceof HTMLElement) status.textContent = `${visibleBubbles.length} shown`;
+  if (selectedSummary instanceof HTMLElement) {
+    if (!selected) {
+      selectedSummary.textContent = hasBubbles
+        ? "Select a marker below to edit it on the right."
+        : "Add a time marker or import visible shots to start editing.";
+    } else {
+      const selectedIndex = allBubbles.findIndex((bubble) => bubble.id === selected.id);
+      const summaryParts = [popupBubbleSummaryText(selected, Math.max(0, selectedIndex))];
+      if (selected.follow_motion) summaryParts.push("Motion on");
+      if (!selected.enabled) summaryParts.push("Hidden");
+      selectedSummary.textContent = summaryParts.filter(Boolean).join(" • ");
+    }
+  }
+  if (listStatus instanceof HTMLElement) {
+    listStatus.textContent = allBubbles.length === 0
+      ? "No markers yet."
+      : visibleBubbles.length === 0
+        ? "No markers match the current filter."
+        : `${visibleBubbles.length} shown`;
+  }
+  if (editorStatus instanceof HTMLElement) {
+    editorStatus.textContent = selected
+      ? popupBubbleSummaryText(selected, Math.max(0, allBubbles.findIndex((bubble) => bubble.id === selected.id)))
+      : (hasBubbles ? "No marker selected." : "Nothing to edit yet.");
+  }
+  ["popup-prev-workbench", "popup-next-workbench", "popup-play-window-workbench", "popup-loop-window-workbench"].forEach((id) => {
+    const button = $(id);
+    if (button instanceof HTMLButtonElement) button.disabled = !hasBubbles || (id.includes("window") && !hasSelectedBubble);
+  });
+  const addSelectedShotButton = $("popup-add-selected-shot-workbench");
+  if (addSelectedShotButton instanceof HTMLButtonElement) addSelectedShotButton.disabled = !selectedShotId;
+  const loopButton = $("popup-loop-window-workbench");
+  if (loopButton instanceof HTMLButtonElement) {
+    loopButton.classList.toggle("active", Boolean(popupPlaybackWindow?.loop));
+    loopButton.textContent = popupPlaybackWindow?.loop ? "Stop Loop" : "Loop";
+  }
+  if (!(list instanceof HTMLElement) || !(editor instanceof HTMLElement)) return;
+  withPreservedScrollState([list, editor], () => {
+    list.innerHTML = "";
+    if (!hasBubbles) {
+      const empty = document.createElement("div");
+      empty.className = "markers-workbench-list-empty";
+      empty.textContent = "No markers yet.";
+      list.appendChild(empty);
+    } else if (visibleBubbles.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "markers-workbench-list-empty";
+      empty.textContent = "No markers match the current filter.";
+      list.appendChild(empty);
+    } else {
+      visibleBubbles.forEach((bubble, index) => {
+        list.appendChild(buildPopupMarkerRow(bubble, originalIndexById.get(bubble.id) ?? index));
+      });
+    }
+    editor.innerHTML = "";
+    if (!selected) {
+      const empty = document.createElement("div");
+      empty.className = "markers-workbench-editor-empty";
+      empty.textContent = hasBubbles
+        ? "Select a marker from the list to edit it here."
+        : "Add a time marker or import visible shots to start editing.";
+      editor.appendChild(empty);
+      return;
+    }
+    editor.appendChild(buildPopupBubbleCard(selected, originalIndexById.get(selected.id) ?? 0, { forceExpanded: true }));
+  });
+}
+
 function selectAdjacentPopupBubble(direction) {
   const bubbles = sortedPopupBubblesForTimeline(filteredPopupBubbles());
   if (bubbles.length === 0) {
@@ -4327,24 +5235,13 @@ function selectAdjacentPopupBubble(direction) {
   return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
 }
 
-function setPopupShotEditorOpen(open) {
-  popupShotEditorOpen = Boolean(open);
-  renderPopupEditors();
-}
-
-function selectedShotLinkedPopupBubble() {
-  const selected = selectedPopupBubble();
-  if (selected?.anchor_mode === "shot" && selected.shot_id) return selected;
-  return filteredPopupBubbles(popupBubbles()).find((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id) || null;
-}
-
 function stepShotLinkedPopupBubble(direction) {
   const bubbles = filteredPopupBubbles(popupBubbles()).filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id);
   if (bubbles.length === 0) return false;
-  const current = selectedShotLinkedPopupBubble();
+  const current = selectedPopupBubble();
   const currentIndex = bubbles.findIndex((bubble) => bubble.id === current?.id);
   const nextIndex = currentIndex < 0 ? 0 : clamp(currentIndex + direction, 0, bubbles.length - 1);
-  return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
+  return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
 }
 
 function playSelectedPopupWindow({ loop = false } = {}) {
@@ -4359,7 +5256,6 @@ function playSelectedPopupWindow({ loop = false } = {}) {
   selectPopupBubble(bubble.id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
   const playResult = video.play?.();
   if (playResult?.catch) playResult.catch(() => setStatus("Browser blocked playback until the video is clicked."));
-  renderPopupTimeline();
   return true;
 }
 
@@ -4383,13 +5279,11 @@ function syncPopupPlaybackWindow() {
   }
   video.pause();
   popupPlaybackWindow = null;
-  renderPopupTimeline();
 }
 
 function renderPopupEditors() {
-  const timeList = $("popup-bubble-list");
-  const shotList = $("popup-shot-linked-list");
-  if (!timeList || !shotList) return;
+  const markerList = $("popup-marker-list");
+  if (!markerList) return;
   const bubbles = popupBubbles();
   const visibleBubbles = filteredPopupBubbles(bubbles);
   const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
@@ -4399,71 +5293,34 @@ function renderPopupEditors() {
   if (selectedPopupBubbleId && !validBubbleIds.has(selectedPopupBubbleId)) {
     selectedPopupBubbleId = null;
   }
-  renderPopupAuthoringControls(bubbles, visibleBubbles);
-  renderPopupTimeline(bubbles, visibleBubbles);
   const originalIndexById = new Map(bubbles.map((bubble, index) => [bubble.id, index]));
-  const visibleShotLinked = visibleBubbles.filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id);
-  const visibleTimeBased = visibleBubbles.filter((bubble) => bubble.anchor_mode !== "shot" || !bubble.shot_id);
-  withPreservedScrollState([timeList, shotList], () => {
-    timeList.innerHTML = "";
-    shotList.innerHTML = "";
+  const selected = selectedPopupBubble();
+  if (!selected) {
+    popupEditorVisible = false;
+    popupEditorCollapsed = false;
+  }
+  renderPopupAuthoringControls(bubbles, visibleBubbles);
+  withPreservedScrollState([markerList], () => {
+    markerList.innerHTML = "";
     if (bubbles.length === 0) {
       const empty = document.createElement("div");
       empty.className = "hint";
       empty.textContent = "No markers yet.";
-      shotList.appendChild(empty.cloneNode(true));
-      timeList.appendChild(empty);
+      markerList.appendChild(empty);
       return;
     }
     if (visibleBubbles.length === 0) {
       const empty = document.createElement("div");
       empty.className = "hint";
       empty.textContent = "No markers match the current filter.";
-      shotList.appendChild(empty.cloneNode(true));
-      timeList.appendChild(empty);
+      markerList.appendChild(empty);
       return;
     }
-    if (visibleShotLinked.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No shot-linked markers shown.";
-      shotList.appendChild(empty);
-    } else {
-      visibleShotLinked.forEach((bubble, index) => {
-        shotList.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
-      });
-    }
-    if (visibleTimeBased.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No time markers shown.";
-      timeList.appendChild(empty);
-    } else {
-      visibleTimeBased.forEach((bubble, index) => {
-        timeList.appendChild(buildPopupBubbleCard(bubble, originalIndexById.get(bubble.id) ?? index));
-      });
-    }
-    const editor = $("popup-shot-editor");
-    const editorCurrent = $("popup-shot-editor-current");
-    const selected = selectedPopupBubble();
-    const editorBubble = selected?.anchor_mode === "shot" && selected.shot_id ? selected : visibleShotLinked[0] || null;
-    if (editor instanceof HTMLElement) editor.hidden = !popupShotEditorOpen;
-    if (editorCurrent instanceof HTMLElement) {
-      editorCurrent.innerHTML = "";
-      if (popupShotEditorOpen) {
-        if (editorBubble) editorCurrent.appendChild(buildPopupBubbleCard(editorBubble, originalIndexById.get(editorBubble.id) ?? 0));
-        else {
-          const empty = document.createElement("p");
-          empty.className = "hint";
-          empty.textContent = "Select or import a shot-linked marker to edit it here.";
-          editorCurrent.appendChild(empty);
-        }
-      }
-    }
-    if (popupShotEditorOpen && editorBubble && editorBubble.id !== selectedPopupBubbleId) {
-      selectedPopupBubbleId = editorBubble.id;
-    }
+    visibleBubbles.forEach((bubble, index) => {
+      markerList.appendChild(buildPopupMarkerRow(bubble, originalIndexById.get(bubble.id) ?? index));
+    });
   });
+  renderMarkersWorkbench(bubbles, visibleBubbles, selected, originalIndexById);
 }
 
 function syncTimingEventLabelState() {
@@ -4492,6 +5349,59 @@ function alignToEdge(value) {
 
 function setCssPixels(name, value) {
   document.documentElement.style.setProperty(name, `${Math.round(value)}px`);
+}
+
+function currentPreviewAspectRatio(video = $("primary-video")) {
+  const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 0) || 1);
+  const sourceHeight = Math.max(1, Number(video?.videoHeight || state?.project?.primary_video?.height || 0) || 1);
+  const exportSettings = state?.project?.export;
+  if (!exportSettings) return sourceWidth / sourceHeight;
+  const cropBox = computeExportCropBox(
+    sourceWidth,
+    sourceHeight,
+    exportSettings.aspect_ratio,
+    exportSettings.crop_center_x,
+    exportSettings.crop_center_y,
+  );
+  const outputDimensions = exportTargetDimensions(cropBox.width, cropBox.height);
+  return Math.max(0.45, Math.min(2.4, outputDimensions.width / Math.max(1, outputDimensions.height)));
+}
+
+function recommendedReviewLayoutSizes(viewportWidth = window.innerWidth, viewportHeight = layoutViewportHeight()) {
+  const railWidth = railCollapsed ? 48 : clamp(layoutSizes.railWidth, 84, 104);
+  const reviewWidth = Math.max(720, viewportWidth - railWidth - (2 * 4));
+  const reviewHeight = Math.max(360, viewportHeight - 38);
+  const previewAspect = currentPreviewAspectRatio();
+  const inspectorMinimum = 320;
+  const inspectorMaximum = Math.max(inspectorMinimum, Math.min(520, reviewWidth * 0.42));
+  const targetWaveformHeight = clamp(Math.round(reviewHeight * 0.24), 144, Math.max(160, reviewHeight * 0.34));
+  const preferredStageHeight = Math.max(260, reviewHeight - targetWaveformHeight - 4);
+  const preferredStageWidth = preferredStageHeight * previewAspect;
+  const inspectorWidth = clamp(Math.round(reviewWidth - preferredStageWidth - 4), inspectorMinimum, inspectorMaximum);
+  const stageWidth = Math.max(320, reviewWidth - inspectorWidth - 4);
+  const waveformHeight = clamp(
+    Math.round(reviewHeight - (stageWidth / previewAspect) - 4),
+    144,
+    Math.max(144, reviewHeight * 0.38),
+  );
+  return { inspectorWidth, waveformHeight };
+}
+
+function maybeApplyRecommendedLayout({ force = false } = {}) {
+  const shouldAdjustInspector = force || !layoutSizePinned.inspectorWidth;
+  const shouldAdjustWaveform = force || !layoutSizePinned.waveformHeight;
+  if (!shouldAdjustInspector && !shouldAdjustWaveform) return false;
+  const recommended = recommendedReviewLayoutSizes();
+  let changed = false;
+  if (shouldAdjustInspector && Math.round(layoutSizes.inspectorWidth) !== Math.round(recommended.inspectorWidth)) {
+    layoutSizes.inspectorWidth = recommended.inspectorWidth;
+    changed = true;
+  }
+  if (shouldAdjustWaveform && Math.round(layoutSizes.waveformHeight) !== Math.round(recommended.waveformHeight)) {
+    layoutSizes.waveformHeight = recommended.waveformHeight;
+    changed = true;
+  }
+  return changed;
 }
 
 function capturePointer(target, pointerId) {
@@ -4547,6 +5457,7 @@ function applyLayoutState() {
 
 function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {
   layoutSizes[key] = value;
+  layoutSizePinned[key] = true;
   const storageKey = {
     railWidth: "splitshot.layout.railWidth",
     inspectorWidth: "splitshot.layout.inspectorWidth",
@@ -4575,10 +5486,12 @@ function toggleLayoutLock() {
 }
 
 function resetLayout() {
-  layoutSizes = { railWidth: 84, inspectorWidth: 440, waveformHeight: 206 };
+  layoutSizes = { ...DEFAULT_LAYOUT_SIZES };
+  layoutSizePinned = { railWidth: false, inspectorWidth: false, waveformHeight: false };
   ["splitshot.layout.railWidth", "splitshot.layout.inspectorWidth", "splitshot.layout.waveformHeight"].forEach((key) => {
     window.localStorage.removeItem(key);
   });
+  maybeApplyRecommendedLayout({ force: true });
   activity("layout.reset", layoutSizes);
   applyLayoutState();
   syncLocalProjectUiState();
@@ -4645,7 +5558,8 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   const hadExpandedLayout = root?.classList.contains("waveform-expanded")
     || root?.classList.contains("timing-expanded")
     || root?.classList.contains("metrics-expanded")
-    || root?.classList.contains("scoring-expanded");
+    || root?.classList.contains("scoring-expanded")
+    || root?.classList.contains("markers-expanded");
   activeTool = tool;
   window.localStorage.setItem("splitshot.activeTool", tool);
   let previousExpandedLayout = null;
@@ -4653,6 +5567,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
       waveform_expanded: state.project.ui_state.waveform_expanded,
       timing_expanded: state.project.ui_state.timing_expanded,
       metrics_expanded: state.project.ui_state.metrics_expanded,
+      markers_expanded: state.project.ui_state.markers_expanded,
       scoring_expanded: state.project.ui_state.scoring_expanded,
     } : null;
   if (collapseExpandedLayout && hadExpandedLayout) {
@@ -4660,6 +5575,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
       waveform_expanded: root?.classList.contains("waveform-expanded") || false,
       timing_expanded: root?.classList.contains("timing-expanded") || false,
       metrics_expanded: root?.classList.contains("metrics-expanded") || false,
+      markers_expanded: root?.classList.contains("markers-expanded") || false,
       scoring_expanded: root?.classList.contains("scoring-expanded") || false,
     };
   }
@@ -4670,6 +5586,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     setWaveformExpanded(false, { persistUiState: false });
     setTimingExpanded(false, { persistUiState: false });
     setMetricsExpanded(false, { persistUiState: false });
+    setMarkersExpanded(false, { persistUiState: false });
     setScoringWorkbenchExpanded(false, { persistUiState: false });
     const expand = $("expand-waveform");
     if (expand) expand.textContent = "Expand";
@@ -4683,9 +5600,14 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   document.querySelectorAll(".tool-pane").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.toolPane === tool);
   });
+  const popupFloatingEditor = $("popup-floating-editor");
+  if (popupFloatingEditor instanceof HTMLElement && tool !== "markers") {
+    popupFloatingEditor.hidden = true;
+    popupFloatingEditor.innerHTML = "";
+  }
   if (tool === "merge") {
     $("add-merge-media")?.focus();
-  } else if (tool === "markers") {
+  } else if (tool === "markers" && changed) {
     if (selectedPopupBubbleId) {
       window.requestAnimationFrame(() => revealPopupBubbleCard(selectedPopupBubbleId, { focus: false }));
     }
@@ -4696,11 +5618,13 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     state.project.ui_state.waveform_expanded = previousExpandedLayout.waveform_expanded;
     state.project.ui_state.timing_expanded = previousExpandedLayout.timing_expanded;
     state.project.ui_state.metrics_expanded = previousExpandedLayout.metrics_expanded;
+    state.project.ui_state.markers_expanded = previousExpandedLayout.markers_expanded;
     state.project.ui_state.scoring_expanded = previousExpandedLayout.scoring_expanded;
   } else if (preservedExpandedLayout && state?.project?.ui_state) {
     state.project.ui_state.waveform_expanded = preservedExpandedLayout.waveform_expanded;
     state.project.ui_state.timing_expanded = preservedExpandedLayout.timing_expanded;
     state.project.ui_state.metrics_expanded = preservedExpandedLayout.metrics_expanded;
+    state.project.ui_state.markers_expanded = preservedExpandedLayout.markers_expanded;
     state.project.ui_state.scoring_expanded = preservedExpandedLayout.scoring_expanded;
   }
   if (persistUiState) scheduleProjectUiStateApply();
@@ -4712,6 +5636,9 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   }
   if (tool === "metrics" && state?.project?.ui_state?.metrics_expanded) {
     setMetricsExpanded(true, { persistUiState: false });
+  }
+  if (tool === "markers" && state?.project?.ui_state?.markers_expanded) {
+    setMarkersExpanded(true, { persistUiState: false });
   }
   if (tool === "scoring" && state?.project?.ui_state?.scoring_expanded) {
     setScoringWorkbenchExpanded(true, { persistUiState: false });
@@ -4973,6 +5900,7 @@ function stateHasShot(nextState, shotId) {
 }
 
 function resetLocalProjectView() {
+  resetProjectUiStateApplyState();
   selectedShotId = null;
   draggingShotId = null;
   draggingShotPointerId = null;
@@ -4981,6 +5909,13 @@ function resetLocalProjectView() {
   exportDraft = {};
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
+  popupEditorVisible = false;
+  popupEditorCollapsed = false;
+  metricsSectionExpansion = new Map([
+    ["trend-snapshot", true],
+    ["scoring-context", true],
+  ]);
+  layoutSizePinned = { railWidth: false, inspectorWidth: false, waveformHeight: false };
   timingRowEdits = new Set();
   timingAdjustmentDrafts = new Map();
   scoringRowEdits = new Set();
@@ -4991,9 +5926,9 @@ function resetLocalProjectView() {
     timeline_zoom: 1,
     timeline_offset_ms: 0,
     layout_locked: true,
-    rail_width: 84,
-    inspector_width: 440,
-    waveform_height: 206,
+    rail_width: DEFAULT_LAYOUT_SIZES.railWidth,
+    inspector_width: DEFAULT_LAYOUT_SIZES.inspectorWidth,
+    waveform_height: DEFAULT_LAYOUT_SIZES.waveformHeight,
   });
   window.localStorage.removeItem("splitshot.waveform.zoomX");
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
@@ -6001,6 +6936,7 @@ function syncMergePreviewElements(primary) {
 }
 
 function renderVideo() {
+  maybeApplyRecommendedLayout();
   const video = $("primary-video");
   const secondary = $("secondary-video");
   const secondaryImage = $("secondary-image");
@@ -6290,6 +7226,26 @@ function resizeCanvasToDisplay(canvas) {
   return { width, height };
 }
 
+function renderWaveformPlayhead(positionMs = currentPrimaryVideoPositionMs()) {
+  const canvas = $("waveform");
+  const playhead = $("waveform-playhead");
+  const panel = canvas?.closest(".waveform-panel");
+  if (!(canvas instanceof HTMLCanvasElement) || !(playhead instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
+  const total = durationMs();
+  const visible = waveformWindow();
+  const currentPositionMs = clamp(Number(positionMs) || 0, 0, total);
+  const canvasRect = canvas.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  const withinWindow = currentPositionMs >= visible.start && currentPositionMs <= visible.end;
+  const isVisible = canvasRect.width > 0 && canvasRect.height > 0 && visible.duration > 0 && total > 0 && withinWindow;
+  playhead.hidden = !isVisible;
+  if (!isVisible) return;
+  const left = canvasRect.left - panelRect.left + (((currentPositionMs - visible.start) / visible.duration) * canvasRect.width);
+  playhead.style.left = `${left}px`;
+  playhead.style.top = `${canvasRect.top - panelRect.top}px`;
+  playhead.style.height = `${canvasRect.height}px`;
+}
+
 function renderWaveform() {
   const canvas = $("waveform");
   const { width, height } = resizeCanvasToDisplay(canvas);
@@ -6344,6 +7300,7 @@ function renderWaveform() {
   });
   renderWaveformShotList();
   renderWaveformNavigator();
+  renderWaveformPlayhead();
 }
 
 function drawOutlinedText(ctx, text, x, y, fillStyle, font, lineWidth = 3) {
@@ -6512,7 +7469,7 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
       if (activePopup?.anchor_mode === "shot" && activePopup.shot_id === shot.id) {
         revealedPopup = selectPopupBubble(activePopup.id, {
           seek: true,
-          reveal: true,
+          reveal: false,
           focus: false,
           activateTool: false,
           expand: false,
@@ -6520,7 +7477,7 @@ function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } 
       } else if (!activePopup) {
         revealedPopup = selectPopupBubbleForShot(shot.id, {
           seek: true,
-          reveal: true,
+          reveal: false,
           focus: false,
           activateTool: false,
           expand: false,
@@ -7164,7 +8121,7 @@ function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {
   scoringWorkbenchExpanded = Boolean(expanded);
   const root = $("cockpit-root");
   root?.classList.toggle("scoring-expanded", scoringWorkbenchExpanded);
-  if (scoringWorkbenchExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded");
+  if (scoringWorkbenchExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded", "markers-expanded");
   const section = $("scoring-workbench");
   if (section instanceof HTMLElement) section.hidden = !scoringWorkbenchExpanded;
   activity("scoring.expand", { expanded: scoringWorkbenchExpanded });
@@ -7178,6 +8135,28 @@ function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {
   } else {
     scheduleReviewStageRestore();
   }
+}
+
+function markersWorkbenchShown() {
+  return Boolean($("cockpit-root")?.classList.contains("markers-expanded"));
+}
+
+function setMarkersExpanded(expanded, { persistUiState = true } = {}) {
+  const root = $("cockpit-root");
+  const nextExpanded = Boolean(expanded);
+  root?.classList.toggle("markers-expanded", nextExpanded);
+  if (nextExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded", "scoring-expanded");
+  const section = $("markers-workbench");
+  if (section instanceof HTMLElement) section.hidden = !nextExpanded;
+  activity("markers.expand", { expanded: nextExpanded });
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
+  renderPopupEditors();
+  if (nextExpanded) {
+    renderLiveOverlay();
+    return;
+  }
+  scheduleReviewStageRestore();
 }
 
 function scoringPenaltySummary(segment, penaltyFields = state.scoring_summary?.penalty_fields || []) {
@@ -7747,6 +8726,272 @@ function renderMetricsTrendTable(table) {
   });
 }
 
+function metricsSecondsValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Number((numeric / 1000).toFixed(3));
+}
+
+function metricsPercentValue(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Number((numeric * 100).toFixed(1));
+}
+
+function metricsGraphLabel(entry, fallbackShotNumber) {
+  const shotNumber = entry.shotNumber || fallbackShotNumber;
+  if (entry.intervalLabel) return `${entry.label} ${entry.intervalLabel}`;
+  if (entry.label) return entry.label;
+  return `Shot ${shotNumber}`;
+}
+
+function buildMetricsGraphSeries(rows = buildMetricsRows()) {
+  const shotRows = rows.filter((entry) => entry.shotId);
+  if (shotRows.length === 0) return [];
+  const graphPoints = shotRows.map((entry, index) => ({
+    shotNumber: entry.shotNumber || index + 1,
+    label: metricsGraphLabel(entry, index + 1),
+    finalSplitS: metricsSecondsValue(entry.splitMs),
+    shotmlSplitS: metricsSecondsValue(entry.shotmlSplitMs),
+    runTotalS: metricsSecondsValue(entry.cumulativeMs),
+    adjustmentS: metricsSecondsValue(entry.adjustmentMs),
+    confidencePct: metricsPercentValue(entry.confidence),
+  }));
+  const buildLine = (key, label, color) => ({
+    key,
+    label,
+    color,
+    points: graphPoints
+      .filter((point) => point[key] !== null && point[key] !== undefined)
+      .map((point) => ({ shotNumber: point.shotNumber, label: point.label, value: point[key] })),
+  });
+  const graphs = [
+    {
+      id: "split_trend",
+      title: "Final Split Trend",
+      subtitle: "ShotML vs adjusted split",
+      unit: "s",
+      lines: [
+        buildLine("finalSplitS", "Final", "#ff7b22"),
+        buildLine("shotmlSplitS", "ShotML", "#4ea7ff"),
+      ],
+    },
+    {
+      id: "run_total_trend",
+      title: "Run Total Trend",
+      subtitle: "Cumulative time after each shot",
+      unit: "s",
+      lines: [buildLine("runTotalS", "Run Total", "#39d06f")],
+    },
+    {
+      id: "adjustment_trend",
+      title: "Adjustment Trend",
+      subtitle: "Manual timing offsets per shot",
+      unit: "s",
+      lines: [buildLine("adjustmentS", "Adjustment", "#f59e0b")],
+    },
+    {
+      id: "confidence_trend",
+      title: "Confidence Trend",
+      subtitle: "ShotML confidence by shot",
+      unit: "%",
+      lines: [buildLine("confidencePct", "Confidence", "#a855f7")],
+    },
+  ];
+  return graphs
+    .map((graph) => ({
+      ...graph,
+      lines: graph.lines.filter((line) => line.points.length > 0),
+    }))
+    .filter((graph) => graph.lines.length > 0)
+    .filter((graph) => graph.id !== "adjustment_trend" || graph.lines.some((line) => line.points.some((point) => Math.abs(point.value) > 0.0001)));
+}
+
+function metricsGraphValueLabel(value, unit) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
+  const numeric = Number(value);
+  if (unit === "%") return `${formatNumber(numeric, 1)}%`;
+  return `${formatNumber(numeric, 3)}s`;
+}
+
+function createSvgNode(tagName) {
+  return document.createElementNS("http://www.w3.org/2000/svg", tagName);
+}
+
+function metricsGraphRange(lines, unit) {
+  const values = lines.flatMap((line) => line.points.map((point) => point.value)).filter((value) => Number.isFinite(value));
+  if (values.length === 0) return null;
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (unit === "%") {
+    min = Math.min(0, min);
+    max = Math.max(100, max);
+  }
+  if (min === max) {
+    const padding = min === 0 ? 1 : Math.max(0.5, Math.abs(min) * 0.15);
+    min -= padding;
+    max += padding;
+  }
+  return { min, max };
+}
+
+function renderMetricsGraphCard(graph, { compact = true } = {}) {
+  const card = document.createElement("article");
+  card.className = "metric-card metrics-graph-card";
+  if (!compact) card.classList.add("metrics-graph-card-wide");
+  const header = document.createElement("div");
+  header.className = "metrics-graph-header";
+  const title = document.createElement("strong");
+  title.textContent = graph.title;
+  const subtitle = document.createElement("span");
+  subtitle.className = "hint";
+  subtitle.textContent = graph.subtitle;
+  header.append(title, subtitle);
+  card.appendChild(header);
+
+  const summary = document.createElement("div");
+  summary.className = "metrics-graph-summary";
+  graph.lines.forEach((line) => {
+    const lastPoint = line.points[line.points.length - 1] || null;
+    const chip = document.createElement("span");
+    chip.className = "metrics-graph-chip";
+    chip.style.setProperty("--metrics-graph-chip-color", line.color);
+    chip.textContent = `${line.label} ${metricsGraphValueLabel(lastPoint?.value ?? null, graph.unit)}`;
+    summary.appendChild(chip);
+  });
+  card.appendChild(summary);
+
+  const range = metricsGraphRange(graph.lines, graph.unit);
+  if (!range) return card;
+
+  const svg = createSvgNode("svg");
+  svg.classList.add("metrics-graph-svg");
+  svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
+  svg.setAttribute("preserveAspectRatio", "none");
+  const viewWidth = compact ? 260 : 320;
+  const viewHeight = compact ? 132 : 150;
+  const padding = { left: 12, right: 10, top: 10, bottom: 22 };
+  const plotWidth = viewWidth - padding.left - padding.right;
+  const plotHeight = viewHeight - padding.top - padding.bottom;
+  const lineCount = Math.max(...graph.lines.map((line) => line.points.length));
+  const xFor = (index) => padding.left + (lineCount <= 1 ? plotWidth / 2 : (index / (lineCount - 1)) * plotWidth);
+  const yFor = (value) => padding.top + ((range.max - value) / Math.max(0.0001, range.max - range.min)) * plotHeight;
+
+  [0, 0.5, 1].forEach((ratio) => {
+    const y = padding.top + (plotHeight * ratio);
+    const gridLine = createSvgNode("line");
+    gridLine.setAttribute("x1", String(padding.left));
+    gridLine.setAttribute("x2", String(viewWidth - padding.right));
+    gridLine.setAttribute("y1", String(y));
+    gridLine.setAttribute("y2", String(y));
+    gridLine.setAttribute("class", "metrics-graph-grid-line");
+    svg.appendChild(gridLine);
+  });
+
+  graph.lines.forEach((line) => {
+    const polyline = createSvgNode("polyline");
+    polyline.setAttribute(
+      "points",
+      line.points.map((point, index) => `${xFor(index)},${yFor(point.value)}`).join(" "),
+    );
+    polyline.setAttribute("fill", "none");
+    polyline.setAttribute("stroke", line.color);
+    polyline.setAttribute("stroke-width", compact ? "2" : "2.5");
+    polyline.setAttribute("stroke-linejoin", "round");
+    polyline.setAttribute("stroke-linecap", "round");
+    polyline.setAttribute("class", "metrics-graph-line");
+    svg.appendChild(polyline);
+    line.points.forEach((point, index) => {
+      const dot = createSvgNode("circle");
+      dot.setAttribute("cx", String(xFor(index)));
+      dot.setAttribute("cy", String(yFor(point.value)));
+      dot.setAttribute("r", compact ? "3" : "3.5");
+      dot.setAttribute("fill", line.color);
+      dot.setAttribute("class", "metrics-graph-dot");
+      svg.appendChild(dot);
+    });
+  });
+
+  const firstLabel = graph.lines[0]?.points[0]?.shotNumber;
+  const lastLabel = graph.lines[0]?.points[graph.lines[0].points.length - 1]?.shotNumber;
+  if (firstLabel !== undefined && lastLabel !== undefined) {
+    const firstText = createSvgNode("text");
+    firstText.setAttribute("x", String(padding.left));
+    firstText.setAttribute("y", String(viewHeight - 6));
+    firstText.setAttribute("text-anchor", "start");
+    firstText.setAttribute("class", "metrics-graph-axis-label");
+    firstText.textContent = `Shot ${firstLabel}`;
+    svg.appendChild(firstText);
+    const lastText = createSvgNode("text");
+    lastText.setAttribute("x", String(viewWidth - padding.right));
+    lastText.setAttribute("y", String(viewHeight - 6));
+    lastText.setAttribute("text-anchor", "end");
+    lastText.setAttribute("class", "metrics-graph-axis-label");
+    lastText.textContent = `Shot ${lastLabel}`;
+    svg.appendChild(lastText);
+  }
+  card.appendChild(svg);
+  return card;
+}
+
+function renderMetricsGraphs(container, graphs, { compact = true } = {}) {
+  if (!(container instanceof HTMLElement)) return;
+  container.innerHTML = "";
+  if (graphs.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "hint metrics-graph-empty";
+    empty.textContent = "Graphs appear once the run has timing rows to chart.";
+    container.appendChild(empty);
+    return;
+  }
+  graphs.forEach((graph) => container.appendChild(renderMetricsGraphCard(graph, { compact })));
+}
+
+function isMetricsSectionExpanded(sectionId) {
+  return metricsSectionExpansion.get(sectionId) !== false;
+}
+
+function setMetricsSectionExpanded(sectionId, expanded) {
+  metricsSectionExpansion.set(sectionId, Boolean(expanded));
+}
+
+function renderMetricsSections() {
+  document.querySelectorAll("[data-metrics-section]").forEach((section) => {
+    if (!(section instanceof HTMLElement)) return;
+    const sectionId = section.dataset.metricsSection || "";
+    const expanded = isMetricsSectionExpanded(sectionId);
+    section.classList.toggle("collapsed", !expanded);
+    ensureSectionToggle(section, expanded, () => {
+      setMetricsSectionExpanded(sectionId, !expanded);
+      renderMetricsSections();
+    });
+  });
+}
+
+function buildMetricsGraphCsvSections(rows = buildMetricsRows()) {
+  return buildMetricsGraphSeries(rows).map((graph) => {
+    const headers = ["shot_number", "shot_label", ...graph.lines.map((line) => line.key)];
+    const recordByShotNumber = new Map();
+    graph.lines.forEach((line) => {
+      line.points.forEach((point) => {
+        const existing = recordByShotNumber.get(point.shotNumber) || { shot_number: point.shotNumber, shot_label: point.label };
+        existing[line.key] = point.value;
+        recordByShotNumber.set(point.shotNumber, existing);
+      });
+    });
+    const sectionRows = [...recordByShotNumber.values()]
+      .sort((left, right) => Number(left.shot_number || 0) - Number(right.shot_number || 0))
+      .map((record) => headers.map((header) => record[header] ?? ""));
+    return {
+      name: `graph_${graph.id}`,
+      headers,
+      rows: sectionRows.length > 0 ? sectionRows : [["", "", ...graph.lines.map(() => "")]],
+    };
+  });
+}
+
 function metricsScoringDetailRows(summary) {
   const imported = summary.imported_stage || {};
   const shortPenaltyLabels = {
@@ -7798,6 +9043,8 @@ function renderMetricsPanel() {
   const scoreStatus = $("metrics-score-status");
   if (!summaryGrid || !trendList || !scoreStatus) return;
   const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
+  const rows = buildMetricsRows();
+  const graphs = buildMetricsGraphSeries(rows);
 
   const summaryCards = [
     ["Draw", splitSeconds(state.metrics.draw_ms), "First-shot timing"],
@@ -7837,6 +9084,9 @@ function renderMetricsPanel() {
     : "Scoring disabled.";
   const details = metricsScoringDetailRows(summary);
   renderDetailsList("metrics-score-summary", details);
+  renderMetricsGraphs($("metrics-graph-list"), graphs, { compact: true });
+  renderMetricsGraphs($("metrics-workbench-graphs"), graphs, { compact: false });
+  renderMetricsSections();
   renderMetricsTable($("metrics-workbench-table"));
 }
 
@@ -8013,6 +9263,7 @@ function buildMetricsCsv() {
         ["total_penalties", summary.penalty_label || "Total Penalties", "points", "", summary.total_penalties ?? "", summary.total_penalties ?? ""],
       ],
     },
+    ...buildMetricsGraphCsvSections(rows),
   ];
 
   const output = [];
@@ -9649,6 +10900,7 @@ function beginPopupBubbleDrag(event) {
     const point = popupKeyframePoint(bubble, offsetMs);
     selectedPopupBubbleId = bubbleId;
     setSelectedPopupKeyframeOffset(offsetMs);
+    if (offsetMs <= 0) setSelectedPopupPlacementMode("base");
     renderPopupEditors();
     renderLiveOverlay();
     popupBubbleDrag = {
@@ -9673,14 +10925,16 @@ function beginPopupBubbleDrag(event) {
   const bubbleId = badge.dataset.popupId || "";
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
+  const badgeRect = badge.getBoundingClientRect();
   selectedPopupBubbleId = bubbleId;
+  setSelectedPopupPlacementMode("base");
   renderPopupEditors();
   renderLiveOverlay();
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
   const currentPositionMs = overlayRenderPositionMs($("primary-video"));
   const renderPositionMs = popupBubbleRenderPositionMs(bubble, currentPositionMs);
-  const renderedCoordinates = resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
+  const renderedCoordinates = resolveNormalizedPointFromRect(badgeRect, frameRect)
     || popupBubblePoint(bubble, renderPositionMs);
   const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
   popupBubbleDrag = {
@@ -9692,6 +10946,10 @@ function beginPopupBubbleDrag(event) {
     startX: renderedCoordinates.x,
     startY: renderedCoordinates.y,
     motionOffsetMs: Math.max(0, renderPositionMs - popupTimeMs),
+    badgeWidth: Math.max(0, badgeRect.width || 0),
+    badgeHeight: Math.max(0, badgeRect.height || 0),
+    pointerOffsetX: clamp(event.clientX - badgeRect.left, 0, Math.max(0, badgeRect.width || 0)),
+    pointerOffsetY: clamp(event.clientY - badgeRect.top, 0, Math.max(0, badgeRect.height || 0)),
     kind: "bubble",
   };
   setSelectedPopupKeyframeOffset(popupBubbleDrag.motionOffsetMs);
@@ -9706,13 +10964,32 @@ function movePopupBubbleDrag(event) {
   if (event.pointerId !== undefined && popupBubbleDrag.pointerId !== undefined && event.pointerId !== popupBubbleDrag.pointerId) return;
   const stage = $("video-stage");
   const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const deltaX = (event.clientX - popupBubbleDrag.startClientX) / Math.max(1, frameRect.width || 0);
-  const deltaY = (event.clientY - popupBubbleDrag.startClientY) / Math.max(1, frameRect.height || 0);
-  const newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
-  const newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
-  const nextBubbles = popupBubbles().map((bubble) => bubble.id === popupBubbleDrag.bubbleId
-    ? updatePopupBubbleMotionPoint(bubble, popupBubbleDrag.motionOffsetMs, newX, newY)
-    : bubble);
+  const width = Math.max(1, frameRect.width || 0);
+  const height = Math.max(1, frameRect.height || 0);
+  let newX;
+  let newY;
+  if (popupBubbleDrag.kind === "bubble") {
+    const badgeWidth = clamp(popupBubbleDrag.badgeWidth || 0, 0, width);
+    const badgeHeight = clamp(popupBubbleDrag.badgeHeight || 0, 0, height);
+    const pointerOffsetX = clamp(popupBubbleDrag.pointerOffsetX ?? badgeWidth / 2, 0, badgeWidth);
+    const pointerOffsetY = clamp(popupBubbleDrag.pointerOffsetY ?? badgeHeight / 2, 0, badgeHeight);
+    const nextLeft = clamp(event.clientX - frameRect.left - pointerOffsetX, 0, Math.max(0, width - badgeWidth));
+    const nextTop = clamp(event.clientY - frameRect.top - pointerOffsetY, 0, Math.max(0, height - badgeHeight));
+    newX = clamp((nextLeft + (badgeWidth / 2)) / width, 0, 1);
+    newY = clamp((nextTop + (badgeHeight / 2)) / height, 0, 1);
+  } else {
+    const deltaX = (event.clientX - popupBubbleDrag.startClientX) / width;
+    const deltaY = (event.clientY - popupBubbleDrag.startClientY) / height;
+    newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
+    newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
+  }
+  const nextBubbles = popupBubbles().map((bubble) => {
+    if (bubble.id !== popupBubbleDrag.bubbleId) return bubble;
+    if (popupBubbleDrag.kind === "keyframe" && popupBubbleDrag.motionOffsetMs > 0) {
+      return updatePopupBubbleMotionPoint(bubble, popupBubbleDrag.motionOffsetMs, newX, newY);
+    }
+    return normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY });
+  });
   setPopupBubbles(nextBubbles, { commit: false, rerender: false });
 }
 
@@ -9993,6 +11270,10 @@ function popupOverlayPixelPoint(frameRect, xValue, yValue) {
 function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
   const keyframes = popupBubbleKeyframes(bubble);
   if (keyframes.length === 0) return;
+  const hideBaseHandle = activeTool === "markers"
+    && bubble.id === selectedPopupBubbleId
+    && selectedPopupPlacementMode === "base"
+    && Boolean(popupBubblePlacementSelectorStyle(bubble));
   const entries = keyframes.map((point) => ({
     ...point,
     pixel: popupOverlayPixelPoint(frameRect, point.x, point.y),
@@ -10012,13 +11293,14 @@ function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
     popupOverlay.appendChild(segment);
   });
   entries.forEach((point) => {
+    if (point.base && hideBaseHandle) return;
     const handle = document.createElement("button");
     handle.type = "button";
     handle.className = "popup-keyframe-dot";
     if (point.base) handle.classList.add("base");
     if (!bubble.follow_motion) handle.classList.add("paused");
     if (point.offset_ms === selectedPopupKeyframeOffsetMs) handle.classList.add("selected");
-    handle.dataset.popupKeyframeDrag = bubble.follow_motion ? "true" : "false";
+    handle.dataset.popupKeyframeDrag = point.base || bubble.follow_motion ? "true" : "false";
     handle.dataset.popupId = bubble.id;
     handle.dataset.popupKeyframeOffset = String(point.offset_ms);
     handle.title = point.base
@@ -10055,40 +11337,80 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
   visiblePopupBubbles(positionMs).forEach((entry) => {
     const bubble = entry.bubble;
     const point = popupBubblePoint(bubble, entry.positionMs);
-    const popupSize = resolvedPopupBubbleSize(bubble);
+    const popupStyle = popupBubbleRenderStyle(bubble);
+    const selectorStyle = entry.selected && activeTool === "markers" && selectedPopupPlacementMode === "base"
+      ? popupBubblePlacementSelectorStyle(bubble)
+      : null;
+    const popupSize = selectorStyle
+      ? { width: selectorStyle.width, height: selectorStyle.height }
+      : resolvedPopupBubbleSize(bubble);
+    const scaledWidth = Math.max(1, scaledOverlayPixelValue(popupSize.width, overlayScale, 1));
+    const scaledHeight = Math.max(1, scaledOverlayPixelValue(popupSize.height, overlayScale, 1));
+    const scaledGap = selectorStyle ? 0 : scaledOverlayPixelValue(6, overlayScale, 2);
+    const scaledPaddingY = selectorStyle ? 0 : scaledOverlayPixelValue(8, overlayScale, 2);
+    const scaledPaddingX = selectorStyle ? 0 : scaledOverlayPixelValue(10, overlayScale, 2);
+    const selectorHasText = Boolean(selectorStyle?.show_text);
+    const selectorToken = selectorHasText ? String(selectorStyle?.token || "") : "";
+    const selectorTokenLength = selectorHasText ? Math.max(1, selectorToken.length || 1) : 1;
+    const selectorFontSize = clamp(
+      Math.round(Math.min(scaledWidth, scaledHeight) * (selectorTokenLength >= 3 ? 0.28 : selectorTokenLength === 2 ? 0.33 : 0.42)),
+      scaledOverlayPixelValue(8, overlayScale, 8),
+      scaledOverlayPixelValue(selectorTokenLength >= 3 ? 10 : 12, overlayScale, selectorTokenLength >= 3 ? 10 : 12),
+    );
+    const scaledFontSize = selectorStyle
+      ? selectorFontSize
+      : scaledOverlayPixelValue(state?.project?.overlay?.font_size || 14, overlayScale, 1);
+    const scaledBorderWidth = selectorStyle ? scaledOverlayPixelValue(2, overlayScale, 1) : 0;
     const badge = document.createElement("div");
     badge.className = "overlay-badge popup-overlay-badge";
-    badge.style.minWidth = `${Math.max(1, popupSize.width)}px`;
-    badge.style.minHeight = `${Math.max(1, popupSize.height)}px`;
-    badge.style.width = `${Math.max(1, popupSize.width)}px`;
-    badge.style.height = `${Math.max(1, popupSize.height)}px`;
-    badge.style.backgroundColor = rgba(bubble.background_color, bubble.opacity);
-    badge.style.color = bubble.text_color;
-    badge.style.opacity = `${bubble.opacity}`;
+    badge.classList.toggle("popup-placement-selector", Boolean(selectorStyle));
+    badge.style.minWidth = `${scaledWidth}px`;
+    badge.style.minHeight = `${scaledHeight}px`;
+    badge.style.width = `${scaledWidth}px`;
+    badge.style.height = `${scaledHeight}px`;
+    badge.style.backgroundColor = rgba(selectorStyle ? selectorStyle.background_color : popupStyle.background_color, selectorStyle ? 0.96 : bubble.opacity);
+    badge.style.color = selectorStyle ? selectorStyle.text_color : popupStyle.text_color;
+    badge.style.border = selectorStyle ? `${scaledBorderWidth}px solid ${selectorStyle.border_color}` : "0";
+    badge.style.borderRadius = selectorStyle ? "999px" : "0";
+    badge.style.boxShadow = selectorStyle
+      ? `inset 0 0 0 ${Math.max(1, scaledOverlayPixelValue(1, overlayScale, 1))}px rgba(255, 244, 214, 0.18)`
+      : "none";
     badge.style.display = "flex";
     badge.style.flexDirection = "column";
     badge.style.alignItems = "center";
     badge.style.justifyContent = "center";
-    badge.style.gap = "6px";
-    badge.style.padding = "8px 10px";
+    badge.style.gap = `${scaledGap}px`;
+    badge.style.padding = `${scaledPaddingY}px ${scaledPaddingX}px`;
     badge.style.boxSizing = "border-box";
+    badge.style.fontSize = `${scaledFontSize}px`;
     badge.style.textAlign = "center";
-    if (entry.hasImage) {
+    if (entry.hasImage && !selectorStyle) {
       const image = document.createElement("img");
       image.src = popupBubbleImageUrl(bubble);
       image.alt = "";
       image.style.width = "100%";
-      image.style.height = entry.hasText ? "calc(100% - 28px)" : "100%";
+      image.style.height = entry.hasText ? `calc(100% - ${Math.max(18, scaledOverlayPixelValue(28, overlayScale, 18))}px)` : "100%";
       image.style.objectFit = bubble.image_scale_mode === "cover" ? "cover" : "contain";
       image.style.pointerEvents = "none";
       badge.appendChild(image);
     }
-    if (entry.hasText) {
+    if (entry.hasText && (!selectorStyle || selectorHasText)) {
       const text = document.createElement("div");
-      text.textContent = entry.text;
-      text.style.fontWeight = "700";
-      text.style.lineHeight = "1.1";
+      text.textContent = selectorToken || entry.text;
+      text.style.alignItems = "center";
+      text.style.display = "flex";
+      text.style.flex = "1 1 auto";
+      text.style.fontWeight = selectorStyle ? selectorStyle.font_weight : popupStyle.font_weight;
+      text.style.fontVariantNumeric = selectorStyle ? "tabular-nums" : "normal";
+      text.style.height = "100%";
+      text.style.justifyContent = "center";
+      text.style.letterSpacing = selectorStyle ? (selectorTokenLength >= 3 ? "-0.05em" : selectorTokenLength === 2 ? "-0.03em" : "0") : "0";
+      text.style.lineHeight = "1";
       text.style.pointerEvents = "none";
+      text.style.textShadow = "none";
+      text.style.textAlign = "center";
+      text.style.whiteSpace = "nowrap";
+      text.style.width = "100%";
       badge.appendChild(text);
     }
     badge.dataset.popupDrag = "true";
@@ -10096,7 +11418,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     badge.classList.toggle("popup-selected", Boolean(entry.selected));
     badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));
     placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
-    if (entry.selected && (bubble.follow_motion || popupBubbleMotionPath(bubble).length > 0)) {
+    if (entry.selected) {
       renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect);
     }
   });
@@ -10316,6 +11638,7 @@ function startOverlayLoop() {
     });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);
+    renderWaveformPlayhead(mediaTimeS === null ? currentPrimaryVideoPositionMs() : mediaTimeS * 1000);
     if (video.paused || video.ended) return;
     requestOverlayFrame(video, tick);
   };
@@ -10329,6 +11652,7 @@ function stopOverlayLoop() {
   cancelOverlayFrame(video);
   scheduleSecondaryPreviewSync();
   renderLiveOverlay();
+  renderWaveformPlayhead();
 }
 
 function render() {
@@ -10351,6 +11675,7 @@ function render() {
 function renderViewportLayout() {
   if (!state?.project) return;
   withPreservedScrollState(scrollRenderTargets(), () => {
+    maybeApplyRecommendedLayout();
     applyLayoutState();
     renderVideo();
     renderWaveform();
@@ -10407,7 +11732,7 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
 function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
-  if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded");
+  if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("waveform.expand", { expanded });
   syncLocalProjectUiState();
@@ -10480,7 +11805,7 @@ function resetWaveformView() {
 function setTimingExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("timing-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded");
+  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("timing.expand", { expanded });
   syncLocalProjectUiState();
@@ -10495,7 +11820,7 @@ function setTimingExpanded(expanded, { persistUiState = true } = {}) {
 function setMetricsExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("metrics-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded");
+  if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded", "markers-expanded");
   $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
   activity("metrics.expand", { expanded });
   syncLocalProjectUiState();
@@ -10886,6 +12211,24 @@ function applySettingsShotMLDefaults() {
   return applySettingsDefaults();
 }
 
+async function applyProjectUiStatePayload(payload = readProjectUiStatePayload()) {
+  const normalized = normalizeProjectUiState(payload);
+  const payloadKey = projectUiStatePayloadKey(normalized);
+  if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return null;
+  lastSubmittedProjectUiStatePayloadKey = payloadKey;
+  const result = await callApi("/api/project/ui-state", normalized);
+  if (!result && lastSubmittedProjectUiStatePayloadKey === payloadKey) {
+    lastSubmittedProjectUiStatePayloadKey = null;
+  }
+  return result;
+}
+
+function resetProjectUiStateApplyState() {
+  pendingProjectUiStatePayload = null;
+  lastSubmittedProjectUiStatePayloadKey = null;
+  autoApplyProjectUiState.cancel?.();
+}
+
 async function flushPendingProjectDrafts() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
@@ -10893,7 +12236,7 @@ async function flushPendingProjectDrafts() {
   await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   await callApi("/api/project/details", readProjectDetailsPayload());
   await callApi("/api/project/practiscore", readPractiScoreContextPayload());
-  await callApi("/api/project/ui-state", readProjectUiStatePayload());
+  await applyProjectUiStatePayload();
   await callApi("/api/overlay", readOverlayPayload());
   await callApi("/api/merge", readMergePayload());
   await flushPendingMergeSourceCommits();
@@ -10926,13 +12269,22 @@ function sendKeepaliveJson(path, payload) {
   }
 }
 
+function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {
+  const normalized = normalizeProjectUiState(payload);
+  const payloadKey = projectUiStatePayloadKey(normalized);
+  if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return false;
+  const sent = sendKeepaliveJson("/api/project/ui-state", normalized);
+  if (sent) lastSubmittedProjectUiStatePayloadKey = payloadKey;
+  return sent;
+}
+
 function flushPendingProjectDraftsKeepalive() {
   if (!state?.project) return;
   cancelPendingExportDrafts();
   sendKeepaliveJson("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
   sendKeepaliveJson("/api/project/details", readProjectDetailsPayload());
   sendKeepaliveJson("/api/project/practiscore", readPractiScoreContextPayload());
-  sendKeepaliveJson("/api/project/ui-state", readProjectUiStatePayload());
+  sendProjectUiStateKeepalive();
   sendKeepaliveJson("/api/overlay", readOverlayPayload());
   sendKeepaliveJson("/api/merge", readMergePayload());
   flushPendingMergeSourceCommits({ keepalive: true });
@@ -11075,7 +12427,7 @@ async function applyConfiguredProjectLandingTool(options = {}) {
       ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
       : "project";
   setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
-  return callApi("/api/project/ui-state", readProjectUiStatePayload());
+  return applyProjectUiStatePayload();
 }
 
 async function useProjectFolder(path = "") {
@@ -11158,8 +12510,9 @@ const autoApplyPractiScoreContext = debounce((payload) => {
 }, 300);
 
 const autoApplyProjectUiState = debounce((payload) => {
+  if (!shouldApplyProjectUiStatePayload(payload)) return;
   activity("auto_apply.project_ui_state", {});
-  callApi("/api/project/ui-state", payload);
+  applyProjectUiStatePayload(payload);
 }, 300);
 
 const autoApplyOverlay = debounce((payload) => {
@@ -11214,6 +12567,10 @@ function schedulePractiScoreContextApply() {
 
 function scheduleProjectUiStateApply() {
   const payload = readProjectUiStatePayload();
+  if (!shouldApplyProjectUiStatePayload(payload)) {
+    pendingProjectUiStatePayload = null;
+    return;
+  }
   if (hasActivePointerInteraction()) {
     pendingProjectUiStatePayload = payload;
     return;
@@ -11226,6 +12583,7 @@ function flushQueuedProjectUiStateApply() {
   if (!pendingProjectUiStatePayload) return;
   const payload = pendingProjectUiStatePayload;
   pendingProjectUiStatePayload = null;
+  if (!shouldApplyProjectUiStatePayload(payload)) return;
   autoApplyProjectUiState(payload);
 }
 
@@ -11486,17 +12844,16 @@ function wireEvents() {
     activity("video.seeked", { current_time_s: $("primary-video").currentTime });
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
-    if (activeTool === "markers") renderPopupTimeline();
+    renderWaveformPlayhead();
+    if (activeTool === "markers" && popupFilterMode === "visible") renderPopupEditors();
   });
   $("primary-video").addEventListener("timeupdate", () => {
     if (overlayFrame !== null) return;
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
+    renderWaveformPlayhead();
     syncPopupPlaybackWindow();
-    if (activeTool === "markers") {
-      if (popupFilterMode === "visible") renderPopupEditors();
-      else renderPopupTimeline();
-    }
+    if (activeTool === "markers" && popupFilterMode === "visible") renderPopupEditors();
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
     button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));
@@ -11511,6 +12868,11 @@ function wireEvents() {
   $("reset-waveform-view").addEventListener("click", resetWaveformView);
   $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
   $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
+  $("expand-markers")?.addEventListener("click", () => {
+    setActiveTool("markers", { collapseExpandedLayout: false });
+    setMarkersExpanded(true);
+  });
+  $("collapse-markers")?.addEventListener("click", () => setMarkersExpanded(false));
   $("timing-enabled")?.addEventListener("change", () => {
     syncLocalProjectUiState();
     scheduleProjectUiStateApply();
@@ -11595,6 +12957,7 @@ function wireEvents() {
   $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
   $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
   $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
+  $("popup-overlay")?.addEventListener("mousedown", beginPopupBubbleDrag);
   ["badge-size"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncOverlayFontSizePreset();
@@ -11662,29 +13025,45 @@ function wireEvents() {
     $(id)?.addEventListener("click", () => addOverlayTextBox(source));
   });
   $("popup-import-shots")?.addEventListener("click", importShotPopups);
-  $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
-  $("popup-open-shot-editor")?.addEventListener("click", () => setPopupShotEditorOpen(true));
-  $("popup-shot-editor-done")?.addEventListener("click", () => setPopupShotEditorOpen(false));
-  $("popup-shot-editor-prev")?.addEventListener("click", () => stepShotLinkedPopupBubble(-1));
-  $("popup-shot-editor-next")?.addEventListener("click", () => stepShotLinkedPopupBubble(1));
-  $("popup-shot-editor-duplicate")?.addEventListener("click", () => {
-    const bubble = selectedShotLinkedPopupBubble();
-    if (bubble) duplicatePopupBubble(bubble.id);
+  $("popup-import-shots-workbench")?.addEventListener("click", importShotPopups);
+  $("popup-add-selected-shot")?.addEventListener("click", () => {
+    if (!createPopupBubbleForShot(selectedShotId)) setStatus("Select a shot before adding a shot-linked marker.");
   });
-  $("popup-shot-editor-delete")?.addEventListener("click", () => {
-    const bubble = selectedShotLinkedPopupBubble();
-    if (bubble) removePopupBubble(bubble.id);
+  $("popup-add-selected-shot-workbench")?.addEventListener("click", () => {
+    if (!createPopupBubbleForShot(selectedShotId)) setStatus("Select a shot before adding a shot-linked marker.");
+  });
+  $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
+  $("popup-add-bubble-workbench")?.addEventListener("click", addPopupBubble);
+  $("popup-edit-selected")?.addEventListener("click", () => {
+    toggleSelectedPopupEditor({ focus: true });
+  });
+  $("popup-apply-template-to-selected")?.addEventListener("click", () => {
+    if (!applyTemplateStyleToSelectedPopupBubble()) setStatus("Select a marker before applying defaults.");
+  });
+  $("popup-apply-selected-style-visible")?.addEventListener("click", () => {
+    if (!applySelectedPopupStyleToVisibleShotLinked()) setStatus("Select a marker before applying its style.");
   });
   $("popup-toggle-authoring")?.addEventListener("click", () => setPopupAuthoringCollapsed(!popupAuthoringCollapsed));
   $("popup-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
+  $("markers-workbench-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
   $("popup-prev-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
   $("popup-next-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
+  $("popup-prev-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
+  $("popup-next-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
   $("popup-play-window")?.addEventListener("click", () => playSelectedPopupWindow({ loop: false }));
+  $("popup-play-window-workbench")?.addEventListener("click", () => playSelectedPopupWindow({ loop: false }));
   $("popup-loop-window")?.addEventListener("click", () => {
     if (popupPlaybackWindow?.loop) {
       popupPlaybackWindow = null;
-      renderPopupTimeline();
-      renderPopupAuthoringControls(popupBubbles(), filteredPopupBubbles());
+      renderPopupEditors();
+      return;
+    }
+    playSelectedPopupWindow({ loop: true });
+  });
+  $("popup-loop-window-workbench")?.addEventListener("click", () => {
+    if (popupPlaybackWindow?.loop) {
+      popupPlaybackWindow = null;
+      renderPopupEditors();
       return;
     }
     playSelectedPopupWindow({ loop: true });
@@ -11701,6 +13080,7 @@ function wireEvents() {
     "popup-template-duration-s",
     "popup-template-width",
     "popup-template-height",
+    "popup-template-opacity",
   ].forEach((id) => {
     $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
     $(id)?.addEventListener("keydown", (event) => {
@@ -11708,6 +13088,13 @@ function wireEvents() {
       event.preventDefault();
       callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() });
     });
+  });
+  [
+    "popup-template-background-color",
+    "popup-template-text-color",
+  ].forEach((id) => {
+    $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
+    $(id)?.addEventListener("blur", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
   });
 
   $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
@@ -11823,6 +13210,8 @@ function wireEvents() {
   document.addEventListener("mouseup", endTextBoxDrag);
   document.addEventListener("pointermove", movePopupBubbleDrag);
   document.addEventListener("pointerup", endPopupBubbleDrag);
+  document.addEventListener("mousemove", movePopupBubbleDrag);
+  document.addEventListener("mouseup", endPopupBubbleDrag);
   document.addEventListener("pointercancel", endPopupBubbleDrag);
   document.addEventListener("lostpointercapture", endPopupBubbleDrag);
   ["overlay-style"].forEach((id) => {

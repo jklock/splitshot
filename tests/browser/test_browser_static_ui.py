@@ -190,6 +190,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="popup-import-shots"' in html
     assert 'id="popup-import-mode"' in html
     assert 'id="popup-filter"' in html
+    assert 'id="popup-marker-toolbar"' in html
+    assert 'id="popup-edit-selected"' in html
+    assert 'id="expand-markers"' in html
     assert 'id="popup-prev"' not in html
     assert 'id="popup-next"' not in html
     assert 'id="popup-prev-compact"' in html
@@ -197,6 +200,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="popup-play-window"' in html
     assert 'id="popup-loop-window"' in html
     assert 'id="popup-toggle-authoring"' in html
+    assert 'id="popup-pane-status"' in html
+    assert 'id="popup-selected-summary"' in html
+    assert 'id="popup-list-status"' in html
     assert 'id="popup-duplicate-selected"' not in html
     assert 'id="popup-delete-selected"' not in html
     assert 'id="popup-enable-shown"' not in html
@@ -205,11 +211,29 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="popup-apply-duration-selected"' not in html
     assert 'id="popup-apply-duration-shown"' not in html
     assert 'id="popup-apply-duration-shot-linked"' not in html
-    assert 'id="popup-timeline-strip"' in html
+    assert 'id="popup-timeline-strip"' not in html
     assert 'id="popup-template-content-type"' in html
-    assert 'id="popup-shot-linked-list"' in html
-    assert 'id="popup-open-shot-editor"' in html
-    assert 'id="popup-shot-editor"' in html
+    assert 'id="popup-shot-linked-list"' not in html
+    assert 'id="popup-open-shot-editor"' not in html
+    assert 'id="popup-shot-editor"' not in html
+    assert 'id="popup-marker-list"' in html
+    assert 'id="markers-workbench"' in html
+    assert 'id="collapse-markers"' in html
+    assert 'id="popup-add-bubble-workbench"' in html
+    assert 'id="popup-add-selected-shot-workbench"' in html
+    assert 'id="popup-import-shots-workbench"' in html
+    assert 'id="popup-prev-workbench"' in html
+    assert 'id="popup-next-workbench"' in html
+    assert 'id="popup-play-window-workbench"' in html
+    assert 'id="popup-loop-window-workbench"' in html
+    assert 'id="markers-workbench-filter"' in html
+    assert 'id="markers-workbench-list"' in html
+    assert 'id="markers-workbench-editor"' in html
+    assert 'id="popup-add-selected-shot"' in html
+    assert 'id="popup-template-background-color"' in html
+    assert 'id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000"' in html
+    assert 'id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF"' in html
+    assert 'id="popup-floating-editor"' not in html
     assert 'id="settings-default-match-type"' in html
     assert 'id="settings-import-current"' in html
     assert 'id="settings-overlay-position"' in html
@@ -288,6 +312,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-action="prev_keyframe"' in js
     assert 'data-popup-action="next_keyframe"' in js
     assert 'data-popup-action="clear_motion_path"' in js
+    assert 'data-popup-action="auto_trace_motion"' in js
+    assert 'function autoTracePopupBubbleMotion(bubbleId) {' in js
     popup_motion_template = re.search(
         r'<section class="popup-motion-guide" data-popup-motion-guide hidden>.*?</section>',
         js,
@@ -639,6 +665,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function scheduleExportSettingsApply()" in js
     assert "function scheduleProjectDetailsApply()" in js
     assert "function schedulePractiScoreContextApply()" in js
+    assert 'let lastSubmittedProjectUiStatePayloadKey = null;' in js
+    assert 'function projectUiStatePayloadKey(payload = {}) {' in js
+    assert 'function shouldApplyProjectUiStatePayload(payload) {' in js
+    assert 'async function applyProjectUiStatePayload(payload = readProjectUiStatePayload()) {' in js
+    assert 'if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return null;' in js
+    assert 'lastSubmittedProjectUiStatePayloadKey = payloadKey;' in js
+    assert 'function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {' in js
+    assert 'await applyProjectUiStatePayload();' in js
+    assert 'sendProjectUiStateKeepalive();' in js
     assert "function scheduleOverlayApply()" in js
     assert "function scheduleMergeApply()" in js
     assert "function scheduleScoringApply()" in js
@@ -710,6 +745,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {' in js
     assert 'function renderPopupBubbleMotionGuide(card, bubble) {' in js
     assert 'function popupBubbleAutoSize(bubble) {' in js
+    assert 'function popupBubblePlacementSelectorToken(text) {' in js
+    assert 'function popupBubblePlacementSelectorStyle(bubble) {' in js
+    assert 'function popupBubbleRenderStyle(bubble) {' in js
     assert 'function popupTextForShotId(shotId) {' in js
     assert 'function popupBubbleResolvedText(bubble) {' in js
     assert 'function resolvedPopupBubbleSize(bubble) {' in js
@@ -727,13 +765,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),' in js
     assert 'badge.classList.toggle("popup-selected", Boolean(entry.selected));' in js
     assert 'badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));' in js
+    assert 'if (point.base && hideBaseHandle) return;' in js
+    assert 'const selectorStyle = entry.selected && activeTool === "markers" && selectedPopupPlacementMode === "base"' in js
+    assert 'badge.classList.toggle("popup-placement-selector", Boolean(selectorStyle));' in js
     assert 'if (shot) return shot.time_ms;' in js
     assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
     assert 'data-popup-field="follow_motion"' in js
     assert 'data-popup-keyframe-drag' in js
     assert 'dataset.popupKeyframeOffset' in js
-    assert 'text.textContent = entry.text;' in js
-    assert 'badge.style.width = `${Math.max(1, popupSize.width)}px`;' in js
+    assert 'text.textContent = selectorStyle?.token || entry.text;' in js
+    assert 'badge.style.width = `${scaledWidth}px`;' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
     assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",' in js
@@ -899,6 +940,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'scoring_expanded: false,' in js
     assert 'scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),' in js
     assert 'scoring_expanded: Boolean(root?.classList.contains("scoring-expanded")),' in js
+    assert 'if (!shouldApplyProjectUiStatePayload(payload)) return;' in js
     assert 'function scoringWorkbenchGridTemplate(table) {' in js
     assert 'const containerWidth = table.parentElement instanceof HTMLElement' in js
     assert 'const tableWidth = Math.max(containerWidth, table.clientWidth, table.getBoundingClientRect().width || 0);' in js
@@ -1016,9 +1058,16 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".popup-authoring-bar {\n  align-items: end;" in css
     assert ".popup-duration-actions {\n  align-items: end;" not in css
     assert ".popup-authoring-panel {\n  display: grid;" in css
-    assert ".popup-collapsed-nav {\n  display: grid;" in css
-    assert ".popup-timeline-strip {\n  background:" in css
-    assert ".popup-timeline-bar.selected {\n  border-color: var(--accent);" in css
+    assert ".popup-marker-toolbar," in css
+    assert ".popup-marker-create-actions {\n  gap: 0.35rem;" in css
+    assert ".popup-toolbar-row {\n  display: grid;" in css
+    assert ".markers-workbench {" in css
+    assert ".markers-workbench-toolbar {" in css
+    assert ".markers-workbench-body.defaults-collapsed {" in css
+    assert ".cockpit.markers-expanded .markers-workbench {" in css
+    assert ".cockpit.markers-expanded .waveform-panel," in css
+    assert ".popup-collapsed-nav {\n  display: grid;" not in css
+    assert ".popup-timeline-strip {\n  background:" not in css
     assert ".popup-style-card,\n.cockpit-shell.inspector-compact .popup-style-card {\n  grid-template-columns: repeat(2, minmax(0, 1fr));" in css
     assert ".popup-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
     assert ".popup-style-card .color-hex-input,\n.cockpit-shell.inspector-compact .popup-style-card .color-hex-input {\n  flex: 1 1 auto;\n  max-width: 10rem;" in css
@@ -1324,6 +1373,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "collapse-metrics",
         "expand-metrics",
         "popup-add-bubble",
+        "popup-edit-selected",
         "popup-import-shots",
         "popup-import-mode",
         "popup-filter",
@@ -1332,12 +1382,18 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "popup-play-window",
             "popup-loop-window",
                 "popup-toggle-authoring",
-                "popup-open-shot-editor",
-                "popup-shot-editor-done",
-                "popup-shot-editor-prev",
-                "popup-shot-editor-next",
-                "popup-shot-editor-duplicate",
-                "popup-shot-editor-delete",
+                "popup-add-selected-shot",
+            "expand-markers",
+            "collapse-markers",
+            "popup-add-bubble-workbench",
+            "popup-add-selected-shot-workbench",
+            "popup-import-shots-workbench",
+            "popup-prev-workbench",
+            "popup-next-workbench",
+            "popup-play-window-workbench",
+            "popup-loop-window-workbench",
+                "popup-apply-template-to-selected",
+                "popup-apply-selected-style-visible",
                 "show-overlay",
                 "show-markers",
                 "show-pip",

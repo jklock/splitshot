@@ -183,15 +183,21 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.waveform_mode = "add"
     project.ui_state.waveform_expanded = True
     project.ui_state.timing_expanded = False
+    project.ui_state.timing_enabled = False
+    project.ui_state.review_show_markers = False
+    project.ui_state.review_show_pip = False
+    project.ui_state.scoring_expanded = True
     project.ui_state.layout_locked = False
-    project.ui_state.rail_width = 68
+    project.ui_state.rail_width = 92
     project.ui_state.inspector_width = 520
     project.ui_state.waveform_height = 288
     project.ui_state.scoring_shot_expansion = {selected_shot_id: True}
+    project.ui_state.scoring_edit_shot_ids = [selected_shot_id]
     project.ui_state.waveform_shot_amplitudes = {selected_shot_id: 1.75}
     project.ui_state.timing_edit_shot_ids = [selected_shot_id]
     project.ui_state.timing_column_widths = {"segment": 128, "split": 224, "action": 244}
     project.ui_state.popup_bubble_expansion = {popup.id: False}
+    project.ui_state.popup_authoring_collapsed = True
     project.ui_state.merge_source_expansion = {project.merge_sources[0].id: False, "pip-defaults": False}
     project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
 
@@ -292,11 +298,16 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.ui_state.waveform_mode == "add"
     assert loaded.ui_state.waveform_expanded is True
     assert loaded.ui_state.timing_expanded is False
+    assert loaded.ui_state.timing_enabled is False
+    assert loaded.ui_state.review_show_markers is False
+    assert loaded.ui_state.review_show_pip is False
+    assert loaded.ui_state.scoring_expanded is True
     assert loaded.ui_state.layout_locked is False
-    assert loaded.ui_state.rail_width == 68
+    assert loaded.ui_state.rail_width == 92
     assert loaded.ui_state.inspector_width == 520
     assert loaded.ui_state.waveform_height == 288
     assert loaded.ui_state.scoring_shot_expansion == {selected_shot_id: True}
+    assert loaded.ui_state.scoring_edit_shot_ids == [selected_shot_id]
     assert loaded.ui_state.waveform_shot_amplitudes == {selected_shot_id: 1.75}
     assert loaded.ui_state.timing_edit_shot_ids == [selected_shot_id]
     assert loaded.ui_state.timing_column_widths["segment"] == 128
@@ -307,8 +318,29 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.popups[0].image_path.endswith("Markers/popup-image.png")
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
+    assert loaded.ui_state.popup_authoring_collapsed is True
     assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
     assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}
+
+
+def test_project_from_dict_defaults_browser_ui_state_contract_fields() -> None:
+    legacy = project_to_dict(Project(name="Legacy UI Contract"))
+    for field_name in (
+        "timing_enabled",
+        "review_show_markers",
+        "review_show_pip",
+        "scoring_expanded",
+        "rail_width",
+    ):
+        legacy["ui_state"].pop(field_name, None)
+
+    loaded = project_from_dict(legacy)
+
+    assert loaded.ui_state.timing_enabled is True
+    assert loaded.ui_state.review_show_markers is True
+    assert loaded.ui_state.review_show_pip is True
+    assert loaded.ui_state.scoring_expanded is False
+    assert loaded.ui_state.rail_width == 84
 
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:

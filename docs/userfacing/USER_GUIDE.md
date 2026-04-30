@@ -34,7 +34,7 @@ Most edits auto-apply. Export is the main exception: the final video is created 
 | [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
 | [panes/pip.md](panes/pip.md) | Added media, picture-in-picture layout, per-item size/position/opacity, sync nudges, and export inclusion |
 | [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
-| [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, motion paths, the shot marker editor, and bundled marker images |
+| [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, motion paths, the expanded markers workbench, and bundled marker images |
 | [panes/review.md](panes/review.md) | Preview artifact toggles, imported summary boxes, custom text boxes, placement, size, and style |
 | [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
 | [panes/settings.md](panes/settings.md) | App defaults, folder defaults in `splitshot.conf`, settings source attribution, and marker template defaults |
