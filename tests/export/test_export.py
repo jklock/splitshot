@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PySide6.QtGui import QColor, QFont, QImage, QPainter
+from PySide6.QtGui import QColor, QImage, QPainter
 
 from splitshot.analysis.detection import analyze_video_audio
 from splitshot.analysis.sync import compute_sync_offset
@@ -14,7 +14,7 @@ from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageS
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import Badge, BadgeStyle, OverlayRenderer, _FONT_SIZE, _auto_badge_size, _combined_rect, _standard_badge_texts
+from splitshot.overlay.render import OverlayRenderer, _auto_badge_size, _combined_rect, _standard_badge_texts
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
 
@@ -260,6 +260,7 @@ def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_fact
     project.overlay.show_shots = True
     project.overlay.show_draw = True
     project.overlay.show_score = False
+    project.scoring.enabled = False
 
     before_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms - 1)[0]
     after_first = OverlayRenderer().build_badges(project, project.analysis.shots[0].time_ms + 50)[0]
@@ -309,6 +310,7 @@ def test_overlay_renderer_folds_reload_intervals_into_the_following_shot_badge()
     project.overlay.show_draw = False
     project.overlay.show_shots = True
     project.overlay.show_score = False
+    project.scoring.enabled = False
 
     badges, _score_marks = OverlayRenderer().build_badges(project, 500)
     texts = [badge.text for badge in badges]
@@ -342,6 +344,7 @@ def test_overlay_auto_badge_size_uses_longest_project_badge_text_with_fixed_padd
     project.overlay.show_shots = True
     project.overlay.show_score = False
     project.overlay.font_size = 18
+    project.scoring.enabled = False
 
     texts = _standard_badge_texts(project)
 

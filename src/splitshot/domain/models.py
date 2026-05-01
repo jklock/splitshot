@@ -51,6 +51,7 @@ class BadgeSize(StrEnum):
     M = "M"
     L = "L"
     XL = "XL"
+    CUSTOM = "custom"
 
 
 class MergeLayout(StrEnum):
@@ -465,6 +466,7 @@ class PopupBubble:
     quadrant: str = "middle_middle"
     x: float = 0.5
     y: float = 0.5
+    motion_mode: str = "fixed"
     follow_motion: bool = False
     motion_path: list[PopupMotionPoint] = field(default_factory=list)
     background_color: str = "#000000"
@@ -486,6 +488,7 @@ class PopupTemplate:
     quadrant: str = "middle_middle"
     width: int = 0
     height: int = 0
+    motion_mode: str = "fixed"
     follow_motion: bool = False
     background_color: str = "#000000"
     text_color: str = "#ffffff"
@@ -541,7 +544,7 @@ class UIState:
     timing_column_widths: dict[str, float] = field(default_factory=dict)
     review_text_box_expansion: dict[str, bool] = field(default_factory=dict)
     popup_bubble_expansion: dict[str, bool] = field(default_factory=dict)
-    popup_authoring_collapsed: bool = False
+    popup_authoring_collapsed: bool = True
     merge_source_expansion: dict[str, bool] = field(default_factory=dict)
     shotml_section_expansion: dict[str, bool] = field(default_factory=dict)
 
@@ -651,6 +654,7 @@ _POPUP_BUBBLE_QUADRANTS = {
     "bottom_right",
     "custom",
 }
+_POPUP_MOTION_MODES = {"fixed", "guided", "manual", "auto"}
 _POPUP_MOTION_EASINGS = {"linear", "hold", "ease_in", "ease_out", "ease_in_out"}
 
 _UI_STATE_ACTIVE_TOOLS = {
@@ -731,6 +735,21 @@ def _normalize_popup_motion_path(data: Any) -> list[PopupMotionPoint]:
     return deduped
 
 
+def _normalize_popup_motion_mode(
+    value: Any,
+    *,
+    follow_motion: bool = False,
+    motion_path: list[PopupMotionPoint] | None = None,
+) -> str:
+    normalized = str(value or "").strip().lower()
+    has_motion = follow_motion or bool(motion_path)
+    if normalized in _POPUP_MOTION_MODES and not (normalized == "fixed" and has_motion):
+        return normalized
+    if has_motion:
+        return "manual"
+    return "fixed"
+
+
 def _normalize_ui_state_active_tool(value: Any) -> str:
     normalized = str(value or "project")
     if normalized == "popup":
@@ -809,6 +828,7 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
     x_value = None if data.get("x") in {None, ""} else float(data["x"])
     y_value = None if data.get("y") in {None, ""} else float(data["y"])
     motion_path = _normalize_popup_motion_path(data.get("motion_path"))
+    follow_motion = bool(data.get("follow_motion", bool(motion_path)))
     return PopupBubble(
         id=str(data.get("id") or uuid4().hex),
         enabled=bool(data.get("enabled", True)),
@@ -821,7 +841,12 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         quadrant=_normalize_popup_bubble_quadrant(data.get("quadrant"), x=x_value, y=y_value),
         x=max(0.0, min(1.0, x_value if x_value is not None else 0.5)),
         y=max(0.0, min(1.0, y_value if y_value is not None else 0.5)),
-        follow_motion=bool(data.get("follow_motion", bool(motion_path))),
+        motion_mode=_normalize_popup_motion_mode(
+            data.get("motion_mode"),
+            follow_motion=follow_motion,
+            motion_path=motion_path,
+        ),
+        follow_motion=follow_motion,
         motion_path=motion_path,
         background_color=str(data.get("background_color", "#000000")),
         text_color=str(data.get("text_color", "#ffffff")),
@@ -836,6 +861,7 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
 
 def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
     payload = data if isinstance(data, dict) else {}
+    follow_motion = bool(payload.get("follow_motion", False))
     return PopupTemplate(
         enabled=bool(payload.get("enabled", True)),
         content_type=str(payload.get("content_type", "text") or "text"),
@@ -844,7 +870,8 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         quadrant=_normalize_popup_bubble_quadrant(payload.get("quadrant")),
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),
-        follow_motion=bool(payload.get("follow_motion", False)),
+        motion_mode=_normalize_popup_motion_mode(payload.get("motion_mode"), follow_motion=follow_motion),
+        follow_motion=follow_motion,
         background_color=str(payload.get("background_color", "#000000") or "#000000"),
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", 0.9)))),
@@ -1372,7 +1399,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             review_text_box_expansion=_ui_state_bool_map(ui_data.get("review_text_box_expansion")),
             popup_bubble_expansion=_ui_state_bool_map(ui_data.get("popup_bubble_expansion")),
-            popup_authoring_collapsed=bool(ui_data.get("popup_authoring_collapsed", False)),
+            popup_authoring_collapsed=bool(ui_data.get("popup_authoring_collapsed", True)),
             merge_source_expansion=_ui_state_bool_map(ui_data.get("merge_source_expansion")),
             shotml_section_expansion=_ui_state_bool_map(ui_data.get("shotml_section_expansion")),
         ),

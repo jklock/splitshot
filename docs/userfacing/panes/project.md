@@ -17,8 +17,8 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 | Control | What it does |
 | --- | --- |
 | `Project folder` | Shows the current project folder name. Before a project exists it stays blank and prompts you to create or select one. |
-| `Select Project` | Opens an existing project bundle or adopts a folder for the current run. |
-| `Create Project` | Clears the current session and saves a new project into the selected folder. |
+| `Select Project` | Opens an existing project bundle or adopts a folder for the current run, then keeps you on the Project pane so setup can continue immediately. |
+| `Create Project` | Clears the current session, saves a new project into the selected folder, and keeps you on the Project pane for the next setup steps. |
 | `Delete Project` | Removes only `project.json`, resets the current session, and leaves the project folders and files on disk. |
 | `Project name` | Sets the saved name shown in the app and metrics/export filenames. |
 | `Project description` | Stores project notes, stage reminders, or edit plans. |
@@ -35,7 +35,7 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 
 ## How To Use It
 
-1. Click `Create Project` or `Select Project` first. The PractiScore and primary-video buttons stay disabled until a project is active.
+1. Click `Create Project` or `Select Project` first. The PractiScore and primary-video buttons stay disabled until a project is active, and SplitShot keeps you on the Project pane right after the project switch so you can keep setting things up.
 2. Enter `Project name` and `Project description` before deeper editing so screenshots, exports, and metrics have meaningful labels.
 3. If you need a PractiScore export, click `Open PractiScore Dashboard`, use your browser to download the relevant CSV/TXT result, then return to SplitShot.
 4. Click `Select PractiScore File` and choose the exported CSV/TXT file.
@@ -61,7 +61,7 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 | PractiScore dashboard does not open. | Click `Open PractiScore Dashboard` again. If your browser blocks the launch, open `https://practiscore.com/dashboard/home` manually. |
 | The imported result is for the wrong run. | Click `Select PractiScore File` again with the correct CSV/TXT export. |
 | The imported stage is right but the competitor row is wrong. | Recheck `Match type`, `Stage #`, `Competitor name`, and `Place`. |
-| A previous project reopened unexpectedly. | Confirm the `Project folder` before using `Select Project`. |
+| A previous project reopened unexpectedly. | Confirm the `Project folder` before using `Select Project`, then review the Settings pane if you want a different landing pane after a later reload. |
 | The app looks empty after `Create Project`. | Import a primary video again. |
 
 ## Related Guides
@@ -69,5 +69,5 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 Previous: [../USER_GUIDE.md](../USER_GUIDE.md)
 Next: [shotml.md](shotml.md)
 
-**Last updated:** 2026-04-27
-**Referenced files last updated:** 2026-04-27
+**Last updated:** 2026-04-30
+**Referenced files last updated:** 2026-04-30

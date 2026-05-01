@@ -2,9 +2,13 @@
 
 The ShotML pane controls automatic beep and shot detection. It is where you tune detector sensitivity, rerun analysis, review timing-change proposals, and adjust advanced detector behavior before doing detailed manual timing.
 
+<!-- markdownlint-disable MD033 -->
+
 <img src="../../screenshots/ShotMLPane.png" alt="ShotML pane with threshold, beep detection, shot candidate detection, and shot refinement sections expanded" width="960">
 
 <img src="../../screenshots/ShotMLPane2.png" alt="Lower ShotML pane with false positive suppression, confidence review, timing changer, and advanced runtime controls expanded" width="840">
+
+<!-- markdownlint-enable MD033 -->
 
 ## When To Use This Pane
 
@@ -18,6 +22,7 @@ The ShotML pane controls automatic beep and shot detection. It is where you tune
 
 | Control | What it does |
 | --- | --- |
+| `Avg auto confidence` | Shows the current average confidence for automatically detected shots, so you can see at a glance whether the latest run looks strong or shaky before drilling into individual rows. |
 | `Re-run ShotML` | Replaces the automatic beep and shot detections using the current settings. Manual timing edits remain available in Splits. |
 | `Reset Defaults` | Restores the current project to the factory detector profile. |
 | Section chevrons | Expand or collapse each detector group. |
@@ -117,5 +122,5 @@ ShotML controls automatic detection. Splits controls the final timeline. Rerun S
 Previous: [project.md](project.md)
 Next: [splits.md](splits.md)
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-04-30
+**Referenced files last updated:** 2026-04-30

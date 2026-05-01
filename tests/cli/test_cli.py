@@ -78,20 +78,26 @@ def test_cli_help_documents_browser_default() -> None:
     assert "--log-level" in help_text
 
 
+class FakeRuntime:
+    def run_server(self, server, *, open_browser: bool) -> int:
+        server.start_background(open_browser=open_browser)
+        return 0
+
+
 def test_run_browser_keeps_default_startup_quiet(monkeypatch, capsys) -> None:
     class FakeServer:
         def __init__(self, controller, host, port, log_level) -> None:
             self.url = "http://127.0.0.1:8765/"
             self.activity = SimpleNamespace(path=Path("/tmp/splitshot.log"))
 
-        def serve_forever(self, open_browser: bool) -> None:
+        def start_background(self, open_browser: bool) -> None:
             assert open_browser is True
 
     class FakeController:
         def open_project(self, path: str) -> None:
             raise AssertionError(f"Unexpected project open: {path}")
 
-    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController))
+    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController, FakeRuntime))
 
     assert cli.run_browser() == 0
     assert capsys.readouterr().out == ""
@@ -103,14 +109,14 @@ def test_run_browser_prints_url_when_no_open_is_requested(monkeypatch, capsys) -
             self.url = "http://127.0.0.1:8765/"
             self.activity = SimpleNamespace(path=Path("/tmp/splitshot.log"))
 
-        def serve_forever(self, open_browser: bool) -> None:
+        def start_background(self, open_browser: bool) -> None:
             assert open_browser is False
 
     class FakeController:
         def open_project(self, path: str) -> None:
             raise AssertionError(f"Unexpected project open: {path}")
 
-    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController))
+    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController, FakeRuntime))
 
     assert cli.run_browser(open_browser=False) == 0
     output = capsys.readouterr().out
@@ -124,14 +130,14 @@ def test_run_browser_prints_log_path_when_terminal_logging_is_enabled(monkeypatc
             self.url = "http://127.0.0.1:8765/"
             self.activity = SimpleNamespace(path=Path("/tmp/splitshot.log"))
 
-        def serve_forever(self, open_browser: bool) -> None:
+        def start_background(self, open_browser: bool) -> None:
             assert open_browser is True
 
     class FakeController:
         def open_project(self, path: str) -> None:
             raise AssertionError(f"Unexpected project open: {path}")
 
-    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController))
+    monkeypatch.setattr(cli, "_browser_runtime", lambda: (FakeServer, FakeController, FakeRuntime))
 
     assert cli.run_browser(log_level="debug") == 0
     output = capsys.readouterr().out

@@ -26,6 +26,7 @@ from splitshot.domain.models import (
 APP_DIR = Path.home() / ".splitshot"
 SETTINGS_PATH = APP_DIR / "settings.json"
 FOLDER_SETTINGS_FILENAME = "splitshot.conf"
+_POPUP_MOTION_MODES = {"fixed", "guided", "manual", "auto"}
 
 
 def _serialize_popup_template(template: PopupTemplate) -> dict[str, object]:
@@ -37,6 +38,7 @@ def _serialize_popup_template(template: PopupTemplate) -> dict[str, object]:
         "quadrant": template.quadrant,
         "width": template.width,
         "height": template.height,
+        "motion_mode": template.motion_mode,
         "follow_motion": template.follow_motion,
         "background_color": template.background_color,
         "text_color": template.text_color,
@@ -50,8 +52,16 @@ def _float_or_default(value: object, default: float) -> float:
     return float(value)
 
 
+def _normalize_popup_motion_mode(value: object, *, follow_motion: bool = False) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in _POPUP_MOTION_MODES and not (normalized == "fixed" and follow_motion):
+        return normalized
+    return "manual" if follow_motion else "fixed"
+
+
 def _popup_template_from_dict(data: object) -> PopupTemplate:
     payload = data if isinstance(data, dict) else {}
+    follow_motion = bool(payload.get("follow_motion", False))
     return PopupTemplate(
         enabled=bool(payload.get("enabled", True)),
         content_type=str(payload.get("content_type", "text") or "text"),
@@ -60,7 +70,8 @@ def _popup_template_from_dict(data: object) -> PopupTemplate:
         quadrant=str(payload.get("quadrant", "middle_middle") or "middle_middle"),
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),
-        follow_motion=bool(payload.get("follow_motion", False)),
+        motion_mode=_normalize_popup_motion_mode(payload.get("motion_mode"), follow_motion=follow_motion),
+        follow_motion=follow_motion,
         background_color=str(payload.get("background_color", "#000000") or "#000000"),
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
         opacity=max(0.0, min(1.0, _float_or_default(payload.get("opacity"), 0.9))),
@@ -140,6 +151,10 @@ class AppSettings:
     badge_size: BadgeSize = BadgeSize.M
     default_tool: str = "project"
     reopen_last_tool: bool = True
+    layout_locked: bool | None = None
+    layout_rail_width: int | None = None
+    layout_inspector_width: int | None = None
+    layout_waveform_height: int | None = None
     marker_template: PopupTemplate = field(default_factory=PopupTemplate)
     review_text_boxes: list[dict[str, object]] = field(default_factory=list)
     active_template_name: str = "Default"
@@ -180,6 +195,10 @@ class AppSettings:
             "badge_size": self.badge_size.value,
             "default_tool": self.default_tool,
             "reopen_last_tool": self.reopen_last_tool,
+            "layout_locked": self.layout_locked,
+            "layout_rail_width": self.layout_rail_width,
+            "layout_inspector_width": self.layout_inspector_width,
+            "layout_waveform_height": self.layout_waveform_height,
             "marker_template": _serialize_popup_template(self.marker_template),
             "review_text_boxes": deepcopy(self.review_text_boxes),
         }
@@ -228,6 +247,10 @@ class AppSettings:
         active_template_name = str(data.get("active_template_name", "Default") or "Default")
         default_stage_number = data.get("default_stage_number")
         default_competitor_place = data.get("default_competitor_place")
+        layout_locked = data.get("layout_locked")
+        layout_rail_width = data.get("layout_rail_width")
+        layout_inspector_width = data.get("layout_inspector_width")
+        layout_waveform_height = data.get("layout_waveform_height")
         try:
             parsed_default_stage_number = None if default_stage_number in {None, ""} else int(default_stage_number)
         except (TypeError, ValueError):
@@ -238,6 +261,20 @@ class AppSettings:
             )
         except (TypeError, ValueError):
             parsed_default_competitor_place = None
+
+        def _optional_int(value: object) -> int | None:
+            try:
+                return None if value in {None, ""} else int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _optional_bool(value: object) -> bool | None:
+            if value in {None, ""}:
+                return None
+            if isinstance(value, str):
+                return value.strip().lower() in {"1", "true", "yes", "on"}
+            return bool(value)
+
         recent_projects = [str(item) for item in data.get("recent_projects", [])]
         settings = cls(
             detection_threshold=factory_threshold,
@@ -269,6 +306,10 @@ class AppSettings:
             badge_size=BadgeSize(str(data.get("badge_size", BadgeSize.M.value))),
             default_tool=str(data.get("default_tool", "project") or "project"),
             reopen_last_tool=bool(data.get("reopen_last_tool", True)),
+            layout_locked=_optional_bool(layout_locked),
+            layout_rail_width=_optional_int(layout_rail_width),
+            layout_inspector_width=_optional_int(layout_inspector_width),
+            layout_waveform_height=_optional_int(layout_waveform_height),
             marker_template=_popup_template_from_dict(data.get("marker_template")),
             review_text_boxes=review_text_boxes,
             active_template_name=active_template_name,
@@ -356,6 +397,14 @@ def save_folder_settings(project_path: str | Path, settings: AppSettings) -> Non
         f'default_tool = "{data["default_tool"]}"',
         f'reopen_last_tool = {"true" if data["reopen_last_tool"] else "false"}',
     ])
+    if data["layout_locked"] is not None:
+        lines.append(f'layout_locked = {"true" if data["layout_locked"] else "false"}')
+    if data["layout_rail_width"] is not None:
+        lines.append(f'layout_rail_width = {int(data["layout_rail_width"])}')
+    if data["layout_inspector_width"] is not None:
+        lines.append(f'layout_inspector_width = {int(data["layout_inspector_width"])}')
+    if data["layout_waveform_height"] is not None:
+        lines.append(f'layout_waveform_height = {int(data["layout_waveform_height"])}')
     for section_name in ("timer_badge", "shot_badge", "current_shot_badge", "hit_factor_badge"):
         style = data[section_name]
         if isinstance(style, dict):

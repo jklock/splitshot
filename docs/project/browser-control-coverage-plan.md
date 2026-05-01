@@ -124,7 +124,7 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Template Text Source | behavioral | Keep the score, shot-label, and custom generated-marker payload coverage; shot-linked live overlay text still resolves from score text today. |
 | Template Duration | behavioral | Keep the generated-marker duration coverage if the marker window model changes. |
 | Template Width / Height | behavioral | Keep the generated-marker size coverage and live badge-size assertion if popup sizing changes. |
-| Template Follow Motion | behavioral | Keep the generated-marker follow-motion default coverage if motion-path defaulting changes. |
+| Template Motion Mode | behavioral | Keep the generated-marker motion-mode default coverage if Fixed/Guided/Advanced defaulting changes. |
 
 ### Popup Bubble Cards
 
@@ -145,9 +145,11 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Start time input | missing | Add a start-time commit test. |
 | Shot select | missing | Add a shot-anchored selection test. |
 | Duration input | missing | Add a duration commit test. |
-| Follow motion checkbox | missing | Add a motion-path toggle test. |
-| Add Keyframe | missing | Add a keyframe insertion test. |
-| Previous Keyframe / Next Keyframe | missing | Add keyframe navigation tests. |
+| Motion mode selector | missing | Add a Fixed/Guided/Advanced selection test. |
+| Add Fix Point Here | missing | Add a guided motion-point insertion test. |
+| Previous Fix Point / Next Fix Point | missing | Add guided motion-point navigation tests. |
+| Add Keyframe | missing | Add an advanced keyframe insertion test. |
+| Previous Keyframe / Next Keyframe | missing | Add advanced keyframe navigation tests. |
 | Copy Prev Motion | missing | Add a motion-copy test from the previous bubble. |
 | Apply To Shown Shot Popups | missing | Add a bulk-apply motion test for visible shot-linked popups. |
 | Clear path | missing | Add a clear-motion-path test. |
@@ -312,7 +314,7 @@ Direct browser coverage now proves these headers toggle and keep their collapse 
 | Quadrant select | smoke | Add a placement default test. |
 | Width input | smoke | Add a width default test. |
 | Height input | smoke | Add a height default test. |
-| Follow motion checkbox | smoke | Add a follow-motion default test. |
+| Motion mode selector | smoke | Add a marker motion-mode default test. |
 | Background color input | smoke | Add a marker-color default test. |
 | Text color input | smoke | Add a marker-color default test. |
 | Opacity input | smoke | Add a marker-opacity default test. |

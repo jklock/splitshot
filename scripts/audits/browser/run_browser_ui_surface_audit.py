@@ -581,6 +581,7 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
           const rows = Array.from(document.querySelectorAll("#popup-marker-list .popup-marker-row[data-popup-id]"));
           const selected = document.querySelector("#popup-marker-list .popup-marker-row.selected");
           const filter = document.querySelector("#popup-filter");
+          const defaultsPanel = document.querySelector("#popup-authoring-panel");
           return {
             row_count: rows.length,
             selected_id: selected?.dataset.popupId || "",
@@ -589,6 +590,8 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
             pane_status: document.querySelector("#popup-pane-status")?.textContent || "",
             list_status: document.querySelector("#popup-list-status")?.textContent || "",
             selected_summary: document.querySelector("#popup-selected-summary")?.textContent || "",
+            defaults_visible: Boolean(defaultsPanel) && getComputedStyle(defaultsPanel).display !== "none",
+            defaults_collapsed: defaultsPanel?.classList.contains("collapsed") === true,
           };
         }
         """
@@ -722,6 +725,8 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
       and "enabled" in marker_shell["pane_status"]
       and "shown" in marker_shell["list_status"]
       and "Select a marker" not in marker_shell["selected_summary"]
+      and marker_shell["defaults_visible"]
+      and marker_shell["defaults_collapsed"]
       and expanded_layout["workbench_visible"]
       and expanded_layout["right_editor_visible"]
       and expanded_layout["compact_list_hidden"]

@@ -14,6 +14,7 @@ from splitshot.domain.models import (
     OverlayTextBox,
     MergeSource,
     PopupBubble,
+    PopupMotionPoint,
     Project,
     ScoreLetter,
     ScoreMark,
@@ -200,6 +201,11 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.popup_authoring_collapsed = True
     project.ui_state.merge_source_expansion = {project.merge_sources[0].id: False, "pip-defaults": False}
     project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
+    project.popup_template.motion_mode = "guided"
+    project.popup_template.follow_motion = True
+    popup.motion_mode = "guided"
+    popup.follow_motion = True
+    popup.motion_path = [PopupMotionPoint(offset_ms=250, x=0.6, y=0.45)]
 
     bundle = save_project(project, tmp_path / "round-trip.ssproj")
     loaded = load_project(bundle)
@@ -315,12 +321,43 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.ui_state.timing_column_widths["action"] == 244
     assert loaded.popups[0].name == "Entry target"
     assert loaded.popups[0].content_type == "text_image"
+    assert loaded.popups[0].motion_mode == "guided"
+    assert loaded.popups[0].follow_motion is True
+    assert loaded.popups[0].motion_path[0].offset_ms == 250
+    assert loaded.popups[0].motion_path[0].x == pytest.approx(0.6)
+    assert loaded.popup_template.motion_mode == "guided"
+    assert loaded.popup_template.follow_motion is True
     assert loaded.popups[0].image_path.endswith("Markers/popup-image.png")
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
     assert loaded.ui_state.popup_authoring_collapsed is True
     assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
     assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}
+
+
+def test_project_from_dict_backfills_legacy_popup_motion_mode() -> None:
+    data = project_to_dict(Project(name="Legacy Popup Motion"))
+    data["popups"] = [
+        {
+            "id": "legacy-popup",
+            "text": "Legacy",
+            "follow_motion": True,
+            "motion_path": [{"offset_ms": 400, "x": 0.7, "y": 0.2}],
+        }
+    ]
+    data["popup_template"] = {
+        "enabled": True,
+        "text_source": "score",
+        "follow_motion": True,
+    }
+
+    loaded = project_from_dict(data)
+
+    assert loaded.popups[0].motion_mode == "manual"
+    assert loaded.popups[0].follow_motion is True
+    assert loaded.popups[0].motion_path[0].offset_ms == 400
+    assert loaded.popup_template.motion_mode == "manual"
+    assert loaded.popup_template.follow_motion is True
 
 
 def test_project_from_dict_defaults_browser_ui_state_contract_fields() -> None:
