@@ -203,6 +203,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
     project.popup_template.motion_mode = "guided"
     project.popup_template.follow_motion = True
+    project.popup_template.use_shot_split_duration = True
     popup.motion_mode = "guided"
     popup.follow_motion = True
     popup.motion_path = [PopupMotionPoint(offset_ms=250, x=0.6, y=0.45)]
@@ -327,6 +328,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.popups[0].motion_path[0].x == pytest.approx(0.6)
     assert loaded.popup_template.motion_mode == "guided"
     assert loaded.popup_template.follow_motion is True
+    assert loaded.popup_template.use_shot_split_duration is True
     assert loaded.popups[0].image_path.endswith("Markers/popup-image.png")
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
@@ -358,6 +360,7 @@ def test_project_from_dict_backfills_legacy_popup_motion_mode() -> None:
     assert loaded.popups[0].motion_path[0].offset_ms == 400
     assert loaded.popup_template.motion_mode == "manual"
     assert loaded.popup_template.follow_motion is True
+    assert loaded.popup_template.use_shot_split_duration is False
 
 
 def test_project_from_dict_defaults_browser_ui_state_contract_fields() -> None:

@@ -13,8 +13,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     css = (STATIC_ROOT / "styles.css").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260430f"' in html
-    assert 'src="/static/app.js?v=20260430f"' in html
+    assert 'href="/static/styles.css?v=20260501b"' in html
+    assert 'src="/static/app.js?v=20260501c"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -179,7 +179,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Add Custom Box" in html
     assert "Add Summary Box" in html
     assert "Show Boxes" in html
-    assert "Every viewable overlay condition" in html
     assert 'class="review-visibility-manager"' in html
     assert 'class="check-row review-visibility-option"' in html
     assert 'id="show-markers"' in html
@@ -192,24 +191,24 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool-pane="markers"' in html
     assert 'data-tool-pane="settings"' in html
     assert 'id="popup-add-bubble"' in html
-    assert 'id="popup-import-shots"' in html
-    assert 'id="popup-import-mode"' in html
-    assert 'id="popup-filter"' in html
+    assert 'id="popup-import-shots"' not in html
+    assert 'id="popup-import-mode"' not in html
+    assert 'id="popup-filter"' not in html
     assert 'id="popup-marker-toolbar"' not in html
     assert 'id="popup-edit-selected"' in html
     assert 'id="expand-markers"' not in html
     assert 'id="popup-prev"' not in html
     assert 'id="popup-next"' not in html
-    assert 'id="popup-prev-compact"' in html
-    assert 'id="popup-next-compact"' in html
-    assert 'id="popup-play-window"' in html
-    assert 'id="popup-loop-window"' in html
+    assert 'id="popup-prev-compact"' not in html
+    assert 'id="popup-next-compact"' not in html
+    assert 'id="popup-play-window"' not in html
+    assert 'id="popup-loop-window"' not in html
     assert 'id="popup-toggle-authoring"' not in html
     assert 'id="popup-pane-status"' in html
-    assert 'id="popup-selected-summary"' in html
+    assert 'id="popup-selected-summary"' not in html
     assert 'id="popup-list-status"' in html
     assert 'id="markers-workbench-status"' in html
-    assert 'id="markers-workbench-selected-summary"' in html
+    assert 'id="markers-workbench-selected-summary"' not in html
     assert 'id="markers-workbench-list-status"' in html
     assert 'id="markers-workbench-editor-status"' in html
     assert 'id="popup-duplicate-selected"' not in html
@@ -221,16 +220,18 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="popup-apply-duration-shown"' not in html
     assert 'id="popup-apply-duration-shot-linked"' not in html
     assert 'id="popup-timeline-strip"' not in html
-    assert 'id="popup-template-content-type"' in html
+    assert 'id="popup-template-content-type"' not in html
     assert 'id="popup-shot-linked-list"' not in html
     assert 'id="popup-open-shot-editor"' not in html
     assert 'id="popup-shot-editor"' not in html
     assert 'id="popup-marker-list"' in html
     assert 'id="markers-workbench"' in html
-    assert 'id="collapse-markers"' in html
+    assert 'id="collapse-markers"' not in html
     assert 'id="popup-add-bubble-workbench"' in html
     assert 'id="popup-add-selected-shot-workbench"' in html
     assert 'id="popup-import-shots-workbench"' in html
+    assert '>Import Shots</button>' in html
+    assert 'Import Visible Shots' not in html
     assert 'id="popup-prev-workbench"' in html
     assert 'id="popup-next-workbench"' in html
     assert 'id="popup-play-window-workbench"' in html
@@ -238,13 +239,11 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="markers-workbench-filter"' in html
     assert 'id="markers-workbench-list"' in html
     assert 'id="markers-workbench-editor"' in html
-    assert 'id="popup-add-selected-shot"' in html
-    assert '>Open Workbench</button>' in html
-    assert 'id="popup-template-background-color"' in html
-    assert 'id="popup-template-motion-mode" type="hidden" value="fixed"' in html
-    assert 'data-motion-mode-target="popup-template-motion-mode"' in html
-    assert 'id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000"' in html
-    assert 'id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF"' in html
+    assert 'id="popup-add-selected-shot"' not in html
+    assert '>Edit</button>' in html
+    assert 'id="popup-template-background-color"' not in html
+    assert 'id="popup-template-motion-mode" type="hidden" value="fixed"' not in html
+    assert 'data-motion-mode-target="popup-template-motion-mode"' not in html
     assert 'id="popup-floating-editor"' not in html
     assert 'id="settings-default-match-type"' in html
     assert 'id="settings-import-current"' in html
@@ -259,6 +258,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-layout-inspector-width"' in html
     assert 'id="settings-layout-waveform-height"' in html
     assert 'id="settings-use-current-layout"' in html
+    assert 'id="settings-marker-use-shot-split-duration"' in html
+    assert 'Use shot split duration' in html
+    assert 'use_shot_split_duration' in js
     assert 'id="settings-release-layout"' in html
     assert 'id="settings-layout-status"' in html
     assert 'id="settings-layout-summary"' in html
@@ -270,7 +272,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-export-ffmpeg-preset"' in html
     assert 'id="settings-marker-background-color"' in html
     assert 'id="settings-marker-motion-mode" type="hidden" value="fixed"' in html
-    assert 'data-motion-mode-target="settings-marker-motion-mode"' in html
+    assert 'data-motion-mode-target="settings-marker-motion-mode"' not in html
+    assert '<label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Enable motion</label>' in html
     assert 'id="settings-marker-opacity"' in html
     assert 'id="settings-shotml-threshold"' in html
     assert 'id="settings-scope-status"' in html
@@ -323,11 +326,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-field="quadrant"' not in js
     assert 'data-popup-field="opacity_percent"' in js
     assert 'data-popup-field="follow_motion"' in js
-    assert 'data-popup-motion-mode="fixed"' in js
     assert 'data-popup-motion-mode="guided"' in js
-    assert 'data-popup-motion-mode="advanced"' in js
-    assert 'data-popup-motion-guided-toolbar' in js
-    assert 'data-popup-motion-advanced-toolbar' in js
+    assert 'Enable Motion' in js
+    assert 'data-popup-motion-mode-value' not in js
     assert 'function popupBubbleMotionUiMode(bubble = null) {' in js
     assert 'function setPopupBubbleMotionUiMode(bubbleId, uiMode, options = {}) {' in js
     assert 'function syncPopupBubbleMotionModeControls(card, bubble) {' in js
@@ -336,24 +337,41 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'function addPopupBubbleKeyframeAtPlayhead(bubbleId) {' in js
     assert 'function deletePopupBubbleKeyframe(bubbleId, offsetMs) {' in js
     assert 'function jumpPopupBubbleKeyframe(bubbleId, direction) {' in js
-    assert 'data-popup-motion-guide' in js
-    assert 'data-popup-keyframe-list' in js
-    assert 'data-popup-action="add_keyframe"' in js
-    assert 'data-popup-action="prev_keyframe"' in js
-    assert 'data-popup-action="next_keyframe"' in js
+    assert 'data-popup-action="add_motion_step"' in js
+    assert 'data-popup-action="prev_motion_step"' in js
+    assert 'data-popup-action="next_motion_step"' in js
+    assert 'data-popup-action="remove_motion_step"' in js
     assert 'data-popup-action="clear_motion_path"' in js
-    assert 'data-popup-action="auto_trace_motion"' in js
-    assert 'function autoTracePopupBubbleMotion(bubbleId) {' in js
+    assert 'class="danger-button" data-popup-action="clear_motion_path"' in js
+    assert 'data-popup-motion-step-count' in js
+    assert 'data-popup-motion-selected-step' in js
+    assert 'Selected: Step 0 (Base)' in js
+    assert 'Play to the next position, then add a step.' in js
+    assert 'function popupMotionGuideStepName(index) {' in js
+    assert 'function popupMotionGuidePointName(point, index) {' in js
+    assert 'function popupMotionGuidePointLabel(point, index) {' in js
+    assert 'popup-placement-compact-grid' in js
+    assert 'popup-motion-action-grid' in js
     assert 'Enable motion when this marker should move.' not in js
-    assert 'const editingSelectedBubbleOnly = activeTool === "markers" && markersWorkbenchShown() && Boolean(selectedPopupBubbleId);' in js
-    popup_motion_template = re.search(
-        r'<section class="popup-motion-guide" data-popup-motion-guide hidden>.*?</section>',
+    assert 'const isSelectedEditorBubble = activeTool === "markers" && bubble.id === selectedPopupBubbleId;' in js
+    guided_motion_template = re.search(
+        r'<section class="popup-motion-guide" data-popup-motion-mode="guided" hidden>.*?</section>',
         js,
         re.DOTALL,
     )
-    assert popup_motion_template is not None
-    popup_motion_html = popup_motion_template.group(0)
-    assert popup_motion_html.index('data-popup-action="add_keyframe"') < popup_motion_html.index('data-popup-keyframe-list')
+    assert guided_motion_template is not None
+    guided_motion_html = guided_motion_template.group(0)
+    assert 'popup-motion-action-grid' in guided_motion_html
+    assert 'data-popup-action="add_motion_step"' in guided_motion_html
+    assert 'data-popup-action="remove_motion_step"' in guided_motion_html
+    assert 'data-popup-guided-point-list' in guided_motion_html
+    assert 'data-popup-motion-mode="advanced"' not in js
+    assert 'data-popup-action="add_keyframe"' not in js
+    assert 'data-popup-action="prev_keyframe"' not in js
+    assert 'data-popup-action="next_keyframe"' not in js
+    assert 'data-popup-action="auto_trace_motion"' not in js
+    assert 'data-popup-action="copy_motion_prev"' not in js
+    assert 'data-popup-action="apply_motion_visible"' not in js
     assert 'id="metrics-summary-grid"' in html
     assert 'id="metrics-trend-list"' in html
     assert 'class="data-table metrics-trend-table" aria-label="Metrics trend table"' in html
@@ -490,7 +508,6 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-lock-to-stack"' in html
     assert 'id="show-timer"' in html
     assert 'id="review-text-box-list"' in html
-    assert 'Imported summary' in html
     assert 'Review Text Boxes' in html
     assert 'data-text-box-field="lock_to_stack"' in js
     assert 'Lock to shot stack' in js
@@ -538,9 +555,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="show-export-log"' in html
     assert 'id="export-log-output"' in html
     assert 'id="export-log-modal"' in html
-    assert 'FFmpeg Renderer' in html
     assert 'Local video' in html
-    assert 'Supported export containers: MP4, M4V, MOV, and MKV.' in html
     assert "/api/files/primary" in js
     assert "/api/files/merge" in js
     assert "/api/files/practiscore" in js
@@ -632,14 +647,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'review_show_pip: true,' in js
     assert 'review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),' in js
     assert 'review_show_pip: Boolean(uiState.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip),' in js
-    assert 'review_show_markers: currentMarkersVisibilityEnabled(),' in js
+    assert 'review_show_markers: $("markers-enable")?.checked ?? $("show-markers")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_markers,' in js
     assert 'review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,' in js
-    assert 'function currentMarkersVisibilityEnabled() {' in js
     assert '$("markers-enable")?.checked' in js
-    assert 'function syncMarkersVisibilityControls(enabled) {' in js
-    assert 'syncControlChecked($("markers-enable"), enabled);' in js
-    assert 'syncMarkersVisibilityControls(normalized.review_show_markers);' in js
-    assert '$("reset-layout")?.addEventListener("click", resetLayout);\n  $("settings-use-current-layout")?.addEventListener("click", saveCurrentLayoutAsDefaults);\n  $("settings-release-layout")?.addEventListener("click", releaseLayoutDefaults);\n  [\n    ["resize-rail", "railWidth"],' in js
+    assert 'syncControlChecked($("show-markers"), normalized.review_show_markers);' in js
+    assert '$("reset-layout")?.addEventListener("click", resetLayout);\n  [\n    ["resize-rail", "railWidth"],' in js
     assert 'syncControlChecked($("show-pip"), normalized.review_show_pip);' in js
     assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
@@ -783,11 +795,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function popupOverlayPixelPoint(frameRect, xValue, yValue) {' in js
     assert 'function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {' in js
     assert 'function seekPrimaryVideoToTimeMs(timeMs) {' in js
+    assert 'renderLiveOverlay(clampedTimeMs);' in js
+    assert 'renderWaveformPlayhead(clampedTimeMs);' in js
+    assert 'function nextPopupBubbleKeyframeOffset(bubble, requestedOffsetMs) {' in js
+    assert 'seekPopupBubbleMotionPoint(bubbleId, offsetMs);' in js
     assert 'function seekPrimaryVideoToShot(shotId) {' in js
     assert 'function updatePopupBubbleMotionPoint(bubble, offsetMs, x, y) {' in js
     assert 'function renderPopupBubbleMotionGuide(card, bubble) {' in js
     assert 'function popupBubbleAutoSize(bubble) {' in js
-    assert 'function popupBubblePlacementSelectorToken(text) {' in js
     assert 'function popupBubblePlacementSelectorStyle(bubble) {' in js
     assert 'function popupBubbleRenderStyle(bubble) {' in js
     assert 'function popupTextForShotId(shotId) {' in js
@@ -816,7 +831,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'popupBubbleMotionUiMode(bubble) === "fixed"' in js
     assert 'data-popup-keyframe-drag' in js
     assert 'dataset.popupKeyframeOffset' in js
-    assert 'text.textContent = selectorStyle?.token || entry.text;' in js
+    assert 'const selectorToken = selectorHasText ? String(selectorStyle?.token || "") : "";' in js
+    assert 'text.textContent = selectorToken || entry.text;' in js
     assert 'badge.style.width = `${scaledWidth}px`;' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
@@ -893,16 +909,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function buildSplitRowActionCell(row, expandedTable) {' in js
     assert 'function maximumSplitRowActionLabelLength() {' in js
     assert 'const actionCell = buildSplitRowActionCell(row, expandedTable);' in js
-    assert 'totalCell.textContent = splitSeconds(splitRowShotMLCumulativeMs(row));' in js
+    assert 'totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));' in js
     assert 'finalCell.textContent = splitSeconds(splitRowFinalTimeMs(row));' in js
     assert 'function deleteShotById(shotId, source = "selected") {' in js
     assert 'deleteShotById(row.shot_id, "timing_row")' in js
     assert 'deleteShotById(segment.shot_id, "scoring_row")' in js
     assert 'function refreshReviewMediaFrame() {' in js
     assert 'if (result) refreshReviewMediaFrame();' in js
-    assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded");' in js
-    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded");' in js
-    assert 'if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded");' in js
+    assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");' in js
+    assert 'if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded", "markers-expanded");' in js
     assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
     assert 'function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {' in js
     assert 'timing_enabled: true,' in js
@@ -953,10 +969,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '[currentResultLabel, currentResultValue],' in js
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
-    assert 'syncMarkersVisibilityControls(state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
+    assert 'syncControlChecked($("markers-enable"), normalized.review_show_markers);' in js
+    assert 'syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
     assert 'syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);' in js
     assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
-    assert 'if (!currentMarkersVisibilityEnabled()) {' in js
+    assert 'if (!($("show-markers")?.checked ?? true)) {' in js
     assert 'if (!($("show-pip")?.checked ?? true)) {' in js
     assert 'const badgeDisplayLabels = {' in js
     assert 'card.className = "style-card badge-style-card";' in js
@@ -975,8 +992,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "Behavior" not in html
     assert "Score letter is saved to that shot" not in html
     assert "Score and penalty edits live here. The Splits pane stays read-only so timing edits do not fight scoring edits." not in html
-    assert "Score Text Colors" in html
-    assert "These colors only affect score text tokens." in html
+    assert "Score Colors" in html
+    assert "These colors only affect score text tokens." not in html
     assert "scoring-workbench-table" in js
     assert "toggleScoringRowEdit" in js
     assert 'scoringWorkbenchExpanded = Boolean(expanded);' in js
@@ -1015,7 +1032,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'timingAdjustmentDrafts.set(shotId, signedSeconds(numericMs(row.adjustment_ms) ?? 0));' in js
     assert 'timingAdjustmentDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
     assert 'updateTimingRowField(shotId, "adjustment_ms", draftValue);' in js
-    assert 'railWidth: clamp(savedNumber("splitshot.layout.railWidth", 84), 84, 104)' in js
+    assert 'railWidth: clamp(savedNumber("splitshot.layout.railWidth", DEFAULT_LAYOUT_SIZES.railWidth), 84, 104)' in js
     assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
     assert 'parentRect?.width' in js
@@ -1101,15 +1118,15 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".popup-authoring-bar {\n  align-items: end;" in css
     assert ".popup-duration-actions {\n  align-items: end;" not in css
     assert ".popup-authoring-panel {\n  display: grid;" in css
-    assert ".popup-marker-toolbar," in css
-    assert ".popup-marker-create-actions {\n  gap: 0.35rem;" in css
-    assert ".popup-toolbar-row {\n  display: grid;" in css
+    assert ".popup-marker-toolbar," not in css
+    assert ".popup-marker-create-actions {\n  gap: 0.35rem;" not in css
+    assert ".popup-toolbar-row {\n  display: grid;" not in css
     assert ".markers-workbench {" in css
     assert ".markers-workbench-toolbar {" in css
     assert ".markers-workbench-body.defaults-collapsed {" not in css
     assert ".popup-list-section.popup-authoring-panel.collapsed > :not(.section-header) {" in css
     assert ".cockpit.markers-expanded .markers-workbench {" in css
-    assert ".cockpit.markers-expanded .waveform-panel," in css
+    assert ".cockpit.markers-expanded .waveform-panel," not in css
     assert ".popup-collapsed-nav {\n  display: grid;" not in css
     assert ".popup-timeline-strip {\n  background:" not in css
     assert ".popup-style-card,\n.cockpit-shell.inspector-compact .popup-style-card {\n  grid-template-columns: repeat(2, minmax(0, 1fr));" in css
@@ -1129,7 +1146,12 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "@container (max-width: 420px)" in css
     assert ".popup-bubble-card .text-box-card-actions {\n  flex-wrap: wrap;" in css
     assert ".popup-bubble-card .text-box-card-actions > .scoring-shot-toggle {\n  flex: 0 0 1.7rem;" in css
-    assert ".popup-motion-point-row,\n  .metrics-trend-table {\n    grid-template-columns: minmax(0, 1fr);" in css
+    assert ".popup-placement-compact-grid {" in css
+    assert ".popup-motion-point-row-guided {\n  align-items: center;" in css
+    assert ".popup-motion-action-grid {" in css
+    assert ".popup-motion-point-fields {" in css
+    assert ".popup-motion-workflow-header {" in css
+    assert ".popup-motion-workflow-hint {" in css
     assert ".color-control-pair,\n  .opacity-control-pair {\n    margin-left: 0;\n    width: 100%;" in css
     assert "container-type: inline-size;" in css
     assert "#project-description" in css
@@ -1418,31 +1440,18 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "expand-metrics",
         "popup-add-bubble",
         "popup-edit-selected",
-        "popup-import-shots",
-        "popup-import-mode",
-        "popup-filter",
-        "popup-prev-compact",
-            "popup-next-compact",
-            "popup-play-window",
-            "popup-loop-window",
-                "popup-toggle-authoring",
-                "popup-add-selected-shot",
-            "expand-markers",
-            "collapse-markers",
-            "popup-add-bubble-workbench",
-            "popup-add-selected-shot-workbench",
-            "popup-import-shots-workbench",
-            "popup-prev-workbench",
-            "popup-next-workbench",
-            "popup-play-window-workbench",
-            "popup-loop-window-workbench",
-                "popup-apply-template-to-selected",
-                "popup-apply-selected-style-visible",
-                "show-overlay",
-                "show-markers",
-                "show-pip",
-            "expand-scoring",
-            "collapse-scoring",
+        "popup-add-bubble-workbench",
+        "popup-add-selected-shot-workbench",
+        "popup-import-shots-workbench",
+        "popup-prev-workbench",
+        "popup-next-workbench",
+        "popup-play-window-workbench",
+        "popup-loop-window-workbench",
+        "show-overlay",
+        "show-markers",
+        "show-pip",
+        "expand-scoring",
+        "collapse-scoring",
                 "settings-import-current",
             "settings-reset-defaults",
             "add-timing-event",
@@ -1484,6 +1493,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "data-sync=",
         "data-open-merge-media",
         "data-layout-lock-toggle",
+        "data-motion-mode-value=",
         "data-popup-action=",
     )
     button_tags = re.findall(r"<button\b[^>]*>", html)

@@ -148,6 +148,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                     ('settings-marker-content-type', 'text_image'),
                     ('settings-marker-text-source', 'custom'),
                     ('settings-marker-duration', '1.500'),
+                    ('settings-marker-use-shot-split-duration', True),
                     ('settings-marker-width', '222'),
                     ('settings-marker-height', '88'),
                     ('settings-marker-background-color', '#202020'),
@@ -167,7 +168,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                 ]
                 for control_id, value in default_controls:
                     _set_control(page, control_id, value)
-                page.locator('[data-motion-mode-target="settings-marker-motion-mode"] [data-motion-mode-value="guided"]').click()
+                page.locator("#settings-marker-follow-motion").check()
                 assert page.evaluate("() => readSettingsDefaultsPayload({}).settings.merge_layout === 'pip'")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
                 page.evaluate("() => applySettingsDefaults()")
@@ -205,6 +206,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                 assert snapshot['export']['ffmpeg_preset'] == 'fast'
                 assert snapshot['export']['two_pass'] is True
                 assert snapshot['popupTemplate']['motion_mode'] == 'guided'
+                assert snapshot['popupTemplate']['use_shot_split_duration'] is True
                 assert snapshot['shotmlThreshold'] == 0.5
             finally:
                 browser.close()
