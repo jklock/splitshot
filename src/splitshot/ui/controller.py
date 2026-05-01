@@ -296,6 +296,8 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
         raw_duration = payload.get("duration_ms")
         if raw_duration not in {None, ""}:
             template.duration_ms = max(1, int(raw_duration))
+    if "use_shot_split_duration" in payload:
+        template.use_shot_split_duration = bool(payload.get("use_shot_split_duration", template.use_shot_split_duration))
     if "quadrant" in payload:
         template.quadrant = str(payload.get("quadrant", template.quadrant) or template.quadrant)
     if "width" in payload:
@@ -2864,6 +2866,7 @@ class ProjectController(QObject):
                     "content_type": self.project.popup_template.content_type,
                     "text_source": self.project.popup_template.text_source,
                     "duration_ms": self.project.popup_template.duration_ms,
+                    "use_shot_split_duration": self.project.popup_template.use_shot_split_duration,
                     "quadrant": self.project.popup_template.quadrant,
                     "width": self.project.popup_template.width,
                     "height": self.project.popup_template.height,

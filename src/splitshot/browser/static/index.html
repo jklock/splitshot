@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260430f" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260501b" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -147,14 +147,13 @@
                 <h2>Markers</h2>
                 <div class="section-header-actions">
                   <span id="markers-workbench-status">0 shown</span>
-                  <button id="collapse-markers" type="button">Collapse</button>
                 </div>
               </div>
               <section class="markers-workbench-toolbar" aria-label="Expanded marker controls">
                 <div class="markers-workbench-toolbar-row">
                   <button id="popup-add-bubble-workbench" class="primary-button" type="button">Add Time Marker</button>
                   <button id="popup-add-selected-shot-workbench" type="button">Add Selected Shot</button>
-                  <button id="popup-import-shots-workbench" type="button">Import Visible Shots</button>
+                  <button id="popup-import-shots-workbench" type="button">Import Shots</button>
                   <label>Filter
                     <select id="markers-workbench-filter">
                       <option value="all">All</option>
@@ -171,9 +170,6 @@
                   <button id="popup-next-workbench" type="button">Next</button>
                   <button id="popup-play-window-workbench" type="button">Play Window</button>
                   <button id="popup-loop-window-workbench" type="button">Loop</button>
-                </div>
-                <div class="markers-workbench-toolbar-row markers-workbench-toolbar-row-meta">
-                  <p id="markers-workbench-selected-summary" class="hint">Select a marker to edit it here.</p>
                 </div>
               </section>
               <div class="markers-workbench-body">
@@ -558,118 +554,17 @@
                 <h3>Markers</h3>
                 <div class="section-header-actions">
                   <span id="popup-pane-status">0 enabled</span>
-                  <button id="popup-edit-selected" type="button">Open Workbench</button>
                 </div>
               </div>
               <div class="scoring-toggle-row markers-compact-toggle-row">
                 <label class="check-row"><input id="markers-enable" type="checkbox" /> Enable Markers</label>
+                <button id="popup-edit-selected" type="button">Edit</button>
               </div>
               <div class="popup-authoring-bar markers-compact-toolbar" aria-label="Compact marker controls">
                 <div class="popup-authoring-actions markers-compact-primary-actions">
                   <button id="popup-add-bubble" class="primary-button" type="button">Add Time Marker</button>
-                  <button id="popup-add-selected-shot" type="button">Add Selected Shot</button>
-                  <button id="popup-import-shots" type="button">Import Visible Shots</button>
                 </div>
-                <div class="popup-authoring-actions markers-compact-secondary-actions">
-                  <button id="popup-prev-compact" type="button">Previous</button>
-                  <button id="popup-next-compact" type="button">Next</button>
-                  <button id="popup-play-window" type="button">Play Window</button>
-                  <button id="popup-loop-window" type="button">Loop</button>
-                </div>
-                <span id="popup-selected-summary" class="hint" aria-live="polite"></span>
               </div>
-              <section id="popup-authoring-panel" class="popup-list-section popup-authoring-panel">
-                <div class="section-header sub-section-header">
-                  <h3>Filter &amp; Defaults</h3>
-                </div>
-                <section class="text-box-manager popup-bulk-marker-panel">
-                  <div class="section-header sub-section-header">
-                    <h3>Filters</h3>
-                  </div>
-                  <div class="control-grid">
-                    <label>Filter
-                      <select id="popup-filter">
-                        <option value="all">All</option>
-                        <option value="enabled">Enabled</option>
-                        <option value="disabled">Disabled</option>
-                        <option value="shot">Shot-linked</option>
-                        <option value="time">Time-based</option>
-                        <option value="motion">Has motion</option>
-                        <option value="missing_text">Missing text</option>
-                        <option value="visible">Visible now</option>
-                      </select>
-                    </label>
-                    <label>Import
-                      <select id="popup-import-mode">
-                        <option value="all">All shots</option>
-                        <option value="scored">Scored shots</option>
-                        <option value="penalty">Penalty / miss shots</option>
-                      </select>
-                    </label>
-                  </div>
-                </section>
-                <section class="text-box-manager popup-template-panel">
-                  <div class="section-header sub-section-header">
-                    <h3>Shot Marker Defaults</h3>
-                  </div>
-                  <div class="control-grid">
-                    <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
-                    <label>Content
-                      <select id="popup-template-content-type">
-                        <option value="text">Text</option>
-                        <option value="image">Image</option>
-                        <option value="text_image">Text + image</option>
-                      </select>
-                    </label>
-                    <label>Text source
-                      <select id="popup-template-text-source">
-                        <option value="score">Shot score</option>
-                        <option value="shot_label">Shot label</option>
-                        <option value="custom">Custom text</option>
-                      </select>
-                    </label>
-                    <label>Duration (seconds)
-                      <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
-                    </label>
-                    <label>Width
-                      <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
-                    </label>
-                    <label>Height
-                      <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
-                    </label>
-                    <input id="popup-template-follow-motion" type="checkbox" hidden />
-                    <input id="popup-template-motion-mode" type="hidden" value="fixed" />
-                    <div class="motion-mode-field">
-                      <span class="motion-mode-label">Motion</span>
-                      <div class="motion-mode-segmented" data-motion-mode-target="popup-template-motion-mode" aria-label="Shot marker default motion mode">
-                        <button type="button" data-motion-mode-value="fixed">Fixed</button>
-                        <button type="button" data-motion-mode-value="guided">Guided</button>
-                        <button type="button" data-motion-mode-value="advanced">Advanced</button>
-                      </div>
-                      <p id="popup-template-motion-summary" class="hint motion-mode-summary">New markers stay pinned to their base point.</p>
-                    </div>
-                    <label>Background
-                      <input id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" />
-                    </label>
-                    <label>Text color
-                      <input id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF" />
-                    </label>
-                    <label>Opacity
-                      <span class="opacity-percent-field">
-                        <input id="popup-template-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
-                        <span class="opacity-percent-suffix">%</span>
-                      </span>
-                    </label>
-                  </div>
-                </section>
-                <div class="popup-authoring-bar" aria-label="Popup authoring controls">
-                  <div class="popup-authoring-actions">
-                    <button id="popup-apply-template-to-selected" type="button">Apply Defaults to Selected</button>
-                    <button id="popup-apply-selected-style-visible" type="button">Apply Selected Style to Visible Shot Markers</button>
-                  </div>
-                  <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
-                </div>
-              </section>
               <section class="popup-list-section popup-list-section-unified">
                 <div class="section-header sub-section-header">
                   <h3>Markers</h3>
@@ -677,7 +572,7 @@
                 </div>
                 <div id="popup-marker-list" class="text-box-list popup-marker-list" aria-label="Marker navigator"></div>
               </section>
-              <section class="popup-list-section popup-selected-editor-panel">
+              <section id="popup-selected-editor-panel" class="popup-selected-editor-panel" hidden>
                 <div class="section-header sub-section-header">
                   <h3>Selected Marker</h3>
                   <span id="markers-workbench-editor-status">No marker selected.</span>
@@ -833,7 +728,6 @@
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Global template</h3>
-                    <p id="markers-workbench-selected-summary" class="hint">Select a marker to edit it in the inspector.</p>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -1073,23 +967,15 @@
                     <label>Duration (s)
                       <input id="settings-marker-duration" type="number" min="0.001" step="0.001" value="1.000" />
                     </label>
+                    <label class="check-row"><input id="settings-marker-use-shot-split-duration" type="checkbox" /> Use shot split duration</label>
                     <label>Width
                       <input id="settings-marker-width" type="number" min="0" step="1" value="0" />
                     </label>
                     <label>Height
                       <input id="settings-marker-height" type="number" min="0" step="1" value="0" />
                     </label>
-                    <input id="settings-marker-follow-motion" type="checkbox" hidden />
+                    <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Enable motion</label>
                     <input id="settings-marker-motion-mode" type="hidden" value="fixed" />
-                    <div class="motion-mode-field">
-                      <span class="motion-mode-label">Motion</span>
-                      <div class="motion-mode-segmented" data-motion-mode-target="settings-marker-motion-mode" aria-label="Settings marker default motion mode">
-                        <button type="button" data-motion-mode-value="fixed">Fixed</button>
-                        <button type="button" data-motion-mode-value="guided">Guided</button>
-                        <button type="button" data-motion-mode-value="advanced">Advanced</button>
-                      </div>
-                      <p id="settings-marker-motion-summary" class="hint motion-mode-summary">New markers stay pinned to their base point.</p>
-                    </div>
                   </div>
                   <div class="control-grid">
                     <label>Background
@@ -1303,6 +1189,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260430f"></script>
+    <script src="/static/app.js?v=20260501c"></script>
   </body>
 </html>

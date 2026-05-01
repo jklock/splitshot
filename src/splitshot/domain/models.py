@@ -485,6 +485,7 @@ class PopupTemplate:
     content_type: str = "text"
     text_source: str = "score"
     duration_ms: int = 1000
+    use_shot_split_duration: bool = False
     quadrant: str = "middle_middle"
     width: int = 0
     height: int = 0
@@ -867,6 +868,7 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         content_type=str(payload.get("content_type", "text") or "text"),
         text_source=str(payload.get("text_source", "score") or "score"),
         duration_ms=max(1, int(payload.get("duration_ms", 1000) or 1000)),
+        use_shot_split_duration=bool(payload.get("use_shot_split_duration", False)),
         quadrant=_normalize_popup_bubble_quadrant(payload.get("quadrant")),
         width=max(0, int(payload.get("width", 0) or 0)),
         height=max(0, int(payload.get("height", 0) or 0)),

@@ -2007,6 +2007,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                 "popup_template": {
                     "follow_motion": True,
                     "motion_mode": "guided",
+                    "use_shot_split_duration": True,
                 },
             },
         )
@@ -2026,6 +2027,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["popups"][0]["y"] == pytest.approx(0.58)
         assert saved["popup_template"]["motion_mode"] == "guided"
         assert saved["popup_template"]["follow_motion"] is True
+        assert saved["popup_template"]["use_shot_split_duration"] is True
 
         project_output_path = project_path / "Output" / "autosave-output.mp4"
         _post_json(
@@ -2159,6 +2161,7 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         assert reset["settings"]["marker_template"]["background_color"] == "#000000"
         assert reset["settings"]["marker_template"]["motion_mode"] == "fixed"
         assert reset["settings"]["marker_template"]["opacity"] == 0.9
+        assert reset["settings"]["marker_template"]["use_shot_split_duration"] is False
         assert reset["settings"]["shotml_defaults"]["min_shot_interval_ms"] == 100
         assert reset["settings"]["shotml_defaults"]["shot_peak_min_spacing_ms"] == 200
 
