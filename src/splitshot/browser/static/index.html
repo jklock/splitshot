@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260430c" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260430f" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -155,13 +155,6 @@
                   <button id="popup-add-bubble-workbench" class="primary-button" type="button">Add Time Marker</button>
                   <button id="popup-add-selected-shot-workbench" type="button">Add Selected Shot</button>
                   <button id="popup-import-shots-workbench" type="button">Import Visible Shots</button>
-                  <button id="popup-toggle-authoring" type="button">Hide Defaults</button>
-                  <button id="popup-prev-workbench" type="button">Previous</button>
-                  <button id="popup-next-workbench" type="button">Next</button>
-                  <button id="popup-play-window-workbench" type="button">Play Window</button>
-                  <button id="popup-loop-window-workbench" type="button">Loop</button>
-                </div>
-                <div class="markers-workbench-toolbar-row markers-workbench-toolbar-row-meta">
                   <label>Filter
                     <select id="markers-workbench-filter">
                       <option value="all">All</option>
@@ -174,6 +167,12 @@
                       <option value="visible">Visible now</option>
                     </select>
                   </label>
+                  <button id="popup-prev-workbench" type="button">Previous</button>
+                  <button id="popup-next-workbench" type="button">Next</button>
+                  <button id="popup-play-window-workbench" type="button">Play Window</button>
+                  <button id="popup-loop-window-workbench" type="button">Loop</button>
+                </div>
+                <div class="markers-workbench-toolbar-row markers-workbench-toolbar-row-meta">
                   <p id="markers-workbench-selected-summary" class="hint">Select a marker to edit it here.</p>
                 </div>
               </section>
@@ -185,73 +184,6 @@
                   </div>
                   <div id="markers-workbench-list" class="text-box-list popup-marker-list markers-workbench-list" aria-label="Expanded marker navigator"></div>
                 </section>
-                <section id="popup-authoring-panel" class="markers-workbench-column popup-authoring-panel">
-                  <p class="hint">Defaults apply to imported and new shot-linked markers. Use the selected marker editor for per-marker changes.</p>
-                  <section class="text-box-manager popup-bulk-marker-panel">
-                    <div class="section-header sub-section-header">
-                      <h3>Marker Actions</h3>
-                      <span>Import or create shot-linked markers</span>
-                    </div>
-                    <div class="control-grid">
-                      <label>Import
-                        <select id="popup-import-mode">
-                          <option value="all">All shots</option>
-                          <option value="scored">Scored shots</option>
-                          <option value="penalty">Penalty / miss shots</option>
-                        </select>
-                      </label>
-                    </div>
-                  </section>
-                  <section class="text-box-manager popup-template-panel">
-                    <div class="section-header sub-section-header">
-                      <h3>Shot Marker Defaults</h3>
-                      <span>Used for imported and new shot-linked markers</span>
-                    </div>
-                    <div class="control-grid">
-                      <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
-                      <label>Content
-                        <select id="popup-template-content-type">
-                          <option value="text">Text</option>
-                          <option value="image">Image</option>
-                          <option value="text_image">Text + image</option>
-                        </select>
-                      </label>
-                      <label>Text source
-                        <select id="popup-template-text-source">
-                          <option value="score">Shot score</option>
-                          <option value="shot_label">Shot label</option>
-                          <option value="custom">Custom text</option>
-                        </select>
-                      </label>
-                      <label>Duration
-                        <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
-                      </label>
-                      <label>Width
-                        <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
-                      </label>
-                      <label>Height
-                        <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
-                      </label>
-                      <label class="check-row"><input id="popup-template-follow-motion" type="checkbox" /> Follow motion</label>
-                      <label>Background
-                        <input id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" />
-                      </label>
-                      <label>Text color
-                        <input id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF" />
-                      </label>
-                      <label>Background alpha
-                        <input id="popup-template-opacity" type="number" min="0" max="100" step="1" value="90" />
-                      </label>
-                    </div>
-                  </section>
-                  <div class="popup-authoring-bar" aria-label="Popup authoring controls">
-                    <div class="popup-authoring-actions">
-                      <button id="popup-apply-template-to-selected" type="button">Apply Defaults To Selected</button>
-                      <button id="popup-apply-selected-style-visible" type="button">Apply Selected Style To Shown Shot Markers</button>
-                    </div>
-                    <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
-                  </div>
-                </section>
               </div>
             </section>
 
@@ -262,12 +194,10 @@
             <section class="tool-pane" data-tool-pane="review">
               <div class="section-header">
                 <h3>Review</h3>
-                <span>Preview artifacts</span>
               </div>
               <section class="review-visibility-manager">
                 <div class="section-header sub-section-header">
                   <h3>Show Boxes</h3>
-                  <span>Every viewable overlay condition</span>
                 </div>
                 <div class="button-grid two-up review-visibility-grid">
                   <label class="check-row review-visibility-option"><input id="show-markers" type="checkbox" /> Show markers</label>
@@ -281,13 +211,11 @@
               <section class="text-box-manager">
                 <div class="section-header sub-section-header">
                   <h3>Review Text Boxes</h3>
-                  <span>Imported summary and custom notes can coexist</span>
                 </div>
                 <div class="button-grid two-up">
                   <button id="review-add-text-box" type="button">Add Custom Box</button>
                   <button id="review-add-imported-box" type="button">Add Summary Box</button>
                 </div>
-                <p class="hint">Each box keeps its own enable state, shot-stack lock, content source, placement, size, and style. Drag a rendered box on the stage to switch it to a custom position.</p>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
             </section>
@@ -297,7 +225,6 @@
                 <h3>Metrics</h3>
                 <button id="expand-metrics" type="button">Expand</button>
               </div>
-              <p class="hint">Built from the current metrics, split rows, timing segments, and scoring summary so timing and score context stay in one view.</p>
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
               <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
                 <div class="section-header sub-section-header">
@@ -339,10 +266,12 @@
             <section class="tool-pane" data-tool-pane="shotml">
               <div class="section-header">
                 <h3>ShotML</h3>
-                <button id="apply-threshold" type="button">Re-run ShotML</button>
-                <button id="reset-shotml-defaults" type="button">Reset Defaults</button>
+                <div class="section-header-actions">
+                  <span id="shotml-confidence-summary">Avg auto confidence --</span>
+                  <button id="apply-threshold" type="button">Re-run ShotML</button>
+                  <button id="reset-shotml-defaults" type="button">Reset Defaults</button>
+                </div>
               </div>
-              <p class="hint">Tune detector timing for this project. Re-running ShotML replaces the current automatic detections; manual shot edits remain available from Splits and the waveform.</p>
               <section class="shotml-section" data-shotml-section="threshold">
                 <div class="section-header sub-section-header">
                   <h3>Threshold</h3>
@@ -512,6 +441,7 @@
                     <option>M</option>
                     <option>L</option>
                     <option>XL</option>
+                    <option value="custom">Custom</option>
                   </select>
                 </label>
               </div>
@@ -523,14 +453,13 @@
                     <option value="rounded">Rounded Bubble</option>
                   </select>
                 </label>
-                <label>Shot gap
+                <label>Stack gap
                   <input id="overlay-spacing" type="number" min="0" max="40" step="2" value="8" />
                 </label>
-                <label>Frame padding
+                <label>Edge padding
                   <input id="overlay-margin" type="number" min="0" max="40" step="2" value="8" />
                 </label>
               </div>
-              <p class="hint">Shot gap spaces badges inside the live stack. Frame padding offsets the stack from the video frame edge.</p>
               <div class="control-grid">
                 <label>Shots shown
                   <input id="max-visible-shots" type="number" min="1" max="40" step="1" value="4" />
@@ -558,7 +487,6 @@
                   </select>
                 </label>
               </div>
-              <p class="hint">Quadrant chooses the starting corner for the badge stack. Shot flow chooses whether new badges build right, left, down, or up from that anchor.</p>
               <div class="control-grid">
                 <label>Shot stack X (0 left, 1 right)
                   <input id="overlay-custom-x" type="number" min="0" max="1" step="0.01" placeholder="0.50" disabled />
@@ -621,8 +549,7 @@
                 <label class="check-row"><input id="overlay-font-italic" type="checkbox" /> Italic</label>
               </div>
               <div class="style-grid" id="badge-style-grid"></div>
-              <h3>Score Text Colors</h3>
-              <p class="hint">These colors only affect score text tokens. The shot box background stays with the badge style.</p>
+              <h3>Score Colors</h3>
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
 
@@ -631,35 +558,117 @@
                 <h3>Markers</h3>
                 <div class="section-header-actions">
                   <span id="popup-pane-status">0 enabled</span>
-                  <button id="expand-markers" type="button">Expand</button>
+                  <button id="popup-edit-selected" type="button">Open Workbench</button>
                 </div>
               </div>
-              <section id="popup-marker-toolbar" class="text-box-manager popup-marker-toolbar">
-                <div class="popup-toolbar-row" aria-label="Marker toolbar">
-                  <button id="popup-edit-selected" class="primary-button" type="button">Open Workbench</button>
-                  <button id="popup-add-bubble" type="button">Add Time Marker</button>
+              <div class="scoring-toggle-row markers-compact-toggle-row">
+                <label class="check-row"><input id="markers-enable" type="checkbox" /> Enable Markers</label>
+              </div>
+              <div class="popup-authoring-bar markers-compact-toolbar" aria-label="Compact marker controls">
+                <div class="popup-authoring-actions markers-compact-primary-actions">
+                  <button id="popup-add-bubble" class="primary-button" type="button">Add Time Marker</button>
                   <button id="popup-add-selected-shot" type="button">Add Selected Shot</button>
                   <button id="popup-import-shots" type="button">Import Visible Shots</button>
                 </div>
-                <div class="popup-toolbar-row popup-toolbar-row-secondary" aria-label="Marker navigation">
-                  <label>Filter
-                    <select id="popup-filter">
-                      <option value="all">All</option>
-                      <option value="enabled">Enabled</option>
-                      <option value="disabled">Disabled</option>
-                      <option value="shot">Shot-linked</option>
-                      <option value="time">Time-based</option>
-                      <option value="motion">Has motion</option>
-                      <option value="missing_text">Missing text</option>
-                      <option value="visible">Visible now</option>
-                    </select>
-                  </label>
+                <div class="popup-authoring-actions markers-compact-secondary-actions">
                   <button id="popup-prev-compact" type="button">Previous</button>
                   <button id="popup-next-compact" type="button">Next</button>
                   <button id="popup-play-window" type="button">Play Window</button>
                   <button id="popup-loop-window" type="button">Loop</button>
                 </div>
-                <p id="popup-selected-summary" class="hint">Select a marker to edit it in the workbench, or create one below.</p>
+                <span id="popup-selected-summary" class="hint" aria-live="polite"></span>
+              </div>
+              <section id="popup-authoring-panel" class="popup-list-section popup-authoring-panel">
+                <div class="section-header sub-section-header">
+                  <h3>Filter &amp; Defaults</h3>
+                </div>
+                <section class="text-box-manager popup-bulk-marker-panel">
+                  <div class="section-header sub-section-header">
+                    <h3>Filters</h3>
+                  </div>
+                  <div class="control-grid">
+                    <label>Filter
+                      <select id="popup-filter">
+                        <option value="all">All</option>
+                        <option value="enabled">Enabled</option>
+                        <option value="disabled">Disabled</option>
+                        <option value="shot">Shot-linked</option>
+                        <option value="time">Time-based</option>
+                        <option value="motion">Has motion</option>
+                        <option value="missing_text">Missing text</option>
+                        <option value="visible">Visible now</option>
+                      </select>
+                    </label>
+                    <label>Import
+                      <select id="popup-import-mode">
+                        <option value="all">All shots</option>
+                        <option value="scored">Scored shots</option>
+                        <option value="penalty">Penalty / miss shots</option>
+                      </select>
+                    </label>
+                  </div>
+                </section>
+                <section class="text-box-manager popup-template-panel">
+                  <div class="section-header sub-section-header">
+                    <h3>Shot Marker Defaults</h3>
+                  </div>
+                  <div class="control-grid">
+                    <label class="check-row"><input id="popup-template-enabled" type="checkbox" checked /> Enabled</label>
+                    <label>Content
+                      <select id="popup-template-content-type">
+                        <option value="text">Text</option>
+                        <option value="image">Image</option>
+                        <option value="text_image">Text + image</option>
+                      </select>
+                    </label>
+                    <label>Text source
+                      <select id="popup-template-text-source">
+                        <option value="score">Shot score</option>
+                        <option value="shot_label">Shot label</option>
+                        <option value="custom">Custom text</option>
+                      </select>
+                    </label>
+                    <label>Duration (seconds)
+                      <input id="popup-template-duration-s" type="number" min="0.10" max="20" step="0.05" value="1.00" />
+                    </label>
+                    <label>Width
+                      <input id="popup-template-width" type="number" min="0" max="1000" step="1" value="260" />
+                    </label>
+                    <label>Height
+                      <input id="popup-template-height" type="number" min="0" max="1000" step="1" value="76" />
+                    </label>
+                    <input id="popup-template-follow-motion" type="checkbox" hidden />
+                    <input id="popup-template-motion-mode" type="hidden" value="fixed" />
+                    <div class="motion-mode-field">
+                      <span class="motion-mode-label">Motion</span>
+                      <div class="motion-mode-segmented" data-motion-mode-target="popup-template-motion-mode" aria-label="Shot marker default motion mode">
+                        <button type="button" data-motion-mode-value="fixed">Fixed</button>
+                        <button type="button" data-motion-mode-value="guided">Guided</button>
+                        <button type="button" data-motion-mode-value="advanced">Advanced</button>
+                      </div>
+                      <p id="popup-template-motion-summary" class="hint motion-mode-summary">New markers stay pinned to their base point.</p>
+                    </div>
+                    <label>Background
+                      <input id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" />
+                    </label>
+                    <label>Text color
+                      <input id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF" />
+                    </label>
+                    <label>Opacity
+                      <span class="opacity-percent-field">
+                        <input id="popup-template-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
+                    </label>
+                  </div>
+                </section>
+                <div class="popup-authoring-bar" aria-label="Popup authoring controls">
+                  <div class="popup-authoring-actions">
+                    <button id="popup-apply-template-to-selected" type="button">Apply Defaults to Selected</button>
+                    <button id="popup-apply-selected-style-visible" type="button">Apply Selected Style to Visible Shot Markers</button>
+                  </div>
+                  <span id="popup-authoring-summary" class="hint" aria-live="polite"></span>
+                </div>
               </section>
               <section class="popup-list-section popup-list-section-unified">
                 <div class="section-header sub-section-header">
@@ -722,11 +731,6 @@
               <label>Preset
                 <select id="export-preset"></select>
               </label>
-              <p id="export-preset-description" class="hint">Choose an export preset.</p>
-              <div class="ffmpeg-help">
-                <strong>FFmpeg Renderer</strong>
-                <p>SplitShot renders locally with FFmpeg on this machine. The output settings below affect the same local pipeline used by the browser workflow and export pipeline.</p>
-              </div>
               <h3>Frame</h3>
               <label>Quality
                 <select id="quality">
@@ -812,12 +816,11 @@
                   <button id="browse-export-path" type="button">Browse</button>
                 </div>
               </label>
-              <p class="hint">Supported export containers: MP4, M4V, MOV, and MKV. The output path extension selects the container.</p>
               <div class="button-grid two-up">
                 <button id="export-video" class="primary-button" type="button">Export Video</button>
-                <button id="show-export-log" type="button">Show Log</button>
+                <button id="show-export-log" type="button">Show Export Log</button>
               </div>
-              <p id="export-log-status" class="hint">The live export log opens in a separate window so the output settings stay readable while rendering runs.</p>
+              <p id="export-log-status" class="hint">No export log yet.</p>
             </section>
 
             <section class="tool-pane" data-tool-pane="settings">
@@ -825,13 +828,12 @@
                 <h3>Settings</h3>
                 <small>Master defaults</small>
               </div>
-              <p class="hint">Settings now stores the global template that new projects start from.</p>
 
               <section class="settings-section collapsed" data-settings-section="global-template">
                 <div class="section-header sub-section-header">
                   <div>
                     <h3>Global template</h3>
-                    <span>Save scope and capture from the current project</span>
+                    <p id="markers-workbench-selected-summary" class="hint">Select a marker to edit it in the inspector.</p>
                   </div>
                 </div>
                 <div class="control-grid">
@@ -862,6 +864,32 @@
                   <button id="settings-reset-defaults" type="button">Reset Defaults</button>
                 </div>
                 <p id="settings-scope-status" class="hint">No project folder is open. App defaults are the global template.</p>
+              </section>
+
+              <section class="settings-section collapsed" data-settings-section="layout">
+                <div class="section-header sub-section-header">
+                  <div>
+                    <h3>Layout</h3>
+                    <span id="settings-layout-status">No saved layout defaults.</span>
+                  </div>
+                </div>
+                <div class="control-grid">
+                  <label class="check-row"><input id="settings-layout-locked" type="checkbox" /> Lock layout by default</label>
+                  <label>Rail width
+                    <input id="settings-layout-rail-width" type="number" min="84" max="104" step="1" value="84" />
+                  </label>
+                  <label>Inspector width
+                    <input id="settings-layout-inspector-width" type="number" min="320" max="4096" step="1" value="440" />
+                  </label>
+                  <label>Waveform height
+                    <input id="settings-layout-waveform-height" type="number" min="112" max="4096" step="1" value="206" />
+                  </label>
+                </div>
+                <div class="button-grid two-up settings-layout-actions">
+                  <button id="settings-use-current-layout" type="button">Use Current Layout</button>
+                  <button id="settings-release-layout" type="button">Release Layout</button>
+                </div>
+                <p id="settings-layout-summary" class="hint">New projects are using SplitShot's built-in layout defaults.</p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="scoring">
@@ -938,6 +966,7 @@
                       <option>M</option>
                       <option>L</option>
                       <option>XL</option>
+                      <option value="custom">Custom</option>
                     </select>
                   </label>
                   <label>Stage box background
@@ -946,8 +975,11 @@
                   <label>Stage box text
                     <input id="settings-overlay-custom-text-color" type="color" value="#ffffff" />
                   </label>
-                  <label>Stage box opacity
-                    <input id="settings-overlay-custom-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                  <label>Stage box Opacity
+                    <span class="opacity-percent-field">
+                      <input id="settings-overlay-custom-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                      <span class="opacity-percent-suffix">%</span>
+                    </span>
                   </label>
                 </div>
                 <div id="settings-badge-style-grid" class="settings-badge-style-grid">
@@ -960,7 +992,10 @@
                       <input id="settings-timer-badge-text-color" type="color" value="#f9fafb" />
                     </label>
                     <label>Opacity
-                      <input id="settings-timer-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                      <span class="opacity-percent-field">
+                        <input id="settings-timer-badge-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
                     </label>
                   </article>
                   <article class="badge-style-card">
@@ -972,7 +1007,10 @@
                       <input id="settings-shot-badge-text-color" type="color" value="#f9fafb" />
                     </label>
                     <label>Opacity
-                      <input id="settings-shot-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                      <span class="opacity-percent-field">
+                        <input id="settings-shot-badge-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
                     </label>
                   </article>
                   <article class="badge-style-card">
@@ -984,7 +1022,10 @@
                       <input id="settings-current-shot-badge-text-color" type="color" value="#f9fafb" />
                     </label>
                     <label>Opacity
-                      <input id="settings-current-shot-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                      <span class="opacity-percent-field">
+                        <input id="settings-current-shot-badge-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
                     </label>
                   </article>
                   <article class="badge-style-card">
@@ -996,7 +1037,10 @@
                       <input id="settings-hit-factor-badge-text-color" type="color" value="#f9fafb" />
                     </label>
                     <label>Opacity
-                      <input id="settings-hit-factor-badge-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                      <span class="opacity-percent-field">
+                        <input id="settings-hit-factor-badge-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
                     </label>
                   </article>
                 </div>
@@ -1035,7 +1079,17 @@
                     <label>Height
                       <input id="settings-marker-height" type="number" min="0" step="1" value="0" />
                     </label>
-                    <label class="check-row"><input id="settings-marker-follow-motion" type="checkbox" /> Follow motion by default</label>
+                    <input id="settings-marker-follow-motion" type="checkbox" hidden />
+                    <input id="settings-marker-motion-mode" type="hidden" value="fixed" />
+                    <div class="motion-mode-field">
+                      <span class="motion-mode-label">Motion</span>
+                      <div class="motion-mode-segmented" data-motion-mode-target="settings-marker-motion-mode" aria-label="Settings marker default motion mode">
+                        <button type="button" data-motion-mode-value="fixed">Fixed</button>
+                        <button type="button" data-motion-mode-value="guided">Guided</button>
+                        <button type="button" data-motion-mode-value="advanced">Advanced</button>
+                      </div>
+                      <p id="settings-marker-motion-summary" class="hint motion-mode-summary">New markers stay pinned to their base point.</p>
+                    </div>
                   </div>
                   <div class="control-grid">
                     <label>Background
@@ -1045,7 +1099,10 @@
                       <input id="settings-marker-text-color" type="color" value="#ffffff" />
                     </label>
                     <label>Opacity
-                      <input id="settings-marker-opacity" type="number" min="0" max="1" step="0.05" value="0.9" />
+                      <span class="opacity-percent-field">
+                        <input id="settings-marker-opacity" class="opacity-percent-input" type="number" min="0" max="100" step="1" value="90" />
+                        <span class="opacity-percent-suffix">%</span>
+                      </span>
                     </label>
                   </div>
                 </div>
@@ -1120,7 +1177,6 @@
                     <input id="settings-shotml-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
                   </label>
                 </div>
-                <p class="hint">Use the ShotML pane for the full detector setup and proposal workflow.</p>
               </section>
             </section>
 
@@ -1247,6 +1303,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260430b"></script>
+    <script src="/static/app.js?v=20260430f"></script>
   </body>
 </html>

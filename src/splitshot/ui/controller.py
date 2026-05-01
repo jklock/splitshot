@@ -33,6 +33,7 @@ from splitshot.domain.models import (
     OverlayPosition,
     OverlayTextBox,
     PopupBubble,
+    PopupTemplate,
     PipSize,
     Project,
     MergeSource,
@@ -75,15 +76,12 @@ from splitshot.scoring.practiscore import (
     _normalize_name,
     describe_practiscore_file,
     default_ruleset_for_match_type,
-    import_practiscore_stage,
-    infer_practiscore_context,
     normalize_match_type,
 )
 from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_practiscore_artifact
 from splitshot.scoring.practiscore_web_extract import (
     EXPIRED_AUTHENTICATION_ERROR,
     MALFORMED_REMOTE_RESPONSE_ERROR,
-    MISSING_REQUIRED_REMOTE_ARTIFACT_ERROR,
     NORMALIZATION_IMPORT_FAILURE_ERROR,
     PractiScoreSyncError,
     RemotePractiScoreMatch,
@@ -247,7 +245,29 @@ def _badge_font_size_from_enum(size: BadgeSize) -> int:
         BadgeSize.M: 14,
         BadgeSize.L: 16,
         BadgeSize.XL: 20,
+        BadgeSize.CUSTOM: 14,
     }[size]
+
+
+def _optional_layout_dimension(value: object, minimum: int, maximum: int) -> int | None:
+    if value in {None, ""}:
+        return None
+    return max(minimum, min(maximum, int(value)))
+
+
+def _optional_payload_bool(value: object) -> bool | None:
+    if value in {None, ""}:
+        return None
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _normalize_popup_motion_mode(value: object, *, follow_motion: bool = False) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"fixed", "guided", "manual", "auto"} and not (normalized == "fixed" and follow_motion):
+        return normalized
+    return "manual" if follow_motion else "fixed"
 
 
 def _badge_style_from_payload(style: BadgeStyle, payload: object) -> None:
@@ -288,6 +308,11 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
             template.height = max(0, int(raw_height))
     if "follow_motion" in payload:
         template.follow_motion = bool(payload.get("follow_motion", template.follow_motion))
+    if "motion_mode" in payload:
+        template.motion_mode = _normalize_popup_motion_mode(
+            payload.get("motion_mode", template.motion_mode),
+            follow_motion=template.follow_motion,
+        )
     if "background_color" in payload:
         template.background_color = str(payload.get("background_color", template.background_color) or template.background_color)
     if "text_color" in payload:
@@ -1333,14 +1358,6 @@ class ProjectController(QObject):
         self._save_settings_and_emit()
         self._set_status(f"Deleted settings template {template_name}.")
 
-        candidates: list[Path] = []
-        for path in practiscore_dir.iterdir():
-            if not path.is_file() or path.suffix.lower() not in _PRACTISCORE_FILE_SUFFIXES:
-                continue
-            candidates.append(path.resolve())
-        candidates.sort(key=lambda item: (item.stat().st_mtime_ns, item.name.lower()), reverse=True)
-        return candidates
-
     def _recover_practiscore_path_from_project_folder(
         self,
         stored_path: str,
@@ -2333,7 +2350,8 @@ class ProjectController(QObject):
 
     def set_badge_size(self, size: BadgeSize) -> None:
         self.project.overlay.badge_size = size
-        self.project.overlay.font_size = _badge_font_size_from_enum(size)
+        if size != BadgeSize.CUSTOM:
+            self.project.overlay.font_size = _badge_font_size_from_enum(size)
         self.settings.badge_size = size
         save_settings(self.settings)
         self.settings_changed.emit()
@@ -2489,20 +2507,7 @@ class ProjectController(QObject):
         self.project.popups = parsed_popups
         template_payload = payload.get("popup_template")
         if isinstance(template_payload, dict):
-            template = self.project.popup_template
-            template.enabled = bool(template_payload.get("enabled", template.enabled))
-            template.content_type = str(template_payload.get("content_type", template.content_type))
-            template.text_source = str(template_payload.get("text_source", template.text_source))
-            template.duration_ms = max(1, int(template_payload.get("duration_ms", template.duration_ms) or 1000))
-            template.quadrant = str(template_payload.get("quadrant", template.quadrant))
-            template.width = max(0, int(template_payload.get("width", template.width) or 0))
-            template.height = max(0, int(template_payload.get("height", template.height) or 0))
-            template.follow_motion = bool(template_payload.get("follow_motion", template.follow_motion))
-            template.background_color = str(template_payload.get("background_color", template.background_color) or template.background_color)
-            template.text_color = str(template_payload.get("text_color", template.text_color) or template.text_color)
-            raw_opacity = template_payload.get("opacity")
-            if raw_opacity not in {None, ""}:
-                template.opacity = max(0.0, min(1.0, float(raw_opacity)))
+            _popup_template_from_payload(self.project.popup_template, template_payload)
         self.project.touch()
         self.project_changed.emit()
 
@@ -2862,6 +2867,7 @@ class ProjectController(QObject):
                     "quadrant": self.project.popup_template.quadrant,
                     "width": self.project.popup_template.width,
                     "height": self.project.popup_template.height,
+                    "motion_mode": self.project.popup_template.motion_mode,
                     "follow_motion": self.project.popup_template.follow_motion,
                     "background_color": self.project.popup_template.background_color,
                     "text_color": self.project.popup_template.text_color,
@@ -2977,6 +2983,20 @@ class ProjectController(QObject):
             target.default_tool = str(payload["default_tool"] or "project")
         if "reopen_last_tool" in payload:
             target.reopen_last_tool = bool(payload["reopen_last_tool"])
+        if bool(payload.get("clear_layout_defaults", False)):
+            target.layout_locked = None
+            target.layout_rail_width = None
+            target.layout_inspector_width = None
+            target.layout_waveform_height = None
+        else:
+            if "layout_locked" in payload:
+                target.layout_locked = _optional_payload_bool(payload.get("layout_locked"))
+            if "layout_rail_width" in payload:
+                target.layout_rail_width = _optional_layout_dimension(payload.get("layout_rail_width"), 84, 104)
+            if "layout_inspector_width" in payload:
+                target.layout_inspector_width = _optional_layout_dimension(payload.get("layout_inspector_width"), 320, 4096)
+            if "layout_waveform_height" in payload:
+                target.layout_waveform_height = _optional_layout_dimension(payload.get("layout_waveform_height"), 112, 4096)
         if "detection_threshold" in payload:
             threshold = float(payload["detection_threshold"])
             target.detection_threshold = threshold
@@ -3117,7 +3137,8 @@ class ProjectController(QObject):
         project.scoring.competitor_place = effective.default_competitor_place
         project.overlay.position = effective.overlay_position
         project.overlay.badge_size = effective.badge_size
-        project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
+        if effective.badge_size != BadgeSize.CUSTOM:
+            project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
         project.overlay.timer_badge = deepcopy(effective.timer_badge)
         project.overlay.shot_badge = deepcopy(effective.shot_badge)
         project.overlay.current_shot_badge = deepcopy(effective.current_shot_badge)
@@ -3144,6 +3165,14 @@ class ProjectController(QObject):
             for box in effective.review_text_boxes
             if isinstance(box, dict)
         ]
+        if effective.layout_locked is not None:
+            project.ui_state.layout_locked = bool(effective.layout_locked)
+        if effective.layout_rail_width is not None:
+            project.ui_state.rail_width = max(84, min(104, int(effective.layout_rail_width)))
+        if effective.layout_inspector_width is not None:
+            project.ui_state.inspector_width = max(320, min(4096, int(effective.layout_inspector_width)))
+        if effective.layout_waveform_height is not None:
+            project.ui_state.waveform_height = max(112, min(4096, int(effective.layout_waveform_height)))
         if reset_tool:
             project.ui_state.active_tool = effective.default_tool if effective.reopen_last_tool else "project"
 

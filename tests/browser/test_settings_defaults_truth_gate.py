@@ -81,6 +81,35 @@ def _apply_settings_defaults_and_wait(page, predicate: str) -> None:
     page.wait_for_function(predicate)
 
 
+def _show_expanded_metrics(page) -> None:
+    page.evaluate(
+        """() => {
+            setActiveTool('metrics', { persistUiState: false });
+            setMetricsExpanded(true, { persistUiState: false });
+        }"""
+    )
+    page.wait_for_function(
+        """() => activeTool === 'metrics'
+            && document.getElementById('cockpit-root')?.classList.contains('metrics-expanded') === true"""
+    )
+
+
+def _wait_for_project_landing(page) -> None:
+    page.wait_for_function(
+        """() => {
+            const root = document.getElementById('cockpit-root');
+            return activeTool === 'project'
+                && document.querySelector('[data-tool-pane="project"]')?.classList.contains('active') === true
+                && root?.classList.contains('waveform-expanded') === false
+                && root?.classList.contains('timing-expanded') === false
+                && root?.classList.contains('metrics-expanded') === false
+                && root?.classList.contains('markers-expanded') === false
+                && root?.classList.contains('scoring-expanded') === false;
+        }"""
+    )
+    page.locator('[data-tool-pane="project"]').wait_for(state='visible')
+
+
 def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shotml_state(tmp_path: Path) -> None:
     project_path = tmp_path / f'defaults-seeded-project-{uuid.uuid4().hex[:8]}'
     shutil.rmtree(project_path, ignore_errors=True)
@@ -121,7 +150,6 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                     ('settings-marker-duration', '1.500'),
                     ('settings-marker-width', '222'),
                     ('settings-marker-height', '88'),
-                    ('settings-marker-follow-motion', True),
                     ('settings-marker-background-color', '#202020'),
                     ('settings-marker-text-color', '#f8fafc'),
                     ('settings-marker-opacity', '0.55'),
@@ -139,6 +167,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                 ]
                 for control_id, value in default_controls:
                     _set_control(page, control_id, value)
+                page.locator('[data-motion-mode-target="settings-marker-motion-mode"] [data-motion-mode-value="guided"]').click()
                 assert page.evaluate("() => readSettingsDefaultsPayload({}).settings.merge_layout === 'pip'")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
                 page.evaluate("() => applySettingsDefaults()")
@@ -175,6 +204,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                 assert snapshot['merge']['layout'] == 'pip'
                 assert snapshot['export']['ffmpeg_preset'] == 'fast'
                 assert snapshot['export']['two_pass'] is True
+                assert snapshot['popupTemplate']['motion_mode'] == 'guided'
                 assert snapshot['shotmlThreshold'] == 0.5
             finally:
                 browser.close()
@@ -203,9 +233,11 @@ def test_settings_landing_pane_and_reopen_last_tool_apply_after_reload(tmp_path:
                     page,
                     "() => document.getElementById('settings-default-tool')?.value === 'metrics' && document.getElementById('settings-reopen-last-tool')?.checked === true",
                 )
+                _show_expanded_metrics(page)
                 _set_project_path(page, first_project)
                 page.evaluate('(path) => createNewProject(path)', str(first_project))
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
+                _wait_for_project_landing(page)
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
                 page.wait_for_function("() => activeTool === 'metrics'")
@@ -217,12 +249,62 @@ def test_settings_landing_pane_and_reopen_last_tool_apply_after_reload(tmp_path:
                 page.wait_for_function("() => state?.settings !== undefined")
                 page.evaluate("() => applySettingsDefaults()")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
+                _show_expanded_metrics(page)
                 _set_project_path(page, second_project)
                 page.evaluate('(path) => createNewProject(path)', str(second_project))
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_project))
+                _wait_for_project_landing(page)
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_project))
                 page.wait_for_function("() => activeTool === 'project'")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_selection_stays_on_project_before_reopen_last_tool_applies(tmp_path: Path) -> None:
+    first_project = tmp_path / f'project-switch-one-{uuid.uuid4().hex[:8]}'
+    second_project = tmp_path / f'project-switch-two-{uuid.uuid4().hex[:8]}'
+    shutil.rmtree(first_project, ignore_errors=True)
+    shutil.rmtree(second_project, ignore_errors=True)
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                _expand_settings_section(page, 'global-template')
+
+                _set_control(page, 'settings-scope', 'app')
+                _set_control(page, 'settings-default-tool', 'metrics')
+                _set_control(page, 'settings-reopen-last-tool', True)
+                _apply_settings_defaults_and_wait(
+                    page,
+                    "() => document.getElementById('settings-default-tool')?.value === 'metrics' && document.getElementById('settings-reopen-last-tool')?.checked === true",
+                )
+
+                _show_expanded_metrics(page)
+                _set_project_path(page, first_project)
+                page.evaluate('(path) => createNewProject(path)', str(first_project))
+                page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
+                _wait_for_project_landing(page)
+
+                _show_expanded_metrics(page)
+                _set_project_path(page, second_project)
+                page.evaluate('(path) => createNewProject(path)', str(second_project))
+                page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_project))
+                _wait_for_project_landing(page)
+
+                _show_expanded_metrics(page)
+                page.evaluate('(path) => useProjectFolder(path)', str(first_project))
+                page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
+                _wait_for_project_landing(page)
+
+                page.reload(wait_until='domcontentloaded')
+                page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
+                page.wait_for_function("() => activeTool === 'metrics'")
             finally:
                 browser.close()
     finally:

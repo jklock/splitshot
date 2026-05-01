@@ -43,6 +43,7 @@ _FONT_SIZE = {
     BadgeSize.M: 14,
     BadgeSize.L: 16,
     BadgeSize.XL: 20,
+    BadgeSize.CUSTOM: 14,
 }
 
 _BADGE_PADDING_X_PX = 10
@@ -359,7 +360,7 @@ class OverlayRenderer:
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
 
-        font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
+        font_size = project.overlay.font_size or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
         font = QFont(project.overlay.font_family or "Helvetica Neue")
         font.setPixelSize(max(1, int(font_size)))
         font.setBold(project.overlay.font_bold)
@@ -534,7 +535,7 @@ class OverlayRenderer:
             return []
 
         position = project.overlay.position
-        font_size = project.overlay.font_size or _FONT_SIZE[project.overlay.badge_size]
+        font_size = project.overlay.font_size or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
         font = QFont(project.overlay.font_family or "Helvetica Neue")
         font.setPixelSize(max(1, int(font_size)))
         font.setBold(project.overlay.font_bold)

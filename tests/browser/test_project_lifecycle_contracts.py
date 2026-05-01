@@ -75,6 +75,7 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert 'await flushPendingProjectDrafts();\n  const currentPath = normalizeProjectFolderInput' in js
     assert 'const result = await callApi("/api/project/open", { path: projectPath });' in js
     assert 'const result = await callApi("/api/project/save", { path: projectPath });' in js
+    assert 'setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });' in js
     assert 'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());' in js
     assert 'window.alert(folderMessage);' in js
     assert 'if (apiPath === "/api/import/primary") {\n    await flushPendingProjectDrafts();' in js

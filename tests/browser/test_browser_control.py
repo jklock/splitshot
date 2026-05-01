@@ -1988,6 +1988,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                         "shot_id": first_shot_id,
                         "time_ms": 1200,
                         "duration_ms": 1000,
+                        "motion_mode": "guided",
                         "follow_motion": True,
                         "motion_path": [
                             {"offset_ms": 250, "x": 0.45, "y": 0.55},
@@ -2002,7 +2003,11 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                         "width": 88,
                         "height": 36,
                     }
-                ]
+                ],
+                "popup_template": {
+                    "follow_motion": True,
+                    "motion_mode": "guided",
+                },
             },
         )
         saved = _read_project_json(project_path)
@@ -2011,6 +2016,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["popups"][0]["shot_id"] == first_shot_id
         assert saved["popups"][0]["time_ms"] == 1200
         assert saved["popups"][0]["duration_ms"] == 1000
+        assert saved["popups"][0]["motion_mode"] == "guided"
         assert saved["popups"][0]["follow_motion"] is True
         assert saved["popups"][0]["motion_path"][0]["offset_ms"] == 250
         assert saved["popups"][0]["motion_path"][0]["x"] == pytest.approx(0.45)
@@ -2018,6 +2024,8 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["popups"][0]["quadrant"] == "custom"
         assert saved["popups"][0]["x"] == pytest.approx(0.42)
         assert saved["popups"][0]["y"] == pytest.approx(0.58)
+        assert saved["popup_template"]["motion_mode"] == "guided"
+        assert saved["popup_template"]["follow_motion"] is True
 
         project_output_path = project_path / "Output" / "autosave-output.mp4"
         _post_json(
@@ -2149,6 +2157,7 @@ def test_browser_settings_reset_defaults_restores_project_state(tmp_path: Path, 
         assert reset["settings"]["export_preset"] == "source"
         assert reset["settings"]["export_frame_rate"] == "source"
         assert reset["settings"]["marker_template"]["background_color"] == "#000000"
+        assert reset["settings"]["marker_template"]["motion_mode"] == "fixed"
         assert reset["settings"]["marker_template"]["opacity"] == 0.9
         assert reset["settings"]["shotml_defaults"]["min_shot_interval_ms"] == 100
         assert reset["settings"]["shotml_defaults"]["shot_peak_min_spacing_ms"] == 200
@@ -2317,6 +2326,76 @@ def test_browser_state_exposes_settings_layers_and_folder_precedence(tmp_path: P
         assert state["settings_layers"]["folder"]["merge_layout"] == "above_below"
         assert state["settings"]["merge_layout"] == "above_below"
         assert state["settings_layers"]["project"]["path"] == str(project_path)
+    finally:
+        server.shutdown()
+
+
+def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "settings-layout-defaults.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        updated = _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "folder",
+                "settings": {
+                    "layout_locked": False,
+                    "layout_rail_width": 96,
+                    "layout_inspector_width": 640,
+                    "layout_waveform_height": 260,
+                },
+            },
+        )
+
+        folder_settings_path = project_path / "splitshot.conf"
+        folder_settings_text = folder_settings_path.read_text(encoding="utf-8")
+
+        assert updated["settings"]["layout_locked"] is False
+        assert updated["settings"]["layout_rail_width"] == 96
+        assert updated["settings"]["layout_inspector_width"] == 640
+        assert updated["settings"]["layout_waveform_height"] == 260
+        assert updated["settings_layers"]["folder"]["layout_locked"] is False
+        assert updated["settings_layers"]["folder"]["layout_rail_width"] == 96
+        assert updated["settings_layers"]["folder"]["layout_inspector_width"] == 640
+        assert updated["settings_layers"]["folder"]["layout_waveform_height"] == 260
+        assert updated["project"]["ui_state"]["layout_locked"] is False
+        assert updated["project"]["ui_state"]["rail_width"] == 96
+        assert updated["project"]["ui_state"]["inspector_width"] == 640
+        assert updated["project"]["ui_state"]["waveform_height"] == 260
+        assert "layout_locked = false" in folder_settings_text
+        assert "layout_rail_width = 96" in folder_settings_text
+        assert "layout_inspector_width = 640" in folder_settings_text
+        assert "layout_waveform_height = 260" in folder_settings_text
+
+        cleared = _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "folder",
+                "settings": {
+                    "clear_layout_defaults": True,
+                },
+            },
+        )
+
+        cleared_folder_text = folder_settings_path.read_text(encoding="utf-8")
+
+        assert cleared["settings"]["layout_locked"] is None
+        assert cleared["settings"]["layout_rail_width"] is None
+        assert cleared["settings"]["layout_inspector_width"] is None
+        assert cleared["settings"]["layout_waveform_height"] is None
+        assert "layout_locked" not in cleared_folder_text
+        assert "layout_rail_width" not in cleared_folder_text
+        assert "layout_inspector_width" not in cleared_folder_text
+        assert "layout_waveform_height" not in cleared_folder_text
     finally:
         server.shutdown()
 

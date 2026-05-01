@@ -13,8 +13,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     css = (STATIC_ROOT / "styles.css").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
-    assert 'href="/static/styles.css?v=20260427b"' in html
-    assert 'src="/static/app.js?v=20260427b"' in html
+    assert 'href="/static/styles.css?v=20260430f"' in html
+    assert 'src="/static/app.js?v=20260430f"' in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -106,6 +106,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="apply-threshold"' in html
     assert '>Re-run ShotML<' in html
     assert 'data-tool-pane="shotml"' in html
+    assert 'id="shotml-confidence-summary"' in html
+    assert 'Avg auto confidence --' in html
     assert 'id="generate-shotml-proposals"' in html
     assert 'id="reset-shotml-defaults"' in html
     assert "Apply Scoring" not in html
@@ -182,27 +184,34 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="check-row review-visibility-option"' in html
     assert 'id="show-markers"' in html
     assert 'id="show-pip"' in html
+    assert 'id="markers-enable"' in html
     assert "Show markers" in html
     assert "Show PiP" in html
+    assert "Enable Markers" in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="markers"' in html
     assert 'data-tool-pane="settings"' in html
+    assert 'id="popup-add-bubble"' in html
     assert 'id="popup-import-shots"' in html
     assert 'id="popup-import-mode"' in html
     assert 'id="popup-filter"' in html
-    assert 'id="popup-marker-toolbar"' in html
+    assert 'id="popup-marker-toolbar"' not in html
     assert 'id="popup-edit-selected"' in html
-    assert 'id="expand-markers"' in html
+    assert 'id="expand-markers"' not in html
     assert 'id="popup-prev"' not in html
     assert 'id="popup-next"' not in html
     assert 'id="popup-prev-compact"' in html
     assert 'id="popup-next-compact"' in html
     assert 'id="popup-play-window"' in html
     assert 'id="popup-loop-window"' in html
-    assert 'id="popup-toggle-authoring"' in html
+    assert 'id="popup-toggle-authoring"' not in html
     assert 'id="popup-pane-status"' in html
     assert 'id="popup-selected-summary"' in html
     assert 'id="popup-list-status"' in html
+    assert 'id="markers-workbench-status"' in html
+    assert 'id="markers-workbench-selected-summary"' in html
+    assert 'id="markers-workbench-list-status"' in html
+    assert 'id="markers-workbench-editor-status"' in html
     assert 'id="popup-duplicate-selected"' not in html
     assert 'id="popup-delete-selected"' not in html
     assert 'id="popup-enable-shown"' not in html
@@ -230,7 +239,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="markers-workbench-list"' in html
     assert 'id="markers-workbench-editor"' in html
     assert 'id="popup-add-selected-shot"' in html
+    assert '>Open Workbench</button>' in html
     assert 'id="popup-template-background-color"' in html
+    assert 'id="popup-template-motion-mode" type="hidden" value="fixed"' in html
+    assert 'data-motion-mode-target="popup-template-motion-mode"' in html
     assert 'id="popup-template-background-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000"' in html
     assert 'id="popup-template-text-color" class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#FFFFFF" placeholder="#FFFFFF"' in html
     assert 'id="popup-floating-editor"' not in html
@@ -242,6 +254,14 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-badge-style-grid"' in html
     assert 'id="settings-timer-badge-background-color"' in html
     assert 'id="settings-hit-factor-badge-opacity"' in html
+    assert 'id="settings-layout-locked"' in html
+    assert 'id="settings-layout-rail-width"' in html
+    assert 'id="settings-layout-inspector-width"' in html
+    assert 'id="settings-layout-waveform-height"' in html
+    assert 'id="settings-use-current-layout"' in html
+    assert 'id="settings-release-layout"' in html
+    assert 'id="settings-layout-status"' in html
+    assert 'id="settings-layout-summary"' in html
     assert 'id="settings-merge-layout"' in html
     assert 'id="settings-merge-pip-x"' in html
     assert 'id="settings-pip-size"' in html
@@ -249,12 +269,14 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-export-preset"' in html
     assert 'id="settings-export-ffmpeg-preset"' in html
     assert 'id="settings-marker-background-color"' in html
+    assert 'id="settings-marker-motion-mode" type="hidden" value="fixed"' in html
+    assert 'data-motion-mode-target="settings-marker-motion-mode"' in html
     assert 'id="settings-marker-opacity"' in html
     assert 'id="settings-shotml-threshold"' in html
     assert 'id="settings-scope-status"' in html
     assert 'id="settings-layer-summary"' not in html
     assert 'class="settings-section collapsed"' in html
-    for section_id in ["global-template", "scoring", "pip", "overlay", "markers", "export", "shotml"]:
+    for section_id in ["global-template", "layout", "scoring", "pip", "overlay", "markers", "export", "shotml"]:
         assert f'data-settings-section="{section_id}"' in html
     assert 'Open Project' not in html
     assert 'Open PiP' not in html
@@ -301,6 +323,14 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-field="quadrant"' not in js
     assert 'data-popup-field="opacity_percent"' in js
     assert 'data-popup-field="follow_motion"' in js
+    assert 'data-popup-motion-mode="fixed"' in js
+    assert 'data-popup-motion-mode="guided"' in js
+    assert 'data-popup-motion-mode="advanced"' in js
+    assert 'data-popup-motion-guided-toolbar' in js
+    assert 'data-popup-motion-advanced-toolbar' in js
+    assert 'function popupBubbleMotionUiMode(bubble = null) {' in js
+    assert 'function setPopupBubbleMotionUiMode(bubbleId, uiMode, options = {}) {' in js
+    assert 'function syncPopupBubbleMotionModeControls(card, bubble) {' in js
     assert 'function popupBubbleKeyframes(bubble) {' in js
     assert 'function popupKeyframePoint(bubble, offsetMs) {' in js
     assert 'function addPopupBubbleKeyframeAtPlayhead(bubbleId) {' in js
@@ -314,6 +344,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-popup-action="clear_motion_path"' in js
     assert 'data-popup-action="auto_trace_motion"' in js
     assert 'function autoTracePopupBubbleMotion(bubbleId) {' in js
+    assert 'Enable motion when this marker should move.' not in js
+    assert 'const editingSelectedBubbleOnly = activeTool === "markers" && markersWorkbenchShown() && Boolean(selectedPopupBubbleId);' in js
     popup_motion_template = re.search(
         r'<section class="popup-motion-guide" data-popup-motion-guide hidden>.*?</section>',
         js,
@@ -328,6 +360,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="metrics-export-csv"' in html
     assert 'id="metrics-export-text"' in html
     assert 'id="show-export-log"' in html
+    assert '>Show Export Log</button>' in html
     assert 'id="export-export-log"' in html
     assert 'id="export-log-modal"' in html
     assert 'id="export-log-output"' in html
@@ -427,6 +460,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'Overlay visibility' not in html
     assert '<option value="none">Hidden</option>' in html
     assert '<option value="bottom">Bottom</option>' in html
+    assert 'Stack gap' in html
+    assert 'Edge padding' in html
+    assert 'Score Colors' in html
+    assert html.count('<option value="custom">Custom</option>') >= 2
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
     assert 'id="merge-media-input"' in html
@@ -595,9 +632,14 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'review_show_pip: true,' in js
     assert 'review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),' in js
     assert 'review_show_pip: Boolean(uiState.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip),' in js
-    assert 'review_show_markers: $("show-markers")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_markers,' in js
+    assert 'review_show_markers: currentMarkersVisibilityEnabled(),' in js
     assert 'review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,' in js
-    assert 'syncControlChecked($("show-markers"), normalized.review_show_markers);' in js
+    assert 'function currentMarkersVisibilityEnabled() {' in js
+    assert '$("markers-enable")?.checked' in js
+    assert 'function syncMarkersVisibilityControls(enabled) {' in js
+    assert 'syncControlChecked($("markers-enable"), enabled);' in js
+    assert 'syncMarkersVisibilityControls(normalized.review_show_markers);' in js
+    assert '$("reset-layout")?.addEventListener("click", resetLayout);\n  $("settings-use-current-layout")?.addEventListener("click", saveCurrentLayoutAsDefaults);\n  $("settings-release-layout")?.addEventListener("click", releaseLayoutDefaults);\n  [\n    ["resize-rail", "railWidth"],' in js
     assert 'syncControlChecked($("show-pip"), normalized.review_show_pip);' in js
     assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
@@ -771,6 +813,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (shot) return shot.time_ms;' in js
     assert 'setPopupBubbles(nextBubbles, { commit: false, rerender: false });' in js
     assert 'data-popup-field="follow_motion"' in js
+    assert 'popupBubbleMotionUiMode(bubble) === "fixed"' in js
     assert 'data-popup-keyframe-drag' in js
     assert 'dataset.popupKeyframeOffset' in js
     assert 'text.textContent = selectorStyle?.token || entry.text;' in js
@@ -910,10 +953,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '[currentResultLabel, currentResultValue],' in js
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
-    assert 'syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
+    assert 'syncMarkersVisibilityControls(state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
     assert 'syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);' in js
     assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
-    assert 'if (!($("show-markers")?.checked ?? true)) {' in js
+    assert 'if (!currentMarkersVisibilityEnabled()) {' in js
     assert 'if (!($("show-pip")?.checked ?? true)) {' in js
     assert 'const badgeDisplayLabels = {' in js
     assert 'card.className = "style-card badge-style-card";' in js
@@ -1063,7 +1106,8 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert ".popup-toolbar-row {\n  display: grid;" in css
     assert ".markers-workbench {" in css
     assert ".markers-workbench-toolbar {" in css
-    assert ".markers-workbench-body.defaults-collapsed {" in css
+    assert ".markers-workbench-body.defaults-collapsed {" not in css
+    assert ".popup-list-section.popup-authoring-panel.collapsed > :not(.section-header) {" in css
     assert ".cockpit.markers-expanded .markers-workbench {" in css
     assert ".cockpit.markers-expanded .waveform-panel," in css
     assert ".popup-collapsed-nav {\n  display: grid;" not in css
@@ -1426,6 +1470,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "generate-shotml-proposals",
             "reset-shotml-defaults",
             "restore-merge-defaults",
+            "settings-use-current-layout",
+            "settings-release-layout",
             "toggle-layout-lock-video",
             "toggle-rail",
             "resize-rail",

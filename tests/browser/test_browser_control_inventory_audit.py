@@ -13,6 +13,7 @@ EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     for line in """
 data-settings-section:export
 data-settings-section:global-template
+data-settings-section:layout
 data-settings-section:markers
 data-settings-section:overlay
 data-settings-section:pip
@@ -132,7 +133,6 @@ id:draw-x
 id:draw-y
 id:collapse-markers
 id:expand-metrics
-id:expand-markers
 id:expand-scoring
 id:expand-timing
 id:expand-waveform
@@ -150,6 +150,7 @@ id:match-competitor-place
 id:match-stage-number
 id:match-type
 id:max-visible-shots
+id:markers-enable
 id:markers-workbench-filter
 id:merge-enabled
 id:merge-layout
@@ -184,15 +185,13 @@ id:popup-play-window
 id:popup-play-window-workbench
 id:popup-prev-compact
 id:popup-prev-workbench
+id:popup-add-selected-shot
 id:popup-template-content-type
 id:popup-template-duration-s
 id:popup-template-enabled
-id:popup-template-follow-motion
 id:popup-template-height
 id:popup-template-text-source
 id:popup-template-width
-id:popup-toggle-authoring
-id:popup-add-selected-shot
 id:popup-add-selected-shot-workbench
 id:popup-template-background-color
 id:popup-template-text-color
@@ -237,11 +236,14 @@ id:settings-hit-factor-badge-background-color
 id:settings-hit-factor-badge-opacity
 id:settings-hit-factor-badge-text-color
 id:settings-import-current
+id:settings-layout-inspector-width
+id:settings-layout-locked
+id:settings-layout-rail-width
+id:settings-layout-waveform-height
 id:settings-marker-background-color
 id:settings-marker-content-type
 id:settings-marker-duration
 id:settings-marker-enabled
-id:settings-marker-follow-motion
 id:settings-marker-height
 id:settings-marker-opacity
 id:settings-marker-text-color
@@ -255,6 +257,7 @@ id:settings-overlay-custom-opacity
 id:settings-overlay-custom-text-color
 id:settings-overlay-position
 id:settings-pip-size
+id:settings-release-layout
 id:settings-rail-button
 id:settings-reopen-last-tool
 id:settings-reset-defaults
@@ -266,6 +269,7 @@ id:settings-shotml-threshold
 id:settings-timer-badge-background-color
 id:settings-timer-badge-opacity
 id:settings-timer-badge-text-color
+id:settings-use-current-layout
 id:shot-direction
 id:shot-quadrant
 id:show-draw
@@ -347,7 +351,7 @@ def test_browser_shell_static_mutable_control_inventory_is_exhaustive() -> None:
 
     assert not missing, f"Static browser controls missing from audit:\n{_sorted_lines(missing)}"
     assert not unexpected, f"New static browser controls need explicit inventory ownership:\n{_sorted_lines(unexpected)}"
-    assert len(actual_identifiers) == 281
+    assert len(actual_identifiers) == len(EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS)
 
 
 def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:

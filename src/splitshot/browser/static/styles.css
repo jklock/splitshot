@@ -1530,7 +1530,7 @@ button:disabled {
   align-content: stretch;
   display: grid;
   gap: 0.42rem;
-  grid-template-rows: max-content max-content auto auto minmax(0, 1fr);
+  grid-template-rows: max-content max-content auto minmax(0, 1fr) auto;
   min-height: 0;
   overflow: hidden;
   padding-bottom: 0.48rem;
@@ -2151,6 +2151,18 @@ button:disabled {
   padding: 0.5rem;
 }
 
+.markers-compact-toolbar {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.markers-compact-primary-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.markers-compact-secondary-actions {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .popup-authoring-actions {
   display: grid;
   gap: 0.35rem;
@@ -2158,37 +2170,74 @@ button:disabled {
   min-width: 0;
 }
 
+.motion-mode-field {
+  display: grid;
+  gap: 0.35rem;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.motion-mode-label {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.motion-mode-segmented {
+  border: 1px solid var(--line-strong);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.motion-mode-segmented > button {
+  background: #0e1012;
+  border: 0;
+  border-right: 1px solid var(--line-strong);
+  min-width: 0;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+}
+
+.motion-mode-segmented > button:last-child {
+  border-right: 0;
+}
+
+.motion-mode-segmented > button.active,
+.motion-mode-segmented > button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #111;
+}
+
+.motion-mode-summary,
+.popup-motion-guide-summary,
+.markers-workbench-inline-hint {
+  margin: 0;
+}
+
 .popup-authoring-panel {
   display: grid;
   gap: 0.42rem;
 }
 
-.popup-marker-toolbar,
+.popup-list-section.popup-authoring-panel {
+  align-content: start;
+}
+
+.popup-list-section.popup-authoring-panel.collapsed {
+  gap: 0;
+}
+
+.popup-list-section.popup-authoring-panel.collapsed > :not(.section-header) {
+  display: none !important;
+}
+
 .popup-bulk-marker-panel {
   gap: 0.42rem;
 }
-
-.popup-toolbar-row {
-  display: grid;
-  gap: 0.35rem;
-  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
-}
-
-.popup-toolbar-row-secondary {
-  align-items: end;
-}
-
-.popup-toolbar-row-secondary label {
-  min-width: 0;
-}
-
-.popup-marker-toolbar .hint,
 .popup-bulk-marker-panel .hint {
   margin: 0;
-}
-
-.popup-marker-create-actions {
-  gap: 0.35rem;
 }
 
 .popup-authoring-panel[hidden],
@@ -2212,11 +2261,13 @@ button:disabled {
 }
 
 .popup-list-section-unified {
+  grid-template-rows: auto minmax(0, 1fr);
   padding-bottom: 0.25rem;
 }
 
 .popup-selected-editor-panel {
-  display: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
 }
@@ -2225,6 +2276,14 @@ button:disabled {
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+}
+
+.markers-compact-toggle-row {
+  align-items: center;
+}
+
+.markers-compact-toggle-row > button {
+  justify-self: end;
 }
 
 .markers-workbench[hidden] {
@@ -2255,7 +2314,7 @@ button:disabled {
 }
 
 .markers-workbench-toolbar-row-meta {
-  grid-template-columns: minmax(160px, 200px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .markers-workbench-toolbar .hint {
@@ -2265,14 +2324,10 @@ button:disabled {
 .markers-workbench-body {
   display: grid;
   gap: 0.4rem;
-  grid-template-columns: minmax(240px, 1fr) minmax(220px, 0.82fr);
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   overflow: hidden;
   padding: 0.4rem;
-}
-
-.markers-workbench-body.defaults-collapsed {
-  grid-template-columns: minmax(0, 1fr);
 }
 
 .markers-workbench-column {
@@ -2571,6 +2626,7 @@ button:disabled {
 
 .popup-marker-row-main {
   align-items: start;
+  cursor: pointer;
   display: grid;
   gap: 0.28rem;
   min-width: 0;
@@ -2580,9 +2636,11 @@ button:disabled {
   background: transparent;
   border: 0;
   color: inherit;
+  display: block;
   min-width: 0;
   padding: 0;
   text-align: left;
+  width: 100%;
 }
 
 .popup-marker-title {
@@ -2636,8 +2694,15 @@ button:disabled {
 .popup-marker-actions {
   align-items: start;
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   justify-content: flex-end;
   min-width: 0;
+}
+
+.popup-marker-actions > button {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .popup-marker-actions .check-row {
@@ -2848,6 +2913,13 @@ button:disabled {
   gap: 0.45rem;
 }
 
+.popup-motion-point-row-guided {
+  align-items: center;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: 4.25rem minmax(0, 1fr) minmax(0, 1.1fr) 4.9rem;
+}
+
 .popup-motion-path-list {
   display: grid;
   gap: 0.42rem;
@@ -2875,8 +2947,16 @@ button:disabled {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .markers-compact-primary-actions,
+  .markers-compact-secondary-actions,
+  .markers-workbench-authoring-bar .popup-authoring-actions,
+  .motion-mode-segmented {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .popup-bubble-card .text-box-card-header,
-  .popup-bubble-card .popup-motion-point-row {
+  .popup-bubble-card .popup-motion-point-row,
+  .popup-motion-point-row-guided {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -2916,6 +2996,12 @@ button:disabled {
   font-weight: 850;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.popup-motion-point-meta {
+  color: var(--muted);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
 }
 
 .sub-section-header {
@@ -4260,30 +4346,17 @@ button:disabled {
   min-height: 0;
 }
 
-.cockpit.markers-expanded .markers-workbench-toolbar,
-.cockpit.markers-expanded .popup-authoring-panel {
-  display: none;
-}
-
 .cockpit.markers-expanded .markers-workbench-body {
-  grid-template-columns: minmax(0, 1fr);
   padding: 0.45rem 0.5rem 0.5rem;
 }
 
 .cockpit.markers-expanded .inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
-  grid-template-rows: max-content max-content minmax(0, 1fr);
+  grid-template-rows: max-content max-content auto minmax(0, 1fr);
 }
 
-.cockpit.markers-expanded .tool-pane[data-tool-pane="markers"] > .popup-list-section.popup-list-section-unified {
+.cockpit.markers-expanded .tool-pane[data-tool-pane="markers"] > .popup-list-section.popup-list-section-unified,
+.cockpit.markers-expanded .tool-pane[data-tool-pane="markers"] > .markers-compact-toolbar {
   display: none;
-}
-
-.cockpit.markers-expanded .popup-selected-editor-panel {
-  display: grid;
-  background: transparent;
-  border: 0;
-  gap: 0.45rem;
-  padding: 0;
 }
 
 .cockpit.markers-expanded #markers-workbench-list {
@@ -4296,10 +4369,6 @@ button:disabled {
 
 .cockpit.markers-expanded #markers-workbench-list .popup-marker-row {
   min-height: 84px;
-}
-
-.cockpit.markers-expanded .popup-selected-editor-panel > .section-header {
-  padding: 0.5rem 0.55rem 0;
 }
 
 .cockpit.markers-expanded #markers-workbench-editor {
@@ -4332,7 +4401,19 @@ button:disabled {
 }
 
 .cockpit.markers-expanded #markers-workbench-editor .popup-editor-section {
-  padding: 0.8rem;
+  background: transparent;
+  border: 0;
+  gap: 0.65rem;
+  padding: 0;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-editor-section + .popup-editor-section {
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-editor-section > .section-header {
+  padding: 0;
 }
 
 .cockpit.scoring-expanded .video-stage,
