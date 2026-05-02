@@ -48,8 +48,8 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Settings gear button | behavioral | Keep the direct Settings-pane routing and persistence assertion with the rail-footer contract test. |
 | Rail collapse toggle | behavioral | Keep the collapsed-vs-expanded rail persistence coverage for `splitshot.railCollapsed`. |
 | Rail resize handle | behavioral | Keep the drag-persistence coverage if the rail geometry or storage key changes. |
-| Layout lock toggle in the video stage | behavioral | Keep the unlock/lock persistence coverage if layout locking changes. |
-| Waveform resize handle | behavioral | Keep the drag-persistence coverage if the waveform geometry or storage key changes. |
+| Layout lock toggle in the top status bar | behavioral | Keep the unlock/lock persistence coverage if layout locking changes. |
+| Waveform resize handle | behavioral | Keep the drag-persistence coverage if the waveform geometry or storage key changes, and keep the marker-workbench temporary resize/restore coverage if the lower editor keeps sharing this handle. |
 | Sidebar resize handle | behavioral | Keep the drag-persistence coverage if the inspector geometry or storage key changes. |
 | Primary video player controls | behavioral at surface level | Keep at least one browser test that verifies play/pause/seek flows still drive SplitShot state when custom behavior depends on the native player. |
 
@@ -103,8 +103,6 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Markers Add Time Marker | behavioral | Keep the add-marker path covered through the existing browser control tests. |
 | Expand Markers | behavioral | Keep the compact-to-workbench launch coverage and extend it if expanded-layout routing changes. |
 | Marker defaults collapse toggle | behavioral | Keep the defaults-column show-or-hide coverage and extend it only if expand-state persistence changes. |
-| Play Window | behavioral | Keep the selected-marker playback-window coverage and extend it if playback uses a different seek or stop path. |
-| Loop | behavioral | Keep the looping-window wrap or stop coverage and extend it if loop state moves out of the marker playback controls. |
 | Previous / Next compact buttons | behavioral | Keep the collapsed-navigation coverage if filter ordering or wrap behavior changes. |
 | Marker pane enabled count | static | Keep the header-status coverage if enabled-marker summary text or placement changes. |
 | Shot-linked marker list cards | behavioral | Keep the list-card selection coverage if marker reveal or seek behavior changes. |
@@ -124,7 +122,7 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Template Text Source | behavioral | Keep the score, shot-label, and custom generated-marker payload coverage; shot-linked live overlay text still resolves from score text today. |
 | Template Duration | behavioral | Keep the generated-marker duration coverage if the marker window model changes. |
 | Template Width / Height | behavioral | Keep the generated-marker size coverage and live badge-size assertion if popup sizing changes. |
-| Template Motion Mode | behavioral | Keep the generated-marker motion-mode default coverage if Fixed/Guided/Advanced defaulting changes. |
+| Template Enable Motion | behavioral | Keep the generated-marker motion-enabled default coverage if marker motion defaults change. |
 
 ### Popup Bubble Cards
 
@@ -145,14 +143,12 @@ The plan below focuses on the controls that are still only smoke/static, presenc
 | Start time input | missing | Add a start-time commit test. |
 | Shot select | missing | Add a shot-anchored selection test. |
 | Duration input | missing | Add a duration commit test. |
-| Motion mode selector | missing | Add a Fixed/Guided/Advanced selection test. |
-| Add Fix Point Here | missing | Add a guided motion-point insertion test. |
-| Previous Fix Point / Next Fix Point | missing | Add guided motion-point navigation tests. |
-| Add Keyframe | missing | Add an advanced keyframe insertion test. |
-| Previous Keyframe / Next Keyframe | missing | Add advanced keyframe navigation tests. |
-| Copy Prev Motion | missing | Add a motion-copy test from the previous bubble. |
-| Apply To Shown Shot Popups | missing | Add a bulk-apply motion test for visible shot-linked popups. |
-| Clear path | missing | Add a clear-motion-path test. |
+| Enable Motion checkbox | behavioral | Keep the selected-marker motion-enable coverage and extend it if guided controls stop opening or preserving selection. |
+| Generate | behavioral | Keep the trace-first generation coverage and extend it if summary text, fallback selection, or tracked-path replacement changes. |
+| Add Detail | behavioral | Keep the largest-gap detail insertion coverage and extend it if authored detail placement rules change. |
+| Previous Point / Next Point | behavioral | Keep guided point navigation coverage and extend it if playhead seek routing changes. |
+| Remove Detail | missing | Add a selected-detail removal test. |
+| Clear path | behavioral | Keep the clear-motion-path coverage and extend it if follow_motion stop-state or path reset semantics change. |
 | X / Y inputs | behavioral | Keep the direct-position coverage and custom-placement assertion when marker placement rules change. |
 | Width / Height inputs | missing | Add a size commit test. |
 | Background color swatch + hex field | behavioral | Review text-box background color-picker and linked hex-input coverage are directly covered. |
@@ -314,7 +310,7 @@ Direct browser coverage now proves these headers toggle and keep their collapse 
 | Quadrant select | smoke | Add a placement default test. |
 | Width input | smoke | Add a width default test. |
 | Height input | smoke | Add a height default test. |
-| Motion mode selector | smoke | Add a marker motion-mode default test. |
+| Enable motion checkbox | smoke | Add a marker motion-enabled default test. |
 | Background color input | smoke | Add a marker-color default test. |
 | Text color input | smoke | Add a marker-color default test. |
 | Opacity input | smoke | Add a marker-opacity default test. |

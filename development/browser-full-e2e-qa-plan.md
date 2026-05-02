@@ -137,11 +137,11 @@ Goal: close the largest remaining browser-surface gap and prove authoring contro
 
 Surfaces:
 
-- compact marker controls, workbench open/close, playback window, loop, and previous/next navigation
+- compact marker controls, workbench open/close, and previous/next navigation
 - shot-linked marker cards and time-marker cards
 - markers workbench actions
 - popup template controls
-- popup bubble card controls, including motion editing
+- popup bubble card controls, including Start/Finish placement, trace-first `Generate`, `Add Detail`, and placement-only motion editing
 - review text-box source, stack lock, placement, size, colors, opacity, and stage drag
 - overlay timer, draw, score anchors, locks, typography, badge styles, and live box sizing
 - color picker modal controls and swatches
@@ -271,5 +271,5 @@ Start with the biggest gap clusters in this order:
 
 Do not mark the repo as fully covered until all five items above are closed and the Phase 6 gate is passing.
 
-**Last updated:** 2026-04-24
-**Referenced files last updated:** 2026-04-24
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01

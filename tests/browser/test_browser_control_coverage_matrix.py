@@ -11,7 +11,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "| Project / import | project details, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, gated primary import, metadata-only delete |" in matrix
     assert "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls |" in matrix
     assert "| Splits / waveform | split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |" in matrix
-    assert "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided step rows, step add/previous/next/remove/clear actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion and split-duration inheritance checkboxes, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size/style/custom font sizing, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
+    assert "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size/style/custom font sizing, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, review text-box background/text color and opacity, text boxes, popup editor, text-box drag |" in matrix
     assert "| Settings | scope, landing pane, reopen-last-tool, import current, reset defaults, layout capture/release, section collapse, template fields |" in matrix
     assert "| Export | output path, preset, quality, show export log modal open/close/backdrop and download |" in matrix
     assert "| ShotML | average auto-confidence summary, threshold apply/reset, rerun, proposal generation, reset defaults |" in matrix
@@ -33,8 +33,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "bubble enabled live-badge toggle" in matrix
     assert "selected-editor duplicate or remove rerender" in matrix
     assert "workbench editor continuity" in matrix
-    assert "shot-split duration clamp" in matrix
-    assert "overlay drag lock during marker editing" in matrix
+
     assert "timer badge background color-picker live preview and close-commit" in matrix
     assert "marker template defaults for fresh shot-linked markers" in matrix
     assert "workbench marker navigation" in matrix

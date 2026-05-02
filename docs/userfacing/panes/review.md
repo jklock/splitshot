@@ -27,7 +27,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `>` / `v` | Expands or collapses that box editor. |
 | `Duplicate` | Copies the box and its styling. |
 | `Remove` | Deletes the box. |
-| Video-frame lock icon | Unlocks or relocks the shared layout resize controls. The inspector header no longer duplicates this icon. |
+| Top-right lock icon | Unlocks or relocks the shared layout resize controls from the upper-right corner of the top status bar. The inspector header no longer duplicates this icon. |
 | `Content Source` | Chooses `Custom text` or `Imported summary`. |
 | `Lock to shot stack` | Makes the box follow the overlay shot stack instead of independent placement. |
 | `Box text` | Edits the text for custom boxes. Imported summaries can be overridden here. |
@@ -74,5 +74,5 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 Previous: [popup.md](popup.md) (Markers)
 Next: [export.md](export.md)
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01

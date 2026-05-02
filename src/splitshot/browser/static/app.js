@@ -22,11 +22,14 @@ let selectedPopupKeyframeOffsetMs = 0;
 let selectedPopupPlacementMode = "base";
 let popupFilterMode = window.localStorage.getItem("splitshot.popupFilterMode") || "all";
 let popupAuthoringCollapsed = false;
-let popupPlaybackWindow = null;
 let popupEditorVisible = false;
 let popupEditorCollapsed = false;
 let popupEditorSectionExpansion = new Map();
+let popupGeneratedMotionOffsetsByBubbleId = new Map();
+let popupMotionGenerationSummaryByBubbleId = new Map();
 let popupAutoTraceBubbleId = null;
+let popupWorkbenchHeight = null;
+let popupWorkbenchRestoreState = null;
 let scoringWorkbenchExpanded = false;
 let overlayVisibilityPosition = "bottom";
 let railCollapsed = window.localStorage.getItem("splitshot.railCollapsed") === "true";
@@ -218,6 +221,10 @@ const POPUP_SELECTOR_MAX_DIAMETER_PX = 32;
 const POPUP_SELECTOR_FILL = "#ff7b22";
 const POPUP_SELECTOR_TEXT = "#111111";
 const POPUP_SELECTOR_BORDER = "#050607";
+const POPUP_MOTION_REFERENCE_FPS = 60;
+const POPUP_MOTION_FRAME_BUDGET_PER_POINT = 4;
+const POPUP_MOTION_TRAVEL_PX_PER_POINT = 48;
+const POPUP_MOTION_MAX_AUTO_POINTS = 14;
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -3154,6 +3161,59 @@ function popupBubbleMotionUiMode(bubble = null) {
   return popupMotionUiModeFromValue(bubble?.motion_mode, bubble?.follow_motion, popupBubbleMotionPath(bubble));
 }
 
+function popupMotionGeneratedOffsetsForBubbleId(bubbleId) {
+  return popupGeneratedMotionOffsetsByBubbleId.get(bubbleId) || new Set();
+}
+
+function popupMotionOffsetIsGenerated(bubbleId, offsetMs) {
+  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
+  return popupMotionGeneratedOffsetsForBubbleId(bubbleId).has(normalizedOffset);
+}
+
+function setPopupMotionGeneratedOffsets(bubbleId, offsets = []) {
+  if (!bubbleId) return;
+  const nextOffsets = [...new Set((offsets || [])
+    .map((value) => Math.max(0, Math.round(Number(value) || 0)))
+    .filter((value) => value > 0))];
+  if (nextOffsets.length === 0) {
+    popupGeneratedMotionOffsetsByBubbleId.delete(bubbleId);
+    return;
+  }
+  popupGeneratedMotionOffsetsByBubbleId.set(bubbleId, new Set(nextOffsets));
+}
+
+function copyPopupMotionUiState(sourceBubbleId, targetBubbleIds = []) {
+  const generatedOffsets = [...popupMotionGeneratedOffsetsForBubbleId(sourceBubbleId)];
+  const summary = popupMotionGenerationSummaryByBubbleId.get(sourceBubbleId) || "";
+  targetBubbleIds.forEach((bubbleId) => {
+    if (!bubbleId) return;
+    setPopupMotionGeneratedOffsets(bubbleId, generatedOffsets);
+    if (summary) popupMotionGenerationSummaryByBubbleId.set(bubbleId, summary);
+    else popupMotionGenerationSummaryByBubbleId.delete(bubbleId);
+  });
+}
+
+function prunePopupMotionUiState(bubbles = popupBubbles()) {
+  const validBubbleIds = new Set(bubbles.map((bubble) => bubble.id));
+  [popupGeneratedMotionOffsetsByBubbleId, popupMotionGenerationSummaryByBubbleId].forEach((map) => {
+    [...map.keys()].forEach((bubbleId) => {
+      if (!validBubbleIds.has(bubbleId)) map.delete(bubbleId);
+    });
+  });
+  bubbles.forEach((bubble) => {
+    const existing = popupGeneratedMotionOffsetsByBubbleId.get(bubble.id);
+    if (!existing) return;
+    const validOffsets = new Set(
+      popupBubbleMotionPath(bubble)
+        .map((point) => point.offset_ms)
+        .filter((offsetMs) => offsetMs > 0 && offsetMs < Math.max(1, bubble.duration_ms)),
+    );
+    const nextOffsets = [...existing].filter((offsetMs) => validOffsets.has(offsetMs));
+    if (nextOffsets.length === 0) popupGeneratedMotionOffsetsByBubbleId.delete(bubble.id);
+    else popupGeneratedMotionOffsetsByBubbleId.set(bubble.id, new Set(nextOffsets));
+  });
+}
+
 function popupTemplateMotionUiMode(template = currentPopupTemplate()) {
   return popupMotionUiModeFromValue(template?.motion_mode, template?.follow_motion);
 }
@@ -3597,6 +3657,7 @@ function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
   if (selectedPopupBubbleId && !state.project.popups.some((bubble) => bubble.id === selectedPopupBubbleId)) {
     selectedPopupBubbleId = null;
   }
+  prunePopupMotionUiState(state.project.popups);
   if (rerender) {
     renderPopupEditors();
   }
@@ -3631,13 +3692,21 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
       nextBubble.follow_motion = Boolean(rawValue);
       nextBubble.motion_mode = nextBubble.follow_motion ? "guided" : "fixed";
       if (nextBubble.follow_motion) setPopupEditorSectionExpanded("motion", true);
-      if (!nextBubble.follow_motion && bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
+      if (!nextBubble.follow_motion) {
+        setPopupMotionGeneratedOffsets(bubble.id, []);
+        popupMotionGenerationSummaryByBubbleId.delete(bubble.id);
+        if (bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
+      }
     }
     if (field === "motion_mode") {
       nextBubble.motion_mode = normalizePopupMotionMode(rawValue, nextBubble.follow_motion, nextBubble.motion_path);
       nextBubble.follow_motion = nextBubble.motion_mode !== "fixed";
       if (nextBubble.follow_motion) setPopupEditorSectionExpanded("motion", true);
-      if (!nextBubble.follow_motion && bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
+      if (!nextBubble.follow_motion) {
+        setPopupMotionGeneratedOffsets(bubble.id, []);
+        popupMotionGenerationSummaryByBubbleId.delete(bubble.id);
+        if (bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
+      }
     }
     if (field === "anchor_mode") {
       nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
@@ -3676,6 +3745,9 @@ function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
       })));
     }
     nextBubble.motion_mode = normalizePopupMotionMode(nextBubble.motion_mode, nextBubble.follow_motion, nextBubble.motion_path);
+    if (durationChanged && popupMotionGenerationSummaryByBubbleId.has(bubble.id)) {
+      popupMotionGenerationSummaryByBubbleId.set(bubble.id, "Start or Finish changed — regenerate to refresh the in-between steps.");
+    }
     if (field === "quadrant") {
       nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
     }
@@ -3900,6 +3972,8 @@ function removePopupBubble(bubbleId) {
   const currentBubbles = popupBubbles();
   const removedIndex = currentBubbles.findIndex((bubble) => bubble.id === bubbleId);
   if (removedIndex < 0) return;
+  popupGeneratedMotionOffsetsByBubbleId.delete(bubbleId);
+  popupMotionGenerationSummaryByBubbleId.delete(bubbleId);
   const removingSelectedBubble = selectedPopupBubbleId === bubbleId;
   const remainingBubbles = currentBubbles.filter((bubble) => bubble.id !== bubbleId);
   setPopupBubbles(remainingBubbles, { commit: true, rerender: true });
@@ -3936,10 +4010,15 @@ function duplicatePopupBubble(bubbleId) {
     }),
   ], { commit: true, rerender: true });
   const duplicate = popupBubbles()[popupBubbles().length - 1];
-  if (duplicate) selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "markers", expand: true });
+  if (duplicate) {
+    copyPopupMotionUiState(bubble.id, [duplicate.id]);
+    selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "markers", expand: true });
+  }
 }
 
 function clearPopupBubbleMotionPath(bubbleId) {
+  setPopupMotionGeneratedOffsets(bubbleId, []);
+  popupMotionGenerationSummaryByBubbleId.delete(bubbleId);
   if (selectedPopupBubbleId === bubbleId) setSelectedPopupPlacementMode("base");
   setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId
     ? normalizePopupBubble({ ...bubble, follow_motion: false, motion_path: [] })
@@ -3999,24 +4078,58 @@ function setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, opt
 
 function popupBubbleKeyframes(bubble) {
   const basePoint = popupBubblePoint(bubble);
-  return [
+  const motionPath = popupBubbleMotionPath(bubble);
+  const keyframes = [
     { offset_ms: 0, x: basePoint.x, y: basePoint.y, easing: "linear", base: true },
-    ...popupBubbleMotionPath(bubble).map((point) => ({ ...point, base: false })),
+    ...motionPath.map((point) => ({ ...point, base: false })),
   ];
+  const finishOffsetMs = Math.max(1, Math.round(Number(bubble?.duration_ms ?? 1) || 1));
+  if ((bubble?.follow_motion || motionPath.length > 0) && !keyframes.some((point) => point.offset_ms === finishOffsetMs)) {
+    const finishPoint = popupBubbleMotionPointAtOffset(motionPath, finishOffsetMs, basePoint);
+    keyframes.push({
+      offset_ms: finishOffsetMs,
+      x: finishPoint.x,
+      y: finishPoint.y,
+      easing: motionPath[motionPath.length - 1]?.easing || "linear",
+      base: false,
+      synthesized: true,
+    });
+  }
+  return keyframes;
 }
 
-function popupMotionGuideStepName(index) {
-  return `Step ${Math.max(0, index)}`;
+function popupMotionGuidePointRole(bubble, point) {
+  if (!point || point.base || point.offset_ms <= 0) return "start";
+  if (bubble && point.offset_ms >= Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1))) return "finish";
+  return popupMotionOffsetIsGenerated(bubble?.id, point.offset_ms) ? "generated" : "detail";
 }
 
-function popupMotionGuidePointName(point, index) {
-  return popupMotionGuideStepName(index);
+function popupMotionGuideStepName(index, point = null, bubble = null) {
+  const role = popupMotionGuidePointRole(bubble, point);
+  if (role === "start") return "Start";
+  if (role === "finish") return "Finish";
+  return `Step ${Math.max(1, index)}`;
 }
 
-function popupMotionGuidePointLabel(point, index) {
+function popupMotionGuidePointName(point, index, bubble = null) {
+  return popupMotionGuideStepName(index, point, bubble);
+}
+
+function popupMotionGuidePointLabel(point, index, bubble = null) {
   if (!point) return "";
-  if (point.base) return "Base";
-  return `@ ${precise(point.offset_ms)}s`;
+  const role = popupMotionGuidePointRole(bubble, point);
+  if (role === "start") return "@ 0.000s";
+  if (role === "finish") return `Marker end @ ${precise(point.offset_ms)}s`;
+  return `${role === "generated" ? "Auto" : "Detail"} @ ${precise(point.offset_ms)}s`;
+}
+
+function popupMotionGuideHintText(bubble, inBetweenCount) {
+  const summary = popupMotionGenerationSummaryByBubbleId.get(bubble?.id);
+  if (summary) return summary;
+  if (inBetweenCount > 0) {
+    return "Regenerate first tries to trace the video motion and falls back to evenly spaced in-between points. Add Detail splits the largest remaining time gap.";
+  }
+  return "Select Start or Finish below, then place it on the video. Generate first tries to trace the video motion and falls back to evenly spaced in-between points. Add Detail splits the largest remaining time gap.";
 }
 
 function selectedPopupMotionPoint(bubble) {
@@ -4025,26 +4138,6 @@ function selectedPopupMotionPoint(bubble) {
     ? selectedPopupKeyframeOffsetMs
     : 0;
   return popupKeyframePoint(bubble, selectedOffset);
-}
-
-function nextPopupBubbleKeyframeOffset(bubble, requestedOffsetMs) {
-  const normalizedBubble = normalizePopupBubble(bubble);
-  const durationMs = Math.max(1, normalizedBubble.duration_ms);
-  const existingOffsets = new Set(popupBubbleMotionPath(normalizedBubble).map((point) => point.offset_ms));
-  const frameStepMs = Math.max(1, Math.round(primaryFrameDurationMs()) || 1);
-  const quantizedOffsetMs = Math.max(
-    1,
-    Math.round((Math.max(1, Number(requestedOffsetMs) || 1) / frameStepMs)) * frameStepMs,
-  );
-  let offsetMs = clamp(quantizedOffsetMs, 1, durationMs);
-  if (!existingOffsets.has(offsetMs)) return offsetMs;
-  let candidate = offsetMs;
-  while (candidate <= durationMs && existingOffsets.has(candidate)) candidate += frameStepMs;
-  if (candidate <= durationMs && !existingOffsets.has(candidate)) return candidate;
-  candidate = offsetMs - frameStepMs;
-  while (candidate >= 1 && existingOffsets.has(candidate)) candidate -= frameStepMs;
-  if (candidate >= 1 && !existingOffsets.has(candidate)) return candidate;
-  return null;
 }
 
 function popupKeyframePoint(bubble, offsetMs) {
@@ -4057,6 +4150,7 @@ function popupKeyframePoint(bubble, offsetMs) {
       base: Boolean(keyframe.base),
       offset_ms: keyframe.offset_ms,
       easing: popupKeyframeEasing(keyframe.easing),
+      synthesized: Boolean(keyframe.synthesized),
     };
   }
   const fallbackPoint = popupBubblePoint(bubble, popupBubbleEffectiveTimeMs(bubble) + normalizedOffset);
@@ -4066,7 +4160,244 @@ function popupKeyframePoint(bubble, offsetMs) {
     base: normalizedOffset <= 0,
     offset_ms: normalizedOffset,
     easing: "linear",
+    synthesized: false,
   };
+}
+
+function popupMotionDistancePx(startPoint, finishPoint) {
+  const width = Math.max(1, Number($("primary-video")?.videoWidth || state?.project?.primary_video?.width || 1920) || 1920);
+  const height = Math.max(1, Number($("primary-video")?.videoHeight || state?.project?.primary_video?.height || 1080) || 1080);
+  return Math.hypot((finishPoint.x - startPoint.x) * width, (finishPoint.y - startPoint.y) * height);
+}
+
+function popupMotionFrameDurationMs() {
+  const frameDurationMs = primaryFrameDurationMs();
+  return frameDurationMs > 0 ? frameDurationMs : (1000 / POPUP_MOTION_REFERENCE_FPS);
+}
+
+function popupMotionSuggestedInBetweenCount(bubble, finishOffsetMs, startPoint, finishPoint) {
+  const frameDurationMs = popupMotionFrameDurationMs();
+  const frameCount = Math.max(1, Math.ceil(finishOffsetMs / frameDurationMs));
+  const distancePx = popupMotionDistancePx(startPoint, finishPoint);
+  const bubbleSize = resolvedPopupBubbleSize(bubble);
+  const sizeWeight = bubble?.content_type === "image" || bubble?.content_type === "text_image"
+    ? 1.12
+    : clampNumber(Math.max(bubbleSize.width || 0, bubbleSize.height || 0) / 320, 1, 1.2);
+  const hasMeaningfulTravel = distancePx >= 8;
+  if (!hasMeaningfulTravel) {
+    return {
+      count: 0,
+      frameCount,
+      distancePx: Math.round(distancePx),
+    };
+  }
+  const timeTarget = Math.max(0, Math.floor((frameCount - 4) / POPUP_MOTION_FRAME_BUDGET_PER_POINT));
+  const travelTarget = Math.max(0, Math.floor(distancePx / POPUP_MOTION_TRAVEL_PX_PER_POINT));
+  let targetCount = Math.max(timeTarget, travelTarget);
+  const maxCount = Math.min(POPUP_MOTION_MAX_AUTO_POINTS, Math.max(0, Math.round(Number(finishOffsetMs) || 0) - 1));
+  let count = clamp(Math.round(targetCount * sizeWeight), 0, maxCount);
+  if (count === 0 && maxCount > 0) count = 1;
+  return {
+    count,
+    frameCount,
+    distancePx: Math.round(distancePx),
+  };
+}
+
+function popupMotionAutoOffsets(finishOffsetMs, count) {
+  const upperBound = Math.max(1, Math.round(Number(finishOffsetMs) || 0) - 1);
+  if (count <= 0 || upperBound < 1) return [];
+  const usedOffsets = new Set();
+  const offsets = [];
+  for (let index = 1; index <= count; index += 1) {
+    const ratio = index / (count + 1);
+    let candidate = clamp(Math.round(finishOffsetMs * ratio), 1, upperBound);
+    let forward = candidate;
+    while (forward <= upperBound && usedOffsets.has(forward)) forward += 1;
+    if (forward <= upperBound && !usedOffsets.has(forward)) {
+      candidate = forward;
+    } else {
+      let backward = candidate - 1;
+      while (backward >= 1 && usedOffsets.has(backward)) backward -= 1;
+      if (backward < 1 || usedOffsets.has(backward)) continue;
+      candidate = backward;
+    }
+    usedOffsets.add(candidate);
+    offsets.push(candidate);
+  }
+  return offsets.sort((left, right) => left - right);
+}
+
+function popupMotionNearestFreeOffset(targetOffsetMs, minOffsetMs, maxOffsetMs, usedOffsets) {
+  const target = clamp(Math.round(Number(targetOffsetMs) || 0), minOffsetMs, maxOffsetMs);
+  if (!usedOffsets.has(target)) return target;
+  for (let distance = 1; distance <= (maxOffsetMs - minOffsetMs); distance += 1) {
+    const backward = target - distance;
+    if (backward >= minOffsetMs && !usedOffsets.has(backward)) return backward;
+    const forward = target + distance;
+    if (forward <= maxOffsetMs && !usedOffsets.has(forward)) return forward;
+  }
+  return null;
+}
+
+function popupMotionNextDetailOffsetMs(bubble) {
+  const keyframes = popupBubbleKeyframes(bubble)
+    .map((point) => Math.max(0, Math.round(Number(point.offset_ms) || 0)))
+    .sort((left, right) => left - right);
+  if (keyframes.length <= 1) return null;
+  const usedOffsets = new Set(keyframes.filter((offsetMs) => offsetMs > 0));
+  let bestGap = null;
+  for (let index = 1; index < keyframes.length; index += 1) {
+    const left = keyframes[index - 1];
+    const right = keyframes[index];
+    if (right - left <= 1) continue;
+    const midpoint = Math.round((left + right) / 2);
+    const candidate = popupMotionNearestFreeOffset(midpoint, left + 1, right - 1, usedOffsets);
+    if (candidate === null) continue;
+    const gap = right - left;
+    if (!bestGap || gap > bestGap.size) {
+      bestGap = { size: gap, offsetMs: candidate };
+    }
+  }
+  return bestGap?.offsetMs ?? null;
+}
+
+function popupMotionSamplePointForOffset(bubble, offsetMs, finishOffsetMs, startPoint, finishPoint) {
+  const clampedOffsetMs = clamp(Math.round(Number(offsetMs) || 0), 0, finishOffsetMs);
+  const sourcePath = popupBubbleMotionPath(bubble).filter((point) => point.offset_ms <= finishOffsetMs);
+  if (clampedOffsetMs >= finishOffsetMs) return { x: finishPoint.x, y: finishPoint.y };
+  if (sourcePath.length === 0) {
+    const ratio = finishOffsetMs <= 0 ? 0 : clampedOffsetMs / finishOffsetMs;
+    return {
+      x: clamp(startPoint.x + ((finishPoint.x - startPoint.x) * ratio), 0, 1),
+      y: clamp(startPoint.y + ((finishPoint.y - startPoint.y) * ratio), 0, 1),
+    };
+  }
+  return popupBubbleMotionPointAtOffset(sourcePath, clampedOffsetMs, startPoint);
+}
+
+function popupMotionInBetweenOffsets(motionPath, finishOffsetMs) {
+  return normalizePopupMotionPath(motionPath)
+    .map((point) => Math.max(0, Math.round(Number(point.offset_ms) || 0)))
+    .filter((offsetMs) => offsetMs > 0 && offsetMs < finishOffsetMs);
+}
+
+function popupMotionAlignPathToFinish(motionPath, finishOffsetMs, startPoint, finishPoint) {
+  const normalizedPath = normalizePopupMotionPath(motionPath);
+  if (normalizedPath.length === 0) return normalizedPath;
+  const tracedFinishPoint = popupBubbleMotionPointAtOffset(normalizedPath, finishOffsetMs, startPoint);
+  const deltaX = (finishPoint?.x ?? tracedFinishPoint.x) - tracedFinishPoint.x;
+  const deltaY = (finishPoint?.y ?? tracedFinishPoint.y) - tracedFinishPoint.y;
+  if (Math.abs(deltaX) < 0.0001 && Math.abs(deltaY) < 0.0001) return normalizedPath;
+  return normalizePopupMotionPath(normalizedPath.map((point) => {
+    const ratio = finishOffsetMs <= 0 ? 1 : clamp(point.offset_ms / finishOffsetMs, 0, 1);
+    return {
+      ...point,
+      x: clamp(point.x + (deltaX * ratio), 0, 1),
+      y: clamp(point.y + (deltaY * ratio), 0, 1),
+    };
+  }));
+}
+
+function generatePopupBubbleMotionPathLinear(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return false;
+  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
+  const startPoint = popupKeyframePoint(bubble, 0);
+  const finishPoint = popupKeyframePoint(bubble, finishOffsetMs);
+  const { count, distancePx } = popupMotionSuggestedInBetweenCount(
+    bubble,
+    finishOffsetMs,
+    startPoint,
+    finishPoint,
+  );
+  const generatedOffsets = popupMotionAutoOffsets(finishOffsetMs, count);
+  const nextMotionPath = [
+    ...generatedOffsets.map((offsetMs) => {
+      const point = popupMotionSamplePointForOffset(bubble, offsetMs, finishOffsetMs, startPoint, finishPoint);
+      return {
+        offset_ms: offsetMs,
+        x: point.x,
+        y: point.y,
+        easing: "linear",
+      };
+    }),
+    {
+      offset_ms: finishOffsetMs,
+      x: finishPoint.x,
+      y: finishPoint.y,
+      easing: popupKeyframeEasing(finishPoint.easing),
+    },
+  ];
+  const nextBubble = normalizePopupBubble({
+    ...bubble,
+    follow_motion: true,
+    motion_mode: "guided",
+    motion_path: nextMotionPath,
+  });
+  const summary = count === 0
+    ? `Auto kept just Start and Finish across ${precise(finishOffsetMs)}s and ${distancePx}px of travel.`
+    : `Auto generated ${count} evenly spaced in-between point${count === 1 ? "" : "s"} across ${precise(finishOffsetMs)}s and ${distancePx}px of travel.`;
+  setPopupMotionGeneratedOffsets(bubble.id, generatedOffsets);
+  popupMotionGenerationSummaryByBubbleId.set(bubble.id, `${summary} Regenerate replaces the current in-between points.`);
+  setPopupEditorSectionExpanded("motion", true);
+  setSelectedPopupKeyframeOffset(generatedOffsets[0] ?? finishOffsetMs);
+  setPopupBubbles(popupBubbles().map((item) => item.id === bubble.id ? nextBubble : item), { commit: true, rerender: true });
+  setStatus(summary);
+  return true;
+}
+
+function generatePopupBubbleMotionPath(bubbleId) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  const video = $("primary-video");
+  if (!bubble) return false;
+  if (popupAutoTraceBubbleId) {
+    setStatus("Finish the current motion trace before generating another path.");
+    return false;
+  }
+  if (!(video instanceof HTMLVideoElement) || !state?.media?.primary_available || Number(video.videoWidth || 0) <= 0) {
+    return generatePopupBubbleMotionPathLinear(bubbleId);
+  }
+  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
+  const startPoint = popupKeyframePoint(bubble, 0);
+  const finishPoint = popupKeyframePoint(bubble, finishOffsetMs);
+  void autoTracePopupBubbleMotion(bubbleId)
+    .then((traced) => {
+      if (!traced) {
+        generatePopupBubbleMotionPathLinear(bubbleId);
+        return;
+      }
+      const tracedBubble = popupBubbles().find((item) => item.id === bubbleId);
+      if (!tracedBubble) return;
+      const tracedPath = popupBubbleMotionPath(tracedBubble);
+      const alignedPath = popupMotionAlignPathToFinish(tracedPath, finishOffsetMs, startPoint, finishPoint);
+      const generatedOffsets = popupMotionInBetweenOffsets(alignedPath, finishOffsetMs);
+      const summary = generatedOffsets.length === 0
+        ? `Generate traced Start and Finish from the video across ${precise(finishOffsetMs)}s.`
+        : `Generate traced ${generatedOffsets.length} in-between point${generatedOffsets.length === 1 ? "" : "s"} from the video across ${precise(finishOffsetMs)}s.`;
+      setPopupMotionGeneratedOffsets(bubbleId, generatedOffsets);
+      popupMotionGenerationSummaryByBubbleId.set(bubbleId, `${summary} Regenerate replaces the current in-between points.`);
+      setPopupEditorSectionExpanded("motion", true);
+      setSelectedPopupKeyframeOffset(generatedOffsets[0] ?? finishOffsetMs);
+      const pathChanged = JSON.stringify(alignedPath) !== JSON.stringify(tracedPath);
+      if (pathChanged) {
+        const nextBubble = normalizePopupBubble({
+          ...tracedBubble,
+          follow_motion: true,
+          motion_mode: "guided",
+          motion_path: alignedPath,
+        });
+        setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
+      } else {
+        renderPopupEditors();
+        renderLiveOverlay();
+      }
+      setStatus(summary);
+    })
+    .catch(() => {
+      generatePopupBubbleMotionPathLinear(bubbleId);
+    });
+  return true;
 }
 
 function syncSelectedPopupKeyframeOffset(bubble) {
@@ -4084,38 +4415,45 @@ function setSelectedPopupKeyframeOffset(offsetMs) {
 function addPopupBubbleKeyframeAtPlayhead(bubbleId) {
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return false;
-  const requestedOffsetMs = clamp(
-    currentPrimaryVideoPositionMs() - popupBubbleEffectiveTimeMs(bubble),
-    0,
-    Math.max(1, bubble.duration_ms),
-  );
-  const offsetMs = nextPopupBubbleKeyframeOffset(bubble, requestedOffsetMs);
-  if (offsetMs === null) {
-    setStatus("No room for another motion step at this marker duration.");
+  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
+  if (finishOffsetMs <= 1) {
+    setStatus("This marker is too short for an in-between detail step.");
     return false;
   }
+  const offsetMs = popupMotionNextDetailOffsetMs(bubble);
+  if (offsetMs === null) {
+    setStatus("No room for another detail point between the existing motion points.");
+    return false;
+  }
+  const startPoint = popupKeyframePoint(bubble, 0);
+  const finishPoint = popupKeyframePoint(bubble, finishOffsetMs);
+  const sampledPoint = popupMotionSamplePointForOffset(bubble, offsetMs, finishOffsetMs, startPoint, finishPoint);
   const nextBubble = updatePopupBubbleMotionPoint(
     normalizePopupBubble({ ...bubble, follow_motion: true }),
     offsetMs,
-    0.5,
-    0.5,
+    sampledPoint.x,
+    sampledPoint.y,
   );
   setPopupEditorSectionExpanded("motion", true);
   setSelectedPopupKeyframeOffset(offsetMs);
+  setPopupMotionGeneratedOffsets(bubble.id, [...popupMotionGeneratedOffsetsForBubbleId(bubble.id)].filter((value) => value !== offsetMs));
   setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
   seekPopupBubbleMotionPoint(bubbleId, offsetMs);
   return true;
 }
 
 function deletePopupBubbleKeyframe(bubbleId, offsetMs) {
+  const bubble = popupBubbles().find((item) => item.id === bubbleId);
+  if (!bubble) return false;
   const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
-  if (normalizedOffset <= 0) return false;
+  if (normalizedOffset <= 0 || normalizedOffset >= Math.max(1, bubble.duration_ms)) return false;
   const nextBubbles = popupBubbles().map((bubble) => bubble.id === bubbleId
     ? normalizePopupBubble({
         ...bubble,
         motion_path: popupBubbleMotionPath(bubble).filter((point) => point.offset_ms !== normalizedOffset),
       })
     : bubble);
+  setPopupMotionGeneratedOffsets(bubbleId, [...popupMotionGeneratedOffsetsForBubbleId(bubbleId)].filter((value) => value !== normalizedOffset));
   setSelectedPopupKeyframeOffset(0);
   setPopupBubbles(nextBubbles, { commit: true, rerender: true });
   return true;
@@ -4155,6 +4493,8 @@ function copyPopupBubbleMotionFromPrevious(bubbleId) {
   setPopupEditorSectionExpanded("motion", true);
   setSelectedPopupKeyframeOffset(popupBubbleMotionPath(nextTarget)[0]?.offset_ms ?? 0);
   setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId ? nextTarget : bubble), { commit: true, rerender: true });
+  copyPopupMotionUiState(source.id, [bubbleId]);
+  renderPopupEditors();
   return true;
 }
 
@@ -4178,6 +4518,8 @@ function applyPopupBubbleMotionToVisibleShotLinked(bubbleId) {
         motion_path: sourceMotion.map((point) => ({ ...point })),
       })
     : bubble), { commit: true, rerender: true });
+  copyPopupMotionUiState(bubbleId, [...targetIds]);
+  renderPopupEditors();
   setStatus(`Applied motion path to ${targetIds.size} shot-linked popup${targetIds.size === 1 ? "" : "s"}.`);
   return true;
 }
@@ -4570,6 +4912,8 @@ function renderPopupBubbleMotionGuide(card, bubble) {
   const guidedList = card.querySelector('[data-popup-guided-point-list]');
   const stepCount = card.querySelector('[data-popup-motion-step-count]');
   const selectedLabel = card.querySelector('[data-popup-motion-selected-step]');
+  const generateButton = card.querySelector('[data-popup-action="generate_motion_path"]');
+  const summary = card.querySelector('[data-popup-motion-summary]');
   const prevButton = card.querySelector('[data-popup-action="prev_motion_step"]');
   const nextButton = card.querySelector('[data-popup-action="next_motion_step"]');
   const removeButton = card.querySelector('[data-popup-action="remove_motion_step"]');
@@ -4579,26 +4923,39 @@ function renderPopupBubbleMotionGuide(card, bubble) {
   if (popupBubbleMotionUiMode(bubble) === "fixed") return;
   syncSelectedPopupKeyframeOffset(bubble);
   const keyframes = popupBubbleKeyframes(bubble);
+  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
   const selectedIndex = keyframes.findIndex((point) => point.offset_ms === selectedPopupKeyframeOffsetMs);
   const selectedPoint = keyframes[selectedIndex >= 0 ? selectedIndex : 0] || keyframes[0] || null;
+  const inBetweenCount = keyframes.filter((point) => point.offset_ms > 0 && point.offset_ms < finishOffsetMs).length;
   if (stepCount instanceof HTMLElement) {
-    const authoredSteps = Math.max(0, keyframes.length - 1);
-    stepCount.textContent = authoredSteps === 0 ? "No steps yet" : `${authoredSteps} step${authoredSteps === 1 ? "" : "s"}`;
+    stepCount.textContent = `Finish @ ${precise(finishOffsetMs)}s • ${inBetweenCount} in-between point${inBetweenCount === 1 ? "" : "s"}`;
   }
   if (selectedLabel instanceof HTMLElement) {
     selectedLabel.textContent = !selectedPoint
-      ? "Selected: Step 0 (Base)"
-      : selectedPoint.base
-        ? "Selected: Step 0 (Base)"
-        : `Selected: ${popupMotionGuidePointName(selectedPoint, selectedIndex)} ${popupMotionGuidePointLabel(selectedPoint, selectedIndex)}`;
+      ? "Selected: Start"
+      : `Selected: ${popupMotionGuidePointName(selectedPoint, selectedIndex, bubble)}`;
+  }
+  if (generateButton instanceof HTMLButtonElement) {
+    generateButton.textContent = popupMotionGenerationSummaryByBubbleId.has(bubble.id) ? "Regenerate" : "Generate";
+  }
+  if (summary instanceof HTMLElement) {
+    summary.textContent = popupMotionGuideHintText(bubble, inBetweenCount);
   }
   if (prevButton instanceof HTMLButtonElement) prevButton.disabled = keyframes.length <= 1 || selectedIndex <= 0;
   if (nextButton instanceof HTMLButtonElement) nextButton.disabled = keyframes.length <= 1 || selectedIndex < 0 || selectedIndex >= keyframes.length - 1;
-  if (removeButton instanceof HTMLButtonElement) removeButton.disabled = !selectedPoint || selectedPoint.offset_ms <= 0;
+  if (removeButton instanceof HTMLButtonElement) removeButton.disabled = !selectedPoint || selectedPoint.offset_ms <= 0 || selectedPoint.offset_ms >= finishOffsetMs;
   if (clearButton instanceof HTMLButtonElement) clearButton.disabled = popupBubbleMotionPath(bubble).length === 0;
   keyframes.forEach((point, index) => {
-    const pointName = popupMotionGuidePointName(point, index);
-    const pointLabel = popupMotionGuidePointLabel(point, index);
+    const role = popupMotionGuidePointRole(bubble, point);
+    const pointName = popupMotionGuidePointName(point, index, bubble);
+    const pointLabel = popupMotionGuidePointLabel(point, index, bubble);
+    const pointKind = role === "generated"
+      ? "Auto"
+      : role === "detail"
+        ? "Detail"
+        : role === "finish"
+          ? "Finish"
+          : "Start";
     const selectPoint = ({ seek = true, rerender = true } = {}) => {
       selectedPopupBubbleId = bubble.id;
       setSelectedPopupKeyframeOffset(point.offset_ms);
@@ -4609,10 +4966,17 @@ function renderPopupBubbleMotionGuide(card, bubble) {
     const row = document.createElement("div");
     row.className = "popup-motion-point-row-guided";
     row.classList.toggle("selected", point.offset_ms === selectedPopupKeyframeOffsetMs);
+    row.classList.toggle("generated", role === "generated");
+    row.classList.toggle("detail", role === "detail");
+    row.classList.toggle("finish", role === "finish");
+    row.classList.toggle("start", role === "start");
     row.dataset.popupKeyframeOffset = String(point.offset_ms);
     row.innerHTML = `
       <button type="button" class="popup-motion-point-jump" data-popup-motion-seek="true">${pointName}</button>
-      <span class="popup-motion-point-label">${pointLabel}</span>
+      <div class="popup-motion-point-meta">
+        <span class="popup-motion-point-label">${pointLabel}</span>
+        <span class="popup-motion-point-kind popup-motion-point-kind-${role}">${pointKind}</span>
+      </div>
       <div class="popup-motion-point-fields">
         <label class="popup-motion-axis-field">X
           <input data-popup-motion-field="x" type="number" min="0" max="1" step="0.0001" />
@@ -4765,19 +5129,20 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
         <label class="check-row popup-motion-toggle"><input data-popup-field="follow_motion" type="checkbox" /> Enable Motion</label>
         <section class="popup-motion-guide" data-popup-motion-mode="guided" hidden>
           <div class="popup-motion-workflow-header">
-            <span data-popup-motion-step-count>No steps yet</span>
-            <span data-popup-motion-selected-step>Selected: Step 0 (Base)</span>
+            <span data-popup-motion-step-count>Finish @ ${precise(bubble.duration_ms)}s • 0 in-between points</span>
+            <span data-popup-motion-selected-step>Selected: Start</span>
           </div>
           <div class="popup-motion-actions">
             <div class="popup-motion-action-grid">
-              <button type="button" data-popup-action="add_motion_step">Add Step</button>
-              <button type="button" data-popup-action="prev_motion_step">Previous Step</button>
-              <button type="button" data-popup-action="next_motion_step">Next Step</button>
-              <button type="button" data-popup-action="remove_motion_step">Remove Step</button>
+              <button type="button" data-popup-action="generate_motion_path">Generate</button>
+              <button type="button" data-popup-action="add_motion_step">Add Detail</button>
+              <button type="button" data-popup-action="prev_motion_step">Previous Point</button>
+              <button type="button" data-popup-action="next_motion_step">Next Point</button>
+              <button type="button" data-popup-action="remove_motion_step">Remove Detail</button>
+              <button type="button" class="danger-button" data-popup-action="clear_motion_path">Clear path</button>
             </div>
-            <button type="button" class="danger-button" data-popup-action="clear_motion_path">Clear path</button>
           </div>
-          <p class="popup-motion-workflow-hint">Play to the next position, then add a step.</p>
+          <p class="popup-motion-workflow-hint" data-popup-motion-summary>Select Start or Finish below, then place it on the video. Generate first tries to trace the video motion and falls back to evenly spaced in-between points. Add Detail splits the largest remaining time gap.</p>
           <div class="popup-motion-path-list" data-popup-guided-point-list></div>
         </section>
       </section>
@@ -4990,6 +5355,11 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
     event.stopPropagation();
     clearPopupBubbleMotionPath(bubble.id);
   });
+  card.querySelector('[data-popup-action="generate_motion_path"]')?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    generatePopupBubbleMotionPath(bubble.id);
+  });
   card.querySelector('[data-popup-action="add_motion_step"]')?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -5169,7 +5539,9 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
     editSelectedButton.disabled = false;
     const expanded = markersWorkbenchShown();
     editSelectedButton.textContent = expanded ? "Collapse" : "Edit";
-    editSelectedButton.title = expanded ? "Close the marker editor" : "Open the selected marker in the workbench";
+    editSelectedButton.title = expanded
+      ? "Close the marker editor"
+      : (hasSelectedBubble ? "Open the selected marker in the workbench" : "Open the marker workbench");
     editSelectedButton.setAttribute("aria-label", editSelectedButton.title);
   }
   const selectedEditorPanel = $("popup-selected-editor-panel");
@@ -5271,21 +5643,18 @@ function openSelectedPopupEditor({ focus = false } = {}) {
   setMarkersExpanded(true);
   if (focus) {
     window.requestAnimationFrame(() => {
-      const firstInput = document.querySelector("#markers-workbench-editor input, #markers-workbench-editor textarea, #markers-workbench-editor select");
-      if (firstInput instanceof HTMLElement) firstInput.focus();
+      const focusTarget = document.querySelector("#markers-workbench-editor input, #markers-workbench-editor textarea, #markers-workbench-editor select, #markers-workbench-list .popup-marker-select")
+        || $("popup-add-bubble-workbench");
+      if (focusTarget instanceof HTMLElement) focusTarget.focus();
     });
   }
   return true;
 }
 
 function toggleSelectedPopupEditor({ focus = false } = {}) {
-  const bubble = selectedPopupBubble();
-  if (!bubble) {
-    setStatus("Select a marker before editing it.");
-    return false;
-  }
   if (markersWorkbenchShown()) {
     setMarkersExpanded(false);
+    restorePopupWorkbenchLayout();
     return true;
   }
   return openSelectedPopupEditor({ focus });
@@ -5318,17 +5687,12 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
       ? popupBubbleSummaryText(selected, Math.max(0, allBubbles.findIndex((bubble) => bubble.id === selected.id)))
       : (hasBubbles ? "No marker selected." : "Nothing to edit yet.");
   }
-  ["popup-prev-workbench", "popup-next-workbench", "popup-play-window-workbench", "popup-loop-window-workbench"].forEach((id) => {
+  ["popup-prev-workbench", "popup-next-workbench"].forEach((id) => {
     const button = $(id);
-    if (button instanceof HTMLButtonElement) button.disabled = !hasBubbles || (id.includes("window") && !hasSelectedBubble);
+    if (button instanceof HTMLButtonElement) button.disabled = !hasBubbles;
   });
   const addSelectedShotButton = $("popup-add-selected-shot-workbench");
   if (addSelectedShotButton instanceof HTMLButtonElement) addSelectedShotButton.disabled = !selectedShotId;
-  const loopButton = $("popup-loop-window-workbench");
-  if (loopButton instanceof HTMLButtonElement) {
-    loopButton.classList.toggle("active", Boolean(popupPlaybackWindow?.loop));
-    loopButton.textContent = popupPlaybackWindow?.loop ? "Stop Loop" : "Loop";
-  }
   if (!(list instanceof HTMLElement) || !(editor instanceof HTMLElement)) return;
   withPreservedScrollState([list, editor], () => {
     list.innerHTML = "";
@@ -5381,43 +5745,6 @@ function stepShotLinkedPopupBubble(direction) {
   const currentIndex = bubbles.findIndex((bubble) => bubble.id === current?.id);
   const nextIndex = currentIndex < 0 ? 0 : clamp(currentIndex + direction, 0, bubbles.length - 1);
   return selectPopupBubble(bubbles[nextIndex].id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
-}
-
-function playSelectedPopupWindow({ loop = false } = {}) {
-  const bubble = selectedPopupBubble() || sortedPopupBubblesForTimeline(filteredPopupBubbles())[0] || null;
-  const video = $("primary-video");
-  if (!bubble || !(video instanceof HTMLVideoElement) || !state?.media?.primary_available) {
-    setStatus("Select a PopUp bubble with loaded media before playing its window.");
-    return false;
-  }
-  const { startMs, endMs } = popupBubbleVisibleWindow(bubble);
-  popupPlaybackWindow = { bubbleId: bubble.id, startMs, endMs, loop };
-  selectPopupBubble(bubble.id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
-  const playResult = video.play?.();
-  if (playResult?.catch) playResult.catch(() => setStatus("Browser blocked playback until the video is clicked."));
-  return true;
-}
-
-function syncPopupPlaybackWindow() {
-  if (!popupPlaybackWindow) return;
-  const video = $("primary-video");
-  if (!(video instanceof HTMLVideoElement)) {
-    popupPlaybackWindow = null;
-    return;
-  }
-  const currentMs = currentPrimaryVideoPositionMs();
-  if (currentMs < popupPlaybackWindow.startMs - 250) return;
-  if (currentMs < popupPlaybackWindow.endMs) return;
-  if (popupPlaybackWindow.loop) {
-    seekPrimaryVideoToTimeMs(popupPlaybackWindow.startMs);
-    if (video.paused) {
-      const playResult = video.play?.();
-      if (playResult?.catch) playResult.catch(() => {});
-    }
-    return;
-  }
-  video.pause();
-  popupPlaybackWindow = null;
 }
 
 function renderPopupEditors() {
@@ -5543,6 +5870,49 @@ function maybeApplyRecommendedLayout({ force = false } = {}) {
   return changed;
 }
 
+function popupWorkbenchTargetHeight(viewportHeight = layoutViewportHeight()) {
+  const minimumHeight = 112;
+  const maximumHeight = Math.max(minimumHeight, viewportHeight * 0.42);
+  const fallbackHeight = clamp(layoutSizes.waveformHeight, minimumHeight, maximumHeight);
+  return clamp(
+    Math.round(Number(popupWorkbenchHeight ?? fallbackHeight) || fallbackHeight),
+    minimumHeight,
+    maximumHeight,
+  );
+}
+
+function capturePopupWorkbenchRestoreState() {
+  if (popupWorkbenchRestoreState) return popupWorkbenchRestoreState;
+  const root = $("cockpit-root");
+  popupWorkbenchRestoreState = {
+    waveformExpanded: Boolean(root?.classList.contains("waveform-expanded")),
+    waveformHeight: layoutSizes.waveformHeight,
+    waveformHeightPinned: Boolean(layoutSizePinned.waveformHeight),
+  };
+  popupWorkbenchHeight = layoutSizes.waveformHeight;
+  return popupWorkbenchRestoreState;
+}
+
+function restorePopupWorkbenchLayout({ persistUiState = true, restoreWaveformExpanded = true } = {}) {
+  const restoreState = popupWorkbenchRestoreState;
+  popupWorkbenchRestoreState = null;
+  popupWorkbenchHeight = null;
+  if (!restoreState) {
+    scheduleReviewStageRestore();
+    return;
+  }
+  layoutSizes.waveformHeight = restoreState.waveformHeight;
+  layoutSizePinned.waveformHeight = restoreState.waveformHeightPinned;
+  applyLayoutState();
+  if (restoreWaveformExpanded && restoreState.waveformExpanded) {
+    setWaveformExpanded(true, { persistUiState });
+    return;
+  }
+  syncLocalProjectUiState();
+  if (persistUiState) scheduleProjectUiStateApply();
+  scheduleReviewStageRestore();
+}
+
 function capturePointer(target, pointerId) {
   if (!target || typeof target.setPointerCapture !== "function") return;
   try {
@@ -5572,6 +5942,7 @@ function applyLayoutState() {
   setCssPixels("--rail-width", railCollapsed ? 48 : layoutSizes.railWidth);
   setCssPixels("--inspector-width", layoutSizes.inspectorWidth);
   setCssPixels("--waveform-height", layoutSizes.waveformHeight);
+  setCssPixels("--markers-workbench-height", popupWorkbenchTargetHeight(viewportHeight));
   const shell = document.querySelector(".cockpit-shell");
   if (shell) {
     shell.classList.toggle("layout-locked", layoutLocked);
@@ -5665,7 +6036,14 @@ function moveLayoutResize(event) {
     const stack = document.querySelector(".review-stack");
     const rect = stack?.getBoundingClientRect();
     if (rect) {
-      previewLayoutSize("waveformHeight", clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48)));
+      const nextHeight = clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48));
+      if (markersWorkbenchShown()) {
+        popupWorkbenchHeight = nextHeight;
+        applyLayoutState();
+        scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
+      } else {
+        previewLayoutSize("waveformHeight", nextHeight);
+      }
     }
   }
 }
@@ -5682,7 +6060,13 @@ function endLayoutResize(event) {
   releasePointer(activeResize.target, activeResize.pointerId);
   activeResize = null;
   document.body.classList.remove("resizing-layout");
-  if (sizeKey) persistLayoutSize(sizeKey, layoutSizes[sizeKey], { renderWaveformNow: false });
+  if (sizeKey) {
+    if (kind === "waveformHeight" && markersWorkbenchShown()) {
+      applyLayoutState();
+    } else {
+      persistLayoutSize(sizeKey, layoutSizes[sizeKey], { renderWaveformNow: false });
+    }
+  }
   activity("layout.resize.commit", { kind, sizes: layoutSizes });
   flushInteractionPreviewRender();
   flushQueuedProjectUiStateApply();
@@ -5745,7 +6129,8 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     popupFloatingEditor.innerHTML = "";
   }
   if (tool !== "markers") {
-    root?.classList.remove("markers-expanded");
+    if (markersWorkbenchShown()) setMarkersExpanded(false, { persistUiState: false });
+    if (popupWorkbenchRestoreState) restorePopupWorkbenchLayout({ persistUiState: false, restoreWaveformExpanded: false });
     const markersWorkbench = $("markers-workbench");
     if (markersWorkbench instanceof HTMLElement) markersWorkbench.hidden = true;
   }
@@ -6053,6 +6438,8 @@ function resetLocalProjectView() {
   exportDraft = {};
   projectDetailsDraft = { name: null, description: null };
   exportLogLines = [];
+  popupGeneratedMotionOffsetsByBubbleId = new Map();
+  popupMotionGenerationSummaryByBubbleId = new Map();
   popupEditorVisible = false;
   popupEditorCollapsed = false;
   metricsSectionExpansion = new Map([
@@ -8315,6 +8702,8 @@ function setMarkersExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   const nextExpanded = Boolean(expanded);
   const markersActive = activeTool === "markers";
+  const wasExpanded = Boolean(root?.classList.contains("markers-expanded"));
+  if (nextExpanded && markersActive && !wasExpanded) capturePopupWorkbenchRestoreState();
   if (nextExpanded && markersActive) cancelOverlayDragInteractions("markers.editing");
   root?.classList.toggle("markers-expanded", nextExpanded && markersActive);
   if (nextExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded", "scoring-expanded");
@@ -8798,6 +9187,7 @@ function buildMetricsRows() {
     const adjustmentMs = numericMs(row.adjustment_ms) ?? 0;
     const finalTimeMs = splitRowFinalTimeMs(row);
     const finalSplitMs = numericMs(row.split_ms);
+    const shotmlCumulativeMs = splitRowShotMLCumulativeMs(row);
     const rawDeltaMs = importedRawMs === null || finalTimeMs === null || row.shot_id !== finalShotRowId
       ? null
       : finalTimeMs - importedRawMs;
@@ -8809,13 +9199,24 @@ function buildMetricsRows() {
       shotNumber: row.shot_number,
       label: splitRowEntryLabel(row),
       intervalLabel: splitRowIntervalLabel(row),
+      intervalKind: String(row.interval_kind || ""),
       absoluteMs,
       splitMs: finalSplitMs,
       shotmlSplitMs,
       adjustmentMs,
       sequenceTotalMs: splitRowSequenceTotalMs(row),
       cumulativeMs: finalTimeMs ?? numericMs(row.cumulative_ms) ?? fallbackCumulativeMs,
+      shotmlCumulativeMs,
       actionSummary: splitRowActionSummary(row),
+      actions: splitRowActions(row).map((action) => ({
+        eventId: action.event_id || null,
+        kind: action.kind || "",
+        label: action.label || "",
+        placement: action.placement || "interval",
+        synthetic: Boolean(action.synthetic),
+        resetsSequence: Boolean(action.resets_sequence),
+      })),
+      resetsSequence: Boolean(row.resets_sequence),
       scoreLetter: segment?.score_letter || row.score_letter || defaultScore,
       penaltyText: formatPenaltyCountsText(penaltyCounts),
       confidence,
@@ -8912,6 +9313,165 @@ function metricsPercentValue(value) {
   return Number((numeric * 100).toFixed(1));
 }
 
+function metricsMedian(values = []) {
+  const sorted = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+    .sort((left, right) => left - right);
+  if (sorted.length === 0) return null;
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[middle];
+  return Number((((sorted[middle - 1] + sorted[middle]) / 2)).toFixed(3));
+}
+
+function metricsCategoryDefinition(id) {
+  return {
+    first_shot: { id: "first_shot", label: "First shot", shortLabel: "First", color: "#f59e0b" },
+    shooting_interval: { id: "shooting_interval", label: "Shooting interval", shortLabel: "Shoot", color: "#39d06f" },
+    transition: { id: "transition", label: "Transition / movement", shortLabel: "Move", color: "#4ea7ff" },
+    reload_manipulation: { id: "reload_manipulation", label: "Reload / manipulation", shortLabel: "Reload", color: "#ef4444" },
+    dead_time: { id: "dead_time", label: "Dead time", shortLabel: "Dead", color: "#f97316" },
+    unknown: { id: "unknown", label: "Unknown", shortLabel: "Unknown", color: "#a855f7" },
+  }[id] || { id: "unknown", label: "Unknown", shortLabel: "Unknown", color: "#a855f7" };
+}
+
+function metricsIntervalText(entry) {
+  return [
+    String(entry.intervalKind || ""),
+    String(entry.intervalLabel || ""),
+    String(entry.actionSummary || ""),
+    ...(entry.actions || []).map((action) => `${action.kind || ""} ${action.label || ""}`),
+  ]
+    .join(" ")
+    .trim()
+    .toLowerCase();
+}
+
+function metricsMeaningfulIntervalLabel(entry) {
+  const label = String(entry.intervalLabel || "").trim();
+  if (!label || ["Draw", "Split", "Start"].includes(label)) return "";
+  return label;
+}
+
+function metricsCadenceBaselineMs(entries = []) {
+  const candidates = entries
+    .filter((entry) => Number(entry.shotNumber || 0) > 1)
+    .filter((entry) => numericMs(entry.splitMs) !== null)
+    .filter((entry) => {
+      const kind = String(entry.intervalKind || "").trim().toLowerCase();
+      return !["reload", "malfunction", "custom_label"].includes(kind);
+    })
+    .map((entry) => Number(entry.splitMs))
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right);
+  const sample = candidates.slice(0, Math.max(1, Math.ceil(candidates.length * 0.6)));
+  const baseline = metricsMedian(sample.length > 0 ? sample : candidates);
+  return baseline === null ? 350 : Math.max(120, baseline);
+}
+
+function metricsIntervalClassification(entry, { cadenceBaselineMs = 350 } = {}) {
+  const kind = String(entry.intervalKind || "").trim().toLowerCase();
+  const labelText = metricsIntervalText(entry);
+  const splitMs = numericMs(entry.splitMs);
+  const transitionThresholdMs = Math.max(360, cadenceBaselineMs * 1.75);
+  const deadTimeThresholdMs = Math.max(900, cadenceBaselineMs * 4.25);
+
+  if (Number(entry.shotNumber || 0) === 1 || kind === "draw" || kind === "start") {
+    return metricsCategoryDefinition("first_shot");
+  }
+  if (
+    kind === "reload"
+    || kind === "malfunction"
+    || /(reload|malfunction|clear|rack|stoppage|jam|manip|mag\b)/.test(labelText)
+  ) {
+    return metricsCategoryDefinition("reload_manipulation");
+  }
+  if (/(transition|move|movement|position|entry|exit|cross|sprint|step|turn)/.test(labelText)) {
+    return metricsCategoryDefinition("transition");
+  }
+  if (splitMs !== null && splitMs >= deadTimeThresholdMs) {
+    return metricsCategoryDefinition("dead_time");
+  }
+  if (kind === "custom_label") {
+    return metricsCategoryDefinition("unknown");
+  }
+  if (splitMs !== null && splitMs <= transitionThresholdMs) {
+    return metricsCategoryDefinition("shooting_interval");
+  }
+  if (splitMs !== null) {
+    return metricsCategoryDefinition("transition");
+  }
+  return metricsCategoryDefinition("unknown");
+}
+
+function metricsSegmentShortLabel(label) {
+  const normalized = String(label || "").trim();
+  if (!normalized) return "Segment";
+  if (normalized.startsWith("Shooting sequence")) return normalized.replace("Shooting sequence", "Seq");
+  if (normalized === "Start / first shot") return "Start";
+  if (normalized === "Transition / movement") return "Move";
+  if (normalized === "Reload / manipulation") return "Reload";
+  if (normalized === "Dead time") return "Dead";
+  if (normalized.length <= 10) return normalized;
+  return `${normalized.slice(0, 9).trimEnd()}…`;
+}
+
+function metricsStageSegmentLabel(point, category = point.category) {
+  const customLabel = metricsMeaningfulIntervalLabel(point);
+  if (category.id === "first_shot") return "Start / first shot";
+  if (category.id === "reload_manipulation") return "Reload / manipulation";
+  if (category.id === "transition") return customLabel || "Transition / movement";
+  if (category.id === "dead_time") return customLabel || "Dead time";
+  if (category.id === "unknown") return customLabel || "Unknown";
+  return category.label;
+}
+
+function buildMetricsStageSegments(points = []) {
+  const segments = [];
+  let sequenceIndex = 0;
+  let shootingSequence = null;
+  const flushShootingSequence = () => {
+    if (!shootingSequence) return;
+    segments.push(shootingSequence);
+    shootingSequence = null;
+  };
+
+  points.forEach((point) => {
+    const durationS = Number(point.finalSplitS);
+    if (!Number.isFinite(durationS)) return;
+    if (point.category.id === "shooting_interval") {
+      if (!shootingSequence) {
+        sequenceIndex += 1;
+        shootingSequence = {
+          key: `shooting_sequence_${sequenceIndex}`,
+          label: `Shooting sequence ${sequenceIndex}`,
+          shortLabel: `Seq ${sequenceIndex}`,
+          value: 0,
+          category: metricsCategoryDefinition("shooting_interval"),
+          pairLabels: [],
+        };
+      }
+      shootingSequence.value = Number((shootingSequence.value + durationS).toFixed(3));
+      shootingSequence.pairLabels.push(point.pairLabel);
+      return;
+    }
+
+    flushShootingSequence();
+    const label = metricsStageSegmentLabel(point, point.category);
+    segments.push({
+      key: `${point.category.id}_${point.shotNumber}`,
+      label,
+      shortLabel: metricsSegmentShortLabel(label),
+      value: durationS,
+      category: point.category,
+      pairLabels: [point.pairLabel],
+    });
+  });
+
+  flushShootingSequence();
+  return segments;
+}
+
 function metricsGraphLabel(entry, fallbackShotNumber) {
   const shotNumber = entry.shotNumber || fallbackShotNumber;
   if (entry.intervalLabel) return `${entry.label} ${entry.intervalLabel}`;
@@ -8922,15 +9482,30 @@ function metricsGraphLabel(entry, fallbackShotNumber) {
 function buildMetricsGraphSeries(rows = buildMetricsRows()) {
   const shotRows = rows.filter((entry) => entry.shotId);
   if (shotRows.length === 0) return [];
-  const graphPoints = shotRows.map((entry, index) => ({
-    shotNumber: entry.shotNumber || index + 1,
-    label: metricsGraphLabel(entry, index + 1),
-    finalSplitS: metricsSecondsValue(entry.splitMs),
-    shotmlSplitS: metricsSecondsValue(entry.shotmlSplitMs),
-    runTotalS: metricsSecondsValue(entry.cumulativeMs),
-    adjustmentS: metricsSecondsValue(entry.adjustmentMs),
-    confidencePct: metricsPercentValue(entry.confidence),
-  }));
+  const cadenceBaselineMs = metricsCadenceBaselineMs(shotRows);
+  const graphPoints = shotRows.map((entry, index) => {
+    const shotNumber = entry.shotNumber || index + 1;
+    const category = metricsIntervalClassification(entry, { cadenceBaselineMs });
+    const runTotalS = metricsSecondsValue(entry.cumulativeMs);
+    const referenceRunS = metricsSecondsValue(entry.shotmlCumulativeMs);
+    return {
+      shotNumber,
+      label: metricsGraphLabel(entry, index + 1),
+      pairLabel: shotNumber === 1 ? "Start→1" : `${shotNumber - 1}→${shotNumber}`,
+      intervalKind: entry.intervalKind,
+      intervalLabel: entry.intervalLabel,
+      actionSummary: entry.actionSummary,
+      finalSplitS: metricsSecondsValue(entry.splitMs),
+      shotmlSplitS: metricsSecondsValue(entry.shotmlSplitMs),
+      runTotalS,
+      referenceRunS,
+      confidencePct: metricsPercentValue(entry.confidence),
+      category,
+      referenceDeltaS: runTotalS === null || referenceRunS === null
+        ? null
+        : Number((runTotalS - referenceRunS).toFixed(3)),
+    };
+  });
   const buildLine = (key, label, color) => ({
     key,
     label,
@@ -8939,60 +9514,149 @@ function buildMetricsGraphSeries(rows = buildMetricsRows()) {
       .filter((point) => point[key] !== null && point[key] !== undefined)
       .map((point) => ({ shotNumber: point.shotNumber, label: point.label, value: point[key] })),
   });
+  const largestGapPoint = graphPoints.reduce((largest, point) => {
+    if (!largest) return point;
+    return Number(point.finalSplitS || 0) > Number(largest.finalSplitS || 0) ? point : largest;
+  }, null);
+  const intervalBars = graphPoints
+    .filter((point) => point.shotNumber > 1 && point.finalSplitS !== null && point.finalSplitS !== undefined)
+    .map((point) => ({
+      key: point.pairLabel,
+      label: point.pairLabel,
+      shortLabel: point.pairLabel,
+      value: point.finalSplitS,
+      category: point.category,
+      detail: point.intervalLabel || point.category.label,
+      highlight: largestGapPoint?.shotNumber === point.shotNumber,
+    }));
+  const intervalMedian = metricsMedian(intervalBars.map((bar) => bar.value));
+  const stageSegments = buildMetricsStageSegments(graphPoints).map((segment, index) => ({
+    key: segment.key || `segment_${index + 1}`,
+    label: segment.label,
+    shortLabel: segment.shortLabel,
+    value: segment.value,
+    category: segment.category,
+    highlight: false,
+  }));
+  const largestStageSegment = stageSegments.reduce((largest, segment) => {
+    if (!largest) return segment;
+    return Number(segment.value || 0) > Number(largest.value || 0) ? segment : largest;
+  }, null);
+  stageSegments.forEach((segment) => {
+    if (!largestStageSegment) return;
+    segment.highlight = segment.key === largestStageSegment.key;
+  });
+  const finalPoint = graphPoints[graphPoints.length - 1] || null;
+  const largestDeltaPoint = graphPoints
+    .filter((point) => point.referenceDeltaS !== null && point.referenceDeltaS !== undefined)
+    .reduce((largest, point) => {
+      if (!largest) return point;
+      return Math.abs(Number(point.referenceDeltaS || 0)) > Math.abs(Number(largest.referenceDeltaS || 0)) ? point : largest;
+    }, null);
+  const shootingTotalS = stageSegments
+    .filter((segment) => segment.category.id === "shooting_interval")
+    .reduce((total, segment) => total + Number(segment.value || 0), 0);
+  const nonShootingTotalS = stageSegments
+    .filter((segment) => segment.category.id !== "shooting_interval")
+    .reduce((total, segment) => total + Number(segment.value || 0), 0);
+
   const graphs = [
     {
-      id: "split_trend",
-      title: "Final Split Trend",
-      subtitle: "ShotML vs adjusted split",
+      id: "shot_interval_timeline",
+      type: "timeline",
+      title: "Shot / Interval Timeline",
+      subtitle: "Start signal to last shot, with dead time made obvious",
       unit: "s",
-      lines: [
-        buildLine("finalSplitS", "Final", "#ff7b22"),
-        buildLine("shotmlSplitS", "ShotML", "#4ea7ff"),
+      points: graphPoints.map((point) => ({
+        ...point,
+        value: point.runTotalS,
+        highlight: largestGapPoint?.shotNumber === point.shotNumber,
+      })),
+      summary: [
+        { label: "Start→1", value: metricsGraphValueLabel(graphPoints[0]?.runTotalS ?? null, "s"), color: graphPoints[0]?.category?.color },
+        { label: `Largest ${largestGapPoint?.pairLabel || "gap"}`, value: metricsGraphValueLabel(largestGapPoint?.finalSplitS ?? null, "s"), color: largestGapPoint?.category?.color },
+        { label: "Last shot", value: metricsGraphValueLabel(finalPoint?.runTotalS ?? null, "s"), color: finalPoint?.category?.color },
+      ],
+      forceZeroMin: true,
+    },
+    {
+      id: "split_interval_bars",
+      type: "bars",
+      title: "Split / Interval Bar Chart",
+      subtitle: "Each shot pair shows where time was lost",
+      unit: "s",
+      bars: intervalBars,
+      summary: [
+        { label: "Median", value: metricsGraphValueLabel(intervalMedian, "s"), color: "#39d06f" },
+        { label: `Largest ${largestGapPoint?.pairLabel || "gap"}`, value: metricsGraphValueLabel(largestGapPoint?.finalSplitS ?? null, "s"), color: largestGapPoint?.category?.color },
+        { label: "Cadence ref", value: metricsGraphValueLabel(metricsSecondsValue(cadenceBaselineMs), "s"), color: "#4ea7ff" },
       ],
     },
     {
-      id: "run_total_trend",
-      title: "Run Total Trend",
-      subtitle: "Cumulative time after each shot",
+      id: "run_comparison_overlay",
+      type: "lines",
+      title: "Run Comparison Overlay",
+      subtitle: "Current cumulative time vs the ShotML reference baseline",
       unit: "s",
-      lines: [buildLine("runTotalS", "Run Total", "#39d06f")],
+      lines: [
+        buildLine("runTotalS", "Current", "#ff7b22"),
+        buildLine("referenceRunS", "ShotML Reference", "#4ea7ff"),
+      ],
+      summary: [
+        { label: "Current", value: metricsGraphValueLabel(finalPoint?.runTotalS ?? null, "s"), color: "#ff7b22" },
+        { label: "Reference", value: metricsGraphValueLabel(finalPoint?.referenceRunS ?? null, "s"), color: "#4ea7ff" },
+        { label: "Final delta", value: metricsSignedValueLabel(finalPoint?.referenceDeltaS ?? null, "s"), color: largestDeltaPoint?.referenceDeltaS !== null && largestDeltaPoint?.referenceDeltaS !== undefined ? (largestDeltaPoint.referenceDeltaS > 0 ? "#ef4444" : "#39d06f") : "#a855f7" },
+      ],
+      forceZeroMin: true,
     },
     {
-      id: "adjustment_trend",
-      title: "Adjustment Trend",
-      subtitle: "Manual timing offsets per shot",
+      id: "stage_segment_breakdown",
+      type: "bars",
+      title: "Stage Segment Breakdown",
+      subtitle: "Grouped into first shot, shooting, movement, reload, and dead time",
       unit: "s",
-      lines: [buildLine("adjustmentS", "Adjustment", "#f59e0b")],
-    },
-    {
-      id: "confidence_trend",
-      title: "Confidence Trend",
-      subtitle: "ShotML confidence by shot",
-      unit: "%",
-      lines: [buildLine("confidencePct", "Confidence", "#a855f7")],
+      bars: stageSegments,
+      summary: [
+        { label: `Largest ${largestStageSegment?.shortLabel || "segment"}`, value: metricsGraphValueLabel(largestStageSegment?.value ?? null, "s"), color: largestStageSegment?.category?.color },
+        { label: "Shooting", value: metricsGraphValueLabel(Number(shootingTotalS.toFixed(3)), "s"), color: metricsCategoryDefinition("shooting_interval").color },
+        { label: "Non-shooting", value: metricsGraphValueLabel(Number(nonShootingTotalS.toFixed(3)), "s"), color: metricsCategoryDefinition("transition").color },
+      ],
     },
   ];
   return graphs
     .map((graph) => ({
       ...graph,
-      lines: graph.lines.filter((line) => line.points.length > 0),
+      lines: Array.isArray(graph.lines)
+        ? graph.lines.filter((line) => line.points.length > 0)
+        : [],
     }))
-    .filter((graph) => graph.lines.length > 0)
-    .filter((graph) => graph.id !== "adjustment_trend" || graph.lines.some((line) => line.points.some((point) => Math.abs(point.value) > 0.0001)));
+    .filter((graph) => {
+      if (graph.type === "timeline") return Array.isArray(graph.points) && graph.points.length > 0;
+      if (graph.type === "bars") return Array.isArray(graph.bars) && graph.bars.length > 0;
+      return graph.lines.length > 0;
+    });
 }
 
 function metricsGraphValueLabel(value, unit) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
   const numeric = Number(value);
-  if (unit === "%") return `${formatNumber(numeric, 1)}%`;
-  return `${formatNumber(numeric, 3)}s`;
+  if (unit === "%") return `${numeric.toFixed(1)}%`;
+  return `${numeric.toFixed(3)}s`;
+}
+
+function metricsSignedValueLabel(value, unit) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "--";
+  const numeric = Number(value);
+  const prefix = numeric > 0 ? "+" : "";
+  if (unit === "%") return `${prefix}${numeric.toFixed(1)}%`;
+  return `${prefix}${numeric.toFixed(3)}s`;
 }
 
 function createSvgNode(tagName) {
   return document.createElementNS("http://www.w3.org/2000/svg", tagName);
 }
 
-function metricsGraphRange(lines, unit) {
+function metricsGraphRange(lines, unit, { forceZeroMin = false } = {}) {
   const values = lines.flatMap((line) => line.points.map((point) => point.value)).filter((value) => Number.isFinite(value));
   if (values.length === 0) return null;
   let min = Math.min(...values);
@@ -9000,6 +9664,9 @@ function metricsGraphRange(lines, unit) {
   if (unit === "%") {
     min = Math.min(0, min);
     max = Math.max(100, max);
+  }
+  if (forceZeroMin || (unit !== "%" && values.every((value) => value >= 0))) {
+    min = Math.min(0, min);
   }
   if (min === max) {
     const padding = min === 0 ? 1 : Math.max(0.5, Math.abs(min) * 0.15);
@@ -9009,35 +9676,26 @@ function metricsGraphRange(lines, unit) {
   return { min, max };
 }
 
-function renderMetricsGraphCard(graph, { compact = true } = {}) {
-  const card = document.createElement("article");
-  card.className = "metric-card metrics-graph-card";
-  if (!compact) card.classList.add("metrics-graph-card-wide");
-  const header = document.createElement("div");
-  header.className = "metrics-graph-header";
-  const title = document.createElement("strong");
-  title.textContent = graph.title;
-  const subtitle = document.createElement("span");
-  subtitle.className = "hint";
-  subtitle.textContent = graph.subtitle;
-  header.append(title, subtitle);
-  card.appendChild(header);
-
-  const summary = document.createElement("div");
-  summary.className = "metrics-graph-summary";
-  graph.lines.forEach((line) => {
+function metricsGraphSummaryItems(graph) {
+  if (Array.isArray(graph.summary) && graph.summary.length > 0) return graph.summary;
+  return (graph.lines || []).map((line) => {
     const lastPoint = line.points[line.points.length - 1] || null;
-    const chip = document.createElement("span");
-    chip.className = "metrics-graph-chip";
-    chip.style.setProperty("--metrics-graph-chip-color", line.color);
-    chip.textContent = `${line.label} ${metricsGraphValueLabel(lastPoint?.value ?? null, graph.unit)}`;
-    summary.appendChild(chip);
+    return {
+      label: line.label,
+      value: metricsGraphValueLabel(lastPoint?.value ?? null, graph.unit),
+      color: line.color,
+    };
   });
-  card.appendChild(summary);
+}
 
-  const range = metricsGraphRange(graph.lines, graph.unit);
-  if (!range) return card;
+function appendMetricsSvgTitle(node, text) {
+  if (!node || !text) return;
+  const title = createSvgNode("title");
+  title.textContent = text;
+  node.appendChild(title);
+}
 
+function createMetricsGraphCanvas({ compact = true } = {}) {
   const svg = createSvgNode("svg");
   svg.classList.add("metrics-graph-svg");
   svg.setAttribute("viewBox", compact ? "0 0 260 132" : "0 0 320 150");
@@ -9047,8 +9705,21 @@ function renderMetricsGraphCard(graph, { compact = true } = {}) {
   const padding = { left: 12, right: 10, top: 10, bottom: 22 };
   const plotWidth = viewWidth - padding.left - padding.right;
   const plotHeight = viewHeight - padding.top - padding.bottom;
-  const lineCount = Math.max(...graph.lines.map((line) => line.points.length));
-  const xFor = (index) => padding.left + (lineCount <= 1 ? plotWidth / 2 : (index / (lineCount - 1)) * plotWidth);
+  return { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight };
+}
+
+function shouldRenderMetricsAxisLabel(index, count, compact, highlighted = false) {
+  if (highlighted || count <= 1 || index === 0 || index === count - 1) return true;
+  const step = Math.ceil(count / (compact ? 4 : 6));
+  return step <= 1 ? true : index % step === 0;
+}
+
+function renderMetricsLineGraphSvg(graph, { compact = true } = {}) {
+  const range = metricsGraphRange(graph.lines || [], graph.unit, { forceZeroMin: graph.forceZeroMin !== false });
+  if (!range) return null;
+  const { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight } = createMetricsGraphCanvas({ compact });
+  const pointCount = Math.max(...graph.lines.map((line) => line.points.length));
+  const xFor = (index) => padding.left + (pointCount <= 1 ? plotWidth / 2 : (index / (pointCount - 1)) * plotWidth);
   const yFor = (value) => padding.top + ((range.max - value) / Math.max(0.0001, range.max - range.min)) * plotHeight;
 
   [0, 0.5, 1].forEach((ratio) => {
@@ -9074,6 +9745,7 @@ function renderMetricsGraphCard(graph, { compact = true } = {}) {
     polyline.setAttribute("stroke-linejoin", "round");
     polyline.setAttribute("stroke-linecap", "round");
     polyline.setAttribute("class", "metrics-graph-line");
+    appendMetricsSvgTitle(polyline, `${line.label}: ${line.points.map((point) => `Shot ${point.shotNumber} ${metricsGraphValueLabel(point.value, graph.unit)}`).join(" • ")}`);
     svg.appendChild(polyline);
     line.points.forEach((point, index) => {
       const dot = createSvgNode("circle");
@@ -9082,29 +9754,225 @@ function renderMetricsGraphCard(graph, { compact = true } = {}) {
       dot.setAttribute("r", compact ? "3" : "3.5");
       dot.setAttribute("fill", line.color);
       dot.setAttribute("class", "metrics-graph-dot");
+      appendMetricsSvgTitle(dot, `${line.label} • Shot ${point.shotNumber}: ${metricsGraphValueLabel(point.value, graph.unit)}`);
       svg.appendChild(dot);
     });
   });
 
-  const firstLabel = graph.lines[0]?.points[0]?.shotNumber;
-  const lastLabel = graph.lines[0]?.points[graph.lines[0].points.length - 1]?.shotNumber;
-  if (firstLabel !== undefined && lastLabel !== undefined) {
+  const firstLabel = graph.axisStartLabel || (graph.lines[0]?.points[0]?.shotNumber !== undefined ? `Shot ${graph.lines[0].points[0].shotNumber}` : "");
+  const lastPoint = graph.lines[0]?.points[graph.lines[0].points.length - 1] || null;
+  const lastLabel = graph.axisEndLabel || (lastPoint?.shotNumber !== undefined ? `Shot ${lastPoint.shotNumber}` : "");
+  if (firstLabel) {
     const firstText = createSvgNode("text");
     firstText.setAttribute("x", String(padding.left));
     firstText.setAttribute("y", String(viewHeight - 6));
     firstText.setAttribute("text-anchor", "start");
     firstText.setAttribute("class", "metrics-graph-axis-label");
-    firstText.textContent = `Shot ${firstLabel}`;
+    firstText.textContent = firstLabel;
     svg.appendChild(firstText);
+  }
+  if (lastLabel) {
     const lastText = createSvgNode("text");
     lastText.setAttribute("x", String(viewWidth - padding.right));
     lastText.setAttribute("y", String(viewHeight - 6));
     lastText.setAttribute("text-anchor", "end");
     lastText.setAttribute("class", "metrics-graph-axis-label");
-    lastText.textContent = `Shot ${lastLabel}`;
+    lastText.textContent = lastLabel;
     svg.appendChild(lastText);
   }
-  card.appendChild(svg);
+  return svg;
+}
+
+function renderMetricsTimelineGraphSvg(graph, { compact = true } = {}) {
+  const points = (graph.points || []).filter((point) => point.value !== null && point.value !== undefined);
+  if (points.length === 0) return null;
+  const { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight } = createMetricsGraphCanvas({ compact });
+  const totalValue = Math.max(...points.map((point) => Number(point.value || 0)), 0.001);
+  const baselineY = padding.top + (plotHeight / 2);
+  const xForValue = (value) => padding.left + ((Number(value || 0) / totalValue) * plotWidth);
+
+  const baseline = createSvgNode("line");
+  baseline.setAttribute("x1", String(padding.left));
+  baseline.setAttribute("x2", String(viewWidth - padding.right));
+  baseline.setAttribute("y1", String(baselineY));
+  baseline.setAttribute("y2", String(baselineY));
+  baseline.setAttribute("class", "metrics-graph-baseline");
+  svg.appendChild(baseline);
+
+  const startDot = createSvgNode("circle");
+  startDot.setAttribute("cx", String(padding.left));
+  startDot.setAttribute("cy", String(baselineY));
+  startDot.setAttribute("r", compact ? "2.5" : "3");
+  startDot.setAttribute("fill", "#f8fafc");
+  startDot.setAttribute("class", "metrics-graph-timeline-start");
+  appendMetricsSvgTitle(startDot, "Start 0.000s");
+  svg.appendChild(startDot);
+
+  let previousX = padding.left;
+  points.forEach((point, index) => {
+    const x = xForValue(point.value);
+    const segment = createSvgNode("line");
+    segment.setAttribute("x1", String(previousX));
+    segment.setAttribute("x2", String(x));
+    segment.setAttribute("y1", String(baselineY));
+    segment.setAttribute("y2", String(baselineY));
+    segment.setAttribute("stroke", point.category.color);
+    segment.setAttribute("stroke-width", point.highlight ? (compact ? "5" : "6") : (compact ? "4" : "4.5"));
+    segment.setAttribute("class", "metrics-graph-timeline-segment");
+    appendMetricsSvgTitle(segment, `${point.pairLabel} • ${metricsGraphValueLabel(point.finalSplitS, graph.unit)} • ${point.category.label}`);
+    svg.appendChild(segment);
+
+    const dot = createSvgNode("circle");
+    dot.setAttribute("cx", String(x));
+    dot.setAttribute("cy", String(baselineY));
+    dot.setAttribute("r", point.highlight ? (compact ? "4" : "4.5") : (compact ? "3.2" : "3.6"));
+    dot.setAttribute("fill", point.category.color);
+    dot.setAttribute("class", "metrics-graph-dot");
+    appendMetricsSvgTitle(dot, `Shot ${point.shotNumber} • ${metricsGraphValueLabel(point.value, graph.unit)} • ${point.category.label}`);
+    svg.appendChild(dot);
+
+    if (!compact && point.highlight) {
+      const label = createSvgNode("text");
+      label.setAttribute("x", String((previousX + x) / 2));
+      label.setAttribute("y", String(baselineY - 10));
+      label.setAttribute("text-anchor", "middle");
+      label.setAttribute("class", "metrics-graph-highlight-label");
+      label.textContent = `${point.pairLabel} ${metricsGraphValueLabel(point.finalSplitS, graph.unit)}`;
+      svg.appendChild(label);
+    }
+
+    if (!compact && shouldRenderMetricsAxisLabel(index, points.length, compact, point.highlight)) {
+      const axis = createSvgNode("text");
+      axis.setAttribute("x", String(x));
+      axis.setAttribute("y", String(baselineY + 16));
+      axis.setAttribute("text-anchor", "middle");
+      axis.setAttribute("class", "metrics-graph-axis-label");
+      axis.textContent = `S${point.shotNumber}`;
+      svg.appendChild(axis);
+    }
+
+    previousX = x;
+  });
+
+  const startText = createSvgNode("text");
+  startText.setAttribute("x", String(padding.left));
+  startText.setAttribute("y", String(viewHeight - 6));
+  startText.setAttribute("text-anchor", "start");
+  startText.setAttribute("class", "metrics-graph-axis-label");
+  startText.textContent = "Start 0.000s";
+  svg.appendChild(startText);
+
+  const finalPoint = points[points.length - 1] || null;
+  if (finalPoint) {
+    const endText = createSvgNode("text");
+    endText.setAttribute("x", String(viewWidth - padding.right));
+    endText.setAttribute("y", String(viewHeight - 6));
+    endText.setAttribute("text-anchor", "end");
+    endText.setAttribute("class", "metrics-graph-axis-label");
+    endText.textContent = `Shot ${finalPoint.shotNumber} ${metricsGraphValueLabel(finalPoint.value, graph.unit)}`;
+    svg.appendChild(endText);
+  }
+  return svg;
+}
+
+function renderMetricsBarGraphSvg(graph, { compact = true } = {}) {
+  const bars = (graph.bars || []).filter((bar) => bar.value !== null && bar.value !== undefined);
+  if (bars.length === 0) return null;
+  const { svg, viewWidth, viewHeight, padding, plotWidth, plotHeight } = createMetricsGraphCanvas({ compact });
+  const maxValue = Math.max(...bars.map((bar) => Number(bar.value || 0)), 0.001);
+  const yFor = (value) => padding.top + ((maxValue - Number(value || 0)) / Math.max(0.0001, maxValue)) * plotHeight;
+  const columnWidth = plotWidth / Math.max(1, bars.length);
+  const barWidth = Math.max(6, columnWidth * (compact ? 0.56 : 0.64));
+
+  [0, 0.5, 1].forEach((ratio) => {
+    const y = padding.top + (plotHeight * ratio);
+    const gridLine = createSvgNode("line");
+    gridLine.setAttribute("x1", String(padding.left));
+    gridLine.setAttribute("x2", String(viewWidth - padding.right));
+    gridLine.setAttribute("y1", String(y));
+    gridLine.setAttribute("y2", String(y));
+    gridLine.setAttribute("class", "metrics-graph-grid-line");
+    svg.appendChild(gridLine);
+  });
+
+  const baseline = createSvgNode("line");
+  baseline.setAttribute("x1", String(padding.left));
+  baseline.setAttribute("x2", String(viewWidth - padding.right));
+  baseline.setAttribute("y1", String(padding.top + plotHeight));
+  baseline.setAttribute("y2", String(padding.top + plotHeight));
+  baseline.setAttribute("class", "metrics-graph-baseline");
+  svg.appendChild(baseline);
+
+  bars.forEach((bar, index) => {
+    const x = padding.left + (index * columnWidth) + ((columnWidth - barWidth) / 2);
+    const y = yFor(bar.value);
+    const rect = createSvgNode("rect");
+    rect.setAttribute("x", String(x));
+    rect.setAttribute("y", String(y));
+    rect.setAttribute("width", String(barWidth));
+    rect.setAttribute("height", String(Math.max(1, (padding.top + plotHeight) - y)));
+    rect.setAttribute("fill", bar.category.color);
+    rect.setAttribute("class", `metrics-graph-bar${bar.highlight ? " highlight" : ""}`);
+    appendMetricsSvgTitle(rect, `${bar.label}: ${metricsGraphValueLabel(bar.value, graph.unit)} • ${bar.category.label}`);
+    svg.appendChild(rect);
+
+    if (bar.highlight || (!compact && bars.length <= 8)) {
+      const valueText = createSvgNode("text");
+      valueText.setAttribute("x", String(x + (barWidth / 2)));
+      valueText.setAttribute("y", String(Math.max(padding.top + 9, y - 4)));
+      valueText.setAttribute("text-anchor", "middle");
+      valueText.setAttribute("class", "metrics-graph-bar-value");
+      valueText.textContent = metricsGraphValueLabel(bar.value, graph.unit);
+      svg.appendChild(valueText);
+    }
+
+    if (shouldRenderMetricsAxisLabel(index, bars.length, compact, bar.highlight)) {
+      const axis = createSvgNode("text");
+      axis.setAttribute("x", String(x + (barWidth / 2)));
+      axis.setAttribute("y", String(viewHeight - 6));
+      axis.setAttribute("text-anchor", "middle");
+      axis.setAttribute("class", "metrics-graph-axis-label");
+      axis.textContent = bar.shortLabel || bar.label;
+      svg.appendChild(axis);
+    }
+  });
+
+  return svg;
+}
+
+function renderMetricsGraphSvg(graph, { compact = true } = {}) {
+  if (graph.type === "timeline") return renderMetricsTimelineGraphSvg(graph, { compact });
+  if (graph.type === "bars") return renderMetricsBarGraphSvg(graph, { compact });
+  return renderMetricsLineGraphSvg(graph, { compact });
+}
+
+function renderMetricsGraphCard(graph, { compact = true } = {}) {
+  const card = document.createElement("article");
+  card.className = "metric-card metrics-graph-card";
+  if (!compact) card.classList.add("metrics-graph-card-wide");
+  const header = document.createElement("div");
+  header.className = "metrics-graph-header";
+  const title = document.createElement("strong");
+  title.textContent = graph.title;
+  const subtitle = document.createElement("span");
+  subtitle.className = "hint";
+  subtitle.textContent = graph.subtitle;
+  header.append(title, subtitle);
+  card.appendChild(header);
+
+  const summary = document.createElement("div");
+  summary.className = "metrics-graph-summary";
+  metricsGraphSummaryItems(graph).forEach((item) => {
+    const chip = document.createElement("span");
+    chip.className = "metrics-graph-chip";
+    chip.style.setProperty("--metrics-graph-chip-color", item.color || "var(--accent)");
+    chip.textContent = [item.label, item.value].filter(Boolean).join(" ").trim();
+    summary.appendChild(chip);
+  });
+  card.appendChild(summary);
+
+  const svg = renderMetricsGraphSvg(graph, { compact });
+  if (svg) card.appendChild(svg);
   return card;
 }
 
@@ -9144,6 +10012,37 @@ function renderMetricsSections() {
 
 function buildMetricsGraphCsvSections(rows = buildMetricsRows()) {
   return buildMetricsGraphSeries(rows).map((graph) => {
+    if (graph.type === "timeline") {
+      return {
+        name: `graph_${graph.id}`,
+        headers: ["shot_number", "shot_label", "pair_label", "cumulative_s", "interval_s", "category_id", "category_label", "interval_label", "actions"],
+        rows: (graph.points || []).map((point) => [
+          point.shotNumber ?? "",
+          point.label || "",
+          point.pairLabel || "",
+          point.value ?? "",
+          point.finalSplitS ?? "",
+          point.category?.id || "",
+          point.category?.label || "",
+          point.intervalLabel || "",
+          point.actionSummary || "",
+        ]),
+      };
+    }
+    if (graph.type === "bars") {
+      return {
+        name: `graph_${graph.id}`,
+        headers: ["order", "label", "short_label", "value_s", "category_id", "category_label"],
+        rows: (graph.bars || []).map((bar, index) => [
+          index + 1,
+          bar.label || "",
+          bar.shortLabel || "",
+          bar.value ?? "",
+          bar.category?.id || "",
+          bar.category?.label || "",
+        ]),
+      };
+    }
     const headers = ["shot_number", "shot_label", ...graph.lines.map((line) => line.key)];
     const recordByShotNumber = new Map();
     graph.lines.forEach((line) => {
@@ -9451,6 +10350,9 @@ function buildMetricsCsv() {
 function buildMetricsText() {
   const summary = state.scoring_summary || {};
   const rows = buildMetricsRows();
+  const graphs = buildMetricsGraphSeries(rows);
+  const segmentGraph = graphs.find((graph) => graph.id === "stage_segment_breakdown") || null;
+  const comparisonGraph = graphs.find((graph) => graph.id === "run_comparison_overlay") || null;
   const lines = [
     state.project.name || "Untitled Project",
     `Video: ${fileName(state.project.primary_video.path || "")}`,
@@ -9476,6 +10378,18 @@ function buildMetricsText() {
     if (entry.confidence !== null && entry.confidence !== undefined && entry.confidence !== "") parts.push(`ShotML ${formatConfidenceValue(entry.confidence)}`);
     lines.push(`- ${parts.join(" | ")}`);
   });
+  if (segmentGraph?.bars?.length) {
+    lines.push("", "Stage Segments");
+    segmentGraph.bars.forEach((bar) => {
+      lines.push(`- ${bar.label}: ${metricsGraphValueLabel(bar.value, segmentGraph.unit)} (${bar.category.label})`);
+    });
+  }
+  if (comparisonGraph?.summary?.length) {
+    lines.push("", comparisonGraph.title);
+    comparisonGraph.summary.forEach((item) => {
+      lines.push(`- ${item.label}: ${item.value}`);
+    });
+  }
   return lines.join("\n");
 }
 
@@ -11063,41 +11977,11 @@ function endTextBoxDrag(event) {
 }
 
 function beginPopupBubbleDrag(event) {
-  if (event.button !== 0 || popupBubbleDrag) return;
-  const keyframeHandle = event.target instanceof Element ? event.target.closest("[data-popup-keyframe-drag='true']") : null;
-  if (keyframeHandle instanceof HTMLElement) {
-    const bubbleId = keyframeHandle.dataset.popupId || selectedPopupBubbleId || "";
-    if (popupEditingActive() && bubbleId !== selectedPopupBubbleId) return;
-    const bubble = popupBubbles().find((item) => item.id === bubbleId);
-    if (!bubble) return;
-    const offsetMs = Math.max(0, Math.round(Number(keyframeHandle.dataset.popupKeyframeOffset) || 0));
-    const point = popupKeyframePoint(bubble, offsetMs);
-    selectedPopupBubbleId = bubbleId;
-    setSelectedPopupKeyframeOffset(offsetMs);
-    if (offsetMs <= 0) setSelectedPopupPlacementMode("base");
-    renderPopupEditors();
-    renderLiveOverlay();
-    popupBubbleDrag = {
-      bubbleId,
-      target: $("popup-overlay"),
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startX: point.x,
-      startY: point.y,
-      motionOffsetMs: offsetMs,
-      kind: "keyframe",
-    };
-    capturePointer(popupBubbleDrag.target, event.pointerId);
-    popupBubbleDrag.target?.classList.add("dragging");
-    event.preventDefault();
-    activity("popup.keyframe.drag.start", { popup_id: bubbleId, offset_ms: offsetMs, x: point.x, y: point.y });
-    return;
-  }
+  if (event.button !== 0 || popupBubbleDrag || !popupEditingActive()) return;
   const badge = event.target instanceof Element ? event.target.closest("[data-popup-drag]") : null;
   if (!(badge instanceof HTMLElement)) return;
   const bubbleId = badge.dataset.popupId || "";
-  if (popupEditingActive() && bubbleId !== selectedPopupBubbleId) return;
+  if (!bubbleId || bubbleId !== selectedPopupBubbleId) return;
   const bubble = popupBubbles().find((item) => item.id === bubbleId);
   if (!bubble) return;
   const badgeRect = badge.getBoundingClientRect();
@@ -11493,7 +12377,7 @@ function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
     handle.dataset.popupKeyframeOffset = String(point.offset_ms);
     handle.title = point.base
       ? "Base point"
-      : `${popupMotionGuidePointLabel(point, index)} (${popupKeyframeEasing(point.easing).replace(/_/g, " ")})`;
+      : `${popupMotionGuidePointLabel(point, index, bubble)} (${popupKeyframeEasing(point.easing).replace(/_/g, " ")})`;
     handle.style.left = `${point.pixel.left}px`;
     handle.style.top = `${point.pixel.top}px`;
     handle.addEventListener("click", (event) => {
@@ -11601,7 +12485,7 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
       text.style.width = "100%";
       badge.appendChild(text);
     }
-    const allowDrag = editingActive ? entry.selected : true;
+    const allowDrag = editingActive && entry.selected;
     if (allowDrag) badge.dataset.popupDrag = "true";
     else delete badge.dataset.popupDrag;
     badge.dataset.popupId = bubble.id;
@@ -11610,9 +12494,6 @@ function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positio
     badge.classList.toggle("popup-selected", Boolean(entry.selected));
     badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));
     placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
-    if (entry.selected) {
-      renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect);
-    }
   });
 }
 
@@ -13046,7 +13927,6 @@ function wireEvents() {
     scheduleSecondaryPreviewSync();
     renderLiveOverlay();
     renderWaveformPlayhead();
-    syncPopupPlaybackWindow();
     if (activeTool === "markers" && popupFilterMode === "visible") renderPopupEditors();
   });
   document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
@@ -13243,24 +14123,6 @@ function wireEvents() {
   $("popup-next-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
   $("popup-prev-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
   $("popup-next-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
-  $("popup-play-window")?.addEventListener("click", () => playSelectedPopupWindow({ loop: false }));
-  $("popup-play-window-workbench")?.addEventListener("click", () => playSelectedPopupWindow({ loop: false }));
-  $("popup-loop-window")?.addEventListener("click", () => {
-    if (popupPlaybackWindow?.loop) {
-      popupPlaybackWindow = null;
-      renderPopupEditors();
-      return;
-    }
-    playSelectedPopupWindow({ loop: true });
-  });
-  $("popup-loop-window-workbench")?.addEventListener("click", () => {
-    if (popupPlaybackWindow?.loop) {
-      popupPlaybackWindow = null;
-      renderPopupEditors();
-      return;
-    }
-    playSelectedPopupWindow({ loop: true });
-  });
   [
     "popup-template-content-type",
     "popup-template-text-source",

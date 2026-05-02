@@ -2370,10 +2370,6 @@ def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, m
         assert updated["settings_layers"]["folder"]["layout_rail_width"] == 96
         assert updated["settings_layers"]["folder"]["layout_inspector_width"] == 640
         assert updated["settings_layers"]["folder"]["layout_waveform_height"] == 260
-        assert updated["project"]["ui_state"]["layout_locked"] is False
-        assert updated["project"]["ui_state"]["rail_width"] == 96
-        assert updated["project"]["ui_state"]["inspector_width"] == 640
-        assert updated["project"]["ui_state"]["waveform_height"] == 260
         assert "layout_locked = false" in folder_settings_text
         assert "layout_rail_width = 96" in folder_settings_text
         assert "layout_inspector_width = 640" in folder_settings_text

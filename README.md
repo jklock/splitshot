@@ -37,6 +37,13 @@ SplitShot runs directly from this repository. You need the SplitShot source fold
 
 This path does not require Git. Download and unzip [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip), then run the commands from the extracted folder.
 
+**Prerequisites:** The setup script installs `uv` and `ffmpeg` for you but requires a package manager to do so:
+- **macOS:** [Homebrew](https://brew.sh) must already be installed.
+- **Linux:** `apt-get`, `dnf`, `pacman`, or `zypper` — the script auto-detects.
+- **Windows:** [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) must already be installed (ships with Windows 11 and recent Windows 10).
+
+If your platform's package manager is not available, follow the manual install for your system instead.
+
 #### macOS or Linux
 
 ```bash
@@ -135,7 +142,14 @@ uv run splitshot
 
 #### Windows without winget or Chocolatey
 
-Download Git from [git-scm.com/download/win](https://git-scm.com/download/win), `uv` from [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/), FFmpeg from [gyan.dev ffmpeg-release-essentials.zip](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip), and SplitShot from [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip). Then open PowerShell in the extracted `splitshot-main` folder and run:
+Download and install these manually, ensuring each is on your PATH:
+
+- **Git:** [git-scm.com/download/win](https://git-scm.com/download/win) — adds itself to PATH during install.
+- **`uv`:** [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/) — the installer adds it to PATH.
+- **FFmpeg:** Download the essentials ZIP from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip), extract it, and add the `bin` folder (e.g. `C:\ffmpeg\bin`) to your system PATH. Verify with `ffmpeg -version` in a new PowerShell window.
+- **SplitShot:** [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip) — extract to a folder.
+
+Then open PowerShell in the extracted `splitshot-main` folder and run:
 
 ```powershell
 uv python install 3.12
@@ -159,9 +173,12 @@ uv run splitshot
 - [Project](docs/userfacing/panes/project.md)
 - [Splits](docs/userfacing/panes/splits.md)
 - [Score](docs/userfacing/panes/score.md)
+- [ShotML](docs/userfacing/panes/shotml.md)
 - [PiP](docs/userfacing/panes/pip.md)
+- [Markers](docs/userfacing/panes/popup.md)
 - [Overlay](docs/userfacing/panes/overlay.md)
 - [Review](docs/userfacing/panes/review.md)
+- [Settings](docs/userfacing/panes/settings.md)
 - [Export](docs/userfacing/panes/export.md)
 - [Metrics](docs/userfacing/panes/metrics.md)
 
@@ -172,10 +189,20 @@ uv run splitshot
 - [Troubleshooting](docs/userfacing/troubleshooting.md)
 - [Documentation hub](docs/README.md)
 - [Current limitations](docs/project/LIMITATIONS.md)
+- [Contributing](CONTRIBUTING.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Security](SECURITY.md)
+
+## Next Steps
+
+Forward-looking architecture research for a browser-only (no Python backend) deployment:
+
+- [Cloudflare Pages setup](nextsteps/cloudflare-pages.md)
+- [PWA setup after modularization](nextsteps/pwa-after-modularization.md)
 
 ## License
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01

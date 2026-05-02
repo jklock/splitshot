@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SplitShot</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260501b" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260501f" />
   </head>
   <body>
     <div class="app-shell cockpit-shell">
@@ -44,6 +44,9 @@
             <strong id="current-file">No Video Selected</strong>
             <span id="status-copy">Ready.</span>
           </div>
+          <div class="status-bar-actions">
+            <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
+          </div>
         </section>
         <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
           <div class="processing-copy">
@@ -67,7 +70,6 @@
               <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="popup-overlay" class="popup-overlay" aria-hidden="true"></div>
               <div id="score-layer" class="score-layer" aria-hidden="true"></div>
-              <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-video" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
             </div>
 
             <button id="resize-waveform" class="resize-handle resize-handle-waveform" type="button" aria-label="Resize waveform"></button>
@@ -124,12 +126,12 @@
               <div id="timing-event-list" class="timing-event-list" aria-label="Timing event list"></div>
             </section>
 
-            <section id="metrics-workbench" class="metrics-workbench" aria-label="Expanded metrics comparison">
+            <section id="metrics-workbench" class="metrics-workbench" aria-label="Expanded metrics analysis">
               <div class="section-header">
                 <h2>Metrics</h2>
                 <button id="collapse-metrics" type="button">Collapse</button>
               </div>
-              <p class="hint">Adjusted split values are compared against the imported PractiScore stage result.</p>
+              <p class="hint">Post-stage graphs highlight dead time, interval outliers, reference deltas, and grouped stage segments beside the expanded table.</p>
               <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench" aria-label="Expanded metrics graphs"></div>
               <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
             </section>
@@ -168,8 +170,6 @@
                   </label>
                   <button id="popup-prev-workbench" type="button">Previous</button>
                   <button id="popup-next-workbench" type="button">Next</button>
-                  <button id="popup-play-window-workbench" type="button">Play Window</button>
-                  <button id="popup-loop-window-workbench" type="button">Loop</button>
                 </div>
               </section>
               <div class="markers-workbench-body">
@@ -224,8 +224,8 @@
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
               <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
                 <div class="section-header sub-section-header">
-                  <h3>Trend Snapshot</h3>
-                  <span>Splits and confidence</span>
+                  <h3>Stage Story</h3>
+                  <span>Timeline, intervals, comparison, and segment grouping</span>
                 </div>
                 <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
                 <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
@@ -1189,6 +1189,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js?v=20260501c"></script>
+    <script src="/static/app.js?v=20260501f"></script>
   </body>
 </html>

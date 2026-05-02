@@ -420,13 +420,13 @@ h3 {
   display: grid;
   gap: 0.65rem;
   grid-template-columns: minmax(0, 1fr) minmax(120px, 220px) auto;
-  min-height: 28px;
-  height: 28px;
-  padding: 0 0.75rem;
+  min-height: var(--topbar-height);
+  height: var(--topbar-height);
+  padding: 0 0.85rem;
   left: 0;
   position: absolute;
   right: 0;
-  top: var(--topbar-height);
+  top: 0;
   z-index: 20;
 }
 
@@ -493,15 +493,25 @@ small,
   background: rgba(18, 20, 23, 0.98);
   border-bottom: 1px solid var(--line);
   display: flex;
+  gap: 0.75rem;
   height: var(--topbar-height);
+  justify-content: space-between;
   min-width: 0;
   padding: 0 0.85rem;
 }
 
 .status-bar-copy {
   display: grid;
+  flex: 1 1 auto;
   gap: 0.12rem;
   min-width: 0;
+}
+
+.status-bar-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.35rem;
 }
 
 .status-bar strong {
@@ -752,11 +762,10 @@ small,
   color: #111;
 }
 
-.panel-lock-button-video {
-  position: absolute;
-  right: 0.45rem;
-  top: 0.45rem;
-  z-index: 6;
+.panel-lock-button-status {
+  min-height: calc(var(--topbar-height) - 10px);
+  min-width: 34px;
+  padding: 0.25rem 0.6rem;
 }
 
 .video-stage:fullscreen,
@@ -2832,6 +2841,24 @@ button:disabled {
   gap: 0.35rem;
 }
 
+.popup-motion-density-row {
+  align-items: end;
+  display: grid;
+  gap: 0.35rem;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(0, auto));
+}
+
+.popup-motion-density-field {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.popup-motion-density-field select {
+  min-width: 0;
+  width: 100%;
+}
+
 .popup-motion-action-grid {
   display: grid;
   gap: 0.35rem;
@@ -2942,9 +2969,25 @@ button:disabled {
   padding-left: 0.3rem;
 }
 
+.popup-motion-point-row-guided.generated {
+  background: rgba(14, 165, 233, 0.05);
+}
+
+.popup-motion-point-row-guided.finish {
+  background: rgba(34, 197, 94, 0.04);
+}
+
 .popup-motion-point-jump {
   min-width: 4.8rem;
   white-space: nowrap;
+}
+
+.popup-motion-point-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  min-width: 0;
 }
 
 .popup-motion-point-fields {
@@ -3032,6 +3075,42 @@ button:disabled {
   color: var(--muted);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
+}
+
+.popup-motion-point-kind {
+  align-items: center;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  min-height: 1.15rem;
+  padding: 0 0.38rem;
+  text-transform: uppercase;
+}
+
+.popup-motion-point-kind-start {
+  color: #cbd5e1;
+}
+
+.popup-motion-point-kind-finish {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.3);
+  color: #86efac;
+}
+
+.popup-motion-point-kind-generated {
+  background: rgba(14, 165, 233, 0.12);
+  border-color: rgba(14, 165, 233, 0.3);
+  color: #7dd3fc;
+}
+
+.popup-motion-point-kind-detail {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.28);
+  color: #fde68a;
 }
 
 .sub-section-header {
@@ -3132,6 +3211,43 @@ button:disabled {
   fill: var(--quiet);
   font-size: 10px;
   font-weight: 700;
+}
+
+.metrics-graph-baseline {
+  stroke: rgba(244, 245, 246, 0.18);
+  stroke-width: 2;
+}
+
+.metrics-graph-timeline-segment {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.metrics-graph-timeline-start,
+.metrics-graph-dot {
+  stroke: rgba(5, 6, 7, 0.9);
+  stroke-width: 1.25;
+}
+
+.metrics-graph-bar {
+  opacity: 0.9;
+}
+
+.metrics-graph-bar.highlight {
+  opacity: 1;
+  stroke: rgba(248, 250, 252, 0.95);
+  stroke-width: 1.5;
+}
+
+.metrics-graph-bar-value,
+.metrics-graph-highlight-label {
+  fill: rgba(248, 250, 252, 0.96);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.metrics-graph-highlight-label {
+  fill: var(--muted);
 }
 
 .metrics-graph-empty {
@@ -3526,6 +3642,10 @@ button:disabled {
 }
 
 @container (max-width: 460px) {
+  .popup-motion-density-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .control-grid,
   .score-color-grid,
   .metrics-summary-grid,
@@ -4367,7 +4487,7 @@ button:disabled {
 }
 
 .cockpit.markers-expanded .review-stack {
-  grid-template-rows: minmax(360px, 1.15fr) var(--resize-handle-size) minmax(320px, 0.85fr);
+  grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--markers-workbench-height));
 }
 
 .cockpit.markers-expanded .waveform-panel {

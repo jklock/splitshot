@@ -66,7 +66,7 @@ Scope of this reference:
   - #popup-import-shots
   - #popup-edit-selected
   - data-popup-field controls: name, content_type, text, image_path, image_scale_mode, anchor_mode, shot_id, duration_s, x, y, width, height, quadrant, follow_motion
-  - data-popup-action controls: browse_image, add_keyframe, prev_keyframe, next_keyframe, copy_motion_prev, apply_motion_visible, auto_trace_motion, clear_motion_path
+  - data-popup-action controls: browse_image, add_motion_step, prev_motion_step, next_motion_step, clear_motion_path
 - State/function assertions:
   - state.project.popups[] field updates
   - selectedPopupKeyframeOffsetMs
@@ -377,12 +377,13 @@ Scope of this reference:
 
 ## tests/browser/test_metrics_e2e.py
 
-### Helper Abstractions
+### Metrics Helper Abstractions
 
-- _open_scoring_workbench / _open_timing_workbench / _open_metrics_pane: route and expand each workbench pane.
-- _select_scoring_preset_with_penalties: picks a preset with live penalty fields.
-- _metrics_table_rows / _metrics_row_for_shot: table extraction utilities for row-level assertions.
-- _metrics_summary_values: summary-card extraction for aggregate assertions.
+- `_open_scoring_workbench`, `_open_timing_workbench`, and `_open_metrics_pane`: route and expand each workbench pane.
+- `_select_scoring_preset_with_penalties`: picks a preset with live penalty fields.
+- `_metrics_table_rows` and `_metrics_row_for_shot`: table extraction utilities for row-level assertions.
+- `_metrics_summary_values`: summary-card extraction for aggregate assertions.
+- `_metrics_graph_snapshot`: graph-model extraction for timeline, interval, comparison, and segment assertions.
 
 ### test_metrics_pane_reflects_scoring_workbench_edits_and_restore
 
@@ -427,6 +428,22 @@ Scope of this reference:
 - Artifact/persistence:
   - Metrics summary "Shots" decrements after delete.
 
+### test_metrics_graphs_show_timeline_intervals_reference_and_segment_story
+
+- Validates: the Metrics pane renders the four post-stage graphs and classifies reload/manipulation segments.
+- Control surface:
+  - #timing-event-kind
+  - #timing-event-position
+  - #add-timing-event
+  - #metrics-workbench-graphs
+- State/function assertions:
+  - buildMetricsGraphSeries(buildMetricsRows())
+  - graph ids and titles for timeline, interval bars, comparison overlay, and stage segments
+  - comparison line labels
+  - stage-segment category classification after a reload event
+- Artifact/persistence:
+  - The expanded Metrics graph strip stays aligned with the current timing model.
+
 ### test_metrics_export_buttons_download_current_metrics_context
 
 - Validates: metrics CSV/TXT export downloads include current event and table context.
@@ -435,6 +452,8 @@ Scope of this reference:
   - #metrics-export-text
 - State/function assertions:
   - current metrics table content includes event labels
+  - exported CSV graph sections include the four post-stage graph models
+  - exported text summary includes stage segments and the comparison overlay summary
 - Artifact/persistence:
   - download file names/suffixes and content structure are validated.
 
@@ -572,6 +591,28 @@ Scope of this reference:
 - State/assertions:
   - popup counts, selected popup transitions, lower marker-list presence, and right-side editor continuity
 
+#### test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height
+
+- Validates: unlocked marker edit mode can shrink the lower workbench and closing the editor restores the prior waveform height.
+- Controls:
+  - #popup-edit-selected
+  - #resize-waveform
+- State/assertions:
+  - #markers-workbench height decreases while .video-stage height increases
+  - state.project.ui_state.waveform_height remains unchanged during the temporary workbench resize
+  - .waveform-panel height returns to its pre-edit size after closing the workbench
+
+#### test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row
+
+- Validates: the shared layout lock lives in the top-right status bar instead of over the video, and the transient processing bar occupies the full top row when shown.
+- Controls:
+  - #toggle-layout-lock-video
+  - .status-bar
+  - #processing-bar
+- State/assertions:
+  - lock button bounding box stays within the status-bar bounds and above `.video-stage`
+  - processing bar bounding box matches the status-bar row position and size when visible
+
 #### test_marker_template_controls_drive_new_shot_marker_defaults
 
 - Validates: template controls define defaults for new shot-linked markers.
@@ -581,15 +622,38 @@ Scope of this reference:
 - State/assertions:
   - new popup fields inherit template settings
 
-#### test_marker_play_window_and_loop_controls_follow_selected_marker_window
+#### test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningful_travel
 
-- Validates: marker play window and loop controls enforce visible playback interval.
+- Validates: guided marker generation falls back to linear interpolation and inserts an in-between point for small-but-real motion once travel clears the 8px threshold.
 - Controls:
-  - #popup-play-window
-  - #popup-loop-window
+  - #popup-add-bubble
+  - #popup-edit-selected
+  - #markers-workbench-editor [data-popup-action="generate_motion_path"]
 - State/assertions:
-  - popupPlaybackWindow state
-  - video play/pause/currentTime transitions
+  - state.project.popups[].follow_motion stays enabled
+  - generated motion_path gains a midpoint before the finish keyframe for a short-duration, ~8.5px move when tracing is unavailable
+
+#### test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_travel
+
+- Validates: guided marker generation falls back to multiple evenly spaced in-between points for longer motion when tracing is unavailable.
+- Controls:
+  - #popup-add-bubble
+  - #popup-edit-selected
+  - #markers-workbench-editor [data-popup-action="generate_motion_path"]
+- State/assertions:
+  - generated motion_path contains several in-between offsets before the finish keyframe
+  - offset gaps stay evenly spaced within rounding tolerance
+
+#### test_generate_motion_path_prefers_traced_motion_when_available
+
+- Validates: guided marker generation keeps a traced video-following path instead of replacing it with the linear fallback when tracing succeeds.
+- Controls:
+  - #popup-add-bubble
+  - #popup-edit-selected
+  - #markers-workbench-editor [data-popup-action="generate_motion_path"]
+- State/assertions:
+  - generated motion_path keeps traced in-between offsets before the finish keyframe
+  - motion hint text reports traced in-between points from the video
 
 #### test_time_marker_list_cards_select_marker_and_seek_video
 

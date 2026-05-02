@@ -2,9 +2,18 @@
 
 ## Overview
 
-Motion tracking allows popup markers (also called "popup bubbles") to follow moving objects in video. Instead of staying at a fixed screen position, a marker can be given a **motion path** consisting of keyframes (`PopupMotionPoint`) at specific time offsets. Positions between keyframes are interpolated with configurable easing. An **auto-trace** feature can generate the path automatically via browser-side frame-by-frame normalized cross-correlation (NCC) template matching.
+Motion tracking allows popup markers (also called "popup bubbles") to follow moving objects in video. Instead of staying at a fixed screen position, a marker can be given a **motion path** consisting of timed `PopupMotionPoint` entries. Positions between those points are interpolated with configurable easing. In the shipped V1 browser workflow, users place `Start` and `Finish`, then use `Generate` to try browser-side frame-by-frame normalized cross-correlation (NCC) tracking first, with an evenly spaced linear fallback when tracking cannot lock onto the video detail.
 
 The system is identical in behavior across both the live browser overlay and the Python-side video export pipeline.
+
+### V1 Authoring Model
+
+- `Start` is the popup base position at the beginning of its duration.
+- `Finish` is the popup position at the end of its duration.
+- `Generate` first calls the browser tracking path and keeps the traced points when tracking succeeds.
+- If tracing fails, `Generate` falls back to evenly spaced in-between points between `Start` and `Finish`.
+- `Add Detail` splits the largest remaining time gap so one more hand-authored point can be placed.
+- The persisted data is still `follow_motion + motion_path`; the simplified V1 UI does not expose a separate advanced keyframe editor.
 
 ---
 
@@ -18,7 +27,7 @@ The system is identical in behavior across both the live browser overlay and the
 | **Backend controller** | `src/splitshot/ui/controller.py` | Handles save/load of popup data including motion paths |
 | **Settings** | `src/splitshot/config.py` | Persists `marker_template` with `follow_motion` default |
 | **Persistence** | `src/splitshot/persistence/projects.py` | Saves/loads popup arrays (including `motion_path`) to `project.json` |
-| **Frontend** | `src/splitshot/browser/static/app.js` | Auto-trace algorithm, keyframe editing, drag interaction, overlay rendering |
+| **Frontend** | `src/splitshot/browser/static/app.js` | Trace-first `Generate`, guided motion editing, drag interaction, overlay rendering |
 | **Tests** | `tests/presentation/test_popup_presentation.py` | Validates interpolation, deduplication, and easing modes |
 
 ---
@@ -125,7 +134,7 @@ Output: (x, y) normalized position
 
 ## Auto-Trace Algorithm
 
-The auto-trace function `autoTracePopupBubbleMotion` (`app.js:4283-4399`) implements a **frame-by-frame normalized cross-correlation tracker** entirely in the browser on an offscreen `<canvas>`. It does not use WebGL, WASM, or server-side processing.
+The browser tracking function `autoTracePopupBubbleMotion` (`app.js:4283-4399`) implements a **frame-by-frame normalized cross-correlation tracker** entirely in the browser on an offscreen `<canvas>`. In V1, `Generate` uses this tracer first and only falls back to `generatePopupBubbleMotionPathLinear` when tracing fails or the primary video is unavailable. It does not use WebGL, WASM, or server-side processing.
 
 ### Step 1 — Prepare (`app.js:4283-4311`)
 - Locate the popup bubble and `<video>` element.
@@ -193,7 +202,7 @@ The auto-trace function `autoTracePopupBubbleMotion` (`app.js:4283-4399`) implem
 ### Creation / Update Flow
 
 ```
-User action (drag, add keyframe, auto-trace)
+User action (place Start/Finish, click Generate or Add Detail, drag selected point)
   → Frontend creates/modifies PopupBubble.motion_path
   → normalizePopupBubble() → normalizePopupMotionPath()
   → setPopupBubbles() → callApi("/api/popups", ...)

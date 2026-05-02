@@ -142,8 +142,6 @@ def _exercise_markers_review_overlay(page) -> None:
     page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
     page.locator("#popup-import-shots-workbench").click()
     page.wait_for_function("() => (state?.project?.popups || []).length > 0")
-    page.locator("#popup-play-window-workbench").click()
-    page.locator("#popup-loop-window-workbench").click()
     page.locator("#popup-next-workbench").click()
     page.locator("#popup-prev-workbench").click()
     page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()

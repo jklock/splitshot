@@ -14,7 +14,7 @@ This directory contains the browser-first SplitShot shell that talks to the loca
 `index.html` is organized into these major regions:
 
 - the left rail with Project, PiP, Score, Splits, Markers, Overlay, Review, Export, Settings, Metrics, and ShotML tools
-- the persistent status bar that shows the selected video name or `No Video Selected`
+- the persistent top status bar that shows the selected video name or `No Video Selected` and keeps the shared layout lock in the upper-right corner
 - the review grid with the stage preview, waveform, timing workbench, and inspector
 - inspector panes for project metadata, scoring, timing, ShotML, PiP, overlays, markers, review text boxes, export controls, settings, and metrics
 - the color picker and export log modals used by overlay, markers, review, and export controls
@@ -23,7 +23,7 @@ Important ids and data attributes include:
 
 - `primary-file-input`, `merge-media-input`, `project-path`, `export-path`, and `practiscore-file-input`
 - `timing-table`, `timing-workbench-table`, `timing-event-list`, `score-option-grid`, and `scoring-shot-list`
-- `review-text-box-list`, `popup-marker-list`, `markers-workbench`, `markers-workbench-list`, `markers-workbench-editor`, `settings-scope-status`, `metrics-summary-grid`, `metrics-trend-list`, and `metrics-score-summary`
+- `review-text-box-list`, `popup-marker-list`, `markers-workbench`, `markers-workbench-list`, `markers-workbench-editor`, `settings-scope-status`, `metrics-summary-grid`, `metrics-graph-list`, `metrics-workbench-graphs`, `metrics-trend-list`, and `metrics-score-summary`
 - `show-export-log`, `export-log-modal`, `export-log-output`, and `export-log-error`
 - `color-picker-modal`, `color-picker-hue`, `color-picker-saturation`, `color-picker-lightness`, and `color-picker-hex`
 - `toggle-layout-lock-video`, `toggle-layout-lock-waveform`, `toggle-layout-lock-inspector`, `resize-rail`, `resize-waveform`, and `resize-sidebar`
@@ -55,8 +55,9 @@ The main loop is:
 - Waveform zoom, waveform offset, and active tool state persist in `localStorage`.
 - Review and export overlays share the same repeatable text-box model, including imported summary boxes and manual notes.
 - Shot-level score and penalty edits live in the Scoring pane; the Splits pane focuses on timing edits.
+- Metrics centers post-stage analysis around `Shot / Interval Timeline`, `Split / Interval Bar Chart`, `Run Comparison Overlay`, and `Stage Segment Breakdown`, while CSV/text exports mirror the same current run state.
 - Markers are separate from review text boxes and can be time-based, shot-linked, image-based, or motion-following, with a compact pane for browsing and a dedicated workbench for focused editing.
-- Export progress uses the processing bar plus the live export log modal.
+- Export progress uses the processing bar, which temporarily occupies the full top status row, plus the live export log modal.
 - Browser controls are normalized for WebKit and Safari-class browsers so native inputs remain usable in the cockpit layout.
 
 ## Editing Notes
@@ -64,5 +65,5 @@ The main loop is:
 - The browser shell depends directly on `browser/server.py` routes; update both sides when changing action names or payload contracts.
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 
-**Last updated:** 2026-04-30
-**Referenced files last updated:** 2026-04-30
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01
