@@ -173,9 +173,7 @@ id:popup-add-bubble
 id:popup-add-bubble-workbench
 id:popup-edit-selected
 id:popup-import-shots-workbench
-id:popup-loop-window-workbench
 id:popup-next-workbench
-id:popup-play-window-workbench
 id:popup-prev-workbench
 id:popup-add-selected-shot-workbench
 id:practiscore-file-input

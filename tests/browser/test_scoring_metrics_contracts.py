@@ -118,8 +118,14 @@ def test_browser_state_defines_missing_beep_raw_time_and_confidence_projection()
 def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
 
-    assert js.count("const rows = buildMetricsRows();") == 4
+    assert js.count("const rows = buildMetricsRows();") == 5
     assert "const confidence = splitRowShotMLConfidence(row);" in js
+    assert 'title: "Shot / Interval Timeline"' in js
+    assert 'title: "Split / Interval Bar Chart"' in js
+    assert 'title: "Run Comparison Overlay"' in js
+    assert 'title: "Stage Segment Breakdown"' in js
+    assert 'function buildMetricsStageSegments(points = []) {' in js
+    assert 'ShotML Reference' in js
     assert 'return `${clamped.toFixed(1)}%`;' in js
     assert "estimated confidence" not in js
     assert "ShotML ${formatConfidenceValue(entry.confidence)}" in js
@@ -132,9 +138,14 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert '"raw_time_s"' in js
     assert '"interval_label"' in js
     assert '"actions"' in js
+    assert '"pair_label"' in js
+    assert '"category_id"' in js
+    assert '"category_label"' in js
     assert '"shotml_split_s"' in js
     assert '"adjustment_s"' in js
     assert '"practiscore_raw_s"' in js
     assert '"raw_delta_s"' in js
     assert '"shotml_confidence"' in js
     assert '"Split Timeline"' in js
+    assert '"Stage Segments"' in js
+    assert '"Run Comparison Overlay"' in js

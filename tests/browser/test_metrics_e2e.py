@@ -135,6 +135,27 @@ def _metrics_summary_values(page) -> dict[str, str]:
         )
 
 
+def _metrics_graph_snapshot(page) -> list[dict[str, object]]:
+    return page.evaluate(
+        """() => buildMetricsGraphSeries(buildMetricsRows()).map((graph) => ({
+            id: graph.id,
+            title: graph.title,
+            type: graph.type,
+            pointCount: Array.isArray(graph.points) ? graph.points.length : 0,
+            barCount: Array.isArray(graph.bars) ? graph.bars.length : 0,
+            lineLabels: (graph.lines || []).map((line) => line.label || ''),
+            bars: (graph.bars || []).map((bar) => ({
+                label: bar.label || '',
+                category: bar.category?.label || '',
+            })),
+            summary: (graph.summary || []).map((item) => ({
+                label: item.label || '',
+                value: item.value || '',
+            })),
+        }))"""
+    )
+
+
 def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="metrics-scoring-ui"))
     server = BrowserControlServer(port=0)
@@ -330,6 +351,69 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
         server.shutdown()
 
 
+def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="metrics-graphs-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_timing_workbench(page)
+
+                option_values = page.locator("#timing-event-position").evaluate(
+                    "select => [...select.options].map((option) => option.value).filter(Boolean)"
+                )
+                assert option_values
+                between_shots_value = next(
+                    (
+                        value
+                        for value in option_values
+                        if not value.startswith("::") and not value.endswith("::")
+                    ),
+                    option_values[0],
+                )
+                page.locator("#timing-event-kind").select_option("reload")
+                page.locator("#timing-event-position").select_option(between_shots_value)
+                page.locator("#add-timing-event").click()
+                page.wait_for_function(
+                    """() => (state?.project?.analysis?.events || []).some((event) => event.kind === 'reload')"""
+                )
+
+                _open_metrics_pane(page)
+                graph_titles = page.locator("#metrics-workbench-graphs .metrics-graph-header strong").all_inner_texts()
+                assert graph_titles == [
+                    "Shot / Interval Timeline",
+                    "Split / Interval Bar Chart",
+                    "Run Comparison Overlay",
+                    "Stage Segment Breakdown",
+                ]
+
+                graph_snapshot = _metrics_graph_snapshot(page)
+                assert [graph["id"] for graph in graph_snapshot] == [
+                    "shot_interval_timeline",
+                    "split_interval_bars",
+                    "run_comparison_overlay",
+                    "stage_segment_breakdown",
+                ]
+
+                timeline_graph = next(graph for graph in graph_snapshot if graph["id"] == "shot_interval_timeline")
+                assert timeline_graph["pointCount"] == int(page.evaluate("state.metrics.total_shots"))
+
+                comparison_graph = next(graph for graph in graph_snapshot if graph["id"] == "run_comparison_overlay")
+                assert comparison_graph["lineLabels"] == ["Current", "ShotML Reference"]
+                assert any(item["label"] == "Final delta" for item in comparison_graph["summary"])
+
+                segment_graph = next(graph for graph in graph_snapshot if graph["id"] == "stage_segment_breakdown")
+                assert segment_graph["barCount"] >= 2
+                assert any(bar["category"] == "Reload / manipulation" for bar in segment_graph["bars"])
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_metrics_export_buttons_download_current_metrics_context(
     synthetic_video_factory,
     tmp_path: Path,
@@ -367,8 +451,14 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert csv_download.suggested_filename.endswith("-metrics.csv")
                 assert "# per_shot_metrics" in csv_text
+                assert "# graph_shot_interval_timeline" in csv_text
+                assert "# graph_split_interval_bars" in csv_text
+                assert "# graph_run_comparison_overlay" in csv_text
+                assert "# graph_stage_segment_breakdown" in csv_text
                 assert "segment_label" in csv_text
                 assert "actions" in csv_text
+                assert "pair_label" in csv_text
+                assert "category_id" in csv_text
                 assert "Manual note" in csv_text
 
                 with page.expect_download() as text_download_info:
@@ -380,6 +470,8 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert text_download.suggested_filename.endswith("-metrics.txt")
                 assert "Split Timeline" in text_output
+                assert "Stage Segments" in text_output
+                assert "Run Comparison Overlay" in text_output
                 assert "Manual note" in text_output
                 assert "Absolute" in text_output
             finally:

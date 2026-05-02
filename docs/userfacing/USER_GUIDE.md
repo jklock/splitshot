@@ -34,11 +34,11 @@ Most edits auto-apply. Export is the main exception: the final video is created 
 | [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
 | [panes/pip.md](panes/pip.md) | Added media, picture-in-picture layout, per-item size/position/opacity, sync nudges, and export inclusion |
 | [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
-| [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, motion paths, the expanded markers workbench, and bundled marker images |
+| [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, guided Start/Finish motion authoring, the expanded markers workbench, and bundled marker images |
 | [panes/review.md](panes/review.md) | Preview artifact toggles, imported summary boxes, custom text boxes, placement, size, and style |
 | [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
 | [panes/settings.md](panes/settings.md) | App defaults, folder defaults in `splitshot.conf`, settings source attribution, and marker template defaults |
-| [panes/metrics.md](panes/metrics.md) | Read-only run dashboard, expanded timing table, scoring context, CSV export, and text export |
+| [panes/metrics.md](panes/metrics.md) | Read-only post-stage graphs, expanded timing table, scoring context, CSV export, and text export |
 
 ## Screenshot Coverage
 
@@ -53,5 +53,5 @@ The screenshot set covers every pane plus expanded timing, waveform, metrics, Sh
 
 Architecture, development, and technical notes live in [../README.md](../README.md).
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from playwright.sync_api import sync_playwright
 
@@ -11,6 +14,26 @@ def _open_test_page(playwright, server: BrowserControlServer):
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(server.url, wait_until="domcontentloaded")
     return browser, page
+
+
+def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "browser-rail-layout.ssproj")
+        page.evaluate(f"() => createNewProject({json.dumps(project_path)})")
+        page.wait_for_function("() => Boolean(state?.project?.path)")
+    page.locator("#primary-file-input").set_input_files(str(primary_path))
+    page.locator(".waveform-shot-card").first.wait_for(state="attached")
+
+
+def _open_tool(page, tool: str) -> None:
+    page.locator(f'button[data-tool="{tool}"]').click(force=True)
+    page.wait_for_function("(expected) => activeTool === expected", arg=tool)
+
+
+def _open_markers_workbench(page) -> None:
+    if not page.evaluate("() => document.getElementById('markers-workbench')?.hidden === false"):
+        page.locator("#popup-edit-selected").click()
+    page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
 
 
 def _unlock_layout(page) -> None:
@@ -175,6 +198,55 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
         server.shutdown()
 
 
+def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                status_bar = page.locator(".status-bar")
+                toggle_button = page.locator("#toggle-layout-lock-video")
+                video_stage = page.locator(".video-stage")
+
+                status_box = status_bar.bounding_box()
+                toggle_box = toggle_button.bounding_box()
+                video_box = video_stage.bounding_box()
+                assert status_box is not None
+                assert toggle_box is not None
+                assert video_box is not None
+
+                assert status_box["x"] <= toggle_box["x"]
+                assert toggle_box["x"] + toggle_box["width"] <= status_box["x"] + status_box["width"] + 1
+                assert status_box["y"] <= toggle_box["y"]
+                assert toggle_box["y"] + toggle_box["height"] <= status_box["y"] + status_box["height"] + 1
+                assert toggle_box["x"] >= status_box["x"] + status_box["width"] - toggle_box["width"] - 28
+                assert toggle_box["y"] + toggle_box["height"] <= video_box["y"] + 1
+
+                page.evaluate(
+                    """() => {
+                        window.__finishTopbarProcessing = beginProcessing('Importing video', 'Working locally', '/api/import/primary');
+                    }"""
+                )
+                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === false")
+
+                processing_box = page.locator("#processing-bar").bounding_box()
+                assert processing_box is not None
+                assert processing_box["x"] == pytest.approx(status_box["x"], abs=1)
+                assert processing_box["y"] == pytest.approx(status_box["y"], abs=1)
+                assert processing_box["width"] == pytest.approx(status_box["width"], abs=1)
+                assert processing_box["height"] == pytest.approx(status_box["height"], abs=1)
+
+                page.evaluate("""() => {
+                    forceHideProcessingBar('Ready.');
+                }""")
+                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === true")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 @pytest.mark.parametrize(
     ("handle_id", "panel_selector", "storage_key", "delta_x", "delta_y"),
     [
@@ -227,6 +299,75 @@ def test_layout_resize_handles_persist_layout_sizes(
                     assert updated_panel_box["height"] > initial_panel_box["height"]
                 else:
                     assert updated_panel_box["width"] > initial_panel_box["width"]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-workbench-layout-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _unlock_layout(page)
+
+                waveform_panel = page.locator(".waveform-panel")
+                initial_waveform_box = waveform_panel.bounding_box()
+                initial_waveform_height = page.evaluate("state?.project?.ui_state?.waveform_height")
+                assert initial_waveform_box is not None
+                assert initial_waveform_height is not None
+
+                _open_tool(page, "markers")
+                _open_markers_workbench(page)
+
+                workbench = page.locator("#markers-workbench")
+                video_stage = page.locator(".video-stage")
+                resize_handle = page.locator("#resize-waveform")
+
+                workbench_before = workbench.bounding_box()
+                video_before = video_stage.bounding_box()
+                handle_box = resize_handle.bounding_box()
+                assert workbench_before is not None
+                assert video_before is not None
+                assert handle_box is not None
+
+                start_x = handle_box["x"] + (handle_box["width"] / 2)
+                start_y = handle_box["y"] + (handle_box["height"] / 2)
+                page.mouse.move(start_x, start_y)
+                page.mouse.down()
+                page.mouse.move(start_x, start_y - 80, steps=12)
+                page.mouse.up()
+
+                page.wait_for_function(
+                    """(beforeHeight) => {
+                        const workbench = document.getElementById('markers-workbench');
+                        const rect = workbench?.getBoundingClientRect();
+                        return Boolean(rect) && rect.height < beforeHeight - 20;
+                    }""",
+                    arg=workbench_before["height"],
+                )
+
+                workbench_after = workbench.bounding_box()
+                video_after = video_stage.bounding_box()
+                assert workbench_after is not None
+                assert video_after is not None
+                assert workbench_after["height"] < workbench_before["height"] - 20
+                assert video_after["height"] > video_before["height"] + 20
+                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
+
+                page.locator("#popup-edit-selected").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                waveform_panel.wait_for(state="visible")
+
+                restored_waveform_box = waveform_panel.bounding_box()
+                assert restored_waveform_box is not None
+                assert restored_waveform_box["height"] == pytest.approx(initial_waveform_box["height"], abs=4)
+                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
             finally:
                 browser.close()
     finally:

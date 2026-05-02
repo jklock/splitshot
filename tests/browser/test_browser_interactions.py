@@ -1208,14 +1208,14 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 _open_tool(page, "markers")
                 _import_shot_linked_markers(page)
                 assert _shot_linked_popup_count(page) == total_shots
-                                assert page.evaluate(
-                                        """() => (state?.project?.popups || [])
-                                            .filter((item) => item.anchor_mode === 'shot' && item.shot_id)
-                                            .every((bubble) => {
-                                                const limitMs = popupDurationLimitMsForBubble(bubble);
-                                                return limitMs === null || bubble.duration_ms <= limitMs;
-                                            })"""
-                                ) is True
+                assert page.evaluate(
+                    """() => (state?.project?.popups || [])
+                        .filter((item) => item.anchor_mode === 'shot' && item.shot_id)
+                        .every((bubble) => {
+                            const limitMs = popupDurationLimitMsForBubble(bubble);
+                            return limitMs === null || bubble.duration_ms <= limitMs;
+                        })"""
+                ) is True
 
                 page.wait_for_function(
                     """(shotId) => {
@@ -1424,6 +1424,15 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
                 popup_id = page.evaluate("selectedPopupBubbleId")
                 assert popup_id is not None
 
+                page.locator("#popup-edit-selected").click()
+                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    """(popupId) => !document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`)""",
+                    arg=popup_id,
+                )
+
+                _open_markers_workbench(page)
+
                 badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
                 badge.wait_for(state="visible")
                 before = page.evaluate(
@@ -1546,6 +1555,332 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                 browser.close()
     finally:
         server.shutdown()
+
+
+def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningful_travel(synthetic_video_factory) -> None:
+        primary_path = Path(synthetic_video_factory(name="markers-small-motion-auto-ui"))
+        server = BrowserControlServer(port=0)
+        server.start_background(open_browser=False)
+        try:
+                with sync_playwright() as playwright:
+                        browser, page = _open_test_page(playwright, server)
+                        try:
+                                _load_primary_video(page, primary_path)
+                                _open_tool(page, "markers")
+
+                                page.evaluate(
+                                        """() => {
+                                            const video = document.getElementById('primary-video');
+                                            video.currentTime = 1.0;
+                                            video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                                        }"""
+                                )
+                                page.locator("#popup-add-bubble").click()
+                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                                assert popup_id is not None
+
+                                _open_markers_workbench(page)
+                                page.evaluate(
+                                        """(popupId) => {
+                                            const video = document.getElementById('primary-video');
+                                            const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 1920) || 1920);
+                                            const deltaX = 8.5 / sourceWidth;
+                                            const nextBubbles = (state?.project?.popups || []).map((bubble) => {
+                                                if (bubble.id !== popupId) return bubble;
+                                                return normalizePopupBubble({
+                                                    ...bubble,
+                                                    quadrant: 'custom',
+                                                    x: 0.5,
+                                                    y: 0.5,
+                                                    duration_ms: 150,
+                                                    follow_motion: true,
+                                                    motion_mode: 'guided',
+                                                    motion_path: [
+                                                        {
+                                                            offset_ms: 150,
+                                                            x: Math.min(1, 0.5 + deltaX),
+                                                            y: 0.5,
+                                                            easing: 'linear',
+                                                        },
+                                                    ],
+                                                });
+                                            });
+                                            setPopupBubbles(nextBubbles, { commit: true, rerender: true });
+                                        }""",
+                                        popup_id,
+                                )
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            return Boolean(bubble)
+                                                && bubble.follow_motion === true
+                                                && bubble.duration_ms === 150
+                                                && (bubble.motion_path || []).length === 1;
+                                        }""",
+                                        arg=popup_id,
+                                )
+                                page.evaluate("""() => {
+                                    autoTracePopupBubbleMotion = async () => false;
+                                }""")
+
+                                page.locator(
+                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                                ).click()
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const points = bubble?.motion_path || [];
+                                            return points.length === 2
+                                                && points[0].offset_ms > 0
+                                                && points[0].offset_ms < points[1].offset_ms
+                                                && points[1].offset_ms === 150;
+                                        }""",
+                                        arg=popup_id,
+                                )
+
+                                motion_snapshot = page.evaluate(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            return {
+                                                followMotion: Boolean(bubble?.follow_motion),
+                                                offsets: (bubble?.motion_path || []).map((point) => point.offset_ms),
+                                            };
+                                        }""",
+                                        popup_id,
+                                )
+                                assert motion_snapshot["followMotion"] is True
+                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
+                                assert len(motion_snapshot["offsets"]) == 2
+                                assert 0 < motion_snapshot["offsets"][0] < 150
+                                assert motion_snapshot["offsets"][1] == 150
+                        finally:
+                                browser.close()
+        finally:
+                server.shutdown()
+
+
+def test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_travel(synthetic_video_factory) -> None:
+        primary_path = Path(synthetic_video_factory(name="markers-dense-motion-auto-ui"))
+        server = BrowserControlServer(port=0)
+        server.start_background(open_browser=False)
+        try:
+                with sync_playwright() as playwright:
+                        browser, page = _open_test_page(playwright, server)
+                        try:
+                                _load_primary_video(page, primary_path)
+                                _open_tool(page, "markers")
+
+                                page.evaluate(
+                                        """() => {
+                                            const video = document.getElementById('primary-video');
+                                            video.currentTime = 1.0;
+                                            video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                                        }"""
+                                )
+                                page.locator("#popup-add-bubble").click()
+                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                                assert popup_id is not None
+
+                                _open_markers_workbench(page)
+                                page.evaluate(
+                                        """(popupId) => {
+                                            const video = document.getElementById('primary-video');
+                                            const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 1920) || 1920);
+                                            const deltaX = 160 / sourceWidth;
+                                            const nextBubbles = (state?.project?.popups || []).map((bubble) => {
+                                                if (bubble.id !== popupId) return bubble;
+                                                return normalizePopupBubble({
+                                                    ...bubble,
+                                                    quadrant: 'custom',
+                                                    x: 0.42,
+                                                    y: 0.5,
+                                                    duration_ms: 600,
+                                                    follow_motion: true,
+                                                    motion_mode: 'guided',
+                                                    motion_path: [
+                                                        {
+                                                            offset_ms: 600,
+                                                            x: Math.min(1, 0.42 + deltaX),
+                                                            y: 0.5,
+                                                            easing: 'linear',
+                                                        },
+                                                    ],
+                                                });
+                                            });
+                                            setPopupBubbles(nextBubbles, { commit: true, rerender: true });
+                                        }""",
+                                        popup_id,
+                                )
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            return Boolean(bubble)
+                                                && bubble.follow_motion === true
+                                                && bubble.duration_ms === 600
+                                                && (bubble.motion_path || []).length === 1;
+                                        }""",
+                                        arg=popup_id,
+                                )
+                                page.evaluate("""() => {
+                                    autoTracePopupBubbleMotion = async () => false;
+                                }""")
+
+                                page.locator(
+                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                                ).click()
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const points = bubble?.motion_path || [];
+                                            return points.length >= 6 && points[points.length - 1]?.offset_ms === 600;
+                                        }""",
+                                        arg=popup_id,
+                                )
+
+                                motion_snapshot = page.evaluate(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const offsets = (bubble?.motion_path || []).map((point) => point.offset_ms);
+                                            const gaps = offsets.slice(1).map((offsetMs, index) => offsetMs - offsets[index]);
+                                            return {
+                                                offsets,
+                                                gapRange: gaps.length === 0 ? 0 : Math.max(...gaps) - Math.min(...gaps),
+                                            };
+                                        }""",
+                                        popup_id,
+                                )
+                                assert len(motion_snapshot["offsets"]) >= 6
+                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
+                                assert 0 < motion_snapshot["offsets"][0] < 600
+                                assert motion_snapshot["offsets"][-1] == 600
+                                assert motion_snapshot["gapRange"] <= 1
+                        finally:
+                                browser.close()
+        finally:
+                server.shutdown()
+
+
+def test_generate_motion_path_prefers_traced_motion_when_available(synthetic_video_factory) -> None:
+        primary_path = Path(synthetic_video_factory(name="markers-traced-motion-auto-ui"))
+        server = BrowserControlServer(port=0)
+        server.start_background(open_browser=False)
+        try:
+                with sync_playwright() as playwright:
+                        browser, page = _open_test_page(playwright, server)
+                        try:
+                                _load_primary_video(page, primary_path)
+                                _open_tool(page, "markers")
+
+                                page.evaluate(
+                                        """() => {
+                                            const video = document.getElementById('primary-video');
+                                            video.currentTime = 1.0;
+                                            video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+                                        }"""
+                                )
+                                page.locator("#popup-add-bubble").click()
+                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                                assert popup_id is not None
+
+                                _open_markers_workbench(page)
+                                page.evaluate(
+                                        """(popupId) => {
+                                            const nextBubbles = (state?.project?.popups || []).map((bubble) => {
+                                                if (bubble.id !== popupId) return bubble;
+                                                return normalizePopupBubble({
+                                                    ...bubble,
+                                                    quadrant: 'custom',
+                                                    x: 0.5,
+                                                    y: 0.5,
+                                                    duration_ms: 200,
+                                                    follow_motion: true,
+                                                    motion_mode: 'guided',
+                                                    motion_path: [
+                                                        {
+                                                            offset_ms: 200,
+                                                            x: 0.68,
+                                                            y: 0.56,
+                                                            easing: 'linear',
+                                                        },
+                                                    ],
+                                                });
+                                            });
+                                            setPopupBubbles(nextBubbles, { commit: true, rerender: true });
+                                            autoTracePopupBubbleMotion = async (targetId) => {
+                                                if (targetId !== popupId) return false;
+                                                const tracedBubbles = (state?.project?.popups || []).map((bubble) => {
+                                                    if (bubble.id !== popupId) return bubble;
+                                                    return normalizePopupBubble({
+                                                        ...bubble,
+                                                        follow_motion: true,
+                                                        motion_mode: 'guided',
+                                                        motion_path: [
+                                                            {
+                                                                offset_ms: 50,
+                                                                x: 0.55,
+                                                                y: 0.52,
+                                                                easing: 'linear',
+                                                            },
+                                                            {
+                                                                offset_ms: 100,
+                                                                x: 0.61,
+                                                                y: 0.54,
+                                                                easing: 'linear',
+                                                            },
+                                                            {
+                                                                offset_ms: 200,
+                                                                x: 0.68,
+                                                                y: 0.56,
+                                                                easing: 'linear',
+                                                            },
+                                                        ],
+                                                    });
+                                                });
+                                                setPopupBubbles(tracedBubbles, { commit: true, rerender: true });
+                                                return true;
+                                            };
+                                        }""",
+                                        popup_id,
+                                )
+
+                                page.locator(
+                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                                ).click()
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const points = bubble?.motion_path || [];
+                                            return points.length === 3
+                                                && points[0]?.offset_ms === 50
+                                                && points[1]?.offset_ms === 100
+                                                && points[2]?.offset_ms === 200
+                                                && Math.abs((points[1]?.y || 0) - 0.54) < 0.0001;
+                                        }""",
+                                        arg=popup_id,
+                                )
+
+                                motion_snapshot = page.evaluate(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const status = document.querySelector(`#markers-workbench-editor .popup-bubble-card[data-popup-id="${popupId}"] .popup-motion-guide-hint`)?.textContent || '';
+                                            return {
+                                                offsets: (bubble?.motion_path || []).map((point) => point.offset_ms),
+                                                yValues: (bubble?.motion_path || []).map((point) => point.y),
+                                                status,
+                                            };
+                                        }""",
+                                        popup_id,
+                                )
+                                assert motion_snapshot["offsets"] == [50, 100, 200]
+                                assert motion_snapshot["yValues"] == [0.52, 0.54, 0.56]
+                                assert "Generate traced 2 in-between points from the video" in motion_snapshot["status"]
+                        finally:
+                                browser.close()
+        finally:
+                server.shutdown()
 
 
 def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video_factory) -> None:
@@ -1674,13 +2009,13 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                         && Math.abs((template.opacity || 0) - 0.65) < 0.001;
                     }"""
                 )
-                                expected_shot_duration_ms = int(page.evaluate(
-                                        """(shotId) => {
-                                            const shot = shotById(shotId);
-                                            return popupDefaultDurationMsForShot(shot, currentPopupTemplate());
-                                        }""",
-                                        selected_shot["id"],
-                                ))
+                expected_shot_duration_ms = int(page.evaluate(
+                    """(shotId) => {
+                        const shot = shotById(shotId);
+                        return popupDefaultDurationMsForShot(shot, currentPopupTemplate());
+                    }""",
+                    selected_shot["id"],
+                ))
 
                 _open_tool(page, "markers")
                 _open_markers_workbench(page)
@@ -2203,165 +2538,6 @@ def test_merge_default_pip_controls_commit_to_state_and_label(synthetic_video_fa
                 browser.close()
     finally:
         server.shutdown()
-
-
-def test_marker_play_window_and_loop_controls_follow_selected_marker_window(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-playback-window-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-
-                                selected_shot = _select_waveform_shot(page)
-                                assert selected_shot is not None
-
-                                _open_tool(page, "markers")
-                                _open_markers_workbench(page)
-                                page.locator("#popup-add-selected-shot-workbench").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
-
-                                playback_popup = page.evaluate(
-                                        """() => {
-                                            const bubble = (state?.project?.popups || [])[0] || null;
-                                            if (!bubble) return null;
-                                            const windowRange = popupBubbleVisibleWindow(bubble);
-                                            return {
-                                                id: bubble.id,
-                                                shotId: bubble.shot_id,
-                                                startMs: windowRange.startMs,
-                                                endMs: windowRange.endMs,
-                                            };
-                                        }"""
-                                )
-                                assert playback_popup is not None
-                                assert playback_popup["shotId"] == selected_shot["id"]
-
-                                page.evaluate(
-                                        """() => {
-                                            const video = document.getElementById('primary-video');
-                                            if (!(video instanceof HTMLVideoElement)) return;
-                                            video.dataset.testPaused = 'true';
-                                            video.dataset.testPlayCalls = '0';
-                                            video.dataset.testPauseCalls = '0';
-                                            Object.defineProperty(video, 'paused', {
-                                                configurable: true,
-                                                get() {
-                                                    return this.dataset.testPaused !== 'false';
-                                                },
-                                            });
-                                            video.play = () => {
-                                                video.dataset.testPlayCalls = String(Number(video.dataset.testPlayCalls || '0') + 1);
-                                                video.dataset.testPaused = 'false';
-                                                return Promise.resolve();
-                                            };
-                                            video.pause = () => {
-                                                video.dataset.testPauseCalls = String(Number(video.dataset.testPauseCalls || '0') + 1);
-                                                video.dataset.testPaused = 'true';
-                                            };
-                                        }"""
-                                )
-
-                                _open_markers_workbench(page)
-                                page.locator("#popup-play-window-workbench").click()
-                                page.wait_for_function(
-                                        """(popupId) => {
-                                            return Boolean(popupPlaybackWindow)
-                                                && popupPlaybackWindow.bubbleId === popupId
-                                                && popupPlaybackWindow.loop === false;
-                                        }""",
-                                        arg=playback_popup["id"],
-                                )
-                                play_snapshot = page.evaluate(
-                                        """() => {
-                                            const video = document.getElementById('primary-video');
-                                            return {
-                                                selectedPopupBubbleId,
-                                                currentTimeMs: Math.round((video?.currentTime || 0) * 1000),
-                                                playCalls: Number(video?.dataset.testPlayCalls || '0'),
-                                            };
-                                        }"""
-                                )
-                                assert play_snapshot["selectedPopupBubbleId"] == playback_popup["id"]
-                                assert abs(play_snapshot["currentTimeMs"] - playback_popup["startMs"]) <= 80
-                                assert play_snapshot["playCalls"] == 1
-
-                                page.evaluate(
-                                        """(endMs) => {
-                                            const video = document.getElementById('primary-video');
-                                            video.currentTime = (endMs + 40) / 1000;
-                                            syncPopupPlaybackWindow();
-                                        }""",
-                                        playback_popup["endMs"],
-                                )
-                                stop_snapshot = page.evaluate(
-                                        """() => {
-                                            const video = document.getElementById('primary-video');
-                                            return {
-                                                playbackWindowActive: Boolean(popupPlaybackWindow),
-                                                pauseCalls: Number(video?.dataset.testPauseCalls || '0'),
-                                                paused: video?.dataset.testPaused,
-                                            };
-                                        }"""
-                                )
-                                assert stop_snapshot == {
-                                        "playbackWindowActive": False,
-                                        "pauseCalls": 1,
-                                        "paused": "true",
-                                }
-
-                                page.locator("#popup-loop-window-workbench").click()
-                                page.wait_for_function(
-                                        """(popupId) => {
-                                            return Boolean(popupPlaybackWindow)
-                                                && popupPlaybackWindow.bubbleId === popupId
-                                                && popupPlaybackWindow.loop === true;
-                                        }""",
-                                        arg=playback_popup["id"],
-                                )
-                                loop_button = page.locator("#popup-loop-window-workbench")
-                                assert loop_button.evaluate("button => button.classList.contains('active')") is True
-                                assert loop_button.inner_text() == "Stop Loop"
-
-                                page.evaluate(
-                                        """(endMs) => {
-                                            const video = document.getElementById('primary-video');
-                                            video.dataset.testPaused = 'true';
-                                            video.currentTime = (endMs + 40) / 1000;
-                                            syncPopupPlaybackWindow();
-                                        }""",
-                                        playback_popup["endMs"],
-                                )
-                                loop_snapshot = page.evaluate(
-                                        """() => {
-                                            const video = document.getElementById('primary-video');
-                                            return {
-                                                playbackWindowActive: Boolean(popupPlaybackWindow),
-                                                loop: Boolean(popupPlaybackWindow?.loop),
-                                                currentTimeMs: Math.round((video?.currentTime || 0) * 1000),
-                                                playCalls: Number(video?.dataset.testPlayCalls || '0'),
-                                                pauseCalls: Number(video?.dataset.testPauseCalls || '0'),
-                                                paused: video?.dataset.testPaused,
-                                            };
-                                        }"""
-                                )
-                                assert loop_snapshot["playbackWindowActive"] is True
-                                assert loop_snapshot["loop"] is True
-                                assert abs(loop_snapshot["currentTimeMs"] - playback_popup["startMs"]) <= 80
-                                assert loop_snapshot["playCalls"] == 3
-                                assert loop_snapshot["pauseCalls"] == 1
-                                assert loop_snapshot["paused"] == "false"
-
-                                page.locator("#popup-loop-window-workbench").click()
-                                page.wait_for_function("() => !popupPlaybackWindow")
-                                assert loop_button.evaluate("button => button.classList.contains('active')") is False
-                                assert loop_button.inner_text() == "Loop"
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
 
 
 def test_time_marker_list_cards_select_marker_and_seek_video(synthetic_video_factory) -> None:

@@ -86,8 +86,6 @@ Ease-of-use work:
   - shot-linked marker label
   - current playhead marker
 - Add fast controls:
-  - play selected popup window
-  - loop selected popup
   - jump to previous/next popup
   - set duration for selected/all/imported
   - enable/disable selected/all
@@ -121,54 +119,32 @@ Exit criteria:
 - The timeline strip makes popup overlap and missing visibility obvious.
 - Bulk actions are covered by save/reopen and API tests.
 
-### Phase 3: Motion Keyframe Editor
+### Phase 3: Guided Marker Motion (V1 shipped)
 
-Goal: turn motion paths from an advanced form into an intuitive keyframe editor.
+Goal: keep marker motion authoring simple in V1 while preserving the existing `motion_path` data model and preview/export parity.
 
-Stability work:
+Delivered stability work:
 
-- Replace fixed mental model of "point counts" with explicit keyframes while preserving backward compatibility with existing motion_path data.
-- Store keyframes with offset, x, y, and easing.
-- Migrate existing motion paths into linear keyframes.
-- Keep renderer fallback behavior for older projects.
-- Add tests for keyframe insertion, deletion, reorder-by-time, interpolation, save/reopen, and export parity.
+- Preserve backward compatibility with existing `motion_path` data and persisted popup state.
+- Keep the renderer and export pipeline using the same normalized motion-path interpolation they already share.
+- Use trace-first generation in the browser when video detail is trackable, with evenly spaced fallback points when it is not.
+- Keep marker editing layout changes temporary so leaving the workbench restores the previous waveform sizing.
+- Cover the shipped workflow with browser interaction and static-contract tests instead of a larger editor rewrite.
 
-Ease-of-use work:
+Delivered ease-of-use work:
 
-- Show keyframe dots over the video for the selected popup.
-- Draw a path preview between keyframes.
-- Let users:
-  - add keyframe at playhead
-  - delete selected keyframe
-  - drag any keyframe directly on the video
-  - jump previous/next keyframe
-  - copy motion from previous popup
-  - apply one motion path to selected imported popups
-- Keep the base popup point and later keyframes visually distinct.
-- Replace "Go" point rows with a compact keyframe list:
-  - time offset
-  - easing
-  - X/Y
-  - jump button
-  - delete button
-- Add easing:
-  - linear
-  - hold
-  - ease in
-  - ease out
-  - ease in/out
+- The user-facing motion workflow is `Start`, `Finish`, generated `Auto` points, and hand-authored `Detail` points.
+- `Generate` tries to trace visible motion from the video first, then falls back to evenly spaced in-between points.
+- `Add Detail` splits the largest remaining time gap.
+- `Previous` and `Next` seek between authored motion points.
+- Only the selected motion point is shown on the video, and the video remains a placement surface only while editing.
+- No separate advanced motion editor, copy-from-previous flow, or bulk motion-apply flow ships in V1.
 
-WYSIWYG work:
+V1 exit criteria:
 
-- Browser path preview must match exported interpolation.
-- Dragging a keyframe must update the live overlay immediately and persist through save/reopen.
-- Export should render the selected easing exactly, or the UI should not expose that easing.
-
-Exit criteria:
-
-- A user can create a moving callout by scrubbing, adding keyframes, and dragging on the video without typing X/Y values.
-- Existing projects with motion_path still load and export correctly.
-- Preview/export parity is covered for all supported easing modes.
+- A user can place `Start` and `Finish`, generate or refine a usable motion path, and drag the selected point on the video without leaving the markers workbench.
+- Existing projects with `motion_path` still load, preview, save, reopen, and export correctly.
+- Browser coverage exists for traced generation, fallback generation, placement-only editing, motion-path preservation, and temporary workbench resize/restore.
 
 ## Cross-App Audit Themes
 
@@ -321,7 +297,7 @@ Use the dedicated PopUp Feature Plan above.
 The pane-level audit criteria are:
 
 - Stability: selection, expansion, drag, motion, imported shot refresh, save/reopen, and export parity.
-- Ease of use: timeline strip, filters, bulk actions, loop selected popup, and keyframe editor.
+- Ease of use: timeline strip, filters, bulk actions, and the guided marker motion workflow.
 - WYSIWYG: shared semantics for timing, text, placement, size, motion, and export.
 
 ## Review Pane Plan
@@ -379,7 +355,7 @@ WYSIWYG:
 Stability:
 
 - Add tests for compact metrics, expanded metrics, CSV export, text export, PractiScore context, scoring context, timing edits, score edits, and save/reopen.
-- Ensure the compact trend snapshot and expanded table use the same row builder.
+- Ensure the post-stage graph model, compact timing table, and expanded table use the same row builder.
 - Ensure CSV/text export uses the same current state as the visible metrics.
 - Keep expanded/collapsed layout stable under inspector resizing.
 
@@ -388,7 +364,7 @@ Ease of use:
 - Make Metrics clearly read-only while providing source links or jump actions to fix values in Project, Splits, ShotML, or Score.
 - Keep scoring context in a compact two-column table with all text visible.
 - Add "copy summary" and "copy selected row" actions if they do not conflict with CSV/text export.
-- Make trend snapshot scan-friendly: shot/event, split, total, score, confidence, action.
+- Make the stage story scan-friendly: shot timeline, interval bars, reference overlay, segment breakdown, plus the compact row table.
 
 WYSIWYG:
 
@@ -433,6 +409,6 @@ WYSIWYG:
 6. Score and Metrics consistency pass.
 7. PiP preview/export parity pass.
 8. Export preflight and logging pass.
-9. PopUp Phase 3.
+9. Guided marker motion V1 ship.
 10. Documentation and screenshot refresh across all panes.
 
