@@ -25,7 +25,8 @@ SplitShot runs directly from this repository. You need the SplitShot source fold
 
 ### Direct Downloads
 
-- SplitShot ZIP: [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip)
+- SplitShot stable release ZIP: [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip)
+- SplitShot source snapshot ZIP: [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip)
 - Git for Windows: [git-scm.com/download/win](https://git-scm.com/download/win)
 - `uv`: [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/)
 - FFmpeg downloads: [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
@@ -35,7 +36,7 @@ SplitShot runs directly from this repository. You need the SplitShot source fold
 
 ### 1. Automated Install
 
-This path does not require Git. Download and unzip [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip), then run the commands from the extracted folder.
+This path does not require Git. Download and unzip the stable release archive [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip), then run the commands from the extracted folder.
 
 **Prerequisites:** The setup script installs `uv` and `ffmpeg` for you but requires a package manager to do so:
 - **macOS:** [Homebrew](https://brew.sh) must already be installed.
@@ -47,7 +48,7 @@ If your platform's package manager is not available, follow the manual install f
 #### macOS or Linux
 
 ```bash
-cd ~/Downloads/splitshot-main
+cd ~/Downloads/splitshot-1.0.0
 bash scripts/setup/setup_splitshot.sh
 uv run splitshot
 ```
@@ -55,7 +56,7 @@ uv run splitshot
 #### Windows PowerShell
 
 ```powershell
-Set-Location "$HOME\Downloads\splitshot-main"
+Set-Location "$HOME\Downloads\splitshot-1.0.0"
 powershell -ExecutionPolicy Bypass -File .\scripts\setup\setup_splitshot.ps1
 uv run splitshot
 ```
@@ -147,9 +148,9 @@ Download and install these manually, ensuring each is on your PATH:
 - **Git:** [git-scm.com/download/win](https://git-scm.com/download/win) — adds itself to PATH during install.
 - **`uv`:** [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/) — the installer adds it to PATH.
 - **FFmpeg:** Download the essentials ZIP from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip), extract it, and add the `bin` folder (e.g. `C:\ffmpeg\bin`) to your system PATH. Verify with `ffmpeg -version` in a new PowerShell window.
-- **SplitShot:** [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip) — extract to a folder.
+- **SplitShot:** [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip) — extract to a folder.
 
-Then open PowerShell in the extracted `splitshot-main` folder and run:
+Then open PowerShell in the extracted `splitshot-1.0.0` folder and run:
 
 ```powershell
 uv python install 3.12

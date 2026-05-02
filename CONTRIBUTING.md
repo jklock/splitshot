@@ -17,10 +17,13 @@ Contributions should stay aligned with the current local-first architecture.
 
 ## Pull Requests
 
+- `main` is the protected release branch.
+- Use a branch for every change, open a pull request, and merge through GitHub after CI passes.
+- No approval rule is expected here because the repository has a single maintainer. The pull request exists to preserve reviewable history and enforce CI before merge.
 - Describe the problem and the exact fix.
 - Note any behavioral changes in the browser UI or export pipeline.
 - Include test coverage for new behavior when practical.
 - Mention any tradeoffs or follow-up work that remains.
 
-**Last updated:** 2026-04-17
-**Referenced files last updated:** 2026-04-17
+**Last updated:** 2026-05-01
+**Referenced files last updated:** 2026-05-01
