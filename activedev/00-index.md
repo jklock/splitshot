@@ -26,7 +26,7 @@ The executable modularization program lives under [`modularization/`](modulariza
 | File | Scope |
 | --- | --- |
 | [modularization/progress.md](modularization/progress.md) | Rolling task ledger, locks, proof links, and blocker log. |
-| [modularization/orchestration-prompt.md](modularization/orchestration-prompt.md) | Standard prompt and operating rules for subagent runs. |
+| [modularization/orchestration-prompt.md](modularization/orchestration-prompt.md) | Master orchestration prompt for the top-level chat that runs the full modularization workflow via subagents. |
 | [modularization/validation.md](modularization/validation.md) | Required zero-UX-delta validation directions. |
 | [modularization/audit.md](modularization/audit.md) | Structural audit rules, ownership checks, and PWA-readiness gates. |
 | [modularization/tasks/](modularization/tasks/) | Non-overlapping task packets from governance through final certification. |

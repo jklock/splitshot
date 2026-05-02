@@ -44,7 +44,7 @@ This directory is the operational control plane for modularization.
 | --- | --- |
 | `plan.md` | master program definition, task map, constraints, and sign-off rules |
 | `progress.md` | append-only execution ledger for task claims, completions, blockers, and proof links |
-| `orchestration-prompt.md` | reusable launcher prompt for subagents |
+| `orchestration-prompt.md` | master orchestration prompt for the top-level chat that spawns and manages subagents end to end |
 | `validation.md` | zero-UX-delta validation directions |
 | `audit.md` | structural and architectural audit directions |
 | `tasks/` | executable task packets with non-overlapping ownership |
