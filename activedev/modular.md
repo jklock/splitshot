@@ -1,17 +1,41 @@
 # Modular Architecture Plan — SplitShot Browser UI
 
+## Execution note
+
+This document is the **architectural source-of-truth** for the modularization effort.
+Operational execution, task ownership, proof records, validation rules, and audit rules live in
+[`modularization/`](modularization/), especially:
+
+- [`modularization/plan.md`](modularization/plan.md)
+- [`modularization/progress.md`](modularization/progress.md)
+- [`modularization/validation.md`](modularization/validation.md)
+- [`modularization/audit.md`](modularization/audit.md)
+- [`modularization/tasks/`](modularization/tasks/)
+
+The modularization program is a **zero-functional-change internal refactor**. The browser UI is
+already considered correct. This work must preserve:
+
+- existing UI structure, pane order, and visual layout
+- control ids, labels, and workflows
+- current PractiScore fallback/local controls and browser contract
+- current server/API semantics and persistence behavior
+
+The program should improve the codebase according to best practice and leave the browser shell
+ready for the later PWA work described in `PWA/pwa-after-modularization.md`, but it should not
+ship manifest/service-worker/install UX changes as part of modularization itself.
+
 ---
 
 ## 1. Current State: The Monolith
 
-The frontend is a single 13,142-line vanilla JS file (`browser/static/app.js`) loaded via
+The frontend is a single 14,376-line vanilla JS file (`browser/static/app.js`) loaded via
 a classic `<script>` tag with zero modularity. There are:
 
 - **0** `import`/`export` statements
 - **0** class definitions
 - **0** module boundaries
-- **~100+** global mutable variables shared across all panes
-- **~200+** flat functions calling each other by name
+- **40+** global mutable variables (plus `const` declarations) shared across all panes
+- **~740** flat functions calling each other by name
 - **1** monolithic `render()` that re-renders every pane on every state change
 - **1** monolithic `wireEvents()` (600 lines) that wires every control in every pane
 
@@ -292,7 +316,7 @@ export default createPane({
 
 | Current Function | New Home |
 |---|---|
-| `render()` (line 11,506) | **Deleted.** Each pane renders itself via `store.subscribe()`. |
+| `render()` (line 12,731) | **Deleted.** Each pane renders itself via `store.subscribe()`. |
 | `renderHeader()` | `panes/project-pane.js` (it's in the review-stack, not a pane — extracted to `components/status-bar.js`) |
 | `renderStats()` | `components/status-bar.js` |
 | `renderVideo()` | `components/video-player.js` |
@@ -301,7 +325,7 @@ export default createPane({
 | `renderControls()` | **Deleted.** Each pane renders its own controls |
 | `renderLiveOverlay()` | `components/overlay-canvas.js` |
 | `setActiveTool()` | `lib/layout.js` (emits `tool:activated` event) |
-| `wireEvents()` (line 12,536) | **Deleted.** Each pane wires its own events in `init()` |
+| `wireEvents()` (line 13,763) | **Deleted.** Each pane wires its own events in `init()` |
 | `callApi()` / `api()` | `lib/api.js` |
 | `applyRemoteState()` | **Deleted.** Store handles this via `api.postAndSync()` |
 | `readProjectUiStatePayload()` | **Deleted.** Each pane persists its own slice of UI state |
@@ -420,9 +444,9 @@ elements.badgeColor.addEventListener("click", () => {
 ### Current:
 ```
 browser/static/
-├── index.html          (1,200 lines — HTML shell)
-├── app.js              (13,142 lines — everything)
-├── styles.css          (4,066 lines — everything)
+├── index.html          (1,194 lines — HTML shell)
+├── app.js              (14,376 lines — everything)
+├── styles.css          (4,587 lines — everything)
 ├── logo.png
 └── githublogo.png
 ```
@@ -488,6 +512,20 @@ browser/static/
 
 This is a significant refactor. Do NOT attempt in one pass.
 Recommended order:
+
+### Operational task mapping
+
+The execution control plane expands the migration into task packets so work can be tracked,
+validated, audited, and parallelized safely:
+
+- `T00`–`T02` — governance, baseline truth, and QA-baseline restoration
+- `T03`–`T07` — shell bootstrap, backbone extraction, and shared components
+- `T08` — pilot scoring-pane extraction
+- `T09A`–`T09E` — controlled pane-extraction lanes
+- `T10`–`T12` — monolith cleanup, CSS split, and final certification/PWA readiness
+
+Only the explicitly parallel-safe lanes in the `T09*` group may run concurrently, and only when
+their task packets show non-overlapping ownership.
 
 ### Phase 1: Extract the backbone (safe, no behavioral change)
 
@@ -589,11 +627,11 @@ pattern, and the code has grown organically with no abstraction boundaries.
 **What we already have going for us:**
 
 | Asset | Status |
-|---|---|
+|---|---|---|
 | HTML structure | **Good** — `data-tool-pane` attributes cleanly identify each pane's DOM |
 | CSS class patterns | **Good** — consistent `.control-grid`, `.button-grid`, `.section-header` patterns |
-| Server API endpoints | **Good** — 42 focused endpoints, each returns full state (easy to scope later) |
-| `browser/state.py` | **Good** — single function builds the full state dict; easy to add `extract_slice()` helpers |
+| Server API routes | **Good** — 42 endpoint handlers in the routes dict (plus 13 file/state/activity endpoints), each returns full state (easy to scope later) |
+| `browser/state.py` (227 lines) | **Good** — single function builds the full state dict; easy to add `extract_slice()` helpers |
 
 **What we need to build from scratch:**
 
@@ -623,7 +661,7 @@ each phase.
 - After Phase 1 (backbone), existing tests should still pass because no behavior changed
 - After Phase 3 (pilot pane), write a focused Playwright test for the scoring pane
 - After each subsequent pane extraction, run the full browser test suite
-- The `tests/browser/` suite (213 test functions) is the safety net
+- The `tests/browser/` suite (226 test functions) is the safety net
 
 ### 10.2 Keeping the app shippable during the refactor
 
@@ -631,6 +669,8 @@ each phase.
   in place (the new module and the old function coexist; the new module is just not
   connected yet, or the old function delegates to the new module)
 - The "switchover" for each pane is a single PR that changes what `render()` calls
+- Every task run should update `modularization/progress.md` and write a proof file under
+  `modularization/proof/` so the refactor remains auditable end to end
 
 ### 10.3 Avoiding scope creep
 
