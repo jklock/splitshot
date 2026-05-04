@@ -29,6 +29,8 @@ from splitshot.domain.models import (
     PipSize,
     Project,
     ScoreLetter,
+    _shot_from_dict,
+    _timing_event_from_dict,
 )
 from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
@@ -1691,6 +1693,21 @@ class BrowserControlServer:
                     for source_payload in merge_payload.get("sources", []):
                         if isinstance(source_payload, dict):
                             self._set_merge_source(source_payload)
+                analysis_payload = payload.get("analysis")
+                if isinstance(analysis_payload, dict):
+                    shots_payload = analysis_payload.get("shots")
+                    if isinstance(shots_payload, list):
+                        controller.project.analysis.shots = [
+                            _shot_from_dict(item) for item in shots_payload if isinstance(item, dict)
+                        ]
+                    events_payload = analysis_payload.get("events")
+                    if isinstance(events_payload, list):
+                        controller.project.analysis.events = [
+                            _timing_event_from_dict(item) for item in events_payload if isinstance(item, dict)
+                        ]
+                    beep_ms = analysis_payload.get("beep_time_ms_primary")
+                    if beep_ms is not None:
+                        controller.project.analysis.beep_time_ms_primary = int(beep_ms)
                 _sync_export_payload(controller, payload)
                 output_path = Path(str(payload["path"]))
                 activity.log("api.export.start", path=str(output_path))
