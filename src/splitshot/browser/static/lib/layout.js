@@ -202,6 +202,12 @@ export function createLayoutRuntime({
     syncLayoutBackbone();
   }
 
+  function preserveBootstrapProjectUiState() {
+    if (!runtime.initialProjectUiStateApplied) {
+      runtime.pendingBootstrapProjectUiStateOverride = true;
+    }
+  }
+
   function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {
     runtime.layoutSizes = {
       ...runtime.layoutSizes,
@@ -218,6 +224,7 @@ export function createLayoutRuntime({
     }[key];
     window.localStorage.setItem(storageKey, String(Math.round(value)));
     applyLayoutState();
+    preserveBootstrapProjectUiState();
     syncLocalProjectUiState();
     scheduleProjectUiStateApply();
     if (runtime.state && renderWaveformNow) renderWaveform();
@@ -240,6 +247,7 @@ export function createLayoutRuntime({
     emitBackbone(backbone, "layout.lock.toggle", { locked: runtime.layoutLocked });
     activity("layout.lock.toggle", { locked: runtime.layoutLocked });
     applyLayoutState();
+    preserveBootstrapProjectUiState();
     syncLocalProjectUiState();
     scheduleProjectUiStateApply();
     syncLayoutBackbone();
@@ -255,6 +263,7 @@ export function createLayoutRuntime({
     emitBackbone(backbone, "layout.reset", { ...runtime.layoutSizes });
     activity("layout.reset", runtime.layoutSizes);
     applyLayoutState();
+    preserveBootstrapProjectUiState();
     syncLocalProjectUiState();
     scheduleProjectUiStateApply();
     if (runtime.state) renderWaveform();

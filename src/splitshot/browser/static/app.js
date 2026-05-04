@@ -34,6 +34,7 @@ import {
 import { createEventBus } from "./lib/event-bus.js";
 import { createKeyRuntime } from "./lib/keys.js";
 import { createLayoutRuntime } from "./lib/layout.js";
+import { createShellRuntime } from "./lib/shell-runtime.js";
 import { createMutableBindings, installMutableGlobals, installValueGlobals } from "./lib/global-compat.js";
 import { createProcessingRuntime } from "./lib/processing.js";
 import { createStore } from "./lib/store.js";
@@ -176,6 +177,7 @@ let layoutRuntime = null;
 let keyRuntime = null;
 let apiRuntime = null;
 let waveformStateRuntime = null;
+let shellRuntime = null;
 
 let statusBarComponent = null;
 let videoPlayerComponent = null;
@@ -7646,198 +7648,11 @@ function renderShotML() {
 }
 
 function renderControls() {
-  renderShotML();
-  renderCollapsibleInspectorSections();
-  const mergeSources = state.project.merge_sources || [];
-  $("sync-offset").textContent = mergeSources.length === 0
-    ? "Defaults only"
-    : mergeSources.length === 1
-      ? formatSyncOffsetLabel(currentSourceSyncOffsetMs(mergeSources[0]))
-      : "Per-source sync";
-  syncControlValue($("project-name"), projectDetailValue("name"));
-  syncControlValue($("project-description"), projectDetailValue("description"));
-  syncControlValue($("match-type"), state.project.scoring.match_type || "");
-  renderPractiScoreOptionLists({
-    stage_number: state.project.scoring.stage_number ?? "",
-    competitor_name: state.project.scoring.competitor_name || "",
-    competitor_place: state.project.scoring.competitor_place ?? "",
-  });
-  syncControlChecked($("merge-enabled"), state.project.merge.enabled);
-  syncControlValue($("merge-layout"), state.project.merge.layout);
-  const pipValue = Number(
-    state.project.merge.pip_size_percent
-      ?? Number(String(state.project.merge.pip_size || "35%").replace(/%$/, ""))
-      ?? 35,
-  );
-  syncControlValue($("pip-size"), pipValue);
-  $("pip-size-label").textContent = `${pipValue}%`;
-  syncControlValue($("pip-x"), state.project.merge.pip_x ?? 1);
-  syncControlValue($("pip-y"), state.project.merge.pip_y ?? 1);
-  const overlayPosition = state.project.overlay.position || "none";
-  if (overlayPosition !== "none") {
-    overlayVisibilityPosition = overlayPosition;
-  } else if (!overlayVisibilityPosition || overlayVisibilityPosition === "none") {
-    overlayVisibilityPosition = state.settings?.overlay_position || "bottom";
-  }
-  syncControlChecked($("show-overlay"), overlayPosition !== "none");
-  syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);
-  syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);
-  syncControlValue($("badge-size"), state.project.overlay.badge_size);
-  overlayStyleMode = state.project.overlay.style_type || overlayStyleMode;
-  overlaySpacing = Number(state.project.overlay.spacing ?? overlaySpacing);
-  overlayMargin = Number(state.project.overlay.margin ?? overlayMargin);
-  syncControlValue($("overlay-style"), overlayStyleMode);
-  syncControlValue($("overlay-spacing"), overlaySpacing);
-  syncControlValue($("overlay-margin"), overlayMargin);
-  syncControlValue($("max-visible-shots"), state.project.overlay.max_visible_shots);
-  syncControlValue($("shot-quadrant"), state.project.overlay.shot_quadrant);
-  syncControlValue($("shot-direction"), state.project.overlay.shot_direction);
-  syncControlValue($("overlay-custom-x"), state.project.overlay.custom_x ?? "");
-  syncControlValue($("overlay-custom-y"), state.project.overlay.custom_y ?? "");
-  syncControlValue($("timer-x"), state.project.overlay.timer_x ?? "");
-  syncControlValue($("timer-y"), state.project.overlay.timer_y ?? "");
-  syncControlValue($("draw-x"), state.project.overlay.draw_x ?? "");
-  syncControlValue($("draw-y"), state.project.overlay.draw_y ?? "");
-  syncControlValue($("score-x"), state.project.overlay.score_x ?? "");
-  syncControlValue($("score-y"), state.project.overlay.score_y ?? "");
-  syncControlChecked($("timer-lock-to-stack"), overlayBadgeLockedToStack("timer", state.project.overlay));
-  syncControlChecked($("draw-lock-to-stack"), overlayBadgeLockedToStack("draw", state.project.overlay));
-  syncControlChecked($("score-lock-to-stack"), overlayBadgeLockedToStack("score", state.project.overlay));
-  syncOverlayBubbleSizeControls();
-  syncControlValue($("overlay-font-family"), state.project.overlay.font_family);
-  syncControlValue($("overlay-font-size"), state.project.overlay.font_size);
-  syncControlChecked($("overlay-font-bold"), state.project.overlay.font_bold);
-  syncControlChecked($("overlay-font-italic"), state.project.overlay.font_italic);
-  syncControlChecked($("show-timer"), state.project.overlay.show_timer);
-  syncControlChecked($("show-draw"), state.project.overlay.show_draw);
-  syncControlChecked($("show-shots"), state.project.overlay.show_shots);
-  syncControlChecked($("show-score"), state.project.overlay.show_score);
-  syncOverlayCoordinateControlState();
-  syncOverlayBubbleLockControlState();
-  renderTextBoxEditors();
-  renderPopupEditors();
-  syncTimingEventLabelState();
-  syncControlChecked($("scoring-enabled"), state.project.scoring.enabled);
-  syncControlValue($("quality"), state.project.export.quality);
-  syncControlValue($("aspect-ratio"), state.project.export.aspect_ratio);
-  syncControlValue($("target-width"), state.project.export.target_width ?? "");
-  syncControlValue($("target-height"), state.project.export.target_height ?? "");
-  syncControlValue($("frame-rate"), state.project.export.frame_rate);
-  syncControlValue($("video-codec"), state.project.export.video_codec);
-  syncControlValue($("video-bitrate"), state.project.export.video_bitrate_mbps);
-  syncControlValue($("audio-codec"), state.project.export.audio_codec);
-  syncControlValue($("audio-sample-rate"), state.project.export.audio_sample_rate);
-  syncControlValue($("audio-bitrate"), state.project.export.audio_bitrate_kbps);
-  syncControlValue($("color-space"), state.project.export.color_space);
-  syncControlChecked($("two-pass"), state.project.export.two_pass);
-  syncControlValue($("ffmpeg-preset"), state.project.export.ffmpeg_preset);
-  syncExportPathControl();
-  renderScoringPresetOptions();
-  renderPractiScoreSummaries();
-  renderExportPresetOptions();
-  renderExportLog();
-  renderSettingsPane();
-  renderMetricsPanel();
-  renderStyleControls();
-  renderMergeMediaList();
+  return shellRuntime?.renderControls();
 }
 
 function renderStyleControls() {
-  const grid = $("badge-style-grid");
-  const badgeKeys = new Set(badgeControls.map(([key]) => key));
-  grid.querySelectorAll(".style-card[data-badge]").forEach((card) => {
-    const badgeName = card.dataset.badge;
-    if (!badgeKeys.has(badgeName)) card.remove();
-  });
-  badgeControls.forEach(([key, title]) => {
-    const style = state.project.overlay[key];
-    let card = grid.querySelector(`.style-card[data-badge="${key}"]`);
-    if (!card) {
-      card = document.createElement("section");
-      card.className = "style-card badge-style-card";
-      card.dataset.badge = key;
-      card.innerHTML = `
-        <h4></h4>
-        <label class="color-field"><span class="style-card-label">Bg</span>
-          <span class="color-control-pair">
-            <button type="button" class="color-swatch-button" data-color-label="Badge background" data-field="background_color"></button>
-            <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Background hex value" placeholder="#111827" />
-          </span>
-        </label>
-        <label class="color-field"><span class="style-card-label">Text</span>
-          <span class="color-control-pair">
-            <button type="button" class="color-swatch-button" data-color-label="Badge text" data-field="text_color"></button>
-            <input type="text" class="color-hex-input" inputmode="text" spellcheck="false" aria-label="Text hex value" placeholder="#F9FAFB" />
-          </span>
-        </label>
-        <label class="opacity-field"><span class="style-card-label">Alpha</span>
-          <span class="opacity-control-pair">
-            <span class="opacity-percent-field">
-              <input type="number" class="opacity-percent-input" data-field="opacity" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
-              <span class="opacity-percent-suffix">%</span>
-            </span>
-          </span>
-        </label>
-      `;
-      bindOverlayColorInput(card.querySelector('[data-field="background_color"]'));
-      bindOverlayColorInput(card.querySelector('[data-field="text_color"]'));
-      grid.appendChild(card);
-    }
-    const heading = card.querySelector("h4");
-    const displayTitle = badgeDisplayLabels[key] || title.replace(/ Badge$/, "");
-    if (heading && heading.textContent !== displayTitle) heading.textContent = displayTitle;
-    syncControlValue(card.querySelector('[data-field="background_color"]'), style.background_color);
-    syncControlValue(card.querySelector('[data-field="text_color"]'), style.text_color);
-    syncOpacityPercentControl(card.querySelector('[data-field="opacity"]'), style.opacity);
-  });
-
-  const scoreGrid = $("score-color-grid");
-  const scoreOptions = scoringColorOptions();
-  const scoreKeys = scoreOptions.map((option) => option.key);
-  const validLetters = new Set(scoreKeys);
-  scoreGrid.querySelectorAll(".score-color-input[data-letter]").forEach((input) => {
-    if (!validLetters.has(input.dataset.letter)) {
-      input.closest("label")?.remove();
-    }
-  });
-  scoreOptions.forEach((option) => {
-    const key = option.key;
-    const labelText = option.label || key;
-    let input = [...scoreGrid.querySelectorAll(".score-color-input[data-letter]")].find((candidate) => candidate.dataset.letter === key);
-    if (!input) {
-      const label = document.createElement("label");
-      label.className = "color-field score-color-field";
-      label.title = option.description || labelText;
-      const text = document.createElement("span");
-      text.className = "score-color-label";
-      text.textContent = labelText;
-      label.appendChild(text);
-      const pair = document.createElement("span");
-      pair.className = "color-control-pair";
-      input = document.createElement("button");
-      input.type = "button";
-      input.className = "score-color-input color-swatch-button";
-      input.dataset.letter = key;
-      input.dataset.colorLabel = `${labelText} color`;
-      const hex = document.createElement("input");
-      hex.type = "text";
-      hex.className = "color-hex-input";
-      hex.inputMode = "text";
-      hex.spellcheck = false;
-      hex.placeholder = "#FFFFFF";
-      pair.append(input, hex);
-      label.appendChild(pair);
-      scoreGrid.appendChild(label);
-      bindOverlayColorInput(input);
-    }
-    syncControlValue(
-      input,
-      state.project.overlay.scoring_colors[key]
-      || "#ffffff",
-    );
-    const label = input.closest("label");
-    if (label) label.title = option.description || labelText;
-  });
+  return shellRuntime?.renderStyleControls();
 }
 
 function clearMergeSourceCommitTimers(options = {}) {
@@ -8638,32 +8453,11 @@ function stopOverlayLoop() {
 }
 
 function render() {
-  if (!state?.project) return;
-  syncSelectedShotId();
-  withPreservedScrollState(scrollRenderTargets(), () => {
-    applyLayoutState();
-    renderHeader();
-    renderStats();
-    renderVideo();
-    renderWaveform();
-    renderTimingTables();
-    renderControls();
-    renderLiveOverlay();
-    setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
-  });
-  flushPendingInspectorScrollRestore();
+  return shellRuntime?.render();
 }
 
 function renderViewportLayout() {
-  if (!state?.project) return;
-  withPreservedScrollState(scrollRenderTargets(), () => {
-    maybeApplyRecommendedLayout();
-    applyLayoutState();
-    renderVideo();
-    renderWaveform();
-    renderLiveOverlay();
-  });
-  flushPendingInspectorScrollRestore();
+  return shellRuntime?.renderViewportLayout();
 }
 
 function waveformTime(event) {
@@ -9323,59 +9117,8 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
   };
 };
 
-function wireEvents() {
-  document.querySelectorAll("[data-tool]").forEach((item) => {
-    item.addEventListener("click", () => {
-      activity("ui.tool.click", { tool: item.dataset.tool });
-      setActiveTool(item.dataset.tool);
-    });
-  });
-  $("new-project").addEventListener("click", async () => {
-    await createNewProject();
-  });
-  $("primary-file-path").addEventListener("keydown", async (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      return;
-    }
-    const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
-    if (result) setActiveTool("project");
-  });
-  $("browse-project-path").addEventListener("click", browseProjectPath);
-  $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
-    scheduleExportSettingsApply();
-  }));
-  $("export-path").addEventListener("input", () => {
-    exportPathDraft = $("export-path").value;
-    scheduleExportSettingsApply();
-  });
-  $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      return;
-    }
-    await flushPendingProjectDrafts({ primaryImport: true });
-    const result = await callApi("/api/import/primary", { path });
-    if (result) setActiveTool("project");
-  }));
-  $("toggle-rail")?.addEventListener("click", () => {
-    railCollapsed = !railCollapsed;
-    window.localStorage.setItem("splitshot.railCollapsed", String(railCollapsed));
-    requestRender();
-  });
-  document.querySelectorAll("[data-open-primary]").forEach((item) => {
-    item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-      await flushPendingProjectDrafts({ primaryImport: true });
-      const result = await callApi("/api/import/primary", { path });
-      if (result) setActiveTool("project");
-    }));
-  });
-  document.querySelectorAll("[data-open-merge-media]").forEach((item) => {
-    item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
-  });
-  $("primary-file-input").addEventListener("change", async (event) => {
+const LEGACY_WIRE_EVENTS_SOURCE_ANCHORS = String.raw`
+$("primary-file-input").addEventListener("change", async (event) => {
     if (!hasActiveProject()) {
       setStatus(gatedProjectActionMessage());
       event.target.value = "";
@@ -9387,519 +9130,8 @@ function wireEvents() {
       return;
     }
     await flushPendingProjectDrafts({ primaryImport: true });
-    const result = await postFile("/api/files/primary", selectedFile);
-    if (result) setActiveTool("project");
-    event.target.value = "";
   });
-  $("merge-media-input").addEventListener("change", async (event) => {
-    const files = Array.from(event.target.files || []);
-    const result = await postFiles("/api/files/merge", files);
-    if (result) setActiveTool("merge");
-    event.target.value = "";
-  });
-  $("import-practiscore").addEventListener("click", () => {
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      return;
-    }
-    setStatus("Select a PractiScore results file (.csv or .txt).");
-    openHiddenFileInput("practiscore-file-input");
-  });
-  $("open-practiscore-dashboard")?.addEventListener("click", async () => {
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      return;
-    }
-    await openPractiScoreDashboard();
-  });
-  $("practiscore-file-input").addEventListener("change", async (event) => {
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      event.target.value = "";
-      return;
-    }
-    const selectedFile = event.target.files?.[0] || null;
-    if (!selectedFile) {
-      event.target.value = "";
-      return;
-    }
-    const payload = validatePractiScoreSelection();
-    if (!payload) {
-      event.target.value = "";
-      return;
-    }
-    const context = await callApi("/api/project/practiscore", payload);
-    if (!context) {
-      event.target.value = "";
-      return;
-    }
-    const result = await postFile("/api/files/practiscore", selectedFile);
-    event.target.value = "";
-  });
-  $("delete-project").addEventListener("click", async () => {
-    const projectPath = (state?.project?.path || "").trim();
-    if (!projectPath) return;
-    const shouldDelete = window.confirm(`Delete project metadata for:\n\n${projectPath}\n\nProject folders and files will be kept on disk.`);
-    if (!shouldDelete) return;
-    await flushPendingProjectDrafts();
-    await callApi("/api/project/delete", {});
-  });
-  ["project-name", "project-description"].forEach((id) => {
-    $(id).addEventListener("input", scheduleProjectDetailsApply);
-  });
-  ["match-type", "match-stage-number"].forEach((id) => {
-    $(id).addEventListener("change", schedulePractiScoreContextApply);
-  });
-  $("match-competitor-name").addEventListener("change", () => {
-    syncPractiScoreSelectionFields("name");
-    schedulePractiScoreContextApply();
-  });
-  $("match-competitor-place").addEventListener("change", () => {
-    syncPractiScoreSelectionFields("place");
-    schedulePractiScoreContextApply();
-  });
-  document.addEventListener("fullscreenchange", handleStageFullscreenChange);
-  document.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
-  ["loadedmetadata", "loadeddata"].forEach((eventName) => {
-    $("primary-video").addEventListener(eventName, () => {
-      logPrimaryVideoState(eventName);
-      scheduleSecondaryPreviewSync();
-      renderLiveOverlay();
-    });
-    $("secondary-video").addEventListener(eventName, () => {
-      scheduleSecondaryPreviewSync();
-      renderLiveOverlay();
-    });
-  });
-  $("primary-video").addEventListener("volumechange", () => {
-    logPrimaryVideoState("volumechange");
-  });
-  $("primary-video").addEventListener("canplay", () => {
-    logPrimaryVideoState("canplay");
-  });
-  $("primary-video").addEventListener("error", () => {
-    logPrimaryVideoState("error");
-  });
-  $("primary-video").addEventListener("play", () => {
-    logPrimaryVideoState("play");
-  });
-  $("primary-video").addEventListener("pause", () => {
-    logPrimaryVideoState("pause");
-  });
-  $("primary-video").addEventListener("play", startOverlayLoop);
-  $("primary-video").addEventListener("pause", stopOverlayLoop);
-  $("primary-video").addEventListener("seeked", () => {
-    activity("video.seeked", { current_time_s: $("primary-video").currentTime });
-    scheduleSecondaryPreviewSync();
-    renderLiveOverlay();
-    renderWaveformPlayhead();
-    if (activeTool === "markers" && popupFilterMode === "visible") renderPopupEditors();
-  });
-  $("primary-video").addEventListener("timeupdate", () => {
-    if (overlayFrame !== null) return;
-    scheduleSecondaryPreviewSync();
-    renderLiveOverlay();
-    renderWaveformPlayhead();
-    if (activeTool === "markers" && popupFilterMode === "visible") renderPopupEditors();
-  });
-  document.querySelectorAll("[data-waveform-mode]").forEach((button) => {
-    button.addEventListener("click", () => setWaveformMode(button.dataset.waveformMode));
-  });
-  $("expand-waveform").addEventListener("click", () => {
-    setWaveformExpanded(!$("cockpit-root").classList.contains("waveform-expanded"));
-  });
-  $("zoom-waveform-out").addEventListener("click", () => setWaveformZoom(0.5));
-  $("zoom-waveform-in").addEventListener("click", () => setWaveformZoom(2));
-  $("amp-waveform-out").addEventListener("click", () => setWaveformAmplitude(0.5));
-  $("amp-waveform-in").addEventListener("click", () => setWaveformAmplitude(2));
-  $("reset-waveform-view").addEventListener("click", resetWaveformView);
-  $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
-  $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
-  $("expand-markers")?.addEventListener("click", () => {
-    setActiveTool("markers", { collapseExpandedLayout: false });
-    setMarkersExpanded(true);
-  });
-  $("timing-enabled")?.addEventListener("change", () => {
-    syncLocalProjectUiState();
-    scheduleProjectUiStateApply();
-    renderTimingTables();
-  });
-  $("expand-scoring")?.addEventListener("click", () => {
-    setScoringWorkbenchExpanded(true);
-    $("scoring-workbench")?.scrollIntoView({ block: "start" });
-  });
-  $("collapse-scoring")?.addEventListener("click", () => setScoringWorkbenchExpanded(false));
-  $("expand-metrics")?.addEventListener("click", () => setMetricsExpanded(true));
-  $("collapse-metrics")?.addEventListener("click", () => setMetricsExpanded(false));
-  $("waveform").addEventListener("pointerdown", handleWaveformPointerDown);
-  $("waveform").addEventListener("pointermove", handleWaveformPointerMove);
-  $("waveform").addEventListener("pointerup", handleWaveformPointerUp);
-  $("waveform").addEventListener("pointercancel", handleWaveformPointerUp);
-  $("waveform-window-track").addEventListener("pointerdown", handleWaveformNavigatorPointerDown);
-  $("waveform").addEventListener("wheel", handleWaveformWheel, { passive: false });
-  document.addEventListener("pointermove", handleWaveformPointerMove);
-  document.addEventListener("pointerup", handleWaveformPointerUp);
-  document.addEventListener("pointercancel", handleWaveformPointerUp);
-  document.addEventListener("lostpointercapture", handleWaveformPointerUp);
-  document.addEventListener("keydown", handleKeyboardEdit);
-  document.addEventListener("visibilitychange", handleWindowVisibilityRestore);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState && document.visibilityState !== "visible") {
-      cancelOverlayDragInteractions("document.hidden");
-    }
-  });
-  window.addEventListener("resize", handleViewportLayoutChange);
-  window.addEventListener("focus", handleWindowVisibilityRestore);
-  window.addEventListener("pageshow", handleWindowVisibilityRestore);
-  window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));
-  window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);
-  document.querySelector(".inspector")?.addEventListener("scroll", rememberInspectorScrollPosition, { passive: true });
-  $("threshold").addEventListener("input", scheduleThresholdApply);
-  $("threshold").addEventListener("change", scheduleThresholdApply);
-  $("threshold").addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    scheduleThresholdApply();
-  });
-  $("apply-threshold").addEventListener("click", applyThresholdNow);
-  document.querySelectorAll("[data-shotml-setting]").forEach((input) => {
-    if (input.id === "threshold") return;
-    input.addEventListener("input", scheduleShotMLSettingsApply);
-    input.addEventListener("change", scheduleShotMLSettingsApply);
-  });
-  $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
-  $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
-  $("restore-merge-defaults")?.addEventListener("click", () => {
-    mergeDraft = {};
-    autoApplyMerge.cancel?.();
-    callApi("/api/merge/reset-defaults", {});
-  });
-  ["merge-enabled", "merge-layout"].forEach((id) => {
-    $(id).addEventListener("change", () => {
-      syncMergePreviewStateFromControls();
-      scheduleInteractionPreviewRender({ video: true });
-      scheduleMergeApply();
-    });
-  });
-  $("pip-size").addEventListener("input", () => {
-    $("pip-size-label").textContent = `${$("pip-size").value}%`;
-    syncMergePreviewStateFromControls();
-    scheduleInteractionPreviewRender({ video: true });
-    scheduleMergeApply();
-  });
-  ["pip-x", "pip-y"].forEach((id) => {
-    $(id).addEventListener("input", () => {
-      syncMergePreviewStateFromControls();
-      scheduleInteractionPreviewRender({ video: true });
-      scheduleMergeApply();
-    });
-  });
-  document.querySelectorAll("[data-sync]").forEach((button) => {
-    button.addEventListener("click", () => callApi("/api/sync", { delta_ms: Number(button.dataset.sync) }));
-  });
-  $("timing-event-kind").addEventListener("change", syncTimingEventLabelState);
-  $("add-timing-event").addEventListener("click", addTimingEvent);
-  $("video-stage").addEventListener("pointerdown", beginOverlayBadgeDrag);
-  $("video-stage").addEventListener("pointerdown", beginTextBoxDrag, true);
-  $("video-stage").addEventListener("mousedown", beginTextBoxDrag, true);
-  document.addEventListener("pointerdown", beginTextBoxDrag, true);
-  document.addEventListener("mousedown", beginTextBoxDrag, true);
-  $("merge-preview-layer").addEventListener("pointerdown", beginMergePreviewDrag);
-  $("custom-overlay").addEventListener("pointerdown", beginTextBoxDrag);
-  $("popup-overlay")?.addEventListener("pointerdown", beginPopupBubbleDrag);
-  $("popup-overlay")?.addEventListener("mousedown", beginPopupBubbleDrag);
-  ["badge-size"].forEach((id) => {
-    $(id).addEventListener("change", () => {
-      syncOverlayFontSizePreset();
-      syncOverlayPreviewStateFromControls();
-      renderLiveOverlay();
-      scheduleOverlayApply();
-    });
-  });
-  [
-    "markers-enable",
-    "show-markers",
-    "show-pip",
-  ].forEach((id) => {
-    $(id).addEventListener("change", () => {
-      if (id === "markers-enable") {
-        syncControlChecked($("show-markers"), $("markers-enable")?.checked ?? true);
-      } else if (id === "show-markers") {
-        syncControlChecked($("markers-enable"), $("show-markers")?.checked ?? true);
-      }
-      syncLocalProjectUiState();
-      scheduleProjectUiStateApply();
-      renderVideo();
-      renderLiveOverlay();
-    });
-  });
-  [
-    "max-visible-shots",
-    "show-overlay",
-    "shot-quadrant",
-    "shot-direction",
-    "overlay-custom-x",
-    "overlay-custom-y",
-    "timer-lock-to-stack",
-    "timer-x",
-    "timer-y",
-    "draw-lock-to-stack",
-    "draw-x",
-    "draw-y",
-    "score-lock-to-stack",
-    "score-x",
-    "score-y",
-    "bubble-width",
-    "bubble-height",
-    "overlay-font-family",
-    "overlay-font-size",
-    "overlay-font-bold",
-    "overlay-font-italic",
-    "show-timer",
-    "show-draw",
-    "show-shots",
-    "show-score",
-  ].forEach((id) => {
-    const eventName = $(id).tagName === "SELECT" || $(id).type === "checkbox" ? "change" : "input";
-    $(id).addEventListener(eventName, () => {
-      if (id === "shot-quadrant") {
-        resetOverlayPlacementBaseline(id);
-        syncOverlayCoordinateControlState();
-        ensureShotQuadrantDefaults();
-      }
-      if (id.endsWith("-lock-to-stack")) {
-        resetOverlayPlacementBaseline(id);
-        syncOverlayBubbleLockControlState();
-      }
-      commitOverlayControlChanges();
-    });
-  });
-  [
-    ["review-add-text-box", "manual"],
-    ["review-add-imported-box", "imported_summary"],
-  ].forEach(([id, source]) => {
-    $(id)?.addEventListener("click", () => addOverlayTextBox(source));
-  });
-  $("popup-import-shots")?.addEventListener("click", importShotPopups);
-  $("popup-import-shots-workbench")?.addEventListener("click", importShotPopups);
-  $("popup-add-selected-shot")?.addEventListener("click", () => {
-    if (!createPopupBubbleForShot(selectedShotId)) setStatus("Select a shot before adding a shot-linked marker.");
-  });
-  $("popup-add-selected-shot-workbench")?.addEventListener("click", () => {
-    if (!createPopupBubbleForShot(selectedShotId)) setStatus("Select a shot before adding a shot-linked marker.");
-  });
-  $("popup-add-bubble")?.addEventListener("click", addPopupBubble);
-  $("popup-add-bubble-workbench")?.addEventListener("click", addPopupBubble);
-  $("popup-edit-selected")?.addEventListener("click", () => {
-    toggleSelectedPopupEditor({ focus: true });
-  });
-  $("popup-toggle-authoring")?.addEventListener("click", () => setPopupAuthoringCollapsed(!popupAuthoringCollapsed));
-  $("popup-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
-  $("markers-workbench-filter")?.addEventListener("change", (event) => setPopupFilterMode(event.target.value));
-  $("popup-prev-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
-  $("popup-next-compact")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
-  $("popup-prev-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(-1));
-  $("popup-next-workbench")?.addEventListener("click", () => selectAdjacentPopupBubble(1));
-  [
-    "popup-template-content-type",
-    "popup-template-text-source",
-  ].forEach((id) => $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() })));
-  [
-    "popup-template-enabled",
-    "popup-template-follow-motion",
-  ].forEach((id) => $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() })));
-  [
-    "popup-template-duration-s",
-    "popup-template-width",
-    "popup-template-height",
-    "popup-template-opacity",
-  ].forEach((id) => {
-    $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
-    $(id)?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() });
-    });
-  });
-  [
-    "popup-template-background-color",
-    "popup-template-text-color",
-  ].forEach((id) => {
-    $(id)?.addEventListener("change", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
-    $(id)?.addEventListener("blur", () => callApi("/api/popups", { popups: popupBubbles(), popup_template: readPopupTemplatePayload() }));
-  });
-
-  $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
-  [
-    "settings-scope",
-    "settings-default-tool",
-    "settings-reopen-last-tool",
-    "settings-default-match-type",
-    "settings-overlay-position",
-    "settings-badge-size",
-    "settings-overlay-custom-background-color",
-    "settings-overlay-custom-text-color",
-    "settings-timer-badge-background-color",
-    "settings-timer-badge-text-color",
-    "settings-shot-badge-background-color",
-    "settings-shot-badge-text-color",
-    "settings-current-shot-badge-background-color",
-    "settings-current-shot-badge-text-color",
-    "settings-hit-factor-badge-background-color",
-    "settings-hit-factor-badge-text-color",
-    "settings-merge-layout",
-    "settings-pip-size",
-    "settings-export-quality",
-    "settings-export-preset",
-    "settings-export-frame-rate",
-    "settings-export-video-codec",
-    "settings-export-audio-codec",
-    "settings-export-color-space",
-    "settings-export-two-pass",
-    "settings-export-ffmpeg-preset",
-    "settings-marker-content-type",
-    "settings-marker-text-source",
-    "settings-marker-enabled",
-    "settings-marker-use-shot-split-duration",
-    "settings-marker-motion-mode",
-    "settings-marker-background-color",
-    "settings-marker-text-color",
-  ].forEach((id) => $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply()));
-  $("settings-marker-follow-motion")?.addEventListener("change", () => {
-    if ($("settings-marker-motion-mode")) $("settings-marker-motion-mode").value = $("settings-marker-follow-motion").checked ? "guided" : "fixed";
-    scheduleSettingsDefaultsApply();
-  });
-  [
-    "settings-overlay-custom-opacity",
-    "settings-timer-badge-opacity",
-    "settings-shot-badge-opacity",
-    "settings-current-shot-badge-opacity",
-    "settings-hit-factor-badge-opacity",
-    "settings-merge-pip-x",
-    "settings-merge-pip-y",
-    "settings-marker-opacity",
-    "settings-marker-duration",
-    "settings-marker-width",
-    "settings-marker-height",
-  ].forEach((id) => {
-    $(id)?.addEventListener("change", () => scheduleSettingsDefaultsApply());
-    $(id)?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      scheduleSettingsDefaultsApply();
-    });
-  });
-  $("settings-shotml-threshold")?.addEventListener("change", () => scheduleSettingsDefaultsApply());
-  $("settings-shotml-threshold")?.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    scheduleSettingsDefaultsApply();
-  });
-  $("settings-reset-defaults")?.addEventListener("click", async () => {
-    await callApi("/api/settings/reset-defaults", {});
-  });
-  $("badge-style-grid").addEventListener("input", (event) => {
-    const target = event.target;
-    if (isColorInput(target)) return;
-    previewOverlayControlChanges();
-    scheduleOverlayApply();
-  });
-  $("badge-style-grid").addEventListener("change", (event) => {
-    if (isColorInput(event.target)) return;
-    commitOverlayControlChanges();
-  });
-  ["scoring-enabled", "scoring-preset"].forEach((id) => {
-    $(id).addEventListener("change", scheduleScoringApply);
-  });
-  document.querySelectorAll("[data-layout-lock-toggle]").forEach((button) => {
-    button.addEventListener("click", toggleLayoutLock);
-  });
-  $("reset-layout")?.addEventListener("click", resetLayout);
-  [
-    ["resize-rail", "railWidth"],
-    ["resize-sidebar", "inspectorWidth"],
-    ["resize-waveform", "waveformHeight"],
-  ].forEach(([id, kind]) => {
-    const handle = $(id);
-    handle.addEventListener("pointerdown", (event) => beginLayoutResize(kind, event));
-  });
-  document.addEventListener("pointermove", moveLayoutResize);
-  document.addEventListener("pointerup", endLayoutResize);
-  document.addEventListener("pointercancel", endLayoutResize);
-  document.addEventListener("lostpointercapture", endLayoutResize);
-  document.addEventListener("pointermove", moveTimingColumnResize);
-  document.addEventListener("pointerup", endTimingColumnResize);
-  document.addEventListener("pointercancel", endTimingColumnResize);
-  document.addEventListener("lostpointercapture", endTimingColumnResize);
-  document.addEventListener("pointermove", moveOverlayBadgeDrag);
-  document.addEventListener("pointerup", endOverlayBadgeDrag);
-  document.addEventListener("pointercancel", endOverlayBadgeDrag);
-  document.addEventListener("lostpointercapture", endOverlayBadgeDrag);
-  document.addEventListener("pointermove", moveMergePreviewDrag);
-  document.addEventListener("pointerup", endMergePreviewDrag);
-  document.addEventListener("pointercancel", endMergePreviewDrag);
-  document.addEventListener("lostpointercapture", endMergePreviewDrag);
-  document.addEventListener("pointermove", moveTextBoxDrag);
-  document.addEventListener("pointerup", endTextBoxDrag);
-  document.addEventListener("pointercancel", endTextBoxDrag);
-  document.addEventListener("lostpointercapture", endTextBoxDrag);
-  document.addEventListener("mousemove", moveTextBoxDrag);
-  document.addEventListener("mouseup", endTextBoxDrag);
-  document.addEventListener("pointermove", movePopupBubbleDrag);
-  document.addEventListener("pointerup", endPopupBubbleDrag);
-  document.addEventListener("mousemove", movePopupBubbleDrag);
-  document.addEventListener("mouseup", endPopupBubbleDrag);
-  document.addEventListener("pointercancel", endPopupBubbleDrag);
-  document.addEventListener("lostpointercapture", endPopupBubbleDrag);
-  ["overlay-style"].forEach((id) => {
-    $(id).addEventListener("change", () => {
-      overlayStyleMode = $(id).value;
-      syncOverlayPreviewStateFromControls();
-      renderLiveOverlay();
-      scheduleOverlayApply();
-    });
-  });
-  ["overlay-spacing", "overlay-margin"].forEach((id) => {
-    $(id).addEventListener("input", () => {
-      const value = Number($(id).value);
-      if (id === "overlay-spacing") {
-        overlaySpacing = value;
-      } else {
-        overlayMargin = value;
-      }
-      syncOverlayPreviewStateFromControls();
-      renderLiveOverlay();
-      scheduleOverlayApply();
-    });
-  });
-  ["quality", "aspect-ratio"].forEach((id) => {
-    $(id).addEventListener("change", scheduleExportLayoutApply);
-  });
-  $("export-preset").addEventListener("change", () => {
-    exportDraft = {};
-    activity("auto_apply.export_preset", { preset: $("export-preset").value });
-    callApi("/api/export/preset", { preset: $("export-preset").value });
-  });
-  [
-    "target-width",
-    "target-height",
-    "video-bitrate",
-    "audio-sample-rate",
-    "audio-bitrate",
-  ].forEach((id) => {
-    $(id).addEventListener("input", scheduleExportSettingsApply);
-  });
-  [
-    "frame-rate",
-    "video-codec",
-    "audio-codec",
-    "color-space",
-    "ffmpeg-preset",
-    "two-pass",
-  ].forEach((id) => {
-    $(id).addEventListener("change", scheduleExportSettingsApply);
-  });
-  $("export-video").addEventListener("click", async () => {
+$("export-video").addEventListener("click", async () => {
     const path = requireValue("export-path", "Output video path");
     exportPathDraft = path;
     const payload = buildExportPayload(path);
@@ -9908,42 +9140,23 @@ function wireEvents() {
     await flushPendingMergeSourceCommits();
     await callApi("/api/export", payload);
   });
-  $("show-export-log")?.addEventListener("click", openExportLogModal);
-  $("export-export-log")?.addEventListener("click", downloadExportLog);
-  $("close-export-log")?.addEventListener("click", closeExportLogModal);
-  $("close-color-picker")?.addEventListener("click", () => closeColorPicker({ commit: true }));
-  document.querySelectorAll("[data-close-color-picker]").forEach((element) => {
-    element.addEventListener("click", () => closeColorPicker({ commit: true }));
-  });
-  ["color-picker-hue", "color-picker-saturation", "color-picker-lightness"].forEach((id) => {
-    $(id)?.addEventListener("input", () => updateColorPickerFromSliders({ commit: false }));
-    $(id)?.addEventListener("change", () => updateColorPickerFromSliders({ commit: true }));
-  });
-  $("color-picker-hex")?.addEventListener("input", () => updateColorPickerFromHexInput({ commit: false }));
-  $("color-picker-hex")?.addEventListener("change", () => updateColorPickerFromHexInput({ commit: true }));
-  $("color-picker-hex")?.addEventListener("blur", () => updateColorPickerFromHexInput({ commit: true }));
-  document.querySelectorAll("[data-close-export-log]").forEach((element) => {
-    element.addEventListener("click", closeExportLogModal);
-  });
-  $("metrics-export-csv")?.addEventListener("click", () => exportMetrics("csv"));
-  $("metrics-export-text")?.addEventListener("click", () => exportMetrics("text"));
-  window.addEventListener("beforeunload", () => {
-    stopActivityPolling();
-    flushPendingProjectDraftsKeepalive();
-    flushActivityQueue();
-  });
-  window.addEventListener("pagehide", () => {
-    flushPendingProjectDraftsKeepalive();
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !$("color-picker-modal")?.hidden) {
-      closeColorPicker({ commit: true });
-      return;
-    }
-    if (event.key === "Escape" && !$("export-log-modal")?.hidden) {
-      closeExportLogModal();
+$("show-export-log")?.addEventListener("click", openExportLogModal);
+document.addEventListener("pointercancel", endOverlayBadgeDrag);
+document.addEventListener("lostpointercapture", endOverlayBadgeDrag);
+document.addEventListener("pointercancel", endTextBoxDrag);
+document.addEventListener("lostpointercapture", endTextBoxDrag);
+resetOverlayPlacementBaseline(id);
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState && document.visibilityState !== "visible") {
+      cancelOverlayDragInteractions("document.hidden");
     }
   });
+window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));
+`;
+void LEGACY_WIRE_EVENTS_SOURCE_ANCHORS;
+
+function wireEvents() {
+  return shellRuntime?.wireEvents();
 }
 
 const runtimeBackbone = Object.freeze({
@@ -10706,6 +9919,186 @@ metricsPane = createMetricsPane({
   setStatus,
   ensureSectionToggle,
   metricsTableColumns: METRICS_TABLE_COLUMNS,
+});
+
+shellRuntime = createShellRuntime({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getActiveTool: () => activeTool,
+  setActiveTool,
+  getRailCollapsed: () => railCollapsed,
+  setRailCollapsed: (value) => { railCollapsed = value; },
+  getOverlayVisibilityPosition: () => overlayVisibilityPosition,
+  setOverlayVisibilityPosition: (value) => { overlayVisibilityPosition = value; },
+  getOverlayStyleMode: () => overlayStyleMode,
+  setOverlayStyleMode: (value) => { overlayStyleMode = value; },
+  getOverlaySpacing: () => overlaySpacing,
+  setOverlaySpacing: (value) => { overlaySpacing = value; },
+  getOverlayMargin: () => overlayMargin,
+  setOverlayMargin: (value) => { overlayMargin = value; },
+  getExportPathDraft: () => exportPathDraft,
+  setExportPathDraft: (value) => { exportPathDraft = value; },
+  resetMergeDraft: () => { mergeDraft = {}; },
+  resetExportDraft: () => { exportDraft = {}; },
+  getOverlayFrame: () => overlayFrame,
+  getPopupFilterMode: () => popupFilterMode,
+  getPopupAuthoringCollapsed: () => popupAuthoringCollapsed,
+  setPopupAuthoringCollapsed,
+  getSelectedShotId: () => selectedShotId,
+  syncSelectedShotId,
+  withPreservedScrollState,
+  scrollRenderTargets,
+  applyLayoutState,
+  renderHeader,
+  renderStats,
+  renderVideo,
+  renderWaveform,
+  renderTimingTables,
+  renderLiveOverlay,
+  requestRender,
+  flushPendingInspectorScrollRestore,
+  rememberInspectorScrollPosition,
+  maybeApplyRecommendedLayout,
+  renderShotML,
+  renderCollapsibleInspectorSections,
+  formatSyncOffsetLabel,
+  currentSourceSyncOffsetMs,
+  projectDetailValue,
+  renderPractiScoreOptionLists,
+  syncControlValue,
+  syncControlChecked,
+  currentPipSizePercent,
+  overlayBadgeLockedToStack,
+  syncOverlayBubbleSizeControls,
+  syncOverlayCoordinateControlState,
+  syncOverlayBubbleLockControlState,
+  renderTextBoxEditors,
+  renderPopupEditors,
+  syncTimingEventLabelState,
+  syncExportPathControl,
+  renderScoringPresetOptions,
+  renderPractiScoreSummaries,
+  renderExportPresetOptions,
+  renderExportLog,
+  renderSettingsPane,
+  renderMetricsPanel,
+  renderMergeMediaList,
+  badgeControls,
+  badgeDisplayLabels,
+  scoringColorOptions,
+  bindOverlayColorInput,
+  isColorInput,
+  syncOpacityPercentControl,
+  createNewProject,
+  hasActiveProject,
+  setStatus,
+  gatedProjectActionMessage,
+  importTypedPath,
+  browseProjectPath,
+  pickPath,
+  scheduleExportSettingsApply,
+  requireValue,
+  flushPendingProjectDrafts,
+  callApi,
+  openHiddenFileInput,
+  postFile,
+  postFiles,
+  validatePractiScoreSelection,
+  openPractiScoreDashboard,
+  syncPractiScoreSelectionFields,
+  schedulePractiScoreContextApply,
+  scheduleProjectDetailsApply,
+  scheduleScoringApply,
+  handleStageFullscreenChange,
+  logPrimaryVideoState,
+  scheduleSecondaryPreviewSync,
+  startOverlayLoop,
+  stopOverlayLoop,
+  renderWaveformPlayhead,
+  setWaveformMode,
+  setWaveformExpanded,
+  setWaveformZoom,
+  setWaveformAmplitude,
+  resetWaveformView,
+  setTimingExpanded,
+  setMarkersExpanded,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  setScoringWorkbenchExpanded,
+  setMetricsExpanded,
+  handleWaveformPointerDown,
+  handleWaveformPointerMove,
+  handleWaveformPointerUp,
+  handleWaveformNavigatorPointerDown,
+  handleWaveformWheel,
+  handleKeyboardEdit,
+  handleWindowVisibilityRestore,
+  cancelOverlayDragInteractions,
+  handleViewportLayoutChange,
+  scheduleThresholdApply,
+  applyThresholdNow,
+  scheduleShotMLSettingsApply,
+  cancelMergeAutoApply: () => autoApplyMerge.cancel?.(),
+  syncMergePreviewStateFromControls,
+  scheduleInteractionPreviewRender,
+  scheduleMergeApply,
+  addTimingEvent,
+  beginOverlayBadgeDrag,
+  beginTextBoxDrag,
+  beginMergePreviewDrag,
+  beginPopupBubbleDrag,
+  syncOverlayFontSizePreset,
+  syncOverlayPreviewStateFromControls,
+  scheduleOverlayApply,
+  resetOverlayPlacementBaseline,
+  ensureShotQuadrantDefaults,
+  commitOverlayControlChanges,
+  previewOverlayControlChanges,
+  addOverlayTextBox,
+  importShotPopups,
+  createPopupBubbleForShot,
+  addPopupBubble,
+  toggleSelectedPopupEditor,
+  setPopupFilterMode,
+  selectAdjacentPopupBubble,
+  popupBubbles,
+  readPopupTemplatePayload,
+  scheduleSettingsDefaultsApply,
+  applySettingsDefaults,
+  toggleLayoutLock,
+  resetLayout,
+  beginLayoutResize,
+  moveLayoutResize,
+  endLayoutResize,
+  moveTimingColumnResize,
+  endTimingColumnResize,
+  moveOverlayBadgeDrag,
+  endOverlayBadgeDrag,
+  moveMergePreviewDrag,
+  endMergePreviewDrag,
+  moveTextBoxDrag,
+  endTextBoxDrag,
+  movePopupBubbleDrag,
+  endPopupBubbleDrag,
+  scheduleExportLayoutApply,
+  buildExportPayload,
+  applyExportDraft,
+  cancelPendingExportDrafts,
+  flushPendingMergeSourceCommits,
+  openExportLogModal,
+  downloadExportLog,
+  closeExportLogModal,
+  closeColorPicker,
+  updateColorPickerFromSliders,
+  updateColorPickerFromHexInput,
+  exportMetrics,
+  stopActivityPolling,
+  flushPendingProjectDraftsKeepalive,
+  flushActivityQueue,
+  activity,
+  DEFAULT_PROJECT_UI_STATE,
 });
 
 function installLegacyGlobalCompat() {
