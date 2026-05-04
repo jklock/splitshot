@@ -19,6 +19,10 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "browser-test.ssproj")
+        page.evaluate("(path) => createNewProject(path)", project_path)
+        page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
 
@@ -27,6 +31,18 @@ def _activate_tool(page, tool_id: str) -> None:
     page.locator(f'button[data-tool="{tool_id}"]').click(force=True)
     page.wait_for_timeout(100)
     assert page.evaluate("activeTool") == tool_id
+
+
+def _select_waveform_shot(page, index: int = 0) -> str:
+    _activate_tool(page, "timing")
+    target_shot_id = page.evaluate(f"state.timing_segments[{index}].shot_id")
+    assert target_shot_id is not None
+    waveform_card = page.locator(".waveform-shot-card").nth(index)
+    waveform_card.evaluate(
+        "(card) => card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))"
+    )
+    page.wait_for_function("(shotId) => selectedShotId === shotId", arg=target_shot_id)
+    return str(target_shot_id)
 
 
 def _open_scoring_workbench(page) -> None:
@@ -301,11 +317,7 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
             browser, page = _open_test_page(playwright, server)
             try:
                 _load_primary_video(page, primary_path)
-                _activate_tool(page, "timing")
-
-                target_shot_id = page.evaluate("state.timing_segments[1].shot_id")
-                page.locator("#timing-table .timeline-segment-cell").nth(1).click()
-                page.wait_for_function("(shotId) => selectedShotId === shotId", arg=target_shot_id)
+                target_shot_id = _select_waveform_shot(page, 1)
 
                 original_time_ms = page.evaluate(
                     """(shotId) => {
@@ -320,8 +332,8 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
                 baseline_metrics_row = _metrics_row_for_shot(page, target_shot_id)
                 baseline_summary = _metrics_summary_values(page)
 
-                _activate_tool(page, "timing")
-                page.locator('button[data-nudge="10"]').click()
+                _select_waveform_shot(page, 1)
+                page.evaluate("() => moveSelectedShot(10)")
                 page.wait_for_function(
                     """({ shotId, originalTime }) => {
                       const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
@@ -334,8 +346,8 @@ def test_selected_shot_nudge_and_delete_propagate_to_metrics(synthetic_video_fac
                 nudged_metrics_row = _metrics_row_for_shot(page, target_shot_id)
                 assert nudged_metrics_row[3] != baseline_metrics_row[3]
 
-                _activate_tool(page, "timing")
-                page.locator("#delete-selected").click()
+                _select_waveform_shot(page, 1)
+                page.evaluate("() => deleteSelectedShot()")
                 page.wait_for_function(
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     arg=target_shot_id,

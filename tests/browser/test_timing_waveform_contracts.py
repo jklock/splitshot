@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -156,17 +157,51 @@ def test_split_adjustment_preserves_shotml_split_baseline_and_following_splits()
 
 
 def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
-    app_js = (Path(__file__).resolve().parents[2] / "src/splitshot/browser/static/app.js").read_text(
-        encoding="utf-8"
-    )
+    static_root = Path(__file__).resolve().parents[2] / "src/splitshot/browser/static"
+    app_js = (static_root / "app.js").read_text(encoding="utf-8")
+    waveform_js = (static_root / "components/waveform.js").read_text(encoding="utf-8")
+    waveform_state_js = (static_root / "lib/waveform-state.js").read_text(encoding="utf-8")
 
     assert "function resolveSelectedShotId" in app_js
     assert "function syncSelectedShotId" in app_js
     assert "syncSelectedShotId();" in app_js
     assert "pendingSelectionFallback = shotSelectionContext(selectedShotId, state, \"time\");" in app_js
-    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in app_js
+    assert 'import { createWaveformComponent } from "./components/waveform.js";' in app_js
+    assert 'import { createWaveformState } from "./lib/waveform-state.js";' in app_js
+    assert "waveformStateRuntime = createWaveformState({" in app_js
+    assert "waveformComponent = createWaveformComponent({" in app_js
     assert "splitCell.textContent = splitSeconds(numericMs(row.split_ms));" in app_js
     assert "totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));" in app_js
+    assert "export function createWaveformComponent({" in waveform_js
+    assert "function renderWaveform() {" in waveform_js
+    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in waveform_js
+    assert "function handleWaveformPointerDown(event) {" in waveform_js
+    assert "export function createWaveformState({" in waveform_state_js
+    assert "function waveformWindow() {" in waveform_state_js
+    assert "function nearestShot(event) {" in waveform_state_js
+
+
+def test_timing_pane_modularization_wrappers_are_source_visible() -> None:
+    static_root = Path(__file__).resolve().parents[2] / "src/splitshot/browser/static"
+    app_js = (static_root / "app.js").read_text(encoding="utf-8")
+    timing_pane_js = (static_root / "panes/timing-pane.js").read_text(encoding="utf-8")
+
+    assert 'import { createTimingPane } from "./panes/timing-pane.js";' in app_js
+    assert "timingPane = createTimingPane({" in app_js
+    assert "function applyTimingTableColumns(table) {" in app_js
+    assert "return timingPane?.applyTimingTableColumns(table);" in app_js
+    assert "function deleteTimingEvent(eventId) {" in app_js
+    assert "return timingPane?.deleteTimingEvent(eventId);" in app_js
+    assert "function buildSplitRowActionCell(row, expandedTable) {" in app_js
+    assert "return timingPane?.buildSplitRowActionCell(row, expandedTable);" in app_js
+    assert "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in app_js
+    assert 'return timingPane?.setTimingExpanded(expanded, { persistUiState }) ?? Boolean(expanded);' in app_js
+
+    assert "export function createTimingPane({" in timing_pane_js
+    assert "function applyTimingTableColumns(table) {" in timing_pane_js
+    assert "function deleteTimingEvent(eventId) {" in timing_pane_js
+    assert "function buildSplitRowActionCell(row, expandedTable) {" in timing_pane_js
+    assert "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in timing_pane_js
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -177,6 +212,10 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 
 def _load_primary_video(page, primary_path: Path) -> None:
+    if not page.evaluate("Boolean(state?.project?.path)"):
+        project_path = str(primary_path.parent / "timing-browser-test.ssproj")
+        page.evaluate(f"() => createNewProject({json.dumps(project_path)})")
+        page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
 

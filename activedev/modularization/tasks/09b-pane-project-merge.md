@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_project_lifecycle_contracts.py`, merge-owned assertions inside `tests/browser/test_merge_export_contracts.py`, `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`, `docs/userfacing/panes/project.md`, `docs/project/browser-control-qa-matrix.md` |
 | proof-file | `activedev/modularization/proof/PROOF-T09B-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T08 before the parallel A/B/C wave can open.` |
+
 ## Goal
 
 Extract the project and merge panes while preserving the full current Project-pane experience, including PractiScore parity requirements.

@@ -28,22 +28,24 @@ ship manifest/service-worker/install UX changes as part of modularization itself
 
 ## 1. Current State: The Monolith
 
+The facts in this section were re-verified against the live repository on 2026-05-02.
+
 The frontend is a single 14,376-line vanilla JS file (`browser/static/app.js`) loaded via
 a classic `<script>` tag with zero modularity. There are:
 
-- **0** `import`/`export` statements
+- **0** `import` statements and **0** `export` statements
 - **0** class definitions
 - **0** module boundaries
-- **40+** global mutable variables (plus `const` declarations) shared across all panes
-- **~740** flat functions calling each other by name
-- **1** monolithic `render()` that re-renders every pane on every state change
-- **1** monolithic `wireEvents()` (600 lines) that wires every control in every pane
+- **91** top-level `let` globals shared across all panes
+- **739** named `function` declarations calling each other by name
+- **1** monolithic `render()` at lines **12,731–12,747** that re-renders every pane on every state change
+- **1** monolithic `wireEvents()` at lines **13,763–14,376** (**614 lines**) that wires every control in every pane
 
 ### How it got here
 
 The app grew feature by feature, each new pane adding more global vars, more functions,
 and more entries in `render()` and `wireEvents()`. The architecture that was fine at
-2,000 lines became unmanageable at 13,000. There was never a refactor step to carve
+2,000 lines became unmanageable at 14,000+. There was never a refactor step to carve
 out module boundaries.
 
 ### Symptoms
@@ -630,7 +632,7 @@ pattern, and the code has grown organically with no abstraction boundaries.
 |---|---|---|
 | HTML structure | **Good** — `data-tool-pane` attributes cleanly identify each pane's DOM |
 | CSS class patterns | **Good** — consistent `.control-grid`, `.button-grid`, `.section-header` patterns |
-| Server API routes | **Good** — 42 endpoint handlers in the routes dict (plus 13 file/state/activity endpoints), each returns full state (easy to scope later) |
+| Server API routes | **Good** — the browser server remains a single 1,712-line module returning full state snapshots, which keeps extraction targets easy to trace later |
 | `browser/state.py` (227 lines) | **Good** — single function builds the full state dict; easy to add `extract_slice()` helpers |
 
 **What we need to build from scratch:**
@@ -661,7 +663,7 @@ each phase.
 - After Phase 1 (backbone), existing tests should still pass because no behavior changed
 - After Phase 3 (pilot pane), write a focused Playwright test for the scoring pane
 - After each subsequent pane extraction, run the full browser test suite
-- The `tests/browser/` suite (226 test functions) is the safety net
+- The `tests/browser/` suite (225 test functions across 18 files) is the safety net
 
 ### 10.2 Keeping the app shippable during the refactor
 

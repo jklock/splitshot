@@ -1514,17 +1514,16 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                     }"""
                 )
                 page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="add_motion_step"]').click()
-                page.wait_for_function(
-                    "(popupId) => ((state?.project?.popups || []).find((item) => item.id === popupId)?.motion_path || []).length === 1",
-                    arg=popup_id,
-                )
-                motion_before = page.evaluate(
+                motion_before_handle = page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
-                      return bubble ? JSON.stringify(bubble.motion_path || []) : '[]';
+                      const serialized = bubble ? JSON.stringify(bubble.motion_path || []) : '[]';
+                      return serialized !== '[]' ? serialized : false;
                     }""",
-                    popup_id,
+                    arg=popup_id,
                 )
+                motion_before = motion_before_handle.json_value()
+                assert motion_before != "[]"
 
                 badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
                 badge.wait_for(state="visible")
@@ -1542,6 +1541,13 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                 page.wait_for_function(
                     "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.quadrant === 'custom'",
                     arg=popup_id,
+                )
+                page.wait_for_function(
+                    """({ popupId, expectedMotionPath }) => {
+                      const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                      return JSON.stringify(bubble?.motion_path || []) === expectedMotionPath;
+                    }""",
+                    arg={"popupId": popup_id, "expectedMotionPath": motion_before},
                 )
                 motion_after = page.evaluate(
                     """(popupId) => {
@@ -3390,6 +3396,19 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
 
                 first_shot_id = page.evaluate("state.timing_segments[0].shot_id")
                 second_shot_id = page.evaluate("state.timing_segments[1].shot_id")
+                second_shot_time_ms = page.evaluate(
+                    """(shotId) => (state?.project?.analysis?.shots || []).find((shot) => shot.id === shotId)?.time_ms ?? null""",
+                    second_shot_id,
+                )
+                assert second_shot_time_ms is not None
+
+                page.locator("#scoring-workbench-table .timeline-segment-cell").nth(1).click()
+                page.wait_for_function("(shotId) => selectedShotId === shotId", arg=second_shot_id)
+                page.wait_for_function(
+                    """(targetMs) => Math.abs(((document.getElementById('primary-video')?.currentTime || 0) * 1000) - targetMs) < 150""",
+                    arg=second_shot_time_ms,
+                )
+
                 score_select = page.locator('#scoring-workbench-table select[data-score-field="letter"]').first
                 lock_button = page.locator("#scoring-workbench-table .lock-button").first
                 lock_button.click()
@@ -3407,9 +3426,18 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
 
                 score_select.select_option(next_letter)
                 penalty_select.select_option(penalty_options[0])
+                page.wait_for_function("(shotId) => selectedShotId === shotId", arg=first_shot_id)
 
-                page.wait_for_timeout(250)
                 lock_button.click()
+                page.wait_for_function(
+                    """({ shotId, letter, penaltyField }) => {
+                      const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
+                      return Boolean(segment)
+                        && segment.score_letter === letter
+                        && Number(segment.penalty_counts?.[penaltyField] || 0) === 1;
+                    }""",
+                    arg={"shotId": first_shot_id, "letter": next_letter, "penaltyField": penalty_options[0]},
+                )
                 updated_letter = page.evaluate("(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.score_letter ?? null", first_shot_id)
                 assert updated_letter == next_letter
                 updated_penalties = page.evaluate(

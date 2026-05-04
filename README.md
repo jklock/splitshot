@@ -194,16 +194,6 @@ uv run splitshot
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md)
 
-## Next Steps
-
-Forward-looking architecture research for a browser-only (no Python backend) deployment:
-
-- [Cloudflare Pages setup](nextsteps/cloudflare-pages.md)
-- [PWA setup after modularization](nextsteps/pwa-after-modularization.md)
-
 ## License
 
 SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
-
-**Last updated:** 2026-05-01
-**Referenced files last updated:** 2026-05-01

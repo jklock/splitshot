@@ -495,10 +495,15 @@ def test_popup_bubble_follow_motion_path_interpolates_between_points() -> None:
 
 
 def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
-    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", js, re.S)
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
+    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", overlay_js, re.S)
 
     assert match is not None
+    assert 'import { createOverlayPane } from "./panes/overlay-pane.js";' in app_js
+    assert "overlayPane = createOverlayPane({" in app_js
+    assert "function readOverlayPayload() {" in app_js
+    assert "return overlayPane?.readOverlayPayload() || {};" in app_js
     body = match.group("body")
     assert "const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));" in body
     assert "const primaryTextBox = preferredLegacyTextBox(textBoxes);" in body
@@ -510,18 +515,42 @@ def test_overlay_payload_keeps_review_text_boxes_and_legacy_custom_box_in_sync()
 
 
 def test_overlay_color_picker_previews_then_flushes_committed_color_payloads() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
 
-    assert "const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;" in js
-    assert "function scheduleOverlayColorCommit() {" in js
-    assert "overlayColorCommitTimer = window.setTimeout(() => {" in js
-    assert "scheduleOverlayApply();" in js
-    assert "function flushOverlayColorCommit() {" in js
-    assert "clearOverlayColorCommitTimer();" in js
-    assert "function closeColorPicker({ commit = true } = {}) {" in js
-    assert "if (commit) flushOverlayColorCommit();" in js
-    assert "applyColorControlValue(activeColorPickerControl, normalized, { queueCommit: true });" in js
-    assert "if (commit) flushOverlayColorCommit();" in js
+    assert "const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;" in app_js
+    assert "function scheduleOverlayColorCommit() {" in app_js
+    assert "return overlayPane?.scheduleOverlayColorCommit();" in app_js
+    assert "function flushOverlayColorCommit() {" in app_js
+    assert "return overlayPane?.flushOverlayColorCommit();" in app_js
+    assert "function scheduleOverlayColorCommit() {" in overlay_js
+    assert "setOverlayColorCommitTimer(windowObject.setTimeout(() => {" in overlay_js
+    assert "scheduleOverlayApply();" in overlay_js
+    assert "function flushOverlayColorCommit() {" in overlay_js
+    assert "clearOverlayColorCommitTimer();" in overlay_js
+    assert "function closeColorPicker({ commit = true } = {}) {" in app_js
+    assert "if (commit) flushOverlayColorCommit();" in app_js
+    assert "applyColorControlValue(activeColorPickerControl, normalized, { queueCommit: true });" in app_js
+    assert "if (commit) flushOverlayColorCommit();" in app_js
+
+
+def test_overlay_canvas_component_owns_frame_scheduler_contract() -> None:
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_canvas_js = (STATIC_ROOT / "components/overlay-canvas.js").read_text(encoding="utf-8")
+
+    assert 'import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";' in app_js
+    assert "overlayCanvasComponent = createOverlayCanvasComponent({" in app_js
+    assert "function requestOverlayFrame(video, tick) {" in app_js
+    assert "return overlayCanvasComponent?.requestOverlayFrame(video, tick);" in app_js
+    assert "function startOverlayLoop() {" in app_js
+    assert "return overlayCanvasComponent?.startOverlayLoop();" in app_js
+    assert "function stopOverlayLoop() {" in app_js
+    assert "return overlayCanvasComponent?.stopOverlayLoop();" in app_js
+    assert "export function createOverlayCanvasComponent({" in overlay_canvas_js
+    assert "function requestOverlayFrame(video, tick) {" in overlay_canvas_js
+    assert "function startOverlayLoop() {" in overlay_canvas_js
+    assert 'renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);' in overlay_canvas_js
+    assert 'renderWaveformPlayhead(mediaTimeS === null ? currentPrimaryVideoPositionMs() : mediaTimeS * 1000);' in overlay_canvas_js
 
 
 def test_overlay_review_drag_cleanup_is_bound_to_cancel_lost_capture_and_window_interruptions() -> None:
@@ -540,49 +569,60 @@ def test_overlay_review_drag_cleanup_is_bound_to_cancel_lost_capture_and_window_
 
 
 def test_overlay_drag_math_uses_client_preview_frame_rect() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
 
-    assert "function previewFrameClientRect(video, container) {" in js
-    assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in js
-    assert "const badgeRect = customBadge.getBoundingClientRect();" in js
-    assert "const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);" in js
-    assert "const anchorRect = anchorBadge?.getBoundingClientRect() || overlay?.getBoundingClientRect() || badge.getBoundingClientRect();" in js
-    assert 'scoreLayer.style.left = `${frameRect.left}px`;' in js
-    assert 'scoreLayer.style.top = `${frameRect.top}px`;' in js
-    assert 'scoreLayer.style.width = `${frameRect.width}px`;' in js
-    assert 'scoreLayer.style.height = `${frameRect.height}px`;' in js
-    assert 'badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;' in js
-    assert 'badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;' in js
-    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in js
-    assert 'kind: effectiveKind,' in js
-    assert 'sourceKind: kind,' in js
-    assert '$(config.lockId).checked = false;' not in js
+    assert "function previewFrameClientRect(video, container) {" in app_js
+    assert 'badge.style.left = `${clamp((x * frameRect.width) - (badgeWidth / 2), 0, Math.max(0, frameRect.width - badgeWidth))}px`;' in app_js
+    assert 'badge.style.top = `${clamp((y * frameRect.height) - (badgeHeight / 2), 0, Math.max(0, frameRect.height - badgeHeight))}px`;' in app_js
+    assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in overlay_js
+    assert "const badgeRect = customBadge.getBoundingClientRect();" in overlay_js
+    assert "const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);" in overlay_js
+    assert "const anchorRect = anchorBadge?.getBoundingClientRect() || overlay?.getBoundingClientRect() || badge.getBoundingClientRect();" in overlay_js
+    assert 'scoreLayer.style.left = `${frameRect.left}px`;' in overlay_js
+    assert 'scoreLayer.style.top = `${frameRect.top}px`;' in overlay_js
+    assert 'scoreLayer.style.width = `${frameRect.width}px`;' in overlay_js
+    assert 'scoreLayer.style.height = `${frameRect.height}px`;' in overlay_js
+    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in overlay_js
+    assert 'kind: effectiveKind,' in overlay_js
+    assert 'sourceKind: kind,' in overlay_js
+    assert '$(config.lockId).checked = false;' not in overlay_js
 
 
 def test_imported_summary_defaults_and_above_final_contract_are_source_visible() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
+    review_js = (STATIC_ROOT / "panes/review-pane.js").read_text(encoding="utf-8")
     controller_source = Path("src/splitshot/ui/controller.py").read_text(encoding="utf-8")
     renderer_source = Path("src/splitshot/overlay/render.py").read_text(encoding="utf-8")
 
-    assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left"' in js
-    assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
-    assert 'return box.text || state?.scoring_summary?.imported_overlay_text || "";' in js
-    assert 'if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE)' in js
-    assert 'textArea.disabled = false;' in js
-    assert 'Leave blank to use the imported PractiScore stage summary after the final shot' in js
-    assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in js
-    assert 'function resolvedOverlayTextBoxSize(box) {' in js
-    assert 'function overlayStackAnchorRect(overlay) {' in js
-    assert 'function overlayStackTerminalRect(overlay) {' in js
-    assert 'const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());' in js
-    assert 'if (direction === "up") return candidateRect.top < selectedRect.top ? candidate : selected;' in js
-    assert 'left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);' in js
-    assert 'top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);' in js
-    assert 'if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
-    assert 'const aboveFinalAnchorRect = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE' in js
-    assert '!(finalScoreBadge instanceof HTMLElement) && box.source === "imported_summary" ? stackAnchorRect : null' in js
-    assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
-    assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameClientRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in js
+    assert 'import { createReviewPane } from "./panes/review-pane.js";' in app_js
+    assert "reviewPane = createReviewPane({" in app_js
+    assert 'function buildOverlayTextBox(source = "manual") {' in app_js
+    assert 'return reviewPane?.buildOverlayTextBox(source);' in app_js
+    assert 'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left"' in review_js
+    assert 'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";' in review_js
+    assert 'return box.text || currentState()?.scoring_summary?.imported_overlay_text || "";' in review_js
+    assert 'if (box.quadrant === aboveFinalTextBoxValue)' in review_js
+    assert 'textArea.disabled = false;' in review_js
+    assert 'Leave blank to use the imported PractiScore stage summary after the final shot' in review_js
+    assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in review_js
+    assert 'function resolvedOverlayTextBoxSize(box) {' in review_js
+    assert 'function overlayStackAnchorRect(overlay) {' in app_js
+    assert 'return overlayPane?.overlayStackAnchorRect(overlay) || null;' in app_js
+    assert 'function overlayStackTerminalRect(overlay) {' in app_js
+    assert 'return overlayPane?.overlayStackTerminalRect(overlay) || null;' in app_js
+    assert 'function overlayStackAnchorRect(overlay) {' in overlay_js
+    assert 'function overlayStackTerminalRect(overlay) {' in overlay_js
+    assert 'const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());' in overlay_js
+    assert 'if (direction === "up") return candidateRect.top < selectedRect.top ? candidate : selected;' in overlay_js
+    assert 'left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);' in overlay_js
+    assert 'top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);' in overlay_js
+    assert 'if (box.lock_to_stack && box.quadrant !== aboveFinalTextBoxValue) {' in overlay_js
+    assert 'const aboveFinalAnchorRect = box.quadrant === aboveFinalTextBoxValue' in overlay_js
+    assert 'box.source === "imported_summary" ? stackAnchorRect : null' in overlay_js
+    assert 'anchorBadge: box.quadrant === aboveFinalTextBoxValue ? finalScoreBadge : null,' in overlay_js
+    assert 'renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameClientRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);' in overlay_js
     assert "def _terminal_stack_rect(rects: list[QRectF], direction: str) -> QRectF | None:" in renderer_source
     assert 'rect_x = base_rect.center().x() - (badge_width / 2)' in renderer_source
     assert 'rect_y = base_rect.center().y() - (badge_height / 2)' in renderer_source
@@ -592,40 +632,62 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
 
 
 def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
+    review_js = (STATIC_ROOT / "panes/review-pane.js").read_text(encoding="utf-8")
 
-    assert 'let textBoxRenderedPositionById = new Map();' in js
-    assert 'function resolveNormalizedPointFromRect(rect, frameRect) {' in js
-    assert 'function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {' in js
-    assert 'function unlockedOverlayTextBox(box, coordinates = null) {' in js
-    assert 'function syncLockedTextBoxEditorCoordinates() {' in js
-    assert 'if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
-    assert 'return unlockedOverlayTextBox(box);' in js
-    assert 'kind: "shots",\n      sourceKind: "text_box",' in js
-    assert 'preservedTextBoxes: overlayTextBoxes(),' in js
-    assert 'activity("overlay.drag.start", { kind: "shots", source_kind: "text_box", x: anchor.x, y: anchor.y });' in js
-    assert 'const preserveExistingTextBoxes = Boolean(' in js
-    assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' not in js
-    assert 'textBoxRenderedPositionById = nextRenderedPositions;' in js
-    assert 'syncLockedTextBoxEditorCoordinates();' in js
-    assert 'setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));' in js
-    build_text_box_body = js[js.index("function buildTextBoxCard("):js.index("function renderTextBoxEditors()")]
+    assert 'let textBoxRenderedPositionById = new Map();' in app_js
+    assert 'function resolveNormalizedPointFromRect(rect, frameRect) {' in app_js
+    assert 'function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {' in app_js
+    assert 'return overlayPane?.resolveRenderedTextBoxCoordinates(boxId, fallbackBox) || null;' in app_js
+    assert 'function unlockedOverlayTextBox(box, coordinates = null) {' in app_js
+    assert 'return overlayPane?.unlockedOverlayTextBox(box, coordinates);' in app_js
+    assert 'function syncLockedTextBoxEditorCoordinates() {' in app_js
+    assert 'return overlayPane?.syncLockedTextBoxEditorCoordinates();' in app_js
+    assert 'getTextBoxRenderedPositionById: () => textBoxRenderedPositionById,' in app_js
+    assert 'setTextBoxRenderedPositionById: (value) => { textBoxRenderedPositionById = value; },' in app_js
+    assert 'function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {' in overlay_js
+    assert 'function unlockedOverlayTextBox(box, coordinates = null) {' in overlay_js
+    assert 'function syncLockedTextBoxEditorCoordinates() {' in overlay_js
+    assert 'if (!locked && box.lock_to_stack && box.quadrant !== aboveFinalTextBoxValue) {' in review_js
+    assert 'return unlockedOverlayTextBox(box);' in review_js
+    assert 'kind: "shots",' in overlay_js
+    assert 'sourceKind: "text_box",' in overlay_js
+    assert 'preservedTextBoxes: overlayTextBoxes(),' in overlay_js
+    assert 'activity("overlay.drag.start", { kind: "shots", source_kind: "text_box", x: anchor.x, y: anchor.y });' in overlay_js
+    assert 'const preserveExistingTextBoxes = Boolean(' in overlay_js
+    assert 'const unlockedBox = unlockedOverlayTextBox(box, resolveNormalizedPointFromRect(badgeRect, frameRect));' not in overlay_js
+    assert 'setTextBoxRenderedPositionById(nextRenderedPositions);' in overlay_js
+    assert 'syncLockedTextBoxEditorCoordinates();' in overlay_js
+    assert 'function setReviewTextBoxExpanded(boxId, expanded) {' in app_js
+    assert 'return reviewPane?.setReviewTextBoxExpanded(boxId, expanded);' in app_js
+    assert 'function buildTextBoxCard(box, index) {' in app_js
+    assert 'return reviewPane?.buildTextBoxCard(box, index);' in app_js
+    assert 'function renderTextBoxEditors() {' in app_js
+    assert 'return reviewPane?.renderTextBoxEditors();' in app_js
+    assert 'setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));' in review_js
+    build_text_box_body = review_js[review_js.index("function buildTextBoxCard("):review_js.index("function renderTextBoxEditors()")] 
     assert 'card.querySelector(".text-box-card-header")?.addEventListener("click", (event) => {' not in build_text_box_body
 
 
 def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:
-    js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
+    review_js = (STATIC_ROOT / "panes/review-pane.js").read_text(encoding="utf-8")
 
-    assert 'function resolveRenderedOverlayBadgeCoordinates(kind) {' in js
-    assert 'function resetOverlayPlacementBaseline(controlId) {' in js
-    assert 'function syncOverlayBadgeCoordinateControlValues() {' in js
-    assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
-    assert 'const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {' in js
-    assert 'if (locked && !box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {' in js
-    assert 'const coords = resolveRenderedOverlayBadgeCoordinates(kind);' in js
-    assert 'syncControlValue($(config.xId), coords.x);' in js
-    assert 'syncControlValue($(config.yId), coords.y);' in js
-    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in js
-    assert 'resetOverlayPlacementBaseline(id);' in js
-    assert 'syncOverlayBadgeCoordinateControlValues();' in js
-    assert '["timer-x", "timer-y", "draw-x", "draw-y"]' not in js
+    assert 'function resolveRenderedOverlayBadgeCoordinates(kind) {' in app_js
+    assert 'return overlayPane?.resolveRenderedOverlayBadgeCoordinates(kind) || null;' in app_js
+    assert 'function resetOverlayPlacementBaseline(controlId) {' in app_js
+    assert 'return overlayPane?.resetOverlayPlacementBaseline(controlId);' in app_js
+    assert 'function syncOverlayBadgeCoordinateControlValues() {' in app_js
+    assert 'return overlayPane?.syncOverlayBadgeCoordinateControlValues();' in app_js
+    assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in app_js
+    assert 'const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {' in review_js
+    assert 'if (locked && !box.lock_to_stack && box.quadrant !== aboveFinalTextBoxValue) {' in review_js
+    assert 'const coords = resolveRenderedOverlayBadgeCoordinates(kind);' in overlay_js
+    assert 'syncControlValue($(config.xId), coords.x);' in overlay_js
+    assert 'syncControlValue($(config.yId), coords.y);' in overlay_js
+    assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in overlay_js
+    assert 'resetOverlayPlacementBaseline(id);' in app_js
+    assert 'syncOverlayBadgeCoordinateControlValues();' in overlay_js
+    assert '["timer-x", "timer-y", "draw-x", "draw-y"]' not in app_js

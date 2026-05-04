@@ -14,6 +14,18 @@
 | owned-tests-docs | restored QA docs and the two browser tests that enforce them |
 | proof-file | `activedev/modularization/proof/PROOF-T02-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `done` |
+| last-synced | `2026-05-02` |
+| owner | `copilot-orchestrator-20260502-t02-run1` |
+| proof | `activedev/modularization/proof/PROOF-T02-run1.md` |
+| notes | Restored the three QA docs, reconciled related developer docs, and passed the Tier A doc-audit test gate after repairing a broken local `.venv`. |
+
 ## Goal
 
 Restore the missing browser QA documents so the modularization program can validate zero-UX-delta against an explicit control inventory and QA matrix.
@@ -33,17 +45,17 @@ Out of scope:
 
 ## Preconditions
 
-- [ ] `T01` is `done`
-- [ ] the current control inventory has been audited
-- [ ] the task owner understands the current browser pane/control surface
+- [x] `T01` is `done`
+- [x] the current control inventory has been audited
+- [x] the task owner understands the current browser pane/control surface
 
 ## Implementation checklist
 
-- [ ] author `browser-control-qa-matrix.md`
-- [ ] author `browser-control-coverage-plan.md`
-- [ ] author `browser-full-e2e-qa-plan.md`
-- [ ] reconcile `docs/README.md`, `docs/project/DEVELOPING.md`, and `docs/tests/TEST_SUITE_GUIDE.md`
-- [ ] update the enforcing browser tests if their assertions require it
+- [x] author `browser-control-qa-matrix.md`
+- [x] author `browser-control-coverage-plan.md`
+- [x] author `browser-full-e2e-qa-plan.md`
+- [x] reconcile `docs/README.md`, `docs/project/DEVELOPING.md`, and `docs/tests/TEST_SUITE_GUIDE.md`
+- [x] update the enforcing browser tests if their assertions require it
 
 ## Validation
 
@@ -70,8 +82,8 @@ Use the governance and shared-doc checks in `audit.md`:
 
 ## Done criteria
 
-- [ ] all three QA docs exist
-- [ ] the enforcing tests pass
-- [ ] related developer docs are synchronized
-- [ ] proof file was written
-- [ ] `progress.md` was updated
+- [x] all three QA docs exist
+- [x] the enforcing tests pass
+- [x] related developer docs are synchronized
+- [x] proof file was written
+- [x] `progress.md` was updated

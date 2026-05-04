@@ -31,7 +31,9 @@ The facts below were verified against the live repository on 2026-05-02.
 | Browser stylesheet | `src/splitshot/browser/static/styles.css` — 4,587 lines |
 | Browser server | `src/splitshot/browser/server.py` — 1,712 lines |
 | Browser state builder | `src/splitshot/browser/state.py` — 227 lines |
-| Browser test files | `tests/browser/` — 18 test files |
+| Browser test inventory | `tests/browser/` — 18 test files / 225 top-level test functions |
+| Browser monolith structure | `app.js` has 0 `import` statements, 0 `export` statements, 0 classes, 91 top-level `let` globals, and 739 named `function` declarations |
+| Monolith shell seams | `render()` lines 12,731–12,747; `wireEvents()` lines 13,763–14,376 |
 | Static shell structure | still a classic `<script>` load, not module-based |
 | Existing UI audit artifacts | `artifacts/browser-ui-surface-audit-latest.json`, `artifacts/browser-interaction-audit-latest.json` |
 | Missing QA docs | `docs/project/browser-control-qa-matrix.md`, `docs/project/browser-control-coverage-plan.md`, `docs/project/browser-full-e2e-qa-plan.md` |

@@ -13,6 +13,7 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "app.js"
+MERGE_PANE_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "panes" / "merge-pane.js"
 
 
 def _post_json(url: str, payload: dict) -> dict:
@@ -43,12 +44,15 @@ def _function_body(source: str, function_name: str) -> str:
 
 def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     source = APP_JS.read_text(encoding="utf-8")
+    merge_pane_source = MERGE_PANE_JS.read_text(encoding="utf-8")
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
     export_click = source[source.index('$("export-video").addEventListener("click"') :]
     export_click = export_click[: export_click.index('$("show-export-log")')]
 
+    assert 'import { createMergePane } from "./panes/merge-pane.js";' in source
+    assert "mergePane = createMergePane({" in source
     assert "function previewFrameClientRect(video, container) {" in source
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in begin_drag_body
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in move_drag_body
@@ -61,6 +65,11 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert 'media.style.opacity = String(currentSourceOpacity(source));' in source
     assert 'input.dataset.mergeSourceField = "opacity";' in source
     assert "These values are saved per item and take effect in PiP layout and export timing." in source
+
+    assert "export function createMergePane({" in merge_pane_source
+    assert "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {" in merge_pane_source
+    assert "function renderMergeMediaList() {" in merge_pane_source
+    assert "function readMergePayload() {" in merge_pane_source
 
 
 def test_merge_source_offsets_persist_reopen_and_export_in_order(

@@ -55,6 +55,7 @@ from splitshot.media.ffmpeg import MediaError
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
+    POPUP_DIRNAME,
     PRACTISCORE_DIRNAME,
     copy_path_to_project_subdir,
     default_project_output_path,
@@ -2497,6 +2498,22 @@ class ProjectController(QObject):
             else:
                 legacy_box = legacy_custom_box_as_text_box(overlay)
                 overlay.text_boxes = [] if legacy_box is None else [legacy_box]
+        styles_payload = payload.get("styles")
+        if isinstance(styles_payload, dict):
+            for badge_name, badge_payload in styles_payload.items():
+                normalized_badge_name = str(badge_name or "").strip()
+                if normalized_badge_name not in VALID_OVERLAY_BADGE_NAMES:
+                    continue
+                badge_style = getattr(overlay, normalized_badge_name, None)
+                if isinstance(badge_style, BadgeStyle):
+                    _badge_style_from_payload(badge_style, badge_payload)
+        scoring_colors_payload = payload.get("scoring_colors")
+        if isinstance(scoring_colors_payload, dict):
+            for score_key, color in scoring_colors_payload.items():
+                normalized_score_key = str(score_key or "").strip()
+                normalized_color = str(color or "").strip()
+                if normalized_score_key and normalized_color:
+                    overlay.scoring_colors[normalized_score_key] = normalized_color
         self.project.touch()
         self.project_changed.emit()
 
@@ -2505,7 +2522,14 @@ class ProjectController(QObject):
         for item in payload.get("popups", []):
             if not isinstance(item, dict):
                 continue
-            parsed_popups.append(_popup_bubble_from_dict(item))
+            popup = _popup_bubble_from_dict(item)
+            if popup.image_path and self.project_path is not None:
+                popup.image_path = copy_path_to_project_subdir(
+                    self.project_path,
+                    popup.image_path,
+                    POPUP_DIRNAME,
+                )
+            parsed_popups.append(popup)
         self.project.popups = parsed_popups
         template_payload = payload.get("popup_template")
         if isinstance(template_payload, dict):

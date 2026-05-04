@@ -1,0 +1,333 @@
+export function createSettingsPane({
+  $ = (id) => document.getElementById(id),
+  documentObject = document,
+  getState = () => null,
+  getSettingsSectionExpansion = () => new Map(),
+  syncControlValue = () => {},
+  syncControlChecked = () => {},
+  readNumberSetting = (_id, defaultValue) => defaultValue,
+  normalizePopupTemplate = (template = {}) => template,
+  renderExportPresetOptions = () => {},
+  ensureSectionToggle = () => {},
+  settingsLayerFields = [],
+} = {}) {
+  let settingsDraft = null;
+
+  function currentState() {
+    return getState() || {};
+  }
+
+  function currentSettings() {
+    return currentState().settings || {};
+  }
+
+  function settingsSectionExpansion() {
+    return getSettingsSectionExpansion() || new Map();
+  }
+
+  function settingsPaneIsActive() {
+    return documentObject.querySelector('[data-tool-pane="settings"]')?.classList.contains("active") === true;
+  }
+
+  function syncSettingsBadgeStyle(prefix, style = {}) {
+    syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
+    syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
+    syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
+  }
+
+  function readSettingsBadgeStyle(prefix) {
+    return {
+      background_color: $(`${prefix}-background-color`)?.value || "#000000",
+      text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
+      opacity: readNumberSetting(`${prefix}-opacity`, 0.9),
+    };
+  }
+
+  function syncSettingsMarkerTemplate(template = {}) {
+    syncControlChecked($("settings-marker-enabled"), Boolean(template.enabled ?? true));
+    syncControlValue($("settings-marker-content-type"), template.content_type ?? "text");
+    syncControlValue($("settings-marker-text-source"), template.text_source ?? "score");
+    syncControlValue($("settings-marker-duration"), (Number(template.duration_ms ?? 1000) / 1000).toFixed(3));
+    syncControlChecked($("settings-marker-use-shot-split-duration"), Boolean(template.use_shot_split_duration ?? false));
+    syncControlValue($("settings-marker-width"), template.width ?? 0);
+    syncControlValue($("settings-marker-height"), template.height ?? 0);
+    syncControlChecked($("settings-marker-follow-motion"), Boolean(template.follow_motion ?? false));
+    syncControlValue($("settings-marker-motion-mode"), Boolean(template.follow_motion ?? false) ? "guided" : "fixed");
+    syncControlValue($("settings-marker-background-color"), template.background_color ?? "#000000");
+    syncControlValue($("settings-marker-text-color"), template.text_color ?? "#ffffff");
+    syncControlValue($("settings-marker-opacity"), template.opacity ?? 0.9);
+  }
+
+  function settingsValueAtPath(value, path) {
+    let current = value;
+    for (const key of path) {
+      if (!(current && typeof current === "object" && key in current)) return undefined;
+      current = current[key];
+    }
+    return current;
+  }
+
+  function settingsHasPath(value, path) {
+    let current = value;
+    for (const key of path) {
+      if (!(current && typeof current === "object" && key in current)) return false;
+      current = current[key];
+    }
+    return true;
+  }
+
+  function sameSettingsValue(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  function settingsSourceLabel(source) {
+    return {
+      project: "Project",
+      folder: "Folder",
+      app: "App",
+      effective: "Effective",
+    }[source] || "Effective";
+  }
+
+  function formatSettingsValue(value) {
+    if (value === null || value === undefined) return "-";
+    if (typeof value === "boolean") return value ? "true" : "false";
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
+    return String(value);
+  }
+
+  function settingFieldCurrentValue(field, settings, markerTemplate) {
+    if (!field.usesProjectTemplate) return settingsValueAtPath(settings, field.path);
+    const markerKey = field.path[field.path.length - 1];
+    return markerTemplate?.[markerKey];
+  }
+
+  function settingFieldSource(field, currentValue, layers) {
+    const effectivePath = ["effective", ...field.path];
+    const appPath = ["app", ...field.path];
+    const folderPath = ["folder", ...field.path];
+    const effectiveValue = settingsValueAtPath(layers, effectivePath);
+    if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
+      const projectValue = settingsValueAtPath(layers, field.projectPath);
+      if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
+        return "project";
+      }
+    }
+    if (settingsHasPath(layers, folderPath)) {
+      const folderValue = settingsValueAtPath(layers, folderPath);
+      if (sameSettingsValue(folderValue, currentValue)) return "folder";
+    }
+    if (settingsHasPath(layers, appPath)) {
+      const appValue = settingsValueAtPath(layers, appPath);
+      if (sameSettingsValue(appValue, currentValue)) return "app";
+    }
+    return "effective";
+  }
+
+  function renderSettingsLayerSummary(settings, markerTemplate, layers) {
+    const container = $("settings-layer-summary");
+    if (!container) return;
+    const table = documentObject.createElement("table");
+    table.className = "data-table";
+    table.setAttribute("aria-label", "Settings layer summary");
+    table.innerHTML = "<thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>";
+    const body = documentObject.createElement("tbody");
+    settingsLayerFields.forEach((field) => {
+      const currentValue = settingFieldCurrentValue(field, settings, markerTemplate);
+      const source = settingFieldSource(field, currentValue, layers);
+      const row = documentObject.createElement("tr");
+      const labelCell = documentObject.createElement("td");
+      labelCell.textContent = field.label;
+      const valueCell = documentObject.createElement("td");
+      valueCell.textContent = formatSettingsValue(currentValue);
+      const sourceCell = documentObject.createElement("td");
+      sourceCell.textContent = settingsSourceLabel(source);
+      row.append(labelCell, valueCell, sourceCell);
+      body.appendChild(row);
+    });
+    table.appendChild(body);
+    container.replaceChildren(table);
+  }
+
+  function isSettingsSectionExpanded(sectionId) {
+    if (settingsSectionExpansion().has(sectionId)) return Boolean(settingsSectionExpansion().get(sectionId));
+    return false;
+  }
+
+  function setSettingsSectionExpanded(sectionId, expanded) {
+    if (!sectionId) return;
+    settingsSectionExpansion().set(sectionId, Boolean(expanded));
+  }
+
+  function renderSettingsSections() {
+    documentObject.querySelectorAll("[data-settings-section]").forEach((section) => {
+      if (!(section instanceof HTMLElement)) return;
+      const sectionId = section.dataset.settingsSection || "";
+      const expanded = isSettingsSectionExpanded(sectionId);
+      section.classList.toggle("collapsed", !expanded);
+      ensureSectionToggle(section, expanded, () => {
+        setSettingsSectionExpanded(sectionId, !expanded);
+        renderSettingsSections();
+      });
+    });
+  }
+
+  function renderSettingsPane() {
+    const state = currentState();
+    const persistedSettings = currentSettings();
+    const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
+    if (!settingsPaneIsActive()) {
+      settingsDraft = null;
+    } else if (liveSettingsPayload && !sameSettingsValue(liveSettingsPayload.settings, persistedSettings)) {
+      settingsDraft = liveSettingsPayload;
+    } else if (settingsDraft && sameSettingsValue(settingsDraft.settings, persistedSettings)) {
+      settingsDraft = null;
+    }
+    const settings = settingsDraft?.settings || persistedSettings;
+    const layers = state?.settings_layers || {};
+    const hasProjectPath = Boolean(state?.project?.path);
+    const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
+    const projectOverlay = state?.project?.overlay || {};
+    const projectExport = state?.project?.export || {};
+    const projectScoring = state?.project?.scoring || {};
+    const projectAnalysis = state?.project?.analysis || {};
+    const markerTemplate = normalizePopupTemplate(settings.marker_template || state?.project?.popup_template || {});
+    const scopeSelect = $("settings-scope");
+    const scopeStatus = $("settings-scope-status");
+    if (scopeSelect) {
+      const folderOption = scopeSelect.querySelector('option[value="folder"]');
+      if (folderOption) folderOption.disabled = !hasProjectPath;
+      if (!hasProjectPath && scopeSelect.value === "folder") syncControlValue(scopeSelect, "app");
+      if (hasProjectPath && !scopeSelect.value) syncControlValue(scopeSelect, "folder");
+    }
+    if (scopeStatus) {
+      const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
+      scopeStatus.textContent = folderSettingsError
+        ? folderSettingsError
+        : !hasProjectPath
+          ? "No project folder is open. App defaults are the global template."
+          : (hasFolderLayer
+            ? "Folder defaults are active for this project and override the global template here."
+            : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
+    }
+    const shotmlDefaults = settings.shotml_defaults || {};
+    renderExportPresetOptions("settings-export-preset", null, settings.export_preset ?? projectExport.preset ?? "source");
+    syncControlValue($("settings-default-match-type"), settings.default_match_type ?? projectScoring.match_type ?? "uspsa");
+    syncControlValue($("settings-overlay-position"), settings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
+    syncControlValue($("settings-badge-size"), settings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
+    syncControlValue($("settings-overlay-custom-background-color"), settings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
+    syncControlValue($("settings-overlay-custom-text-color"), settings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
+    syncControlValue($("settings-overlay-custom-opacity"), settings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+    syncSettingsBadgeStyle("settings-timer-badge", settings.timer_badge || projectOverlay.timer_badge || {});
+    syncSettingsBadgeStyle("settings-shot-badge", settings.shot_badge || projectOverlay.shot_badge || {});
+    syncSettingsBadgeStyle("settings-current-shot-badge", settings.current_shot_badge || projectOverlay.current_shot_badge || {});
+    syncSettingsBadgeStyle("settings-hit-factor-badge", settings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
+    syncControlValue($("settings-merge-layout"), settings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
+    syncControlValue($("settings-pip-size"), settings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
+    syncControlValue($("settings-merge-pip-x"), settings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
+    syncControlValue($("settings-merge-pip-y"), settings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
+    syncControlValue($("settings-export-quality"), settings.export_quality ?? state?.project?.export?.quality ?? "high");
+    syncControlValue($("settings-export-frame-rate"), settings.export_frame_rate ?? projectExport.frame_rate ?? "source");
+    syncControlValue($("settings-export-video-codec"), settings.export_video_codec ?? projectExport.video_codec ?? "h264");
+    syncControlValue($("settings-export-audio-codec"), settings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
+    syncControlValue($("settings-export-color-space"), settings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
+    syncControlChecked($("settings-export-two-pass"), Boolean(settings.export_two_pass ?? projectExport.two_pass ?? false));
+    syncControlValue($("settings-export-ffmpeg-preset"), settings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
+    syncControlValue($("settings-default-tool"), settings.default_tool ?? "project");
+    syncControlChecked($("settings-reopen-last-tool"), Boolean(settings.reopen_last_tool ?? true));
+    syncControlValue(
+      $("settings-shotml-threshold"),
+      Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
+    );
+    syncSettingsMarkerTemplate(markerTemplate);
+    const markerSource = $("settings-marker-source");
+    if (markerSource) {
+      markerSource.textContent = hasProjectPath
+        ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
+        : "App template";
+    }
+    renderSettingsSections();
+  }
+
+  function readSettingsDefaultsPayload({ projectDefaults = false } = {}) {
+    const state = currentState();
+    const projectOverlay = state?.project?.overlay || {};
+    const projectExport = state?.project?.export || {};
+    const projectScoring = state?.project?.scoring || {};
+    const projectAnalysis = state?.project?.analysis || {};
+    const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || {});
+    const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
+    const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
+    const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
+    const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
+    const markerTemplate = projectDefaults
+      ? projectPopupTemplate
+      : normalizePopupTemplate({
+        enabled: $("settings-marker-enabled")?.checked ?? true,
+        content_type: $("settings-marker-content-type")?.value || "text",
+        text_source: $("settings-marker-text-source")?.value || "score",
+        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
+        use_shot_split_duration: $("settings-marker-use-shot-split-duration")?.checked ?? false,
+        quadrant: $("settings-marker-quadrant")?.value || projectPopupTemplate.quadrant || "middle_middle",
+        width: Number($("settings-marker-width")?.value || 0),
+        height: Number($("settings-marker-height")?.value || 0),
+        follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
+        motion_mode: $("settings-marker-motion-mode")?.value || projectPopupTemplate.motion_mode,
+        background_color: $("settings-marker-background-color")?.value || "#000000",
+        text_color: $("settings-marker-text-color")?.value || "#ffffff",
+        opacity: readNumberSetting("settings-marker-opacity", 0.9),
+      });
+    return {
+      scope: $("settings-scope")?.value || "app",
+      settings: {
+        default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
+        overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
+        badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
+        overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
+        overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
+        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+        timer_badge: timerBadge,
+        shot_badge: shotBadge,
+        current_shot_badge: currentShotBadge,
+        hit_factor_badge: hitFactorBadge,
+        merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
+        pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
+        merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
+        merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+        export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
+        export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
+        export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
+        export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
+        export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
+        export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
+        export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
+        export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
+        default_tool: $("settings-default-tool")?.value || "project",
+        reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
+        detection_threshold: projectDefaults
+          ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
+          : readNumberSetting("settings-shotml-threshold", 0.35),
+        marker_template: markerTemplate,
+      },
+    };
+  }
+
+  return Object.freeze({
+    syncSettingsBadgeStyle,
+    readSettingsBadgeStyle,
+    syncSettingsMarkerTemplate,
+    settingsValueAtPath,
+    settingsHasPath,
+    sameSettingsValue,
+    settingsSourceLabel,
+    formatSettingsValue,
+    settingFieldCurrentValue,
+    settingFieldSource,
+    renderSettingsLayerSummary,
+    renderSettingsPane,
+    isSettingsSectionExpanded,
+    setSettingsSectionExpanded,
+    renderSettingsSections,
+    readSettingsDefaultsPayload,
+  });
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from functools import lru_cache
 import json
 import os
 import shutil
@@ -60,7 +61,8 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return process
 
 
-def run_ffprobe_json(input_path: Path) -> dict:
+@lru_cache(maxsize=64)
+def _run_ffprobe_json_cached(path_str: str, file_size: int, modified_ns: int) -> str:
     process = _run(
         [
             "ffprobe",
@@ -70,10 +72,32 @@ def run_ffprobe_json(input_path: Path) -> dict:
             "-show_streams",
             "-of",
             "json",
-            str(input_path),
+            path_str,
         ]
     )
-    return json.loads(process.stdout)
+    return process.stdout
+
+
+def run_ffprobe_json(input_path: Path) -> dict:
+    resolved_path = Path(input_path)
+    try:
+        stats = resolved_path.stat()
+    except OSError:
+        process = _run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_format",
+                "-show_streams",
+                "-of",
+                "json",
+                str(resolved_path),
+            ]
+        )
+        return json.loads(process.stdout)
+    payload = _run_ffprobe_json_cached(str(resolved_path), stats.st_size, stats.st_mtime_ns)
+    return json.loads(payload)
 
 
 def run_ffmpeg(command: list[str]) -> None:

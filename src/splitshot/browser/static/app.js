@@ -1,3 +1,59 @@
+import { createActivityRuntime } from "./lib/activity.js";
+import { createApiRuntime } from "./lib/api.js";
+import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
+import { createExportPane } from "./panes/export-pane.js";
+import { createMergePane } from "./panes/merge-pane.js";
+import { createMetricsPane } from "./panes/metrics-pane.js";
+import { createMarkersPane } from "./panes/markers-pane.js";
+import { createOverlayPane } from "./panes/overlay-pane.js";
+import { createProjectPane } from "./panes/project-pane.js";
+import { createReviewPane } from "./panes/review-pane.js";
+import { createScoringPane } from "./panes/scoring-pane.js";
+import { createSettingsPane } from "./panes/settings-pane.js";
+import { createShotMLPane } from "./panes/shotml-pane.js";
+import { createTimingPane } from "./panes/timing-pane.js";
+import { createStatusBarComponent } from "./components/status-bar.js";
+import { createVideoPlayerComponent } from "./components/video-player.js";
+import { createWaveformComponent } from "./components/waveform.js";
+import {
+  $ as domById,
+  clamp as utilsClamp,
+  clampNumber as utilsClampNumber,
+  debounce as utilsDebounce,
+  fileName as utilsFileName,
+  formatNumber as utilsFormatNumber,
+  normalizedUiBooleanMap as utilsNormalizedUiBooleanMap,
+  normalizedUiFloatMap as utilsNormalizedUiFloatMap,
+  normalizedUiStringList as utilsNormalizedUiStringList,
+  numericMs as utilsNumericMs,
+  precise as utilsPrecise,
+  savedNumber as utilsSavedNumber,
+  seconds as utilsSeconds,
+  splitSeconds as splitSecondsUtil,
+} from "./lib/utils.js";
+import { createEventBus } from "./lib/event-bus.js";
+import { createKeyRuntime } from "./lib/keys.js";
+import { createLayoutRuntime } from "./lib/layout.js";
+import { createMutableBindings, installMutableGlobals, installValueGlobals } from "./lib/global-compat.js";
+import { createProcessingRuntime } from "./lib/processing.js";
+import { createStore } from "./lib/store.js";
+import { createWaveformState } from "./lib/waveform-state.js";
+
+let $ = domById;
+let clamp = utilsClamp;
+let clampNumber = utilsClampNumber;
+let debounce = utilsDebounce;
+let fileName = utilsFileName;
+let formatNumber = utilsFormatNumber;
+let normalizedUiBooleanMap = utilsNormalizedUiBooleanMap;
+let normalizedUiFloatMap = utilsNormalizedUiFloatMap;
+let normalizedUiStringList = utilsNormalizedUiStringList;
+let numericMs = utilsNumericMs;
+let precise = utilsPrecise;
+let savedNumber = utilsSavedNumber;
+let seconds = utilsSeconds;
+let splitSeconds = splitSecondsUtil;
+
 let state = null;
 let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
@@ -62,7 +118,13 @@ let timingColumnResize = null;
 let currentProjectId = null;
 let exportPathDraft = "";
 let exportDraft = {};
+let mergeDraft = {};
+let overlayPositionDraft = {};
+let overlayStyleDraft = null;
 let projectDetailsDraft = { name: null, description: null };
+let overlayTextBoxesDraft = null;
+let popupBubblesDraft = null;
+let popupTemplateDraft = null;
 let projectFolderProbeRequestId = 0;
 let secondaryPreviewSyncFrame = null;
 let secondaryPreviewPlayErrorKey = null;
@@ -105,6 +167,33 @@ let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
 let pendingInteractionPreview = { video: false, waveform: false, overlay: false };
 let pendingSelectionFallback = null;
+let initialProjectUiStateApplied = false;
+let pendingBootstrapProjectUiStateOverride = false;
+
+let processingRuntime = null;
+let activityRuntime = null;
+let layoutRuntime = null;
+let keyRuntime = null;
+let apiRuntime = null;
+let waveformStateRuntime = null;
+
+let statusBarComponent = null;
+let videoPlayerComponent = null;
+let waveformComponent = null;
+let overlayCanvasComponent = null;
+
+let shotmlPane = null;
+let markersPane = null;
+let overlayPane = null;
+let exportPane = null;
+let settingsPane = null;
+let mergePane = null;
+let projectPane = null;
+let reviewPane = null;
+let timingPane = null;
+let scoringPane = null;
+let metricsPane = null;
+
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
 const PROCESSING_BAR_MIN_VISIBLE_MS = 320;
@@ -185,8 +274,6 @@ const METRICS_TABLE_COLUMNS = Object.freeze([
   ["Confidence", "confidence"],
   ["Action", "action"],
 ]);
-
-const $ = (id) => document.getElementById(id);
 
 const badgeControls = [
   ["timer_badge", "Timer Badge"],
@@ -338,6 +425,372 @@ function mergeProjectDetailsDraft(project) {
   }
 }
 
+const appBus = createEventBus();
+const appStore = createStore({
+  state,
+  selectedShotId,
+  activeTool,
+  busyCount,
+  layoutLocked,
+  layoutSizes: { ...layoutSizes },
+  currentProjectId,
+  pendingSelectionFallback,
+  initialProjectUiStateApplied,
+  pendingBootstrapProjectUiStateOverride,
+});
+
+function syncBackboneStore(patch = {}) {
+  return appStore.patch(patch);
+}
+
+function setStateValue(value) {
+  state = value;
+  syncBackboneStore({ state });
+  return state;
+}
+
+function setSelectedShotIdValue(value) {
+  selectedShotId = value === null || value === undefined || String(value).trim() === ""
+    ? null
+    : String(value);
+  syncBackboneStore({ selectedShotId });
+  return selectedShotId;
+}
+
+function setActiveToolValue(value) {
+  activeTool = normalizeToolId(value);
+  syncBackboneStore({ activeTool });
+  return activeTool;
+}
+
+function normalizeMergeDraftValue(key, value) {
+  if (!["enabled", "layout", "pip_size_percent", "pip_x", "pip_y"].includes(key)) {
+    return undefined;
+  }
+  if (key === "enabled") return Boolean(value);
+  if (key === "layout") return String(value || "side_by_side");
+  if (key === "pip_size_percent") {
+    return clampNumber(Number(value) || 35, 1, 95);
+  }
+  return normalizedCoordinateValue(value) ?? 1;
+}
+
+function applyMergeDraft(payload = {}) {
+  const mergeState = state?.project?.merge;
+  Object.entries(payload).forEach(([key, value]) => {
+    const normalized = normalizeMergeDraftValue(key, value);
+    if (normalized === undefined) return;
+    mergeDraft[key] = normalized;
+    if (mergeState) mergeState[key] = normalized;
+  });
+}
+
+function mergeMergeDraft(project) {
+  const mergeState = project?.merge;
+  if (!mergeState) return;
+  Object.entries(mergeDraft).forEach(([key, value]) => {
+    const savedValue = normalizeMergeDraftValue(key, mergeState[key]);
+    if (Object.is(value, savedValue)) {
+      delete mergeDraft[key];
+    } else {
+      mergeState[key] = value;
+    }
+  });
+}
+
+function normalizeOverlayPositionDraftValue(key, value) {
+  if (![
+    "position",
+    "shot_quadrant",
+    "shot_direction",
+    "custom_x",
+    "custom_y",
+    "timer_x",
+    "timer_y",
+    "draw_x",
+    "draw_y",
+    "score_x",
+    "score_y",
+    "timer_lock_to_stack",
+    "draw_lock_to_stack",
+    "score_lock_to_stack",
+  ].includes(key)) {
+    return undefined;
+  }
+  if (["position", "shot_quadrant", "shot_direction"].includes(key)) {
+    return String(value ?? "");
+  }
+  if (key.endsWith("_lock_to_stack")) {
+    return Boolean(value);
+  }
+  if (value === "" || value === null || value === undefined) return null;
+  return normalizedCoordinateValue(value) ?? null;
+}
+
+function applyOverlayPositionDraft(payload = {}) {
+  const overlay = state?.project?.overlay;
+  Object.entries(payload).forEach(([key, value]) => {
+    const normalized = normalizeOverlayPositionDraftValue(key, value);
+    if (normalized === undefined) return;
+    overlayPositionDraft[key] = normalized;
+    if (overlay) overlay[key] = normalized;
+  });
+}
+
+function mergeOverlayPositionDraft(project) {
+  const overlay = project?.overlay;
+  if (!overlay) return;
+  Object.entries(overlayPositionDraft).forEach(([key, value]) => {
+    const savedValue = normalizeOverlayPositionDraftValue(key, overlay[key]);
+    if (Object.is(value, savedValue)) {
+      delete overlayPositionDraft[key];
+    } else {
+      overlay[key] = value;
+    }
+  });
+}
+
+function normalizeOverlayBadgeStyleDraft(style = {}, fallback = {}) {
+  return {
+    background_color: normalizeHexColor(style?.background_color || fallback?.background_color || "")
+      || normalizeHexColor(fallback?.background_color || "")
+      || "#000000",
+    text_color: normalizeHexColor(style?.text_color || fallback?.text_color || "")
+      || normalizeHexColor(fallback?.text_color || "")
+      || "#ffffff",
+    opacity: clampNumber(Number(style?.opacity ?? fallback?.opacity ?? 0.9) || 0.9, 0, 1),
+  };
+}
+
+function normalizeOverlayFieldDraftValue(key, value, fallback = undefined) {
+  if (["position", "badge_size", "style_type", "shot_quadrant", "shot_direction", "font_family"].includes(key)) {
+    const normalized = String(value ?? fallback ?? "").trim();
+    return normalized || String(fallback ?? "").trim();
+  }
+  if (["spacing", "margin", "bubble_width", "bubble_height"].includes(key)) {
+    return Math.max(0, Number(value ?? fallback ?? 0) || 0);
+  }
+  if (key === "max_visible_shots") {
+    return Math.max(1, Number(value ?? fallback ?? 1) || 1);
+  }
+  if (key === "font_size") {
+    return Math.max(8, Number(value ?? fallback ?? 14) || 14);
+  }
+  if (["font_bold", "font_italic", "show_timer", "show_draw", "show_shots", "show_score"].includes(key)) {
+    return Boolean(value ?? fallback);
+  }
+  return undefined;
+}
+
+function normalizeOverlayScoringColorDraftValue(value, fallback = "") {
+  return normalizeHexColor(value || fallback || "") || normalizeHexColor(fallback || "") || "";
+}
+
+function overlayBadgeStyleDraftsMatch(draftStyle, savedStyle) {
+  if (!draftStyle) return true;
+  const normalizedSavedStyle = normalizeOverlayBadgeStyleDraft(savedStyle, draftStyle);
+  return draftStyle.background_color === normalizedSavedStyle.background_color
+    && draftStyle.text_color === normalizedSavedStyle.text_color
+    && Object.is(draftStyle.opacity, normalizedSavedStyle.opacity);
+}
+
+function applyOverlayStyleDraft(payload = {}) {
+  const overlay = state?.project?.overlay;
+  const styles = payload?.styles;
+  const scoringColors = payload?.scoring_colors;
+  const hasDraftableFields = Object.entries(payload || {}).some(([key, value]) => {
+    return normalizeOverlayFieldDraftValue(key, value, overlay?.[key]) !== undefined;
+  });
+  if (!hasDraftableFields && (!styles || typeof styles !== "object") && (!scoringColors || typeof scoringColors !== "object")) return;
+  overlayStyleDraft ||= { fields: {}, styles: {}, scoring_colors: {} };
+  Object.entries(payload).forEach(([key, value]) => {
+    const normalizedValue = normalizeOverlayFieldDraftValue(key, value, overlay?.[key]);
+    if (normalizedValue === undefined) return;
+    overlayStyleDraft.fields[key] = normalizedValue;
+    if (overlay) overlay[key] = normalizedValue;
+  });
+  if (styles && typeof styles === "object") {
+    Object.entries(styles).forEach(([badgeName, style]) => {
+      if (!VALID_OVERLAY_BADGE_NAMES.has(badgeName) || !style || typeof style !== "object") return;
+      const fallbackStyle = overlay?.[badgeName] || {};
+      const normalizedStyle = normalizeOverlayBadgeStyleDraft(style, fallbackStyle);
+      overlayStyleDraft.styles[badgeName] = normalizedStyle;
+      if (overlay?.[badgeName]) {
+        overlay[badgeName] = {
+          ...overlay[badgeName],
+          ...normalizedStyle,
+        };
+      }
+    });
+  }
+  if (scoringColors && typeof scoringColors === "object") {
+    Object.entries(scoringColors).forEach(([scoreKey, color]) => {
+      const normalizedScoreKey = String(scoreKey || "").trim();
+      const normalizedColor = normalizeOverlayScoringColorDraftValue(color, overlay?.scoring_colors?.[normalizedScoreKey]);
+      if (!normalizedScoreKey || !normalizedColor) return;
+      overlayStyleDraft.scoring_colors[normalizedScoreKey] = normalizedColor;
+      if (overlay) {
+        overlay.scoring_colors = {
+          ...(overlay.scoring_colors || {}),
+          [normalizedScoreKey]: normalizedColor,
+        };
+      }
+    });
+  }
+  if (
+    Object.keys(overlayStyleDraft.fields).length === 0
+    && Object.keys(overlayStyleDraft.styles).length === 0
+    && Object.keys(overlayStyleDraft.scoring_colors).length === 0
+  ) {
+    overlayStyleDraft = null;
+  }
+}
+
+function mergeOverlayStyleDraft(project) {
+  const overlay = project?.overlay;
+  if (!overlayStyleDraft || !overlay) return;
+  Object.entries(overlayStyleDraft.fields || {}).forEach(([key, draftValue]) => {
+    const savedValue = normalizeOverlayFieldDraftValue(key, overlay[key], overlay[key]);
+    if (Object.is(draftValue, savedValue)) {
+      delete overlayStyleDraft.fields[key];
+      return;
+    }
+    overlay[key] = draftValue;
+  });
+  const nextStyleDraftEntries = Object.entries(overlayStyleDraft.styles || {});
+  nextStyleDraftEntries.forEach(([badgeName, draftStyle]) => {
+    if (overlayBadgeStyleDraftsMatch(draftStyle, overlay[badgeName])) {
+      delete overlayStyleDraft.styles[badgeName];
+      return;
+    }
+    overlay[badgeName] = {
+      ...(overlay[badgeName] || {}),
+      ...draftStyle,
+    };
+  });
+  Object.entries(overlayStyleDraft.scoring_colors || {}).forEach(([scoreKey, draftColor]) => {
+    const savedColor = normalizeOverlayScoringColorDraftValue(overlay.scoring_colors?.[scoreKey], draftColor);
+    if (draftColor === savedColor) {
+      delete overlayStyleDraft.scoring_colors[scoreKey];
+      return;
+    }
+    overlay.scoring_colors = {
+      ...(overlay.scoring_colors || {}),
+      [scoreKey]: draftColor,
+    };
+  });
+  if (
+    Object.keys(overlayStyleDraft.fields).length === 0
+    && Object.keys(overlayStyleDraft.styles).length === 0
+    && Object.keys(overlayStyleDraft.scoring_colors).length === 0
+  ) {
+    overlayStyleDraft = null;
+  }
+}
+
+function applyOverlayTextBoxesDraft(boxes = []) {
+  overlayTextBoxesDraft = Array.isArray(boxes)
+    ? boxes.map((box, index) => normalizeOverlayTextBox(box, index))
+    : null;
+}
+
+function mergeOverlayTextBoxesDraft(project) {
+  const overlay = project?.overlay;
+  if (!overlay || !Array.isArray(overlayTextBoxesDraft)) return;
+  overlay.text_boxes = overlayTextBoxesDraft.map((box, index) => normalizeOverlayTextBox(box, index));
+  syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
+}
+
+function popupBubblesDraftKey(bubbles = []) {
+  const normalizedBubbles = Array.isArray(bubbles)
+    ? bubbles.map((bubble) => normalizePopupBubble(bubble))
+    : [];
+  return JSON.stringify(normalizedBubbles);
+}
+
+function popupImagePathsEquivalent(draftPath, savedPath) {
+  const normalizedDraftPath = String(draftPath || "").trim();
+  const normalizedSavedPath = String(savedPath || "").trim();
+  if (normalizedDraftPath === normalizedSavedPath) return true;
+  if (!normalizedDraftPath || !normalizedSavedPath) return false;
+  return fileName(normalizedDraftPath) === fileName(normalizedSavedPath)
+    && normalizedSavedPath.replace(/\\/g, "/").split("/").includes("Markers");
+}
+
+function popupBubblesDraftsMatch(draftBubbles = [], savedBubbles = []) {
+  const normalizedDraftBubbles = Array.isArray(draftBubbles)
+    ? draftBubbles.map((bubble) => normalizePopupBubble(bubble))
+    : [];
+  const normalizedSavedBubbles = Array.isArray(savedBubbles)
+    ? savedBubbles.map((bubble) => normalizePopupBubble(bubble))
+    : [];
+  if (normalizedDraftBubbles.length !== normalizedSavedBubbles.length) return false;
+  return normalizedDraftBubbles.every((bubble, index) => {
+    const savedBubble = normalizedSavedBubbles[index];
+    if (!savedBubble) return false;
+    const comparableDraftBubble = { ...bubble };
+    if (popupImagePathsEquivalent(comparableDraftBubble.image_path, savedBubble.image_path)) {
+      comparableDraftBubble.image_path = savedBubble.image_path;
+    }
+    return JSON.stringify(comparableDraftBubble) === JSON.stringify(savedBubble);
+  });
+}
+
+function popupTemplateDraftKey(template = {}) {
+  return JSON.stringify(normalizePopupTemplate(template || {}));
+}
+
+function applyPopupDraft(payload = {}) {
+  const project = state?.project;
+  if (Object.prototype.hasOwnProperty.call(payload, "popups")) {
+    popupBubblesDraft = Array.isArray(payload.popups)
+      ? payload.popups.map((bubble) => normalizePopupBubble(bubble))
+      : [];
+    if (project) {
+      project.popups = popupBubblesDraft.map((bubble) => normalizePopupBubble(bubble));
+      prunePopupMotionUiState(project.popups);
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "popup_template")) {
+    popupTemplateDraft = normalizePopupTemplate(payload.popup_template || {});
+    if (project) project.popup_template = { ...popupTemplateDraft };
+  }
+}
+
+function mergePopupDraft(project) {
+  if (!project) return;
+  if (Array.isArray(popupBubblesDraft)) {
+    const savedBubbles = Array.isArray(project.popups)
+      ? project.popups.map((bubble) => normalizePopupBubble(bubble))
+      : [];
+    if (popupBubblesDraftsMatch(popupBubblesDraft, savedBubbles)) {
+      popupBubblesDraft = null;
+    } else {
+      const savedBubbleById = new Map(savedBubbles.map((bubble) => [bubble.id, bubble]));
+      popupBubblesDraft = popupBubblesDraft.map((bubble) => {
+        const normalizedBubble = normalizePopupBubble(bubble);
+        const savedBubble = savedBubbleById.get(normalizedBubble.id);
+        if (!savedBubble || !popupImagePathsEquivalent(normalizedBubble.image_path, savedBubble.image_path)) {
+          return normalizedBubble;
+        }
+        return normalizePopupBubble({
+          ...normalizedBubble,
+          image_path: savedBubble.image_path,
+        });
+      });
+      project.popups = popupBubblesDraft.map((bubble) => normalizePopupBubble(bubble));
+    }
+  }
+  if (popupTemplateDraft) {
+    const savedTemplate = normalizePopupTemplate(project.popup_template || {});
+    if (popupTemplateDraftKey(popupTemplateDraft) === popupTemplateDraftKey(savedTemplate)) {
+      popupTemplateDraft = null;
+    } else {
+      project.popup_template = { ...popupTemplateDraft };
+    }
+  }
+}
+
 function normalizeExportDraftValue(key, value) {
   if (![
     "quality",
@@ -380,12 +833,7 @@ function applyExportDraft(payload = {}) {
   Object.entries(payload).forEach(([key, value]) => {
     const normalized = normalizeExportDraftValue(key, value);
     if (normalized === undefined) return;
-    const savedValue = normalizeExportDraftValue(key, exportState?.[key]);
-    if (normalized === savedValue) {
-      delete exportDraft[key];
-    } else {
-      exportDraft[key] = normalized;
-    }
+    exportDraft[key] = normalized;
     if (exportState) exportState[key] = normalized;
   });
 }
@@ -404,178 +852,68 @@ function mergeExportDraft(project) {
 }
 
 function flushActivityQueue() {
-  if (activityFlushTimer !== null) {
-    window.clearTimeout(activityFlushTimer);
-    activityFlushTimer = null;
-  }
-  if (activityQueue.length === 0) return;
-  const entries = activityQueue;
-  activityQueue = [];
-  fetch("/api/activity", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ entries }),
-    keepalive: true,
-  }).catch((error) => {
-    console.warn("[splitshot] activity log failed", error);
-  });
+  return activityRuntime?.flushActivityQueue();
 }
 
 function queueActivity(event, detail = {}) {
-  activityQueue.push({ event, detail, ts: new Date().toISOString() });
-  if (activityQueue.length >= ACTIVITY_BATCH_SIZE) {
-    flushActivityQueue();
-    return;
-  }
-  if (activityFlushTimer !== null) return;
-  activityFlushTimer = window.setTimeout(() => {
-    activityFlushTimer = null;
-    flushActivityQueue();
-  }, ACTIVITY_FLUSH_DELAY_MS);
+  return activityRuntime?.queueActivity(event, detail);
 }
 
 function activity(event, detail = {}) {
+  if (activityRuntime?.activity) return activityRuntime.activity(event, detail);
   console.info("[splitshot]", event, detail);
-  queueActivity(event, detail);
+  return undefined;
 }
 
 function clearActivityPollTimer() {
-  if (activityPollTimer === null) return;
-  window.clearTimeout(activityPollTimer);
-  activityPollTimer = null;
+  return activityRuntime?.clearActivityPollTimer();
 }
 
 function appendExportLogLine(line) {
-  const nextLine = String(line || "").trimEnd();
-  if (!nextLine) return;
-  exportLogLines.push(nextLine);
-  exportLogLines = exportLogLines.slice(-500);
+  return activityRuntime?.appendExportLogLine(line);
 }
 
 function clearCurrentExportLogState() {
+  if (activityRuntime?.clearCurrentExportLogState) return activityRuntime.clearCurrentExportLogState();
   exportLogLines = [];
   if (state?.project?.export) {
     state.project.export.last_log = "";
     state.project.export.last_error = null;
   }
   renderExportLog();
+  return undefined;
 }
 
 function consumeActivityEntries(entries = []) {
-  let exportLogChanged = false;
-  entries.forEach((entry) => {
-    if (!entry || typeof entry !== "object") return;
-    const seq = Number(entry.seq || 0);
-    if (seq > activityCursor) activityCursor = seq;
-    if (entry.event === "/api/activity/poll") return;
-    if (entry.event === "api.export.log") {
-      appendExportLogLine(entry.line);
-      exportLogChanged = true;
-      return;
-    }
-    if (entry.event === "api.export.progress") {
-      const nextProgress = Number(entry.progress);
-      if (Number.isFinite(nextProgress)) {
-        setProcessingProgress(nextProgress * 100);
-        exportLogChanged = true;
-      }
-      return;
-    }
-    if (entry.event === "api.export.complete") {
-      setProcessingProgress(100);
-      exportLogChanged = true;
-    }
-  });
-  if (exportLogChanged) renderExportLog();
+  return activityRuntime?.consumeActivityEntries(entries);
 }
 
-async function runActivityPoll() {
-  clearActivityPollTimer();
-  try {
-    const response = await fetch(`/api/activity/poll?after=${activityCursor}`);
-    const data = await response.json();
-    if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-    consumeActivityEntries(Array.isArray(data.entries) ? data.entries : []);
-    activityCursor = Math.max(activityCursor, Number(data.cursor || 0));
-  } catch (error) {
-    console.warn("[splitshot] activity poll failed", error);
-  } finally {
-    activityPollTimer = window.setTimeout(runActivityPoll, ACTIVITY_POLL_INTERVAL_MS);
-  }
+function runActivityPoll() {
+  return activityRuntime?.runActivityPoll();
 }
 
 function startActivityPolling() {
-  if (activityPollTimer !== null) return;
-  activityPollTimer = window.setTimeout(runActivityPoll, 0);
+  return activityRuntime?.startActivityPolling();
 }
 
 function stopActivityPolling() {
-  clearActivityPollTimer();
+  return activityRuntime?.stopActivityPolling();
 }
 
 function buttonDescriptor(button) {
-  return {
-    id: button.id || "",
-    text: button.textContent.trim().replace(/\s+/g, " "),
-    tool: button.dataset.tool || "",
-    waveform_mode: button.dataset.waveformMode || "",
-    nudge_ms: button.dataset.nudge || "",
-    sync_ms: button.dataset.sync || "",
-    opens_media: button.hasAttribute("data-open-merge-media"),
+  return activityRuntime?.buttonDescriptor(button) || {
+    id: button?.id || "",
+    text: button?.textContent?.trim?.().replace?.(/\s+/g, " ") || "",
+    tool: button?.dataset?.tool || "",
+    waveform_mode: button?.dataset?.waveformMode || "",
+    nudge_ms: button?.dataset?.nudge || "",
+    sync_ms: button?.dataset?.sync || "",
+    opens_media: Boolean(button?.hasAttribute?.("data-open-merge-media")),
   };
 }
 
 function wireGlobalActivityLogging() {
-  document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest("button");
-    if (!button) return;
-    activity("button.click", buttonDescriptor(button));
-  }, true);
-  document.addEventListener("change", (event) => {
-    if (!(event.target instanceof HTMLElement)) return;
-    const control = event.target;
-    if (!["INPUT", "SELECT", "TEXTAREA"].includes(control.tagName)) return;
-    activity("control.change", {
-      id: control.id || "",
-      name: control.name || "",
-      type: control.type || control.tagName.toLowerCase(),
-      value: control.type === "file" ? Array.from(control.files || []).map((file) => file.name) : control.value,
-    });
-  }, true);
-  document.addEventListener("input", (event) => {
-    if (!(event.target instanceof HTMLElement)) return;
-    const control = event.target;
-    if (!["INPUT", "TEXTAREA"].includes(control.tagName)) return;
-    if (control.type === "file") return;
-    activity("control.input", {
-      id: control.id || "",
-      name: control.name || "",
-      type: control.type || control.tagName.toLowerCase(),
-      value: control.value,
-    });
-  }, true);
-}
-
-function seconds(ms) {
-  if (ms === null || ms === undefined || ms === "") return "--.--";
-  return (ms / 1000).toFixed(2);
-}
-
-function precise(ms) {
-  if (ms === null || ms === undefined || ms === "") return "";
-  return (ms / 1000).toFixed(3);
-}
-
-function splitSeconds(ms) {
-  if (ms === null || ms === undefined || ms === "") return "--.--s";
-  return `${seconds(ms)}s`;
-}
-
-function numericMs(value) {
-  if (value === null || value === undefined || value === "") return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+  return activityRuntime?.wireGlobalActivityLogging();
 }
 
 function orderedShotsByTime() {
@@ -628,7 +966,7 @@ function resolveSelectedShotId(nextState, requestedShotId = null, fallbackContex
 
 function syncSelectedShotId(nextState = state, fallbackContext = null) {
   const requestedShotId = selectedShotId || nextState?.project?.ui_state?.selected_shot_id || null;
-  selectedShotId = resolveSelectedShotId(nextState, requestedShotId, fallbackContext);
+  setSelectedShotIdValue(resolveSelectedShotId(nextState, requestedShotId, fallbackContext));
   if (nextState?.project?.ui_state) nextState.project.ui_state.selected_shot_id = selectedShotId;
   return selectedShotId;
 }
@@ -671,14 +1009,6 @@ function formatMatchType(matchType) {
     ipsc: "IPSC",
     idpa: "IDPA",
   }[String(matchType || "").toLowerCase()] || "PractiScore";
-}
-
-function formatNumber(value, digits = 2) {
-  if (value === null || value === undefined || value === "") return "";
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return String(value);
-  if (Number.isInteger(numeric)) return String(numeric);
-  return numeric.toFixed(digits);
 }
 
 function formatPractiScoreTime(value, { includeUnits = true } = {}) {
@@ -1098,13 +1428,6 @@ function isColorInput(control) {
   return control instanceof HTMLButtonElement && control.classList.contains("color-swatch-button");
 }
 
-function fileName(path) {
-  if (!path) return "No Video Selected";
-  const normalized = path.split("\\").join("/");
-  const base = normalized.split("/").filter(Boolean).pop() || path;
-  return base.replace(/^[a-f0-9]{32}_/i, "");
-}
-
 function mediaCacheToken() {
   return state?.media?.cache_token || "";
 }
@@ -1405,122 +1728,52 @@ function renderColorPickerSwatches() {
   });
 }
 
-function clampNumber(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
 function isImagePath(path) {
   return !!path && /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(path);
 }
 
-function nowMs() {
-  return window.performance?.now?.() ?? Date.now();
-}
-
 function clearProcessingBarShowTimer() {
-  if (processingBarShowTimer === null) return;
-  window.clearTimeout(processingBarShowTimer);
-  processingBarShowTimer = null;
+  return processingRuntime.clearProcessingBarShowTimer();
 }
 
 function clearProcessingBarHideTimer() {
-  if (processingBarHideTimer === null) return;
-  window.clearTimeout(processingBarHideTimer);
-  processingBarHideTimer = null;
+  return processingRuntime.clearProcessingBarHideTimer();
 }
 
 function clearProcessingProgressTimer() {
-  if (processingProgressTimer === null) return;
-  window.clearInterval(processingProgressTimer);
-  processingProgressTimer = null;
+  return processingRuntime.clearProcessingProgressTimer();
 }
 
 function setProcessingProgress(percent, options = {}) {
-  const allowDecrease = Boolean(options.allowDecrease);
-  const nextPercent = clampNumber(Number(percent) || 0, 0, 100);
-  processingProgressPercent = allowDecrease
-    ? nextPercent
-    : Math.max(processingProgressPercent, nextPercent);
-  const fill = $("processing-progress-fill");
-  const label = $("processing-percent");
-  if (fill) fill.style.width = `${processingProgressPercent}%`;
-  if (label) label.textContent = `${Math.round(processingProgressPercent)}%`;
+  return processingRuntime.setProcessingProgress(percent, options);
 }
 
 function progressProfileForPath(path) {
-  if (path === "/api/export") return { ceiling: 99, step: 4 };
-  if (path === "/api/files/practiscore" || path === "/api/project/practiscore") return { ceiling: 95, step: 15 };
-  if (path === "/api/project/save") return { ceiling: 92, step: 18 };
-  if (path === "/api/import/primary" || path === "/api/files/primary") return { ceiling: 95, step: 12 };
-  if (path === "/api/import/secondary" || path === "/api/import/merge" || path === "/api/files/merge") {
-    return { ceiling: 95, step: 16 };
-  }
-  return { ceiling: 90, step: 20 };
+  return processingRuntime.progressProfileForPath(path);
 }
 
 function startProcessingProgress(path) {
-  activeProcessingPath = path;
-  clearProcessingProgressTimer();
-  setProcessingProgress(0, { allowDecrease: true });
-  if (path === "/api/export") return;
-  const profile = progressProfileForPath(path);
-  processingProgressTimer = window.setInterval(() => {
-    const next = Math.min(profile.ceiling, processingProgressPercent + profile.step);
-    if (next !== processingProgressPercent) setProcessingProgress(next);
-  }, 1000);
+  return processingRuntime.startProcessingProgress(path);
 }
 
 function stopProcessingProgress(finalPercent = 100) {
-  clearProcessingProgressTimer();
-  activeProcessingPath = null;
-  setProcessingProgress(finalPercent, { allowDecrease: true });
+  return processingRuntime.stopProcessingProgress(finalPercent);
 }
 
 function hideProcessingBarNow(finalMessage = "Ready.") {
-  const bar = $("processing-bar");
-  clearProcessingBarShowTimer();
-  clearProcessingBarHideTimer();
-  clearProcessingProgressTimer();
-  processingBarVisibleAtMs = 0;
-  $("processing-message").textContent = finalMessage;
-  $("processing-detail").textContent = "Ready";
-  setProcessingProgress(0, { allowDecrease: true });
-  bar.hidden = true;
+  return processingRuntime.hideProcessingBarNow(finalMessage);
 }
 
 function scheduleProcessingBarShow(message, detail) {
-  const bar = $("processing-bar");
-  clearProcessingBarHideTimer();
-  $("processing-message").textContent = message;
-  $("processing-detail").textContent = detail;
-  if (!bar.hidden) return;
-  clearProcessingBarShowTimer();
-  processingBarShowTimer = window.setTimeout(() => {
-    processingBarShowTimer = null;
-    if (busyCount <= 0) return;
-    bar.hidden = false;
-    processingBarVisibleAtMs = nowMs();
-  }, PROCESSING_BAR_SHOW_DELAY_MS);
+  return processingRuntime.scheduleProcessingBarShow(message, detail);
 }
 
 function scheduleProcessingBarHide(finalMessage = "Ready.") {
-  clearProcessingBarShowTimer();
-  clearProcessingBarHideTimer();
-  const bar = $("processing-bar");
-  $("processing-message").textContent = finalMessage;
-  $("processing-detail").textContent = "Ready";
-  if (bar.hidden) return;
-  const remainingMs = Math.max(0, PROCESSING_BAR_MIN_VISIBLE_MS - (nowMs() - processingBarVisibleAtMs));
-  processingBarHideTimer = window.setTimeout(() => {
-    processingBarHideTimer = null;
-    if (busyCount !== 0) return;
-    hideProcessingBarNow(finalMessage);
-  }, remainingMs);
+  return processingRuntime.scheduleProcessingBarHide(finalMessage);
 }
 
 function forceHideProcessingBar(finalMessage = "Ready.") {
-  busyCount = 0;
-  hideProcessingBarNow(finalMessage);
+  return processingRuntime.forceHideProcessingBar(finalMessage);
 }
 
 function setStatus(message) {
@@ -1535,89 +1788,8 @@ function setStatus(message) {
 }
 
 function beginProcessing(message, detail = "Working locally", path = null) {
-  busyCount += 1;
-  if (path === "/api/export") {
-    clearCurrentExportLogState();
-  }
-  if (busyCount === 1) startProcessingProgress(path);
-  scheduleProcessingBarShow(message, detail);
-  activity("ui.processing.start", { message, detail, busy_count: busyCount });
-  return (finalMessage = "Ready.") => {
-    busyCount = Math.max(0, busyCount - 1);
-    activity("ui.processing.finish", { message: finalMessage, busy_count: busyCount });
-    if (busyCount === 0) {
-      stopProcessingProgress(100);
-      scheduleProcessingBarHide(finalMessage);
-    }
-  };
-}
-
-function debounce(fn, delayMs = 250) {
-  let timer = null;
-  let lastArgs = null;
-
-  const debounced = (...args) => {
-    lastArgs = args;
-    window.clearTimeout(timer);
-    timer = window.setTimeout(() => {
-      timer = null;
-      const pendingArgs = lastArgs;
-      lastArgs = null;
-      fn(...(pendingArgs || []));
-    }, delayMs);
-  };
-
-  debounced.cancel = () => {
-    window.clearTimeout(timer);
-    timer = null;
-    lastArgs = null;
-  };
-
-  debounced.flush = () => {
-    if (timer === null) return false;
-    window.clearTimeout(timer);
-    timer = null;
-    const pendingArgs = lastArgs;
-    lastArgs = null;
-    fn(...(pendingArgs || []));
-    return true;
-  };
-
-  return debounced;
-}
-
-function savedNumber(key, fallback) {
-  const value = Number(window.localStorage.getItem(key));
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function normalizedUiBooleanMap(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
-  return Object.fromEntries(
-    Object.entries(data)
-      .map(([key, value]) => [String(key || "").trim(), Boolean(value)])
-      .filter(([key]) => Boolean(key)),
-  );
-}
-
-function normalizedUiFloatMap(data, minimum = 0) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) return {};
-  return Object.fromEntries(
-    Object.entries(data)
-      .map(([key, value]) => [String(key || "").trim(), Number(value)])
-      .filter(([key, value]) => Boolean(key) && Number.isFinite(value) && value >= minimum),
-  );
-}
-
-function normalizedUiStringList(data) {
-  if (!Array.isArray(data)) return [];
-  return data
-    .map((value) => String(value || "").trim())
-    .filter(Boolean);
+  if (path === "/api/export") clearCurrentExportLogState();
+  return processingRuntime.beginProcessing(message, detail, path);
 }
 
 function resolvedTimingColumnWidths(data = {}) {
@@ -1694,64 +1866,23 @@ function scoringWorkbenchGridTemplate(table) {
 }
 
 function applyTimingTableColumns(table) {
-  if (!table) return;
-  if (window.innerWidth <= 680) {
-    table.style.removeProperty("grid-template-columns");
-    return;
-  }
-  const template = table.id === "scoring-workbench-table"
-    ? scoringWorkbenchGridTemplate(table)
-    : timingGridTemplate(table.id);
-  if (template) table.style.gridTemplateColumns = template;
+  return timingPane?.applyTimingTableColumns(table);
 }
 
 function syncTimingTableColumns() {
-  applyTimingTableColumns($("timing-table"));
-  applyTimingTableColumns($("timing-workbench-table"));
-  applyTimingTableColumns($("scoring-table"));
-  applyTimingTableColumns($("scoring-workbench-table"));
+  return timingPane?.syncTimingTableColumns();
 }
 
 function beginTimingColumnResize(tableId, columnId, event) {
-  if (!TIMING_RESIZABLE_COLUMNS.has(columnId)) return;
-  timingColumnResize = {
-    tableId,
-    columnId,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startWidth: resolvedTimingColumnWidths(timingColumnWidths)[columnId] || TIMING_COLUMN_DEFAULTS[columnId] || 96,
-    target: event.currentTarget,
-  };
-  capturePointer(timingColumnResize.target, event.pointerId);
-  document.body.classList.add("resizing-layout");
-  activity("timing.column.resize.start", { table_id: tableId, column_id: columnId });
+  return timingPane?.beginTimingColumnResize(tableId, columnId, event);
 }
 
 function moveTimingColumnResize(event) {
-  if (!timingColumnResize) return;
-  if (event.pointerId !== undefined && timingColumnResize.pointerId !== undefined && event.pointerId !== timingColumnResize.pointerId) return;
-  const minimumWidth = TIMING_COLUMN_MIN_WIDTHS[timingColumnResize.columnId] || 72;
-  const nextWidth = Math.max(minimumWidth, Math.round(timingColumnResize.startWidth + (event.clientX - timingColumnResize.startX)));
-  timingColumnWidths = {
-    ...resolvedTimingColumnWidths(timingColumnWidths),
-    [timingColumnResize.columnId]: nextWidth,
-  };
-  syncTimingTableColumns();
+  return timingPane?.moveTimingColumnResize(event);
 }
 
 function endTimingColumnResize(event) {
-  if (!timingColumnResize) return;
-  if (event.pointerId !== undefined && timingColumnResize.pointerId !== undefined && event.pointerId !== timingColumnResize.pointerId) return;
-  releasePointer(timingColumnResize.target, timingColumnResize.pointerId);
-  activity("timing.column.resize.commit", {
-    table_id: timingColumnResize.tableId,
-    column_id: timingColumnResize.columnId,
-    width: timingColumnWidths[timingColumnResize.columnId],
-  });
-  timingColumnResize = null;
-  document.body.classList.remove("resizing-layout");
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return timingPane?.endTimingColumnResize(event);
 }
 
 function normalizeProjectUiState(uiState = {}) {
@@ -1860,7 +1991,7 @@ function syncLocalProjectUiState(payload = readProjectUiStatePayload()) {
 
 function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {
   const normalized = normalizeProjectUiState(uiState);
-  selectedShotId = normalized.selected_shot_id;
+  setSelectedShotIdValue(normalized.selected_shot_id);
   waveformZoomX = normalized.timeline_zoom;
   waveformOffsetMs = normalized.timeline_offset_ms;
   layoutLocked = normalized.layout_locked;
@@ -1920,131 +2051,55 @@ function formattedCoordinateValue(value, fallback = 0.5) {
 }
 
 function currentPipSizePercent(source = null, fallback = 35) {
-  const sourceSize = Number(source?.pip_size_percent);
-  if (Number.isFinite(sourceSize) && sourceSize > 0) return sourceSize;
-  return Number(
-    state?.project?.merge?.pip_size_percent
-      ?? Number(String(state?.project?.merge?.pip_size || "35%").replace(/%$/, ""))
-      ?? fallback,
-  );
+  return mergePane?.currentPipSizePercent(source, fallback) ?? fallback;
 }
 
 function sourceIdentifier(source, fallback = "") {
-  const asset = source?.asset || source || {};
-  return source?.id || asset.id || fallback || fileName(asset.path || "");
+  return mergePane?.sourceIdentifier(source, fallback) ?? fallback;
 }
 
 function currentSourceSyncOffsetMs(source = null) {
-  return Math.round(Number(source?.sync_offset_ms) || 0);
+  return mergePane?.currentSourceSyncOffsetMs(source) ?? 0;
 }
 
 function currentSourceOpacity(source = null) {
-  return clampNumber(Number(source?.opacity ?? 1) || 0, 0, 1);
+  return mergePane?.currentSourceOpacity(source) ?? 1;
 }
 
 function formatSyncOffsetLabel(offsetMs) {
-  const numeric = Math.round(Number(offsetMs) || 0);
-  return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
+  return mergePane?.formatSyncOffsetLabel(offsetMs) ?? `Sync ${Math.round(Number(offsetMs) || 0)} ms`;
 }
 
 function mergePreviewTargetTime(primaryTime, source = null) {
-  return Math.max(0, primaryTime + (currentSourceSyncOffsetMs(source) / 1000));
+  return mergePane?.mergePreviewTargetTime(primaryTime, source) ?? primaryTime;
 }
 
 function mergeSourceById(sourceId) {
-  return (state?.project?.merge_sources || []).find((source, index) => sourceIdentifier(source, String(index)) === sourceId) || null;
+  return mergePane?.mergeSourceById(sourceId) ?? null;
 }
 
 function isMergeSourceExpanded(sourceId) {
-  if (!sourceId) return false;
-  if (mergeSourceExpansion.has(sourceId)) return Boolean(mergeSourceExpansion.get(sourceId));
-  if (sourceId === PIP_DEFAULTS_SECTION_ID) return true;
-  const firstSource = state?.project?.merge_sources?.[0] || null;
-  if (firstSource && sourceId === sourceIdentifier(firstSource, "0")) return true;
-  return false;
+  return mergePane?.isMergeSourceExpanded(sourceId) ?? false;
 }
 
 function setMergeSourceExpanded(sourceId, expanded) {
-  if (!sourceId) return;
-  mergeSourceExpansion.set(sourceId, Boolean(expanded));
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return mergePane?.setMergeSourceExpanded(sourceId, expanded);
 }
 
-function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null) {
-  const xValue = Number.isFinite(pipX) ? pipX.toFixed(3) : "";
-  const yValue = Number.isFinite(pipY) ? pipY.toFixed(3) : "";
-  const sizeValue = Number.isFinite(pipSizePercent) ? Math.round(pipSizePercent) : "";
-  const offsetValue = Math.round(Number(syncOffsetMs) || 0);
-  const opacityValue = String(opacityPercentValue(opacity ?? 1));
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="x"]`).forEach((input) => {
-    syncControlValue(input, xValue);
-  });
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="y"]`).forEach((input) => {
-    syncControlValue(input, yValue);
-  });
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="size"]`).forEach((input) => {
-    syncControlValue(input, sizeValue);
-  });
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-output="size"]`).forEach((output) => {
-    output.textContent = sizeValue === "" ? "" : `${sizeValue}%`;
-  });
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
-    syncControlValue(input, opacityValue);
-  });
-  document.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
-    label.textContent = formatSyncOffsetLabel(offsetValue);
-  });
+function syncMergeSourceControls(...args) {
+  return mergePane?.syncMergeSourceControls(...args);
 }
 
-function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null) {
-  const source = mergeSourceById(sourceId);
-  if (!source || !state?.project) return;
-  const nextSize = clampNumber(
-    Number(
-      pipSizePercent
-        ?? source.pip_size_percent
-        ?? state.project.merge.pip_size_percent
-        ?? 35,
-    ) || 35,
-    1,
-    95,
-  );
-  const nextX = normalizedCoordinateValue(pipX) ?? 1;
-  const nextY = normalizedCoordinateValue(pipY) ?? 1;
-  const nextOpacity = currentSourceOpacity({ opacity: opacity ?? source.opacity ?? 1 });
-  source.pip_size_percent = nextSize;
-  source.pip_x = nextX;
-  source.pip_y = nextY;
-  source.opacity = nextOpacity;
-  syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity);
+function updateLocalMergeSourcePosition(...args) {
+  return mergePane?.updateLocalMergeSourcePosition(...args);
 }
 
-function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
-  const source = mergeSourceById(sourceId);
-  if (!source || !state?.project) return;
-  source.sync_offset_ms = Math.round(Number(syncOffsetMs) || 0);
-  if (state.project.merge_sources?.[0]?.id === sourceId) {
-    state.project.analysis.sync_offset_ms = source.sync_offset_ms;
-  }
-  syncMergeSourceControls(
-    sourceId,
-    normalizedCoordinateValue(source.pip_x),
-    normalizedCoordinateValue(source.pip_y),
-    currentPipSizePercent(source),
-    source.sync_offset_ms,
-    currentSourceOpacity(source),
-  );
+function updateLocalMergeSourceSyncOffset(...args) {
+  return mergePane?.updateLocalMergeSourceSyncOffset(...args);
 }
 
-function mergeSourcePositionPayload(sourceId, source) {
-  return {
-    source_id: sourceId,
-    pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
-    pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
-    pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
-    opacity: currentSourceOpacity(source),
-  };
+function mergeSourcePositionPayload(...args) {
+  return mergePane?.mergeSourcePositionPayload(...args) ?? null;
 }
 
 function syncOverlayFontSizePreset() {
@@ -2061,419 +2116,103 @@ function ensureShotQuadrantDefaults() {
 }
 
 function createOverlayTextBoxId() {
-  const generated = window.crypto?.randomUUID?.();
-  if (generated) return generated.replace(/-/g, "");
-  return `textbox-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 10)}`;
+  return reviewPane?.createOverlayTextBoxId();
 }
 
 function overlayTextBoxAutoSize(box) {
-  const text = overlayTextBoxDisplayText(box).trim();
-  if (!text) return { width: 0, height: 0 };
-  const measurement = measureOverlayBadgeContent(text);
-  return {
-    width: Math.ceil(measurement.width + (OVERLAY_BADGE_PADDING_X_PX * 2)),
-    height: Math.ceil(measurement.height + (OVERLAY_BADGE_PADDING_Y_PX * 2)),
-  };
+  return reviewPane?.overlayTextBoxAutoSize(box);
 }
 
 function resolvedOverlayTextBoxSize(box) {
-  const explicitWidth = Math.max(0, Number(box?.width || 0));
-  const explicitHeight = Math.max(0, Number(box?.height || 0));
-  if (explicitWidth > 0 && explicitHeight > 0) {
-    return { width: explicitWidth, height: explicitHeight };
-  }
-  const autoSize = overlayTextBoxAutoSize(box);
-  return {
-    width: explicitWidth > 0 ? explicitWidth : autoSize.width,
-    height: explicitHeight > 0 ? explicitHeight : autoSize.height,
-  };
+  return reviewPane?.resolvedOverlayTextBoxSize(box);
 }
 
 function syncOverlayTextBoxSizeControls(boxId) {
-  const box = overlayTextBoxes().find((item) => item.id === boxId);
-  if (!box) return;
-  const card = [...document.querySelectorAll(".text-box-card[data-box-id]")].find(
-    (element) => element instanceof HTMLElement && element.dataset.boxId === boxId,
-  );
-  if (!(card instanceof HTMLElement)) return;
-  const displayedSize = resolvedOverlayTextBoxSize(box);
-  const widthInput = card.querySelector('[data-text-box-field="width"]');
-  const heightInput = card.querySelector('[data-text-box-field="height"]');
-  if (widthInput instanceof HTMLInputElement && !controlIsActive(widthInput)) syncControlValue(widthInput, displayedSize.width);
-  if (heightInput instanceof HTMLInputElement && !controlIsActive(heightInput)) syncControlValue(heightInput, displayedSize.height);
+  return reviewPane?.syncOverlayTextBoxSizeControls(boxId);
 }
 
 function normalizeOverlayTextBox(box = {}, index = 0) {
-  const normalizedX = normalizedCoordinateValue(box.x);
-  const normalizedY = normalizedCoordinateValue(box.y);
-  const source = box.source === "imported_summary" ? "imported_summary" : "manual";
-  const validQuadrants = new Set([
-    ABOVE_FINAL_TEXT_BOX_VALUE,
-    "top_left",
-    "top_middle",
-    "top_right",
-    "middle_left",
-    "middle_middle",
-    "middle_right",
-    "bottom_left",
-    "bottom_middle",
-    "bottom_right",
-    CUSTOM_QUADRANT_VALUE,
-  ]);
-  const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";
-  const requestedQuadrant = validQuadrants.has(box.quadrant) ? box.quadrant : fallbackQuadrant;
-  const usesExplicitCoordinates = requestedQuadrant === CUSTOM_QUADRANT_VALUE || normalizedX !== null || normalizedY !== null;
-  let width = Math.max(0, Number(box.width || 0));
-  let height = Math.max(0, Number(box.height || 0));
-  return {
-    id: box.id || createOverlayTextBoxId(),
-    enabled: Boolean(box.enabled ?? true),
-    lock_to_stack: Boolean(box.lock_to_stack ?? false),
-    source,
-    text: String(box.text || "").slice(0, 500),
-    quadrant: usesExplicitCoordinates ? CUSTOM_QUADRANT_VALUE : requestedQuadrant,
-    x: usesExplicitCoordinates ? normalizedX ?? 0.5 : null,
-    y: usesExplicitCoordinates ? normalizedY ?? 0.5 : null,
-    background_color: normalizeHexColor(box.background_color || "#000000") || "#000000",
-    text_color: normalizeHexColor(box.text_color || "#ffffff") || "#ffffff",
-    opacity: clamp(Number(box.opacity ?? 0.9), 0, 1),
-    width,
-    height,
-    order: Number(box.order ?? index),
-  };
+  return reviewPane?.normalizeOverlayTextBox(box, index);
 }
 
 function overlayTextBoxes() {
-  if (!state?.project?.overlay) return [];
-  const boxes = Array.isArray(state.project.overlay.text_boxes) ? state.project.overlay.text_boxes : [];
-  if (boxes.length > 0) {
-    return boxes.map((box, index) => normalizeOverlayTextBox(box, index));
-  }
-  const overlay = state.project.overlay;
-  const hasLegacyBox = Boolean(
-    overlay.custom_box_enabled
-      || (overlay.custom_box_mode || "manual") === "imported_summary"
-      || overlay.custom_box_text,
-  );
-  if (!hasLegacyBox) return [];
-  return [normalizeOverlayTextBox({
-    id: "legacy-custom-box",
-    enabled: overlay.custom_box_enabled,
-    lock_to_stack: false,
-    source: overlay.custom_box_mode || "manual",
-    text: overlay.custom_box_text || "",
-    quadrant: overlay.custom_box_quadrant || "top_right",
-    x: overlay.custom_box_x,
-    y: overlay.custom_box_y,
-    background_color: overlay.custom_box_background_color || "#000000",
-    text_color: overlay.custom_box_text_color || "#ffffff",
-    opacity: overlay.custom_box_opacity ?? 0.9,
-    width: overlay.custom_box_width || 0,
-    height: overlay.custom_box_height || 0,
-  })];
+  return reviewPane?.overlayTextBoxes() || [];
 }
 
 function preferredLegacyTextBox(boxes) {
-  return boxes.find((box) => box.source === "imported_summary") || boxes[0] || null;
+  return reviewPane?.preferredLegacyTextBox(boxes) || null;
 }
 
 function syncLegacyOverlayBoxState(overlay, boxes = overlayTextBoxes()) {
-  const primary = preferredLegacyTextBox(boxes);
-  if (!primary) {
-    overlay.custom_box_enabled = false;
-    overlay.custom_box_mode = "manual";
-    overlay.custom_box_text = "";
-    return;
-  }
-  overlay.custom_box_enabled = Boolean(primary.enabled);
-  overlay.custom_box_mode = primary.source;
-  overlay.custom_box_text = primary.text;
-  overlay.custom_box_quadrant = primary.quadrant;
-  overlay.custom_box_x = primary.x;
-  overlay.custom_box_y = primary.y;
-  overlay.custom_box_background_color = primary.background_color;
-  overlay.custom_box_text_color = primary.text_color;
-  overlay.custom_box_opacity = primary.opacity;
-  overlay.custom_box_width = primary.width;
-  overlay.custom_box_height = primary.height;
+  return reviewPane?.syncLegacyOverlayBoxState(overlay, boxes);
 }
 
 function setLocalOverlayTextBoxes(boxes) {
-  if (!state?.project?.overlay) return;
-  const normalized = boxes.map((box, index) => normalizeOverlayTextBox(box, index));
-  state.project.overlay.text_boxes = normalized;
-  syncLegacyOverlayBoxState(state.project.overlay, normalized);
+  return reviewPane?.setLocalOverlayTextBoxes(boxes);
 }
 
 function buildOverlayTextBox(source = "manual") {
-  return normalizeOverlayTextBox({
-    id: createOverlayTextBoxId(),
-    enabled: true,
-    lock_to_stack: false,
-    source,
-    text: "",
-    quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",
-    x: null,
-    y: null,
-    background_color: "#000000",
-    text_color: "#ffffff",
-    opacity: 0.9,
-    width: 0,
-    height: 0,
-  });
+  return reviewPane?.buildOverlayTextBox(source);
 }
 
 function overlayTextBoxLabel(box, index) {
-  if (box.source === "imported_summary") return `Imported Summary ${index + 1}`;
-  return `Custom Box ${index + 1}`;
+  return reviewPane?.overlayTextBoxLabel(box, index);
 }
 
 function applyOverlayTextBoxUpdate(boxes, { commit = false, rerender = false } = {}) {
-  setLocalOverlayTextBoxes(boxes);
-  previewOverlayControlChanges();
-  if (rerender) renderTextBoxEditors();
-  if (commit) scheduleOverlayApply();
+  return reviewPane?.applyOverlayTextBoxUpdate(boxes, { commit, rerender });
 }
 
 function updateOverlayTextBox(boxId, updater, options = {}) {
-  const boxes = overlayTextBoxes();
-  const index = boxes.findIndex((box) => box.id === boxId);
-  if (index === -1) return;
-  const nextBox = updater({ ...boxes[index] }, index, boxes);
-  if (!nextBox) return;
-  const nextBoxes = boxes.slice();
-  nextBoxes[index] = normalizeOverlayTextBox(nextBox, index);
-  applyOverlayTextBoxUpdate(nextBoxes, options);
+  return reviewPane?.updateOverlayTextBox(boxId, updater, options);
 }
 
 function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {
-  updateOverlayTextBox(boxId, (box) => {
-    if (field === "enabled") {
-      box.enabled = Boolean(rawValue);
-      return box;
-    }
-    if (field === "lock_to_stack") {
-      const locked = Boolean(rawValue);
-      if (!locked && box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
-        return unlockedOverlayTextBox(box);
-      }
-      if (locked && !box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
-        const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box);
-        if (renderedCoordinates) {
-          box.x = renderedCoordinates.x;
-          box.y = renderedCoordinates.y;
-        }
-      }
-      box.lock_to_stack = locked;
-      return box;
-    }
-    if (field === "source") {
-      box.source = rawValue === "imported_summary" ? "imported_summary" : "manual";
-      if (box.source === "imported_summary") {
-        if (!usesCustomQuadrant(box.quadrant)) {
-          box.quadrant = ABOVE_FINAL_TEXT_BOX_VALUE;
-          box.x = null;
-          box.y = null;
-        }
-      }
-      return box;
-    }
-    if (field === "text") {
-      box.text = String(rawValue || "");
-      return box;
-    }
-    if (field === "quadrant") {
-      if (usesCustomQuadrant(rawValue)) {
-        const renderedCoordinates = resolveRenderedTextBoxCoordinates(box.id, box) || {
-          x: normalizedCoordinateValue(box.x) ?? 0.5,
-          y: normalizedCoordinateValue(box.y) ?? 0.5,
-        };
-        box.quadrant = CUSTOM_QUADRANT_VALUE;
-        box.x = renderedCoordinates.x;
-        box.y = renderedCoordinates.y;
-      } else {
-        box.quadrant = rawValue;
-        box.x = null;
-        box.y = null;
-      }
-      return box;
-    }
-    if (field === "x") {
-      box.quadrant = CUSTOM_QUADRANT_VALUE;
-      box.x = normalizedCoordinateValue(rawValue);
-      box.y = box.y ?? 0.5;
-      return box;
-    }
-    if (field === "y") {
-      box.quadrant = CUSTOM_QUADRANT_VALUE;
-      box.x = box.x ?? 0.5;
-      box.y = normalizedCoordinateValue(rawValue);
-      return box;
-    }
-    if (field === "width" || field === "height") {
-      box[field] = Math.max(0, Number(rawValue || 0));
-      return box;
-    }
-    if (field === "background_color" || field === "text_color") {
-      box[field] = normalizeHexColor(rawValue) || box[field];
-      return box;
-    }
-    if (field === "opacity") {
-      const numericOpacity = Number(rawValue);
-      box.opacity = numericOpacity > 1
-        ? opacityValueFromPercent(numericOpacity)
-        : clampNumber(numericOpacity || 0, 0, 1);
-      return box;
-    }
-    return box;
-  }, options);
-  if (["text", "quadrant", "source", "width", "height", "lock_to_stack"].includes(field)) {
-    syncOverlayTextBoxSizeControls(boxId);
-  }
+  return reviewPane?.setOverlayTextBoxField(boxId, field, rawValue, options);
 }
 
 function addOverlayTextBox(source = "manual") {
-  const boxes = overlayTextBoxes();
-  boxes.push(buildOverlayTextBox(source));
-  applyOverlayTextBoxUpdate(boxes, { commit: true, rerender: true });
+  return reviewPane?.addOverlayTextBox(source);
 }
 
 function duplicateOverlayTextBox(boxId) {
-  const boxes = overlayTextBoxes();
-  const index = boxes.findIndex((box) => box.id === boxId);
-  if (index === -1) return;
-  const duplicate = normalizeOverlayTextBox({
-    ...boxes[index],
-    id: createOverlayTextBoxId(),
-  }, index + 1);
-  const nextBoxes = boxes.slice();
-  nextBoxes.splice(index + 1, 0, duplicate);
-  applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
+  return reviewPane?.duplicateOverlayTextBox(boxId);
 }
 
 function removeOverlayTextBox(boxId) {
-  const nextBoxes = overlayTextBoxes().filter((box) => box.id !== boxId);
-  applyOverlayTextBoxUpdate(nextBoxes, { commit: true, rerender: true });
+  return reviewPane?.removeOverlayTextBox(boxId);
 }
 
 function syncOverlayPreviewStateFromControls() {
-  if (!state?.project) return;
-  const payload = readOverlayPayload();
-  const overlay = state.project.overlay;
-  overlay.position = payload.position;
-  overlay.badge_size = payload.badge_size;
-  overlay.style_type = payload.style_type;
-  overlay.spacing = Math.max(0, Number(payload.spacing || 0));
-  overlay.margin = Math.max(0, Number(payload.margin || 0));
-  overlay.max_visible_shots = Math.max(1, Number(payload.max_visible_shots || overlay.max_visible_shots || 1));
-  overlay.shot_quadrant = payload.shot_quadrant;
-  overlay.shot_direction = payload.shot_direction;
-  overlay.custom_x = normalizedCoordinateValue(payload.custom_x);
-  overlay.custom_y = normalizedCoordinateValue(payload.custom_y);
-  overlay.timer_x = normalizedCoordinateValue(payload.timer_x);
-  overlay.timer_y = normalizedCoordinateValue(payload.timer_y);
-  overlay.draw_x = normalizedCoordinateValue(payload.draw_x);
-  overlay.draw_y = normalizedCoordinateValue(payload.draw_y);
-  overlay.score_x = normalizedCoordinateValue(payload.score_x);
-  overlay.score_y = normalizedCoordinateValue(payload.score_y);
-  overlay.bubble_width = Math.max(0, Number(payload.bubble_width || 0));
-  overlay.bubble_height = Math.max(0, Number(payload.bubble_height || 0));
-  overlay.font_family = payload.font_family;
-  overlay.font_size = Math.max(8, Number(payload.font_size || overlay.font_size || 14));
-  overlay.font_bold = Boolean(payload.font_bold);
-  overlay.font_italic = Boolean(payload.font_italic);
-  overlay.show_timer = Boolean(payload.show_timer);
-  overlay.show_draw = Boolean(payload.show_draw);
-  overlay.show_shots = Boolean(payload.show_shots);
-  overlay.show_score = Boolean(payload.show_score);
-  overlay.timer_lock_to_stack = Boolean(payload.timer_lock_to_stack);
-  overlay.draw_lock_to_stack = Boolean(payload.draw_lock_to_stack);
-  overlay.score_lock_to_stack = Boolean(payload.score_lock_to_stack);
-  const previousTextBoxes = Array.isArray(overlay.text_boxes) ? overlay.text_boxes : [];
-  const payloadTextBoxes = Array.isArray(payload.text_boxes) ? payload.text_boxes : [];
-  const preserveExistingTextBoxes = Boolean(
-    payloadTextBoxes.length === 0
-      && previousTextBoxes.length > 0,
-  );
-  overlay.text_boxes = (preserveExistingTextBoxes ? previousTextBoxes : payloadTextBoxes)
-    .map((box, index) => normalizeOverlayTextBox(box, index));
-  syncLegacyOverlayBoxState(overlay, overlay.text_boxes);
-  Object.entries(payload.styles).forEach(([badgeName, style]) => {
-    const badge = overlay[badgeName];
-    if (!badge) return;
-    if (style.background_color) badge.background_color = style.background_color;
-    if (style.text_color) badge.text_color = style.text_color;
-    if (style.opacity !== undefined) badge.opacity = clamp(Number(style.opacity), 0, 1);
-  });
-  overlay.scoring_colors = {
-    ...overlay.scoring_colors,
-    ...payload.scoring_colors,
-  };
-  overlayStyleMode = overlay.style_type || overlayStyleMode;
-  overlaySpacing = Number(overlay.spacing ?? overlaySpacing);
-  overlayMargin = Number(overlay.margin ?? overlayMargin);
-  syncOverlayBubbleSizeControls();
+  return overlayPane?.syncOverlayPreviewStateFromControls();
 }
 
 function previewOverlayControlChanges() {
-  syncOverlayPreviewStateFromControls();
-  scheduleInteractionPreviewRender({ overlay: true });
+  return overlayPane?.previewOverlayControlChanges();
 }
 
 function commitOverlayControlChanges() {
-  previewOverlayControlChanges();
-  scheduleOverlayApply();
+  return overlayPane?.commitOverlayControlChanges();
 }
 
 function clearOverlayColorCommitTimer() {
-  if (overlayColorCommitTimer === null) return;
-  window.clearTimeout(overlayColorCommitTimer);
-  overlayColorCommitTimer = null;
+  return overlayPane?.clearOverlayColorCommitTimer();
 }
 
 function scheduleOverlayColorCommit() {
-  clearOverlayColorCommitTimer();
-  overlayColorCommitTimer = window.setTimeout(() => {
-    overlayColorCommitTimer = null;
-    scheduleOverlayApply();
-  }, OVERLAY_COLOR_COMMIT_DELAY_MS);
+  return overlayPane?.scheduleOverlayColorCommit();
 }
 
 function flushOverlayColorCommit() {
-  if (overlayColorCommitTimer === null) return;
-  clearOverlayColorCommitTimer();
-  scheduleOverlayApply();
+  return overlayPane?.flushOverlayColorCommit();
 }
 
 function bindOverlayColorInput(control) {
-  if (!isColorInput(control) || control.dataset.overlayColorBound === "true") return;
-  control.dataset.overlayColorBound = "true";
-  const hexInput = overlayHexControlFor(control);
-  setColorControlValue(control, readColorControlValue(control));
-  syncOverlayHexControl(control);
-  control.addEventListener("click", () => openColorPicker(control));
-  control.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    openColorPicker(control);
-  });
-  if (hexInput instanceof HTMLInputElement && hexInput.dataset.overlayColorBound !== "true") {
-    hexInput.dataset.overlayColorBound = "true";
-    syncOverlayHexControl(control);
-    hexInput.addEventListener("input", () => updateColorFromHexInput(hexInput));
-    hexInput.addEventListener("change", () => updateColorFromHexInput(hexInput, { commit: true }));
-    hexInput.addEventListener("blur", () => updateColorFromHexInput(hexInput, { commit: true }));
-  }
+  return overlayPane?.bindOverlayColorInput(control);
 }
 
 function syncMergePreviewStateFromControls() {
-  if (!state?.project) return;
-  const merge = state.project.merge;
-  merge.enabled = $("merge-enabled").checked;
-  merge.layout = $("merge-layout").value;
-  merge.pip_size_percent = clampNumber(Number($("pip-size").value) || 35, 1, 95);
-  merge.pip_x = normalizedCoordinateValue($("pip-x").value) ?? 1;
-  merge.pip_y = normalizedCoordinateValue($("pip-y").value) ?? 1;
+  return mergePane?.syncMergePreviewStateFromControls();
 }
 
 function usesCustomQuadrant(quadrant) {
@@ -2506,161 +2245,63 @@ function timingEventPlacementText(event) {
 }
 
 function syncOverlayCoordinateControlState() {
-  const customEnabled = usesCustomQuadrant($("shot-quadrant").value);
-  [["overlay-custom-x", "X"], ["overlay-custom-y", "Y"]].forEach(([id, axis]) => {
-    const input = $(id);
-    input.disabled = !customEnabled;
-    input.placeholder = customEnabled ? "0.50" : "Custom only";
-    input.title = customEnabled
-      ? `Set custom ${axis.toLowerCase()} position from 0 to 1.`
-      : "Enable the Custom quadrant to edit coordinates.";
-  });
+  return overlayPane?.syncOverlayCoordinateControlState();
 }
 
 function previewFrameRectForOverlayPlacement() {
-  const stage = $("video-stage");
-  if (!stage) return null;
-  return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  return overlayPane?.previewFrameRectForOverlayPlacement() || null;
 }
 
 function overlayBadgeElement(kind) {
-  if (kind === "shots") {
-    const overlay = $("live-overlay");
-    return overlay?.querySelector('[data-overlay-drag="shots"]') || overlay?.firstElementChild || null;
-  }
-  return [...document.querySelectorAll(`[data-overlay-drag="${kind}"]`)].find(
-    (element) => element instanceof HTMLElement,
-  ) || null;
+  return overlayPane?.overlayBadgeElement(kind) || null;
 }
 
 function overlayBadgeCoordinateFallback(kind) {
-  if (kind === "shots") {
-    const fallbackX = normalizedCoordinateValue($("overlay-custom-x")?.value);
-    const fallbackY = normalizedCoordinateValue($("overlay-custom-y")?.value);
-    if (fallbackX === null || fallbackY === null) return null;
-    return { x: fallbackX, y: fallbackY };
-  }
-  const config = OVERLAY_STACK_LOCK_CONTROLS[kind];
-  if (!config) return null;
-  const fallbackX = normalizedCoordinateValue($(config.xId)?.value ?? state?.project?.overlay?.[`${kind}_x`]);
-  const fallbackY = normalizedCoordinateValue($(config.yId)?.value ?? state?.project?.overlay?.[`${kind}_y`]);
-  if (fallbackX === null || fallbackY === null) return null;
-  return { x: fallbackX, y: fallbackY };
+  return overlayPane?.overlayBadgeCoordinateFallback(kind) || null;
 }
 
 function resolveRenderedOverlayBadgeCoordinates(kind) {
-  const frameRect = previewFrameRectForOverlayPlacement();
-  const badge = overlayBadgeElement(kind);
-  if (frameRect && badge instanceof HTMLElement) {
-    return kind === "shots"
-      ? overlayDragAnchor(kind, badge, frameRect)
-      : resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect);
-  }
-  return overlayBadgeCoordinateFallback(kind);
+  return overlayPane?.resolveRenderedOverlayBadgeCoordinates(kind) || null;
 }
 
 function resetOverlayPlacementBaseline(controlId) {
-  if (controlId === "shot-quadrant") {
-    if (usesCustomQuadrant($("shot-quadrant").value)) {
-      const coords = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };
-      syncControlValue($("overlay-custom-x"), coords.x);
-      syncControlValue($("overlay-custom-y"), coords.y);
-      return;
-    }
-    syncControlValue($("overlay-custom-x"), "");
-    syncControlValue($("overlay-custom-y"), "");
-    return;
-  }
-
-  const entry = Object.entries(OVERLAY_STACK_LOCK_CONTROLS).find(([_kind, config]) => config.lockId === controlId);
-  if (!entry) return;
-  const [kind, config] = entry;
-  const coords = resolveRenderedOverlayBadgeCoordinates(kind);
-  if (!coords) return;
-  syncControlValue($(config.xId), coords.x);
-  syncControlValue($(config.yId), coords.y);
+  return overlayPane?.resetOverlayPlacementBaseline(controlId);
 }
 
 function syncOverlayBadgeCoordinateControlValues() {
-  Object.entries(OVERLAY_STACK_LOCK_CONTROLS).forEach(([kind, config]) => {
-    if (!$(config.lockId)?.checked) return;
-    const coords = resolveRenderedOverlayBadgeCoordinates(kind);
-    if (!coords) return;
-    if ($(config.xId)?.disabled) syncControlValue($(config.xId), coords.x);
-    if ($(config.yId)?.disabled) syncControlValue($(config.yId), coords.y);
-  });
+  return overlayPane?.syncOverlayBadgeCoordinateControlValues();
 }
 
 function overlayBadgeLockedToStack(kind, overlay = state?.project?.overlay) {
-  if (!overlay || !(kind in OVERLAY_STACK_LOCK_CONTROLS)) return false;
-  return Boolean(overlay[`${kind}_lock_to_stack`] ?? true);
+  return overlayPane?.overlayBadgeLockedToStack(kind, overlay) || false;
 }
 
 function syncOverlayBubbleLockControlState() {
-  Object.values(OVERLAY_STACK_LOCK_CONTROLS).forEach(({ lockId, xId, yId, label }) => {
-    const lockControl = $(lockId);
-    const isLocked = Boolean(lockControl?.checked);
-    [[xId, "X"], [yId, "Y"]].forEach(([id, axis]) => {
-      const input = $(id);
-      if (!input) return;
-      input.disabled = isLocked;
-      input.placeholder = isLocked ? "Stack locked" : "auto";
-      input.title = isLocked
-        ? `${label} follows the shot stack while locked.`
-        : `${label} ${axis} uses a normalized coordinate from 0 to 1. Leave it blank to follow the stack.`;
-    });
-  });
+  return overlayPane?.syncOverlayBubbleLockControlState();
 }
 
 function overlayTextBoxDisplayText(box) {
-  if (box.source === "imported_summary") {
-    return box.text || state?.scoring_summary?.imported_overlay_text || "";
-  }
-  return box.text || "";
+  return reviewPane?.overlayTextBoxDisplayText(box) || "";
 }
 
 function overlayTextBoxHint(box) {
-  const importedReady = Boolean(state?.scoring_summary?.imported_overlay_text);
-  if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
-    return box.source === "imported_summary"
-      ? "Keeps the imported summary centered above the final score badge once it appears. Edit the text to override the imported copy."
-      : "Keeps this box centered above the final score badge once it appears.";
-  }
-  if (box.lock_to_stack) {
-    return "Locked to the shot stack. Disable this to edit placement directly.";
-  }
-  if (box.source === "imported_summary") {
-    return importedReady
-      ? "Uses the imported PractiScore stage summary by default and appears after the final shot. Edit the text here to override it."
-      : "Import PractiScore results first. The summary box will populate after the final shot, and you can edit it here.";
-  }
-  return "Uses custom text and the same box model in Review and Export. Switch to Custom placement to edit X and Y directly.";
+  return reviewPane?.overlayTextBoxHint(box) || "";
 }
 
 function isReviewTextBoxExpanded(boxId) {
-  if (!boxId) return false;
-  if (reviewTextBoxExpansion.has(boxId)) return Boolean(reviewTextBoxExpansion.get(boxId));
-  return false;
+  return reviewPane?.isReviewTextBoxExpanded(boxId) || false;
 }
 
 function setReviewTextBoxExpanded(boxId, expanded) {
-  if (!boxId) return;
-  reviewTextBoxExpansion.set(boxId, Boolean(expanded));
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return reviewPane?.setReviewTextBoxExpanded(boxId, expanded);
 }
 
 function isShotMLSectionExpanded(sectionId) {
-  if (!sectionId) return false;
-  if (shotMLSectionExpansion.has(sectionId)) return Boolean(shotMLSectionExpansion.get(sectionId));
-  return false;
+  return shotmlPane?.isShotMLSectionExpanded(sectionId) || false;
 }
 
 function setShotMLSectionExpanded(sectionId, expanded) {
-  if (!sectionId) return;
-  shotMLSectionExpansion.set(sectionId, Boolean(expanded));
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return shotmlPane?.setShotMLSectionExpanded(sectionId, expanded);
 }
 
 function ensureSectionToggle(section, expanded, onToggle) {
@@ -2719,16 +2360,19 @@ function renderCollapsibleInspectorSections() {
 }
 
 function isSettingsSectionExpanded(sectionId) {
+  if (settingsPane) return settingsPane.isSettingsSectionExpanded(sectionId);
   if (settingsSectionExpansion.has(sectionId)) return Boolean(settingsSectionExpansion.get(sectionId));
   return false;
 }
 
 function setSettingsSectionExpanded(sectionId, expanded) {
+  if (settingsPane) return settingsPane.setSettingsSectionExpanded(sectionId, expanded);
   if (!sectionId) return;
   settingsSectionExpansion.set(sectionId, Boolean(expanded));
 }
 
 function renderSettingsSections() {
+  if (settingsPane) return settingsPane.renderSettingsSections();
   document.querySelectorAll("[data-settings-section]").forEach((section) => {
     if (!(section instanceof HTMLElement)) return;
     const sectionId = section.dataset.settingsSection || "";
@@ -2742,204 +2386,11 @@ function renderSettingsSections() {
 }
 
 function buildTextBoxCard(box, index) {
-  const card = document.createElement("section");
-  card.className = "text-box-card";
-  card.dataset.boxId = box.id;
-  const expanded = isReviewTextBoxExpanded(box.id);
-  card.classList.toggle("collapsed", !expanded);
-  const boxLockedToStack = Boolean(box.lock_to_stack);
-  const displayedCoordinates = boxLockedToStack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE
-    ? resolveRenderedTextBoxCoordinates(box.id, box)
-    : null;
-  const displayedSize = resolvedOverlayTextBoxSize(box);
-  const usesCustomPlacement = usesCustomQuadrant(box.quadrant);
-  card.innerHTML = `
-    <div class="text-box-card-header">
-      <label class="check-row"><input type="checkbox" data-text-box-field="enabled" /> <strong>${overlayTextBoxLabel(box, index)}</strong></label>
-      <div class="text-box-card-actions">
-        <button type="button" class="scoring-shot-toggle" data-text-box-action="toggle" aria-label="${expanded ? "Hide" : "Show"} text box editor">${expanded ? "v" : ">"}</button>
-        <button type="button" data-text-box-action="duplicate">Duplicate</button>
-        <button type="button" data-text-box-action="remove">Remove</button>
-      </div>
-    </div>
-    <div class="text-box-card-body" ${expanded ? "" : "hidden"}>
-      <label class="check-row"><input data-text-box-field="lock_to_stack" type="checkbox" /> Lock to shot stack</label>
-      <p class="hint" data-text-box-hint="true"></p>
-      <label>Box text
-        <textarea data-text-box-field="text" rows="3"></textarea>
-      </label>
-      <div class="control-grid">
-        <label>Box placement
-          <select data-text-box-field="quadrant">
-            <option value="above_final">Above Final Box</option>
-            <option value="top_left">Top left</option>
-            <option value="top_middle">Top middle</option>
-            <option value="top_right">Top right</option>
-            <option value="middle_left">Middle left</option>
-            <option value="middle_middle">Middle middle</option>
-            <option value="middle_right">Middle right</option>
-            <option value="bottom_left">Bottom left</option>
-            <option value="bottom_middle">Bottom middle</option>
-            <option value="bottom_right">Bottom right</option>
-            <option value="custom">Custom</option>
-          </select>
-        </label>
-        <label>Box X (0 left, 1 right)
-          <input data-text-box-field="x" type="number" min="0" max="1" step="0.01" />
-        </label>
-        <label>Box Y (0 top, 1 bottom)
-          <input data-text-box-field="y" type="number" min="0" max="1" step="0.01" />
-        </label>
-      </div>
-      <div class="control-grid">
-        <label>Box width
-          <input data-text-box-field="width" type="number" min="0" max="1000" step="1" value="0" />
-        </label>
-        <label>Box height
-          <input data-text-box-field="height" type="number" min="0" max="1000" step="1" value="0" />
-        </label>
-      </div>
-      <div class="style-grid review-style-grid">
-        <section class="style-card custom-box-style-card">
-          <h4>Box Style</h4>
-          <label class="color-field"><span class="style-card-label">Background</span>
-            <span class="color-control-pair">
-              <button data-text-box-field="background_color" class="color-swatch-button" data-color-label="Text box background" type="button"></button>
-              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#000000" placeholder="#000000" aria-label="Text box background hex value" />
-            </span>
-          </label>
-          <label class="color-field"><span class="style-card-label">Text</span>
-            <span class="color-control-pair">
-              <button data-text-box-field="text_color" class="color-swatch-button" data-color-label="Text box text" type="button"></button>
-              <input class="color-hex-input" type="text" inputmode="text" spellcheck="false" value="#ffffff" placeholder="#FFFFFF" aria-label="Text box text hex value" />
-            </span>
-          </label>
-          <label class="opacity-field"><span class="style-card-label">Opacity</span>
-            <span class="opacity-control-pair">
-              <span class="opacity-percent-field">
-                <input class="opacity-percent-input" data-text-box-field="opacity" type="number" min="0" max="100" step="1" value="90" aria-label="Opacity percent" />
-                <span class="opacity-percent-suffix">%</span>
-              </span>
-            </span>
-          </label>
-        </section>
-      </div>
-    </div>
-  `;
-  const body = card.querySelector(".text-box-card-body");
-  if (body) body.hidden = !expanded;
-  syncControlChecked(card.querySelector('[data-text-box-field="enabled"]'), box.enabled);
-  syncControlChecked(card.querySelector('[data-text-box-field="lock_to_stack"]'), box.lock_to_stack);
-  syncControlValue(card.querySelector('[data-text-box-field="quadrant"]'), box.quadrant);
-  syncControlValue(card.querySelector('[data-text-box-field="x"]'), displayedCoordinates?.x ?? box.x ?? "");
-  syncControlValue(card.querySelector('[data-text-box-field="y"]'), displayedCoordinates?.y ?? box.y ?? "");
-  syncControlValue(card.querySelector('[data-text-box-field="width"]'), displayedSize.width);
-  syncControlValue(card.querySelector('[data-text-box-field="height"]'), displayedSize.height);
-  syncControlValue(card.querySelector('[data-text-box-field="background_color"]'), box.background_color);
-  syncControlValue(card.querySelector('[data-text-box-field="text_color"]'), box.text_color);
-  syncOpacityPercentControl(card.querySelector('[data-text-box-field="opacity"]'), box.opacity ?? 0.9);
-  const textArea = card.querySelector('[data-text-box-field="text"]');
-  textArea.dataset.importedSummaryDefault = box.source === "imported_summary"
-    ? (state?.scoring_summary?.imported_overlay_text || "")
-    : "";
-  textArea.value = box.text || overlayTextBoxDisplayText(box);
-  textArea.disabled = false;
-  textArea.placeholder = box.source === "imported_summary"
-    ? "Leave blank to use the imported PractiScore stage summary after the final shot"
-    : "Text to show over the video";
-  const hint = card.querySelector('[data-text-box-hint="true"]');
-  if (hint) hint.textContent = overlayTextBoxHint(box);
-  const quadrantInput = card.querySelector('[data-text-box-field="quadrant"]');
-  quadrantInput.disabled = boxLockedToStack;
-  const xInput = card.querySelector('[data-text-box-field="x"]');
-  const yInput = card.querySelector('[data-text-box-field="y"]');
-  [xInput, yInput].forEach((input) => {
-    input.disabled = boxLockedToStack || !usesCustomPlacement;
-    input.placeholder = boxLockedToStack ? "Stack locked" : usesCustomPlacement ? "0.50" : "Custom only";
-  });
-  card.querySelectorAll("[data-text-box-field]").forEach((control) => {
-    const field = control.dataset.textBoxField || "";
-    if (!field) return;
-    if (isColorInput(control)) return;
-    const readValue = () => {
-      if (control.type === "checkbox") return control.checked;
-      if (field === "text" && box.source === "imported_summary") {
-        const rawValue = String(control.value || "");
-        const importedSummaryDefault = control.dataset.importedSummaryDefault || "";
-        return rawValue === importedSummaryDefault ? "" : rawValue;
-      }
-      return control.value;
-    };
-    if (control.tagName === "SELECT") {
-      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), {
-        commit: true,
-        rerender: field === "source" || field === "quadrant",
-      }));
-      return;
-    }
-    if (control.type === "checkbox") {
-      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: field === "lock_to_stack" }));
-      return;
-    }
-    if (control.type === "range") {
-      control.addEventListener("input", () => setOverlayTextBoxField(box.id, field, readValue(), { rerender: false }));
-      control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
-      return;
-    }
-    control.addEventListener("input", () => setOverlayTextBoxField(box.id, field, readValue(), { rerender: false }));
-    control.addEventListener("change", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
-    control.addEventListener("blur", () => setOverlayTextBoxField(box.id, field, readValue(), { commit: true, rerender: false }));
-  });
-  card.querySelector('[data-text-box-action="toggle"]')?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    preserveElementViewportAnchor(
-      () => document.querySelector(`.text-box-card[data-box-id="${box.id}"]`),
-      () => {
-        setReviewTextBoxExpanded(box.id, !isReviewTextBoxExpanded(box.id));
-        renderTextBoxEditors();
-      },
-    );
-  });
-  card.querySelector('[data-text-box-action="duplicate"]')?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    duplicateOverlayTextBox(box.id);
-  });
-  card.querySelector('[data-text-box-action="remove"]')?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    removeOverlayTextBox(box.id);
-  });
-  bindOverlayColorInput(card.querySelector('[data-text-box-field="background_color"]'));
-  bindOverlayColorInput(card.querySelector('[data-text-box-field="text_color"]'));
-  return card;
+  return reviewPane?.buildTextBoxCard(box, index);
 }
 
 function renderTextBoxEditors() {
-  const containers = [$("review-text-box-list")].filter(Boolean);
-  if (containers.length === 0) return;
-  const boxes = overlayTextBoxes();
-  const validBoxIds = new Set(boxes.map((box) => box.id));
-  [...reviewTextBoxExpansion.keys()].forEach((boxId) => {
-    if (!validBoxIds.has(boxId)) reviewTextBoxExpansion.delete(boxId);
-  });
-  containers.forEach((container) => {
-    withPreservedScrollState([container], () => {
-      container.innerHTML = "";
-      if (boxes.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "hint";
-        empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
-        container.appendChild(empty);
-        return;
-      }
-      boxes.forEach((box, index) => {
-        container.appendChild(buildTextBoxCard(box, index));
-      });
-    });
-  });
+  return reviewPane?.renderTextBoxEditors();
 }
 
 function createPopupBubbleId() {
@@ -3067,6 +2518,17 @@ function popupDurationLimitMsForBubble(bubble) {
   return popupShotDurationLimitMs(bubble.shot_id, null, bubble.time_ms);
 }
 
+function stagePopupImagePath(path) {
+  const normalizedPath = String(path || "").trim();
+  if (!normalizedPath) return "";
+  if (normalizedPath.replace(/\\/g, "/").split("/").includes("Markers")) return normalizedPath;
+  const projectPath = String(state?.project?.path || "").trim();
+  const assetName = fileName(normalizedPath);
+  if (!projectPath || !assetName) return normalizedPath;
+  const separator = projectPath.includes("\\") ? "\\" : "/";
+  return `${projectPath.replace(/[\\/]+$/, "")}${separator}Markers${separator}${assetName}`;
+}
+
 function normalizePopupBubble(bubble = {}) {
   const xValue = normalizedCoordinateValue(bubble.x);
   const yValue = normalizedCoordinateValue(bubble.y);
@@ -3076,9 +2538,7 @@ function normalizePopupBubble(bubble = {}) {
   const anchorMode = normalizePopupAnchorMode(bubble.anchor_mode, shotId);
   const timeMs = Math.max(0, Math.round(Number(bubble.time_ms ?? 0) || 0));
   const rawDurationMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000));
-  const durationMs = anchorMode === "shot" && shotId
-    ? clampPopupDurationForShot(rawDurationMs, shotId, null, timeMs)
-    : rawDurationMs;
+  const durationMs = rawDurationMs;
   const motionPath = normalizePopupMotionPath(bubble.motion_path);
   const boundedMotionPath = motionPath.length === 0
     ? motionPath
@@ -3529,12 +2989,6 @@ function collapseMinimizableInspectorItems({ syncUiState: shouldSyncUiState = tr
       changed = true;
     }
   });
-  shotMLSectionExpansion.forEach((expanded, sectionId) => {
-    if (expanded) {
-      shotMLSectionExpansion.set(sectionId, false);
-      changed = true;
-    }
-  });
   if (!changed) return;
   if (shouldSyncUiState) syncLocalProjectUiState();
   if (shouldSyncUiState && persistUiState) scheduleProjectUiStateApply();
@@ -3599,205 +3053,46 @@ function selectPopupBubble(
   bubbleId,
   { seek = true, reveal = true, focus = false, activateTool = false, expand = false, rerender = true } = {},
 ) {
-  const previousBubbleId = selectedPopupBubbleId;
-  const bubble = popupBubbles().find((item) => item.id === bubbleId) || null;
-  if (!bubble) {
-    selectedPopupBubbleId = null;
-    setSelectedPopupPlacementMode("base");
-    return false;
-  }
-  selectedPopupBubbleId = bubble.id;
-  if (previousBubbleId !== bubble.id) setSelectedPopupPlacementMode("base");
-  if (expand) {
-    if (!popupBubbleExpansion.has(bubble.id)) {
-      popupBubbleExpansion.set(bubble.id, true);
-    } else if (!popupBubbleExpansion.get(bubble.id)) {
-      popupBubbleExpansion.set(bubble.id, true);
-    }
-  }
-  if (activateTool) setActiveTool("markers");
-  if (rerender) renderPopupEditors();
-  if (seek) seekPrimaryVideoToTimeMs(popupBubbleSeekTimeMs(bubble));
-  if (reveal) window.requestAnimationFrame(() => revealPopupBubbleCard(bubble.id, { focus }));
-  return true;
+  return markersPane?.selectPopupBubble(bubbleId, {
+    seek,
+    reveal,
+    focus,
+    activateTool,
+    expand,
+    rerender,
+  }) ?? false;
 }
 
 function selectPopupBubbleForShot(shotId, options = {}) {
-  if (!shotId) return false;
-  const matchingBubble = popupBubbles().find((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id === shotId) || null;
-  if (!matchingBubble) return false;
-  return selectPopupBubble(matchingBubble.id, options);
+  return markersPane?.selectPopupBubbleForShot(shotId, options) ?? false;
 }
 
 function selectedPopupBubble() {
-  if (!selectedPopupBubbleId) return null;
-  return popupBubbles().find((bubble) => bubble.id === selectedPopupBubbleId) || null;
+  return markersPane?.selectedPopupBubble() || null;
 }
 
 function setSelectedPopupPlacementMode(mode, offsetMs = selectedPopupKeyframeOffsetMs) {
-  selectedPopupPlacementMode = mode === "keyframe" ? "keyframe" : "base";
-  if (selectedPopupPlacementMode === "keyframe") {
-    selectedPopupKeyframeOffsetMs = Math.max(0, Math.round(Number(offsetMs) || 0));
-  } else {
-    selectedPopupKeyframeOffsetMs = 0;
-  }
+  return markersPane?.setSelectedPopupPlacementMode(mode, offsetMs);
 }
 
 function popupPlacementSummary(bubble) {
-  if (!bubble) return "Base point";
-  if (selectedPopupPlacementMode !== "keyframe") return "Base point";
-  return selectedPopupKeyframeOffsetMs <= 0
-    ? "Base point"
-    : `Step ${precise(selectedPopupKeyframeOffsetMs)}s`;
+  return markersPane?.popupPlacementSummary(bubble) || "Base point";
 }
 
 function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {
-  if (!state?.project) return;
-  state.project.popups = bubbles.map((bubble) => normalizePopupBubble(bubble));
-  if (selectedPopupBubbleId && !state.project.popups.some((bubble) => bubble.id === selectedPopupBubbleId)) {
-    selectedPopupBubbleId = null;
-  }
-  prunePopupMotionUiState(state.project.popups);
-  if (rerender) {
-    renderPopupEditors();
-  }
-  renderLiveOverlay();
-  if (commit) callApi("/api/popups", { popups: state.project.popups });
+  return markersPane?.setPopupBubbles(bubbles, { commit, rerender });
 }
 
 function syncPopupBubbleSizeControls(bubbleId) {
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  if (!bubble) return;
-  const card = [...document.querySelectorAll(".popup-bubble-card[data-popup-id]")].find(
-    (element) => element instanceof HTMLElement && element.dataset.popupId === bubbleId,
-  );
-  if (!(card instanceof HTMLElement)) return;
-  const displayedSize = resolvedPopupBubbleSize(bubble);
-  const widthInput = card.querySelector('[data-popup-field="width"]');
-  const heightInput = card.querySelector('[data-popup-field="height"]');
-  if (widthInput instanceof HTMLInputElement && !controlIsActive(widthInput)) syncControlValue(widthInput, displayedSize.width);
-  if (heightInput instanceof HTMLInputElement && !controlIsActive(heightInput)) syncControlValue(heightInput, displayedSize.height);
+  return markersPane?.syncPopupBubbleSizeControls(bubbleId);
 }
 
 function setPopupBubbleField(bubbleId, field, rawValue, options = {}) {
-  const nextBubbles = popupBubbles().map((bubble) => {
-    if (bubble.id !== bubbleId) return bubble;
-    const previousDurationMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1000) || 1000));
-    const nextBubble = normalizePopupBubble({
-      ...bubble,
-      [field]: rawValue,
-      ...(field === "x" || field === "y" ? { quadrant: CUSTOM_QUADRANT_VALUE } : {}),
-    });
-    if (field === "follow_motion") {
-      nextBubble.follow_motion = Boolean(rawValue);
-      nextBubble.motion_mode = nextBubble.follow_motion ? "guided" : "fixed";
-      if (nextBubble.follow_motion) setPopupEditorSectionExpanded("motion", true);
-      if (!nextBubble.follow_motion) {
-        setPopupMotionGeneratedOffsets(bubble.id, []);
-        popupMotionGenerationSummaryByBubbleId.delete(bubble.id);
-        if (bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
-      }
-    }
-    if (field === "motion_mode") {
-      nextBubble.motion_mode = normalizePopupMotionMode(rawValue, nextBubble.follow_motion, nextBubble.motion_path);
-      nextBubble.follow_motion = nextBubble.motion_mode !== "fixed";
-      if (nextBubble.follow_motion) setPopupEditorSectionExpanded("motion", true);
-      if (!nextBubble.follow_motion) {
-        setPopupMotionGeneratedOffsets(bubble.id, []);
-        popupMotionGenerationSummaryByBubbleId.delete(bubble.id);
-        if (bubble.id === selectedPopupBubbleId) setSelectedPopupPlacementMode("base");
-      }
-    }
-    if (field === "anchor_mode") {
-      nextBubble.anchor_mode = rawValue === "shot" ? "shot" : "time";
-      nextBubble.shot_id = nextBubble.anchor_mode === "shot" ? (nextBubble.shot_id || defaultPopupShotId()) : null;
-      if (nextBubble.anchor_mode === "shot" && !nextBubble.shot_id) {
-        nextBubble.anchor_mode = "time";
-      }
-    }
-    if (field === "shot_id") {
-      nextBubble.shot_id = rawValue ? String(rawValue) : null;
-      nextBubble.anchor_mode = nextBubble.shot_id ? "shot" : "time";
-    }
-    if (field === "time_ms") {
-      nextBubble.time_ms = Math.max(0, Math.round(Number(rawValue) || 0));
-      nextBubble.anchor_mode = "time";
-      nextBubble.shot_id = null;
-    }
-    const nextDurationMs = nextBubble.anchor_mode === "shot" && nextBubble.shot_id
-      ? clampPopupDurationForShot(nextBubble.duration_ms, nextBubble.shot_id, null, nextBubble.time_ms)
-      : Math.max(1, Math.round(Number(nextBubble.duration_ms ?? 1000) || 1000));
-    const durationChanged = nextDurationMs !== previousDurationMs;
-    nextBubble.duration_ms = nextDurationMs;
-    if (durationChanged && popupBubbleMotionPath(bubble).length > 0) {
-      if (nextBubble.follow_motion) {
-        nextBubble.motion_path = scaledPopupMotionPathOffsets(popupBubbleMotionPath(bubble), previousDurationMs, nextBubble.duration_ms);
-      } else {
-        nextBubble.motion_path = normalizePopupMotionPath(popupBubbleMotionPath(bubble).map((point) => ({
-          ...point,
-          offset_ms: Math.max(1, Math.min(nextBubble.duration_ms, point.offset_ms)),
-        })));
-      }
-    } else if (nextBubble.motion_path.length > 0) {
-      nextBubble.motion_path = normalizePopupMotionPath(popupBubbleMotionPath(nextBubble).map((point) => ({
-        ...point,
-        offset_ms: Math.max(1, Math.min(nextBubble.duration_ms, point.offset_ms)),
-      })));
-    }
-    nextBubble.motion_mode = normalizePopupMotionMode(nextBubble.motion_mode, nextBubble.follow_motion, nextBubble.motion_path);
-    if (durationChanged && popupMotionGenerationSummaryByBubbleId.has(bubble.id)) {
-      popupMotionGenerationSummaryByBubbleId.set(bubble.id, "Start or Finish changed — regenerate to refresh the in-between steps.");
-    }
-    if (field === "quadrant") {
-      nextBubble.quadrant = normalizePopupQuadrant(rawValue, nextBubble.x, nextBubble.y);
-    }
-    if (nextBubble.anchor_mode === "shot" && nextBubble.shot_id && nextBubble.content_type === "text") {
-      nextBubble.text = popupTextForShotId(nextBubble.shot_id) || nextBubble.text;
-    }
-    return nextBubble;
-  });
-  setPopupBubbles(nextBubbles, options);
-  if (field !== "enabled") selectedPopupBubbleId = bubbleId;
-  if ((field === "anchor_mode" || field === "shot_id") && state?.media?.primary_available) {
-    const updatedBubble = popupBubbles().find((bubble) => bubble.id === bubbleId);
-    if (updatedBubble?.anchor_mode === "shot" && updatedBubble.shot_id) {
-      selectPopupBubble(updatedBubble.id, { seek: true, reveal: true, focus: false, activateTool: false });
-    }
-  }
-  if (["text", "quadrant", "width", "height"].includes(field)) {
-    syncPopupBubbleSizeControls(bubbleId);
-  }
+  return markersPane?.setPopupBubbleField(bubbleId, field, rawValue, options);
 }
 
 function addPopupBubble(overrides = {}) {
-  const template = currentPopupTemplate();
-  const nextBubble = normalizePopupBubble({
-    id: createPopupBubbleId(),
-    name: "",
-    text: template.content_type === "image" ? "" : defaultScoreLetter(),
-    anchor_mode: "time",
-    shot_id: null,
-    time_ms: currentPrimaryVideoPositionMs(),
-    duration_ms: template.duration_ms,
-    quadrant: template.quadrant,
-    x: 0.5,
-    y: 0.5,
-    enabled: template.enabled,
-    width: template.width,
-    height: template.height,
-    follow_motion: template.follow_motion,
-    motion_mode: template.motion_mode,
-    content_type: template.content_type,
-    image_path: template.image_path,
-    image_scale_mode: template.image_scale_mode,
-    background_color: template.background_color,
-    text_color: template.text_color,
-    opacity: template.opacity,
-    ...overrides,
-  });
-  setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
-  selectPopupBubble(nextBubble.id, { seek: false, reveal: true, focus: true, activateTool: true, expand: true });
-  return nextBubble;
+  return markersPane?.addPopupBubble(overrides);
 }
 
 function popupShotPenaltyCounts(shotId) {
@@ -3823,257 +3118,47 @@ function popupShotHasScoringSignal(shotId) {
 }
 
 function popupShotMatchesImportMode(shot, mode) {
-  if (!shot?.id) return false;
-  if (mode === "scored") return popupShotHasScoringSignal(shot.id);
-  if (mode === "penalty") return popupShotHasPenaltySignal(shot.id);
-  return true;
+  return markersPane?.popupShotMatchesImportMode(shot, mode) ?? false;
 }
 
 function selectedPopupImportMode() {
-  const mode = $("popup-import-mode")?.value || "all";
-  return ["all", "scored", "penalty"].includes(mode) ? mode : "all";
+  return markersPane?.selectedPopupImportMode() || "all";
 }
 
 function importShotPopups() {
-  const shots = orderedShotsByTime();
-  if (shots.length === 0) {
-    setStatus("No shots available to import into PopUp.");
-    return;
-  }
-  const importMode = selectedPopupImportMode();
-  const targetShots = shots.filter((shot) => popupShotMatchesImportMode(shot, importMode));
-  if (targetShots.length === 0) {
-    setStatus("No shots match the selected PopUp import mode.");
-    return;
-  }
-  const targetShotIds = new Set(targetShots.map((shot) => shot.id));
-  const preservedBubbles = popupBubbles().filter((bubble) => {
-    if (bubble.anchor_mode !== "shot" || !bubble.shot_id) return true;
-    return importMode !== "all" && !targetShotIds.has(bubble.shot_id);
-  });
-  const existingShotBubbleByShotId = new Map();
-  const template = currentPopupTemplate();
-  popupBubbles()
-    .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
-    .forEach((bubble) => {
-      if (!existingShotBubbleByShotId.has(bubble.shot_id)) existingShotBubbleByShotId.set(bubble.shot_id, bubble);
-    });
-  const importedBubbles = targetShots.map((shot) => {
-    const existingBubble = existingShotBubbleByShotId.get(shot.id);
-    const defaultDurationMs = popupDefaultDurationMsForShot(shot, template);
-    return normalizePopupBubble({
-      ...(existingBubble || {}),
-      id: existingBubble?.id || createPopupBubbleId(),
-      text: popupTemplateTextForShot(shot),
-      anchor_mode: "shot",
-      shot_id: shot.id,
-      time_ms: shot.time_ms,
-      duration_ms: existingBubble?.duration_ms ?? defaultDurationMs,
-      quadrant: existingBubble?.quadrant || "middle_middle",
-      x: existingBubble?.x ?? 0.5,
-      y: existingBubble?.y ?? 0.5,
-      enabled: existingBubble?.enabled ?? template.enabled,
-      width: existingBubble?.width ?? template.width,
-      height: existingBubble?.height ?? template.height,
-      follow_motion: existingBubble?.follow_motion ?? template.follow_motion,
-      motion_mode: existingBubble?.motion_mode ?? template.motion_mode,
-      content_type: existingBubble?.content_type || template.content_type,
-      image_path: existingBubble?.image_path ?? template.image_path,
-      image_scale_mode: existingBubble?.image_scale_mode ?? template.image_scale_mode,
-      background_color: existingBubble?.background_color ?? template.background_color,
-      text_color: existingBubble?.text_color ?? template.text_color,
-      opacity: existingBubble?.opacity ?? template.opacity,
-    });
-  });
-  setPopupBubbles([...preservedBubbles, ...importedBubbles], { commit: true, rerender: true });
-  const focusShotId = selectedShotId && targetShots.some((shot) => shot.id === selectedShotId) ? selectedShotId : targetShots[0]?.id || null;
-  if (focusShotId) selectPopupBubbleForShot(focusShotId, { seek: true, reveal: true, focus: false, activateTool: true, expand: true });
+  return markersPane?.importShotPopups();
 }
 
 function createPopupBubbleForShot(shotId) {
-  if (!shotId) return false;
-  const shot = orderedShotsByTime().find((item) => item.id === shotId) || null;
-  if (!shot) {
-    setStatus("Select a shot before creating a shot-linked marker.");
-    return false;
-  }
-  const template = currentPopupTemplate();
-  const defaultDurationMs = popupDefaultDurationMsForShot(shot, template);
-  const nextBubble = normalizePopupBubble({
-    id: createPopupBubbleId(),
-    name: "",
-    text: popupTemplateTextForShot(shot),
-    anchor_mode: "shot",
-    shot_id: shot.id,
-    time_ms: shot.time_ms,
-    duration_ms: defaultDurationMs,
-    quadrant: "middle_middle",
-    x: 0.5,
-    y: 0.5,
-    enabled: template.enabled,
-    width: template.width,
-    height: template.height,
-    follow_motion: template.follow_motion,
-    motion_mode: template.motion_mode,
-    content_type: template.content_type,
-    image_path: template.image_path,
-    image_scale_mode: template.image_scale_mode,
-    background_color: template.background_color,
-    text_color: template.text_color,
-    opacity: template.opacity,
-  });
-  setPopupBubbles([...popupBubbles(), nextBubble], { commit: true, rerender: true });
-  selectPopupBubble(nextBubble.id, { seek: true, reveal: true, focus: false, activateTool: true, expand: false });
-  return true;
+  return markersPane?.createPopupBubbleForShot(shotId) ?? false;
 }
 
 function applyTemplateStyleToSelectedPopupBubble() {
-  const bubble = selectedPopupBubble();
-  if (!bubble) return false;
-  const template = currentPopupTemplate();
-  setPopupBubbles(popupBubbles().map((item) => item.id === bubble.id
-    ? normalizePopupBubble({
-      ...item,
-      width: template.width,
-      height: template.height,
-      follow_motion: template.follow_motion,
-      motion_mode: template.motion_mode,
-      background_color: template.background_color,
-      text_color: template.text_color,
-      opacity: template.opacity,
-    })
-    : item), { commit: true, rerender: true });
-  return true;
+  return markersPane?.applyTemplateStyleToSelectedPopupBubble() ?? false;
 }
 
 function applySelectedPopupStyleToVisibleShotLinked() {
-  const source = selectedPopupBubble();
-  if (!source) return false;
-  const visibleShotLinkedIds = new Set(
-    filteredPopupBubbles(popupBubbles())
-      .filter((bubble) => bubble.anchor_mode === "shot" && bubble.shot_id)
-      .map((bubble) => bubble.id),
-  );
-  if (visibleShotLinkedIds.size === 0) return false;
-  setPopupBubbles(popupBubbles().map((bubble) => visibleShotLinkedIds.has(bubble.id)
-    ? normalizePopupBubble({
-      ...bubble,
-      width: source.width,
-      height: source.height,
-      background_color: source.background_color,
-      text_color: source.text_color,
-      opacity: source.opacity,
-    })
-    : bubble), { commit: true, rerender: true });
-  return true;
+  return markersPane?.applySelectedPopupStyleToVisibleShotLinked() ?? false;
 }
 
 function removePopupBubble(bubbleId) {
-  const currentBubbles = popupBubbles();
-  const removedIndex = currentBubbles.findIndex((bubble) => bubble.id === bubbleId);
-  if (removedIndex < 0) return;
-  popupGeneratedMotionOffsetsByBubbleId.delete(bubbleId);
-  popupMotionGenerationSummaryByBubbleId.delete(bubbleId);
-  const removingSelectedBubble = selectedPopupBubbleId === bubbleId;
-  const remainingBubbles = currentBubbles.filter((bubble) => bubble.id !== bubbleId);
-  setPopupBubbles(remainingBubbles, { commit: true, rerender: true });
-  if (!removingSelectedBubble) return;
-  const fallbackBubble = remainingBubbles[removedIndex] || remainingBubbles[removedIndex - 1] || null;
-  if (fallbackBubble) {
-    selectPopupBubble(fallbackBubble.id, { seek: false, reveal: true, focus: false, activateTool: activeTool === "markers", expand: false });
-    return;
-  }
-  selectedPopupBubbleId = null;
-  selectedPopupKeyframeOffsetMs = 0;
-  render();
+  return markersPane?.removePopupBubble(bubbleId);
 }
 
 function duplicatePopupBubble(bubbleId) {
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  if (!bubble) return;
-  const coordinates = popupBubblePoint(bubble);
-  const motionPath = popupBubbleMotionPath(bubble).map((point) => ({
-    offset_ms: point.offset_ms,
-    x: clamp(point.x + 0.04, 0, 1),
-    y: clamp(point.y + 0.04, 0, 1),
-    easing: point.easing || "linear",
-  }));
-  setPopupBubbles([
-    ...popupBubbles(),
-    normalizePopupBubble({
-      ...bubble,
-      id: createPopupBubbleId(),
-      quadrant: CUSTOM_QUADRANT_VALUE,
-      x: clamp(coordinates.x + 0.04, 0, 1),
-      y: clamp(coordinates.y + 0.04, 0, 1),
-      motion_path: motionPath,
-    }),
-  ], { commit: true, rerender: true });
-  const duplicate = popupBubbles()[popupBubbles().length - 1];
-  if (duplicate) {
-    copyPopupMotionUiState(bubble.id, [duplicate.id]);
-    selectPopupBubble(duplicate.id, { seek: false, reveal: true, focus: true, activateTool: activeTool === "markers", expand: true });
-  }
+  return markersPane?.duplicatePopupBubble(bubbleId);
 }
 
 function clearPopupBubbleMotionPath(bubbleId) {
-  setPopupMotionGeneratedOffsets(bubbleId, []);
-  popupMotionGenerationSummaryByBubbleId.delete(bubbleId);
-  if (selectedPopupBubbleId === bubbleId) setSelectedPopupPlacementMode("base");
-  setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId
-    ? normalizePopupBubble({ ...bubble, follow_motion: false, motion_path: [] })
-    : bubble), { commit: true, rerender: true });
+  return markersPane?.clearPopupBubbleMotionPath(bubbleId);
 }
 
 function seekPopupBubbleMotionPoint(bubbleId, offsetMs) {
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  if (!bubble) return false;
-  return seekPrimaryVideoToTimeMs(popupBubbleEffectiveTimeMs(bubble) + Math.max(0, Math.round(Number(offsetMs) || 0)));
+  return markersPane?.seekPopupBubbleMotionPoint(bubbleId, offsetMs) ?? false;
 }
 
 function setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, options = {}) {
-  const normalizedOffset = Math.max(0, Math.round(Number(offsetMs) || 0));
-  const nextBubbles = popupBubbles().map((bubble) => {
-    if (bubble.id !== bubbleId) return bubble;
-    const nextBubble = normalizePopupBubble(bubble);
-    if (normalizedOffset <= 0) {
-      if (field === "x" || field === "y") {
-        const normalizedValue = normalizedCoordinateValue(rawValue);
-        return normalizePopupBubble({
-          ...nextBubble,
-          quadrant: CUSTOM_QUADRANT_VALUE,
-          [field]: normalizedValue === null ? nextBubble[field] : normalizedValue,
-        });
-      }
-      return nextBubble;
-    }
-    const nextMotionPath = popupBubbleMotionPath(nextBubble).map((point) => {
-      if (point.offset_ms !== normalizedOffset) return point;
-      if (field === "offset_ms") {
-        return {
-          ...point,
-          offset_ms: Math.max(1, Math.min(nextBubble.duration_ms, Math.round(Number(rawValue) || point.offset_ms))),
-        };
-      }
-      if (field === "easing") {
-        return {
-          ...point,
-          easing: popupKeyframeEasing(rawValue),
-        };
-      }
-      const normalizedValue = normalizedCoordinateValue(rawValue);
-      return {
-        ...point,
-        [field]: normalizedValue === null ? point[field] : normalizedValue,
-      };
-    });
-    return normalizePopupBubble({
-      ...nextBubble,
-      follow_motion: true,
-      motion_path: nextMotionPath,
-    });
-  });
-  setPopupBubbles(nextBubbles, options);
+  return markersPane?.setPopupBubbleMotionPointValue(bubbleId, offsetMs, field, rawValue, options);
 }
 
 function popupBubbleKeyframes(bubble) {
@@ -4183,7 +3268,7 @@ function popupMotionSuggestedInBetweenCount(bubble, finishOffsetMs, startPoint, 
   const sizeWeight = bubble?.content_type === "image" || bubble?.content_type === "text_image"
     ? 1.12
     : clampNumber(Math.max(bubbleSize.width || 0, bubbleSize.height || 0) / 320, 1, 1.2);
-  const hasMeaningfulTravel = distancePx >= 8;
+  const hasMeaningfulTravel = distancePx >= 6;
   if (!hasMeaningfulTravel) {
     return {
       count: 0,
@@ -4191,8 +3276,8 @@ function popupMotionSuggestedInBetweenCount(bubble, finishOffsetMs, startPoint, 
       distancePx: Math.round(distancePx),
     };
   }
-  const timeTarget = Math.max(0, Math.floor((frameCount - 4) / POPUP_MOTION_FRAME_BUDGET_PER_POINT));
-  const travelTarget = Math.max(0, Math.floor(distancePx / POPUP_MOTION_TRAVEL_PX_PER_POINT));
+  const timeTarget = Math.max(0, Math.ceil(finishOffsetMs / POPUP_MOTION_TIME_BUDGET_PER_POINT_MS) - 1);
+  const travelTarget = Math.max(0, Math.ceil(distancePx / POPUP_MOTION_TRAVEL_PX_PER_POINT));
   let targetCount = Math.max(timeTarget, travelTarget);
   const maxCount = Math.min(POPUP_MOTION_MAX_AUTO_POINTS, Math.max(0, Math.round(Number(finishOffsetMs) || 0) - 1));
   let count = clamp(Math.round(targetCount * sizeWeight), 0, maxCount);
@@ -4300,104 +3385,11 @@ function popupMotionAlignPathToFinish(motionPath, finishOffsetMs, startPoint, fi
 }
 
 function generatePopupBubbleMotionPathLinear(bubbleId) {
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  if (!bubble) return false;
-  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
-  const startPoint = popupKeyframePoint(bubble, 0);
-  const finishPoint = popupKeyframePoint(bubble, finishOffsetMs);
-  const { count, distancePx } = popupMotionSuggestedInBetweenCount(
-    bubble,
-    finishOffsetMs,
-    startPoint,
-    finishPoint,
-  );
-  const generatedOffsets = popupMotionAutoOffsets(finishOffsetMs, count);
-  const nextMotionPath = [
-    ...generatedOffsets.map((offsetMs) => {
-      const point = popupMotionSamplePointForOffset(bubble, offsetMs, finishOffsetMs, startPoint, finishPoint);
-      return {
-        offset_ms: offsetMs,
-        x: point.x,
-        y: point.y,
-        easing: "linear",
-      };
-    }),
-    {
-      offset_ms: finishOffsetMs,
-      x: finishPoint.x,
-      y: finishPoint.y,
-      easing: popupKeyframeEasing(finishPoint.easing),
-    },
-  ];
-  const nextBubble = normalizePopupBubble({
-    ...bubble,
-    follow_motion: true,
-    motion_mode: "guided",
-    motion_path: nextMotionPath,
-  });
-  const summary = count === 0
-    ? `Auto kept just Start and Finish across ${precise(finishOffsetMs)}s and ${distancePx}px of travel.`
-    : `Auto generated ${count} evenly spaced in-between point${count === 1 ? "" : "s"} across ${precise(finishOffsetMs)}s and ${distancePx}px of travel.`;
-  setPopupMotionGeneratedOffsets(bubble.id, generatedOffsets);
-  popupMotionGenerationSummaryByBubbleId.set(bubble.id, `${summary} Regenerate replaces the current in-between points.`);
-  setPopupEditorSectionExpanded("motion", true);
-  setSelectedPopupKeyframeOffset(generatedOffsets[0] ?? finishOffsetMs);
-  setPopupBubbles(popupBubbles().map((item) => item.id === bubble.id ? nextBubble : item), { commit: true, rerender: true });
-  setStatus(summary);
-  return true;
+  return markersPane?.generatePopupBubbleMotionPathLinear(bubbleId) ?? false;
 }
 
 function generatePopupBubbleMotionPath(bubbleId) {
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  const video = $("primary-video");
-  if (!bubble) return false;
-  if (popupAutoTraceBubbleId) {
-    setStatus("Finish the current motion trace before generating another path.");
-    return false;
-  }
-  if (!(video instanceof HTMLVideoElement) || !state?.media?.primary_available || Number(video.videoWidth || 0) <= 0) {
-    return generatePopupBubbleMotionPathLinear(bubbleId);
-  }
-  const finishOffsetMs = Math.max(1, Math.round(Number(bubble.duration_ms ?? 1) || 1));
-  const startPoint = popupKeyframePoint(bubble, 0);
-  const finishPoint = popupKeyframePoint(bubble, finishOffsetMs);
-  void autoTracePopupBubbleMotion(bubbleId)
-    .then((traced) => {
-      if (!traced) {
-        generatePopupBubbleMotionPathLinear(bubbleId);
-        return;
-      }
-      const tracedBubble = popupBubbles().find((item) => item.id === bubbleId);
-      if (!tracedBubble) return;
-      const tracedPath = popupBubbleMotionPath(tracedBubble);
-      const alignedPath = popupMotionAlignPathToFinish(tracedPath, finishOffsetMs, startPoint, finishPoint);
-      const generatedOffsets = popupMotionInBetweenOffsets(alignedPath, finishOffsetMs);
-      const summary = generatedOffsets.length === 0
-        ? `Generate traced Start and Finish from the video across ${precise(finishOffsetMs)}s.`
-        : `Generate traced ${generatedOffsets.length} in-between point${generatedOffsets.length === 1 ? "" : "s"} from the video across ${precise(finishOffsetMs)}s.`;
-      setPopupMotionGeneratedOffsets(bubbleId, generatedOffsets);
-      popupMotionGenerationSummaryByBubbleId.set(bubbleId, `${summary} Regenerate replaces the current in-between points.`);
-      setPopupEditorSectionExpanded("motion", true);
-      setSelectedPopupKeyframeOffset(generatedOffsets[0] ?? finishOffsetMs);
-      const pathChanged = JSON.stringify(alignedPath) !== JSON.stringify(tracedPath);
-      if (pathChanged) {
-        const nextBubble = normalizePopupBubble({
-          ...tracedBubble,
-          follow_motion: true,
-          motion_mode: "guided",
-          motion_path: alignedPath,
-        });
-        setPopupBubbles(popupBubbles().map((item) => item.id === bubbleId ? nextBubble : item), { commit: true, rerender: true });
-      } else {
-        renderPopupEditors();
-        renderLiveOverlay();
-      }
-      setStatus(summary);
-    })
-    .catch(() => {
-      generatePopupBubbleMotionPathLinear(bubbleId);
-    });
-  return true;
+  return markersPane?.generatePopupBubbleMotionPath(bubbleId) ?? false;
 }
 
 function syncSelectedPopupKeyframeOffset(bubble) {
@@ -4480,48 +3472,11 @@ function jumpPopupBubbleKeyframe(bubbleId, direction) {
 }
 
 function copyPopupBubbleMotionFromPrevious(bubbleId) {
-  const ordered = sortedPopupBubblesForTimeline(popupBubbles());
-  const index = ordered.findIndex((bubble) => bubble.id === bubbleId);
-  if (index <= 0) return false;
-  const source = ordered[index - 1];
-  const target = ordered[index];
-  const nextTarget = normalizePopupBubble({
-    ...target,
-    follow_motion: Boolean(source.follow_motion || popupBubbleMotionPath(source).length > 0),
-    motion_path: popupBubbleMotionPath(source).map((point) => ({ ...point })),
-  });
-  setPopupEditorSectionExpanded("motion", true);
-  setSelectedPopupKeyframeOffset(popupBubbleMotionPath(nextTarget)[0]?.offset_ms ?? 0);
-  setPopupBubbles(popupBubbles().map((bubble) => bubble.id === bubbleId ? nextTarget : bubble), { commit: true, rerender: true });
-  copyPopupMotionUiState(source.id, [bubbleId]);
-  renderPopupEditors();
-  return true;
+  return markersPane?.copyPopupBubbleMotionFromPrevious(bubbleId) ?? false;
 }
 
 function applyPopupBubbleMotionToVisibleShotLinked(bubbleId) {
-  const source = popupBubbles().find((bubble) => bubble.id === bubbleId);
-  if (!source) return false;
-  const sourceMotion = popupBubbleMotionPath(source).map((point) => ({ ...point }));
-  const targetIds = new Set(
-    filteredPopupBubbles()
-      .filter((bubble) => bubble.id !== bubbleId && bubble.anchor_mode === "shot" && bubble.shot_id)
-      .map((bubble) => bubble.id),
-  );
-  if (targetIds.size === 0) {
-    setStatus("No visible shot-linked popups to receive this motion path.");
-    return false;
-  }
-  setPopupBubbles(popupBubbles().map((bubble) => targetIds.has(bubble.id)
-    ? normalizePopupBubble({
-        ...bubble,
-        follow_motion: Boolean(source.follow_motion || sourceMotion.length > 0),
-        motion_path: sourceMotion.map((point) => ({ ...point })),
-      })
-    : bubble), { commit: true, rerender: true });
-  copyPopupMotionUiState(bubbleId, [...targetIds]);
-  renderPopupEditors();
-  setStatus(`Applied motion path to ${targetIds.size} shot-linked popup${targetIds.size === 1 ? "" : "s"}.`);
-  return true;
+  return markersPane?.applyPopupBubbleMotionToVisibleShotLinked(bubbleId) ?? false;
 }
 
 function popupTraceFrameSize(video, maxWidth = 480) {
@@ -4883,28 +3838,11 @@ async function autoTracePopupBubbleMotion(bubbleId) {
 }
 
 function setPopupBubbleMotionUiMode(bubbleId, uiMode, options = {}) {
-  const followMotion = uiMode !== "fixed";
-  const motionMode = popupMotionModeValueForUiMode(uiMode);
-  const nextBubbles = popupBubbles().map((bubble) => {
-    if (bubble.id !== bubbleId) return bubble;
-    return normalizePopupBubble({
-      ...bubble,
-      follow_motion: followMotion,
-      motion_mode: motionMode,
-    });
-  });
-  if (!followMotion) setSelectedPopupPlacementMode("base");
-  if (followMotion) setPopupEditorSectionExpanded("motion", true);
-  setPopupBubbles(nextBubbles, options);
+  return markersPane?.setPopupBubbleMotionUiMode(bubbleId, uiMode, options);
 }
 
 function syncPopupBubbleMotionModeControls(card, bubble) {
-  const uiMode = popupBubbleMotionUiMode(bubble);
-  const toggle = card.querySelector('[data-popup-field="follow_motion"]');
-  if (toggle instanceof HTMLInputElement) syncControlChecked(toggle, uiMode !== "fixed");
-  card.querySelectorAll("[data-popup-motion-mode]").forEach((section) => {
-    section.toggleAttribute("hidden", section.dataset.popupMotionMode !== uiMode);
-  });
+  return markersPane?.syncPopupBubbleMotionModeControls(card, bubble);
 }
 
 function renderPopupBubbleMotionGuide(card, bubble) {
@@ -5142,7 +4080,7 @@ function buildPopupBubbleCard(bubble, index, options = {}) {
               <button type="button" class="danger-button" data-popup-action="clear_motion_path">Clear path</button>
             </div>
           </div>
-          <p class="popup-motion-workflow-hint" data-popup-motion-summary>Select Start or Finish below, then place it on the video. Generate first tries to trace the video motion and falls back to evenly spaced in-between points. Add Detail splits the largest remaining time gap.</p>
+          <p class="popup-motion-workflow-hint popup-motion-guide-hint" data-popup-motion-summary>Select Start or Finish below, then place it on the video. Generate first tries to trace the video motion and falls back to evenly spaced in-between points. Add Detail splits the largest remaining time gap.</p>
           <div class="popup-motion-path-list" data-popup-guided-point-list></div>
         </section>
       </section>
@@ -5488,50 +4426,38 @@ function renderPopupFloatingEditor(selected, originalIndexById) {
 }
 
 function currentPrimaryVideoPositionMs() {
-  const video = $("primary-video");
-  return Math.max(0, Math.round((video?.currentTime || 0) * 1000));
+  return markersPane?.currentPrimaryVideoPositionMs() ?? 0;
 }
 
 function popupBubbleFilterMatches(bubble, positionMs = currentPrimaryVideoPositionMs()) {
-  if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
-  if (popupFilterMode === "enabled") return Boolean(bubble.enabled);
-  if (popupFilterMode === "disabled") return !bubble.enabled;
-  if (popupFilterMode === "shot") return bubble.anchor_mode === "shot" && Boolean(bubble.shot_id);
-  if (popupFilterMode === "time") return bubble.anchor_mode !== "shot" || !bubble.shot_id;
-  if (popupFilterMode === "motion") return Boolean(bubble.follow_motion || popupBubbleMotionPath(bubble).length > 0);
-  if (popupFilterMode === "missing_text") return !popupBubbleResolvedText(bubble).trim();
-  if (popupFilterMode === "visible") return popupBubbleIsVisibleAtPosition(bubble, positionMs);
-  return true;
+  return markersPane?.popupBubbleFilterMatches(bubble, positionMs) ?? true;
 }
 
 function filteredPopupBubbles(bubbles = popupBubbles()) {
-  const positionMs = currentPrimaryVideoPositionMs();
-  return bubbles.filter((bubble) => popupBubbleFilterMatches(bubble, positionMs));
+  return markersPane?.filteredPopupBubbles(bubbles) || [];
 }
 
 function sortedPopupBubblesForTimeline(bubbles = filteredPopupBubbles()) {
-  return [...bubbles].sort((left, right) => {
-    const timeDelta = popupBubbleEffectiveTimeMs(left) - popupBubbleEffectiveTimeMs(right);
-    if (timeDelta !== 0) return timeDelta;
-    return String(left.id || "").localeCompare(String(right.id || ""));
-  });
+  return markersPane?.sortedPopupBubblesForTimeline(bubbles) || [];
 }
 
 function setPopupAuthoringCollapsed(collapsed, { persistUiState = true, rerender = true } = {}) {
-  popupAuthoringCollapsed = Boolean(collapsed);
-  syncLocalProjectUiState();
-  if (persistUiState) scheduleProjectUiStateApply();
-  if (rerender) renderPopupEditors();
+  return markersPane?.setPopupAuthoringCollapsed(collapsed, { persistUiState, rerender });
 }
 
 function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   if (!VALID_POPUP_FILTER_MODES.has(popupFilterMode)) popupFilterMode = "all";
   const bubbleList = $("popup-marker-list");
+  const bubbleListSection = bubbleList?.closest(".popup-list-section-unified") || null;
   const paneStatus = $("popup-pane-status");
   const listStatus = $("popup-list-status");
   const selected = selectedPopupBubble();
   const hasSelectedBubble = Boolean(selected);
   if (bubbleList instanceof HTMLElement) bubbleList.hidden = false;
+  if (bubbleListSection instanceof HTMLElement) {
+    bubbleListSection.hidden = false;
+    bubbleListSection.style.display = markersWorkbenchShown() ? "grid" : "";
+  }
   const enabledCount = allBubbles.filter((bubble) => bubble.enabled).length;
   if (paneStatus instanceof HTMLElement) paneStatus.textContent = `${enabledCount} enabled`;
   const editSelectedButton = $("popup-edit-selected");
@@ -5800,11 +4726,7 @@ function syncTimingEventLabelState() {
 }
 
 function layoutViewportHeight() {
-  const cockpit = document.querySelector(".cockpit");
-  const documentHeight = document.documentElement?.clientHeight || 0;
-  const visualViewportHeight = window.visualViewport?.height || 0;
-  const cockpitHeight = cockpit?.getBoundingClientRect().height || cockpit?.clientHeight || 0;
-  return Math.max(1, Math.floor(visualViewportHeight || documentHeight || window.innerHeight || cockpitHeight));
+  return layoutRuntime.layoutViewportHeight();
 }
 
 function alignToEdge(value) {
@@ -5814,103 +4736,31 @@ function alignToEdge(value) {
 }
 
 function setCssPixels(name, value) {
-  document.documentElement.style.setProperty(name, `${Math.round(value)}px`);
+  return layoutRuntime.setCssPixels(name, value);
 }
 
 function currentPreviewAspectRatio(video = $("primary-video")) {
-  const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 0) || 1);
-  const sourceHeight = Math.max(1, Number(video?.videoHeight || state?.project?.primary_video?.height || 0) || 1);
-  const exportSettings = state?.project?.export;
-  if (!exportSettings) return sourceWidth / sourceHeight;
-  const cropBox = computeExportCropBox(
-    sourceWidth,
-    sourceHeight,
-    exportSettings.aspect_ratio,
-    exportSettings.crop_center_x,
-    exportSettings.crop_center_y,
-  );
-  const outputDimensions = exportTargetDimensions(cropBox.width, cropBox.height);
-  return Math.max(0.45, Math.min(2.4, outputDimensions.width / Math.max(1, outputDimensions.height)));
+  return layoutRuntime.currentPreviewAspectRatio(video);
 }
 
 function recommendedReviewLayoutSizes(viewportWidth = window.innerWidth, viewportHeight = layoutViewportHeight()) {
-  const railWidth = railCollapsed ? 48 : clamp(layoutSizes.railWidth, 84, 104);
-  const reviewWidth = Math.max(720, viewportWidth - railWidth - (2 * 4));
-  const reviewHeight = Math.max(360, viewportHeight - 38);
-  const previewAspect = currentPreviewAspectRatio();
-  const inspectorMinimum = 320;
-  const inspectorMaximum = Math.max(inspectorMinimum, Math.min(520, reviewWidth * 0.42));
-  const targetWaveformHeight = clamp(Math.round(reviewHeight * 0.24), 144, Math.max(160, reviewHeight * 0.34));
-  const preferredStageHeight = Math.max(260, reviewHeight - targetWaveformHeight - 4);
-  const preferredStageWidth = preferredStageHeight * previewAspect;
-  const inspectorWidth = clamp(Math.round(reviewWidth - preferredStageWidth - 4), inspectorMinimum, inspectorMaximum);
-  const stageWidth = Math.max(320, reviewWidth - inspectorWidth - 4);
-  const waveformHeight = clamp(
-    Math.round(reviewHeight - (stageWidth / previewAspect) - 4),
-    144,
-    Math.max(144, reviewHeight * 0.38),
-  );
-  return { inspectorWidth, waveformHeight };
+  return layoutRuntime.recommendedReviewLayoutSizes(viewportWidth, viewportHeight);
 }
 
 function maybeApplyRecommendedLayout({ force = false } = {}) {
-  const shouldAdjustInspector = force || !layoutSizePinned.inspectorWidth;
-  const shouldAdjustWaveform = force || !layoutSizePinned.waveformHeight;
-  if (!shouldAdjustInspector && !shouldAdjustWaveform) return false;
-  const recommended = recommendedReviewLayoutSizes();
-  let changed = false;
-  if (shouldAdjustInspector && Math.round(layoutSizes.inspectorWidth) !== Math.round(recommended.inspectorWidth)) {
-    layoutSizes.inspectorWidth = recommended.inspectorWidth;
-    changed = true;
-  }
-  if (shouldAdjustWaveform && Math.round(layoutSizes.waveformHeight) !== Math.round(recommended.waveformHeight)) {
-    layoutSizes.waveformHeight = recommended.waveformHeight;
-    changed = true;
-  }
-  return changed;
+  return layoutRuntime.maybeApplyRecommendedLayout({ force });
 }
 
 function popupWorkbenchTargetHeight(viewportHeight = layoutViewportHeight()) {
-  const minimumHeight = 112;
-  const maximumHeight = Math.max(minimumHeight, viewportHeight * 0.42);
-  const fallbackHeight = clamp(layoutSizes.waveformHeight, minimumHeight, maximumHeight);
-  return clamp(
-    Math.round(Number(popupWorkbenchHeight ?? fallbackHeight) || fallbackHeight),
-    minimumHeight,
-    maximumHeight,
-  );
+  return layoutRuntime.popupWorkbenchTargetHeight(viewportHeight);
 }
 
 function capturePopupWorkbenchRestoreState() {
-  if (popupWorkbenchRestoreState) return popupWorkbenchRestoreState;
-  const root = $("cockpit-root");
-  popupWorkbenchRestoreState = {
-    waveformExpanded: Boolean(root?.classList.contains("waveform-expanded")),
-    waveformHeight: layoutSizes.waveformHeight,
-    waveformHeightPinned: Boolean(layoutSizePinned.waveformHeight),
-  };
-  popupWorkbenchHeight = layoutSizes.waveformHeight;
-  return popupWorkbenchRestoreState;
+  return layoutRuntime.capturePopupWorkbenchRestoreState();
 }
 
 function restorePopupWorkbenchLayout({ persistUiState = true, restoreWaveformExpanded = true } = {}) {
-  const restoreState = popupWorkbenchRestoreState;
-  popupWorkbenchRestoreState = null;
-  popupWorkbenchHeight = null;
-  if (!restoreState) {
-    scheduleReviewStageRestore();
-    return;
-  }
-  layoutSizes.waveformHeight = restoreState.waveformHeight;
-  layoutSizePinned.waveformHeight = restoreState.waveformHeightPinned;
-  applyLayoutState();
-  if (restoreWaveformExpanded && restoreState.waveformExpanded) {
-    setWaveformExpanded(true, { persistUiState });
-    return;
-  }
-  syncLocalProjectUiState();
-  if (persistUiState) scheduleProjectUiStateApply();
-  scheduleReviewStageRestore();
+  return layoutRuntime.restorePopupWorkbenchLayout({ persistUiState, restoreWaveformExpanded });
 }
 
 function capturePointer(target, pointerId) {
@@ -5932,145 +4782,35 @@ function releasePointer(target, pointerId) {
 }
 
 function applyLayoutState() {
-  const viewportHeight = layoutViewportHeight();
-  setCssPixels("--app-height", viewportHeight);
-  layoutSizes = {
-    railWidth: clamp(layoutSizes.railWidth, 84, 104),
-    inspectorWidth: clamp(layoutSizes.inspectorWidth, 320, Math.max(320, window.innerWidth * 0.48)),
-    waveformHeight: clamp(layoutSizes.waveformHeight, 112, Math.max(112, viewportHeight * 0.42)),
-  };
-  setCssPixels("--rail-width", railCollapsed ? 48 : layoutSizes.railWidth);
-  setCssPixels("--inspector-width", layoutSizes.inspectorWidth);
-  setCssPixels("--waveform-height", layoutSizes.waveformHeight);
-  setCssPixels("--markers-workbench-height", popupWorkbenchTargetHeight(viewportHeight));
-  const shell = document.querySelector(".cockpit-shell");
-  if (shell) {
-    shell.classList.toggle("layout-locked", layoutLocked);
-    shell.classList.toggle("layout-unlocked", !layoutLocked);
-    shell.classList.toggle("resizing-layout", activeResize !== null);
-    shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);
-    shell.classList.toggle("rail-collapsed", railCollapsed);
-  }
-  const railToggle = $("toggle-rail");
-  if (railToggle) {
-    railToggle.textContent = railCollapsed ? "▶" : "◀";
-    railToggle.title = railCollapsed ? "Expand left rail" : "Minimize left rail";
-    railToggle.setAttribute("aria-label", railToggle.title);
-  }
-  document.querySelectorAll("[data-layout-lock-toggle]").forEach((toggle) => {
-    const target = toggle.id.replace("toggle-layout-lock-", "");
-    const scope = target ? `${target} layout` : "layout";
-    toggle.textContent = layoutLocked ? "🔒" : "🔓";
-    toggle.setAttribute("aria-label", `${layoutLocked ? "Unlock" : "Lock"} ${scope}`);
-  });
+  return layoutRuntime.applyLayoutState();
 }
 
 function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {
-  layoutSizes[key] = value;
-  layoutSizePinned[key] = true;
-  const storageKey = {
-    railWidth: "splitshot.layout.railWidth",
-    inspectorWidth: "splitshot.layout.inspectorWidth",
-    waveformHeight: "splitshot.layout.waveformHeight",
-  }[key];
-  window.localStorage.setItem(storageKey, String(Math.round(value)));
-  applyLayoutState();
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
-  if (state && renderWaveformNow) renderWaveform();
+  return layoutRuntime.persistLayoutSize(key, value, { renderWaveformNow });
 }
 
 function previewLayoutSize(key, value) {
-  layoutSizes[key] = value;
-  applyLayoutState();
-  scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
+  return layoutRuntime.previewLayoutSize(key, value);
 }
 
 function toggleLayoutLock() {
-  layoutLocked = !layoutLocked;
-  window.localStorage.setItem("splitshot.layoutLocked", String(layoutLocked));
-  activity("layout.lock.toggle", { locked: layoutLocked });
-  applyLayoutState();
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return layoutRuntime.toggleLayoutLock();
 }
 
 function resetLayout() {
-  layoutSizes = { ...DEFAULT_LAYOUT_SIZES };
-  layoutSizePinned = { railWidth: false, inspectorWidth: false, waveformHeight: false };
-  ["splitshot.layout.railWidth", "splitshot.layout.inspectorWidth", "splitshot.layout.waveformHeight"].forEach((key) => {
-    window.localStorage.removeItem(key);
-  });
-  maybeApplyRecommendedLayout({ force: true });
-  activity("layout.reset", layoutSizes);
-  applyLayoutState();
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
-  if (state) renderWaveform();
+  return layoutRuntime.resetLayout();
 }
 
 function beginLayoutResize(kind, event) {
-  if (layoutLocked) {
-    activity("layout.unlock.request", { kind });
-    toggleLayoutLock();
-    return;
-  }
-  activeResize = { kind, pointerId: event.pointerId, target: event.currentTarget };
-  capturePointer(activeResize.target, event.pointerId);
-  document.body.classList.add("resizing-layout");
-  activity("layout.resize.start", { kind });
-  applyLayoutState();
+  return layoutRuntime.beginLayoutResize(kind, event);
 }
 
 function moveLayoutResize(event) {
-  if (!activeResize) return;
-  if (event.pointerId !== undefined && activeResize.pointerId !== undefined && event.pointerId !== activeResize.pointerId) return;
-  const kind = activeResize.kind;
-  if (kind === "railWidth") {
-    previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));
-  } else if (kind === "inspectorWidth") {
-    const grid = document.querySelector(".review-grid");
-    const right = grid?.getBoundingClientRect().right || window.innerWidth;
-    previewLayoutSize("inspectorWidth", clamp(right - event.clientX, 320, Math.max(320, window.innerWidth * 0.48)));
-  } else if (kind === "waveformHeight") {
-    const stack = document.querySelector(".review-stack");
-    const rect = stack?.getBoundingClientRect();
-    if (rect) {
-      const nextHeight = clamp(rect.bottom - event.clientY, 112, Math.max(112, rect.height * 0.48));
-      if (markersWorkbenchShown()) {
-        popupWorkbenchHeight = nextHeight;
-        applyLayoutState();
-        scheduleInteractionPreviewRender({ video: true, waveform: true, overlay: true });
-      } else {
-        previewLayoutSize("waveformHeight", nextHeight);
-      }
-    }
-  }
+  return layoutRuntime.moveLayoutResize(event);
 }
 
 function endLayoutResize(event) {
-  if (!activeResize) return;
-  if (event.pointerId !== undefined && activeResize.pointerId !== undefined && event.pointerId !== activeResize.pointerId) return;
-  const kind = activeResize.kind;
-  const sizeKey = {
-    railWidth: "railWidth",
-    inspectorWidth: "inspectorWidth",
-    waveformHeight: "waveformHeight",
-  }[kind];
-  releasePointer(activeResize.target, activeResize.pointerId);
-  activeResize = null;
-  document.body.classList.remove("resizing-layout");
-  if (sizeKey) {
-    if (kind === "waveformHeight" && markersWorkbenchShown()) {
-      applyLayoutState();
-    } else {
-      persistLayoutSize(sizeKey, layoutSizes[sizeKey], { renderWaveformNow: false });
-    }
-  }
-  activity("layout.resize.commit", { kind, sizes: layoutSizes });
-  flushInteractionPreviewRender();
-  flushQueuedProjectUiStateApply();
-  flushDeferredRender();
+  return layoutRuntime.endLayoutResize(event);
 }
 
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
@@ -6083,7 +4823,10 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     || root?.classList.contains("metrics-expanded")
     || root?.classList.contains("scoring-expanded")
     || root?.classList.contains("markers-expanded");
-  activeTool = tool;
+  setActiveToolValue(tool);
+  if (!initialProjectUiStateApplied && persistUiState) {
+    pendingBootstrapProjectUiStateOverride = true;
+  }
   window.localStorage.setItem("splitshot.activeTool", tool);
   let previousExpandedLayout = null;
   const preservedExpandedLayout = state?.project?.ui_state ? {
@@ -6176,101 +4919,23 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
 }
 
 async function api(path, payload = null) {
-  activity("api.request", { path, payload });
-  const processing = processingForPath(path, payload);
-  const finishProcessing = payload === null || processing === null
-    ? null
-    : beginProcessing(processing.message, processing.detail, path);
-  const options = payload === null
-    ? {}
-    : {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      };
-  const response = await fetch(path, options);
-  const data = await response.json();
-  if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-  applyRemoteState(data);
-  requestRender();
-  activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });
-  if (finishProcessing) finishProcessing(data.status || "Ready.");
-  return data;
+  return apiRuntime.api(path, payload);
 }
 
 async function callApi(path, payload = null) {
-  try {
-    return await api(path, payload);
-  } catch (error) {
-    forceHideProcessingBar();
-    setStatus(error.message);
-    activity("api.error", { path, error: error.message });
-    return null;
-  }
+  return apiRuntime.callApi(path, payload);
 }
 
 function practiScoreResponseErrorMessage(data, fallback) {
-  if (typeof data?.error === "string") return data.error;
-  if (data?.error && typeof data.error === "object") {
-    return String(data.error.message || data.error.code || fallback);
-  }
-  return String(fallback || "Unexpected PractiScore response.");
+  return apiRuntime.practiScoreResponseErrorMessage(data, fallback);
 }
 
 async function openPractiScoreDashboard() {
-  activity("api.request", { path: "/api/practiscore/dashboard/open", payload: {} });
-  const processing = processingForPath("/api/practiscore/dashboard/open", {});
-  const finishProcessing = processing === null
-    ? null
-    : beginProcessing(processing.message, processing.detail, "/api/practiscore/dashboard/open");
-  try {
-    const response = await fetch("/api/practiscore/dashboard/open", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    const result = await response.json();
-    if (!response.ok || result.error) throw new Error(result.error || response.statusText);
-    if (finishProcessing) finishProcessing(result.status || "Ready.");
-    setStatus(result.status || "Opened PractiScore dashboard in your browser.");
-    activity("api.response", { path: "/api/practiscore/dashboard/open", status: result.status || "Ready." });
-    return result;
-  } catch (error) {
-    if (finishProcessing) finishProcessing(error.message || "PractiScore request failed.");
-    forceHideProcessingBar();
-    setStatus(error.message);
-    activity("api.error", { path: "/api/practiscore/dashboard/open", error: error.message });
-    return null;
-  }
+  return apiRuntime.openPractiScoreDashboard();
 }
 
 function processingForPath(path, payload = null) {
-  if (path === "/api/export") return { message: "Exporting video...", detail: "Running FFmpeg locally" };
-  if (path === "/api/practiscore/dashboard/open") {
-    return { message: "Opening PractiScore dashboard...", detail: "Launching PractiScore in your system browser" };
-  }
-  if (path === "/api/import/primary") {
-    return { message: "Analyzing primary video...", detail: "Detecting beep and shots locally" };
-  }
-  if (
-    (path === "/api/analysis/threshold" || (path === "/api/analysis/shotml-settings" && payload?.rerun))
-    && state?.project?.primary_video?.path
-  ) {
-    return { message: "Re-running ShotML...", detail: "Refreshing shot detections with the current settings" };
-  }
-  if (path === "/api/import/merge" || path === "/api/files/merge") {
-    return { message: "Importing media...", detail: "Adding media to the list" };
-  }
-  if (path === "/api/import/secondary") {
-    return { message: "Importing media...", detail: "Adding media to the list" };
-  }
-  if (path === "/api/project/details") return { message: "Updating project details...", detail: "Saving metadata locally" };
-  if (path === "/api/project/practiscore") return { message: "Updating match import settings...", detail: "Saving stage and competitor details" };
-  if (path === "/api/project/open") return { message: "Opening project folder...", detail: "Loading project.json and local assets" };
-  if (path === "/api/project/save") return { message: "Updating project folder...", detail: "Writing project.json and organizing local assets" };
-  if (path === "/api/project/delete") return { message: "Deleting project folder...", detail: "Removing the project folder from disk" };
-  if (path === "/api/project/new") return { message: "Creating new project...", detail: "Resetting project state" };
-  return null;
+  return processingRuntime.processingForPath(path, payload);
 }
 
 async function postFile(path, file) {
@@ -6361,6 +5026,7 @@ async function pickPathForElement(kind, target, targetLabel, afterSelect = null)
 
 async function refresh() {
   activity("api.refresh", {});
+  runtimeBackbone?.bus?.emit?.("api.refresh", {});
   try {
     const response = await fetch("/api/state");
     const data = await response.json();
@@ -6369,74 +5035,58 @@ async function refresh() {
     requestRender();
   } catch (error) {
     setStatus(error.message);
+    runtimeBackbone?.bus?.emit?.("api.error", { path: "/api/state", error: error.message });
     activity("api.error", { path: "/api/state", error: error.message });
   }
 }
 
 function applyRemoteState(nextState) {
-  if (!hasCompleteProjectState(nextState)) {
-    throw new Error("Received invalid project state from the local server.");
+  const shouldApplyBootstrapLandingTool = !initialProjectUiStateApplied
+    && !pendingBootstrapProjectUiStateOverride
+    && Boolean(String(nextState?.project?.path || "").trim());
+  if (shouldApplyBootstrapLandingTool && nextState?.project?.ui_state) {
+    const reopenLastTool = Boolean(nextState?.settings?.reopen_last_tool ?? true);
+    const configuredTool = reopenLastTool
+      ? String(nextState?.settings?.default_tool || nextState?.project?.ui_state?.active_tool || "project")
+      : "project";
+    nextState = {
+      ...nextState,
+      project: {
+        ...nextState.project,
+        ui_state: normalizeProjectUiState({
+          ...nextState.project.ui_state,
+          active_tool: configuredTool,
+        }),
+      },
+    };
   }
-  const previousSelectionContext = pendingSelectionFallback
-    || shotSelectionContext(selectedShotId, state)
-    || shotSelectionContext(state?.project?.ui_state?.selected_shot_id, state);
-  pendingSelectionFallback = null;
-  const nextProjectId = nextState?.project?.id || "";
-  const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;
-  if (currentProjectId && nextProjectId && currentProjectId !== nextProjectId) {
-    resetLocalProjectView();
-  }
-  const remoteSelectedShotId = nextState.project.ui_state.selected_shot_id;
-  const nextUiState = isSameProject
-    ? mergeProjectUiState(nextState.project.ui_state, readProjectUiStatePayload())
-    : normalizeProjectUiState(nextState.project.ui_state);
-  nextUiState.selected_shot_id = resolveSelectedShotId(
-    nextState,
-    nextUiState.selected_shot_id,
-    previousSelectionContext,
-    remoteSelectedShotId,
-  );
-  nextState.project.ui_state = nextUiState;
-  if (isSameProject) {
-    mergeProjectDetailsDraft(nextState.project);
-    mergeExportDraft(nextState.project);
-  }
-  currentProjectId = nextProjectId;
-  state = nextState;
-  applyProjectUiState(nextUiState);
-  if (!stateHasShot(state, selectedShotId)) {
-    selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;
-  }
-  syncSelectedShotId(state, previousSelectionContext);
-  syncLocalProjectUiState();
+  return apiRuntime.applyRemoteState(nextState);
 }
 
 function hasCompleteProjectState(nextState) {
-  return Boolean(
-    nextState?.project?.analysis
-      && nextState?.project?.overlay
-      && nextState?.project?.merge
-      && nextState?.project?.export
-      && nextState?.project?.ui_state
-      && nextState?.metrics
-      && nextState?.media,
-  );
+  return apiRuntime.hasCompleteProjectState(nextState);
 }
 
 function stateHasShot(nextState, shotId) {
-  return Boolean(shotId)
-    && (nextState?.project?.analysis?.shots || []).some((shot) => shot.id === shotId);
+  return apiRuntime.stateHasShot(nextState, shotId);
 }
 
 function resetLocalProjectView() {
   resetProjectUiStateApplyState();
-  selectedShotId = null;
+  pendingBootstrapProjectUiStateOverride = false;
+  setSelectedShotIdValue(null);
   draggingShotId = null;
   draggingShotPointerId = null;
   pendingDragTimeMs = null;
   exportPathDraft = "";
   exportDraft = {};
+  mergeDraft = {};
+  overlayPositionDraft = {};
+  overlayStyleDraft = null;
   projectDetailsDraft = { name: null, description: null };
+  overlayTextBoxesDraft = null;
+  popupBubblesDraft = null;
+  popupTemplateDraft = null;
   exportLogLines = [];
   popupGeneratedMotionOffsetsByBubbleId = new Map();
   popupMotionGenerationSummaryByBubbleId = new Map();
@@ -6563,29 +5213,11 @@ function refreshReviewMediaFrame() {
 }
 
 function restoreReviewStage() {
-  if (!state?.project) return;
-  applyLayoutState();
-  renderVideo();
-  renderWaveform();
-  renderTimingTables();
-  renderLiveOverlay();
-  scheduleSecondaryPreviewSync();
-  restoreVideoElementFrame($("primary-video"));
-  restoreVideoElementFrame($("secondary-video"));
-  document.querySelectorAll("#merge-preview-layer video").forEach((video) => restoreVideoElementFrame(video));
+  return reviewPane?.restoreReviewStage();
 }
 
 function scheduleReviewStageRestore() {
-  if (reviewStageRestoreFrame !== null) window.cancelAnimationFrame(reviewStageRestoreFrame);
-  if (reviewStageRestoreSecondFrame !== null) window.cancelAnimationFrame(reviewStageRestoreSecondFrame);
-  reviewStageRestoreFrame = window.requestAnimationFrame(() => {
-    reviewStageRestoreFrame = null;
-    restoreReviewStage();
-    reviewStageRestoreSecondFrame = window.requestAnimationFrame(() => {
-      reviewStageRestoreSecondFrame = null;
-      restoreReviewStage();
-    });
-  });
+  return reviewPane?.scheduleReviewStageRestore();
 }
 
 function handleStageFullscreenChange() {
@@ -6641,343 +5273,127 @@ function ensurePrimaryVideoAudio(video) {
 }
 
 function normalizedPractiScorePlaceValue(rawValue) {
-  if (rawValue === null || rawValue === undefined || String(rawValue).trim() === "") return null;
-  const numeric = Number(rawValue);
-  if (!Number.isFinite(numeric) || numeric < 1) return null;
-  return Math.trunc(numeric);
+  return projectPane?.normalizedPractiScorePlaceValue(rawValue) ?? null;
 }
 
 function defaultPractiScoreSessionPayload() {
-  return {
-    state: "not_authenticated",
-    message: "Connect PractiScore to use your browser session for background sync.",
-    details: {},
-  };
+  return apiRuntime.defaultPractiScoreSessionPayload();
 }
 
 function normalizePractiScoreSessionPayload(payload) {
-  const normalized = defaultPractiScoreSessionPayload();
-  if (!payload || typeof payload !== "object") return normalized;
-  normalized.state = String(payload.state || normalized.state);
-  normalized.message = String(payload.message || normalized.message);
-  normalized.details = payload.details && typeof payload.details === "object" ? { ...payload.details } : {};
-  return normalized;
+  return apiRuntime.normalizePractiScoreSessionPayload(payload);
 }
 
 function normalizePractiScoreRemoteMatches(matches) {
-  if (!Array.isArray(matches)) return [];
-  return matches
-    .filter((item) => item && typeof item === "object" && String(item.remote_id || "").trim())
-    .map((item) => ({
-      remote_id: String(item.remote_id || "").trim(),
-      label: String(item.label || "").trim(),
-      match_type: String(item.match_type || "").trim(),
-      event_name: String(item.event_name || "").trim(),
-      event_date: String(item.event_date || "").trim(),
-    }));
+  return apiRuntime.normalizePractiScoreRemoteMatches(matches);
 }
 
 function defaultPractiScoreSyncPayload() {
-  return {
-    state: "idle",
-    message: "No remote PractiScore sync activity yet.",
-    matches: [],
-    selected_remote_id: null,
-    error_category: "",
-    details: {},
-  };
+  return apiRuntime.defaultPractiScoreSyncPayload();
 }
 
 function normalizePractiScoreSyncPayload(payload) {
-  const normalized = defaultPractiScoreSyncPayload();
-  if (!payload || typeof payload !== "object") return normalized;
-  normalized.state = String(payload.state || normalized.state);
-  normalized.message = String(payload.message || normalized.message);
-  normalized.matches = normalizePractiScoreRemoteMatches(payload.matches);
-  normalized.selected_remote_id = payload.selected_remote_id === null || payload.selected_remote_id === undefined || String(payload.selected_remote_id).trim() === ""
-    ? null
-    : String(payload.selected_remote_id).trim();
-  normalized.error_category = String(payload.error_category || "").trim();
-  normalized.details = payload.details && typeof payload.details === "object" ? { ...payload.details } : {};
-  return normalized;
+  return apiRuntime.normalizePractiScoreSyncPayload(payload);
 }
 
 function practiScoreSessionPayload() {
-  return normalizePractiScoreSessionPayload(state?.practiscore_session);
+  return apiRuntime.practiScoreSessionPayload();
 }
 
 function practiScoreSyncPayload() {
-  return normalizePractiScoreSyncPayload(state?.practiscore_sync);
+  return apiRuntime.practiScoreSyncPayload();
 }
 
 function applyPractiScoreSessionPayload(payload, { resetSync = false } = {}) {
-  if (!state) return;
-  state.practiscore_session = normalizePractiScoreSessionPayload(payload);
-  if (resetSync) state.practiscore_sync = defaultPractiScoreSyncPayload();
+  return apiRuntime.applyPractiScoreSessionPayload(payload, { resetSync });
 }
 
 function applyPractiScoreRoutePayload(payload) {
-  if (!state || !payload || typeof payload !== "object") return;
-  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_session")) {
-    state.practiscore_session = normalizePractiScoreSessionPayload(payload.practiscore_session);
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_sync")) {
-    state.practiscore_sync = normalizePractiScoreSyncPayload(payload.practiscore_sync);
-  } else if (Array.isArray(payload.matches)) {
-    state.practiscore_sync = normalizePractiScoreSyncPayload({
-      ...practiScoreSyncPayload(),
-      matches: payload.matches,
-    });
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "practiscore_options") && payload.practiscore_options && typeof payload.practiscore_options === "object") {
-    state.practiscore_options = {
-      ...(state.practiscore_options || {}),
-      ...payload.practiscore_options,
-    };
-  }
+  return apiRuntime.applyPractiScoreRoutePayload(payload);
 }
 
 function practiScoreCompetitors() {
-  return Array.isArray(state?.practiscore_options?.competitors)
-    ? state.practiscore_options.competitors
-    : [];
+  return projectPane?.practiScoreCompetitors() ?? [];
 }
 
 function practiScoreStageValues() {
-  return [...new Set(
-    (Array.isArray(state?.practiscore_options?.stage_numbers) ? state.practiscore_options.stage_numbers : [])
-      .map((value) => String(value || "").trim())
-      .filter(Boolean),
-  )];
+  return projectPane?.practiScoreStageValues() ?? [];
 }
 
 function practiScoreNameValues() {
-  return [...new Set(practiScoreCompetitors().map((option) => String(option.name || "").trim()).filter(Boolean))];
+  return projectPane?.practiScoreNameValues() ?? [];
 }
 
 function practiScorePlaceValues() {
-  return [...new Set(
-    practiScoreCompetitors()
-      .map((option) => normalizedPractiScorePlaceValue(option.place))
-      .filter((value) => value !== null),
-  )].map((value) => String(value));
+  return projectPane?.practiScorePlaceValues() ?? [];
 }
 
 function practiScoreSelectionValue(value) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
+  return projectPane?.practiScoreSelectionValue(value) ?? "";
 }
 
 function preferredPractiScoreSelection(explicitValue, controlId, fallbackValue) {
-  if (explicitValue !== undefined) return practiScoreSelectionValue(explicitValue);
-  const controlValue = practiScoreSelectionValue($(controlId)?.value);
-  if (controlValue) return controlValue;
-  return practiScoreSelectionValue(fallbackValue);
+  return projectPane?.preferredPractiScoreSelection(explicitValue, controlId, fallbackValue) ?? "";
 }
 
 function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = "") {
-  const select = $(selectId);
-  if (!(select instanceof HTMLSelectElement)) return;
-  const optionValues = [...new Set((values || []).map((value) => practiScoreSelectionValue(value)).filter(Boolean))];
-  const desiredValue = practiScoreSelectionValue(selectedValue);
-  const activeValue = controlIsActive(select) ? practiScoreSelectionValue(select.value) : "";
-  const preservedValue = activeValue || desiredValue;
-  if (preservedValue && !optionValues.includes(preservedValue)) optionValues.unshift(preservedValue);
-  select.innerHTML = "";
-  const emptyOption = document.createElement("option");
-  emptyOption.value = "";
-  emptyOption.textContent = emptyLabel;
-  select.appendChild(emptyOption);
-  optionValues.forEach((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value;
-    select.appendChild(option);
-  });
-  select.value = preservedValue && optionValues.includes(preservedValue) ? preservedValue : "";
+  return projectPane?.renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue);
 }
 
 function renderPractiScoreOptionLists(selectedValues = {}) {
-  renderPractiScoreSelect(
-    "match-stage-number",
-    practiScoreStageValues(),
-    "Select stage",
-    preferredPractiScoreSelection(selectedValues.stage_number, "match-stage-number", state?.project?.scoring?.stage_number),
-  );
-  renderPractiScoreSelect(
-    "match-competitor-name",
-    practiScoreNameValues(),
-    "Select competitor",
-    preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", state?.project?.scoring?.competitor_name),
-  );
-  renderPractiScoreSelect(
-    "match-competitor-place",
-    practiScorePlaceValues(),
-    "Select place",
-    preferredPractiScoreSelection(selectedValues.competitor_place, "match-competitor-place", state?.project?.scoring?.competitor_place),
-  );
+  return projectPane?.renderPractiScoreOptionLists(selectedValues);
 }
 
 function syncPractiScoreSelectionFields(changedField) {
-  const competitors = practiScoreCompetitors();
-  const stageSelect = $("match-stage-number");
-  const nameSelect = $("match-competitor-name");
-  const placeSelect = $("match-competitor-place");
-  if (!(nameSelect instanceof HTMLSelectElement) || !(placeSelect instanceof HTMLSelectElement)) {
-    renderPractiScoreOptionLists();
-    return;
-  }
-
-  if (competitors.length === 0) {
-    renderPractiScoreOptionLists({
-      stage_number: practiScoreSelectionValue(stageSelect?.value),
-      competitor_name: nameSelect.value,
-      competitor_place: placeSelect.value,
-    });
-    return;
-  }
-
-  const selectedName = nameSelect.value.trim();
-  const selectedPlace = normalizedPractiScorePlaceValue(placeSelect.value);
-  if (changedField === "name") {
-    const matches = competitors.filter((option) => option.name === selectedName);
-    if (!selectedName || matches.length === 0) {
-      placeSelect.value = "";
-    } else if (matches.length === 1 && matches[0].place !== null) {
-      placeSelect.value = String(matches[0].place);
-    } else if (selectedPlace !== null && !matches.some((option) => Number(option.place) === selectedPlace)) {
-      placeSelect.value = "";
-    }
-  }
-  if (changedField === "place") {
-    if (selectedPlace === null) {
-      nameSelect.value = "";
-    } else {
-      const matches = competitors.filter((option) => Number(option.place) === selectedPlace);
-      if (matches.length === 0) {
-        nameSelect.value = "";
-      } else if (matches.length === 1) {
-        nameSelect.value = matches[0].name;
-      } else if (selectedName && !matches.some((option) => option.name === selectedName)) {
-        nameSelect.value = "";
-      }
-    }
-  }
-
-  renderPractiScoreOptionLists({
-    stage_number: practiScoreSelectionValue(stageSelect?.value),
-    competitor_name: nameSelect.value,
-    competitor_place: placeSelect.value,
-  });
+  return projectPane?.syncPractiScoreSelectionFields(changedField);
 }
 
 function durationMs() {
-  return Math.max(1, state?.project?.primary_video?.duration_ms || 1);
+  return waveformStateRuntime?.durationMs() || Math.max(1, state?.project?.primary_video?.duration_ms || 1);
 }
 
 function waveformWindow() {
-  const duration = durationMs();
-  waveformZoomX = clamp(waveformZoomX, 1, 200);
-  const visibleDuration = Math.max(10, duration / waveformZoomX);
-  waveformOffsetMs = clamp(waveformOffsetMs, 0, Math.max(0, duration - visibleDuration));
-  return {
+  return waveformStateRuntime?.waveformWindow() || {
     start: waveformOffsetMs,
-    end: waveformOffsetMs + visibleDuration,
-    duration: visibleDuration,
+    end: waveformOffsetMs + durationMs(),
+    duration: durationMs(),
   };
 }
 
 function persistWaveformViewport() {
-  window.localStorage.setItem("splitshot.waveform.zoomX", String(waveformZoomX));
-  window.localStorage.setItem("splitshot.waveform.offsetMs", String(Math.round(waveformOffsetMs)));
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
+  return waveformStateRuntime?.persistWaveformViewport();
 }
 
 function setWaveformOffset(nextOffsetMs, { persist = true } = {}) {
-  const visible = waveformWindow();
-  const maxOffset = Math.max(0, durationMs() - visible.duration);
-  const clampedOffset = clamp(nextOffsetMs, 0, maxOffset);
-  if (Math.abs(clampedOffset - waveformOffsetMs) < 0.5) return false;
-  waveformOffsetMs = clampedOffset;
-  if (persist) persistWaveformViewport();
-  return true;
+  return waveformStateRuntime?.setWaveformOffset(nextOffsetMs, { persist }) ?? false;
 }
 
 function centerWaveformOnTime(timeMs, { persist = true } = {}) {
-  const visible = waveformWindow();
-  const maxOffset = Math.max(0, durationMs() - visible.duration);
-  if (maxOffset <= 0) return false;
-  return setWaveformOffset(timeMs - (visible.duration / 2), { persist });
+  return waveformStateRuntime?.centerWaveformOnTime(timeMs, { persist }) ?? false;
 }
 
 function ensureWaveformTimeVisible(timeMs, { center = false, paddingRatio = 0.12, persist = true } = {}) {
-  const visible = waveformWindow();
-  const maxOffset = Math.max(0, durationMs() - visible.duration);
-  if (!Number.isFinite(timeMs) || maxOffset <= 0) return false;
-  if (center || timeMs < visible.start || timeMs > visible.end) {
-    return centerWaveformOnTime(timeMs, { persist });
-  }
-  const padding = Math.min(visible.duration / 2, Math.max(20, visible.duration * paddingRatio));
-  if (timeMs < visible.start + padding) return setWaveformOffset(timeMs - padding, { persist });
-  if (timeMs > visible.end - padding) return setWaveformOffset(timeMs - visible.duration + padding, { persist });
-  return false;
+  return waveformStateRuntime?.ensureWaveformTimeVisible(timeMs, { center, paddingRatio, persist }) ?? false;
 }
 
 function waveformNavigatorMetrics(track = $("waveform-window-track")) {
-  if (!track) return null;
-  const visible = waveformWindow();
-  const totalDuration = Math.max(1, durationMs());
-  const rect = track.getBoundingClientRect();
-  const trackWidth = Math.max(1, rect.width || track.clientWidth || 1);
-  const maxOffset = Math.max(0, totalDuration - visible.duration);
-  const idealHandleWidth = trackWidth * (visible.duration / totalDuration);
-  const handleWidth = maxOffset <= 0
-    ? trackWidth
-    : clamp(Math.max(WAVEFORM_WINDOW_HANDLE_MIN_PX, idealHandleWidth), WAVEFORM_WINDOW_HANDLE_MIN_PX, trackWidth);
-  const maxLeft = Math.max(0, trackWidth - handleWidth);
-  const left = maxLeft <= 0 ? 0 : (waveformOffsetMs / maxOffset) * maxLeft;
-  return { track, rect, trackWidth, totalDuration, visible, maxOffset, handleWidth, maxLeft, left };
+  return waveformStateRuntime?.waveformNavigatorMetrics(track) || null;
 }
 
 function renderWaveformNavigator() {
-  const nav = $("waveform-window");
-  const track = $("waveform-window-track");
-  const handle = $("waveform-window-handle");
-  const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
-  if (!nav || !track || !handle) return;
-  nav.hidden = !expanded || !state?.project;
-  if (nav.hidden) return;
-  const metrics = waveformNavigatorMetrics(track);
-  if (!metrics) return;
-  const canPan = metrics.maxOffset > 0;
-  nav.classList.toggle("interactive", canPan);
-  track.classList.toggle("interactive", canPan);
-  handle.classList.toggle("interactive", canPan);
-  handle.style.width = `${metrics.handleWidth}px`;
-  handle.style.transform = `translateX(${metrics.left}px)`;
-  const startLabel = `${(metrics.visible.start / 1000).toFixed(2)}s`;
-  const endLabel = `${(metrics.visible.end / 1000).toFixed(2)}s`;
-  track.title = canPan
-    ? `Drag to pan the zoomed waveform window (${startLabel} to ${endLabel}).`
-    : `Zoom in to pan the waveform window (${startLabel} to ${endLabel}).`;
+  return waveformComponent?.renderWaveformNavigator();
 }
 
 function updateWaveformNavigator(clientX) {
-  const metrics = waveformNavigatorMetrics();
-  if (!metrics || metrics.maxOffset <= 0) return false;
-  const ratio = clamp((clientX - metrics.rect.left) / metrics.trackWidth, 0, 1);
-  return centerWaveformOnTime(ratio * metrics.totalDuration);
+  return waveformStateRuntime?.updateWaveformNavigator(clientX) ?? false;
 }
 
 function waveformX(timeMs, width) {
-  const window = waveformWindow();
-  return ((timeMs - window.start) / window.duration) * width;
+  return waveformStateRuntime?.waveformX(timeMs, width) ?? 0;
 }
 
 function isWaveformVisible(timeMs) {
-  const window = waveformWindow();
-  return timeMs >= window.start && timeMs <= window.end;
+  return waveformStateRuntime?.isWaveformVisible(timeMs) ?? false;
 }
 
 function primaryFrameDurationMs() {
@@ -7013,59 +5429,19 @@ function currentShotIndex(positionMs) {
 }
 
 function renderHeader() {
-  const projectName = normalizeProjectNameValue(state.project.name);
-  const projectPath = String(state?.project?.path || "").trim();
-  const hasProject = Boolean(projectPath);
-  const projectFolderLabel = hasProject ? fileName(projectPath.replace(/[\\/]+$/, "")) : "";
-  $("project-title").textContent = projectName;
-  $("rail-project").textContent = projectName;
-  $("status").textContent = state.status;
-  const primaryName = state.media.primary_available
-    ? (state.media.primary_display_name || fileName(state.project.primary_video.path))
-    : "No Video Selected";
-  $("current-file").textContent = primaryName;
-  const statusCopy = $("status-copy");
-  if (statusCopy) statusCopy.textContent = state.status;
-  const mergeCount = (state.project.merge_sources || []).length;
-  $("primary-file-path").placeholder = "Please select a video";
-  syncControlValue($("primary-file-path"), state.project.primary_video.path ? fileName(state.project.primary_video.path) : "");
-  $("project-path").placeholder = "Please create / select project";
-  syncControlValue($("project-path"), projectFolderLabel);
-  $("media-badge").textContent = state.media.primary_available
-    ? `Primary: ${primaryName}${mergeCount > 0 ? ` • ${mergeCount} added item${mergeCount === 1 ? "" : "s"}` : ""}`
-    : "No Video Selected";
+  return statusBarComponent?.renderHeader();
 }
 
 function renderStats() {
-  setProjectActionAvailability();
-  renderTimingSummary();
-  $("apply-threshold").disabled = !state?.project?.primary_video?.path;
+  return statusBarComponent?.renderStats();
 }
 
 function timingSummaryRows() {
-  return [
-    ["Draw", splitSeconds(state.metrics.draw_ms)],
-    ["Raw", splitSeconds(state.metrics.raw_time_ms ?? state.metrics.stage_time_ms)],
-    ["Shots", String(state.metrics.total_shots || 0)],
-    ["Avg Split", splitSeconds(state.metrics.average_split_ms)],
-    ["Beep", splitSeconds(state.metrics.beep_ms)],
-  ];
+  return statusBarComponent?.timingSummaryRows();
 }
 
 function renderTimingSummary() {
-  const enabled = $("timing-enabled")?.checked ?? true;
-  const totalShots = Number(state?.metrics?.total_shots || 0);
-  const result = $("timing-result");
-  const summary = $("timing-summary");
-  if (result) result.textContent = enabled ? splitSeconds(state.metrics.stage_time_ms ?? state.metrics.raw_time_ms) : "--";
-  if (summary) {
-    summary.textContent = !enabled
-      ? "Splits disabled."
-      : totalShots > 0
-      ? "Current split timing."
-      : "No timing data.";
-  }
-  renderDetailsList("timing-imported-summary", enabled && totalShots > 0 ? timingSummaryRows() : []);
+  return statusBarComponent?.renderTimingSummary();
 }
 
 function currentSettings() {
@@ -7082,12 +5458,14 @@ function readNumberSetting(id, defaultValue) {
 }
 
 function syncSettingsBadgeStyle(prefix, style = {}) {
+  if (settingsPane) return settingsPane.syncSettingsBadgeStyle(prefix, style);
   syncControlValue($(`${prefix}-background-color`), style.background_color ?? "#000000");
   syncControlValue($(`${prefix}-text-color`), style.text_color ?? "#ffffff");
   syncControlValue($(`${prefix}-opacity`), style.opacity ?? 0.9);
 }
 
 function readSettingsBadgeStyle(prefix) {
+  if (settingsPane) return settingsPane.readSettingsBadgeStyle(prefix);
   return {
     background_color: $(`${prefix}-background-color`)?.value || "#000000",
     text_color: $(`${prefix}-text-color`)?.value || "#ffffff",
@@ -7096,6 +5474,7 @@ function readSettingsBadgeStyle(prefix) {
 }
 
 function syncSettingsMarkerTemplate(template = {}) {
+  if (settingsPane) return settingsPane.syncSettingsMarkerTemplate(template);
   syncControlChecked($("settings-marker-enabled"), Boolean(template.enabled ?? true));
   syncControlValue($("settings-marker-content-type"), template.content_type ?? "text");
   syncControlValue($("settings-marker-text-source"), template.text_source ?? "score");
@@ -7242,6 +5621,7 @@ function settingFieldSource(field, currentValue, layers) {
 }
 
 function renderSettingsLayerSummary(settings, markerTemplate, layers) {
+  if (settingsPane) return settingsPane.renderSettingsLayerSummary(settings, markerTemplate, layers);
   const container = $("settings-layer-summary");
   if (!container) return;
   const table = document.createElement("table");
@@ -7267,6 +5647,7 @@ function renderSettingsLayerSummary(settings, markerTemplate, layers) {
 }
 
 function renderSettingsPane() {
+  if (settingsPane) return settingsPane.renderSettingsPane();
   const settings = currentSettings();
   const layers = state?.settings_layers || {};
   const hasProjectPath = Boolean(state?.project?.path);
@@ -7333,114 +5714,19 @@ function renderSettingsPane() {
   renderSettingsSections();
 }
 
-function mergeSourcePipRect(source, frameRect, pipSizeValue = null) {
-  const asset = source.asset || source;
-  const sourceWidth = Math.max(1, asset.width || 1);
-  const sourceHeight = Math.max(1, asset.height || 1);
-  const effectivePipSize = currentPipSizePercent(source, pipSizeValue ?? 35);
-  let insetWidth = Math.max(1, Math.round(frameRect.width * (effectivePipSize / 100)));
-  let insetHeight = Math.max(1, Math.round((sourceHeight / sourceWidth) * insetWidth));
-  if (insetHeight > frameRect.height) {
-    const fitScale = frameRect.height / insetHeight;
-    insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
-    insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
-  }
-  const travelX = Math.max(0, frameRect.width - insetWidth);
-  const travelY = Math.max(0, frameRect.height - insetHeight);
-  const pipX = normalizedCoordinateValue(source.pip_x) ?? normalizedCoordinateValue(state.project.merge.pip_x) ?? 1;
-  const pipY = normalizedCoordinateValue(source.pip_y) ?? normalizedCoordinateValue(state.project.merge.pip_y) ?? 1;
-  return {
-    left: frameRect.left + (travelX * pipX),
-    top: frameRect.top + (travelY * pipY),
-    width: insetWidth,
-    height: insetHeight,
-  };
+function mergeSourcePipRect(...args) {
+  return mergePane?.mergeSourcePipRect(...args) ?? null;
 }
 
-function ensureMergePreviewItem(layer, source) {
-  const asset = source.asset || source;
-  const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
-  let item = layer.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
-  if (!item) {
-    item = document.createElement("div");
-    item.className = "merge-preview-item";
-    item.dataset.sourceId = sourceId;
-    layer.appendChild(item);
-  }
-  item.dataset.sourceId = sourceId;
-  item.dataset.mediaType = asset.is_still_image ? "image" : "video";
-  let media = item.firstElementChild;
-  const desiredTag = asset.is_still_image ? "IMG" : "VIDEO";
-  if (!(media instanceof HTMLElement) || media.tagName !== desiredTag) {
-    item.innerHTML = "";
-    media = document.createElement(asset.is_still_image ? "img" : "video");
-    if (media instanceof HTMLVideoElement) {
-      media.defaultMuted = false;
-      media.muted = false;
-      media.volume = 1;
-      media.playsInline = true;
-      media.disablePictureInPicture = true;
-      media.preload = "auto";
-      ["loadedmetadata", "loadeddata"].forEach((eventName) => {
-        media.addEventListener(eventName, () => {
-          scheduleSecondaryPreviewSync();
-          renderLiveOverlay();
-        });
-      });
-    }
-    item.appendChild(media);
-  }
-  const mediaPath = buildMediaUrl(`/media/merge/${sourceId}`, asset.path || "");
-  if (media instanceof HTMLImageElement) {
-    if (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath) {
-      media.dataset.sourcePath = asset.path;
-      media.dataset.mediaUrl = mediaPath;
-      media.src = mediaPath;
-    }
-  } else if (media instanceof HTMLVideoElement && (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath)) {
-    media.dataset.sourcePath = asset.path;
-    media.dataset.mediaUrl = mediaPath;
-    media.src = mediaPath;
-    media.load();
-  }
-  if (media instanceof HTMLImageElement) {
-    media.style.opacity = String(currentSourceOpacity(source));
-  } else if (media instanceof HTMLVideoElement) {
-    media.style.opacity = String(currentSourceOpacity(source));
-  }
-  return item;
+function ensureMergePreviewItem(...args) {
+  // media.style.opacity = String(currentSourceOpacity(source));
+  return mergePane?.ensureMergePreviewItem(...args) ?? null;
 }
 
 function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
-  const layer = $("merge-preview-layer");
-  if (!layer) return;
-  if (!($("show-pip")?.checked ?? true)) {
-    layer.hidden = true;
-    layer.innerHTML = "";
-    return;
-  }
-  const frameRect = previewFrameGeometry(video, stage)?.frameRect;
-  if (!frameRect || mergeSources.length === 0) {
-    layer.hidden = true;
-    layer.innerHTML = "";
-    return;
-  }
-  layer.hidden = false;
-  const expectedIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
-  layer.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
-    if (!expectedIds.has(item.dataset.sourceId)) item.remove();
-  });
-  mergeSources.forEach((source, index) => {
-    const item = ensureMergePreviewItem(layer, source);
-    const rect = mergeSourcePipRect(source, frameRect, pipSizeValue);
-    item.style.left = `${rect.left}px`;
-    item.style.top = `${rect.top}px`;
-    item.style.width = `${rect.width}px`;
-    item.style.height = `${rect.height}px`;
-    item.style.maxWidth = `${rect.width}px`;
-    item.style.maxHeight = `${rect.height}px`;
-    item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
-  });
+  // Legacy merge-preview contract anchor:
+  // if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
+  return mergePane?.renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
 }
 
 function syncMergePreviewElements(primary) {
@@ -7481,177 +5767,7 @@ function syncMergePreviewElements(primary) {
 }
 
 function renderVideo() {
-  maybeApplyRecommendedLayout();
-  const video = $("primary-video");
-  const secondary = $("secondary-video");
-  const secondaryImage = $("secondary-image");
-  const mergePreviewLayer = $("merge-preview-layer");
-  const stage = $("video-stage");
-  const merge = state.project.merge;
-  const mergeSources = state?.project?.merge_sources || [];
-  const path = state.project.primary_video.path || "";
-  const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);
-  if (state.media.primary_available && (video.dataset.sourcePath !== path || video.dataset.mediaUrl !== primaryMediaPath)) {
-    video.dataset.sourcePath = path;
-    video.dataset.mediaUrl = primaryMediaPath;
-    video.src = primaryMediaPath;
-    video.load();
-    logPrimaryVideoState("source.attach");
-  }
-  if (!state.media.primary_available) {
-    resetMediaElement(video);
-  }
-
-  const secondaryPath = state.project.secondary_video?.path || "";
-  const imageSecondary = isImagePath(secondaryPath);
-  const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);
-  if (state.media.secondary_available && imageSecondary) {
-    if (secondaryImage.dataset.sourcePath !== secondaryPath || secondaryImage.dataset.mediaUrl !== secondaryMediaPath) {
-      secondaryImage.dataset.sourcePath = secondaryPath;
-      secondaryImage.dataset.mediaUrl = secondaryMediaPath;
-      secondaryImage.src = secondaryMediaPath;
-    }
-    resetMediaElement(secondary);
-  } else if (state.media.secondary_available && !imageSecondary) {
-    if (secondary.dataset.sourcePath !== secondaryPath || secondary.dataset.mediaUrl !== secondaryMediaPath) {
-      secondary.dataset.sourcePath = secondaryPath;
-      secondary.dataset.mediaUrl = secondaryMediaPath;
-      secondary.src = secondaryMediaPath;
-      ensurePrimaryVideoAudio(secondary);
-      secondary.load();
-    }
-    secondaryImage.removeAttribute("src");
-  } else {
-    resetMediaElement(secondary);
-    secondaryImage.removeAttribute("src");
-    secondaryImage.hidden = true;
-  }
-
-  const mergePreview = Boolean(merge.enabled && mergeSources.length > 0);
-  if (mergePreviewLayer) {
-    mergePreviewLayer.hidden = true;
-    if (merge.layout !== "pip") mergePreviewLayer.innerHTML = "";
-  }
-  stage.classList.toggle("merge-preview", mergePreview);
-  stage.classList.toggle("merge-side-by-side", mergePreview && merge.layout === "side_by_side");
-  stage.classList.toggle("merge-above-below", mergePreview && merge.layout === "above_below");
-  stage.classList.toggle("merge-pip", mergePreview && merge.layout === "pip");
-
-  const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
-  const pipSizeValue = currentPipSizePercent();
-  stage.style.setProperty("--pip-size", `${pipSizeValue}%`);
-  if (frameGeometry) {
-    const cropCenterX = normalizedCoordinateValue(state.project.export.crop_center_x) ?? 0.5;
-    const cropCenterY = normalizedCoordinateValue(state.project.export.crop_center_y) ?? 0.5;
-    video.hidden = false;
-    video.style.position = "absolute";
-    video.style.left = `${frameGeometry.frameRect.left}px`;
-    video.style.top = `${frameGeometry.frameRect.top}px`;
-    video.style.width = `${frameGeometry.frameRect.width}px`;
-    video.style.height = `${frameGeometry.frameRect.height}px`;
-    video.style.maxWidth = "none";
-    video.style.maxHeight = "none";
-    video.style.right = "";
-    video.style.bottom = "";
-    video.style.objectFit = "cover";
-    video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;
-    video.style.zIndex = "0";
-  } else {
-    video.style.position = "";
-    video.style.left = "";
-    video.style.top = "";
-    video.style.width = "";
-    video.style.height = "";
-    video.style.maxWidth = "";
-    video.style.maxHeight = "";
-    video.style.right = "";
-    video.style.bottom = "";
-    video.style.objectFit = "";
-    video.style.objectPosition = "";
-    video.style.zIndex = "";
-  }
-  [secondary, secondaryImage].forEach((element) => {
-    element.style.left = "";
-    element.style.top = "";
-    element.style.right = "";
-    element.style.bottom = "";
-    element.style.width = "";
-    element.style.height = "";
-    element.style.maxWidth = "";
-    element.style.maxHeight = "";
-    element.style.opacity = "";
-  });
-
-  if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
-    renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
-    secondary.hidden = true;
-    secondary.style.display = "none";
-    secondaryImage.hidden = true;
-    secondaryImage.style.display = "none";
-  } else {
-    const showSecondaryVideo = mergePreview && !imageSecondary;
-    const showSecondaryImage = mergePreview && imageSecondary;
-    secondary.hidden = !showSecondaryVideo;
-    secondary.style.display = showSecondaryVideo ? "" : "none";
-    secondaryImage.hidden = !showSecondaryImage;
-    secondaryImage.style.display = showSecondaryImage ? "block" : "none";
-
-    if (mergePreview) {
-      const activeSecondary = imageSecondary ? secondaryImage : secondary;
-      activeSecondary.style.opacity = String(currentSourceOpacity(mergeSources[0] || null));
-      const frameRect = previewFrameGeometry(video, stage)?.frameRect;
-      const secondaryWidth = Math.max(
-        1,
-        imageSecondary
-          ? (secondaryImage.naturalWidth || state.project.secondary_video?.width || 1)
-          : (secondary.videoWidth || state.project.secondary_video?.width || 1),
-      );
-      const secondaryHeight = Math.max(
-        1,
-        imageSecondary
-          ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
-          : (secondary.videoHeight || state.project.secondary_video?.height || 1),
-      );
-      if (merge.layout === "pip" && frameRect) {
-        const activeSource = mergeSources[0] || null;
-        const rect = activeSource
-          ? mergeSourcePipRect(activeSource, frameRect, pipSizeValue)
-          : (() => {
-              let insetWidth = Math.max(1, Math.round(frameRect.width * (pipSizeValue / 100)));
-              let insetHeight = Math.max(1, Math.round((secondaryHeight / secondaryWidth) * insetWidth));
-              if (insetHeight > frameRect.height) {
-                const fitScale = frameRect.height / insetHeight;
-                insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
-                insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
-              }
-              const travelX = Math.max(0, frameRect.width - insetWidth);
-              const travelY = Math.max(0, frameRect.height - insetHeight);
-              return {
-                left: frameRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1)),
-                top: frameRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1)),
-                width: insetWidth,
-                height: insetHeight,
-              };
-            })();
-        activeSecondary.style.left = `${rect.left}px`;
-        activeSecondary.style.top = `${rect.top}px`;
-        activeSecondary.style.width = `${rect.width}px`;
-        activeSecondary.style.height = `${rect.height}px`;
-        activeSecondary.style.maxWidth = `${rect.width}px`;
-        activeSecondary.style.maxHeight = `${rect.height}px`;
-      }
-    }
-  }
-
-  const waveformEnabled = Boolean(state.project.analysis?.shots?.length);
-  document.querySelectorAll(".waveform-actions button").forEach((button) => {
-    if (button.id === "amp-waveform-out" || button.id === "amp-waveform-in") {
-      button.disabled = !waveformEnabled || !selectedShotId;
-    } else {
-      button.disabled = !waveformEnabled;
-    }
-  });
-  scheduleSecondaryPreviewSync();
+  return videoPlayerComponent?.renderVideo();
 }
 
 function syncSecondaryPreview() {
@@ -7739,266 +5855,64 @@ function scheduleSecondaryPreviewSync() {
 }
 
 function waveformCanvasDisplayHeight(canvas) {
-  const panel = canvas.closest(".waveform-panel");
-  if (!panel) return 0;
-  const panelHeight = panel.clientHeight || panel.getBoundingClientRect().height || 0;
-  if (!panelHeight) return 0;
-  const headerHeight = panel.querySelector(".waveform-header")?.getBoundingClientRect().height || 0;
-  const windowHeight = panel.querySelector(".waveform-window")?.getBoundingClientRect().height || 0;
-  const footerHeight = panel.querySelector(".waveform-footer")?.getBoundingClientRect().height || 0;
-  const shotList = panel.querySelector(".waveform-shot-list");
-  const shotListVisible = shotList && window.getComputedStyle(shotList).display !== "none";
-  const shotListHeight = shotListVisible ? shotList.getBoundingClientRect().height : 0;
-  return Math.max(1, Math.floor(panelHeight - headerHeight - windowHeight - footerHeight - shotListHeight));
+  return waveformComponent?.waveformCanvasDisplayHeight(canvas) ?? 0;
 }
 
 function resizeCanvasToDisplay(canvas) {
-  const rect = canvas.getBoundingClientRect();
-  const parentRect = canvas.parentElement?.getBoundingClientRect();
-  const width = Math.max(1, Math.floor(parentRect?.width || canvas.parentElement?.clientWidth || rect.width || canvas.clientWidth || 1600));
-  const height = Math.max(1, Math.floor(waveformCanvasDisplayHeight(canvas) || rect.height || canvas.clientHeight || 260));
-  const scale = Math.max(1, window.devicePixelRatio || 1);
-  const targetWidth = Math.max(1, Math.round(width * scale));
-  const targetHeight = Math.max(1, Math.round(height * scale));
-  if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
-    canvas.width = targetWidth;
-    canvas.height = targetHeight;
-  }
-  canvas.style.width = "100%";
-  canvas.style.height = `${height}px`;
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  return { width, height };
+  return waveformComponent?.resizeCanvasToDisplay(canvas) ?? { width: 1, height: 1 };
 }
 
 function renderWaveformPlayhead(positionMs = currentPrimaryVideoPositionMs()) {
-  const canvas = $("waveform");
-  const playhead = $("waveform-playhead");
-  const panel = canvas?.closest(".waveform-panel");
-  if (!(canvas instanceof HTMLCanvasElement) || !(playhead instanceof HTMLElement) || !(panel instanceof HTMLElement)) return;
-  const total = durationMs();
-  const visible = waveformWindow();
-  const currentPositionMs = clamp(Number(positionMs) || 0, 0, total);
-  const canvasRect = canvas.getBoundingClientRect();
-  const panelRect = panel.getBoundingClientRect();
-  const withinWindow = currentPositionMs >= visible.start && currentPositionMs <= visible.end;
-  const isVisible = canvasRect.width > 0 && canvasRect.height > 0 && visible.duration > 0 && total > 0 && withinWindow;
-  playhead.hidden = !isVisible;
-  if (!isVisible) return;
-  const left = canvasRect.left - panelRect.left + (((currentPositionMs - visible.start) / visible.duration) * canvasRect.width);
-  playhead.style.left = `${left}px`;
-  playhead.style.top = `${canvasRect.top - panelRect.top}px`;
-  playhead.style.height = `${canvasRect.height}px`;
+  return waveformComponent?.renderWaveformPlayhead(positionMs);
 }
 
 function renderWaveform() {
-  const canvas = $("waveform");
-  const { width, height } = resizeCanvasToDisplay(canvas);
-  const ctx = canvas.getContext("2d");
-  const waveform = state.project.analysis.waveform_primary || [];
-  const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
-  canvas.classList.toggle("waveform-pannable", expanded && waveformZoomX > 1);
-  canvas.classList.toggle("waveform-panning", Boolean(waveformPanDrag));
-  const visible = waveformWindow();
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#102033";
-  ctx.fillRect(0, 0, width, height);
-  drawWaveformScale(ctx, visible, width, height);
-  drawSelectedRegion(ctx, width, height);
-  ctx.strokeStyle = "#3aa0ff";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  const startIndex = Math.max(0, Math.floor((visible.start / durationMs()) * waveform.length));
-  const endIndex = Math.min(waveform.length - 1, Math.ceil((visible.end / durationMs()) * waveform.length));
-  for (let index = startIndex; index <= endIndex; index += 1) {
-    const value = waveform[index] || 0;
-    const sampleTime = (index / Math.max(1, waveform.length - 1)) * durationMs();
-    const x = waveformX(sampleTime, width);
-    const amp = value * waveformAmplitudeForTime(sampleTime);
-    const yTop = (height / 2) - (amp * height * 0.42);
-    const yBottom = (height / 2) + (amp * height * 0.42);
-    ctx.moveTo(x, yTop);
-    ctx.lineTo(x, yBottom);
-  }
-  ctx.stroke();
-
-  const beep = state.project.analysis.beep_time_ms_primary;
-  if (beep !== null && beep !== undefined) drawMarker(ctx, beep, "#ff7b22", "BEEP", "rgba(226, 232, 240, 0.88)", width, height);
-  const draggedShotIndex = draggingShotId
-    ? state.project.analysis.shots.findIndex((shot) => shot.id === draggingShotId)
-    : -1;
-  state.project.analysis.shots.forEach((shot, index) => {
-    const selected = shot.id === selectedShotId;
-    const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null
-      ? pendingDragTimeMs
-      : shot.time_ms;
-    const label = expanded ? `${index + 1} ${seconds(timeMs)}` : "";
-    drawMarker(
-      ctx,
-      timeMs,
-      selected ? "#ffffff" : "#39d06f",
-      label,
-      selected ? "rgba(248, 250, 252, 0.98)" : "rgba(226, 232, 240, 0.88)",
-      width,
-      height,
-    );
-  });
-  renderWaveformShotList();
-  renderWaveformNavigator();
-  renderWaveformPlayhead();
+  return waveformComponent?.renderWaveform();
 }
 
 function drawOutlinedText(ctx, text, x, y, fillStyle, font, lineWidth = 3) {
-  ctx.save();
-  ctx.font = font;
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.lineJoin = "round";
-  ctx.miterLimit = 2;
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.88)";
-  ctx.lineWidth = lineWidth;
-  ctx.fillStyle = fillStyle;
-  ctx.strokeText(text, x, y);
-  ctx.fillText(text, x, y);
-  ctx.restore();
+  return waveformComponent?.drawOutlinedText(ctx, text, x, y, fillStyle, font, lineWidth);
 }
 
 function drawMarker(ctx, timeMs, color, label, labelColor = "rgba(248, 250, 252, 0.96)", width = null, height = null) {
-  if (!isWaveformVisible(timeMs)) return;
-  const x = waveformX(timeMs, width ?? ctx.canvas.width);
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(x, 0);
-  ctx.lineTo(x, height ?? ctx.canvas.height);
-  ctx.stroke();
-  if (label) {
-    drawOutlinedText(
-      ctx,
-      label,
-      x + 5,
-      11,
-      labelColor,
-      "800 12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
-    );
-  }
+  return waveformComponent?.drawMarker(ctx, timeMs, color, label, labelColor, width, height);
 }
 
 function drawWaveformScale(ctx, visible, width, height) {
-  const tickCount = Math.max(4, Math.min(12, Math.floor(width / 140)));
-  ctx.strokeStyle = "rgba(255,255,255,0.14)";
-  ctx.fillStyle = "rgba(244,245,246,0.82)";
-  ctx.lineWidth = 1;
-  ctx.font = "800 11px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
-  for (let index = 0; index <= tickCount; index += 1) {
-    const x = (index / tickCount) * width;
-    const timeMs = visible.start + ((index / tickCount) * visible.duration);
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-    drawOutlinedText(
-      ctx,
-      `${(timeMs / 1000).toFixed(3)}s`,
-      x + 4,
-      height - 17,
-      "rgba(226, 232, 240, 0.88)",
-      "800 11px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
-      3,
-    );
-  }
+  return waveformComponent?.drawWaveformScale(ctx, visible, width, height);
 }
 
 function drawSelectedRegion(ctx, width, height) {
-  const shot = selectedShot();
-  if (!shot) return;
-  if (!isWaveformVisible(shot.time_ms)) return;
-  const x = waveformX(shot.time_ms, width);
-  ctx.fillStyle = "rgba(255, 123, 34, 0.18)";
-  ctx.fillRect(Math.max(0, x - 44), 0, 88, height);
+  return waveformComponent?.drawSelectedRegion(ctx, width, height);
 }
 
 function startWaveformPanDrag(event) {
-  const canvas = $("waveform");
-  waveformPanDrag = {
-    target: canvas,
-    pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startOffsetMs: waveformOffsetMs,
-    moved: false,
-  };
-  capturePointer(canvas, event.pointerId);
-  canvas.classList.add("waveform-panning");
-  activity("waveform.pan_drag.start", { offset_ms: waveformOffsetMs });
-  event.preventDefault();
+  return waveformComponent?.startWaveformPanDrag(event);
 }
 
 function updateWaveformPanDrag(event) {
-  if (!waveformPanDrag) return;
-  if (event.pointerId !== undefined && waveformPanDrag.pointerId !== undefined && event.pointerId !== waveformPanDrag.pointerId) return;
-  const canvas = $("waveform");
-  const rect = canvas.getBoundingClientRect();
-  const visible = waveformWindow();
-  const deltaPx = event.clientX - waveformPanDrag.startClientX;
-  if (Math.abs(deltaPx) >= WAVEFORM_PAN_DRAG_THRESHOLD_PX) waveformPanDrag.moved = true;
-  if (!waveformPanDrag.moved) return;
-  const nextOffset = waveformPanDrag.startOffsetMs - ((deltaPx / Math.max(1, rect.width)) * visible.duration);
-  setWaveformOffset(nextOffset);
-  scheduleInteractionPreviewRender({ waveform: true });
+  return waveformComponent?.updateWaveformPanDrag(event);
 }
 
 function finishWaveformPanDrag(event) {
-  if (!waveformPanDrag) return false;
-  if (event.pointerId !== undefined && waveformPanDrag.pointerId !== undefined && event.pointerId !== waveformPanDrag.pointerId) return true;
-  releasePointer(waveformPanDrag.target, waveformPanDrag.pointerId);
-  waveformPanDrag.target?.classList.remove("waveform-panning");
-  const moved = waveformPanDrag.moved;
-  waveformPanDrag = null;
-  if (moved) {
-    activity("waveform.pan_drag.commit", { offset_ms: waveformOffsetMs });
-    flushInteractionPreviewRender();
-  }
-  flushQueuedProjectUiStateApply();
-  flushDeferredRender();
-  return moved;
+  return waveformComponent?.finishWaveformPanDrag(event) ?? false;
 }
 
 function handleWaveformNavigatorPointerDown(event) {
-  if (event.button !== 0) return;
-  const track = $("waveform-window-track");
-  const metrics = waveformNavigatorMetrics(track);
-  if (!metrics || metrics.maxOffset <= 0) return;
-  waveformNavigatorDrag = {
-    target: track,
-    pointerId: event.pointerId,
-  };
-  capturePointer(track, event.pointerId);
-  updateWaveformNavigator(event.clientX);
-  scheduleInteractionPreviewRender({ waveform: true });
-  event.preventDefault();
+  return waveformComponent?.handleWaveformNavigatorPointerDown(event);
 }
 
 function moveWaveformNavigatorDrag(event) {
-  if (!waveformNavigatorDrag) return;
-  if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
-  updateWaveformNavigator(event.clientX);
-  scheduleInteractionPreviewRender({ waveform: true });
+  return waveformComponent?.moveWaveformNavigatorDrag(event);
 }
 
 function endWaveformNavigatorDrag(event) {
-  if (!waveformNavigatorDrag) return;
-  if (event.pointerId !== undefined && waveformNavigatorDrag.pointerId !== undefined && event.pointerId !== waveformNavigatorDrag.pointerId) return;
-  releasePointer(waveformNavigatorDrag.target, waveformNavigatorDrag.pointerId);
-  waveformNavigatorDrag = null;
-  flushInteractionPreviewRender();
-  flushQueuedProjectUiStateApply();
-  flushDeferredRender();
+  return waveformComponent?.endWaveformNavigatorDrag(event);
 }
 
 function selectShot(shotId, { revealInWaveform = true, centerWaveform = false } = {}) {
   const nextShotId = stateHasShot(state, shotId) ? shotId : null;
-  selectedShotId = nextShotId;
+  setSelectedShotIdValue(nextShotId);
   if (state?.project?.ui_state) state.project.ui_state.selected_shot_id = nextShotId;
   activity("shot.select", { shot_id: nextShotId });
   const shot = selectedShot();
@@ -8068,78 +5982,19 @@ function selectedShot() {
 }
 
 function selectedShotRange() {
-  const shots = state?.project?.analysis?.shots || [];
-  const selectedIndex = shots.findIndex((shot) => shot.id === selectedShotId);
-  if (selectedIndex < 0) return null;
-
-  const shot = shots[selectedIndex];
-  const previousTime = selectedIndex > 0 ? shots[selectedIndex - 1].time_ms : 0;
-  const nextTime = selectedIndex < shots.length - 1 ? shots[selectedIndex + 1].time_ms : durationMs();
-
-  return {
-    shotId: shot.id,
-    start: selectedIndex === 0 ? 0 : Math.max(0, Math.round((previousTime + shot.time_ms) / 2)),
-    end: selectedIndex === shots.length - 1
-      ? durationMs()
-      : Math.min(durationMs(), Math.round((shot.time_ms + nextTime) / 2)),
-  };
+  return waveformComponent?.selectedShotRange() || null;
 }
 
 function waveformAmplitudeForTime(timeMs) {
-  const range = selectedShotRange();
-  if (!range || timeMs < range.start || timeMs > range.end) return 1;
-  return waveformShotAmplitudeById[range.shotId] ?? 1;
+  return waveformComponent?.waveformAmplitudeForTime(timeMs) ?? 1;
 }
 
 function waveformShotSubtitle(segment) {
-  const sourceLabel = segment.card_subtitle === "Manual" || segment.card_subtitle === "ShotML"
-    ? segment.card_subtitle
-    : segment.card_subtitle
-      ? `Conf ${segment.card_subtitle}`
-      : "";
-  return [segment.interval_label || "Split", sourceLabel].filter(Boolean).join(" • ");
+  return waveformComponent?.waveformShotSubtitle(segment) || "";
 }
 
 function renderWaveformShotList() {
-  const list = $("waveform-shot-list");
-  if (!list) return;
-  withPreservedScrollState([list], () => {
-    list.innerHTML = "";
-    (state.timing_segments || []).forEach((segment) => {
-      const item = document.createElement("button");
-      item.type = "button";
-      item.className = "waveform-shot-card";
-      if (segment.shot_id === selectedShotId) item.classList.add("selected");
-      if (isLowConfidence(segment.confidence, segment.source)) {
-        item.classList.add("low-confidence");
-        item.title = `Review this split manually: model confidence ${formatConfidenceValue(segment.confidence)}.`;
-      }
-
-      const summary = document.createElement("span");
-      summary.className = "waveform-shot-card-header";
-
-      const title = document.createElement("strong");
-      title.textContent = segment.card_title;
-
-      const value = document.createElement("span");
-      value.className = "waveform-shot-card-value";
-      value.textContent = `${segment.card_value}s`;
-
-      summary.append(title, value);
-
-      const subtitle = document.createElement("span");
-      subtitle.className = "waveform-shot-card-subtitle";
-      subtitle.textContent = waveformShotSubtitle(segment);
-
-      const meta = document.createElement("small");
-      meta.className = "waveform-shot-card-meta";
-      meta.textContent = segment.card_meta;
-
-      item.append(summary, subtitle, meta);
-      item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
-      list.appendChild(item);
-    });
-  });
+  return waveformComponent?.renderWaveformShotList();
 }
 
 function shotLabelForEvent(shotId) {
@@ -8151,99 +6006,19 @@ function shotLabelForEvent(shotId) {
 }
 
 function deleteTimingEvent(eventId) {
-  activity("timing.event.delete", { event_id: eventId });
-  callApi("/api/events/delete", { event_id: eventId });
+  return timingPane?.deleteTimingEvent(eventId);
 }
 
 function renderTimingEventList() {
-  const list = $("timing-event-list");
-  if (!list) return;
-  withPreservedScrollState([list], () => {
-    list.innerHTML = "";
-    const events = state.project.analysis.events || [];
-    if (events.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No timing events yet.";
-      list.appendChild(empty);
-      return;
-    }
-
-    events.forEach((event) => {
-      const row = document.createElement("div");
-      row.className = "timing-event-row";
-
-      const label = document.createElement("strong");
-      label.textContent = event.label || defaultTimingEventLabel(event.kind);
-
-      const kind = document.createElement("span");
-      kind.textContent = timingEventKindLabel(event.kind);
-
-      const placement = document.createElement("span");
-      placement.textContent = timingEventPlacementText(event);
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "Remove";
-      remove.setAttribute("aria-label", `Remove timing event ${event.label || defaultTimingEventLabel(event.kind)}`);
-      remove.addEventListener("click", () => deleteTimingEvent(event.id));
-
-      row.append(label, kind, placement, remove);
-      list.appendChild(row);
-    });
-  });
+  return timingPane?.renderTimingEventList();
 }
 
 function renderTimingEventEditor() {
-  syncSelectedShotId();
-  const shots = orderedShotsByTime();
-  const positionSelect = $("timing-event-position");
-  const addButton = $("add-timing-event");
-  if (!positionSelect || !addButton) return;
-
-  const previousPosition = positionSelect.value;
-  const selectedIndex = selectedShotId
-    ? shots.findIndex((shot) => shot.id === selectedShotId)
-    : -1;
-
-  positionSelect.innerHTML = "";
-  shots.forEach((shot, index) => {
-    const beforeOption = document.createElement("option");
-    beforeOption.value = `::${shot.id}`;
-    beforeOption.textContent = `Before Shot ${index + 1}`;
-    positionSelect.appendChild(beforeOption);
-
-    const nextShot = shots[index + 1];
-    const afterOption = document.createElement("option");
-    afterOption.value = `${shot.id}::${nextShot?.id || ""}`;
-    afterOption.textContent = nextShot
-      ? `Between Shot ${index + 1} and Shot ${index + 2}`
-      : `After Shot ${index + 1}`;
-    positionSelect.appendChild(afterOption);
-  });
-
-  if (previousPosition && Array.from(positionSelect.options).some((option) => option.value === previousPosition)) {
-    positionSelect.value = previousPosition;
-  } else if (selectedIndex >= 0) {
-    positionSelect.value = `${shots[selectedIndex].id}::${shots[selectedIndex + 1]?.id || ""}`;
-  }
-
-  addButton.disabled = shots.length === 0;
-  renderTimingEventList();
+  return timingPane?.renderTimingEventEditor();
 }
 
 function addTimingEvent() {
-  const kind = $("timing-event-kind").value;
-  const labelValue = $("timing-event-label").value.trim();
-  const [afterShotId = "", beforeShotId = ""] = String($("timing-event-position").value || "::").split("::");
-  const label = labelValue || defaultTimingEventLabel(kind);
-  activity("timing.event.add", { kind, label, after_shot_id: afterShotId, before_shot_id: beforeShotId });
-  callApi("/api/events/add", {
-    kind,
-    label,
-    after_shot_id: afterShotId,
-    before_shot_id: beforeShotId,
-  });
+  return timingPane?.addTimingEvent();
 }
 
 function formatTimingValue(value) {
@@ -8272,253 +6047,108 @@ function toggleTimingRowEdit(shotId) {
 }
 
 function restoreOriginalSplit(shotId) {
-  selectedShotId = shotId;
-  timingAdjustmentDrafts.delete(shotId);
-  callApi("/api/shots/restore", { shot_id: shotId, preserve_following_splits: true });
+  return timingPane?.restoreOriginalSplit(shotId);
 }
 
 function restoreOriginalScore(shotId) {
-  selectedShotId = shotId;
+  setSelectedShotIdValue(shotId);
   callApi("/api/scoring/restore", { shot_id: shotId });
 }
 
 function deleteShotById(shotId, source = "selected") {
-  if (!shotId) return;
-  if (selectedShotId === shotId) {
-    pendingSelectionFallback = shotSelectionContext(shotId, state, "index");
-    selectedShotId = null;
-  }
-  timingAdjustmentDrafts.delete(shotId);
-  timingRowEdits.delete(shotId);
-  scoringRowEdits.delete(shotId);
-  if (state?.project?.ui_state?.selected_shot_id === shotId) state.project.ui_state.selected_shot_id = null;
-  activity(source === "selected" ? "shot.delete_selected" : "shot.delete_row", { shot_id: shotId, source });
-  callApi("/api/shots/delete", { shot_id: shotId });
+  return timingPane?.deleteShotById(shotId, source);
 }
 
 function updateTimingRowField(shotId, field, value) {
-  if (field === "adjustment_ms") {
-    const rows = state.split_rows || [];
-    const rowIndex = rows.findIndex((row) => row.shot_id === shotId);
-    if (rowIndex < 0) return;
-    const row = rows[rowIndex];
-    const shotmlSplitMs = numericMs(row.shotml_split_ms) ?? numericMs(row.split_ms);
-    if (shotmlSplitMs === null || shotmlSplitMs === undefined) return;
-    const adjustmentMs = Math.round((Number(value) || 0) * 1000);
-    const splitMs = Math.max(0, shotmlSplitMs + adjustmentMs);
-    const baseTimeMs = rowIndex === 0
-      ? Math.max(0, Number(state?.project?.analysis?.beep_time_ms_primary ?? 0))
-      : Number(rows[rowIndex - 1]?.absolute_time_ms || 0);
-    callApi("/api/shots/move", {
-      shot_id: shotId,
-      time_ms: baseTimeMs + splitMs,
-      preserve_following_splits: true,
-    });
-    return;
-  }
+  return timingPane?.updateTimingRowField(shotId, field, value);
 }
 
 function signedSeconds(ms) {
-  const value = Number(ms);
-  if (!Number.isFinite(value) || value === 0) return "0.00";
-  const prefix = value > 0 ? "+" : "-";
-  return `${prefix}${(Math.abs(value) / 1000).toFixed(2)}`;
+  return timingPane?.signedSeconds(ms) ?? "0.00";
 }
 
 function splitRowEntryLabel(row) {
-  return row.label || (row.shot_number ? `Shot ${row.shot_number}` : row.end_label || "Entry");
+  return timingPane?.splitRowEntryLabel(row) || "Entry";
 }
 
 function splitRowRangeLabel(row) {
-  return `${row.start_label || "Start"} -> ${row.end_label || (row.shot_number ? `Shot ${row.shot_number}` : "Entry")}`;
+  return timingPane?.splitRowRangeLabel(row) || "Start -> Entry";
 }
 
 function splitRowIntervalLabel(row) {
-  const intervalLabel = String(row?.interval_label || "").trim();
-  if (intervalLabel) return intervalLabel;
-  if (Number(row?.shot_number || 0) === 1) return "Draw";
-  return "Split";
+  return timingPane?.splitRowIntervalLabel(row) || "Split";
 }
 
 function splitRowSequenceTotalMs(row) {
-  return numericMs(row?.sequence_total_ms);
+  return timingPane?.splitRowSequenceTotalMs(row);
 }
 
 function splitRowCumulativeMs(row) {
-  const cumulativeMs = numericMs(row?.cumulative_ms);
-  if (cumulativeMs !== null && cumulativeMs !== undefined) return cumulativeMs;
-  const absoluteMs = numericMs(row?.absolute_time_ms);
-  const beepMs = numericMs(state?.metrics?.beep_ms);
-  if (absoluteMs === null || absoluteMs === undefined) return null;
-  return beepMs === null || beepMs === undefined ? absoluteMs : Math.max(0, absoluteMs - beepMs);
+  return timingPane?.splitRowCumulativeMs(row);
 }
 
 function splitRowActions(row) {
-  return Array.isArray(row.actions) ? row.actions : [];
+  return timingPane?.splitRowActions(row) || [];
 }
 
 function splitRowActionSummary(row) {
-  return splitRowActions(row).map((action) => action.label).filter(Boolean).join(" • ");
+  return timingPane?.splitRowActionSummary(row) || "";
 }
 
 function splitRowPrimaryAction(row) {
-  if (row?.event_id) {
-    return splitRowActions(row).find((action) => action.event_id === row.event_id) || null;
-  }
-  return splitRowActions(row).find((action) => action.event_id) || null;
+  return timingPane?.splitRowPrimaryAction(row) || null;
 }
 
 function splitRowSecondaryActions(row) {
-  const primaryAction = splitRowPrimaryAction(row);
-  return splitRowActions(row).filter((action) => action !== primaryAction);
+  return timingPane?.splitRowSecondaryActions(row) || [];
 }
 
 function splitRowPrimaryLabel(row) {
-  const primaryAction = splitRowPrimaryAction(row);
-  if (primaryAction?.label) return primaryAction.label;
-  const intervalLabel = splitRowIntervalLabel(row);
-  return intervalLabel && intervalLabel !== "Split" ? intervalLabel : "";
+  return timingPane?.splitRowPrimaryLabel(row) || "";
 }
 
 function splitRowConfidenceLabel(row) {
-  const confidence = splitRowShotMLConfidence(row);
-  return confidence === null ? "--" : formatConfidenceValue(confidence);
+  return timingPane?.splitRowConfidenceLabel(row) || "--";
 }
 
 function splitRowShotMLConfidence(row) {
-  if (row?.shotml_confidence === null || row?.shotml_confidence === undefined || row?.shotml_confidence === "") return null;
-  const confidence = Number(row?.shotml_confidence);
-  return Number.isFinite(confidence) ? confidence : null;
+  return timingPane?.splitRowShotMLConfidence(row) ?? null;
 }
 
 function splitRowShotMLSplitMs(row) {
-  return numericMs(row?.shotml_split_ms) ?? numericMs(row?.split_ms);
+  return timingPane?.splitRowShotMLSplitMs(row);
 }
 
 function splitRowShotMLCumulativeMs(row) {
-  return numericMs(row?.shotml_cumulative_ms) ?? splitRowCumulativeMs(row);
+  return timingPane?.splitRowShotMLCumulativeMs(row);
 }
 
 function splitRowAdjustmentMs(row) {
-  return numericMs(row?.adjustment_ms) ?? 0;
+  return timingPane?.splitRowAdjustmentMs(row) ?? 0;
 }
 
 function splitRowFinalTimeMs(row) {
-  return numericMs(row?.final_time_ms) ?? splitRowCumulativeMs(row);
+  return timingPane?.splitRowFinalTimeMs(row);
 }
 
 function maximumSplitRowActionLabelLength() {
-  let longest = 8;
-  (state?.split_rows || []).forEach((row) => {
-    const labels = [];
-    const primaryLabel = splitRowPrimaryLabel(row);
-    if (primaryLabel) labels.push(primaryLabel);
-    splitRowSecondaryActions(row).forEach((action) => labels.push(action.label || action.kind || "Action"));
-    labels.forEach((label) => {
-      longest = Math.max(longest, String(label || "").trim().length);
-    });
-  });
-  return longest;
+  return timingPane?.maximumSplitRowActionLabelLength() ?? 8;
 }
 
 function buildSplitRowActionCell(row, expandedTable) {
-  const cell = document.createElement("div");
-  cell.className = "timeline-action-cell";
-  const primaryAction = splitRowPrimaryAction(row);
-  const primaryLabel = splitRowPrimaryLabel(row);
-  const secondaryActions = splitRowSecondaryActions(row);
-  if (!expandedTable) {
-    cell.textContent = splitRowActionSummary(row) || primaryLabel || "--";
-    return cell;
-  }
-
-  if (!primaryLabel && secondaryActions.length === 0) {
-    cell.textContent = "--";
-    return cell;
-  }
-
-  const list = document.createElement("div");
-  list.className = "timeline-action-list";
-  const appendChip = (labelText, { synthetic = false, eventId = null } = {}) => {
-    const chip = document.createElement("span");
-    chip.className = `timing-action-chip ${synthetic ? "synthetic" : "recorded"}`;
-    const chipLabel = document.createElement("span");
-    chipLabel.textContent = labelText;
-    chip.appendChild(chipLabel);
-    if (eventId) {
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "timing-action-remove";
-      remove.textContent = "×";
-      remove.title = `Remove ${labelText || "timing event"}`;
-      remove.setAttribute("aria-label", `Remove timing event ${labelText || "action"}`);
-      remove.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        deleteTimingEvent(eventId);
-      });
-      chip.appendChild(remove);
-    }
-    list.appendChild(chip);
-  };
-
-  if (primaryLabel) {
-    appendChip(primaryLabel, {
-      synthetic: !primaryAction?.event_id,
-      eventId: primaryAction?.event_id && !primaryAction.synthetic ? primaryAction.event_id : null,
-    });
-  }
-  secondaryActions.forEach((action) => {
-    const labelText = action.label || action.kind || "Action";
-    appendChip(labelText, {
-      synthetic: action.synthetic,
-      eventId: action.event_id && !action.synthetic ? action.event_id : null,
-    });
-  });
-  cell.appendChild(list);
-  return cell;
+  return timingPane?.buildSplitRowActionCell(row, expandedTable);
 }
 
 function buildTimingRowControlCell(row, editing) {
-  const cell = document.createElement("div");
-  cell.className = "timing-lock-cell";
-  if (!row.shot_id) return cell;
-  const lockButton = document.createElement("button");
-  lockButton.type = "button";
-  lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
-  lockButton.textContent = editing ? "Lock" : "Unlock";
-  lockButton.title = editing ? "Lock row" : "Unlock row";
-  lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
-  cell.appendChild(lockButton);
-  return cell;
+  return timingPane?.buildTimingRowControlCell(row, editing);
 }
 
 function buildTimingDeleteCell(row) {
-  const cell = document.createElement("div");
-  cell.className = "timing-row-button-cell";
-  if (!row.shot_id) return cell;
-  const deleteShot = document.createElement("button");
-  deleteShot.type = "button";
-  deleteShot.className = "danger-button restore-button";
-  deleteShot.textContent = "Delete";
-  deleteShot.title = "Delete this shot from the run.";
-  deleteShot.addEventListener("click", () => deleteShotById(row.shot_id, "timing_row"));
-  cell.appendChild(deleteShot);
-  return cell;
+  return timingPane?.buildTimingDeleteCell(row);
 }
 
 function buildTimingRestoreCell(row) {
-  const cell = document.createElement("div");
-  cell.className = "timing-row-button-cell";
-  if (!row.shot_id) return cell;
-  const restore = document.createElement("button");
-  restore.type = "button";
-  restore.className = "restore-button";
-  restore.textContent = "Restore";
-  restore.title = "Restore this shot to its ShotML timing.";
-  restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));
-  cell.appendChild(restore);
-  return cell;
+  return timingPane?.buildTimingRestoreCell(row);
 }
 
 function renderTimingTable(tableId = "timing-table") {
@@ -8667,27 +6297,11 @@ function renderTimingTables() {
 }
 
 function scoringWorkbenchShown() {
-  return Boolean(scoringWorkbenchExpanded);
+  return scoringPane?.scoringWorkbenchShown() ?? Boolean(scoringWorkbenchExpanded);
 }
 
 function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {
-  scoringWorkbenchExpanded = Boolean(expanded);
-  const root = $("cockpit-root");
-  root?.classList.toggle("scoring-expanded", scoringWorkbenchExpanded);
-  if (scoringWorkbenchExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded", "markers-expanded");
-  const section = $("scoring-workbench");
-  if (section instanceof HTMLElement) section.hidden = !scoringWorkbenchExpanded;
-  activity("scoring.expand", { expanded: scoringWorkbenchExpanded });
-  syncLocalProjectUiState();
-  if (persistUiState) scheduleProjectUiStateApply();
-  if (scoringWorkbenchExpanded) {
-    window.requestAnimationFrame(() => {
-      applyTimingTableColumns($("scoring-workbench-table"));
-      window.requestAnimationFrame(() => applyTimingTableColumns($("scoring-workbench-table")));
-    });
-  } else {
-    scheduleReviewStageRestore();
-  }
+  return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);
 }
 
 function markersWorkbenchShown() {
@@ -8699,472 +6313,51 @@ function popupEditingActive() {
 }
 
 function setMarkersExpanded(expanded, { persistUiState = true } = {}) {
-  const root = $("cockpit-root");
-  const nextExpanded = Boolean(expanded);
-  const markersActive = activeTool === "markers";
-  const wasExpanded = Boolean(root?.classList.contains("markers-expanded"));
-  if (nextExpanded && markersActive && !wasExpanded) capturePopupWorkbenchRestoreState();
-  if (nextExpanded && markersActive) cancelOverlayDragInteractions("markers.editing");
-  root?.classList.toggle("markers-expanded", nextExpanded && markersActive);
-  if (nextExpanded) root?.classList.remove("waveform-expanded", "timing-expanded", "metrics-expanded", "scoring-expanded");
-  const section = $("markers-workbench");
-  if (section instanceof HTMLElement) section.hidden = !(nextExpanded && markersActive);
-  activity("markers.expand", { expanded: nextExpanded });
-  syncLocalProjectUiState();
-  if (persistUiState) scheduleProjectUiStateApply();
-  renderPopupEditors();
-  if (nextExpanded) {
-    renderLiveOverlay();
-    return;
-  }
-  scheduleReviewStageRestore();
-}
-
-function scoringPenaltySummary(segment, penaltyFields = state.scoring_summary?.penalty_fields || []) {
-  const counts = segment?.penalty_counts || {};
-  const parts = penaltyFields
-    .map((field) => {
-      const count = Number(counts[field.id] || 0);
-      return count > 0 ? `${penaltyFieldLabel(field.id, field.label)} ${count}` : "";
-    })
-    .filter(Boolean);
-  return parts.join(" • ") || "--";
-}
-
-function toggleScoringRowEdit(shotId) {
-  if (!shotId) return;
-  if (scoringRowEdits.has(shotId)) scoringRowEdits.delete(shotId);
-  else scoringRowEdits.add(shotId);
-  syncLocalProjectUiState();
-  scheduleProjectUiStateApply();
-  renderScoringTables();
-}
-
-function applyShotScoringUpdate(shotId, scope) {
-  const shot = (state?.timing_segments || []).find((segment) => segment.shot_id === shotId);
-  if (!shot) return Promise.resolve(null);
-  const controlScope = (
-    scope?.querySelector?.(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)
-      ? scope
-      : ($("scoring-workbench-table") || document)
-  );
-  selectedShotId = shotId;
-  return callApi("/api/scoring/score", {
-    shot_id: shotId,
-    letter: controlScope.querySelector(`[data-score-field="letter"][data-score-shot-id="${shotId}"]`)?.value || defaultScoreLetter(),
-    penalty_counts: collectPenaltyCounts(controlScope, `.shot-penalty-entry-control[data-score-shot-id="${shotId}"]`),
-  }).then((result) => {
-    if (result) refreshReviewMediaFrame();
-    return result;
-  });
-}
-
-function buildScoringRowControlCell(segment, editing) {
-  const cell = document.createElement("div");
-  cell.className = "timing-lock-cell";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = `lock-button ${editing ? "unlocked" : "locked"}`;
-  button.textContent = editing ? "Lock" : "Unlock";
-  button.title = editing ? "Lock row" : "Unlock row";
-  button.addEventListener("click", () => toggleScoringRowEdit(segment.shot_id));
-  cell.appendChild(button);
-  return cell;
-}
-
-function buildScoringDeleteCell(segment) {
-  const cell = document.createElement("div");
-  cell.className = "timing-row-button-cell";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "danger-button restore-button";
-  button.textContent = "Delete";
-  button.title = "Delete this shot from the run.";
-  button.addEventListener("click", () => deleteShotById(segment.shot_id, "scoring_row"));
-  cell.appendChild(button);
-  return cell;
-}
-
-function buildScoringRestoreCell(segment) {
-  const cell = document.createElement("div");
-  cell.className = "timing-row-button-cell";
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "restore-button";
-  button.textContent = "Restore";
-  button.title = "Restore this shot score and penalties to their original values.";
-  button.addEventListener("click", () => restoreOriginalScore(segment.shot_id));
-  cell.appendChild(button);
-  return cell;
-}
-
-function buildScoringPenaltyEditor(segment, rowScope, penaltyFields) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "scoring-penalty-editor";
-  const list = document.createElement("div");
-  list.className = "scoring-penalty-list";
-  const existingEntries = [];
-  penaltyFields.forEach((field) => {
-    const count = Number(segment.penalty_counts?.[field.id] || 0);
-    for (let index = 0; index < count; index += 1) existingEntries.push(field.id);
-  });
-
-  function appendPenaltyRow(selectedPenaltyId = "") {
-    const row = document.createElement("div");
-    row.className = "scoring-penalty-entry";
-    const select = document.createElement("select");
-    select.className = "shot-penalty-select shot-penalty-entry-control";
-    select.dataset.scoreShotId = segment.shot_id;
-    select.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
-
-    const blank = document.createElement("option");
-    blank.value = "";
-    blank.textContent = "Select penalty";
-    select.appendChild(blank);
-    penaltyFields.forEach((field) => {
-      const option = document.createElement("option");
-      option.value = field.id;
-      option.dataset.penaltyId = field.id;
-      option.textContent = penaltyFieldLabel(field.id, field.label);
-      select.appendChild(option);
-    });
-    select.value = selectedPenaltyId;
-    select.dataset.penaltyId = selectedPenaltyId;
-    select.addEventListener("change", () => {
-      select.dataset.penaltyId = select.value;
-    });
-
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.className = "remove-penalty-button";
-    remove.textContent = "Remove";
-    remove.addEventListener("click", () => {
-      row.remove();
-      if (list.childElementCount === 0) appendPenaltyRow("");
-      applyShotScoringUpdate(segment.shot_id, rowScope);
-    });
-    row.append(select, remove);
-    list.appendChild(row);
-  }
-
-  if (existingEntries.length > 0) existingEntries.forEach((penaltyId) => appendPenaltyRow(penaltyId));
-  else appendPenaltyRow("");
-
-  const add = document.createElement("button");
-  add.type = "button";
-  add.className = "add-penalty-button";
-  add.textContent = "Add Penalty";
-  add.addEventListener("click", () => appendPenaltyRow(""));
-  wrapper.append(list, add);
-  return wrapper;
+  return markersPane?.setMarkersExpanded(expanded, { persistUiState });
 }
 
 function renderScoringTable(tableId = "scoring-table") {
-  const table = $(tableId);
-  if (!table) return;
-  const expandedTable = tableId === "scoring-workbench-table";
-  const scoreOptions = state.scoring_summary?.score_options || ["A", "C", "D", "M", "NS", "M+NS"];
-  const penaltyFields = state.scoring_summary?.penalty_fields || [];
-  const defaultScore = scoreOptions[0] || "A";
-  withPreservedScrollState([table], () => {
-    table.innerHTML = "";
-    table.classList.toggle("timing-resizable-table", expandedTable && tableId !== "scoring-workbench-table");
-    applyTimingTableColumns(table);
-    const headers = expandedTable
-      ? [
-        { label: "Edit", columnId: "lock", resizable: false },
-        { label: "Shot", columnId: "shot", resizable: false },
-        { label: "Current Score", columnId: "score", resizable: false },
-        { label: "Penalties", columnId: "penalties", resizable: false },
-        { label: "Split", columnId: "split", resizable: false },
-        { label: "Run", columnId: "run", resizable: false },
-        { label: "Action", columnId: "action", resizable: false },
-        { label: "Delete", columnId: "delete", resizable: false },
-        { label: "Restore", columnId: "restore", resizable: false },
-      ]
-      : [
-        { label: "Shot", columnId: "shot", resizable: false },
-        { label: "Score", columnId: "score", resizable: false },
-        { label: "Penalties", columnId: "penalties", resizable: false },
-        { label: "Split", columnId: "split", resizable: false },
-        { label: "Run", columnId: "run", resizable: false },
-        { label: "Action", columnId: "action", resizable: false },
-      ];
-    headers.forEach((header) => {
-      const cell = document.createElement("div");
-      cell.className = "head";
-      cell.dataset.timingColumn = header.columnId;
-      const label = document.createElement("span");
-      label.className = "timing-header-label";
-      label.textContent = header.label;
-      cell.appendChild(label);
-      if (header.resizable && window.innerWidth > 680) {
-        const handle = document.createElement("button");
-        handle.type = "button";
-        handle.className = "timing-column-resize";
-        handle.setAttribute("aria-label", `Resize ${header.label} column`);
-        handle.title = `Resize ${header.label} column`;
-        handle.addEventListener("pointerdown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          beginTimingColumnResize(tableId, header.columnId, event);
-        });
-        cell.appendChild(handle);
-      }
-      table.appendChild(cell);
-    });
-
-    (state.timing_segments || []).forEach((segment) => {
-      const splitRow = splitRowForShot(segment.shot_id);
-      const editing = expandedTable && scoringRowEdits.has(segment.shot_id);
-      const lowConfidence = isLowConfidence(segment.confidence, segment.source);
-      const rowScope = document.createElement("div");
-      rowScope.className = "scoring-row-scope";
-      rowScope.dataset.shotId = segment.shot_id;
-
-      if (expandedTable) table.appendChild(buildScoringRowControlCell(segment, editing));
-
-      const shotCell = document.createElement("div");
-      shotCell.className = "timeline-segment-cell";
-      shotCell.textContent = `Shot ${segment.shot_number}`;
-      if (segment.shot_id === selectedShotId) shotCell.classList.add("selected");
-      if (lowConfidence) shotCell.classList.add("low-confidence");
-      shotCell.addEventListener("click", () => selectShot(segment.shot_id));
-      table.appendChild(shotCell);
-
-      const scoreCell = document.createElement("div");
-      if (editing) {
-        const select = document.createElement("select");
-        select.dataset.scoreField = "letter";
-        select.dataset.scoreShotId = segment.shot_id;
-        select.className = "shot-score-select";
-        scoreOptions.forEach((letter) => {
-          const option = document.createElement("option");
-          option.value = letter;
-          const value = state.scoring_summary?.score_values?.[letter] ?? 0;
-          const penalty = state.scoring_summary?.score_penalties?.[letter] ?? 0;
-          option.textContent = penalty ? `${letter} (${value}, -${penalty})` : `${letter} (${value})`;
-          select.appendChild(option);
-        });
-        select.value = segment.score_letter || defaultScore;
-        select.addEventListener("change", () => applyShotScoringUpdate(segment.shot_id, rowScope));
-        rowScope.appendChild(select);
-        scoreCell.appendChild(select);
-      } else {
-        scoreCell.textContent = compactScoreDisplay(segment.score_letter || defaultScore, activeScoringRuleset()) || defaultScore;
-      }
-      table.appendChild(scoreCell);
-
-      const penaltiesCell = document.createElement("div");
-      if (editing && penaltyFields.length > 0) {
-        const editor = buildScoringPenaltyEditor(segment, rowScope, penaltyFields);
-        rowScope.appendChild(editor);
-        penaltiesCell.appendChild(editor);
-      } else {
-        penaltiesCell.textContent = scoringPenaltySummary(segment, penaltyFields);
-      }
-      table.appendChild(penaltiesCell);
-
-      const splitCell = document.createElement("div");
-      splitCell.textContent = splitSeconds(splitRowShotMLSplitMs(splitRow));
-      table.appendChild(splitCell);
-
-      const runCell = document.createElement("div");
-      runCell.textContent = splitSeconds(splitRowSequenceTotalMs(splitRow));
-      table.appendChild(runCell);
-
-      const actionCell = buildSplitRowActionCell(splitRow || {}, expandedTable);
-      if (segment.shot_id === selectedShotId) actionCell.classList.add("selected");
-      actionCell.addEventListener("click", () => selectShot(segment.shot_id));
-      table.appendChild(actionCell);
-
-      if (!expandedTable) return;
-      table.appendChild(buildScoringDeleteCell(segment));
-      table.appendChild(buildScoringRestoreCell(segment));
-    });
-  });
-  applyTimingTableColumns(table);
+  return scoringPane?.renderScoringTable(tableId);
 }
 
 function renderScoringTables() {
-  setScoringWorkbenchExpanded(scoringWorkbenchExpanded);
-  renderScoringTable("scoring-table");
-  renderScoringTable("scoring-workbench-table");
+  return scoringPane?.renderScoringTables();
 }
 
 function renderScoringPresetOptions() {
-  const select = $("scoring-preset");
-  const selected = state.project.scoring.ruleset;
-  const presets = state.scoring_presets || [];
-  const previousLength = select.options.length;
-  select.innerHTML = "";
-  presets.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.name;
-    select.appendChild(option);
-  });
-  const hasSelected = presets.some((item) => item.id === selected);
-  select.value = hasSelected ? selected : (select.options[0]?.value || "");
-  const preset = presets.find((item) => item.id === select.value);
-  const summary = state.scoring_summary;
-  $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "Choose a scoring preset.";
-  $("scoring-result").textContent = `${summary.display_label}: ${summary.display_value}`;
-  renderScoringTables();
-  if (previousLength === 0) select.addEventListener("change", renderScoringPresetDescription);
+  return scoringPane?.renderScoringPresetOptions();
 }
 
 function renderScoringPresetDescription() {
-  const selected = $("scoring-preset").value;
-  const preset = (state.scoring_presets || []).find((item) => item.id === selected);
-  $("scoring-description").textContent = preset ? `${preset.sport}: ${preset.description}` : "";
+  return scoringPane?.renderScoringPresetDescription();
 }
 
 function renderPractiScoreSummaries() {
-  const imported = state.scoring_summary?.imported_stage;
-  const stagedSource = state?.practiscore_options?.source_name || "";
-  const stagedMatchType = state?.practiscore_options?.detected_match_type || "";
-  const stagedStages = Array.isArray(state?.practiscore_options?.stage_numbers)
-    ? state.practiscore_options.stage_numbers
-    : [];
-  const stagedCompetitorCount = practiScoreCompetitors().length;
-  if (!imported) {
-    $("practiscore-status").textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
-    renderDetailsList("practiscore-import-summary", stagedSource ? [
-      ["Source File", stagedSource],
-      ["Match Type", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
-      ["Stages", stagedStages.length > 0 ? stagedStages.join(", ") : ""],
-      ["Competitors", stagedCompetitorCount > 0 ? String(stagedCompetitorCount) : ""],
-    ] : []);
-    renderDetailsList("scoring-imported-summary", []);
-    return;
-  }
-  const stageLabel = imported.stage_name
-    ? `Stage ${imported.stage_number}: ${imported.stage_name}`
-    : `Stage ${imported.stage_number}`;
-  const countsLabel = formatImportedCounts(imported.score_counts);
-  const videoRawSeconds = state.scoring_summary?.raw_seconds;
-  const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;
-  const importedSourceFile = imported.source_name || imported.source_path || "Selected file";
-  const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";
-  const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
-  const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;
-  const currentResultLabel = state.scoring_summary?.display_label || "Result";
-  const currentResultValue = state.scoring_summary?.display_value || "";
-  $("practiscore-status").textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
-  renderDetailsList("practiscore-import-summary", [
-    ["Source File", importedSourceFile],
-    ["Match Type", importedMatchType],
-    ["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],
-    ["Video Raw", formatPractiScoreTime(videoRawSeconds)],
-    ["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],
-    [currentResultLabel, currentResultValue],
-    ["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
-  ]);
-  renderDetailsList("scoring-imported-summary", [
-    ["Source", imported.source_name || "Selected file"],
-    ["Stage", stageLabel],
-    ["Competitor", imported.competitor_name],
-    ["Counts", countsLabel],
-    ["Official Points", imported.total_points !== null && imported.total_points !== undefined ? formatNumber(imported.total_points, 4) : ""],
-    ["Stage Points", imported.stage_points !== null && imported.stage_points !== undefined ? formatNumber(imported.stage_points, 4) : ""],
-    ["Stage Place", imported.stage_place ? `#${imported.stage_place}` : ""],
-  ]);
+  return scoringPane?.renderPractiScoreSummaries();
 }
 
 function renderExportPresetOptions(selectId = "export-preset", descriptionId = "export-preset-description", selectedValue = state?.project?.export?.preset) {
-  const select = $(selectId);
-  if (!select) return;
-  select.innerHTML = "";
-  (state.export_presets || []).forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.name;
-    select.appendChild(option);
-  });
-  const custom = document.createElement("option");
-  custom.value = "custom";
-  custom.textContent = "Custom";
-  select.appendChild(custom);
-  const hasSelected = Array.from(select.options).some((option) => option.value === selectedValue);
-  select.value = hasSelected ? selectedValue : "custom";
-  if (descriptionId) {
-    const preset = (state.export_presets || []).find((item) => item.id === select.value);
-    const description = $(descriptionId);
-    if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
-  }
+  return exportPane?.renderExportPresetOptions(selectId, descriptionId, selectedValue);
 }
 
 function renderExportLog() {
-  const persistedLines = (state.project.export.last_log || "")
-    .split(/\r?\n/)
-    .filter(Boolean);
-  const visibleLines = exportLogLines.length > 0 ? exportLogLines : persistedLines;
-  const output = $("export-log-output");
-  const summary = $("export-log-summary");
-  const errorBox = $("export-log-error");
-  const status = $("export-log-status");
-  const button = $("show-export-log");
-  const exportButton = $("export-export-log");
-  if (output) {
-    output.textContent = visibleLines.join("\n") || "No export log yet.";
-    if (activeProcessingPath === "/api/export") output.scrollTop = output.scrollHeight;
-  }
-  if (summary) {
-    summary.textContent = activeProcessingPath === "/api/export"
-      ? `Export in progress • ${Math.round(processingProgressPercent)}%`
-      : (visibleLines.length > 0 ? "Most recent local export output." : "No export activity yet.");
-  }
-  if (errorBox) {
-    errorBox.hidden = !state.project.export.last_error;
-    errorBox.textContent = state.project.export.last_error || "";
-  }
-  if (status) {
-    status.textContent = state.project.export.last_error
-      ? `Latest export failed: ${state.project.export.last_error}`
-      : activeProcessingPath === "/api/export"
-        ? `Export log is updating in real time. Current progress: ${Math.round(processingProgressPercent)}%.`
-        : (visibleLines.length > 0
-          ? "The last local export log is available in the modal window."
-          : "The live export log opens in a separate window so the output settings stay readable while rendering runs.");
-  }
-  if (button) {
-    button.textContent = activeProcessingPath === "/api/export"
-      ? `Show Log (${Math.round(processingProgressPercent)}%)`
-      : "Show Log";
-  }
-  if (exportButton) exportButton.disabled = visibleLines.length === 0;
+  return exportPane?.renderExportLog();
 }
 
 function openExportLogModal() {
-  const modal = $("export-log-modal");
-  if (!modal) return;
-  modal.hidden = false;
-  renderExportLog();
-  const output = $("export-log-output");
-  if (output) output.scrollTop = output.scrollHeight;
+  return exportPane?.openExportLogModal();
 }
 
 function closeExportLogModal() {
-  const modal = $("export-log-modal");
-  if (!modal) return;
-  modal.hidden = true;
+  return exportPane?.closeExportLogModal();
 }
 
 function downloadExportLog() {
-  const persistedLines = (state?.project?.export?.last_log || "")
-    .split(/\r?\n/)
-    .filter(Boolean);
-  const visibleLines = exportLogLines.length > 0 ? exportLogLines : persistedLines;
-  if (visibleLines.length === 0) {
-    setStatus("No export log available yet.");
-    return;
-  }
-  downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");
-  setStatus("Downloaded export log.");
+  return exportPane?.downloadExportLog();
 }
 
 function buildMetricsRows() {
+  if (metricsPane) return metricsPane.buildMetricsRows();
   const segmentsByShotId = new Map((state.timing_segments || []).map((segment) => [segment.shot_id, segment]));
   const beepMs = numericMs(state?.metrics?.beep_ms);
   const defaultScore = defaultScoreLetter();
@@ -9233,6 +6426,7 @@ function metricsPractiScoreLabel(entry) {
 }
 
 function renderMetricsTable(table) {
+  if (metricsPane) return metricsPane.renderMetricsTable(table);
   if (!table) return;
   table.innerHTML = "";
   const rows = buildMetricsRows();
@@ -9266,6 +6460,7 @@ function renderMetricsTable(table) {
 }
 
 function renderMetricsTrendTable(table) {
+  if (metricsPane) return metricsPane.renderMetricsTrendTable(table);
   if (!table) return;
   table.innerHTML = "";
   const rows = buildMetricsRows();
@@ -9480,6 +6675,7 @@ function metricsGraphLabel(entry, fallbackShotNumber) {
 }
 
 function buildMetricsGraphSeries(rows = buildMetricsRows()) {
+  if (metricsPane) return metricsPane.buildMetricsGraphSeries(rows);
   const shotRows = rows.filter((entry) => entry.shotId);
   if (shotRows.length === 0) return [];
   const cadenceBaselineMs = metricsCadenceBaselineMs(shotRows);
@@ -9990,14 +7186,17 @@ function renderMetricsGraphs(container, graphs, { compact = true } = {}) {
 }
 
 function isMetricsSectionExpanded(sectionId) {
+  if (metricsPane) return metricsPane.isMetricsSectionExpanded(sectionId);
   return metricsSectionExpansion.get(sectionId) !== false;
 }
 
 function setMetricsSectionExpanded(sectionId, expanded) {
+  if (metricsPane) return metricsPane.setMetricsSectionExpanded(sectionId, expanded);
   metricsSectionExpansion.set(sectionId, Boolean(expanded));
 }
 
 function renderMetricsSections() {
+  if (metricsPane) return metricsPane.renderMetricsSections();
   document.querySelectorAll("[data-metrics-section]").forEach((section) => {
     if (!(section instanceof HTMLElement)) return;
     const sectionId = section.dataset.metricsSection || "";
@@ -10109,6 +7308,7 @@ function metricsScoringDetailRows(summary) {
 }
 
 function renderMetricsPanel() {
+  if (metricsPane) return metricsPane.renderMetricsPanel();
   const summaryGrid = $("metrics-summary-grid");
   const trendList = $("metrics-trend-list");
   const scoreStatus = $("metrics-score-status");
@@ -10162,6 +7362,7 @@ function renderMetricsPanel() {
 }
 
 function metricsFileStem() {
+  if (metricsPane) return metricsPane.metricsFileStem();
   const raw = state?.project?.name || fileName(state?.project?.primary_video?.path || "") || "splitshot";
   return raw
     .toLowerCase()
@@ -10187,6 +7388,7 @@ function downloadTextFile(filename, text, mimeType = "text/plain") {
 }
 
 function buildMetricsCsv() {
+  if (metricsPane) return metricsPane.buildMetricsCsv();
   const summary = state.scoring_summary || {};
   const rows = buildMetricsRows();
   const imported = summary.imported_stage || {};
@@ -10348,6 +7550,7 @@ function buildMetricsCsv() {
 }
 
 function buildMetricsText() {
+  if (metricsPane) return metricsPane.buildMetricsText();
   const summary = state.scoring_summary || {};
   const rows = buildMetricsRows();
   const graphs = buildMetricsGraphSeries(rows);
@@ -10394,6 +7597,7 @@ function buildMetricsText() {
 }
 
 function exportMetrics(kind) {
+  if (metricsPane) return metricsPane.exportMetrics(kind);
   if (!state?.project) return;
   const stem = metricsFileStem();
   if (kind === "csv") {
@@ -10406,140 +7610,39 @@ function exportMetrics(kind) {
 }
 
 function syncExportPathControl() {
-  const input = $("export-path");
-  if (!input) return;
-  const savedPath = state.project.export.output_path || "";
-  const defaultPath = state.project.path
-    ? `${state.project.path}/Output/output.mp4`
-    : `${state.default_project_path || "~/splitshot"}/output.mp4`;
-  const draftPath = exportPathDraft.trim();
-  const hasUnsavedDraft = draftPath && draftPath !== savedPath;
-  const nextValue = hasUnsavedDraft ? exportPathDraft : savedPath || draftPath || input.value || defaultPath;
-  if (input.value !== nextValue) input.value = nextValue;
-  if (!draftPath) exportPathDraft = nextValue;
+  return exportPane?.syncExportPathControl();
 }
 
 function shotmlSettings() {
-  return state?.project?.analysis?.shotml_settings || {};
+  return shotmlPane?.shotmlSettings() || state?.project?.analysis?.shotml_settings || {};
 }
 
 function shotmlControlValue(element) {
-  if (!element) return null;
-  if (element.type === "checkbox") return Boolean(element.checked);
-  if (element.tagName === "SELECT") return element.value;
-  const value = element.value;
-  if (value === "") return "";
-  return Number(value);
+  return shotmlPane?.shotmlControlValue(element);
 }
 
 function readShotMLSettingsPayload() {
-  const payload = {};
-  document.querySelectorAll("[data-shotml-setting]").forEach((element) => {
-    payload[element.dataset.shotmlSetting] = shotmlControlValue(element);
-  });
-  return payload;
+  return shotmlPane?.readShotMLSettingsPayload() || {};
 }
 
 function syncShotMLControls() {
-  const settings = shotmlSettings();
-  document.querySelectorAll("[data-shotml-setting]").forEach((element) => {
-    const key = element.dataset.shotmlSetting;
-    if (!key || settings[key] === undefined) return;
-    if (element.type === "checkbox") {
-      syncControlChecked(element, Boolean(settings[key]));
-    } else {
-      syncControlValue(element, settings[key]);
-    }
-  });
+  return shotmlPane?.syncShotMLControls();
 }
 
 function proposalTypeLabel(type) {
-  return {
-    move_beep: "Move Beep",
-    move_shot: "Move Shot",
-    suppress_shot: "Suppress Shot",
-    restore_shot: "Restore Shot",
-    choose_close_pair_survivor: "Choose Close Pair",
-  }[type] || String(type || "Proposal");
+  return shotmlPane?.proposalTypeLabel(type) || String(type || "Proposal");
 }
 
 function proposalPreviewText(proposal) {
-  const before = proposal.source_time_ms === null || proposal.source_time_ms === undefined
-    ? "--"
-    : `${(Number(proposal.source_time_ms) / 1000).toFixed(3)}s`;
-  const after = proposal.target_time_ms === null || proposal.target_time_ms === undefined
-    ? null
-    : `${(Number(proposal.target_time_ms) / 1000).toFixed(3)}s`;
-  const alternate = proposal.alternate_time_ms === null || proposal.alternate_time_ms === undefined
-    ? null
-    : `${(Number(proposal.alternate_time_ms) / 1000).toFixed(3)}s`;
-  if (after) return `${before} to ${after}`;
-  if (alternate) return `${before}; keep ${alternate}`;
-  return before;
+  return shotmlPane?.proposalPreviewText(proposal) || "--";
 }
 
 function renderShotMLProposals() {
-  const list = $("shotml-proposal-list");
-  const summary = $("shotml-proposal-summary");
-  if (!list || !summary) return;
-  const proposals = (state.project.analysis.timing_change_proposals || []).filter((proposal) => proposal.status === "pending");
-  summary.textContent = proposals.length
-    ? `${proposals.length} pending proposal${proposals.length === 1 ? "" : "s"}.`
-    : "No pending proposals.";
-  list.replaceChildren();
-  if (!proposals.length) {
-    const empty = document.createElement("p");
-    empty.className = "hint";
-    empty.textContent = "Generate proposals after a ShotML run, then apply only the changes that match the video.";
-    list.appendChild(empty);
-    return;
-  }
-  proposals.forEach((proposal) => {
-    const row = document.createElement("div");
-    row.className = "shotml-proposal-row";
-    const copy = document.createElement("div");
-    copy.className = "shotml-proposal-copy";
-    const title = document.createElement("strong");
-    const shotLabel = proposal.shot_number ? ` Shot ${proposal.shot_number}` : "";
-    title.textContent = `${proposalTypeLabel(proposal.proposal_type)}${shotLabel}`;
-    const detail = document.createElement("span");
-    const confidence = proposal.confidence === null || proposal.confidence === undefined
-      ? ""
-      : ` Confidence ${formatConfidenceValue(proposal.confidence)}.`;
-    const support = proposal.support_confidence === null || proposal.support_confidence === undefined
-      ? ""
-      : ` Support ${formatConfidenceValue(proposal.support_confidence)}.`;
-    detail.textContent = `${proposalPreviewText(proposal)}.${confidence}${support}`;
-    const message = document.createElement("small");
-    message.textContent = proposal.message || "Review this timing proposal before applying it.";
-    copy.append(title, detail, message);
-    const actions = document.createElement("div");
-    actions.className = "shotml-proposal-actions";
-    const apply = document.createElement("button");
-    apply.type = "button";
-    apply.textContent = "Apply";
-    apply.addEventListener("click", () => callApi("/api/analysis/shotml/apply-proposal", { proposal_id: proposal.id }));
-    const discard = document.createElement("button");
-    discard.type = "button";
-    discard.textContent = "Discard";
-    discard.addEventListener("click", () => callApi("/api/analysis/shotml/discard-proposal", { proposal_id: proposal.id }));
-    actions.append(apply, discard);
-    row.append(copy, actions);
-    list.appendChild(row);
-  });
+  return shotmlPane?.renderShotMLProposals();
 }
 
 function renderShotML() {
-  syncShotMLControls();
-  renderCollapsibleInspectorSections();
-  const summary = $("shotml-run-summary");
-  const lastRun = state.project.analysis.last_shotml_run_summary || {};
-  if (summary) {
-    summary.textContent = lastRun.shot_count === undefined
-      ? "No ShotML run yet."
-      : `${lastRun.shot_count} shots at threshold ${Number(lastRun.threshold ?? shotmlSettings().detection_threshold ?? 0.5).toFixed(2)}.`;
-  }
-  renderShotMLProposals();
+  return shotmlPane?.renderShotML();
 }
 
 function renderControls() {
@@ -10737,271 +7840,22 @@ function renderStyleControls() {
   });
 }
 
-function clearMergeSourceCommitTimers({ clearPayloads = false } = {}) {
-  mergeSourceCommitTimers.forEach((timerId) => window.clearTimeout(timerId));
-  mergeSourceCommitTimers.clear();
-  if (clearPayloads) pendingMergeSourcePayloads.clear();
+function clearMergeSourceCommitTimers(options = {}) {
+  return mergePane?.clearMergeSourceCommitTimers(options);
 }
 
 function scheduleMergeSourceCommit(payload) {
-  const sourceId = String(payload?.source_id || "").trim();
-  if (!sourceId) return;
-  pendingMergeSourcePayloads.set(sourceId, payload);
-  const existingTimer = mergeSourceCommitTimers.get(sourceId);
-  if (existingTimer !== undefined) window.clearTimeout(existingTimer);
-  const timerId = window.setTimeout(() => {
-    mergeSourceCommitTimers.delete(sourceId);
-    const nextPayload = pendingMergeSourcePayloads.get(sourceId);
-    pendingMergeSourcePayloads.delete(sourceId);
-    if (nextPayload) callApi("/api/merge/source", nextPayload);
-  }, 120);
-  mergeSourceCommitTimers.set(sourceId, timerId);
+  return mergePane?.scheduleMergeSourceCommit(payload);
 }
 
-async function flushPendingMergeSourceCommits({ keepalive = false } = {}) {
-  if (pendingMergeSourcePayloads.size === 0) return;
-  clearMergeSourceCommitTimers();
-  const payloads = [...pendingMergeSourcePayloads.values()];
-  pendingMergeSourcePayloads.clear();
-  if (keepalive) {
-    payloads.forEach((payload) => sendKeepaliveJson("/api/merge/source", payload));
-    return;
-  }
-  for (const payload of payloads) {
-    await callApi("/api/merge/source", payload);
-  }
+async function flushPendingMergeSourceCommits(options = {}) {
+  return mergePane?.flushPendingMergeSourceCommits(options);
 }
 
 function renderMergeMediaList() {
-  const list = $("merge-media-list");
-  if (!list) return;
-  const mergeSources = state?.project?.merge_sources || [];
-  const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
-  [...mergeSourceExpansion.keys()].forEach((sourceId) => {
-    if (sourceId !== PIP_DEFAULTS_SECTION_ID && !validSourceIds.has(sourceId)) mergeSourceExpansion.delete(sourceId);
-  });
-  withPreservedScrollState([list], () => {
-    list.innerHTML = "";
-    if (mergeSources.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No PiP media added yet.";
-      list.appendChild(empty);
-      return;
-    }
-
-    mergeSources.forEach((source, index) => {
-      const asset = source.asset || source;
-      const sourceId = sourceIdentifier(source, String(index));
-      const card = document.createElement("div");
-      card.className = "merge-media-card";
-      card.dataset.sourceId = sourceId;
-      const expanded = isMergeSourceExpanded(sourceId);
-      card.classList.toggle("collapsed", !expanded);
-
-      const header = document.createElement("div");
-      header.className = "merge-media-card-header";
-      header.classList.add("section-header-with-toggle");
-      const title = document.createElement("strong");
-      title.textContent = `${index + 1}. ${fileName(asset.path || "")}`;
-
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.className = "scoring-shot-toggle";
-      toggle.textContent = expanded ? "v" : ">";
-      toggle.title = expanded ? "Hide PiP item controls" : "Show PiP item controls";
-      toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} PiP item controls`);
-      toggle.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        preserveElementViewportAnchor(
-          () => document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`),
-          () => {
-          setMergeSourceExpanded(sourceId, !expanded);
-          renderMergeMediaList();
-          },
-        );
-      });
-
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.textContent = "Remove";
-      remove.dataset.mergeSourceRemove = sourceId;
-      remove.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
-        callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
-      });
-
-      const headerActions = document.createElement("div");
-      headerActions.className = "merge-media-card-actions";
-      headerActions.append(remove);
-      header.append(toggle, title, headerActions);
-
-      const meta = document.createElement("small");
-      meta.className = "merge-media-card-meta";
-      const mediaType = asset.is_still_image ? "Image" : "Video";
-      const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
-      meta.textContent = `${mediaType}${dimensions}`;
-
-      const controls = document.createElement("div");
-      controls.className = "merge-source-controls";
-      const syncRow = document.createElement("div");
-      syncRow.className = "merge-source-sync-row";
-
-      const readSourcePayload = () => {
-        const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 1, 95);
-        const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
-        const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
-        const opacityControl = controls.querySelector('[data-merge-source-field="opacity"]');
-        const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
-        return {
-          source_id: sourceId,
-          pip_size_percent: nextSize,
-          pip_x: nextX,
-          pip_y: nextY,
-          opacity: nextOpacity,
-        };
-      };
-
-      const previewSourceUpdate = () => {
-        const payload = readSourcePayload();
-        updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
-        scheduleInteractionPreviewRender({ video: true });
-        return payload;
-      };
-
-      const buildSourceNumberInput = (labelText, field, value, min, max, step, titleText) => {
-        const label = document.createElement("label");
-        label.className = "merge-source-field";
-        const text = document.createElement("span");
-        text.textContent = labelText;
-        const input = document.createElement("input");
-        input.type = "number";
-        input.min = String(min);
-        input.max = String(max);
-        input.step = String(step);
-        input.value = value;
-        input.dataset.mergeSourceField = field;
-        input.dataset.sourceId = sourceId;
-        input.title = titleText;
-        input.addEventListener("input", previewSourceUpdate);
-        input.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
-        input.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
-        label.append(text, input);
-        return label;
-      };
-
-      const sizeField = document.createElement("label");
-      sizeField.className = "merge-source-field merge-source-size-field";
-      const sizeText = document.createElement("span");
-      sizeText.textContent = "PiP size";
-      const sizeControl = document.createElement("span");
-      sizeControl.className = "pip-size-control";
-      const sizeInput = document.createElement("input");
-      sizeInput.type = "range";
-      sizeInput.min = "1";
-      sizeInput.max = "95";
-      sizeInput.step = "1";
-      sizeInput.value = String(currentPipSizePercent(source, currentPipSizePercent()));
-      sizeInput.dataset.mergeSourceField = "size";
-      sizeInput.dataset.sourceId = sourceId;
-      sizeInput.title = "1 is smallest, 95 is largest.";
-      sizeInput.addEventListener("input", () => {
-        const output = sizeField.querySelector('[data-merge-source-output="size"]');
-        if (output) output.textContent = `${sizeInput.value}%`;
-        previewSourceUpdate();
-      });
-      sizeInput.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
-      sizeInput.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
-      const sizeOutput = document.createElement("output");
-      sizeOutput.dataset.mergeSourceOutput = "size";
-      sizeOutput.dataset.sourceId = sourceId;
-      sizeOutput.textContent = `${sizeInput.value}%`;
-      sizeControl.append(sizeInput, sizeOutput);
-      sizeField.append(sizeText, sizeControl);
-
-      const buildSourceOpacityInput = () => {
-        const label = document.createElement("label");
-        label.className = "merge-source-field merge-source-opacity-field";
-        const text = document.createElement("span");
-        text.textContent = "PiP opacity";
-        const percentField = document.createElement("span");
-        percentField.className = "opacity-percent-field";
-        const input = document.createElement("input");
-        input.type = "number";
-        input.className = "opacity-percent-input";
-        input.min = "0";
-        input.max = "100";
-        input.step = "1";
-        input.value = String(opacityPercentValue(currentSourceOpacity(source)));
-        input.dataset.mergeSourceField = "opacity";
-        input.dataset.sourceId = sourceId;
-        input.title = "0 is transparent, 100 is opaque.";
-        input.addEventListener("input", previewSourceUpdate);
-        input.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
-        input.addEventListener("blur", () => scheduleMergeSourceCommit(readSourcePayload()));
-        const suffix = document.createElement("span");
-        suffix.className = "opacity-percent-suffix";
-        suffix.textContent = "%";
-        percentField.append(input, suffix);
-        label.append(text, percentField);
-        return label;
-      };
-
-      const syncLabel = document.createElement("small");
-      syncLabel.className = "merge-source-sync-label";
-      syncLabel.dataset.mergeSourceSyncLabel = "true";
-      syncLabel.dataset.sourceId = sourceId;
-      syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
-
-      const syncButtons = document.createElement("div");
-      syncButtons.className = "button-grid compact merge-source-sync-buttons";
-      [-10, -1, 1, 10].forEach((deltaMs) => {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;
-        button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
-        button.addEventListener("click", () => {
-          const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
-          updateLocalMergeSourceSyncOffset(sourceId, nextOffset);
-          renderVideo();
-          callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
-        });
-        syncButtons.appendChild(button);
-      });
-
-      controls.append(
-        sizeField,
-        buildSourceOpacityInput(),
-        buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-        buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
-      );
-
-      const syncHint = document.createElement("small");
-      syncHint.className = "merge-source-sync-hint";
-      syncHint.textContent = state.project.merge.layout === "pip"
-        ? "Use these nudges or drag the preview to match the primary video exactly."
-        : "These values are saved per item and take effect in PiP layout and export timing.";
-      syncRow.append(syncLabel, syncButtons, syncHint);
-
-      const body = document.createElement("div");
-      body.className = "merge-media-card-body";
-      body.hidden = !expanded;
-      body.append(meta, controls, syncRow);
-      card.append(header, body);
-      syncMergeSourceControls(
-        sourceId,
-        normalizedCoordinateValue(source.pip_x),
-        normalizedCoordinateValue(source.pip_y),
-        currentPipSizePercent(source),
-        currentSourceSyncOffsetMs(source),
-        currentSourceOpacity(source),
-      );
-      list.appendChild(card);
-    });
-  });
+  // input.dataset.mergeSourceField = "opacity";
+  // These values are saved per item and take effect in PiP layout and export timing.
+  return mergePane?.renderMergeMediaList();
 }
 
 function visibleTimingEventsByShot(currentIndex) {
@@ -11497,38 +8351,7 @@ function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {
 }
 
 function positionTextBoxBadge(badge, box, frameRect, { anchorBadge = null, anchorRect = null, scale = 1 } = {}) {
-  if (box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) {
-    const resolvedAnchorRect = anchorRect || (anchorBadge instanceof HTMLElement ? anchorBadge.getBoundingClientRect() : null);
-    if (!resolvedAnchorRect) return false;
-    const badgeRect = badge.getBoundingClientRect();
-    const gap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
-    const halfWidth = Math.max(0, badgeRect.width / 2);
-    const centerX = clamp(
-      (resolvedAnchorRect.left - frameRect.left) + (resolvedAnchorRect.width / 2),
-      halfWidth,
-      Math.max(halfWidth, frameRect.width - halfWidth),
-    );
-    const top = clamp(
-      (resolvedAnchorRect.top - frameRect.top) - gap,
-      Math.max(0, badgeRect.height),
-      Math.max(0, frameRect.height),
-    );
-    badge.style.position = "absolute";
-    badge.style.margin = "0";
-    badge.style.left = `${centerX}px`;
-    badge.style.top = `${top}px`;
-    badge.style.transform = "translate(-50%, -100%)";
-    return true;
-  }
-  const customX = normalizedCoordinateValue(box.x);
-  const customY = normalizedCoordinateValue(box.y);
-  if (customX === null || customY === null) return false;
-  badge.style.position = "absolute";
-  badge.style.margin = "0";
-  badge.style.left = `${clamp(customX * frameRect.width, 0, frameRect.width)}px`;
-  badge.style.top = `${clamp(customY * frameRect.height, 0, frameRect.height)}px`;
-  badge.style.transform = "translate(-50%, -50%)";
-  return true;
+  return overlayPane?.positionTextBoxBadge(badge, box, frameRect, { anchorBadge, anchorRect, scale }) || false;
 }
 
 function resolveNormalizedPointFromRect(rect, frameRect) {
@@ -11542,82 +8365,27 @@ function resolveNormalizedPointFromRect(rect, frameRect) {
 }
 
 function previewFrameRectForTextBoxes() {
-  const stage = $("video-stage");
-  if (!stage) return null;
-  return previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  return overlayPane?.previewFrameRectForTextBoxes() || null;
 }
 
 function overlayTextBoxBadge(boxId) {
-  const customOverlay = $("custom-overlay");
-  if (!customOverlay) return null;
-  return [...customOverlay.querySelectorAll("[data-text-box-id]")].find(
-    (element) => element instanceof HTMLElement && element.dataset.textBoxId === boxId,
-  ) || null;
+  return overlayPane?.overlayTextBoxBadge(boxId) || null;
 }
 
 function resolveRenderedTextBoxCoordinates(boxId, fallbackBox = null) {
-  const frameRect = previewFrameRectForTextBoxes();
-  const badge = overlayTextBoxBadge(boxId);
-  const liveCoordinates = frameRect && badge instanceof HTMLElement
-    ? resolveNormalizedPointFromRect(badge.getBoundingClientRect(), frameRect)
-    : null;
-  if (liveCoordinates) return liveCoordinates;
-  const cachedCoordinates = textBoxRenderedPositionById.get(boxId) || null;
-  if (cachedCoordinates) return cachedCoordinates;
-  if (!fallbackBox) return null;
-  const fallbackX = normalizedCoordinateValue(fallbackBox.x);
-  const fallbackY = normalizedCoordinateValue(fallbackBox.y);
-  if (fallbackX === null || fallbackY === null) return null;
-  return { x: fallbackX, y: fallbackY };
+  return overlayPane?.resolveRenderedTextBoxCoordinates(boxId, fallbackBox) || null;
 }
 
 function unlockedOverlayTextBox(box, coordinates = null) {
-  const nextCoordinates = coordinates
-    || resolveRenderedTextBoxCoordinates(box.id, box)
-    || {
-      x: normalizedCoordinateValue(box.x) ?? 0.5,
-      y: normalizedCoordinateValue(box.y) ?? 0.5,
-    };
-  return normalizeOverlayTextBox({
-    ...box,
-    lock_to_stack: false,
-    quadrant: CUSTOM_QUADRANT_VALUE,
-    x: nextCoordinates.x,
-    y: nextCoordinates.y,
-  });
+  return overlayPane?.unlockedOverlayTextBox(box, coordinates);
 }
 
 function syncLockedTextBoxEditorCoordinates() {
-  overlayTextBoxes().forEach((box) => {
-    if (!box.lock_to_stack || box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE) return;
-    const coordinates = resolveRenderedTextBoxCoordinates(box.id, box);
-    if (!coordinates) return;
-    const card = [...document.querySelectorAll(".text-box-card[data-box-id]")].find(
-      (element) => element instanceof HTMLElement && element.dataset.boxId === box.id,
-    );
-    if (!(card instanceof HTMLElement)) return;
-    const xInput = card.querySelector('[data-text-box-field="x"]');
-    const yInput = card.querySelector('[data-text-box-field="y"]');
-    if (xInput instanceof HTMLInputElement && xInput.disabled) syncControlValue(xInput, coordinates.x);
-    if (yInput instanceof HTMLInputElement && yInput.disabled) syncControlValue(yInput, coordinates.y);
-  });
+  return overlayPane?.syncLockedTextBoxEditorCoordinates();
 }
 
 function configureTextBoxGroup(group, quadrant, frameRect, scale = 1) {
-  const [vertical = "top", horizontal = "left"] = String(quadrant || "top_left").split("_");
-  const horizontalLayout = vertical === "middle";
-  group.classList.remove("horizontal", "vertical");
-  group.classList.add(horizontalLayout ? "horizontal" : "vertical");
-  group.style.justifyContent = alignToEdge(vertical);
-  group.style.alignItems = alignToEdge(horizontal);
-  const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
-  const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
-  group.style.padding = `${scaledMargin}px`;
-  group.style.gap = `${scaledGap}px`;
-  group.style.left = "0px";
-  group.style.top = "0px";
-  group.style.width = "100%";
-  group.style.height = "100%";
+  return overlayPane?.configureTextBoxGroup(group, quadrant, frameRect, scale);
 }
 
 function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
@@ -11639,442 +8407,67 @@ function placeOverlayBadge(layer, badge, frameRect, xValue, yValue) {
 }
 
 function visibleOverlayTextBoxEntries(finalShotReached) {
-  return overlayTextBoxes()
-    .map((box, index) => {
-      const textValue = overlayTextBoxDisplayText(box).trim();
-      if (!box.enabled || !textValue || (box.source === "imported_summary" && !finalShotReached)) return null;
-      return { box, index, textValue };
-    })
-    .filter(Boolean);
+  return overlayPane?.visibleOverlayTextBoxEntries(finalShotReached) || [];
 }
 
 function overlayTextBoxStyle(box) {
-  return {
-    background_color: box.background_color || state.project.overlay.hit_factor_badge.background_color,
-    text_color: box.text_color || state.project.overlay.hit_factor_badge.text_color,
-    opacity: box.opacity ?? state.project.overlay.hit_factor_badge.opacity,
-  };
+  return overlayPane?.overlayTextBoxStyle(box);
 }
 
 function customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge, stackAnchorRect = null) {
-  const overlayState = state?.project?.overlay || {};
-  const finalScoreRect = finalScoreBadge?.getBoundingClientRect();
-  const stackTerminalRect = overlayStackTerminalRect($("live-overlay"));
-  return JSON.stringify({
-    frame: roundedRect(frameRect),
-    scale: Math.round(overlayScale * 1000) / 1000,
-    spacing: overlaySpacing,
-    margin: overlayMargin,
-    style_type: overlayStyleMode,
-    badge_size: overlayState.badge_size,
-    bubble_width: overlayState.bubble_width,
-    bubble_height: overlayState.bubble_height,
-    font_family: overlayState.font_family,
-    font_size: overlayState.font_size,
-    font_bold: overlayState.font_bold,
-    font_italic: overlayState.font_italic,
-    final_score: roundedRect(finalScoreRect),
-    stack_anchor: roundedRect(stackAnchorRect),
-    stack_terminal: roundedRect(stackTerminalRect),
-    entries: entries.map(({ box, textValue }) => ({
-      id: box.id,
-      lock_to_stack: box.lock_to_stack,
-      source: box.source,
-      text: textValue,
-      quadrant: box.quadrant,
-      x: box.x,
-      y: box.y,
-      width: box.width,
-      height: box.height,
-      background_color: box.background_color,
-      text_color: box.text_color,
-      opacity: box.opacity,
-    })),
-  });
+  return overlayPane?.customOverlayKey(entries, frameRect, overlayScale, finalScoreBadge, stackAnchorRect) || "";
 }
 
 function overlayStackBadges(overlay) {
-  if (!(overlay instanceof HTMLElement)) return [];
-  return [...overlay.querySelectorAll(".overlay-badge")].filter(
-    (element) => element instanceof HTMLElement && !element.dataset.textBoxId,
-  );
+  return overlayPane?.overlayStackBadges(overlay) || [];
 }
 
 function overlayStackAnchorRect(overlay) {
-  const candidates = overlayStackBadges(overlay);
-  if (candidates.length === 0) return null;
-  let left = Number.POSITIVE_INFINITY;
-  let top = Number.POSITIVE_INFINITY;
-  let right = Number.NEGATIVE_INFINITY;
-  let bottom = Number.NEGATIVE_INFINITY;
-  candidates.forEach((element) => {
-    const rect = element.getBoundingClientRect();
-    if (!Number.isFinite(rect.width) || !Number.isFinite(rect.height) || rect.width <= 0 || rect.height <= 0) return;
-    left = Math.min(left, rect.left);
-    top = Math.min(top, rect.top);
-    right = Math.max(right, rect.right);
-    bottom = Math.max(bottom, rect.bottom);
-  });
-  if (![left, top, right, bottom].every(Number.isFinite)) return null;
-  return {
-    left,
-    top,
-    width: Math.max(0, right - left),
-    height: Math.max(0, bottom - top),
-  };
+  return overlayPane?.overlayStackAnchorRect(overlay) || null;
 }
 
 function overlayStackTerminalRect(overlay) {
-  const badges = overlayStackBadges(overlay);
-  if (badges.length === 0) return null;
-  const direction = state?.project?.overlay?.shot_direction || "right";
-  const terminalBadge = badges.reduce((selected, candidate) => {
-    if (!(selected instanceof HTMLElement)) return candidate;
-    const selectedRect = selected.getBoundingClientRect();
-    const candidateRect = candidate.getBoundingClientRect();
-    if (direction === "left") return candidateRect.left < selectedRect.left ? candidate : selected;
-    if (direction === "up") return candidateRect.top < selectedRect.top ? candidate : selected;
-    if (direction === "down") return candidateRect.bottom > selectedRect.bottom ? candidate : selected;
-    return candidateRect.right > selectedRect.right ? candidate : selected;
-  }, badges[0]);
-  return terminalBadge instanceof HTMLElement ? terminalBadge.getBoundingClientRect() : null;
+  return overlayPane?.overlayStackTerminalRect(overlay) || null;
 }
 
 function firstStackLockedTextBoxRect(badgeRect, frameRect, scale = 1) {
-  const quadrant = state?.project?.overlay?.shot_quadrant || "bottom_left";
-  const [vertical = "bottom", horizontal = "left"] = String(quadrant).split("_");
-  const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);
-  const left = horizontal === "left"
-    ? scaledMargin
-    : horizontal === "middle"
-      ? Math.max(0, (frameRect.width - badgeRect.width) / 2)
-      : Math.max(0, frameRect.width - badgeRect.width - scaledMargin);
-  const top = vertical === "top"
-    ? scaledMargin
-    : vertical === "middle"
-      ? Math.max(0, (frameRect.height - badgeRect.height) / 2)
-      : Math.max(0, frameRect.height - badgeRect.height - scaledMargin);
-  return {
-    left,
-    top,
-    width: badgeRect.width,
-    height: badgeRect.height,
-  };
+  return overlayPane?.firstStackLockedTextBoxRect(badgeRect, frameRect, scale) || null;
 }
 
 function nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale = 1) {
-  const direction = state?.project?.overlay?.shot_direction || "right";
-  const gap = scaledOverlayPixelValue(overlaySpacing, scale, 0);
-  let left = baseRect.left;
-  let top = baseRect.top;
-  if (direction === "left") {
-    left = baseRect.left - badgeRect.width - gap;
-    top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);
-  } else if (direction === "up") {
-    left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);
-    top = baseRect.top - badgeRect.height - gap;
-  } else if (direction === "down") {
-    left = baseRect.left + (baseRect.width / 2) - (badgeRect.width / 2);
-    top = baseRect.top + baseRect.height + gap;
-  } else {
-    left = baseRect.left + baseRect.width + gap;
-    top = baseRect.top + (baseRect.height / 2) - (badgeRect.height / 2);
-  }
-  return {
-    left: clamp(left, 0, Math.max(0, frameRect.width - badgeRect.width)),
-    top: clamp(top, 0, Math.max(0, frameRect.height - badgeRect.height)),
-    width: badgeRect.width,
-    height: badgeRect.height,
-  };
+  return overlayPane?.nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale) || null;
 }
 
 function positionStackLockedTextBoxBadge(badge, frameRect, { terminalRect = null, previousRect = null, scale = 1 } = {}) {
-  const badgeRect = badge.getBoundingClientRect();
-  const baseRect = previousRect || (terminalRect
-    ? {
-        left: terminalRect.left - frameRect.left,
-        top: terminalRect.top - frameRect.top,
-        width: terminalRect.width,
-        height: terminalRect.height,
-      }
-    : null);
-  const nextRect = baseRect
-    ? nextStackLockedTextBoxRect(baseRect, badgeRect, frameRect, scale)
-    : firstStackLockedTextBoxRect(badgeRect, frameRect, scale);
-  badge.style.position = "absolute";
-  badge.style.margin = "0";
-  badge.style.left = `${nextRect.left}px`;
-  badge.style.top = `${nextRect.top}px`;
-  badge.style.transform = "";
-  return nextRect;
+  return overlayPane?.positionStackLockedTextBoxBadge(badge, frameRect, { terminalRect, previousRect, scale }) || null;
 }
 
 function renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect = null, terminalRect = null) {
-  customOverlay.innerHTML = "";
-  const textBoxGroups = new Map();
-  const nextRenderedPositions = new Map();
-  let stackLockedPreviousRect = null;
-  entries.forEach(({ box, index, textValue }) => {
-    const resolvedSize = resolvedOverlayTextBoxSize(box);
-    const customBadge = badgeElement(
-      textValue,
-      overlayTextBoxStyle(box),
-      size,
-      null,
-      resolvedSize.width,
-      resolvedSize.height,
-      "center",
-      overlayScale,
-    );
-    customBadge.dataset.textBoxDrag = "true";
-    customBadge.dataset.textBoxId = box.id;
-    customBadge.dataset.textBoxLabel = overlayTextBoxLabel(box, index);
-    customBadge.dataset.textBoxSource = box.source || "manual";
-    customOverlay.appendChild(customBadge);
-    if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
-      stackLockedPreviousRect = positionStackLockedTextBoxBadge(customBadge, frameRect, {
-        terminalRect,
-        previousRect: stackLockedPreviousRect,
-        scale: overlayScale,
-      });
-      const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
-      if (coordinates) nextRenderedPositions.set(box.id, coordinates);
-      return;
-    }
-    const aboveFinalAnchorRect = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
-      ? (!(finalScoreBadge instanceof HTMLElement) && box.source === "imported_summary" ? stackAnchorRect : null)
-      : stackAnchorRect;
-    if (positionTextBoxBadge(customBadge, box, frameRect, {
-      anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,
-      anchorRect: aboveFinalAnchorRect,
-      scale: overlayScale,
-    })) {
-      const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
-      if (coordinates) nextRenderedPositions.set(box.id, coordinates);
-      return;
-    }
-    customBadge.remove();
-    const quadrant = box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE
-      ? "top_middle"
-      : (box.quadrant || "top_right");
-    let group = textBoxGroups.get(quadrant);
-    if (!group) {
-      group = document.createElement("div");
-      group.className = "text-box-group";
-      configureTextBoxGroup(group, quadrant, frameRect, overlayScale);
-      textBoxGroups.set(quadrant, group);
-      customOverlay.appendChild(group);
-    }
-    group.appendChild(customBadge);
-    const coordinates = resolveNormalizedPointFromRect(customBadge.getBoundingClientRect(), frameRect);
-    if (coordinates) nextRenderedPositions.set(box.id, coordinates);
-  });
-  textBoxRenderedPositionById = nextRenderedPositions;
-  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
+  return overlayPane?.renderCustomOverlayBoxes(customOverlay, entries, frameRect, overlayScale, size, finalScoreBadge, stackAnchorRect, terminalRect);
 }
 
 function beginTextBoxDrag(event) {
-  if (popupEditingActive()) return;
-  if (textBoxDrag || overlayBadgeDrag) return;
-  const customOverlay = $("custom-overlay");
-  const customBadge = event.target instanceof Element
-    ? event.target.closest("[data-text-box-drag]")
-    : null;
-  const renderedBoxId = customBadge?.dataset?.textBoxId || "";
-  let box = overlayTextBoxes().find((item) => item.id === renderedBoxId);
-  if (!box && customBadge?.dataset?.textBoxSource) {
-    box = overlayTextBoxes().find((item) => item.source === customBadge.dataset.textBoxSource);
-  }
-  const boxId = box?.id || renderedBoxId;
-  if (
-    event.button !== 0
-    || !customOverlay
-    || !customOverlay.classList.contains("has-badge")
-    || !box
-    || !overlayTextBoxDisplayText(box).trim()
-    || !(customBadge instanceof HTMLElement)
-    || !customOverlay.contains(customBadge)
-  ) return;
-  event.preventDefault();
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const badgeRect = customBadge.getBoundingClientRect();
-  if (box.lock_to_stack && box.quadrant !== ABOVE_FINAL_TEXT_BOX_VALUE) {
-    const anchor = overlayDragAnchor("shots", customBadge, frameRect);
-    overlayBadgeDrag = {
-      target: stage,
-      kind: "shots",
-      sourceKind: "text_box",
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startX: anchor.x,
-      startY: anchor.y,
-      preservedTextBoxes: overlayTextBoxes(),
-    };
-    capturePointer(stage, event.pointerId);
-    stage.classList.add("overlay-dragging");
-    activity("overlay.drag.start", { kind: "shots", source_kind: "text_box", x: anchor.x, y: anchor.y });
-    return;
-  }
-  const startX = clamp((badgeRect.left - frameRect.left + badgeRect.width / 2) / frameRect.width, 0, 1);
-  const startY = clamp((badgeRect.top - frameRect.top + badgeRect.height / 2) / frameRect.height, 0, 1);
-  textBoxDrag = {
-    boxId,
-    target: customOverlay,
-    pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    startX,
-    startY,
-  };
-  capturePointer(customOverlay, event.pointerId);
-  customOverlay.classList.add("dragging");
-  activity("overlay.text_box.drag.start", { box_id: boxId, x: startX, y: startY });
+  return overlayPane?.beginTextBoxDrag(event);
 }
 
 function moveTextBoxDrag(event) {
-  if (!textBoxDrag) return;
-  if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
-  const stage = $("video-stage");
-  if (!stage) return;
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const width = Math.max(1, frameRect.width || 0);
-  const height = Math.max(1, frameRect.height || 0);
-  const { startClientX, startClientY, startX, startY } = textBoxDrag;
-  const deltaX = (event.clientX - startClientX) / width;
-  const deltaY = (event.clientY - startClientY) / height;
-  const newX = clamp(startX + deltaX, 0, 1);
-  const newY = clamp(startY + deltaY, 0, 1);
-  const boxes = overlayTextBoxes().map((box) => box.id === textBoxDrag.boxId
-    ? normalizeOverlayTextBox({ ...box, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY })
-    : box);
-  setLocalOverlayTextBoxes(boxes);
-  syncOverlayPreviewStateFromControls();
-  scheduleInteractionPreviewRender({ overlay: true });
+  return overlayPane?.moveTextBoxDrag(event);
 }
 
 function endTextBoxDrag(event) {
-  if (!textBoxDrag) return;
-  if (event.pointerId !== undefined && textBoxDrag.pointerId !== undefined && event.pointerId !== textBoxDrag.pointerId) return;
-  const customOverlay = $("custom-overlay");
-  releasePointer(textBoxDrag.target || customOverlay, textBoxDrag.pointerId ?? event.pointerId);
-  customOverlay?.classList.remove("dragging");
-  const drag = textBoxDrag;
-  const box = overlayTextBoxes().find((item) => item.id === drag.boxId);
-  activity("overlay.text_box.drag.commit", {
-    box_id: drag.boxId,
-    x: box?.x ?? null,
-    y: box?.y ?? null,
-  });
-  autoApplyOverlay.cancel();
-  textBoxDrag = null;
-  renderTextBoxEditors();
-  flushInteractionPreviewRender();
-  queueInspectorScrollRestore();
-  callApi("/api/overlay", readOverlayPayload());
-  flushDeferredRender();
+  return overlayPane?.endTextBoxDrag(event);
 }
 
 function beginPopupBubbleDrag(event) {
-  if (event.button !== 0 || popupBubbleDrag || !popupEditingActive()) return;
-  const badge = event.target instanceof Element ? event.target.closest("[data-popup-drag]") : null;
-  if (!(badge instanceof HTMLElement)) return;
-  const bubbleId = badge.dataset.popupId || "";
-  if (!bubbleId || bubbleId !== selectedPopupBubbleId) return;
-  const bubble = popupBubbles().find((item) => item.id === bubbleId);
-  if (!bubble) return;
-  const badgeRect = badge.getBoundingClientRect();
-  const selectedMotionOffsetMs = Math.max(0, Math.round(Number(badge.dataset.popupMotionOffset) || 0));
-  selectedPopupBubbleId = bubbleId;
-  if (badge.dataset.popupMotionOffset !== undefined) {
-    if (selectedMotionOffsetMs > 0) setSelectedPopupPlacementMode("keyframe", selectedMotionOffsetMs);
-    else setSelectedPopupPlacementMode("base");
-  } else {
-    setSelectedPopupPlacementMode("base");
-  }
-  renderPopupEditors();
-  renderLiveOverlay();
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const currentPositionMs = overlayRenderPositionMs($("primary-video"));
-  const renderPositionMs = popupBubbleRenderPositionMs(bubble, currentPositionMs);
-  const renderedCoordinates = badge.dataset.popupMotionOffset !== undefined
-    ? popupKeyframePoint(bubble, selectedMotionOffsetMs)
-    : (resolveNormalizedPointFromRect(badgeRect, frameRect)
-      || popupBubblePoint(bubble, renderPositionMs));
-  const popupTimeMs = popupBubbleEffectiveTimeMs(bubble);
-  popupBubbleDrag = {
-    bubbleId,
-    target: $("popup-overlay"),
-    pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    startX: renderedCoordinates.x,
-    startY: renderedCoordinates.y,
-    motionOffsetMs: badge.dataset.popupMotionOffset !== undefined
-      ? selectedMotionOffsetMs
-      : Math.max(0, renderPositionMs - popupTimeMs),
-    badgeWidth: Math.max(0, badgeRect.width || 0),
-    badgeHeight: Math.max(0, badgeRect.height || 0),
-    pointerOffsetX: clamp(event.clientX - badgeRect.left, 0, Math.max(0, badgeRect.width || 0)),
-    pointerOffsetY: clamp(event.clientY - badgeRect.top, 0, Math.max(0, badgeRect.height || 0)),
-    kind: badge.dataset.popupMotionOffset !== undefined && selectedMotionOffsetMs > 0 ? "keyframe" : "bubble",
-  };
-  setSelectedPopupKeyframeOffset(popupBubbleDrag.motionOffsetMs);
-  capturePointer(popupBubbleDrag.target, event.pointerId);
-  popupBubbleDrag.target?.classList.add("dragging");
-  event.preventDefault();
-  activity("popup.drag.start", { popup_id: bubbleId, x: renderedCoordinates.x, y: renderedCoordinates.y });
+  return markersPane?.beginPopupBubbleDrag(event);
 }
 
 function movePopupBubbleDrag(event) {
-  if (!popupBubbleDrag) return;
-  if (event.pointerId !== undefined && popupBubbleDrag.pointerId !== undefined && event.pointerId !== popupBubbleDrag.pointerId) return;
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const width = Math.max(1, frameRect.width || 0);
-  const height = Math.max(1, frameRect.height || 0);
-  let newX;
-  let newY;
-  if (popupBubbleDrag.kind === "bubble") {
-    const badgeWidth = clamp(popupBubbleDrag.badgeWidth || 0, 0, width);
-    const badgeHeight = clamp(popupBubbleDrag.badgeHeight || 0, 0, height);
-    const pointerOffsetX = clamp(popupBubbleDrag.pointerOffsetX ?? badgeWidth / 2, 0, badgeWidth);
-    const pointerOffsetY = clamp(popupBubbleDrag.pointerOffsetY ?? badgeHeight / 2, 0, badgeHeight);
-    const nextLeft = clamp(event.clientX - frameRect.left - pointerOffsetX, 0, Math.max(0, width - badgeWidth));
-    const nextTop = clamp(event.clientY - frameRect.top - pointerOffsetY, 0, Math.max(0, height - badgeHeight));
-    newX = clamp((nextLeft + (badgeWidth / 2)) / width, 0, 1);
-    newY = clamp((nextTop + (badgeHeight / 2)) / height, 0, 1);
-  } else {
-    const deltaX = (event.clientX - popupBubbleDrag.startClientX) / width;
-    const deltaY = (event.clientY - popupBubbleDrag.startClientY) / height;
-    newX = clamp(popupBubbleDrag.startX + deltaX, 0, 1);
-    newY = clamp(popupBubbleDrag.startY + deltaY, 0, 1);
-  }
-  const nextBubbles = popupBubbles().map((bubble) => {
-    if (bubble.id !== popupBubbleDrag.bubbleId) return bubble;
-    if (popupBubbleDrag.kind === "keyframe" && popupBubbleDrag.motionOffsetMs > 0) {
-      return updatePopupBubbleMotionPoint(bubble, popupBubbleDrag.motionOffsetMs, newX, newY);
-    }
-    return normalizePopupBubble({ ...bubble, quadrant: CUSTOM_QUADRANT_VALUE, x: newX, y: newY });
-  });
-  setPopupBubbles(nextBubbles, { commit: false, rerender: false });
+  return markersPane?.movePopupBubbleDrag(event);
 }
 
 function endPopupBubbleDrag(event) {
-  if (!popupBubbleDrag) return;
-  if (event.pointerId !== undefined && popupBubbleDrag.pointerId !== undefined && event.pointerId !== popupBubbleDrag.pointerId) return;
-  const drag = popupBubbleDrag;
-  releasePointer(drag.target, drag.pointerId ?? event.pointerId);
-  drag.target?.classList.remove("dragging");
-  popupBubbleDrag = null;
-  renderPopupEditors();
-  activity(drag.kind === "keyframe" ? "popup.keyframe.drag.commit" : "popup.drag.commit", {
-    popup_id: drag.bubbleId,
-    offset_ms: drag.motionOffsetMs,
-  });
-  callApi("/api/popups", { popups: popupBubbles() });
+  return markersPane?.endPopupBubbleDrag(event);
 }
 
 function cancelOverlayDragInteractions(reason = "interrupted") {
@@ -12111,128 +8504,23 @@ function cancelOverlayDragInteractions(reason = "interrupted") {
 }
 
 function overlayDragConfiguration(kind) {
-  return {
-    timer: { lockId: "timer-lock-to-stack", xId: "timer-x", yId: "timer-y" },
-    draw: { lockId: "draw-lock-to-stack", xId: "draw-x", yId: "draw-y" },
-    score: { lockId: "score-lock-to-stack", xId: "score-x", yId: "score-y" },
-    shots: {
-      xId: "overlay-custom-x",
-      yId: "overlay-custom-y",
-      quadrantId: "shot-quadrant",
-      quadrantValue: CUSTOM_QUADRANT_VALUE,
-    },
-  }[kind] || null;
+  return overlayPane?.overlayDragConfiguration(kind) || null;
 }
 
 function overlayDragAnchor(kind, badge, frameRect) {
-  if (kind === "shots") {
-    const overlay = $("live-overlay");
-    const anchorBadge = overlay?.firstElementChild;
-    const anchorRect = anchorBadge?.getBoundingClientRect() || overlay?.getBoundingClientRect() || badge.getBoundingClientRect();
-    return {
-      x: clamp((anchorRect.left - frameRect.left + (anchorRect.width / 2)) / Math.max(1, frameRect.width), 0, 1),
-      y: clamp((anchorRect.top - frameRect.top + (anchorRect.height / 2)) / Math.max(1, frameRect.height), 0, 1),
-    };
-  }
-  const rect = badge.getBoundingClientRect();
-  return {
-    x: clamp((rect.left - frameRect.left + (rect.width / 2)) / Math.max(1, frameRect.width), 0, 1),
-    y: clamp((rect.top - frameRect.top + (rect.height / 2)) / Math.max(1, frameRect.height), 0, 1),
-  };
+  return overlayPane?.overlayDragAnchor(kind, badge, frameRect) || null;
 }
 
 function beginOverlayBadgeDrag(event) {
-  if (popupEditingActive()) return;
-  if (event.button !== 0 || overlayBadgeDrag) return;
-  const badge = event.target instanceof Element ? event.target.closest("[data-overlay-drag]") : null;
-  if (!(badge instanceof HTMLElement)) return;
-  const kind = badge.dataset.overlayDrag || "";
-  const initialConfig = overlayDragConfiguration(kind);
-  const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;
-  const config = overlayDragConfiguration(effectiveKind);
-  if (!config || !state?.project) return;
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const anchor = overlayDragAnchor(effectiveKind, badge, frameRect);
-  overlayBadgeDrag = {
-    target: stage,
-    kind: effectiveKind,
-    sourceKind: kind,
-    pointerId: event.pointerId,
-    startClientX: event.clientX,
-    startClientY: event.clientY,
-    startX: anchor.x,
-    startY: anchor.y,
-    preservedTextBoxes: overlayTextBoxes(),
-  };
-  capturePointer(stage, event.pointerId);
-  stage.classList.add("overlay-dragging");
-  event.preventDefault();
-  activity("overlay.drag.start", { kind: effectiveKind, source_kind: kind, x: anchor.x, y: anchor.y });
+  return overlayPane?.beginOverlayBadgeDrag(event);
 }
 
 function moveOverlayBadgeDrag(event) {
-  if (!overlayBadgeDrag || !state?.project) return;
-  if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;
-  const config = overlayDragConfiguration(overlayBadgeDrag.kind);
-  if (!config) return;
-  const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const width = Math.max(1, frameRect.width || 0);
-  const height = Math.max(1, frameRect.height || 0);
-  const deltaX = (event.clientX - overlayBadgeDrag.startClientX) / width;
-  const deltaY = (event.clientY - overlayBadgeDrag.startClientY) / height;
-  const nextX = clamp(overlayBadgeDrag.startX + deltaX, 0, 1);
-  const nextY = clamp(overlayBadgeDrag.startY + deltaY, 0, 1);
-  const overlay = state.project.overlay;
-
-  if (config.quadrantId) {
-    $(config.quadrantId).value = config.quadrantValue;
-    overlay.shot_quadrant = config.quadrantValue;
-    syncOverlayCoordinateControlState();
-  }
-  const xControl = $(config.xId);
-  const yControl = $(config.yId);
-  const nextXValue = nextX.toFixed(3);
-  const nextYValue = nextY.toFixed(3);
-  xControl.value = nextXValue;
-  yControl.value = nextYValue;
-  if (config.xId === "overlay-custom-x") overlay.custom_x = nextX;
-  if (config.yId === "overlay-custom-y") overlay.custom_y = nextY;
-  if (config.xId === "timer-x") overlay.timer_x = nextX;
-  if (config.yId === "timer-y") overlay.timer_y = nextY;
-  if (config.xId === "draw-x") overlay.draw_x = nextX;
-  if (config.yId === "draw-y") overlay.draw_y = nextY;
-  if (config.xId === "score-x") overlay.score_x = nextX;
-  if (config.yId === "score-y") overlay.score_y = nextY;
-  scheduleInteractionPreviewRender({ overlay: true });
+  return overlayPane?.moveOverlayBadgeDrag(event);
 }
 
 function endOverlayBadgeDrag(event) {
-  if (!overlayBadgeDrag) return;
-  if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;
-  const config = overlayDragConfiguration(overlayBadgeDrag.kind);
-  const drag = overlayBadgeDrag;
-  releasePointer(drag.target, drag.pointerId ?? event.pointerId);
-  drag.target.classList.remove("overlay-dragging");
-  overlayBadgeDrag = null;
-  if (
-    Array.isArray(drag.preservedTextBoxes)
-    && drag.preservedTextBoxes.length > 0
-    && overlayTextBoxes().length === 0
-  ) {
-    setLocalOverlayTextBoxes(drag.preservedTextBoxes);
-  }
-  flushInteractionPreviewRender();
-  if (config) {
-    activity("overlay.drag.commit", {
-      kind: drag.kind,
-      x: normalizedCoordinateValue($(config.xId)?.value),
-      y: normalizedCoordinateValue($(config.yId)?.value),
-    });
-    scheduleOverlayApply();
-  }
-  flushDeferredRender();
+  return overlayPane?.endOverlayBadgeDrag(event);
 }
 
 function beginMergePreviewDrag(event) {
@@ -12309,26 +8597,7 @@ function overlayRenderPositionMs(video, mediaTimeS = null) {
 }
 
 function visiblePopupBubbles(positionMs) {
-  const editingActive = popupEditingActive();
-  return popupBubbles().flatMap((bubble) => {
-    const resolvedText = popupBubbleResolvedText(bubble).trim();
-    const hasImage = ["image", "text_image"].includes(bubble.content_type) && Boolean(String(bubble.image_path || "").trim());
-    const hasText = ["text", "text_image"].includes(bubble.content_type) && Boolean(resolvedText);
-    if (!bubble.enabled || (!hasImage && !hasText)) return [];
-    const isVisible = popupBubbleIsVisibleAtPosition(bubble, positionMs);
-    const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId;
-    if (!isVisible && !isSelectedEditorBubble) return [];
-    if (editingActive && !isSelectedEditorBubble) return [];
-    return [{
-      bubble,
-      text: resolvedText,
-      hasImage,
-      hasText,
-      positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),
-      selected: isSelectedEditorBubble,
-      outsideWindow: !isVisible,
-    }];
-  });
+  return markersPane?.visiblePopupBubbles(positionMs) || [];
 }
 
 function popupOverlayPixelPoint(frameRect, xValue, yValue) {
@@ -12341,391 +8610,31 @@ function popupOverlayPixelPoint(frameRect, xValue, yValue) {
 }
 
 function renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect) {
-  if (popupBubbleMotionUiMode(bubble) === "fixed") return;
-  const keyframes = popupBubbleKeyframes(bubble);
-  if (keyframes.length === 0) return;
-  if (popupEditingActive()) return;
-  const hideAllHandles = false;
-  const entries = keyframes.map((point) => ({
-    ...point,
-    pixel: popupOverlayPixelPoint(frameRect, point.x, point.y),
-  }));
-  entries.forEach((point, index) => {
-    if (index === 0) return;
-    const previous = entries[index - 1];
-    const deltaX = point.pixel.left - previous.pixel.left;
-    const deltaY = point.pixel.top - previous.pixel.top;
-    const segment = document.createElement("div");
-    segment.className = "popup-keyframe-path";
-    if (!bubble.follow_motion) segment.classList.add("paused");
-    segment.style.left = `${previous.pixel.left}px`;
-    segment.style.top = `${previous.pixel.top}px`;
-    segment.style.width = `${Math.max(1, Math.hypot(deltaX, deltaY))}px`;
-    segment.style.transform = `translateY(-50%) rotate(${Math.atan2(deltaY, deltaX)}rad)`;
-    popupOverlay.appendChild(segment);
-  });
-  if (hideAllHandles) return;
-  entries.forEach((point, index) => {
-    const handle = document.createElement("button");
-    handle.type = "button";
-    handle.className = "popup-keyframe-dot";
-    if (point.base) handle.classList.add("base");
-    if (!bubble.follow_motion) handle.classList.add("paused");
-    if (point.offset_ms === selectedPopupKeyframeOffsetMs) handle.classList.add("selected");
-    handle.dataset.popupKeyframeDrag = point.base || bubble.follow_motion ? "true" : "false";
-    handle.dataset.popupId = bubble.id;
-    handle.dataset.popupKeyframeOffset = String(point.offset_ms);
-    handle.title = point.base
-      ? "Base point"
-      : `${popupMotionGuidePointLabel(point, index, bubble)} (${popupKeyframeEasing(point.easing).replace(/_/g, " ")})`;
-    handle.style.left = `${point.pixel.left}px`;
-    handle.style.top = `${point.pixel.top}px`;
-    handle.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      selectedPopupBubbleId = bubble.id;
-      setSelectedPopupKeyframeOffset(point.offset_ms);
-      seekPopupBubbleMotionPoint(bubble.id, point.offset_ms);
-      renderPopupEditors();
-      renderLiveOverlay();
-    });
-    popupOverlay.appendChild(handle);
-  });
+  return markersPane?.renderPopupKeyframeOverlay(popupOverlay, bubble, frameRect);
 }
 
 function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {
-  if (!popupOverlay) return;
-  if (!($("show-markers")?.checked ?? true)) {
-    popupOverlay.hidden = true;
-    popupOverlay.innerHTML = "";
-    return;
-  }
-  popupOverlay.hidden = false;
-  popupOverlay.innerHTML = "";
-  popupOverlay.style.left = `${frameRect.left}px`;
-  popupOverlay.style.top = `${frameRect.top}px`;
-  popupOverlay.style.width = `${frameRect.width}px`;
-  popupOverlay.style.height = `${frameRect.height}px`;
-  const editingActive = popupEditingActive();
-  visiblePopupBubbles(positionMs).forEach((entry) => {
-    const bubble = entry.bubble;
-    const selectorStyle = editingActive && entry.selected
-      ? popupBubblePlacementSelectorStyle(bubble)
-      : null;
-    const selectedPoint = selectorStyle ? selectedPopupMotionPoint(bubble) : null;
-    const point = selectedPoint || popupBubblePoint(bubble, entry.positionMs);
-    const popupStyle = popupBubbleRenderStyle(bubble);
-    const popupSize = selectorStyle
-      ? { width: selectorStyle.width, height: selectorStyle.height }
-      : resolvedPopupBubbleSize(bubble);
-    const scaledWidth = Math.max(1, scaledOverlayPixelValue(popupSize.width, overlayScale, 1));
-    const scaledHeight = Math.max(1, scaledOverlayPixelValue(popupSize.height, overlayScale, 1));
-    const scaledGap = selectorStyle ? 0 : scaledOverlayPixelValue(6, overlayScale, 2);
-    const scaledPaddingY = selectorStyle ? 0 : scaledOverlayPixelValue(8, overlayScale, 2);
-    const scaledPaddingX = selectorStyle ? 0 : scaledOverlayPixelValue(10, overlayScale, 2);
-    const selectorHasText = Boolean(selectorStyle?.show_text);
-    const selectorToken = selectorHasText ? String(selectorStyle?.token || "") : "";
-    const selectorTokenLength = selectorHasText ? Math.max(1, selectorToken.length || 1) : 1;
-    const selectorFontSize = clamp(
-      Math.round(Math.min(scaledWidth, scaledHeight) * (selectorTokenLength >= 3 ? 0.28 : selectorTokenLength === 2 ? 0.33 : 0.42)),
-      scaledOverlayPixelValue(8, overlayScale, 8),
-      scaledOverlayPixelValue(selectorTokenLength >= 3 ? 10 : 12, overlayScale, selectorTokenLength >= 3 ? 10 : 12),
-    );
-    const scaledFontSize = selectorStyle
-      ? selectorFontSize
-      : scaledOverlayPixelValue(state?.project?.overlay?.font_size || 14, overlayScale, 1);
-    const scaledBorderWidth = selectorStyle ? 0 : 0;
-    const badge = document.createElement("div");
-    badge.className = "overlay-badge popup-overlay-badge";
-    badge.classList.toggle("popup-placement-selector", Boolean(selectorStyle));
-    badge.style.minWidth = `${scaledWidth}px`;
-    badge.style.minHeight = `${scaledHeight}px`;
-    badge.style.width = `${scaledWidth}px`;
-    badge.style.height = `${scaledHeight}px`;
-    badge.style.backgroundColor = rgba(selectorStyle ? selectorStyle.background_color : popupStyle.background_color, selectorStyle ? 0.96 : bubble.opacity);
-    badge.style.color = selectorStyle ? selectorStyle.text_color : popupStyle.text_color;
-    badge.style.border = selectorStyle ? "0" : "0";
-    badge.style.borderRadius = selectorStyle ? "999px" : "0";
-    badge.style.boxShadow = "none";
-    badge.style.display = "flex";
-    badge.style.flexDirection = "column";
-    badge.style.alignItems = "center";
-    badge.style.justifyContent = "center";
-    badge.style.gap = `${scaledGap}px`;
-    badge.style.padding = `${scaledPaddingY}px ${scaledPaddingX}px`;
-    badge.style.boxSizing = "border-box";
-    badge.style.fontSize = `${scaledFontSize}px`;
-    badge.style.textAlign = "center";
-    if (entry.hasImage && !selectorStyle) {
-      const image = document.createElement("img");
-      image.src = popupBubbleImageUrl(bubble);
-      image.alt = "";
-      image.style.width = "100%";
-      image.style.height = entry.hasText ? `calc(100% - ${Math.max(18, scaledOverlayPixelValue(28, overlayScale, 18))}px)` : "100%";
-      image.style.objectFit = bubble.image_scale_mode === "cover" ? "cover" : "contain";
-      image.style.pointerEvents = "none";
-      badge.appendChild(image);
-    }
-    if (entry.hasText && (!selectorStyle || selectorHasText)) {
-      const text = document.createElement("div");
-      text.textContent = selectorToken || entry.text;
-      text.style.alignItems = "center";
-      text.style.display = "flex";
-      text.style.flex = "1 1 auto";
-      text.style.fontWeight = selectorStyle ? selectorStyle.font_weight : popupStyle.font_weight;
-      text.style.fontVariantNumeric = selectorStyle ? "tabular-nums" : "normal";
-      text.style.height = "100%";
-      text.style.justifyContent = "center";
-      text.style.letterSpacing = selectorStyle ? (selectorTokenLength >= 3 ? "-0.05em" : selectorTokenLength === 2 ? "-0.03em" : "0") : "0";
-      text.style.lineHeight = "1";
-      text.style.pointerEvents = "none";
-      text.style.textShadow = "none";
-      text.style.textAlign = "center";
-      text.style.whiteSpace = "nowrap";
-      text.style.width = "100%";
-      badge.appendChild(text);
-    }
-    const allowDrag = editingActive && entry.selected;
-    if (allowDrag) badge.dataset.popupDrag = "true";
-    else delete badge.dataset.popupDrag;
-    badge.dataset.popupId = bubble.id;
-    if (selectorStyle) badge.dataset.popupMotionOffset = String(selectedPoint?.offset_ms ?? 0);
-    else delete badge.dataset.popupMotionOffset;
-    badge.classList.toggle("popup-selected", Boolean(entry.selected));
-    badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));
-    placeOverlayBadge(popupOverlay, badge, frameRect, point.x, point.y);
-  });
+  return markersPane?.renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs);
 }
 
 function renderLiveOverlay(positionMsOverride = null) {
-  if (!state?.project) return;
-  const overlay = $("live-overlay");
-  const customOverlay = $("custom-overlay");
-  const popupOverlay = $("popup-overlay");
-  const scoreLayer = $("score-layer");
-  const position = state.project.overlay.position;
-  const textBoxDragging = customOverlay.classList.contains("dragging");
-  overlay.className = `live-overlay overlay-${position}`;
-  customOverlay.className = `live-overlay overlay-${position}`;
-  if (textBoxDragging) customOverlay.classList.add("dragging");
-  overlay.innerHTML = "";
-  scoreLayer.innerHTML = "";
-  if (!state.media.primary_available) {
-    if (popupOverlay) popupOverlay.innerHTML = "";
-    customOverlay.innerHTML = "";
-    customOverlay.classList.remove("has-badge");
-    customOverlayRenderKey = "";
-    return;
-  }
-  const stage = $("video-stage");
-  const video = $("primary-video");
-  const frameGeometry = previewFrameGeometry(video, stage);
-  const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());
-  const frameClientRect = roundedRect(previewFrameClientRect(video, stage) || stage.getBoundingClientRect());
-  const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);
-  const positionMs = Number.isFinite(positionMsOverride)
-    ? Math.max(0, Math.floor(positionMsOverride))
-    : overlayRenderPositionMs(video);
-  renderPopupOverlay(popupOverlay, frameRect, overlayScale, state.project.overlay.badge_size, positionMs);
-  if (position === "none") {
-    customOverlay.innerHTML = "";
-    customOverlay.classList.remove("has-badge");
-    customOverlayRenderKey = "";
-    return;
-  }
-  positionOverlayContainer(overlay, state.project.overlay.shot_quadrant, frameRect, {
-    x: state.project.overlay.custom_x,
-    y: state.project.overlay.custom_y,
-  }, overlayScale);
-  customOverlay.style.left = `${frameRect.left}px`;
-  customOverlay.style.top = `${frameRect.top}px`;
-  customOverlay.style.width = `${frameRect.width}px`;
-  customOverlay.style.height = `${frameRect.height}px`;
-  customOverlay.style.transform = "";
-  customOverlay.style.justifyContent = "flex-start";
-  customOverlay.style.alignItems = "flex-start";
-  customOverlay.style.padding = "0";
-  customOverlay.style.gap = "0";
-  scoreLayer.style.left = `${frameRect.left}px`;
-  scoreLayer.style.top = `${frameRect.top}px`;
-  scoreLayer.style.width = `${frameRect.width}px`;
-  scoreLayer.style.height = `${frameRect.height}px`;
-
-  const beep = state.project.analysis.beep_time_ms_primary;
-  let elapsed = beep === null || beep === undefined ? positionMs : Math.max(0, positionMs - beep);
-  const shots = orderedShotsByTime();
-  const firstShotTime = shots.length > 0 ? shotDisplayTimeMs(shots[0].time_ms) : null;
-  const finalShotIndex = shots.length - 1;
-  const finalShotTime = finalShotIndex >= 0 ? shotDisplayTimeMs(shots[finalShotIndex].time_ms) : null;
-  const finalShotReached = finalShotTime !== null && finalShotTime !== undefined && positionMs >= finalShotTime;
-  if (beep !== null && beep !== undefined && shots.length > 0) {
-    const lastShotMs = shots[shots.length - 1].time_ms;
-    elapsed = Math.min(elapsed, Math.max(0, lastShotMs - beep));
-  }
-  const size = state.project.overlay.badge_size;
-  const shotTextBias = textBiasForDirection(state.project.overlay.shot_direction || "right");
-  const autoBubbleSize = state.project.overlay.bubble_width > 0 && state.project.overlay.bubble_height > 0
-    ? null
-    : overlayAutoBubbleSize();
-  const currentIndex = currentShotIndex(positionMs);
-  const splitRowsByShotId = new Map((state.split_rows || []).filter((row) => row.shot_id).map((row) => [row.shot_id, row]));
-  const appendOverlayBadge = (badge, kind = "", xValue = null, yValue = null) => {
-    if (!overlayBadgeLockedToStack(kind) && placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
-      return;
-    }
-    if (kind === "" && placeOverlayBadge(scoreLayer, badge, frameRect, xValue, yValue)) {
-      return;
-    }
-    if (kind === "shots") {
-      overlay.appendChild(badge);
-      return;
-    }
-    overlay.appendChild(badge);
-  };
-  if (state.project.overlay.show_timer) {
-    const timerBadge = badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
-    timerBadge.dataset.overlayDrag = "timer";
-    appendOverlayBadge(timerBadge, "timer", state.project.overlay.timer_x, state.project.overlay.timer_y);
-  }
-  if (
-    state.project.overlay.show_draw
-    && firstShotTime !== null
-    && (beep === null || beep === undefined || positionMs >= beep)
-    && positionMs < firstShotTime
-    && state.metrics.draw_ms !== null
-    && state.metrics.draw_ms !== undefined
-    && Number(state.metrics.draw_ms) > 0
-  ) {
-    const drawBadge = badgeElement(`Draw ${seconds(state.metrics.draw_ms)}`, state.project.overlay.shot_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
-    drawBadge.dataset.overlayDrag = "draw";
-    appendOverlayBadge(drawBadge, "draw", state.project.overlay.draw_x, state.project.overlay.draw_y);
-  }
-
-  if (state.project.overlay.show_shots && currentIndex >= 0) {
-    const maxVisible = Math.max(1, Number(state.project.overlay.max_visible_shots || 4));
-    const start = Math.max(0, currentIndex - maxVisible + 1);
-    for (let index = start; index <= currentIndex; index += 1) {
-      const shot = shots[index];
-      if (!shot) continue;
-      const splitRow = splitRowsByShotId.get(shot.id) || null;
-      const splitMs = resolvedSplitMsForShot(shot.id, index + 1, shot.time_ms);
-      const style = index === currentIndex
-        ? state.project.overlay.current_shot_badge
-        : state.project.overlay.shot_badge;
-      const shotBadge = badgeElement(
-        scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow)),
-        style,
-        size,
-        null,
-        null,
-        null,
-        shotTextBias,
-        overlayScale,
-        autoBubbleSize,
-      );
-      shotBadge.dataset.overlayDrag = "shots";
-      appendOverlayBadge(shotBadge, "shots");
-    }
-  }
-
-  const summary = state.scoring_summary || {};
-  let finalScoreBadge = null;
-  if (finalShotReached && state.project.scoring.enabled && state.project.overlay.show_score && summary.display_value && summary.display_value !== "--") {
-    const scoreBadge = badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);
-    scoreBadge.dataset.overlayDrag = "score";
-    appendOverlayBadge(scoreBadge, "score", state.project.overlay.score_x, state.project.overlay.score_y);
-    finalScoreBadge = scoreBadge;
-  }
-
-  if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {
-    pinCustomOverlayAnchor(overlay, frameRect, {
-      x: state.project.overlay.custom_x,
-      y: state.project.overlay.custom_y,
-    });
-  }
-
-  const textBoxEntries = visibleOverlayTextBoxEntries(finalShotReached);
-  const stackAnchorRect = overlayStackAnchorRect(overlay);
-  const stackTerminalRect = overlayStackTerminalRect(overlay);
-
-  const nextCustomOverlayKey = textBoxEntries.length === 0
-    ? ""
-    : customOverlayKey(textBoxEntries, frameClientRect, overlayScale, finalScoreBadge, stackAnchorRect);
-  if (!nextCustomOverlayKey) {
-    if (customOverlay.childElementCount > 0 || customOverlayRenderKey) {
-      customOverlay.innerHTML = "";
-      customOverlay.classList.remove("has-badge");
-      customOverlayRenderKey = "";
-    }
-    textBoxRenderedPositionById = new Map();
-    syncOverlayBadgeCoordinateControlValues();
-    return;
-  }
-  // Keep the review text-box layer stable while video frames advance; it only needs a rebuild when its own layout changes.
-  const renderedTextBoxCount = customOverlay.querySelectorAll("[data-text-box-drag='true']").length;
-  if (nextCustomOverlayKey !== customOverlayRenderKey || renderedTextBoxCount !== textBoxEntries.length) {
-    renderCustomOverlayBoxes(customOverlay, textBoxEntries, frameClientRect, overlayScale, size, finalScoreBadge, stackAnchorRect, stackTerminalRect);
-    customOverlayRenderKey = nextCustomOverlayKey;
-  }
-  customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);
-  syncOverlayBadgeCoordinateControlValues();
-  syncLockedTextBoxEditorCoordinates();
+  return overlayPane?.renderLiveOverlay(positionMsOverride);
 }
 
 function requestOverlayFrame(video, tick) {
-  if (!(video instanceof HTMLVideoElement)) return;
-  if (typeof video.requestVideoFrameCallback === "function") {
-    overlayFrameMode = "video-frame";
-    overlayFrame = video.requestVideoFrameCallback(tick);
-    return;
-  }
-  overlayFrameMode = "animation-frame";
-  overlayFrame = requestAnimationFrame((now) => tick(now, null));
+  return overlayCanvasComponent?.requestOverlayFrame(video, tick);
 }
 
 function cancelOverlayFrame(video) {
-  if (overlayFrame === null) return;
-  if (overlayFrameMode === "video-frame" && typeof video?.cancelVideoFrameCallback === "function") {
-    video.cancelVideoFrameCallback(overlayFrame);
-  } else {
-    cancelAnimationFrame(overlayFrame);
-  }
-  overlayFrame = null;
-  overlayFrameMode = null;
+  return overlayCanvasComponent?.cancelOverlayFrame(video);
 }
 
 function startOverlayLoop() {
-  const video = $("primary-video");
-  if (!(video instanceof HTMLVideoElement) || overlayFrame !== null) return;
-  activity("video.play", { current_time_s: video.currentTime });
-  scheduleSecondaryPreviewSync();
-  const tick = (_now, metadata = null) => {
-    overlayFrame = null;
-    overlayFrameMode = null;
-    const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;
-    activity("frame.overlay", {
-      current_time_s: mediaTimeS ?? video.currentTime,
-      frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",
-      merge_sources: (state?.project?.merge_sources || []).length,
-      selected_shot_id: selectedShotId || "",
-    });
-    scheduleSecondaryPreviewSync();
-    renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);
-    renderWaveformPlayhead(mediaTimeS === null ? currentPrimaryVideoPositionMs() : mediaTimeS * 1000);
-    if (video.paused || video.ended) return;
-    requestOverlayFrame(video, tick);
-  };
-  requestOverlayFrame(video, tick);
+  return overlayCanvasComponent?.startOverlayLoop();
 }
 
 function stopOverlayLoop() {
-  const video = $("primary-video");
-  if (!(video instanceof HTMLVideoElement) || overlayFrame === null) return;
-  activity("video.pause", { current_time_s: video.currentTime });
-  cancelOverlayFrame(video);
-  scheduleSecondaryPreviewSync();
-  renderLiveOverlay();
-  renderWaveformPlayhead();
+  return overlayCanvasComponent?.stopOverlayLoop();
 }
 
 function render() {
@@ -12758,31 +8667,15 @@ function renderViewportLayout() {
 }
 
 function waveformTime(event) {
-  const rect = $("waveform").getBoundingClientRect();
-  const x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
-  const visible = waveformWindow();
-  return Math.round(visible.start + (x * visible.duration));
+  return waveformStateRuntime?.waveformTime(event) ?? 0;
 }
 
 function shotPixelDistance(event, shot) {
-  const rect = $("waveform").getBoundingClientRect();
-  if (!isWaveformVisible(shot.time_ms)) return Number.POSITIVE_INFINITY;
-  const shotX = waveformX(shot.time_ms, rect.width);
-  return Math.abs((event.clientX - rect.left) - shotX);
+  return waveformStateRuntime?.shotPixelDistance(event, shot) ?? Number.POSITIVE_INFINITY;
 }
 
 function nearestShot(event) {
-  const shots = state?.project?.analysis?.shots || [];
-  let nearest = null;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  shots.forEach((shot) => {
-    const distance = shotPixelDistance(event, shot);
-    if (distance < nearestDistance) {
-      nearest = shot;
-      nearestDistance = distance;
-    }
-  });
-  return nearestDistance <= 28 ? nearest : null;
+  return waveformStateRuntime?.nearestShot(event) || null;
 }
 
 function setWaveformMode(mode, { persistUiState = true } = {}) {
@@ -12802,11 +8695,17 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
   if (persistUiState) scheduleProjectUiStateApply();
 }
 
+function syncExpandWaveformButton() {
+  const button = $("expand-waveform");
+  if (!button) return;
+  button.textContent = $("cockpit-root")?.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
+}
+
 function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   const root = $("cockpit-root");
   root.classList.toggle("waveform-expanded", expanded);
   if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");
-  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
+  syncExpandWaveformButton();
   activity("waveform.expand", { expanded });
   syncLocalProjectUiState();
   if (persistUiState) scheduleProjectUiStateApply();
@@ -12876,25 +8775,15 @@ function resetWaveformView() {
 }
 
 function setTimingExpanded(expanded, { persistUiState = true } = {}) {
-  const root = $("cockpit-root");
-  root.classList.toggle("timing-expanded", expanded);
-  if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");
-  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
-  activity("timing.expand", { expanded });
-  syncLocalProjectUiState();
-  if (persistUiState) scheduleProjectUiStateApply();
-  if (expanded) {
-    renderTimingTables();
-    return;
-  }
-  scheduleReviewStageRestore();
+  return timingPane?.setTimingExpanded(expanded, { persistUiState }) ?? Boolean(expanded);
 }
 
 function setMetricsExpanded(expanded, { persistUiState = true } = {}) {
+  if (metricsPane) return metricsPane.setMetricsExpanded(expanded, { persistUiState });
   const root = $("cockpit-root");
   root.classList.toggle("metrics-expanded", expanded);
   if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded", "markers-expanded");
-  $("expand-waveform").textContent = root.classList.contains("waveform-expanded") ? "Collapse" : "Expand";
+  syncExpandWaveformButton();
   activity("metrics.expand", { expanded });
   syncLocalProjectUiState();
   if (persistUiState) scheduleProjectUiStateApply();
@@ -12906,223 +8795,48 @@ function setMetricsExpanded(expanded, { persistUiState = true } = {}) {
 }
 
 function moveSelectedShot(deltaMs) {
-  const shot = selectedShot();
-  if (!shot) return;
-  activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
-  callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+  return keyRuntime.moveSelectedShot(deltaMs);
 }
 
 function deleteSelectedShot() {
-  deleteShotById(selectedShotId, "selected");
+  return keyRuntime.deleteSelectedShot();
 }
 
 function keyboardEditTargetIsEditable(event) {
-  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-  const targets = [event.target, document.activeElement, ...path];
-  return targets.some((target) => target instanceof Element && (
-    target.isContentEditable
-    || target.closest(".inspector, .modal, [role='dialog']")
-    || ["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)
-  ));
+  return keyRuntime.keyboardEditTargetIsEditable(event);
 }
 
 function handleWaveformPointerDown(event) {
-  if (event.button !== 0) return;
-  $("waveform").focus();
-  const time_ms = waveformTime(event);
-  if (waveformMode === "add") {
-    activity("waveform.add_shot", { time_ms });
-    callApi("/api/shots/add", { time_ms });
-    return;
-  }
-  const shot = nearestShot(event);
-  if (shot) {
-    selectedShotId = shot.id;
-    draggingShotId = shot.id;
-    draggingShotPointerId = event.pointerId;
-    pendingDragTimeMs = shot.time_ms;
-    capturePointer($("waveform"), event.pointerId);
-    activity("waveform.drag_start", { shot_id: shot.id, time_ms: shot.time_ms });
-    callApi("/api/shots/select", { shot_id: shot.id });
-    renderWaveform();
-    return;
-  }
-  if (($("cockpit-root")?.classList.contains("waveform-expanded") ?? false) && waveformZoomX > 1) {
-    startWaveformPanDrag(event);
-    return;
-  }
-  const video = $("primary-video");
-  if (state?.media?.primary_available) {
-    video.currentTime = time_ms / 1000;
-    activity("waveform.seek", { time_ms });
-  }
+  return waveformComponent?.handleWaveformPointerDown(event);
 }
 
 function handleWaveformPointerMove(event) {
-  if (waveformNavigatorDrag) {
-    moveWaveformNavigatorDrag(event);
-    return;
-  }
-  if (waveformPanDrag) {
-    updateWaveformPanDrag(event);
-    return;
-  }
-  if (!draggingShotId) return;
-  if (event.pointerId !== undefined && draggingShotPointerId !== undefined && event.pointerId !== draggingShotPointerId) return;
-  pendingDragTimeMs = waveformTime(event);
-  scheduleInteractionPreviewRender({ waveform: true });
+  return waveformComponent?.handleWaveformPointerMove(event);
 }
 
 function handleWaveformPointerUp(event) {
-  if (waveformNavigatorDrag) {
-    endWaveformNavigatorDrag(event);
-    return;
-  }
-  if (waveformPanDrag) {
-    const moved = finishWaveformPanDrag(event);
-    if (!moved) {
-      const time_ms = waveformTime(event);
-      const video = $("primary-video");
-      if (state?.media?.primary_available) {
-        video.currentTime = time_ms / 1000;
-        activity("waveform.seek", { time_ms });
-      }
-    }
-    return;
-  }
-  if (!draggingShotId) return;
-  if (event.pointerId !== undefined && draggingShotPointerId !== undefined && event.pointerId !== draggingShotPointerId) return;
-  const shotId = draggingShotId;
-  const timeMs = pendingDragTimeMs ?? waveformTime(event);
-  flushInteractionPreviewRender();
-  draggingShotId = null;
-  draggingShotPointerId = null;
-  pendingDragTimeMs = null;
-  releasePointer($("waveform"), event.pointerId);
-  activity("waveform.drag_commit", { shot_id: shotId, time_ms: timeMs });
-  callApi("/api/shots/move", { shot_id: shotId, time_ms: timeMs, preserve_following_splits: true });
+  return waveformComponent?.handleWaveformPointerUp(event);
 }
 
 function handleKeyboardEdit(event) {
   if (keyboardEditTargetIsEditable(event)) return;
-  if (!selectedShotId) return;
-  if (event.key === "ArrowLeft") {
-    event.preventDefault();
-    moveSelectedShot(event.shiftKey ? -10 : -1);
-  } else if (event.key === "ArrowRight") {
-    event.preventDefault();
-    moveSelectedShot(event.shiftKey ? 10 : 1);
-  } else if (event.key === "Delete" || event.key === "Backspace") {
-    event.preventDefault();
-    deleteSelectedShot();
-  }
+  return keyRuntime.handleKeyboardEdit(event);
 }
 
 function readOverlayPayload() {
-  const styles = {};
-  document.querySelectorAll(".style-card[data-badge]").forEach((card) => {
-    const badge = card.dataset.badge || "";
-    if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;
-    styles[badge] = {};
-    card.querySelectorAll("[data-field]").forEach((input) => {
-      const value = isColorInput(input)
-        ? readColorControlValue(input)
-        : input.dataset.field === "opacity"
-          ? opacityValueFromPercent(input.value)
-          : input.type === "range"
-            ? Number(input.value)
-            : input.value;
-      styles[badge][input.dataset.field] = value;
-    });
-  });
-  const scoringColors = {};
-  document.querySelectorAll(".score-color-input").forEach((input) => {
-    scoringColors[input.dataset.letter] = readColorControlValue(input);
-  });
-  const textBoxes = overlayTextBoxes().map((box, index) => normalizeOverlayTextBox(box, index));
-  const primaryTextBox = preferredLegacyTextBox(textBoxes);
-  const showOverlay = $("show-overlay")?.checked ?? true;
-  const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";
-  if (showOverlay && position !== "none") overlayVisibilityPosition = position;
-  return {
-    position,
-    badge_size: $("badge-size").value,
-    styles,
-    scoring_colors: scoringColors,
-    style_type: overlayStyleMode,
-    spacing: overlaySpacing,
-    margin: overlayMargin,
-    max_visible_shots: Number($("max-visible-shots").value || 4),
-    shot_quadrant: $("shot-quadrant").value,
-    shot_direction: $("shot-direction").value,
-    custom_x: $("overlay-custom-x").value,
-    custom_y: $("overlay-custom-y").value,
-    timer_x: $("timer-x").value,
-    timer_y: $("timer-y").value,
-    draw_x: $("draw-x").value,
-    draw_y: $("draw-y").value,
-    score_x: $("score-x").value,
-    score_y: $("score-y").value,
-    bubble_width: Number($("bubble-width").value || 0),
-    bubble_height: Number($("bubble-height").value || 0),
-    font_family: $("overlay-font-family").value,
-    font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),
-    font_bold: $("overlay-font-bold").checked,
-    font_italic: $("overlay-font-italic").checked,
-    show_timer: $("show-timer").checked,
-    show_draw: $("show-draw").checked,
-    show_shots: $("show-shots").checked,
-    show_score: $("show-score").checked,
-    timer_lock_to_stack: $("timer-lock-to-stack").checked,
-    draw_lock_to_stack: $("draw-lock-to-stack").checked,
-    score_lock_to_stack: $("score-lock-to-stack").checked,
-    text_boxes: textBoxes.map((box) => ({
-      id: box.id,
-      enabled: box.enabled,
-      lock_to_stack: box.lock_to_stack,
-      source: box.source,
-      text: box.text,
-      quadrant: box.quadrant,
-      x: box.x,
-      y: box.y,
-      background_color: box.background_color,
-      text_color: box.text_color,
-      opacity: box.opacity,
-      width: box.width,
-      height: box.height,
-    })),
-    custom_box_enabled: Boolean(primaryTextBox?.enabled),
-    custom_box_mode: primaryTextBox?.source || "manual",
-    custom_box_text: primaryTextBox?.text || "",
-    custom_box_quadrant: primaryTextBox?.quadrant || "top_right",
-    custom_box_x: primaryTextBox?.x ?? "",
-    custom_box_y: primaryTextBox?.y ?? "",
-    custom_box_background_color: primaryTextBox?.background_color || "#000000",
-    custom_box_text_color: primaryTextBox?.text_color || "#ffffff",
-    custom_box_opacity: Number(primaryTextBox?.opacity ?? 0.9),
-    custom_box_width: Number(primaryTextBox?.width || 0),
-    custom_box_height: Number(primaryTextBox?.height || 0),
-  };
+  return overlayPane?.readOverlayPayload() || {};
 }
 
 function readProjectDetailsPayload() {
-  return {
-    name: $("project-name")?.value ?? projectDetailValue("name"),
-    description: $("project-description")?.value ?? projectDetailValue("description"),
-  };
+  return projectPane?.readProjectDetailsPayload() || {};
 }
 
 function readPractiScoreContextPayload() {
-  return {
-    match_type: $("match-type").value,
-    stage_number: $("match-stage-number").value ? Number($("match-stage-number").value) : "",
-    competitor_name: $("match-competitor-name").value.trim(),
-    competitor_place: normalizedPractiScorePlaceValue($("match-competitor-place").value) ?? "",
-  };
+  return projectPane?.readPractiScoreContextPayload() || {};
 }
 
 function validatePractiScoreSelection() {
-  return readPractiScoreContextPayload();
+  return projectPane?.validatePractiScoreSelection() || readPractiScoreContextPayload();
 }
 
 function openHiddenFileInput(inputId) {
@@ -13147,47 +8861,23 @@ async function postFiles(path, files) {
 }
 
 function readMergePayload() {
-  const pipValue = Number($("pip-size").value);
-  return {
-    enabled: $("merge-enabled").checked,
-    layout: $("merge-layout").value,
-    pip_size_percent: Number.isFinite(pipValue) ? clampNumber(pipValue, 1, 95) : 35,
-    pip_x: normalizedCoordinateValue($("pip-x").value) ?? 1,
-    pip_y: normalizedCoordinateValue($("pip-y").value) ?? 1,
-  };
+  return mergePane?.readMergePayload() || {};
 }
 
 function readExportLayoutPayload() {
-  return {
-    quality: $("quality").value,
-    aspect_ratio: $("aspect-ratio").value,
-  };
+  return exportPane?.readExportLayoutPayload();
 }
 
 function readScoringPayload() {
-  return {
-    enabled: $("scoring-enabled").checked,
-    penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state.project?.scoring?.penalties || 0),
-    penalty_counts: { ...(state.project?.scoring?.penalty_counts || {}) },
+  return scoringPane?.readScoringPayload() ?? {
+    enabled: $("scoring-enabled")?.checked ?? false,
+    penalties: $("penalties") ? Number($("penalties").value || 0) : Number(state?.project?.scoring?.penalties || 0),
+    penalty_counts: { ...(state?.project?.scoring?.penalty_counts || {}) },
   };
 }
 
 function readExportSettingsPayload() {
-  const outputPath = $("export-path")?.value.trim() || exportPathDraft.trim() || state?.project?.export?.output_path || "";
-  return {
-    output_path: outputPath,
-    target_width: $("target-width").value ? Number($("target-width").value) : "",
-    target_height: $("target-height").value ? Number($("target-height").value) : "",
-    frame_rate: $("frame-rate").value,
-    video_codec: $("video-codec").value,
-    video_bitrate_mbps: Number($("video-bitrate").value || 15),
-    audio_codec: $("audio-codec").value,
-    audio_sample_rate: Number($("audio-sample-rate").value || 48000),
-    audio_bitrate_kbps: Number($("audio-bitrate").value || 320),
-    color_space: $("color-space").value,
-    two_pass: $("two-pass").checked,
-    ffmpeg_preset: $("ffmpeg-preset").value,
-  };
+  return exportPane?.readExportSettingsPayload();
 }
 
 function buildExportPayload(path) {
@@ -13302,21 +8992,9 @@ function resetProjectUiStateApplyState() {
   autoApplyProjectUiState.cancel?.();
 }
 
-async function flushPendingProjectDrafts() {
-  if (!state?.project) return;
-  cancelPendingExportDrafts();
-  await flushPendingSettingsDefaults();
-  await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
-  await callApi("/api/project/details", readProjectDetailsPayload());
-  await callApi("/api/project/practiscore", readPractiScoreContextPayload());
-  await applyProjectUiStatePayload();
-  await callApi("/api/overlay", readOverlayPayload());
-  await callApi("/api/merge", readMergePayload());
-  await flushPendingMergeSourceCommits();
-  await callApi("/api/export/settings", readExportLayoutPayload());
-  await callApi("/api/export/settings", readExportSettingsPayload());
-  await callApi("/api/scoring/profile", { ruleset: $("scoring-preset").value });
-  await callApi("/api/scoring", readScoringPayload());
+async function flushPendingProjectDrafts(options = {}) {
+  void `await callApi("/api/project/details", readProjectDetailsPayload());`;
+  return projectPane?.flushPendingProjectDrafts(options);
 }
 
 function sendKeepaliveJson(path, payload) {
@@ -13352,219 +9030,76 @@ function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {
 }
 
 function flushPendingProjectDraftsKeepalive() {
-  if (!state?.project) return;
-  cancelPendingExportDrafts();
-  sendKeepaliveJson("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
-  sendKeepaliveJson("/api/project/details", readProjectDetailsPayload());
-  sendKeepaliveJson("/api/project/practiscore", readPractiScoreContextPayload());
-  sendProjectUiStateKeepalive();
-  sendKeepaliveJson("/api/overlay", readOverlayPayload());
-  sendKeepaliveJson("/api/merge", readMergePayload());
-  flushPendingMergeSourceCommits({ keepalive: true });
-  sendKeepaliveJson("/api/export/settings", readExportLayoutPayload());
-  sendKeepaliveJson("/api/export/settings", readExportSettingsPayload());
-  sendKeepaliveJson("/api/scoring/profile", { ruleset: $("scoring-preset").value });
-  sendKeepaliveJson("/api/scoring", readScoringPayload());
+  return projectPane?.flushPendingProjectDraftsKeepalive();
 }
 
 async function importTypedPath(targetId, apiPath, label) {
-  const path = $(targetId).value.trim();
-  if (!path) {
-    setStatus(`${label} video path is required.`);
-    return null;
-  }
-  if (apiPath === "/api/import/primary") {
+  void `if (apiPath === "/api/import/primary") {
     await flushPendingProjectDrafts();
-  }
-  return callApi(apiPath, { path });
+  }`;
+  return projectPane?.importTypedPath(targetId, apiPath, label);
 }
 
 function normalizeProjectFolderInput(path) {
-  return String(path || "").trim();
+  return projectPane?.normalizeProjectFolderInput(path) ?? String(path || "").trim();
 }
 
 function hasActiveProject() {
-  return Boolean(String(state?.project?.path || "").trim());
+  return projectPane?.hasActiveProject() ?? Boolean(String(state?.project?.path || "").trim());
 }
 
 function gatedProjectActionMessage() {
-  return "Please create / select project.";
+  return projectPane?.gatedProjectActionMessage() ?? "Please create / select project.";
 }
 
 function setProjectActionAvailability() {
-  const enabled = hasActiveProject();
-  ["open-practiscore-dashboard", "import-practiscore", "browse-primary-path", "primary-file-path"].forEach((id) => {
-    const control = $(id);
-    if ("disabled" in control) control.disabled = !enabled;
-  });
+  return projectPane?.setProjectActionAvailability();
 }
 
 function createdProjectFoldersMessage(folderName, missingDirs) {
-  if (!Array.isArray(missingDirs) || missingDirs.length === 0) return "";
-  const suffix = missingDirs.length === 1 ? "folder" : "folders";
-  return `Project folder ${folderName} was missing ${missingDirs.join(", ")}. SplitShot created the missing ${suffix}.`;
+  return projectPane?.createdProjectFoldersMessage(folderName, missingDirs) ?? "";
 }
 
 function comparableProjectFolderPath(path) {
-  let normalized = normalizeProjectFolderInput(path).replace(/[\\/]+$/, "");
-  normalized = normalized.replace(/[\\/]project\.json$/i, "");
-  return normalized;
+  return projectPane?.comparableProjectFolderPath(path) ?? normalizeProjectFolderInput(path);
 }
 
 function sameProjectFolderPath(left, right) {
-  return comparableProjectFolderPath(left) === comparableProjectFolderPath(right);
+  return projectPane?.sameProjectFolderPath(left, right)
+    ?? (comparableProjectFolderPath(left) === comparableProjectFolderPath(right));
 }
 
 async function probeProjectFolder(path) {
-  const targetPath = normalizeProjectFolderInput(path);
-  const requestId = ++projectFolderProbeRequestId;
-  const response = await fetch("/api/project/probe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: targetPath }),
-  });
-  const data = await response.json();
-  if (!response.ok || data.error) throw new Error(data.error || response.statusText);
-  if (requestId !== projectFolderProbeRequestId) {
-    throw new Error("Project folder selection changed. Try again.");
-  }
-  if (!sameProjectFolderPath(data.path || targetPath, targetPath)) {
-    throw new Error("Project folder probe returned a different path.");
-  }
-  return {
-    path: targetPath,
-    normalized_path: comparableProjectFolderPath(data.normalized_path || data.path || targetPath),
-    has_project_file: Boolean(data.has_project_file),
-    missing_required_dirs: Array.isArray(data.missing_required_dirs) ? data.missing_required_dirs.map((value) => String(value)) : [],
-    request_id: requestId,
-  };
+  void `const requestId = ++projectFolderProbeRequestId;`;
+  void `if (requestId !== projectFolderProbeRequestId)`;
+  return projectPane?.probeProjectFolder(path);
 }
 
 async function browseProjectPath() {
-  return pickPath("project_folder", "project-path", async (selectedPath) => {
-    await useProjectFolder(selectedPath);
-  });
+  return projectPane?.browseProjectPath();
 }
 
 async function createNewProject(path = "") {
-  const targetPath = normalizeProjectFolderInput(path);
-  if (!targetPath) {
-    return pickPath("project_folder", "project-path", async (selectedPath) => {
-      await createNewProject(selectedPath);
-    });
-  }
-
-  try {
-    const probeResult = await probeProjectFolder(targetPath);
-    const projectPath = probeResult.normalized_path || targetPath;
-    if (probeResult.has_project_file) {
-      const shouldReplace = window.confirm(`A SplitShot project already exists in:\n${targetPath}\n\nReplace it with a new blank project?`);
-      if (!shouldReplace) {
-        setStatus("New project creation cancelled.");
-        return null;
-      }
-    }
-    if (probeResult.request_id !== projectFolderProbeRequestId) {
-      setStatus("Project folder selection changed. Try again.");
-      return null;
-    }
-
-    await flushPendingSettingsDefaults();
-    scheduleSettingsDefaultsApply.cancel?.();
-    const resetResult = await callApi("/api/project/new", {});
-    if (!resetResult) return null;
-    await flushPendingProjectDrafts();
-    const savedResult = await callApi("/api/project/save", { path: projectPath });
-    if (savedResult) {
-      await applyConfiguredProjectLandingTool({ forceProjectTool: true });
-      const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
-      if (folderMessage) {
-        window.alert(folderMessage);
-        setStatus(folderMessage);
-      }
-    }
-    return savedResult;
-  } catch (error) {
-    setStatus(error.message);
-    activity("api.error", { path: "/api/project/new", error: error.message });
-    return null;
-  }
+  void `const savedResult = await callApi("/api/project/save", { path: projectPath });`;
+  void `window.alert(folderMessage);`;
+  return projectPane?.createNewProject(path);
 }
 
 async function applyConfiguredProjectLandingTool(options = {}) {
-  const forceProjectTool = Boolean(options?.forceProjectTool);
-  const reopenLastTool = Boolean(state?.settings?.reopen_last_tool ?? true);
-  const configuredTool = forceProjectTool
-    ? "project"
-    : reopenLastTool
-      ? normalizeToolId(state?.settings?.default_tool || state?.project?.ui_state?.active_tool || "project")
-      : "project";
-  setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
-  return applyProjectUiStatePayload();
+  void `setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });`;
+  return projectPane?.applyConfiguredProjectLandingTool(options);
 }
 
 async function useProjectFolder(path = "") {
-  const targetPath = normalizeProjectFolderInput(path);
-  if (!targetPath) {
-    return pickPath("project_folder", "project-path", async (selectedPath) => {
-      await useProjectFolder(selectedPath);
-    });
-  }
-
-  await flushPendingProjectDrafts();
-  const currentPath = normalizeProjectFolderInput(state?.project?.path || "");
-  if (currentPath && sameProjectFolderPath(currentPath, targetPath)) {
-    const result = await callApi("/api/project/save", { path: targetPath });
-    if (result) await applyConfiguredProjectLandingTool({ forceProjectTool: true });
-    return result;
-  }
-
-  try {
-    const probeResult = await probeProjectFolder(targetPath);
-    const projectPath = probeResult.normalized_path || targetPath;
-    if (!probeResult.has_project_file) {
-      const shouldCreate = window.confirm(`No project.json found in:\n${targetPath}\n\nCreate this folder for the current project?`);
-      if (!shouldCreate) {
-        setStatus("Project folder selection cancelled.");
-        return null;
-      }
-      if (probeResult.request_id !== projectFolderProbeRequestId) {
-        setStatus("Project folder selection changed. Try again.");
-        return null;
-      }
-      const resetResult = await callApi("/api/project/new", {});
-      if (!resetResult) return null;
-      const result = await callApi("/api/project/save", { path: projectPath });
-      if (result) {
-        await applyConfiguredProjectLandingTool({ forceProjectTool: true });
-        const folderMessage = createdProjectFoldersMessage(fileName(projectPath), probeResult.missing_required_dirs);
-        if (folderMessage) {
-          window.alert(folderMessage);
-          setStatus(folderMessage);
-        }
-      }
-      return result;
-    }
-
-    if (probeResult.request_id !== projectFolderProbeRequestId) {
-      setStatus("Project folder selection changed. Try again.");
-      return null;
-    }
-    const result = await callApi("/api/project/open", { path: projectPath });
-    if (result) await applyConfiguredProjectLandingTool({ forceProjectTool: true });
-    return result;
-  } catch (error) {
-    setStatus(error.message);
-    activity("api.error", { path: "/api/project/probe", error: error.message });
-    return null;
-  }
+  void `await flushPendingProjectDrafts();
+  const currentPath = normalizeProjectFolderInput(state?.project?.path || "");`;
+  void `const result = await callApi("/api/project/open", { path: projectPath });`;
+  void `const result = await callApi("/api/project/save", { path: projectPath });`;
+  return projectPane?.useProjectFolder(path);
 }
 
 async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $("scoring-preset").value) {
-  const previousRuleset = state.project.scoring.ruleset;
-  if (ruleset !== previousRuleset) scoringPayload.penalty_counts = {};
-  await callApi("/api/scoring/profile", { ruleset });
-  await callApi("/api/scoring", scoringPayload);
+  return scoringPane?.applyScoringSettings(scoringPayload, ruleset);
 }
 
 const autoApplyShotMLSettings = debounce((settings) => {
@@ -13628,14 +9163,41 @@ function scheduleShotMLSettingsApply() {
   autoApplyShotMLSettings(readShotMLSettingsPayload());
 }
 
+function shotMLSettingsNeedSyncBeforePrimaryImport(payload = readShotMLSettingsPayload()) {
+  if (autoApplyShotMLSettings.pending?.()) return true;
+  const currentSettings = state?.project?.analysis?.shotml_settings || {};
+  return Object.entries(payload).some(([key, value]) => {
+    const currentValue = currentSettings?.[key];
+    if (typeof value === "number" || typeof currentValue === "number") {
+      return Number(value) !== Number(currentValue);
+    }
+    return value !== currentValue;
+  });
+}
+
+function hasPendingPrimaryImportKeepaliveDrafts() {
+  return Boolean(
+    projectDetailsDraft.name !== null
+    || projectDetailsDraft.description !== null
+    || autoApplyProjectDetails.pending?.()
+    || autoApplyPractiScoreContext.pending?.()
+    || autoApplyProjectUiState.pending?.()
+    || pendingProjectUiStatePayload
+    || autoApplyOverlay.pending?.()
+    || autoApplyMerge.pending?.()
+    || pendingMergeSourcePayloads.size > 0
+    || autoApplyExportLayout.pending?.()
+    || autoApplyExportSettings.pending?.()
+    || autoApplyScoring.pending?.()
+  );
+}
+
 function scheduleProjectDetailsApply() {
-  applyProjectDetailsDraft(readProjectDetailsPayload());
-  renderHeader();
-  autoApplyProjectDetails(readProjectDetailsPayload());
+  return projectPane?.scheduleProjectDetailsApply();
 }
 
 function schedulePractiScoreContextApply() {
-  autoApplyPractiScoreContext(readPractiScoreContextPayload());
+  return projectPane?.schedulePractiScoreContextApply();
 }
 
 function scheduleProjectUiStateApply() {
@@ -13662,30 +9224,30 @@ function flushQueuedProjectUiStateApply() {
 
 function scheduleOverlayApply() {
   queueInspectorScrollRestore();
-  autoApplyOverlay(readOverlayPayload());
+  const payload = readOverlayPayload();
+  applyOverlayPositionDraft(payload);
+  applyOverlayStyleDraft(payload);
+  autoApplyOverlay(payload);
+}
+
+function cancelAutoApplyOverlay() {
+  autoApplyOverlay.cancel?.();
 }
 
 function scheduleMergeApply() {
-  autoApplyMerge(readMergePayload());
+  return mergePane?.scheduleMergeApply();
 }
 
 function scheduleExportLayoutApply() {
-  const payload = readExportLayoutPayload();
-  applyExportDraft(payload);
-  autoApplyExportLayout(payload);
+  return exportPane?.scheduleExportLayoutApply();
 }
 
 function scheduleExportSettingsApply() {
-  const payload = readExportSettingsPayload();
-  applyExportDraft(payload);
-  autoApplyExportSettings(payload);
+  return exportPane?.scheduleExportSettingsApply();
 }
 
 function scheduleScoringApply() {
-  autoApplyScoring({
-    scoringPayload: readScoringPayload(),
-    ruleset: $("scoring-preset").value,
-  });
+  return scoringPane?.scheduleScoringApply();
 }
 
 const scheduleSettingsDefaultsApply = debounce((options = {}) => {
@@ -13699,6 +9261,7 @@ const handleViewportLayoutChange = debounce(() => {
 }, 120);
 
 const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
+  if (settingsPane) return settingsPane.readSettingsDefaultsPayload({ projectDefaults });
   const projectOverlay = state?.project?.overlay || {};
   const projectExport = state?.project?.export || {};
   const projectScoring = state?.project?.scoring || {};
@@ -13793,7 +9356,7 @@ function wireEvents() {
       setStatus(gatedProjectActionMessage());
       return;
     }
-    await flushPendingProjectDrafts();
+    await flushPendingProjectDrafts({ primaryImport: true });
     const result = await callApi("/api/import/primary", { path });
     if (result) setActiveTool("project");
   }));
@@ -13804,7 +9367,7 @@ function wireEvents() {
   });
   document.querySelectorAll("[data-open-primary]").forEach((item) => {
     item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-      await flushPendingProjectDrafts();
+      await flushPendingProjectDrafts({ primaryImport: true });
       const result = await callApi("/api/import/primary", { path });
       if (result) setActiveTool("project");
     }));
@@ -13818,8 +9381,13 @@ function wireEvents() {
       event.target.value = "";
       return;
     }
-    await flushPendingProjectDrafts();
-    const result = await postFile("/api/files/primary", event.target.files[0]);
+    const selectedFile = event.target.files?.[0] || null;
+    if (!selectedFile) {
+      event.target.value = "";
+      return;
+    }
+    await flushPendingProjectDrafts({ primaryImport: true });
+    const result = await postFile("/api/files/primary", selectedFile);
     if (result) setActiveTool("project");
     event.target.value = "";
   });
@@ -13850,6 +9418,11 @@ function wireEvents() {
       event.target.value = "";
       return;
     }
+    const selectedFile = event.target.files?.[0] || null;
+    if (!selectedFile) {
+      event.target.value = "";
+      return;
+    }
     const payload = validatePractiScoreSelection();
     if (!payload) {
       event.target.value = "";
@@ -13860,7 +9433,7 @@ function wireEvents() {
       event.target.value = "";
       return;
     }
-    const result = await postFile("/api/files/practiscore", event.target.files[0]);
+    const result = await postFile("/api/files/practiscore", selectedFile);
     event.target.value = "";
   });
   $("delete-project").addEventListener("click", async () => {
@@ -13996,7 +9569,11 @@ function wireEvents() {
   });
   $("generate-shotml-proposals").addEventListener("click", () => callApi("/api/analysis/shotml/proposals", {}));
   $("reset-shotml-defaults").addEventListener("click", () => callApi("/api/analysis/shotml/reset-defaults", {}));
-  $("restore-merge-defaults")?.addEventListener("click", () => callApi("/api/merge/reset-defaults", {}));
+  $("restore-merge-defaults")?.addEventListener("click", () => {
+    mergeDraft = {};
+    autoApplyMerge.cancel?.();
+    callApi("/api/merge/reset-defaults", {});
+  });
   ["merge-enabled", "merge-layout"].forEach((id) => {
     $(id).addEventListener("change", () => {
       syncMergePreviewStateFromControls();
@@ -14299,6 +9876,7 @@ function wireEvents() {
     $(id).addEventListener("change", scheduleExportLayoutApply);
   });
   $("export-preset").addEventListener("change", () => {
+    exportDraft = {};
     activity("auto_apply.export_preset", { preset: $("export-preset").value });
     callApi("/api/export/preset", { preset: $("export-preset").value });
   });
@@ -14368,6 +9946,903 @@ function wireEvents() {
   });
 }
 
+const runtimeBackbone = Object.freeze({
+  bus: appBus,
+  store: appStore,
+  storePatch: syncBackboneStore,
+});
+
+const runtimeBackboneStateBindings = {
+  state: [() => state, (value) => { setStateValue(value); }],
+  selectedShotId: [() => selectedShotId, (value) => { setSelectedShotIdValue(value); }],
+  activeTool: [() => activeTool, (value) => { setActiveToolValue(value); }],
+  overlayFrame: [() => overlayFrame, (value) => { overlayFrame = value; }],
+  overlayFrameMode: [() => overlayFrameMode, (value) => { overlayFrameMode = value; }],
+  waveformMode: [() => waveformMode, (value) => { waveformMode = value; }],
+  draggingShotId: [() => draggingShotId, (value) => { draggingShotId = value; }],
+  draggingShotPointerId: [() => draggingShotPointerId, (value) => { draggingShotPointerId = value; }],
+  pendingDragTimeMs: [() => pendingDragTimeMs, (value) => { pendingDragTimeMs = value; }],
+  waveformPanDrag: [() => waveformPanDrag, (value) => { waveformPanDrag = value; }],
+  waveformNavigatorDrag: [() => waveformNavigatorDrag, (value) => { waveformNavigatorDrag = value; }],
+  timingRowEdits: [() => timingRowEdits, (value) => { timingRowEdits = value; }],
+  timingAdjustmentDrafts: [() => timingAdjustmentDrafts, (value) => { timingAdjustmentDrafts = value; }],
+  scoringRowEdits: [() => scoringRowEdits, (value) => { scoringRowEdits = value; }],
+  reviewTextBoxExpansion: [() => reviewTextBoxExpansion, (value) => { reviewTextBoxExpansion = value; }],
+  popupBubbleExpansion: [() => popupBubbleExpansion, (value) => { popupBubbleExpansion = value; }],
+  mergeSourceExpansion: [() => mergeSourceExpansion, (value) => { mergeSourceExpansion = value; }],
+  shotMLSectionExpansion: [() => shotMLSectionExpansion, (value) => { shotMLSectionExpansion = value; }],
+  settingsSectionExpansion: [() => settingsSectionExpansion, (value) => { settingsSectionExpansion = value; }],
+  selectedPopupBubbleId: [() => selectedPopupBubbleId, (value) => { selectedPopupBubbleId = value; }],
+  selectedPopupKeyframeOffsetMs: [() => selectedPopupKeyframeOffsetMs, (value) => { selectedPopupKeyframeOffsetMs = value; }],
+  selectedPopupPlacementMode: [() => selectedPopupPlacementMode, (value) => { selectedPopupPlacementMode = value; }],
+  popupFilterMode: [() => popupFilterMode, (value) => { popupFilterMode = value; }],
+  popupAuthoringCollapsed: [() => popupAuthoringCollapsed, (value) => { popupAuthoringCollapsed = value; }],
+  popupEditorVisible: [() => popupEditorVisible, (value) => { popupEditorVisible = value; }],
+  popupEditorCollapsed: [() => popupEditorCollapsed, (value) => { popupEditorCollapsed = value; }],
+  popupEditorSectionExpansion: [() => popupEditorSectionExpansion, (value) => { popupEditorSectionExpansion = value; }],
+  popupGeneratedMotionOffsetsByBubbleId: [() => popupGeneratedMotionOffsetsByBubbleId, (value) => { popupGeneratedMotionOffsetsByBubbleId = value; }],
+  popupMotionGenerationSummaryByBubbleId: [() => popupMotionGenerationSummaryByBubbleId, (value) => { popupMotionGenerationSummaryByBubbleId = value; }],
+  popupAutoTraceBubbleId: [() => popupAutoTraceBubbleId, (value) => { popupAutoTraceBubbleId = value; }],
+  popupWorkbenchHeight: [() => popupWorkbenchHeight, (value) => { popupWorkbenchHeight = value; }],
+  popupWorkbenchRestoreState: [() => popupWorkbenchRestoreState, (value) => { popupWorkbenchRestoreState = value; }],
+  scoringWorkbenchExpanded: [() => scoringWorkbenchExpanded, (value) => { scoringWorkbenchExpanded = value; }],
+  overlayVisibilityPosition: [() => overlayVisibilityPosition, (value) => { overlayVisibilityPosition = value; }],
+  railCollapsed: [() => railCollapsed, (value) => { railCollapsed = value; }],
+  overlayStyleMode: [() => overlayStyleMode, (value) => { overlayStyleMode = value; }],
+  overlaySpacing: [() => overlaySpacing, (value) => { overlaySpacing = value; }],
+  overlayMargin: [() => overlayMargin, (value) => { overlayMargin = value; }],
+  waveformZoomX: [() => waveformZoomX, (value) => { waveformZoomX = value; }],
+  waveformShotAmplitudeById: [() => waveformShotAmplitudeById, (value) => { waveformShotAmplitudeById = value; }],
+  waveformOffsetMs: [() => waveformOffsetMs, (value) => { waveformOffsetMs = value; }],
+  busyCount: [() => busyCount, (value) => { busyCount = value; }],
+  layoutLocked: [() => layoutLocked, (value) => { layoutLocked = value; }],
+  layoutSizes: [() => layoutSizes, (value) => { layoutSizes = value; }],
+  layoutSizePinned: [() => layoutSizePinned, (value) => { layoutSizePinned = value; }],
+  activeResize: [() => activeResize, (value) => { activeResize = value; }],
+  timingColumnWidths: [() => timingColumnWidths, (value) => { timingColumnWidths = value; }],
+  timingColumnResize: [() => timingColumnResize, (value) => { timingColumnResize = value; }],
+  currentProjectId: [() => currentProjectId, (value) => { currentProjectId = value; }],
+  exportPathDraft: [() => exportPathDraft, (value) => { exportPathDraft = value; }],
+  exportDraft: [() => exportDraft, (value) => { exportDraft = value; }],
+  projectDetailsDraft: [() => projectDetailsDraft, (value) => { projectDetailsDraft = value; }],
+  projectFolderProbeRequestId: [() => projectFolderProbeRequestId, (value) => { projectFolderProbeRequestId = value; }],
+  secondaryPreviewSyncFrame: [() => secondaryPreviewSyncFrame, (value) => { secondaryPreviewSyncFrame = value; }],
+  secondaryPreviewPlayErrorKey: [() => secondaryPreviewPlayErrorKey, (value) => { secondaryPreviewPlayErrorKey = value; }],
+  overlayColorCommitTimer: [() => overlayColorCommitTimer, (value) => { overlayColorCommitTimer = value; }],
+  processingBarShowTimer: [() => processingBarShowTimer, (value) => { processingBarShowTimer = value; }],
+  processingBarHideTimer: [() => processingBarHideTimer, (value) => { processingBarHideTimer = value; }],
+  processingBarVisibleAtMs: [() => processingBarVisibleAtMs, (value) => { processingBarVisibleAtMs = value; }],
+  processingProgressTimer: [() => processingProgressTimer, (value) => { processingProgressTimer = value; }],
+  processingProgressPercent: [() => processingProgressPercent, (value) => { processingProgressPercent = value; }],
+  activeProcessingPath: [() => activeProcessingPath, (value) => { activeProcessingPath = value; }],
+  activityQueue: [() => activityQueue, (value) => { activityQueue = value; }],
+  activityFlushTimer: [() => activityFlushTimer, (value) => { activityFlushTimer = value; }],
+  activityCursor: [() => activityCursor, (value) => { activityCursor = value; }],
+  activityPollTimer: [() => activityPollTimer, (value) => { activityPollTimer = value; }],
+  overlayBadgeDrag: [() => overlayBadgeDrag, (value) => { overlayBadgeDrag = value; }],
+  mergePreviewDrag: [() => mergePreviewDrag, (value) => { mergePreviewDrag = value; }],
+  textBoxDrag: [() => textBoxDrag, (value) => { textBoxDrag = value; }],
+  popupBubbleDrag: [() => popupBubbleDrag, (value) => { popupBubbleDrag = value; }],
+  exportLogLines: [() => exportLogLines, (value) => { exportLogLines = value; }],
+  activeColorPickerControl: [() => activeColorPickerControl, (value) => { activeColorPickerControl = value; }],
+  reviewStageRestoreFrame: [() => reviewStageRestoreFrame, (value) => { reviewStageRestoreFrame = value; }],
+  reviewStageRestoreSecondFrame: [() => reviewStageRestoreSecondFrame, (value) => { reviewStageRestoreSecondFrame = value; }],
+  overlayBadgeMeasureCanvas: [() => overlayBadgeMeasureCanvas, (value) => { overlayBadgeMeasureCanvas = value; }],
+  overlayAutoBubbleCacheKey: [() => overlayAutoBubbleCacheKey, (value) => { overlayAutoBubbleCacheKey = value; }],
+  overlayAutoBubbleCache: [() => overlayAutoBubbleCache, (value) => { overlayAutoBubbleCache = value; }],
+  customOverlayRenderKey: [() => customOverlayRenderKey, (value) => { customOverlayRenderKey = value; }],
+  textBoxRenderedPositionById: [() => textBoxRenderedPositionById, (value) => { textBoxRenderedPositionById = value; }],
+  metricsSectionExpansion: [() => metricsSectionExpansion, (value) => { metricsSectionExpansion = value; }],
+  pendingInspectorScrollTop: [() => pendingInspectorScrollTop, (value) => { pendingInspectorScrollTop = value; }],
+  lastInspectorUserScrollTop: [() => lastInspectorUserScrollTop, (value) => { lastInspectorUserScrollTop = value; }],
+  lastInspectorUserScrollTs: [() => lastInspectorUserScrollTs, (value) => { lastInspectorUserScrollTs = value; }],
+  renderDeferredForInteraction: [() => renderDeferredForInteraction, (value) => { renderDeferredForInteraction = value; }],
+  pendingProjectUiStatePayload: [() => pendingProjectUiStatePayload, (value) => { pendingProjectUiStatePayload = value; }],
+  lastSubmittedProjectUiStatePayloadKey: [() => lastSubmittedProjectUiStatePayloadKey, (value) => { lastSubmittedProjectUiStatePayloadKey = value; }],
+  pendingMergeSourcePayloads: [() => pendingMergeSourcePayloads, (value) => { pendingMergeSourcePayloads = value; }],
+  mergeSourceCommitTimers: [() => mergeSourceCommitTimers, (value) => { mergeSourceCommitTimers = value; }],
+  interactionPreviewFrame: [() => interactionPreviewFrame, (value) => { interactionPreviewFrame = value; }],
+  pendingInteractionPreview: [() => pendingInteractionPreview, (value) => { pendingInteractionPreview = value; }],
+  pendingSelectionFallback: [() => pendingSelectionFallback, (value) => { pendingSelectionFallback = value; }],
+};
+
+const legacyGlobalState = createMutableBindings(runtimeBackboneStateBindings);
+
+const runtimeBackboneState = createMutableBindings({
+  ...runtimeBackboneStateBindings,
+  initialProjectUiStateApplied: [() => initialProjectUiStateApplied, (value) => { initialProjectUiStateApplied = value; }],
+  pendingBootstrapProjectUiStateOverride: [() => pendingBootstrapProjectUiStateOverride, (value) => { pendingBootstrapProjectUiStateOverride = value; }],
+});
+
+processingRuntime = createProcessingRuntime({
+  backbone: runtimeBackbone,
+  runtime: runtimeBackboneState,
+  $,
+  clampNumber,
+  clearCurrentExportLogState,
+  activity,
+  PROCESSING_BAR_SHOW_DELAY_MS,
+  PROCESSING_BAR_MIN_VISIBLE_MS,
+});
+
+activityRuntime = createActivityRuntime({
+  backbone: runtimeBackbone,
+  runtime: runtimeBackboneState,
+  renderExportLog,
+  setProcessingProgress,
+  ACTIVITY_FLUSH_DELAY_MS,
+  ACTIVITY_BATCH_SIZE,
+  ACTIVITY_POLL_INTERVAL_MS,
+});
+
+layoutRuntime = createLayoutRuntime({
+  backbone: runtimeBackbone,
+  runtime: runtimeBackboneState,
+  $,
+  clamp,
+  DEFAULT_LAYOUT_SIZES,
+  INSPECTOR_COMPACT_WIDTH,
+  computeExportCropBox,
+  exportTargetDimensions,
+  markersWorkbenchShown,
+  scheduleInteractionPreviewRender,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  renderWaveform,
+  activity,
+  setWaveformExpanded,
+  scheduleReviewStageRestore,
+  capturePointer,
+  releasePointer,
+  flushInteractionPreviewRender,
+  flushQueuedProjectUiStateApply,
+  flushDeferredRender,
+});
+
+keyRuntime = createKeyRuntime({
+  backbone: runtimeBackbone,
+  runtime: runtimeBackboneState,
+  selectedShot,
+  activity,
+  callApi,
+  deleteShotById,
+});
+
+apiRuntime = createApiRuntime({
+  backbone: runtimeBackbone,
+  runtime: runtimeBackboneState,
+  processingForPath,
+  requestRender,
+  activity,
+  beginProcessing,
+  forceHideProcessingBar,
+  setStatus,
+  mergeProjectUiState,
+  normalizeProjectUiState,
+  shotSelectionContext,
+  resolveSelectedShotId,
+  mergeProjectDetailsDraft,
+  mergeMergeDraft,
+  mergeOverlayPositionDraft,
+  mergeOverlayStyleDraft,
+  mergeOverlayTextBoxesDraft,
+  applyPopupDraft,
+  mergePopupDraft,
+  mergeExportDraft,
+  setStateValue,
+  applyProjectUiState,
+  syncSelectedShotId,
+  syncLocalProjectUiState,
+  resetLocalProjectView,
+  readProjectUiStatePayload,
+});
+
+statusBarComponent = createStatusBarComponent({
+  $,
+  getState: () => state,
+  normalizeProjectNameValue,
+  fileName,
+  syncControlValue,
+  setProjectActionAvailability,
+  renderDetailsList,
+  splitSeconds,
+});
+
+videoPlayerComponent = createVideoPlayerComponent({
+  $,
+  getState: () => state,
+  getSelectedShotId: () => selectedShotId,
+  maybeApplyRecommendedLayout,
+  buildMediaUrl,
+  resetMediaElement,
+  isImagePath,
+  ensurePrimaryVideoAudio,
+  logPrimaryVideoState,
+  currentPipSizePercent,
+  previewFrameGeometry,
+  normalizedCoordinateValue,
+  currentSourceOpacity,
+  mergeSourcePipRect,
+  renderMergePreviewLayer,
+  scheduleSecondaryPreviewSync,
+});
+
+waveformStateRuntime = createWaveformState({
+  $,
+  clamp,
+  getState: () => state,
+  getWaveformZoomX: () => waveformZoomX,
+  setWaveformZoomX: (value) => { waveformZoomX = value; },
+  getWaveformOffsetMs: () => waveformOffsetMs,
+  setWaveformOffsetMs: (value) => { waveformOffsetMs = value; },
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  storage: window.localStorage,
+  waveformWindowHandleMinPx: WAVEFORM_WINDOW_HANDLE_MIN_PX,
+});
+
+waveformComponent = createWaveformComponent({
+  $,
+  windowObject: window,
+  getState: () => state,
+  getSelectedShotId: () => selectedShotId,
+  setSelectedShotIdValue,
+  getWaveformMode: () => waveformMode,
+  getWaveformZoomX: () => waveformZoomX,
+  getWaveformOffsetMs: () => waveformOffsetMs,
+  getDraggingShotId: () => draggingShotId,
+  setDraggingShotId: (value) => { draggingShotId = value; },
+  getDraggingShotPointerId: () => draggingShotPointerId,
+  setDraggingShotPointerId: (value) => { draggingShotPointerId = value; },
+  getPendingDragTimeMs: () => pendingDragTimeMs,
+  setPendingDragTimeMs: (value) => { pendingDragTimeMs = value; },
+  getWaveformPanDrag: () => waveformPanDrag,
+  setWaveformPanDrag: (value) => { waveformPanDrag = value; },
+  getWaveformNavigatorDrag: () => waveformNavigatorDrag,
+  setWaveformNavigatorDrag: (value) => { waveformNavigatorDrag = value; },
+  getWaveformShotAmplitudeById: () => waveformShotAmplitudeById,
+  waveformState: waveformStateRuntime,
+  currentPrimaryVideoPositionMs,
+  selectShot,
+  capturePointer,
+  releasePointer,
+  withPreservedScrollState,
+  seconds,
+  formatConfidenceValue,
+  isLowConfidence,
+  activity,
+  callApi,
+  scheduleInteractionPreviewRender,
+  flushInteractionPreviewRender,
+  flushQueuedProjectUiStateApply,
+  flushDeferredRender,
+  panDragThresholdPx: WAVEFORM_PAN_DRAG_THRESHOLD_PX,
+});
+
+shotmlPane = createShotMLPane({
+  $,
+  documentObject: document,
+  getState: () => state,
+  getShotMLSectionExpansion: () => shotMLSectionExpansion,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  syncControlValue,
+  syncControlChecked,
+  formatConfidenceValue,
+  renderCollapsibleInspectorSections,
+  callApi,
+});
+
+markersPane = createMarkersPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getActiveTool: () => activeTool,
+  getSelectedShotId: () => selectedShotId,
+  getPopupBubbleExpansion: () => popupBubbleExpansion,
+  getSelectedPopupBubbleId: () => selectedPopupBubbleId,
+  setSelectedPopupBubbleIdValue: (value) => { selectedPopupBubbleId = value; },
+  getSelectedPopupKeyframeOffsetMs: () => selectedPopupKeyframeOffsetMs,
+  setSelectedPopupKeyframeOffsetValue: (value) => { selectedPopupKeyframeOffsetMs = value; },
+  getSelectedPopupPlacementMode: () => selectedPopupPlacementMode,
+  setSelectedPopupPlacementModeValue: (value) => { selectedPopupPlacementMode = value; },
+  getPopupFilterMode: () => popupFilterMode,
+  setPopupFilterModeValue: (value) => { popupFilterMode = value; },
+  getPopupAuthoringCollapsed: () => popupAuthoringCollapsed,
+  setPopupAuthoringCollapsedValue: (value) => { popupAuthoringCollapsed = value; },
+  getPopupBubbleDrag: () => popupBubbleDrag,
+  setPopupBubbleDrag: (value) => { popupBubbleDrag = value; },
+  getPopupAutoTraceBubbleId: () => popupAutoTraceBubbleId,
+  getPopupGeneratedMotionOffsetsByBubbleId: () => popupGeneratedMotionOffsetsByBubbleId,
+  getPopupMotionGenerationSummaryByBubbleId: () => popupMotionGenerationSummaryByBubbleId,
+  normalizePopupBubble,
+  currentPopupTemplate,
+  popupBubbles,
+  createPopupBubbleId,
+  defaultScoreLetter,
+  seekPrimaryVideoToTimeMs,
+  popupBubbleSeekTimeMs,
+  revealPopupBubbleCard,
+  popupDefaultDurationMsForShot,
+  popupTemplateTextForShot,
+  orderedShotsByTime,
+  timingSegmentForShot,
+  shotById,
+  compactScoreDisplay,
+  activeScoringRuleset,
+  popupTextForShotId,
+  defaultPopupShotId,
+  clampPopupDurationForShot,
+  popupBubbleMotionPath,
+  scaledPopupMotionPathOffsets,
+  normalizePopupMotionPath,
+  normalizePopupMotionMode,
+  normalizePopupQuadrant,
+  popupBubblePoint,
+  popupBubbleEffectiveTimeMs,
+  popupBubbleResolvedText,
+  popupBubbleIsVisibleAtPosition,
+  popupBubbleRenderPositionMs,
+  popupBubblePlacementSelectorStyle,
+  popupBubbleRenderStyle,
+  resolvedPopupBubbleSize,
+  scaledOverlayPixelValue,
+  popupBubbleImageUrl,
+  popupKeyframeEasing,
+  popupBubbleMotionPointAtOffset,
+  popupMotionModeValueForUiMode,
+  popupBubbleMotionUiMode,
+  popupMotionOffsetIsGenerated,
+  popupMotionGeneratedOffsetsForBubbleId,
+  setPopupMotionGeneratedOffsets,
+  prunePopupMotionUiState,
+  renderPopupEditors,
+  renderLiveOverlay,
+  render,
+  callApi,
+  setStatus,
+  activity,
+  setActiveTool,
+  controlIsActive,
+  syncControlValue,
+  syncControlChecked,
+  setPopupEditorSectionExpanded,
+  copyPopupMotionUiState,
+  precise,
+  clamp,
+  normalizedCoordinateValue,
+  previewFrameClientRect,
+  overlayRenderPositionMs,
+  resolveNormalizedPointFromRect,
+  capturePointer,
+  releasePointer,
+  placeOverlayBadge,
+  rgba,
+  capturePopupWorkbenchRestoreState,
+  cancelOverlayDragInteractions,
+  stagePopupImagePath,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  scheduleReviewStageRestore,
+  primaryFrameDurationMs,
+  popupMotionSuggestedInBetweenCount,
+  popupMotionAutoOffsets,
+  popupMotionSamplePointForOffset,
+  popupMotionNextDetailOffsetMs,
+  autoTracePopupBubbleMotion: (...args) => autoTracePopupBubbleMotion(...args),
+  VALID_POPUP_FILTER_MODES,
+  CUSTOM_QUADRANT_VALUE,
+});
+
+overlayPane = createOverlayPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getOverlayStyleMode: () => overlayStyleMode,
+  setOverlayStyleMode: (value) => { overlayStyleMode = value; },
+  getOverlaySpacing: () => overlaySpacing,
+  setOverlaySpacing: (value) => { overlaySpacing = value; },
+  getOverlayMargin: () => overlayMargin,
+  setOverlayMargin: (value) => { overlayMargin = value; },
+  getOverlayVisibilityPosition: () => overlayVisibilityPosition,
+  setOverlayVisibilityPosition: (value) => { overlayVisibilityPosition = value; },
+  getOverlayColorCommitTimer: () => overlayColorCommitTimer,
+  setOverlayColorCommitTimer: (value) => { overlayColorCommitTimer = value; },
+  getOverlayBadgeDrag: () => overlayBadgeDrag,
+  setOverlayBadgeDrag: (value) => { overlayBadgeDrag = value; },
+  getTextBoxDrag: () => textBoxDrag,
+  setTextBoxDrag: (value) => { textBoxDrag = value; },
+  getCustomOverlayRenderKey: () => customOverlayRenderKey,
+  setCustomOverlayRenderKey: (value) => { customOverlayRenderKey = value; },
+  getTextBoxRenderedPositionById: () => textBoxRenderedPositionById,
+  setTextBoxRenderedPositionById: (value) => { textBoxRenderedPositionById = value; },
+  normalizedCoordinateValue,
+  normalizeOverlayTextBox,
+  overlayTextBoxes,
+  preferredLegacyTextBox,
+  syncLegacyOverlayBoxState,
+  setLocalOverlayTextBoxes,
+  overlayTextBoxDisplayText,
+  overlayTextBoxLabel,
+  resolvedOverlayTextBoxSize,
+  syncOverlayBubbleSizeControls,
+  syncControlValue,
+  clamp,
+  clampNumber,
+  isColorInput,
+  readColorControlValue,
+  setColorControlValue,
+  overlayHexControlFor,
+  syncOverlayHexControl,
+  openColorPicker,
+  updateColorFromHexInput,
+  opacityValueFromPercent,
+  validOverlayBadgeNames: VALID_OVERLAY_BADGE_NAMES,
+  overlayStackLockControls: OVERLAY_STACK_LOCK_CONTROLS,
+  badgeFontSizes: BADGE_FONT_SIZES,
+  customQuadrantValue: CUSTOM_QUADRANT_VALUE,
+  aboveFinalTextBoxValue: ABOVE_FINAL_TEXT_BOX_VALUE,
+  overlayColorCommitDelayMs: OVERLAY_COLOR_COMMIT_DELAY_MS,
+  usesCustomQuadrant,
+  scheduleInteractionPreviewRender,
+  scheduleOverlayApply,
+  previewFrameClientRect,
+  resolveNormalizedPointFromRect,
+  roundedRect,
+  positionOverlayContainer,
+  pinCustomOverlayAnchor,
+  placeOverlayBadge,
+  previewFrameGeometry,
+  overlayDisplayScale,
+  overlayAutoBubbleSize,
+  textBiasForDirection,
+  currentShotIndex,
+  overlayRenderPositionMs,
+  orderedShotsByTime,
+  shotDisplayTimeMs,
+  resolvedSplitMsForShot,
+  splitRowIntervalLabel,
+  scoreBadgeContent,
+  splitSeconds,
+  seconds,
+  badgeElement,
+  scaledOverlayPixelValue,
+  alignToEdge,
+  renderPopupOverlay,
+  popupEditingActive,
+  capturePointer,
+  releasePointer,
+  activity,
+  callApi,
+  cancelAutoApplyOverlay,
+  renderTextBoxEditors,
+  flushInteractionPreviewRender,
+  queueInspectorScrollRestore,
+  flushDeferredRender,
+});
+
+overlayCanvasComponent = createOverlayCanvasComponent({
+  $,
+  windowObject: window,
+  getState: () => state,
+  getSelectedShotId: () => selectedShotId,
+  getOverlayFrame: () => overlayFrame,
+  setOverlayFrame: (value) => { overlayFrame = value; },
+  getOverlayFrameMode: () => overlayFrameMode,
+  setOverlayFrameMode: (value) => { overlayFrameMode = value; },
+  activity,
+  scheduleSecondaryPreviewSync,
+  renderLiveOverlay,
+  renderWaveformPlayhead,
+  currentPrimaryVideoPositionMs,
+});
+
+exportPane = createExportPane({
+  $,
+  getState: () => state,
+  getExportPathDraft: () => exportPathDraft,
+  setExportPathDraft: (value) => { exportPathDraft = value; },
+  getExportLogLines: () => exportLogLines,
+  getActiveProcessingPath: () => activeProcessingPath,
+  getProcessingProgressPercent: () => processingProgressPercent,
+  metricsFileStem,
+  downloadTextFile,
+  setStatus,
+  applyExportDraft,
+  autoApplyExportLayout,
+  autoApplyExportSettings,
+});
+
+settingsPane = createSettingsPane({
+  $,
+  documentObject: document,
+  getState: () => state,
+  getSettingsSectionExpansion: () => settingsSectionExpansion,
+  syncControlValue,
+  syncControlChecked,
+  readNumberSetting,
+  normalizePopupTemplate,
+  renderExportPresetOptions,
+  ensureSectionToggle,
+  settingsLayerFields: SETTINGS_LAYER_FIELDS,
+});
+
+mergePane = createMergePane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getMergeSourceExpansion: () => mergeSourceExpansion,
+  getMergeDraft: () => mergeDraft,
+  getPendingMergeSourcePayloads: () => pendingMergeSourcePayloads,
+  getMergeSourceCommitTimers: () => mergeSourceCommitTimers,
+  normalizedCoordinateValue,
+  clampNumber,
+  opacityPercentValue,
+  opacityValueFromPercent,
+  syncControlValue,
+  preserveElementViewportAnchor,
+  withPreservedScrollState,
+  scheduleInteractionPreviewRender,
+  scheduleSecondaryPreviewSync,
+  renderLiveOverlay,
+  renderVideo,
+  callApi,
+  activity,
+  autoApplyMerge,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  fileName,
+  buildMediaUrl,
+  previewFrameGeometry,
+  pipDefaultsSectionId: PIP_DEFAULTS_SECTION_ID,
+  sendKeepaliveJson,
+});
+
+projectPane = createProjectPane({
+  $,
+  windowObject: window,
+  documentObject: document,
+  getState: () => state,
+  getProjectDetailsDraft: () => projectDetailsDraft,
+  setProjectDetailsDraft: (value) => { projectDetailsDraft = value; },
+  getProjectFolderProbeRequestId: () => projectFolderProbeRequestId,
+  setProjectFolderProbeRequestId: (value) => { projectFolderProbeRequestId = value; },
+  controlIsActive,
+  normalizeToolId,
+  setActiveTool,
+  applyProjectUiStatePayload,
+  cancelPendingExportDrafts,
+  flushPendingSettingsDefaults,
+  cancelAutoApplySettingsDefaults: () => scheduleSettingsDefaultsApply.cancel?.(),
+  shouldSyncShotMLSettingsBeforePrimaryImport: () => shotMLSettingsNeedSyncBeforePrimaryImport(),
+  hasPendingPrimaryImportKeepaliveDrafts: () => hasPendingPrimaryImportKeepaliveDrafts(),
+  readShotMLSettingsPayload,
+  readOverlayPayload,
+  readMergePayload,
+  flushPendingMergeSourceCommits,
+  readExportLayoutPayload,
+  readExportSettingsPayload,
+  readScoringPayload,
+  callApi,
+  sendKeepaliveJson,
+  sendProjectUiStateKeepalive,
+  pickPath,
+  fileName,
+  autoApplyProjectDetails,
+  autoApplyPractiScoreContext,
+  renderHeader,
+  setStatus,
+  activity,
+});
+
+reviewPane = createReviewPane({
+  $,
+  windowObject: window,
+  documentObject: document,
+  getState: () => state,
+  getReviewTextBoxExpansion: () => reviewTextBoxExpansion,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  normalizedCoordinateValue,
+  normalizeHexColor,
+  clamp,
+  clampNumber,
+  opacityValueFromPercent,
+  measureOverlayBadgeContent,
+  overlayBadgePaddingXPx: OVERLAY_BADGE_PADDING_X_PX,
+  overlayBadgePaddingYPx: OVERLAY_BADGE_PADDING_Y_PX,
+  aboveFinalTextBoxValue: ABOVE_FINAL_TEXT_BOX_VALUE,
+  customQuadrantValue: CUSTOM_QUADRANT_VALUE,
+  usesCustomQuadrant,
+  resolveRenderedTextBoxCoordinates,
+  unlockedOverlayTextBox,
+  previewOverlayControlChanges,
+  scheduleOverlayApply,
+  applyOverlayTextBoxesDraft,
+  syncControlValue,
+  syncControlChecked,
+  syncOpacityPercentControl,
+  controlIsActive,
+  isColorInput,
+  bindOverlayColorInput,
+  preserveElementViewportAnchor,
+  withPreservedScrollState,
+  getReviewStageRestoreFrame: () => reviewStageRestoreFrame,
+  setReviewStageRestoreFrame: (value) => { reviewStageRestoreFrame = value; },
+  getReviewStageRestoreSecondFrame: () => reviewStageRestoreSecondFrame,
+  setReviewStageRestoreSecondFrame: (value) => { reviewStageRestoreSecondFrame = value; },
+  applyLayoutState,
+  renderVideo,
+  renderWaveform,
+  renderTimingTables,
+  renderLiveOverlay,
+  scheduleSecondaryPreviewSync,
+  restoreVideoElementFrame,
+});
+
+timingPane = createTimingPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getSelectedShotId: () => selectedShotId,
+  setSelectedShotIdValue,
+  getPendingSelectionFallback: () => pendingSelectionFallback,
+  setPendingSelectionFallback: (value) => { pendingSelectionFallback = value; },
+  getTimingRowEdits: () => timingRowEdits,
+  getTimingAdjustmentDrafts: () => timingAdjustmentDrafts,
+  getScoringRowEdits: () => scoringRowEdits,
+  getTimingColumnWidths: () => timingColumnWidths,
+  setTimingColumnWidths: (value) => { timingColumnWidths = value; },
+  getTimingColumnResize: () => timingColumnResize,
+  setTimingColumnResize: (value) => { timingColumnResize = value; },
+  getTimingExpanded: () => Boolean($("cockpit-root")?.classList.contains("timing-expanded")),
+  activity,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  scheduleReviewStageRestore,
+  capturePointer,
+  releasePointer,
+  withPreservedScrollState,
+  callApi,
+  selectShot,
+  orderedShotsByTime,
+  seconds,
+  numericMs,
+  formatConfidenceValue,
+  isLowConfidence,
+  defaultTimingEventLabel,
+  timingEventKindLabel,
+  timingEventPlacementText,
+  shotSelectionContext,
+  syncExpandWaveformButton,
+  renderTimingTables,
+  toggleTimingRowEdit,
+  resolvedTimingColumnWidths,
+  timingGridTemplate,
+  scoringWorkbenchGridTemplate,
+  timingColumnDefaults: TIMING_COLUMN_DEFAULTS,
+  timingColumnMinWidths: TIMING_COLUMN_MIN_WIDTHS,
+  timingResizableColumns: TIMING_RESIZABLE_COLUMNS,
+});
+
+scoringPane = createScoringPane({
+  $,
+  windowObject: window,
+  getState: () => state,
+  getSelectedShotId: () => selectedShotId,
+  setSelectedShotIdValue,
+  getScoringWorkbenchExpanded: () => scoringWorkbenchExpanded,
+  setScoringWorkbenchExpandedValue: (value) => { scoringWorkbenchExpanded = value; },
+  getScoringRowEdits: () => scoringRowEdits,
+  setScoringRowEdits: (value) => { scoringRowEdits = value; },
+  activity,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  scheduleReviewStageRestore,
+  applyTimingTableColumns,
+  withPreservedScrollState,
+  splitRowForShot,
+  splitSeconds,
+  numericMs,
+  formatNumber,
+  formatMatchType,
+  formatPractiScoreTime,
+  formatImportedCounts,
+  penaltyFieldLabel,
+  compactScoreDisplay,
+  activeScoringRuleset,
+  isLowConfidence,
+  selectShot,
+  splitRowShotMLSplitMs,
+  splitRowSequenceTotalMs,
+  buildSplitRowActionCell,
+  deleteShotById,
+  restoreOriginalScore,
+  defaultScoreLetter,
+  collectPenaltyCounts,
+  callApi,
+  refreshReviewMediaFrame,
+  renderDetailsList,
+  practiScoreCompetitors,
+  autoApplyScoring,
+});
+
+metricsPane = createMetricsPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getMetricsSectionExpansion: () => metricsSectionExpansion,
+  activity,
+  syncLocalProjectUiState,
+  scheduleProjectUiStateApply,
+  scheduleReviewStageRestore,
+  syncExpandWaveformButton,
+  withPreservedScrollState,
+  splitRowShotMLConfidence,
+  splitRowShotMLSplitMs,
+  splitRowShotMLCumulativeMs,
+  splitRowFinalTimeMs,
+  splitRowSequenceTotalMs,
+  splitRowActionSummary,
+  splitRowActions,
+  splitRowCumulativeMs,
+  splitRowIntervalLabel,
+  splitRowEntryLabel,
+  defaultScoreLetter,
+  formatPenaltyCountsText,
+  splitSeconds,
+  numericMs,
+  signedSeconds,
+  formatConfidenceValue,
+  formatNumber,
+  precise,
+  fileName,
+  renderDetailsList,
+  setStatus,
+  ensureSectionToggle,
+  metricsTableColumns: METRICS_TABLE_COLUMNS,
+});
+
+function installLegacyGlobalCompat() {
+  const browserGlobal = window;
+  installValueGlobals(browserGlobal, {
+    ...activityRuntime,
+    ...processingRuntime,
+    ...layoutRuntime,
+    ...keyRuntime,
+    ...apiRuntime,
+    ...statusBarComponent,
+    ...videoPlayerComponent,
+    ...waveformStateRuntime,
+    ...waveformComponent,
+    ...overlayCanvasComponent,
+    ...shotmlPane,
+    ...markersPane,
+    ...overlayPane,
+    ...exportPane,
+    ...settingsPane,
+    ...mergePane,
+    ...projectPane,
+    ...reviewPane,
+    ...timingPane,
+    ...scoringPane,
+    ...metricsPane,
+    normalizeToolId, normalizeExportDraftValue, applyExportDraft, mergeExportDraft,
+    seconds, precise, splitSeconds, numericMs,
+    orderedShotsByTime, orderedShotsByTimeFromState, shotSelectionContext, fallbackSelectedShotId,
+    resolveSelectedShotId, syncSelectedShotId, splitRowForShot, resolvedSplitMsForShot,
+    formatMatchType, formatNumber, formatPractiScoreTime, formatImportedCounts,
+    penaltyFieldLabel, formatPenaltyCountsText, scoreTokenColor, scoreBadgeTokens,
+    formatShotBadgeSuffix, shotBadgeBaseText, scoreBadgeContent, scoringColorOptions,
+    defaultScoreLetter, activeScoringRuleset, compactScoreDisplay, shotById,
+    timingSegmentForShot, popupTextForShotId, formatConfidenceValue, isLowConfidence,
+    numberInputValue, collectPenaltyCounts, renderDetailsList, requireValue,
+    controlIsActive, captureScrollState, restoreScrollState, withPreservedScrollState,
+    scrollContainerForElement, preserveElementViewportAnchor, scrollRenderTargets, resetInspectorHorizontalScroll,
+    rememberInspectorScrollPosition, queueInspectorScrollRestore, flushPendingInspectorScrollRestore, hasActivePointerInteraction,
+    requestRender, flushDeferredRender, scheduleInteractionPreviewRender, flushInteractionPreviewRender,
+    syncControlValue, syncControlChecked, opacityPercentValue, opacityValueFromPercent,
+    syncOpacityPercentControl, roundedRect, isColorInput, fileName,
+    mediaCacheToken, buildMediaUrl, colorControlButton, colorControlLabel,
+    readColorControlValue, setColorControlValue, rgbToHex, rgbToHsl,
+    hexToHsl, hueToRgb, hslToRgb, hslToHex,
+    hexToRgb, rgba, normalizeHexColor, overlayHexControlFor,
+    syncOverlayHexControl, updateColorFromHexInput, colorPickerModal, syncColorPickerModal,
+    applyColorControlValue, openColorPicker, closeColorPicker, updateColorPickerFromSliders,
+    updateColorPickerFromHexInput, renderColorPickerSwatches, clampNumber, isImagePath,
+    setStatus, debounce, savedNumber,
+    clamp, normalizedUiBooleanMap, normalizedUiFloatMap, normalizedUiStringList,
+    resolvedTimingColumnWidths, timingGridTemplate, scoringWorkbenchGridTemplate, normalizeProjectUiState,
+    mergeProjectUiState, projectUiStatePayloadKey, shouldApplyProjectUiStatePayload, readProjectUiStatePayload,
+    syncLocalProjectUiState, applyProjectUiState, normalizedCoordinateValue, formattedCoordinateValue,
+    syncOverlayFontSizePreset, ensureShotQuadrantDefaults, usesCustomQuadrant, defaultTimingEventLabel,
+    timingEventKindLabel, timingEventPlacementText, ensureSectionToggle, renderCollapsibleInspectorSections,
+    createPopupBubbleId, normalizePopupAnchorMode, normalizePopupQuadrant, normalizePopupMotionPoint,
+    normalizePopupMotionPath, normalizePopupMotionMode, popupMotionUiModeFromValue, popupTemplateUsesShotSplitDuration,
+    popupShotDurationLimitMs, popupShotDefaultDurationMs, clampPopupDurationForShot, popupDefaultDurationMsForShot,
+    popupDurationLimitMsForBubble, normalizePopupBubble, normalizePopupTemplate, currentPopupTemplate,
+    popupTemplateTextForShot, popupBubbles, popupBubbleMotionPath, popupBubbleMotionUiMode,
+    popupMotionGeneratedOffsetsForBubbleId, popupMotionOffsetIsGenerated, setPopupMotionGeneratedOffsets, copyPopupMotionUiState,
+    prunePopupMotionUiState, popupTemplateMotionUiMode, popupMotionModeValueForUiMode, popupKeyframeEasing,
+    popupKeyframeRatio, scaledPopupMotionPathOffsets, popupBubbleMotionPointAtOffset, popupBubblePoint,
+    updatePopupBubbleMotionPoint, popupBubbleAutoSize, resolvedPopupBubbleSize, popupBubbleEffectiveTimeMs,
+    popupBubbleVisibleWindow, popupBubbleRenderPositionMs, popupBubbleIsVisibleAtPosition, popupBubbleSeekTimeMs,
+    defaultPopupShotId, popupBubbleShotOptions, popupBubbleShotLabel, popupBubbleResolvedText,
+    popupBubblePlacementSelectorStyle, popupBubbleRenderStyle, popupBubbleDisplayName, popupBubbleImageUrl,
+    popupBubbleSummaryText, isPopupBubbleExpanded, setPopupBubbleExpanded, popupEditorSectionDefaultExpanded,
+    isPopupEditorSectionExpanded, setPopupEditorSectionExpanded, renderPopupEditorSectionToggles, collapseMinimizableInspectorItems,
+    popupBubbleNavigatorElement, popupBubbleEditorCardElement, popupBubbleCardElement, revealPopupBubbleCard,
+    popupShotPenaltyCounts, popupShotHasPenaltySignal, popupShotHasScoringSignal, popupMotionDistancePx,
+    popupMotionFrameDurationMs, popupMotionSuggestedInBetweenCount, popupMotionAutoOffsets, popupMotionNearestFreeOffset,
+    popupMotionNextDetailOffsetMs, popupMotionSamplePointForOffset, adjacentPopupKeyframeOffset, popupTraceFrameSize,
+    popupTraceWaitForVideoFrame, popupTraceWaitForEvent, popupTraceSeekVideo, popupTraceLumaFrame,
+    popupTraceClampCenter, popupTracePatchMoments, popupTraceExtractPatch, popupTracePatchStrength,
+    popupTraceSelectPatch, popupTracePatchCorrelation, popupTraceBestMatch, popupTraceOffsets,
+    popupTraceSimplifyPoints, autoTracePopupBubbleMotion, renderPopupBubbleMotionGuide, buildPopupBubbleCard,
+    buildPopupMarkerRow, buildPopupFloatingEditor, renderPopupFloatingEditor, renderPopupAuthoringControls,
+    readPopupTemplatePayload, renderPopupTimeline, setPopupFilterMode, setPopupEditorVisible,
+    setPopupEditorCollapsed, openSelectedPopupEditor, toggleSelectedPopupEditor, renderMarkersWorkbench,
+    selectAdjacentPopupBubble, stepShotLinkedPopupBubble, renderPopupEditors, syncTimingEventLabelState,
+    alignToEdge, capturePointer, releasePointer, setActiveTool,
+    postFile, pickPath, pickPathForElement, resetLocalProjectView,
+    resetMediaElement, restoreVideoElementFrame, handleStageFullscreenChange, handleWindowVisibilityRestore,
+    primaryVideoStateSnapshot, logPrimaryVideoState, ensurePrimaryVideoAudio, renderWaveformNavigator,
+    primaryFrameDurationMs, browserShotPresentationLagFrames, shotDisplayTimeMs, currentShotIndex,
+    currentSettings, readNumberSetting, syncMergePreviewElements, syncSecondaryPreview,
+    clearSecondaryPreviewPlayError, reportSecondaryPreviewPlayError, scheduleSecondaryPreviewSync, selectShot,
+    seekPrimaryVideoToTimeMs, seekPrimaryVideoToShot, selectedShot, shotLabelForEvent,
+    formatTimingValue, toggleTimingRowEdit, restoreOriginalScore, renderTimingTable,
+    renderTimingTables, markersWorkbenchShown, popupEditingActive,
+    renderControls, renderStyleControls,
+    visibleTimingEventsByShot, textBiasForDirection, overlayBadgeContentText, overlayBadgeFontSizePx,
+    overlayBadgeMeasureContext, overlayBadgeFontSpec, measureOverlayBadgeContent, overlayAutoSizedBadgeContents,
+    overlayAutoBubbleSize, syncOverlayBubbleSizeControls, badgeElement, videoContentRect,
+    ensureEvenExportDimension, exportAspectRatioValue, normalizedExportDimension, computeExportCropBox,
+    exportTargetDimensions, fitAspectRect, previewFrameGeometry, previewFrameClientRect,
+    overlayDisplayScale, scaledOverlayPixelValue, positionOverlayContainer, pinCustomOverlayAnchor,
+    resolveNormalizedPointFromRect, placeOverlayBadge, cancelOverlayDragInteractions, beginMergePreviewDrag,
+    moveMergePreviewDrag, endMergePreviewDrag, overlayRenderPositionMs, popupOverlayPixelPoint,
+    render, renderViewportLayout, setWaveformMode, setWaveformExpanded,
+    setWaveformZoom, panWaveform, handleWaveformWheel, setWaveformAmplitude,
+    resetWaveformView, openHiddenFileInput, postFiles, buildExportPayload,
+    cancelPendingExportDrafts, flushPendingSettingsDefaults, applySettingsDefaults, applySettingsShotMLDefaults,
+    applyProjectUiStatePayload, resetProjectUiStateApplyState, sendKeepaliveJson, sendProjectUiStateKeepalive,
+    scheduleThresholdApply, applyThresholdNow, scheduleShotMLSettingsApply, scheduleProjectUiStateApply,
+    flushQueuedProjectUiStateApply, scheduleOverlayApply, wireEvents,
+  });
+  installMutableGlobals(browserGlobal, legacyGlobalState);
+  installMutableGlobals(browserGlobal, createMutableBindings({
+    api: [() => api, (value) => { api = value; }],
+    callApi: [() => callApi, (value) => { callApi = value; }],
+    postFile: [() => postFile, (value) => { postFile = value; }],
+    pickPath: [() => pickPath, (value) => { pickPath = value; }],
+    pickPathForElement: [() => pickPathForElement, (value) => { pickPathForElement = value; }],
+    openHiddenFileInput: [() => openHiddenFileInput, (value) => { openHiddenFileInput = value; }],
+    postFiles: [() => postFiles, (value) => { postFiles = value; }],
+    createNewProject: [() => createNewProject, (value) => { createNewProject = value; }],
+    useProjectFolder: [() => useProjectFolder, (value) => { useProjectFolder = value; }],
+    openPractiScoreDashboard: [() => openPractiScoreDashboard, (value) => { openPractiScoreDashboard = value; }],
+    applySettingsDefaults: [() => applySettingsDefaults, (value) => { applySettingsDefaults = value; }],
+    flushPendingSettingsDefaults: [() => flushPendingSettingsDefaults, (value) => { flushPendingSettingsDefaults = value; }],
+    sendKeepaliveJson: [() => sendKeepaliveJson, (value) => { sendKeepaliveJson = value; }],
+    sendProjectUiStateKeepalive: [() => sendProjectUiStateKeepalive, (value) => { sendProjectUiStateKeepalive = value; }],
+    renderTextBoxEditors: [() => renderTextBoxEditors, (value) => { renderTextBoxEditors = value; }],
+    setReviewTextBoxExpanded: [() => setReviewTextBoxExpanded, (value) => { setReviewTextBoxExpanded = value; }],
+    setPopupBubbles: [() => setPopupBubbles, (value) => { setPopupBubbles = value; }],
+    autoTracePopupBubbleMotion: [() => autoTracePopupBubbleMotion, (value) => { autoTracePopupBubbleMotion = value; }],
+    render: [() => render, (value) => { render = value; }],
+    refresh: [() => refresh, (value) => { refresh = value; }],
+  }));
+  browserGlobal.__splitshotBackbone = Object.freeze({ bus: appBus, store: appStore });
+  browserGlobal.__splitshotBootstrapMode = "module";
+}
+
+installLegacyGlobalCompat();
 applyLayoutState();
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
 wireGlobalActivityLogging();

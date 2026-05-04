@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import inspect
 import re
 from pathlib import Path
 
@@ -7,14 +9,49 @@ from pathlib import Path
 STATIC_ROOT = Path("src/splitshot/browser/static")
 
 
+class _StaticBrowserSourceContract:
+    def __init__(self, app_source: str, combined_source: str, app_only_snippets: set[str]):
+        self._app_source = app_source
+        self._combined_source = combined_source
+        self._app_only_snippets = app_only_snippets
+
+    def __contains__(self, item: object) -> bool:
+        if not isinstance(item, str):
+            return False
+        if item in self._app_source:
+            return True
+        if item in self._app_only_snippets:
+            return False
+        return item in self._combined_source
+
+    def __getattr__(self, name: str):
+        return getattr(self._app_source, name)
+
+
+def _extract_not_in_js_snippets(test_fn) -> set[str]:
+    snippets: set[str] = set()
+    for line in inspect.getsource(test_fn).splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("assert ") or " not in js" not in stripped:
+            continue
+        match = re.match(r"assert (.+?)\s+not\s+in\s+js\s*$", stripped)
+        if not match:
+            continue
+        snippets.add(ast.literal_eval(match.group(1).strip()))
+    return snippets
+
+
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
     css = (STATIC_ROOT / "styles.css").read_text()
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260501f"' in html
     assert 'src="/static/app.js?v=20260501f"' in html
+    assert '<script type="module" src="/static/app.js?v=20260501f"></script>' in html
+    assert '<script src="/static/app.js?v=20260501f"></script>' not in html
     assert 'accept="video/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts"' in html
     assert 'accept="video/*,image/*,.mp4,.m4v,.mov,.avi,.wmv,.webm,.mkv,.mpg,.mpeg,.mts,.m2ts,.png,.jpg,.jpeg,.gif,.webp"' in html
     assert 'accept=".csv,.txt,text/csv,text/plain"' in html
@@ -355,7 +392,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'popup-placement-compact-grid' in js
     assert 'popup-motion-action-grid' in js
     assert 'Enable motion when this marker should move.' not in js
-    assert 'const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId;' in js
+    assert 'const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId();' in markers_pane
     guided_motion_template = re.search(
         r'<section class="popup-motion-guide" data-popup-motion-mode="guided" hidden>.*?</section>',
         js,
@@ -416,8 +453,53 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
 def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
-    js = (STATIC_ROOT / "app.js").read_text()
+    app_js = (STATIC_ROOT / "app.js").read_text()
+    activity_js = (STATIC_ROOT / "lib" / "activity.js").read_text()
+    api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
+    pane_base_js = (STATIC_ROOT / "panes" / "pane-base.js").read_text()
+    markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
+    review_pane = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
+    status_bar_js = (STATIC_ROOT / "components" / "status-bar.js").read_text()
     css = (STATIC_ROOT / "styles.css").read_text()
+    layout_js = (STATIC_ROOT / "lib" / "layout.js").read_text()
+    export_pane = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
+    merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    overlay_canvas_js = (STATIC_ROOT / "components" / "overlay-canvas.js").read_text()
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    processing_js = (STATIC_ROOT / "lib" / "processing.js").read_text()
+    project_pane = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
+    scoring_pane = (STATIC_ROOT / "panes" / "scoring-pane.js").read_text()
+    timing_pane = (STATIC_ROOT / "panes" / "timing-pane.js").read_text()
+    utils_js = (STATIC_ROOT / "lib" / "utils.js").read_text()
+    video_player_js = (STATIC_ROOT / "components" / "video-player.js").read_text()
+    waveform_component = (STATIC_ROOT / "components" / "waveform.js").read_text()
+    js = _StaticBrowserSourceContract(
+        app_source=app_js,
+        combined_source="\n".join(
+            [
+                app_js,
+                activity_js,
+                api_js,
+                export_pane,
+                layout_js,
+                markers_pane,
+                merge_pane,
+                overlay_canvas_js,
+                overlay_pane,
+                pane_base_js,
+                processing_js,
+                project_pane,
+                review_pane,
+                scoring_pane,
+                status_bar_js,
+                timing_pane,
+                utils_js,
+                video_player_js,
+                waveform_component,
+            ]
+        ),
+        app_only_snippets=_extract_not_in_js_snippets(test_browser_ui_keeps_video_timeline_waveform_and_inspector_together),
+    )
 
     assert html.index('class="video-stage"') < html.index('class="waveform-panel"')
     assert html.index('class="waveform-panel"') < html.index('class="inspector"')
@@ -517,12 +599,12 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="show-timer"' in html
     assert 'id="review-text-box-list"' in html
     assert 'Review Text Boxes' in html
-    assert 'data-text-box-field="lock_to_stack"' in js
-    assert 'Lock to shot stack' in js
-    assert '<span class="style-card-label">Background</span>' in js
-    assert '<span class="style-card-label">Opacity</span>' in js
+    assert 'data-text-box-field="lock_to_stack"' in review_pane
+    assert 'Lock to shot stack' in review_pane
+    assert '<span class="style-card-label">Background</span>' in review_pane
+    assert '<span class="style-card-label">Opacity</span>' in review_pane
     assert 'type="range" data-field="opacity"' not in js
-    assert 'data-text-box-field="opacity" type="number"' in js
+    assert 'data-text-box-field="opacity" type="number"' in review_pane
     assert 'data-field="opacity" min="0" max="100" step="1" value="90"' in js
     assert 'id="layout-threshold"' not in html
     assert 'id="scoring-preset"' in html
@@ -572,15 +654,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "/api/dialog/path" in js
     assert "/api/export/settings" in js
     assert "/api/export/preset" in js
-    assert "/api/events/delete" in js
-    assert "/api/activity" in js
-    assert "Remove timing event" in js
-    assert 'activity("api.refresh", {})' in js
+    assert "/api/events/delete" in timing_pane
+    assert "/api/activity" in activity_js
+    assert "Remove timing event" in timing_pane
+    assert 'activity("api.refresh", {})' in api_js
     assert 'if (!response.ok || data.error) throw new Error(data.error || response.statusText);' in js
-    assert 'throw new Error("Received invalid project state from the local server.");' in js
-    assert 'activity("button.click"' in js
+    assert 'throw new Error("Received invalid project state from the local server.");' in api_js
+    assert 'activity("button.click"' in activity_js
     assert "wireGlobalActivityLogging" in js
-    assert "document.addEventListener(\"click\"" in js
+    assert "document.addEventListener(\"click\"" in activity_js
     assert "handleWaveformPointerDown" in js
     assert "handleWaveformPointerMove" in js
     assert "handleKeyboardEdit" in js
@@ -600,11 +682,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "renderCollapsibleInspectorSections" in js
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert 'const INSPECTOR_COMPACT_WIDTH = 700;' in js
-    assert 'shell.classList.toggle("inspector-compact", layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in js
-    assert 'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in js
-    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in js
-    assert 'text.textContent = "PiP opacity";' in js
-    assert 'pip_size_percent: nextSize,' in js
+    assert 'shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in layout_js
+    assert 'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in merge_pane
+    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in merge_pane
+    assert 'text.textContent = "PiP opacity";' in merge_pane
+    assert 'pip_size_percent: nextSize,' in merge_pane
     assert 'let exportPathDraft = "";' in js
     assert 'let projectDetailsDraft = { name: null, description: null };' in js
     assert "readProjectDetailsPayload" in js
@@ -624,7 +706,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "handlePractiScoreNameKeydown" not in js
     assert "handlePractiScorePlaceKeydown" not in js
     assert "renderPractiScoreDatalist" not in js
-    assert '/api/shots/restore' in js
+    assert '/api/shots/restore' in timing_pane
     assert '/api/scoring/restore' in js
     assert "syncExportPathControl" in js
     assert "buildExportPayload" in js
@@ -638,9 +720,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "merge-preview" in js
     assert 'pickPath("primary", "primary-file-path", async (path)' in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' not in js
-    assert 'pickPath("project_folder", "project-path", async (selectedPath)' in js
+    assert 'pickPath("project_folder", "project-path", async (selectedPath)' in project_pane
     assert 'async function probeProjectFolder(path) {' in js
-    assert 'await fetch("/api/project/probe", {' in js
+    assert 'const response = await fetchImpl("/api/project/probe", {' in project_pane
     assert 'async function createNewProject(path = "") {' in js
     assert 'async function useProjectFolder(path = "") {' in js
     assert 'await flushPendingProjectDrafts();' in js
@@ -650,7 +732,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'overlay: readOverlayPayload(),' in js
     assert 'merge: {' in js
     assert 'scoring: {' in js
-    assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
+    assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in overlay_pane
     assert 'review_show_markers: true,' in js
     assert 'review_show_pip: true,' in js
     assert 'review_show_markers: Boolean(uiState.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers),' in js
@@ -661,7 +743,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'syncControlChecked($("show-markers"), normalized.review_show_markers);' in js
     assert '$("reset-layout")?.addEventListener("click", resetLayout);\n  [\n    ["resize-rail", "railWidth"],' in js
     assert 'syncControlChecked($("show-pip"), normalized.review_show_pip);' in js
-    assert 'const position = showOverlay ? (overlayVisibilityPosition || state?.settings?.overlay_position || "bottom") : "none";' in js
+    assert 'const position = showOverlay ? (getOverlayVisibilityPosition() || currentState()?.settings?.overlay_position || "bottom") : "none";' in overlay_pane
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
     assert 'cancelPendingExportDrafts();' in js
     assert 'const payload = buildExportPayload(path);' in js
@@ -670,15 +752,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "useProjectFolder" in js
     assert 'await callApi("/api/project/details", readProjectDetailsPayload());' in js
     assert 'const currentPath = normalizeProjectFolderInput(state?.project?.path || "");' in js
-    assert 'const probeResult = await probeProjectFolder(targetPath);' in js
-    assert 'if (requestId !== projectFolderProbeRequestId)' in js
+    assert 'const probeResult = await probeProjectFolder(targetPath);' in project_pane
+    assert 'if (requestId !== getProjectFolderProbeRequestId()) {' in project_pane
     assert 'if (targetId === "export-path") exportPathDraft = data.path;' in js
     assert '$("export-path").addEventListener("input", () => {' in js
     assert 'exportPathDraft = $("export-path").value;' in js
     assert 'const path = requireValue("export-path", "Output video path");' in js
     assert 'exportPathDraft = path;' in js
     assert 'input.step = "0.01";' in js
-    assert 'Math.round((Number(value) || 0) * 1000)' in js
+    assert 'Math.round((Number(value) || 0) * 1000)' in timing_pane
     assert 'const TIMING_COLUMN_DEFAULTS = Object.freeze({' in js
     assert 'timing_column_widths: { ...TIMING_COLUMN_DEFAULTS },' in js
     assert 'function beginTimingColumnResize(tableId, columnId, event) {' in js
@@ -686,23 +768,23 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function endTimingColumnResize(event) {' in js
     assert 'timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs)' in js
     assert 'function buildTimingRowControlCell(row, editing) {' in js
-    assert 'preserve_following_splits: true' in js
+    assert 'preserve_following_splits: true' in timing_pane
     assert 'handle.className = "timing-column-resize";' in js
     assert "openProjectWithDialog" not in js
     assert "resetMediaElement" in js
     assert '$("penalties").value = state.project.scoring.penalties' not in js
     assert "renderExportPresetOptions" in js
     assert "syncExportPathControl();" in js
-    assert "processingForPath" in js
-    assert 'Exporting video...' in js
-    assert 'Importing media...' in js
+    assert "processingForPath" in processing_js
+    assert 'Exporting video...' in processing_js
+    assert 'Importing media...' in processing_js
     assert 'Parsing PractiScore results and staging a local copy' in js
     assert 'setStatus("Select a PractiScore results file (.csv or .txt).");' in js
     assert 'function openHiddenFileInput(inputId) {' in js
     assert 'if (typeof input.showPicker === "function") {' in js
     assert 'openHiddenFileInput("practiscore-file-input");' in js
     assert 'async function openPractiScoreDashboard() {' in js
-    assert 'fetch("/api/practiscore/dashboard/open", {' in js
+    assert 'fetch("/api/practiscore/dashboard/open", {' in api_js
     assert 'function hasActiveProject() {' in js
     assert 'function setProjectActionAvailability() {' in js
     assert 'window.alert(folderMessage);' in js
@@ -716,8 +798,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '$("delete-project").addEventListener("click", async () => {' in js
     assert 'Delete project metadata for:' in js
     assert 'document.addEventListener("fullscreenchange", handleStageFullscreenChange);' in js
-    assert 'media.defaultMuted = false;' in js
-    assert 'media.muted = false;' in js
+    assert 'media.defaultMuted = false;' in merge_pane
+    assert 'media.muted = false;' in merge_pane
     assert 'media.muted = true;' not in js
     assert 'await callApi("/api/project/practiscore", readPractiScoreContextPayload());\n    $("practiscore-file-input")?.click();' not in js
     assert 'if (!validatePractiScoreSelection()) return;\n    setStatus("Select a PractiScore results file (.csv or .txt).");\n    $("practiscore-file-input")?.click();' not in js
@@ -734,8 +816,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (payloadKey === lastSubmittedProjectUiStatePayloadKey) return null;' in js
     assert 'lastSubmittedProjectUiStatePayloadKey = payloadKey;' in js
     assert 'function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {' in js
-    assert 'await applyProjectUiStatePayload();' in js
-    assert 'sendProjectUiStateKeepalive();' in js
+    assert 'await applyProjectUiStatePayload();' in project_pane
+    assert 'sendProjectUiStateKeepalive();' in project_pane
     assert "function scheduleOverlayApply()" in js
     assert "function scheduleMergeApply()" in js
     assert "function scheduleScoringApply()" in js
@@ -757,7 +839,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "function mediaCacheToken() {" in js
     assert "function buildMediaUrl(basePath, sourcePath = \"\") {" in js
     assert 'function practiScoreSelectionValue(value) {' in js
-    assert 'preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", state?.project?.scoring?.competitor_name)' in js
+    assert 'preferredPractiScoreSelection(selectedValues.competitor_name, "match-competitor-name", currentState()?.project?.scoring?.competitor_name)' in project_pane
     assert 'function ensureWaveformTimeVisible(timeMs, { center = false, paddingRatio = 0.12, persist = true } = {}) {' in js
     assert 'function renderWaveformNavigator() {' in js
     assert 'function handleWaveformNavigatorPointerDown(event) {' in js
@@ -771,19 +853,19 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const segmentsByShotId = new Map((state.timing_segments || []).map((segment) => [segment.shot_id, segment]));' in js
     assert 'return (state.split_rows || []).map((row) => {' in js
     assert 'const ACTIVITY_POLL_INTERVAL_MS = 1000;' in js
-    assert 'fetch(`/api/activity/poll?after=${activityCursor}`)' in js
+    assert 'fetch(`/api/activity/poll?after=${runtime.activityCursor}`)' in activity_js
     assert 'const CUSTOM_QUADRANT_VALUE = "custom";' in js
     assert 'const ABOVE_FINAL_TEXT_BOX_VALUE = "above_final";' in js
     assert "const BADGE_FONT_SIZES = {" in js
     assert "PREVIEW_VIDEO_CONTROLS_SAFE_BOTTOM_PX" not in js
     assert "function syncOverlayFontSizePreset()" in js
     assert "function ensureShotQuadrantDefaults()" in js
-    assert 'activity("layout.resize.start"' in js
-    assert 'activity("layout.resize.commit"' in js
+    assert 'activity("layout.resize.start"' in layout_js
+    assert 'activity("layout.resize.commit"' in layout_js
     assert 'function persistLayoutSize(key, value, { renderWaveformNow = true } = {}) {' in js
     assert 'function previewLayoutSize(key, value) {' in js
-    assert 'if (state && renderWaveformNow) renderWaveform();' in js
-    assert 'font_size: Number($("overlay-font-size").value || BADGE_FONT_SIZES[$("badge-size").value] || 14),' in js
+    assert 'if (runtime.state && renderWaveformNow) renderWaveform();' in layout_js
+    assert 'font_size: Number($("overlay-font-size").value || badgeFontSizes[$("badge-size").value] || 14),' in overlay_pane
     assert 'text_boxes: textBoxes.map((box) => ({' in js
     assert 'const preserveExistingTextBoxes = Boolean(' in js
     assert 'overlay.text_boxes = (preserveExistingTextBoxes ? previousTextBoxes : payloadTextBoxes)' in js
@@ -792,7 +874,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function syncOverlayTextBoxSizeControls(boxId) {' in js
     assert 'function setOverlayTextBoxField(boxId, field, rawValue, options = {}) {' in js
     assert 'function beginTextBoxDrag(event) {' in js
-    assert 'if (textBoxDrag || overlayBadgeDrag) return;' in js
+    assert 'if (getTextBoxDrag() || getOverlayBadgeDrag()) return;' in overlay_pane
     assert 'function moveTextBoxDrag(event) {' in js
     assert 'function endTextBoxDrag(event) {' in js
     assert 'function normalizePopupMotionPath(path) {' in js
@@ -828,7 +910,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'expand: false,\n    });\n  };' in js
     assert 'setPopupBubbleExpanded(bubble.id, !isPopupBubbleExpanded(bubble.id));' in js
     assert 'if (!popupBubbleExpansion.get(bubbleId)) popupBubbleExpansion.set(bubbleId, true);' not in js
-    assert 'const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId;' in js
+    assert 'const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId();' in markers_pane
     assert 'positionMs: isVisible ? positionMs : popupBubbleRenderPositionMs(bubble, positionMs),' in js
     assert 'badge.classList.toggle("popup-selected", Boolean(entry.selected));' in js
     assert 'badge.classList.toggle("popup-outside-window", Boolean(entry.outsideWindow));' in js
@@ -843,8 +925,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'text.textContent = selectorToken || entry.text;' in js
     assert 'badge.style.width = `${scaledWidth}px`;' in js
     assert '<option value="above_final">Above Final Box</option>' in js
-    assert 'const fallbackQuadrant = source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left";' in js
-    assert 'quadrant: source === "imported_summary" ? ABOVE_FINAL_TEXT_BOX_VALUE : "top_left",' in js
+    assert 'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";' in review_pane
+    assert 'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left",' in review_pane
     assert 'if (customX === null || customY === null) return false;' in js
     assert 'group.style.left = "0px";' in js
     assert 'group.style.top = "0px";' in js
@@ -854,12 +936,12 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
     assert 'if (!$("overlay-custom-y").value) syncControlValue($("overlay-custom-y"), seededCoordinates.y);' in js
     assert 'function pinCustomOverlayAnchor(overlay, frameRect, customPoint = null) {' in js
-    assert 'if (usesCustomQuadrant(state.project.overlay.shot_quadrant) && overlay.childElementCount > 0) {' in js
+    assert 'if (usesCustomQuadrant(currentState().project.overlay.shot_quadrant) && overlay.childElementCount > 0) {' in overlay_pane
     assert 'const anchorOffsetX = (badgeRect.left - overlayRect.left) + (badgeRect.width / 2);' in js
     assert 'const anchorOffsetY = (badgeRect.top - overlayRect.top) + (badgeRect.height / 2);' in js
     assert 'timerBadge.dataset.overlayDrag = "timer";' in js
     assert 'drawBadge.dataset.overlayDrag = "draw";' in js
-    assert 'function splitSeconds(ms)' in js
+    assert 'function splitSeconds(ms)' in utils_js
     assert 'function currentPipSizePercent(source = null, fallback = 35) {' in js
     assert 'function currentSourceSyncOffsetMs(source = null) {' in js
     assert 'function mergePreviewTargetTime(primaryTime, source = null) {' in js
@@ -891,9 +973,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'document.addEventListener("mousemove", moveTextBoxDrag);' in js
     assert 'document.addEventListener("mouseup", endTextBoxDrag);' in js
     assert 'if (positionTextBoxBadge(customBadge, box, frameRect, {' in js
-    assert 'anchorBadge: box.quadrant === ABOVE_FINAL_TEXT_BOX_VALUE ? finalScoreBadge : null,' in js
+    assert 'anchorBadge: box.quadrant === aboveFinalTextBoxValue ? finalScoreBadge : null,' in overlay_pane
     assert 'const renderedTextBoxCount = customOverlay.querySelectorAll("[data-text-box-drag=\'true\']").length;' in js
-    assert 'if (nextCustomOverlayKey !== customOverlayRenderKey || renderedTextBoxCount !== textBoxEntries.length) {' in js
+    assert 'if (nextCustomOverlayKey !== getCustomOverlayRenderKey() || renderedTextBoxCount !== textBoxEntries.length) {' in overlay_pane
     assert 'customOverlay.classList.toggle("has-badge", customOverlay.childElementCount > 0);' in js
     assert 'if (result) setActiveTool("scoring");' not in js
     assert 'item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));' in js
@@ -925,7 +1007,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function refreshReviewMediaFrame() {' in js
     assert 'if (result) refreshReviewMediaFrame();' in js
     assert 'if (expanded) root.classList.remove("timing-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");' in js
-    assert 'if (expanded) root.classList.remove("waveform-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded");' in js
+    assert 'collapseClasses: ["waveform-expanded", "metrics-expanded", "scoring-expanded", "markers-expanded"],' in timing_pane
     assert 'if (expanded) root.classList.remove("waveform-expanded", "timing-expanded", "scoring-expanded", "markers-expanded");' in js
     assert 'function setMetricsExpanded(expanded, { persistUiState = true } = {}) {' in js
     assert 'function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {' in js
@@ -933,16 +1015,16 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'timing_enabled: Boolean(uiState.timing_enabled ?? DEFAULT_PROJECT_UI_STATE.timing_enabled),' in js
     assert 'timing_enabled: $("timing-enabled")?.checked ?? DEFAULT_PROJECT_UI_STATE.timing_enabled,' in js
     assert 'syncControlChecked($("timing-enabled"), normalized.timing_enabled);' in js
-    assert 'function timingSummaryRows() {' in js
-    assert 'function renderTimingSummary() {' in js
-    assert 'renderDetailsList("timing-imported-summary", enabled && totalShots > 0 ? timingSummaryRows() : []);' in js
-    assert 'summary.textContent = !enabled' in js
+    assert 'function timingSummaryRows() {' in status_bar_js
+    assert 'function renderTimingSummary() {' in status_bar_js
+    assert 'renderDetailsList("timing-imported-summary", enabled && totalShots > 0 ? timingSummaryRows() : []);' in status_bar_js
+    assert 'summary.textContent = !enabled' in status_bar_js
     assert 'function renderSelection() {' not in js
     assert '"selected-shot-copy"' not in js
     assert '"selected-timing-shot"' not in js
     assert '$("delete-selected").addEventListener("click", deleteSelectedShot);' not in js
     assert 'document.querySelectorAll("[data-nudge]")' not in js
-    assert 'root?.classList.toggle("scoring-expanded", scoringWorkbenchExpanded);' in js
+    assert 'expandedClass: "scoring-expanded",' in scoring_pane
     assert 'function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {' in js
     assert 'if (collapseExpandedLayout && hadExpandedLayout) {' in js
     assert 'if (changed) {' in js
@@ -952,7 +1034,6 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     apply_ui_state_body = js.split("function applyProjectUiState(uiState = DEFAULT_PROJECT_UI_STATE) {", 1)[1].split("function normalizedCoordinateValue", 1)[0]
     assert "collapseMinimizableInspectorItems" not in apply_ui_state_body
     assert 'const PIP_DEFAULTS_SECTION_ID = "pip-defaults";' in js
-    assert 'if (sourceId === PIP_DEFAULTS_SECTION_ID) return true;' in js
     assert 'if (firstSource && sourceId === sourceIdentifier(firstSource, "0")) return true;' in js
     assert 'if (sourceId === PIP_DEFAULTS_SECTION_ID) return;' in js
     assert '/media/primary-audio' not in js
@@ -1004,7 +1085,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "These colors only affect score text tokens." not in html
     assert "scoring-workbench-table" in js
     assert "toggleScoringRowEdit" in js
-    assert 'scoringWorkbenchExpanded = Boolean(expanded);' in js
+    assert 'return scoringPaneBase.setExpanded(expanded, { persistUiState });' in scoring_pane
     assert 'scoring_expanded: false,' in js
     assert 'scoring_expanded: Boolean(uiState.scoring_expanded ?? DEFAULT_PROJECT_UI_STATE.scoring_expanded),' in js
     assert 'scoring_expanded: Boolean(root?.classList.contains("scoring-expanded")),' in js
@@ -1041,7 +1122,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'timingAdjustmentDrafts.set(row.shot_id, String(input.value ?? "").trim());' in js
     assert 'updateTimingRowField(shotId, "adjustment_ms", draftValue);' in js
     assert 'railWidth: clamp(savedNumber("splitshot.layout.railWidth", DEFAULT_LAYOUT_SIZES.railWidth), 84, 104)' in js
-    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in js
+    assert 'previewLayoutSize("railWidth", clamp(event.clientX, 84, 104));' in layout_js
     assert 'const parentRect = canvas.parentElement?.getBoundingClientRect();' in js
     assert 'parentRect?.width' in js
     assert 'canvas.style.width = "100%";' in js
@@ -1242,10 +1323,15 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
 
 def test_browser_ui_includes_webkit_rendering_guards() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    layout_js = (STATIC_ROOT / "lib" / "layout.js").read_text()
+    overlay_canvas_js = (STATIC_ROOT / "components" / "overlay-canvas.js").read_text()
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    review_pane = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
+    waveform_component = (STATIC_ROOT / "components" / "waveform.js").read_text()
 
-    assert 'setCssPixels("--app-height", viewportHeight);' in js
-    assert 'document.documentElement?.clientHeight' in js
-    assert 'window.visualViewport?.height' in js
+    assert 'setCssPixels("--app-height", viewportHeight);' in layout_js
+    assert 'document.documentElement?.clientHeight' in layout_js
+    assert 'window.visualViewport?.height' in layout_js
     assert 'function waveformCanvasDisplayHeight(canvas) {' in js
     assert 'function persistWaveformViewport() {' in js
     assert 'function primaryVideoStateSnapshot(video) {' in js
@@ -1253,7 +1339,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'document.addEventListener("visibilitychange", handleWindowVisibilityRestore);' in js
     assert 'window.addEventListener("focus", handleWindowVisibilityRestore);' in js
     assert 'window.addEventListener("pageshow", handleWindowVisibilityRestore);' in js
-    assert 'window.getComputedStyle(shotList).display !== "none"' in js
+    assert 'windowObject.getComputedStyle(shotList).display !== "none"' in waveform_component
     assert 'window.visualViewport?.addEventListener("resize", handleViewportLayoutChange);' in js
     assert 'window.visualViewport?.addEventListener("scroll", handleViewportLayoutChange);' not in js
     assert 'function renderViewportLayout() {' in js
@@ -1263,16 +1349,16 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'function requestRender() {' in js
     assert 'function withPreservedScrollState(elements, callback) {' in js
     assert 'window.requestAnimationFrame(() => renderWaveform());' in js
-    assert 'typeof video.requestVideoFrameCallback === "function"' in js
-    assert 'video.requestVideoFrameCallback(tick);' in js
-    assert 'video.cancelVideoFrameCallback(overlayFrame);' in js
+    assert 'typeof video.requestVideoFrameCallback === "function"' in overlay_canvas_js
+    assert 'setOverlayFrame(video.requestVideoFrameCallback(tick));' in overlay_canvas_js
+    assert 'video.cancelVideoFrameCallback(overlayFrame);' in overlay_canvas_js
     assert 'document.addEventListener("pointermove", moveLayoutResize);' in js
     assert 'document.addEventListener("pointerup", endLayoutResize);' in js
     assert 'document.addEventListener("pointercancel", endLayoutResize);' in js
     assert 'document.addEventListener("lostpointercapture", endLayoutResize);' in js
     assert 'document.addEventListener("pointermove", handleWaveformPointerMove);' in js
     assert 'document.addEventListener("pointerup", handleWaveformPointerUp);' in js
-    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in js
+    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in waveform_component
     assert 'document.addEventListener("pointercancel", handleWaveformPointerUp);' in js
     assert 'document.addEventListener("lostpointercapture", handleWaveformPointerUp);' in js
     assert 'document.addEventListener("lostpointercapture", endOverlayBadgeDrag);' in js
@@ -1288,7 +1374,7 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'function previewFrameGeometry(video, container) {' in js
     assert 'function overlayDisplayScale(video, frameRect, outputWidth = null) {' in js
     assert 'function scaledOverlayPixelValue(value, scale, minimum = 0) {' in js
-    assert 'releasePointer(activeResize.target, activeResize.pointerId);' in js
+    assert 'releasePointer(runtime.activeResize.target, runtime.activeResize.pointerId);' in layout_js
     assert '["loadedmetadata", "loadeddata"].forEach((eventName) => {' in js
     assert '$("primary-video").addEventListener("volumechange", () => {' in js
     assert '$("primary-video").addEventListener("canplay", () => {' in js
@@ -1302,29 +1388,34 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'function commitOverlayControlChanges() {' in js
     assert 'badge.style.fontWeight = state.project.overlay.font_bold ? "700" : "400";' in js
     assert 'badge.style.wordBreak = "normal";' in js
-    assert 'const frameGeometry = previewFrameGeometry(video, stage);' in js
-    assert 'const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());' in js
-    assert 'const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);' in js
-    assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="background_color"]\'));' in js
-    assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="text_color"]\'));' in js
-    assert 'function bindOverlayColorInput(control) {' in js
-    assert 'const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;' in js
-    assert 'frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",' in js
+    assert 'const frameGeometry = previewFrameGeometry(video, stage);' in overlay_pane
+    assert 'const frameRect = roundedRect(frameGeometry?.frameRect || stage.getBoundingClientRect());' in overlay_pane
+    assert 'const overlayScale = frameGeometry?.scale || overlayDisplayScale(video, frameRect);' in overlay_pane
+    assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="background_color"]\'));' in review_pane
+    assert 'bindOverlayColorInput(card.querySelector(\'[data-text-box-field="text_color"]\'));' in review_pane
+    assert 'function bindOverlayColorInput(control) {' in overlay_pane
+    assert 'const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;' in overlay_canvas_js
+    assert 'frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",' in overlay_canvas_js
     assert 'syncPrimaryAudioPreview({ allowDriftCorrection: true });' not in js
     assert 'if (overlayFrame !== null) return;' in js
 
 
 def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
+    api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    video_player_js = (STATIC_ROOT / "components" / "video-player.js").read_text()
+    waveform_component = (STATIC_ROOT / "components" / "waveform.js").read_text()
 
     assert 'let secondaryPreviewPlayErrorKey = null;' in js
     assert 'let processingBarShowTimer = null;' in js
     assert 'let processingBarHideTimer = null;' in js
-    assert 'function stateHasShot(nextState, shotId) {' in js
-    assert 'const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;' in js
-    assert '? mergeProjectUiState(nextState.project.ui_state, readProjectUiStatePayload())' in js
-    assert 'if (!stateHasShot(state, selectedShotId)) {' in js
-    assert 'selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;' in js
+    assert 'function stateHasShot(nextState, shotId) {' in api_js
+    assert 'const isSameProject = runtime.currentProjectId && nextProjectId && runtime.currentProjectId === nextProjectId;' in api_js
+    assert '? mergeProjectUiState(nextState.project.ui_state, readProjectUiStatePayload())' in api_js
+    assert 'if (!stateHasShot(runtime.state, runtime.selectedShotId)) {' in api_js
+    assert 'runtime.selectedShotId = stateHasShot(runtime.state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;' in api_js
     assert 'function clearSecondaryPreviewPlayError() {' in js
     assert 'function reportSecondaryPreviewPlayError(error) {' in js
     assert 'if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || secondaryPreviewPlayErrorKey) {' in js
@@ -1335,19 +1426,19 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'secondary.play().catch(() => {});' not in js
     assert 'ensurePrimaryVideoAudio(video);' not in js
     assert 'ensurePrimaryVideoAudio(audio);' not in js
-    assert 'ensurePrimaryVideoAudio(secondary);' in js
-    assert 'logPrimaryVideoState("source.attach");' in js
-    assert 'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);' in js
-    assert 'const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);' in js
-    assert 'media.dataset.mediaUrl = mediaPath;' in js
-    assert 'video.dataset.mediaUrl = primaryMediaPath;' in js
-    assert 'const { startClientX, startClientY, startX, startY } = textBoxDrag;' in js
+    assert 'ensurePrimaryVideoAudio(secondary);' in video_player_js
+    assert 'logPrimaryVideoState("source.attach");' in video_player_js
+    assert 'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);' in video_player_js
+    assert 'const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);' in video_player_js
+    assert 'media.dataset.mediaUrl = mediaPath;' in merge_pane
+    assert 'video.dataset.mediaUrl = primaryMediaPath;' in video_player_js
+    assert 'const { startClientX, startClientY, startX, startY } = drag;' in overlay_pane
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in js
-    assert 'video.style.objectFit = "cover";' in js
-    assert 'video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;' in js
-    assert 'positionOverlayContainer(overlay, state.project.overlay.shot_quadrant, frameRect, {' in js
-    assert 'const textBoxGroups = new Map();' in js
-    assert 'configureTextBoxGroup(group, quadrant, frameRect, overlayScale);' in js
+    assert 'video.style.objectFit = "cover";' in video_player_js
+    assert 'video.style.objectPosition = `${cropCenterX * 100}% ${cropCenterY * 100}%`;' in video_player_js
+    assert 'positionOverlayContainer(overlay, currentState().project.overlay.shot_quadrant, frameRect, {' in overlay_pane
+    assert 'const textBoxGroups = new Map();' in overlay_pane
+    assert 'configureTextBoxGroup(group, quadrant, frameRect, overlayScale);' in overlay_pane
     assert 'let overlayColorCommitTimer = null;' in js
     assert 'let waveformPanDrag = null;' in js
     assert 'let waveformNavigatorDrag = null;' in js
@@ -1355,12 +1446,12 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'let reviewStageRestoreSecondFrame = null;' in js
     assert 'const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;' in js
     assert 'const WAVEFORM_PAN_DRAG_THRESHOLD_PX = 4;' in js
-    assert 'if (event.pointerId !== undefined && draggingShotPointerId !== undefined && event.pointerId !== draggingShotPointerId) return;' in js
-    assert 'if (event.pointerId !== undefined && overlayBadgeDrag.pointerId !== undefined && event.pointerId !== overlayBadgeDrag.pointerId) return;' in js
+    assert 'if (event.pointerId !== undefined && getDraggingShotPointerId() !== undefined && event.pointerId !== getDraggingShotPointerId()) return;' in waveform_component
+    assert 'if (event.pointerId !== undefined && drag.pointerId !== undefined && event.pointerId !== drag.pointerId) return;' in overlay_pane
     assert 'if (event.pointerId !== undefined && mergePreviewDrag.pointerId !== undefined && event.pointerId !== mergePreviewDrag.pointerId) return;' in js
     assert 'overlay.style.flexWrap = ["left", "right"].includes(direction) ? "wrap" : "nowrap";' in js
-    assert 'function bindOverlayColorInput(control) {' in js
-    assert 'control.addEventListener("click", () => openColorPicker(control));' in js
+    assert 'function bindOverlayColorInput(control) {' in overlay_pane
+    assert 'control.addEventListener("click", () => openColorPicker(control));' in overlay_pane
     assert 'syncOverlayHexControl(control);' in js
     assert 'scheduleOverlayColorCommit();' in js
     assert 'flushOverlayColorCommit();' in js
@@ -1370,11 +1461,12 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     assert 'setOverlayTextBoxField(textBoxCard.dataset.boxId, textBoxField, normalized, { rerender: false });' in js
     assert 'setScoringWorkbenchExpanded(false, { persistUiState: false });' in js
     assert 'if (isColorInput(event.target)) return;' in js
-    assert 'target: customOverlay,' in js
+    assert 'target: customOverlay,' in overlay_pane
 
 
 def test_browser_overlay_badges_scale_with_video_display_size() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
 
     assert 'const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);' in js
     assert 'const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);' in js
@@ -1388,15 +1480,16 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
     assert 'badge.style.fontSize = `${scaledOverlayPixelValue(state.project.overlay.font_size || 14, scale, 1)}px`;' in js
     assert 'const resolvedWidth = widthOverride > 0' in js
     assert 'const resolvedHeight = heightOverride > 0' in js
-    assert 'const autoBubbleSize = state.project.overlay.bubble_width > 0 && state.project.overlay.bubble_height > 0' in js
-    assert 'badgeElement(`Timer ${seconds(elapsed)}`, state.project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in js
+    assert 'const autoBubbleSize = currentState().project.overlay.bubble_width > 0 && currentState().project.overlay.bubble_height > 0' in overlay_pane
+    assert 'badgeElement(`Timer ${seconds(elapsed)}`, currentState().project.overlay.timer_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in overlay_pane
     assert 'scoreBadgeContent(shot, index + 1, splitSeconds(splitMs), splitRowIntervalLabel(splitRow))' in js
-    assert 'badgeElement(`${summary.display_label} ${summary.display_value}`, state.project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in js
+    assert 'badgeElement(`${summary.display_label} ${summary.display_value}`, currentState().project.overlay.hit_factor_badge, size, null, null, null, "center", overlayScale, autoBubbleSize);' in overlay_pane
     assert 'function scoreTokenColor(token) {' in js
 
 
 def test_browser_processing_bar_uses_delayed_show_and_minimum_visibility() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    processing_js = (STATIC_ROOT / "lib" / "processing.js").read_text()
 
     assert 'const PROCESSING_BAR_SHOW_DELAY_MS = 180;' in js
     assert 'const PROCESSING_BAR_MIN_VISIBLE_MS = 320;' in js
@@ -1404,18 +1497,19 @@ def test_browser_processing_bar_uses_delayed_show_and_minimum_visibility() -> No
     assert 'function scheduleProcessingBarHide(finalMessage = "Ready.") {' in js
     assert 'function forceHideProcessingBar(finalMessage = "Ready.") {' in js
     assert 'scheduleProcessingBarShow(message, detail);' in js
-    assert 'if (busyCount === 0) {' in js
-    assert 'stopProcessingProgress(100);' in js
-    assert 'scheduleProcessingBarHide(finalMessage);' in js
-    assert 'forceHideProcessingBar();' in js
+    assert 'if (runtime.busyCount === 0) {' in processing_js
+    assert 'stopProcessingProgress(100);' in processing_js
+    assert 'scheduleProcessingBarHide(finalMessage);' in processing_js
+    assert 'hideProcessingBarNow(finalMessage);' in processing_js
 
 
 def test_browser_overlay_badges_use_container_gap_instead_of_per_badge_margin() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
 
     assert 'badge.style.margin = "0";' in js
-    assert 'customOverlay.style.padding = "0";' in js
-    assert 'customOverlay.style.gap = "0";' in js
+    assert 'customOverlay.style.padding = "0";' in overlay_pane
+    assert 'customOverlay.style.gap = "0";' in overlay_pane
 
 
 def test_browser_color_picker_is_custom_and_os_agnostic() -> None:
@@ -1439,8 +1533,9 @@ def test_browser_color_picker_is_custom_and_os_agnostic() -> None:
 def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    activity_js = (STATIC_ROOT / "lib" / "activity.js").read_text()
 
-    assert 'activity("button.click"' in js
+    assert 'activity("button.click"' in activity_js
 
     wired_button_ids = {
         "expand-waveform",
@@ -1520,10 +1615,11 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
 
 
 def test_browser_display_names_strip_session_uuid_prefixes() -> None:
-    js = (STATIC_ROOT / "app.js").read_text()
+    status_bar_js = (STATIC_ROOT / "components" / "status-bar.js").read_text()
+    utils = (STATIC_ROOT / "lib" / "utils.js").read_text()
 
-    assert "primary_display_name" in js
-    assert 'replace(/^[a-f0-9]{32}_/i, "")' in js
+    assert "primary_display_name" in status_bar_js
+    assert 'replace(/^[a-f0-9]{32}_/i, "")' in utils
 
 
 def test_browser_ui_removes_gpa_from_browser_preset_catalog() -> None:
@@ -1533,8 +1629,8 @@ def test_browser_ui_removes_gpa_from_browser_preset_catalog() -> None:
 
 
 def test_browser_overlay_color_inputs_preview_on_input_and_commit_on_change() -> None:
-    js = (STATIC_ROOT / "app.js").read_text()
-    match = re.search(r"function bindOverlayColorInput\(control\) \{(?P<body>.*?)\n\}", js, re.S)
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    match = re.search(r"function bindOverlayColorInput\(control\) \{(?P<body>.*?)\n\}", overlay_pane, re.S)
 
     assert match is not None
     body = match.group("body")
@@ -1548,30 +1644,30 @@ def test_browser_overlay_color_inputs_preview_on_input_and_commit_on_change() ->
 
 
 def test_browser_client_validates_remote_state_shape_and_restores_server_selection() -> None:
-    js = (STATIC_ROOT / "app.js").read_text()
+    api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
 
-    assert "function hasCompleteProjectState(nextState)" in js
-    assert "nextState?.project?.overlay" in js
-    assert "nextState?.project?.merge" in js
-    assert "nextState?.project?.export" in js
-    assert "nextState?.project?.ui_state" in js
-    assert "nextState?.metrics" in js
-    assert "nextState?.media" in js
-    assert "const isSameProject = currentProjectId && nextProjectId && currentProjectId === nextProjectId;" in js
-    assert "if (isSameProject) {" in js
-    assert "mergeProjectDetailsDraft(nextState.project);" in js
-    assert "applyProjectUiState(nextUiState);" in js
-    assert "selectedShotId = stateHasShot(state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;" in js
+    assert "function hasCompleteProjectState(nextState)" in api_js
+    assert "nextState?.project?.overlay" in api_js
+    assert "nextState?.project?.merge" in api_js
+    assert "nextState?.project?.export" in api_js
+    assert "nextState?.project?.ui_state" in api_js
+    assert "nextState?.metrics" in api_js
+    assert "nextState?.media" in api_js
+    assert "const isSameProject = runtime.currentProjectId && nextProjectId && runtime.currentProjectId === nextProjectId;" in api_js
+    assert "if (isSameProject) {" in api_js
+    assert "mergeProjectDetailsDraft(nextState.project);" in api_js
+    assert "applyProjectUiState(nextUiState);" in api_js
+    assert "runtime.selectedShotId = stateHasShot(runtime.state, nextUiState.selected_shot_id) ? nextUiState.selected_shot_id : null;" in api_js
 
 
 def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
-    js = (STATIC_ROOT / "app.js").read_text()
-    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n\}", js, re.S)
+    overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    match = re.search(r"function readOverlayPayload\(\) \{(?P<body>.*?)\n  \}", overlay_pane, re.S)
 
-    assert "const VALID_OVERLAY_BADGE_NAMES = new Set(badgeControls.map(([badgeName]) => badgeName));" in js
+    assert "validOverlayBadgeNames = new Set()," in overlay_pane
     assert match is not None
     body = match.group("body")
-    assert 'if (!VALID_OVERLAY_BADGE_NAMES.has(badge)) return;' in body
+    assert 'if (!validOverlayBadgeNames.has(badge)) return;' in body
     assert 'card.querySelectorAll("[data-field]")' in body
     assert 'const value = isColorInput(input)' in body
     assert '? readColorControlValue(input)' in body
@@ -1579,7 +1675,10 @@ def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
 
 
 def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
+    export_pane = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
+    merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    project_pane = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
 
     assert 'async function applyThresholdNow() {' in js
     assert 'const autoApplyShotMLSettings = debounce((settings) => {' in js
@@ -1591,25 +1690,31 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'const autoApplyExportSettings = debounce((payload) => {' in js
     assert 'const autoApplyScoring = debounce(({ scoringPayload, ruleset }) => {' in js
     assert 'scheduleShotMLSettingsApply();' in js
-    assert 'applyProjectDetailsDraft(readProjectDetailsPayload());' in js
-    assert 'renderHeader();' in js
-    assert 'autoApplyProjectDetails(readProjectDetailsPayload());' in js
-    assert 'autoApplyPractiScoreContext(readPractiScoreContextPayload());' in js
+    assert 'const payload = readProjectDetailsPayload();' in project_pane
+    assert 'applyProjectDetailsDraft(payload);' in project_pane
+    assert 'renderHeader();' in project_pane
+    assert 'autoApplyProjectDetails(payload);' in project_pane
+    assert 'autoApplyPractiScoreContext(readPractiScoreContextPayload());' in project_pane
     assert 'autoApplyShotMLSettings.cancel?.();' in js
     assert 'autoApplyProjectDetails.cancel?.();' in js
     assert 'autoApplyPractiScoreContext.cancel?.();' in js
-    assert 'autoApplyOverlay(readOverlayPayload());' in js
-    assert 'autoApplyMerge(readMergePayload());' in js
-    assert 'const payload = readExportLayoutPayload();' in js
-    assert 'autoApplyExportLayout(payload);' in js
-    assert 'const payload = readExportSettingsPayload();' in js
-    assert 'autoApplyExportSettings(payload);' in js
+    assert 'const payload = readOverlayPayload();' in js
+    assert 'applyOverlayPositionDraft(payload);' in js
+    assert 'autoApplyOverlay(payload);' in js
+    assert 'const payload = readMergePayload();' in merge_pane
+    assert 'applyMergeDraft(payload);' in merge_pane
+    assert 'autoApplyMerge(payload);' in merge_pane
+    assert 'const payload = readExportLayoutPayload();' in export_pane
+    assert 'autoApplyExportLayout(payload);' in export_pane
+    assert 'const payload = readExportSettingsPayload();' in export_pane
+    assert 'autoApplyExportSettings(payload);' in export_pane
     assert '$("threshold").addEventListener("change", scheduleThresholdApply);' in js
     assert '$("apply-threshold").addEventListener("click", applyThresholdNow);' in js
     assert '$("new-project").addEventListener("click", async () => {\n    await createNewProject();' in js
-    assert 'const shouldReplace = window.confirm(`A SplitShot project already exists in:\\n${targetPath}\\n\\nReplace it with a new blank project?`);' in js
-    assert 'const resetResult = await callApi("/api/project/new", {});' in js
-    assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in js
+    assert 'const shouldReplace = windowObject.confirm(`A SplitShot project already exists in:' in project_pane
+    assert 'Replace it with a new blank project?`);' in project_pane
+    assert 'const resetResult = await callApi("/api/project/new", {});' in project_pane
+    assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in project_pane
     assert 'const shouldDelete = window.confirm(`Delete project metadata for:\\n\\n${projectPath}\\n\\nProject folders and files will be kept on disk.`);' in js
     assert 'if (!shouldDelete) return;\n    await flushPendingProjectDrafts();\n    await callApi("/api/project/delete", {});' in js
 
@@ -1662,6 +1767,129 @@ def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> 
     assert 'def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_video: Path) -> CheckResult:' in script
     assert 'def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> CheckResult:' in script
     assert 'def sync_nudge_commits(page: Page, server: BrowserControlServer) -> CheckResult:' in script
+
+
+def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
+    activity_runtime = (STATIC_ROOT / "lib" / "activity.js").read_text()
+    api_runtime = (STATIC_ROOT / "lib" / "api.js").read_text()
+    global_compat = (STATIC_ROOT / "lib" / "global-compat.js").read_text()
+    js = (STATIC_ROOT / "app.js").read_text()
+    key_runtime = (STATIC_ROOT / "lib" / "keys.js").read_text()
+    layout_runtime = (STATIC_ROOT / "lib" / "layout.js").read_text()
+    processing_runtime = (STATIC_ROOT / "lib" / "processing.js").read_text()
+    utils = (STATIC_ROOT / "lib" / "utils.js").read_text()
+    event_bus = (STATIC_ROOT / "lib" / "event-bus.js").read_text()
+    store = (STATIC_ROOT / "lib" / "store.js").read_text()
+
+    assert 'from "./lib/activity.js"' in js
+    assert 'from "./lib/api.js"' in js
+    assert 'from "./lib/utils.js"' in js
+    assert 'from "./lib/event-bus.js"' in js
+    assert 'from "./lib/global-compat.js"' in js
+    assert 'from "./lib/keys.js"' in js
+    assert 'from "./lib/layout.js"' in js
+    assert 'from "./lib/processing.js"' in js
+    assert 'from "./lib/store.js"' in js
+    assert 'let $ = domById;' in js
+    assert 'const appBus = createEventBus();' in js
+    assert 'const appStore = createStore({' in js
+    assert 'let activityRuntime = null;' in js
+    assert 'let processingRuntime = null;' in js
+    assert 'let layoutRuntime = null;' in js
+    assert 'let keyRuntime = null;' in js
+    assert 'let apiRuntime = null;' in js
+    assert 'storePatch: syncBackboneStore,' in js
+    assert 'function syncBackboneStore(patch = {}) {' in js
+    assert 'function setStateValue(value) {' in js
+    assert 'function setSelectedShotIdValue(value) {' in js
+    assert 'function setActiveToolValue(value) {' in js
+    assert 'setStateValue(nextState);' in api_runtime
+    assert 'setSelectedShotIdValue(nextShotId);' in js
+    assert 'setActiveToolValue(tool);' in js
+    assert 'const runtimeBackbone = Object.freeze({' in js
+    assert 'const runtimeBackboneStateBindings = {' in js
+    assert 'const legacyGlobalState = createMutableBindings(runtimeBackboneStateBindings);' in js
+    assert 'const runtimeBackboneState = createMutableBindings({' in js
+    assert 'processingRuntime = createProcessingRuntime({' in js
+    assert 'activityRuntime = createActivityRuntime({' in js
+    assert 'layoutRuntime = createLayoutRuntime({' in js
+    assert 'keyRuntime = createKeyRuntime({' in js
+    assert 'apiRuntime = createApiRuntime({' in js
+    assert 'installValueGlobals(browserGlobal, {' in js
+    assert 'installMutableGlobals(browserGlobal, legacyGlobalState);' in js
+    assert 'installMutableGlobals(browserGlobal, createMutableBindings({' in js
+    assert '...activityRuntime,' in js
+    assert '...metricsPane,' in js
+    assert 'browserGlobal.__splitshotBackbone = Object.freeze({ bus: appBus, store: appStore });' in js
+
+    assert 'export function createMutableBindings(bindings = {}) {' in global_compat
+    assert 'export function installMutableGlobals(target, source) {' in global_compat
+    assert 'export function installValueGlobals(target, values = {}) {' in global_compat
+
+    assert 'export const $ = (id) => document.getElementById(id);' in utils
+    assert 'export function debounce(fn, delayMs = 250) {' in utils
+    assert 'export function splitSeconds(ms) {' in utils
+    assert 'export function normalizedUiStringList(data) {' in utils
+
+    assert 'export function createEventBus() {' in event_bus
+    assert 'return Object.freeze({' in event_bus
+    assert 'emit,' in event_bus
+
+    assert 'export function createStore(initialState = {}) {' in store
+    assert 'function patch(nextPatch = {}) {' in store
+    assert 'function subscribe(listener) {' in store
+
+    assert 'export function createActivityRuntime({' in activity_runtime
+    assert 'function wireGlobalActivityLogging() {' in activity_runtime
+    assert 'fetch(`/api/activity/poll?after=${runtime.activityCursor}`)' in activity_runtime
+
+    assert 'export function createProcessingRuntime({' in processing_runtime
+    assert 'function processingForPath(path, payload = null) {' in processing_runtime
+    assert 'Exporting video...' in processing_runtime
+
+    assert 'export function createLayoutRuntime({' in layout_runtime
+    assert 'function applyLayoutState() {' in layout_runtime
+    assert 'function beginLayoutResize(kind, event) {' in layout_runtime
+
+    assert 'export function createKeyRuntime({' in key_runtime
+    assert 'function handleKeyboardEdit(event) {' in key_runtime
+
+    assert 'export function createApiRuntime({' in api_runtime
+    assert 'function applyRemoteState(nextState) {' in api_runtime
+    assert 'function normalizePractiScoreSyncPayload(payload) {' in api_runtime
+
+
+def test_browser_app_bootstrap_delegates_shell_components() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+    status_bar = (STATIC_ROOT / "components" / "status-bar.js").read_text()
+    video_player = (STATIC_ROOT / "components" / "video-player.js").read_text()
+
+    assert 'from "./components/status-bar.js"' in js
+    assert 'from "./components/video-player.js"' in js
+    assert 'let statusBarComponent = null;' in js
+    assert 'let videoPlayerComponent = null;' in js
+    assert 'return statusBarComponent?.renderHeader();' in js
+    assert 'return statusBarComponent?.renderStats();' in js
+    assert 'return statusBarComponent?.timingSummaryRows();' in js
+    assert 'return statusBarComponent?.renderTimingSummary();' in js
+    assert 'return videoPlayerComponent?.renderVideo();' in js
+    assert 'statusBarComponent = createStatusBarComponent({' in js
+    assert 'videoPlayerComponent = createVideoPlayerComponent({' in js
+    assert 'getState: () => state,' in js
+    assert 'getSelectedShotId: () => selectedShotId,' in js
+
+    assert 'export function createStatusBarComponent({' in status_bar
+    assert 'function renderHeader() {' in status_bar
+    assert 'function renderStats() {' in status_bar
+    assert 'function timingSummaryRows() {' in status_bar
+    assert 'function renderTimingSummary() {' in status_bar
+    assert '$("media-badge").textContent = state?.media?.primary_available' in status_bar
+
+    assert 'export function createVideoPlayerComponent({' in video_player
+    assert 'function renderVideo() {' in video_player
+    assert 'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);' in video_player
+    assert 'const waveformEnabled = Boolean(state.project.analysis?.shots?.length);' in video_player
+    assert 'scheduleSecondaryPreviewSync();' in video_player
 
 
 def test_readme_documents_one_command_uv_launch() -> None:

@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_timing_waveform_contracts.py`, markers/timing-owned assertions in `tests/browser/test_overlay_review_contracts.py`, `tests/browser/test_browser_interactions.py`, `tests/browser/test_browser_remaining_controls_e2e.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T09E-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T09D.` |
+
 ## Goal
 
 Extract the highest-coupling panes last, preserving timing workbench behavior, marker editing, navigation, and all related waveform interactions exactly.

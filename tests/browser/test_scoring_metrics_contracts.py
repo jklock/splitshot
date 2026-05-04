@@ -149,3 +149,41 @@ def test_static_metrics_pane_and_exports_share_current_row_model() -> None:
     assert '"Split Timeline"' in js
     assert '"Stage Segments"' in js
     assert '"Run Comparison Overlay"' in js
+
+
+def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None:
+    app_js = (STATIC_ROOT / "app.js").read_text()
+    scoring_js = (STATIC_ROOT / "panes" / "scoring-pane.js").read_text()
+    pane_base_js = (STATIC_ROOT / "panes" / "pane-base.js").read_text()
+
+    assert 'import { createScoringPane } from "./panes/scoring-pane.js";' in app_js
+    assert "scoringPane = createScoringPane({" in app_js
+    assert "function setScoringWorkbenchExpanded(expanded, { persistUiState = true } = {}) {" in app_js
+    assert "return scoringPane?.setScoringWorkbenchExpanded(expanded, { persistUiState }) ?? Boolean(expanded);" in app_js
+    assert 'function renderScoringTable(tableId = "scoring-table") {' in app_js
+    assert "return scoringPane?.renderScoringTable(tableId);" in app_js
+    assert "function renderScoringTables() {" in app_js
+    assert "return scoringPane?.renderScoringTables();" in app_js
+    assert "function readScoringPayload() {" in app_js
+    assert "return scoringPane?.readScoringPayload()" in app_js
+    assert "function toggleScoringRowEdit(" not in app_js
+    assert "function applyShotScoringUpdate(" not in app_js
+    assert "function buildScoringPenaltyEditor(" not in app_js
+
+    assert "export function createScoringPane({" in scoring_js
+    assert "const scoringPaneBase = createPaneBase({" in scoring_js
+    assert 'expandedClass: "scoring-expanded"' in scoring_js
+    assert 'sectionId: "scoring-workbench"' in scoring_js
+    assert "function toggleScoringRowEdit(shotId) {" in scoring_js
+    assert "function applyShotScoringUpdate(shotId, scope) {" in scoring_js
+    assert "function buildScoringPenaltyEditor(segment, rowScope, penaltyFields) {" in scoring_js
+    assert "function renderPractiScoreSummaries() {" in scoring_js
+    assert "function readScoringPayload() {" in scoring_js
+    assert "async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $(\"scoring-preset\")?.value || \"\") {" in scoring_js
+    assert "function scheduleScoringApply() {" in scoring_js
+
+    assert "export function createPaneBase({" in pane_base_js
+    assert "collapseClasses = []" in pane_base_js
+    assert 'activityName = "pane.expand"' in pane_base_js
+    assert "setExpandedState = () => {}" in pane_base_js
+    assert "scoring" not in pane_base_js.lower()

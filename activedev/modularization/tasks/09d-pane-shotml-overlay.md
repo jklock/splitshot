@@ -14,6 +14,16 @@
 | owned-tests-docs | overlay-owned assertions inside `tests/browser/test_overlay_review_contracts.py`, `tests/browser/test_timing_waveform_contracts.py`, `tests/browser/test_browser_interactions.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T09D-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T09C.` |
+
 ## Goal
 
 Extract the ShotML and overlay panes after the review-side contracts are stable, preserving all current overlay, threshold, proposal, and confidence-review behavior.

@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_timing_waveform_contracts.py`, `tests/browser/test_overlay_review_contracts.py`, `tests/browser/test_browser_interactions.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T07-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T06.` |
+
 ## Goal
 
 Extract the most interaction-heavy shared components before pane extraction begins, while preserving waveform, overlay, and review-adjacent behavior exactly.

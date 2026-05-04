@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_browser_static_ui.py` and any narrow tests needed for bootstrap-safe extraction |
 | proof-file | `activedev/modularization/proof/PROOF-T04-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting accepted completion of T03.` |
+
 ## Goal
 
 Extract the zero-dependency backbone modules that every later pane and component will rely on.

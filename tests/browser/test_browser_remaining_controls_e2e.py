@@ -142,6 +142,32 @@ def _popup_state(page, popup_id: str) -> dict | None:
     )
 
 
+def test_markers_pane_modularization_wrappers_are_source_visible() -> None:
+    static_root = Path(__file__).resolve().parents[2] / "src/splitshot/browser/static"
+    app_js = (static_root / "app.js").read_text(encoding="utf-8")
+    markers_pane_js = (static_root / "panes/markers-pane.js").read_text(encoding="utf-8")
+
+    assert 'import { createMarkersPane } from "./panes/markers-pane.js";' in app_js
+    assert "markersPane = createMarkersPane({" in app_js
+    assert "function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {" in app_js
+    assert "return markersPane?.setPopupBubbles(bubbles, { commit, rerender });" in app_js
+    assert "function importShotPopups() {" in app_js
+    assert "return markersPane?.importShotPopups();" in app_js
+    assert "function beginPopupBubbleDrag(event) {" in app_js
+    assert "return markersPane?.beginPopupBubbleDrag(event);" in app_js
+    assert "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs) {" in app_js
+    assert "return markersPane?.renderPopupOverlay(popupOverlay, frameRect, overlayScale, size, positionMs);" in app_js
+    assert "function setMarkersExpanded(expanded, { persistUiState = true } = {}) {" in app_js
+    assert "return markersPane?.setMarkersExpanded(expanded, { persistUiState });" in app_js
+
+    assert "export function createMarkersPane({" in markers_pane_js
+    assert "function setPopupBubbles(bubbles, { commit = true, rerender = true } = {}) {" in markers_pane_js
+    assert "function importShotPopups() {" in markers_pane_js
+    assert "function beginPopupBubbleDrag(event) {" in markers_pane_js
+    assert "function renderPopupOverlay(popupOverlay, frameRect, overlayScale, _size, positionMs) {" in markers_pane_js
+    assert "function setMarkersExpanded(expanded, { persistUiState = true } = {}) {" in markers_pane_js
+
+
 def test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="waveform-shell-remaining-ui"))
     server = BrowserControlServer(port=0)

@@ -29,6 +29,23 @@ _STILL_IMAGE_CODEC_NAMES = {
     "avif",
 }
 
+_STILL_IMAGE_SUFFIXES = {
+    ".apng",
+    ".avif",
+    ".bmp",
+    ".gif",
+    ".heic",
+    ".heif",
+    ".jpeg",
+    ".jpg",
+    ".png",
+    ".qoi",
+    ".svg",
+    ".tif",
+    ".tiff",
+    ".webp",
+}
+
 
 def _parse_fraction(value: str | None, fallback: float) -> float:
     if not value or value in {"0/0", "N/A"}:
@@ -62,9 +79,10 @@ def _video_stream_looks_like_still_image(video_stream: dict[str, object], format
 
 def probe_video(path: str | Path) -> VideoAsset:
     input_path = Path(path)
-    image = QImage(str(input_path))
-    if not image.isNull():
-        return _still_image_asset(input_path, int(image.width()), int(image.height()))
+    if input_path.suffix.lower() in _STILL_IMAGE_SUFFIXES:
+        image = QImage(str(input_path))
+        if not image.isNull():
+            return _still_image_asset(input_path, int(image.width()), int(image.height()))
 
     metadata = run_ffprobe_json(input_path)
     streams = metadata.get("streams", [])
