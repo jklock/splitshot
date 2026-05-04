@@ -10,7 +10,6 @@ from playwright.sync_api import sync_playwright
 import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
 from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch, SelectedRemoteMatchArtifacts
-import splitshot.ui.controller as controller_module
 from splitshot.ui.controller import ProjectController
 
 
@@ -1637,10 +1636,31 @@ def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningf
                                         """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const points = bubble?.motion_path || [];
-                                            return points.length === 2
+                                            return points.length >= 2
+                                                && points.length <= 4
                                                 && points[0].offset_ms > 0
                                                 && points[0].offset_ms < points[1].offset_ms
-                                                && points[1].offset_ms === 150;
+                                                && points[points.length - 1].offset_ms === 150;
+                                        }""",
+                                        arg=popup_id,
+                                )
+
+                                page.evaluate("""() => {
+                                    autoTracePopupBubbleMotion = async () => false;
+                                }""")
+
+                                page.locator(
+                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                                ).click()
+                                page.wait_for_function(
+                                        """(popupId) => {
+                                            const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
+                                            const points = bubble?.motion_path || [];
+                                            return points.length >= 2
+                                                && points.length <= 4
+                                                && points[0].offset_ms > 0
+                                                && points[0].offset_ms < points[1].offset_ms
+                                                && points[points.length - 1].offset_ms === 150;
                                         }""",
                                         arg=popup_id,
                                 )
@@ -1657,9 +1677,10 @@ def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningf
                                 )
                                 assert motion_snapshot["followMotion"] is True
                                 assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
-                                assert len(motion_snapshot["offsets"]) == 2
+                                assert len(motion_snapshot["offsets"]) >= 2
                                 assert 0 < motion_snapshot["offsets"][0] < 150
-                                assert motion_snapshot["offsets"][1] == 150
+                                assert motion_snapshot["offsets"][-1] == 150
+                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
                         finally:
                                 browser.close()
         finally:

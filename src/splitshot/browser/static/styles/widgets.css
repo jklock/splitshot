@@ -1,0 +1,383 @@
+.review-visibility-manager {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.review-visibility-option {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  min-height: 40px;
+  padding: 0.4rem 0.55rem;
+}
+
+@media (max-width: 1180px) {
+  .cockpit-shell {
+    grid-template-columns: 84px var(--resize-handle-size) minmax(0, 1fr);
+  }
+
+  .rail-logo {
+    max-height: 68px;
+    max-width: 68px;
+  }
+
+  .review-grid {
+    grid-template-columns: minmax(0, 1fr) var(--resize-handle-size) 380px;
+  }
+
+  .inspector {
+    width: 380px;
+  }
+
+}
+
+@media (max-width: 900px) {
+  html,
+  body {
+    height: auto;
+    overflow: auto;
+  }
+
+  .cockpit-shell {
+    grid-template-columns: var(--rail-width) var(--resize-handle-size) minmax(0, 1fr);
+    height: auto;
+    min-height: var(--app-height, 100vh);
+  }
+
+  .resize-handle {
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .tool-rail {
+    height: auto;
+    min-height: auto;
+  }
+
+  .tool-nav {
+    grid-auto-flow: unset;
+    grid-auto-columns: unset;
+    grid-auto-rows: 56px;
+    grid-template-columns: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .tool-item {
+    min-width: 0;
+  }
+
+  .cockpit {
+    height: auto;
+    min-height: var(--app-height, 100vh);
+    overflow: visible;
+  }
+
+  .processing-bar {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    min-height: 48px;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .processing-copy {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .review-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+    overflow: visible;
+  }
+
+  .review-stack {
+    grid-template-rows: auto auto auto;
+    height: auto;
+    overflow: visible;
+  }
+
+  .button-grid,
+  .button-grid.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .threshold-control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .timing-event-editor,
+  .timing-event-row {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-media-card,
+  .merge-source-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .merge-media-card-header {
+    grid-template-columns: 1fr;
+  }
+
+  .style-card,
+  .custom-box-style-card {
+    grid-template-columns: 1fr;
+  }
+
+  .popup-style-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .opacity-control-pair {
+    margin-left: 0;
+  }
+
+  .score-color-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .markers-workbench-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #timing-table,
+  .timing-workbench-table {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .timing-column-resize {
+    display: none;
+  }
+
+  .video-stage,
+  .video-stage video {
+    min-height: 280px;
+    max-height: 56vh;
+  }
+
+  .waveform-panel {
+    min-height: 220px;
+  }
+
+  .waveform-panel canvas {
+    min-height: 160px;
+  }
+}
+
+.cockpit.waveform-expanded .review-grid,
+.cockpit.timing-expanded .review-grid,
+.cockpit.metrics-expanded .review-grid,
+.cockpit.scoring-expanded .review-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .inspector,
+.cockpit.timing-expanded .inspector,
+.cockpit.metrics-expanded .inspector,
+.cockpit.scoring-expanded .inspector,
+.cockpit.waveform-expanded .resize-handle-sidebar,
+.cockpit.timing-expanded .resize-handle-sidebar,
+.cockpit.metrics-expanded .resize-handle-sidebar,
+.cockpit.scoring-expanded .resize-handle-sidebar {
+  display: none;
+}
+
+.cockpit.waveform-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.waveform-expanded .video-stage,
+.cockpit.waveform-expanded .resize-handle-waveform {
+  display: none;
+}
+
+.cockpit.waveform-expanded .video-stage,
+.cockpit.waveform-expanded .waveform-panel {
+  min-height: 0;
+}
+
+.cockpit.waveform-expanded .waveform-panel {
+  grid-template-rows: auto minmax(0, 2fr) auto auto minmax(0, 1fr);
+  height: 100%;
+}
+
+.cockpit.waveform-expanded .waveform-shot-list {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  max-height: none;
+  min-height: 0;
+  padding: 0.6rem;
+}
+
+.cockpit.waveform-expanded .waveform-shot-list button {
+  border: 1px solid #25354c;
+  min-height: 88px;
+}
+
+.cockpit.waveform-expanded .waveform-shot-card-meta {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.cockpit.timing-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.timing-expanded .video-stage,
+.cockpit.timing-expanded .waveform-panel,
+.cockpit.timing-expanded .resize-handle-waveform,
+.cockpit.timing-expanded .markers-workbench {
+  display: none;
+}
+
+.cockpit.timing-expanded .video-stage,
+.cockpit.timing-expanded .waveform-panel,
+.cockpit.timing-expanded .timing-workbench {
+  min-height: 0;
+}
+
+.cockpit.timing-expanded .timing-workbench {
+  display: grid;
+  height: 100%;
+}
+
+.cockpit.metrics-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.metrics-expanded .video-stage,
+.cockpit.metrics-expanded .waveform-panel,
+.cockpit.metrics-expanded .resize-handle-waveform,
+.cockpit.metrics-expanded .markers-workbench {
+  display: none;
+}
+
+.cockpit.metrics-expanded .metrics-workbench {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.cockpit.scoring-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.cockpit.scoring-expanded .video-stage,
+.cockpit.scoring-expanded .waveform-panel,
+.cockpit.scoring-expanded .resize-handle-waveform,
+.cockpit.scoring-expanded .markers-workbench {
+  display: none;
+}
+
+.cockpit.scoring-expanded .scoring-workbench {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.cockpit.markers-expanded .review-grid {
+  grid-template-columns: minmax(0, 1fr) var(--resize-handle-size) var(--inspector-width);
+}
+
+.cockpit.markers-expanded .review-stack {
+  grid-template-rows: minmax(0, 1fr) var(--resize-handle-size) minmax(112px, var(--markers-workbench-height));
+}
+
+.cockpit.markers-expanded .waveform-panel {
+  display: none;
+}
+
+.cockpit.markers-expanded .video-stage,
+.cockpit.markers-expanded .markers-workbench {
+  min-height: 0;
+}
+
+.cockpit.markers-expanded .video-stage {
+  min-height: 480px;
+}
+
+.cockpit.markers-expanded .markers-workbench {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.cockpit.markers-expanded .markers-workbench-body {
+  padding: 0.45rem 0.5rem 0.5rem;
+}
+
+.cockpit.markers-expanded .inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
+  grid-template-rows: max-content max-content auto minmax(0, 1fr);
+}
+
+.cockpit.markers-expanded .tool-pane[data-tool-pane="markers"] > .popup-list-section.popup-list-section-unified,
+.cockpit.markers-expanded .tool-pane[data-tool-pane="markers"] > .markers-compact-toolbar {
+  display: none;
+}
+
+.cockpit.markers-expanded #markers-workbench-list {
+  align-content: start;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  padding: 0.55rem;
+}
+
+.cockpit.markers-expanded #markers-workbench-list .popup-marker-row {
+  min-height: 84px;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor {
+  padding: 0 0.55rem 0.55rem;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor > .popup-bubble-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  gap: 0.65rem;
+  padding: 0;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor > .popup-bubble-card > .text-box-card-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor > .popup-bubble-card > .text-box-card-body {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .control-grid {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-style-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-editor-section {
+  background: transparent;
+  border: 0;
+  gap: 0.65rem;
+  padding: 0;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-editor-section + .popup-editor-section {
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
+.cockpit.markers-expanded #markers-workbench-editor .popup-editor-section > .section-header {
+  padding: 0;
+}
+
+.cockpit.scoring-expanded .video-stage,
+.cockpit.scoring-expanded .waveform-panel,
+.cockpit.scoring-expanded .scoring-workbench {
+  min-height: 0;
+}

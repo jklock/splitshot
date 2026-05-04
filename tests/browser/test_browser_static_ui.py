@@ -41,6 +41,16 @@ def _extract_not_in_js_snippets(test_fn) -> set[str]:
     return snippets
 
 
+def _read_split_css() -> str:
+    css_dir = STATIC_ROOT / "styles"
+    parts = []
+    for name in ["theme.css", "layout.css", "components.css", "panes.css", "widgets.css"]:
+        path = css_dir / name
+        if path.exists():
+            parts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 def _read_shell_runtime_source() -> str:
     return (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
 
@@ -53,7 +63,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
     markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
-    css = (STATIC_ROOT / "styles.css").read_text()
+    css = _read_split_css()
 
     assert 'class="app-shell cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260501f"' in html
@@ -469,7 +479,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
     review_pane = (STATIC_ROOT / "panes" / "review-pane.js").read_text()
     status_bar_js = (STATIC_ROOT / "components" / "status-bar.js").read_text()
-    css = (STATIC_ROOT / "styles.css").read_text()
+    css = _read_split_css()
     layout_js = (STATIC_ROOT / "lib" / "layout.js").read_text()
     export_pane = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
     merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
@@ -769,7 +779,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '$("export-path").addEventListener("input", () => {' in js
     assert 'setExportPathDraft($("export-path").value);' in js
     assert 'const path = requireValue("export-path", "Output video path");' in js
-    assert 'exportPathDraft = path;' in js
+    assert 'setExportPathDraft(path);' in js
     assert 'input.step = "0.01";' in js
     assert 'Math.round((Number(value) || 0) * 1000)' in timing_pane
     assert 'const TIMING_COLUMN_DEFAULTS = Object.freeze({' in js
@@ -1159,7 +1169,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
 
 
 def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
-    css = (STATIC_ROOT / "styles.css").read_text()
+    css = _read_split_css()
 
     assert "border-radius: 0;" in css
     assert "border-radius: 8px" not in css
@@ -1524,7 +1534,7 @@ def test_browser_overlay_badges_use_container_gap_instead_of_per_badge_margin() 
 
 
 def test_browser_color_picker_is_custom_and_os_agnostic() -> None:
-    css = (STATIC_ROOT / "styles.css").read_text()
+    css = _read_split_css()
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
 

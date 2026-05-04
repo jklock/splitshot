@@ -1,0 +1,248 @@
+:root {
+  --bg: #050607;
+  --rail: #111315;
+  --surface: #151719;
+  --surface-2: #202326;
+  --surface-3: #292d31;
+  --line: #30353b;
+  --line-strong: #464d56;
+  --text: #f4f5f6;
+  --muted: #a4aab2;
+  --quiet: #717982;
+  --accent: #ff7b22;
+  --green: #39d06f;
+  --red: #f05252;
+  --blue-video: #101a2a;
+  --rail-width: 84px;
+  --rail-brand-height: 84px;
+  --rail-item-height: 56px;
+  --topbar-height: 38px;
+  --inspector-width: 440px;
+  --resize-handle-size: 4px;
+  --waveform-height: 206px;
+  --app-height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+.resize-handle,
+.overlay-badge,
+canvas {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+img {
+  max-width: 100%;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  letter-spacing: 0;
+}
+
+button,
+input,
+select {
+  accent-color: var(--accent);
+  background: #0e1012;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  min-height: 30px;
+  padding: 0.34rem 0.55rem;
+}
+
+button {
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0;
+  touch-action: manipulation;
+  text-transform: none;
+}
+
+button:hover,
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+input,
+select {
+  width: 100%;
+}
+
+input[type="number"] {
+  color-scheme: dark;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: auto;
+  appearance: auto;
+  filter: invert(1) brightness(1.3);
+  margin: 0;
+  opacity: 1;
+}
+
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 3px),
+    calc(100% - 9px) calc(50% - 3px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px, 5px 5px;
+  padding-right: 1.6rem;
+}
+
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: #0e1012;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  cursor: pointer;
+  display: inline-block;
+  flex: 0 0 auto;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
+  vertical-align: middle;
+  width: 16px;
+}
+
+input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 3px #0e1012;
+}
+
+input[type="checkbox"]:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  min-height: 18px;
+  padding: 0;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  background: #202326;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  height: 6px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--accent);
+  border: 1px solid #111;
+  border-radius: 0;
+  height: 16px;
+  margin-top: -6px;
+  width: 14px;
+}
+
+input[type="range"]::-moz-range-track {
+  background: #202326;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  height: 6px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  background: var(--accent);
+  border: 1px solid #111;
+  border-radius: 0;
+  height: 16px;
+  width: 14px;
+}
+
+textarea {
+  background: #0e1012;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  min-height: 76px;
+  padding: 0.45rem 0.55rem;
+  resize: vertical;
+  width: 100%;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  background: #0b0d10;
+  border-color: #23272c;
+  color: var(--quiet);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+#project-description {
+  min-height: 118px;
+}
+
+label {
+  color: var(--muted);
+  display: grid;
+  font-size: 0.76rem;
+  font-weight: 600;
+  gap: 0.28rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.12rem;
+  line-height: 1.1;
+  text-transform: none;
+}
+
+h2 {
+  font-size: 0.96rem;
+  line-height: 1.15;
+}
+
+h3 {
+  font-size: 0.84rem;
+  line-height: 1;
+  text-transform: none;
+}
+
