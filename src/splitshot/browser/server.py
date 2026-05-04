@@ -33,7 +33,6 @@ from splitshot.domain.models import (
 from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
 from splitshot.persistence.projects import (
-    PROJECT_FILENAME,
     missing_required_project_dirs,
     normalize_project_path,
     resolve_project_path,
@@ -299,7 +298,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
     try:
         import tkinter as tk
         from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         return None
 
     initial_dir = str(

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 from playwright.sync_api import sync_playwright
 
 import splitshot.ui.controller as controller_module
