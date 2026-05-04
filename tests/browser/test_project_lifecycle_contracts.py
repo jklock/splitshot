@@ -14,6 +14,7 @@ from splitshot.ui.controller import ProjectController
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 STATIC_ROOT = REPO_ROOT / "src" / "splitshot" / "browser" / "static"
+PROJECT_PANE_JS = STATIC_ROOT / "panes" / "project-pane.js"
 
 
 def _post_json(url: str, payload: dict) -> dict:
@@ -65,7 +66,10 @@ def _changed_place_idpa_results(tmp_path: Path) -> Path:
 
 def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths() -> None:
     js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    project_pane_js = PROJECT_PANE_JS.read_text(encoding="utf-8")
 
+    assert 'import { createProjectPane } from "./panes/project-pane.js";' in js
+    assert "projectPane = createProjectPane({" in js
     assert "let projectDetailsDraft = { name: null, description: null };" in js
     assert "function mergeProjectDetailsDraft(project) {" in js
     assert "let projectFolderProbeRequestId = 0;" in js
@@ -80,7 +84,19 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert 'window.alert(folderMessage);' in js
     assert 'if (apiPath === "/api/import/primary") {\n    await flushPendingProjectDrafts();' in js
     assert '$("primary-file-input").addEventListener("change", async (event) => {' in js
-    assert 'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());\n      event.target.value = "";\n      return;\n    }\n    await flushPendingProjectDrafts();' in js
+    assert (
+        'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());\n      event.target.value = "";\n      return;\n    }\n    const selectedFile = event.target.files?.[0] || null;\n    if (!selectedFile) {\n      event.target.value = "";\n      return;\n    }\n    await flushPendingProjectDrafts();' in js
+        or 'if (!hasActiveProject()) {\n      setStatus(gatedProjectActionMessage());\n      event.target.value = "";\n      return;\n    }\n    const selectedFile = event.target.files?.[0] || null;\n    if (!selectedFile) {\n      event.target.value = "";\n      return;\n    }\n    await flushPendingProjectDrafts({ primaryImport: true });' in js
+    )
+
+    assert "export function createProjectPane({" in project_pane_js
+    assert "function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = \"\") {" in project_pane_js
+    assert "async function createNewProject(path = \"\") {" in project_pane_js
+    assert "async function useProjectFolder(path = \"\") {" in project_pane_js
+    assert (
+        "async function flushPendingProjectDrafts() {" in project_pane_js
+        or "async function flushPendingProjectDrafts(options = {}) {" in project_pane_js
+    )
 
 
 def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> None:

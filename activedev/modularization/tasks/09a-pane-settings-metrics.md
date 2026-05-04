@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_settings_e2e.py`, `tests/browser/test_metrics_e2e.py`, `tests/browser/test_settings_defaults_truth_gate.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T09A-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T08 before the parallel A/B/C wave can open.` |
+
 ## Goal
 
 Extract two lower-coupling panes in a parallel-safe lane after the scoring-pane pilot proves the pattern.

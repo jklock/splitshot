@@ -14,6 +14,16 @@
 | owned-tests-docs | final documentation reconciliation plus all required validation and audit outputs |
 | proof-file | `activedev/modularization/proof/PROOF-T12-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T10 and T11.` |
+
 ## Goal
 
 Certify that the frontend is fully modularized, still behavior-identical to the baseline, and architecturally ready for the later PWA work.

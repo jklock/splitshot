@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import time
 import uuid
 from pathlib import Path
 
@@ -74,11 +75,71 @@ def _set_project_path(page, path: Path) -> None:
     )
 
 
+def _set_global_template_defaults(
+    page,
+    *,
+    scope: str | None = None,
+    default_tool: str | None = None,
+    reopen_last_tool: bool | None = None,
+) -> None:
+    page.evaluate(
+        """(values) => {
+            const scopeControl = document.getElementById('settings-scope');
+            const defaultToolControl = document.getElementById('settings-default-tool');
+            const reopenLastToolControl = document.getElementById('settings-reopen-last-tool');
+            if (scopeControl && values.scope !== null) {
+                scopeControl.value = String(values.scope);
+            }
+            if (defaultToolControl && values.defaultTool !== null) {
+                defaultToolControl.value = String(values.defaultTool);
+            }
+            if (reopenLastToolControl && values.reopenLastTool !== null) {
+                reopenLastToolControl.checked = Boolean(values.reopenLastTool);
+            }
+        }""",
+        {
+            "scope": scope,
+            "defaultTool": default_tool,
+            "reopenLastTool": reopen_last_tool,
+        },
+    )
+
+
 def _apply_settings_defaults_and_wait(page, predicate: str) -> None:
     page.wait_for_function("() => state?.settings !== undefined")
+    page.evaluate("() => flushPendingSettingsDefaults()")
     page.evaluate("() => applySettingsDefaults()")
     page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
-    page.wait_for_function(predicate)
+    _wait_for_page_predicate(page, predicate)
+
+
+def _settings_defaults_snapshot(page) -> dict[str, object]:
+    return page.evaluate(
+        """() => ({
+            controlDefaultTool: document.getElementById('settings-default-tool')?.value ?? null,
+            controlReopenLastTool: document.getElementById('settings-reopen-last-tool')?.checked ?? null,
+            controlScope: document.getElementById('settings-scope')?.value ?? null,
+            stateDefaultTool: state?.settings?.default_tool ?? null,
+            stateReopenLastTool: state?.settings?.reopen_last_tool ?? null,
+            stateScopeProjectPath: state?.project?.path ?? null,
+            activeTool,
+            pendingSettingsDefaultsPromiseNull: window.pendingSettingsDefaultsPromise === null,
+        })"""
+    )
+
+
+def _wait_for_page_predicate(page, predicate: str, timeout_ms: int = 30_000, interval_ms: int = 100) -> None:
+    deadline = time.monotonic() + (timeout_ms / 1000)
+    last_value = None
+    while time.monotonic() < deadline:
+        last_value = page.evaluate(predicate)
+        if last_value:
+            return
+        page.wait_for_timeout(interval_ms)
+    raise AssertionError(
+        f"Timed out waiting for browser predicate: {predicate} "
+        f"(last_value={last_value!r}, snapshot={_settings_defaults_snapshot(page)!r})"
+    )
 
 
 def _show_expanded_metrics(page) -> None:
@@ -170,7 +231,7 @@ def test_settings_defaults_seed_fresh_project_overlay_marker_export_pip_and_shot
                     _set_control(page, control_id, value)
                 page.locator("#settings-marker-follow-motion").check()
                 assert page.evaluate("() => readSettingsDefaultsPayload({}).settings.merge_layout === 'pip'")
-                page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
+                page.evaluate("() => flushPendingSettingsDefaults()")
                 page.evaluate("() => applySettingsDefaults()")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
                 page.wait_for_function("() => state?.settings?.merge_layout === 'pip'")
@@ -228,9 +289,7 @@ def test_settings_landing_pane_and_reopen_last_tool_apply_after_reload(tmp_path:
                 _open_settings(page)
                 _expand_settings_section(page, 'global-template')
 
-                _set_control(page, 'settings-scope', 'app')
-                _set_control(page, 'settings-default-tool', 'metrics')
-                _set_control(page, 'settings-reopen-last-tool', True)
+                _set_global_template_defaults(page, scope='app', default_tool='metrics', reopen_last_tool=True)
                 _apply_settings_defaults_and_wait(
                     page,
                     "() => document.getElementById('settings-default-tool')?.value === 'metrics' && document.getElementById('settings-reopen-last-tool')?.checked === true",
@@ -242,15 +301,15 @@ def test_settings_landing_pane_and_reopen_last_tool_apply_after_reload(tmp_path:
                 _wait_for_project_landing(page)
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
-                page.wait_for_function("() => activeTool === 'metrics'")
+                _wait_for_page_predicate(page, "() => activeTool === 'metrics'")
 
                 _open_settings(page)
                 _expand_settings_section(page, 'global-template')
-                _set_control(page, 'settings-default-tool', 'export')
-                _set_control(page, 'settings-reopen-last-tool', False)
-                page.wait_for_function("() => state?.settings !== undefined")
-                page.evaluate("() => applySettingsDefaults()")
-                page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
+                _set_global_template_defaults(page, default_tool='export', reopen_last_tool=False)
+                _apply_settings_defaults_and_wait(
+                    page,
+                    "() => state?.settings?.default_tool === 'export' && state?.settings?.reopen_last_tool === false",
+                )
                 _show_expanded_metrics(page)
                 _set_project_path(page, second_project)
                 page.evaluate('(path) => createNewProject(path)', str(second_project))
@@ -258,7 +317,7 @@ def test_settings_landing_pane_and_reopen_last_tool_apply_after_reload(tmp_path:
                 _wait_for_project_landing(page)
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_project))
-                page.wait_for_function("() => activeTool === 'project'")
+                _wait_for_page_predicate(page, "() => activeTool === 'project'")
             finally:
                 browser.close()
     finally:
@@ -279,9 +338,7 @@ def test_project_selection_stays_on_project_before_reopen_last_tool_applies(tmp_
                 _open_settings(page)
                 _expand_settings_section(page, 'global-template')
 
-                _set_control(page, 'settings-scope', 'app')
-                _set_control(page, 'settings-default-tool', 'metrics')
-                _set_control(page, 'settings-reopen-last-tool', True)
+                _set_global_template_defaults(page, scope='app', default_tool='metrics', reopen_last_tool=True)
                 _apply_settings_defaults_and_wait(
                     page,
                     "() => document.getElementById('settings-default-tool')?.value === 'metrics' && document.getElementById('settings-reopen-last-tool')?.checked === true",
@@ -306,7 +363,7 @@ def test_project_selection_stays_on_project_before_reopen_last_tool_applies(tmp_
 
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(first_project))
-                page.wait_for_function("() => activeTool === 'metrics'")
+                _wait_for_page_predicate(page, "() => activeTool === 'metrics'")
             finally:
                 browser.close()
     finally:
@@ -327,12 +384,12 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
                 _open_settings(page)
                 _expand_settings_section(page, 'global-template')
 
-                _set_control(page, 'settings-scope', 'app')
-                _set_control(page, 'settings-default-tool', 'metrics')
-                page.wait_for_function("() => state?.settings !== undefined")
+                _set_global_template_defaults(page, scope='app', default_tool='metrics', reopen_last_tool=True)
+                page.evaluate("() => flushPendingSettingsDefaults()")
                 page.evaluate("() => applySettingsDefaults()")
                 page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
-                page.wait_for_function(
+                _wait_for_page_predicate(
+                    page,
                     "() => document.getElementById('settings-default-tool')?.value === 'metrics'",
                 )
                 _set_project_path(page, folder_scoped_project)
@@ -341,22 +398,23 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
 
                 _open_settings(page)
                 _expand_settings_section(page, 'global-template')
-                _set_control(page, 'settings-scope', 'folder')
-                _set_control(page, 'settings-default-tool', 'review')
-                page.evaluate("() => applySettingsDefaults()")
-                page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
+                _set_global_template_defaults(page, scope='folder', default_tool='review', reopen_last_tool=True)
+                _apply_settings_defaults_and_wait(
+                    page,
+                    "() => state?.settings?.default_tool === 'review'",
+                )
                 page.evaluate('(path) => useProjectFolder(path)', str(folder_scoped_project))
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(folder_scoped_project))
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(folder_scoped_project))
-                page.wait_for_function("() => activeTool === 'review'")
+                _wait_for_page_predicate(page, "() => activeTool === 'review'")
 
                 _set_project_path(page, second_folder_project)
                 page.evaluate('(path) => createNewProject(path)', str(second_folder_project))
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_folder_project))
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function('(path) => state?.project?.path === path', arg=str(second_folder_project))
-                page.wait_for_function("() => activeTool === 'metrics'")
+                _wait_for_page_predicate(page, "() => activeTool === 'metrics'")
             finally:
                 browser.close()
     finally:

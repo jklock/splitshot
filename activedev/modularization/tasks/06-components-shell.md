@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_control.py`, `tests/browser/test_project_lifecycle_contracts.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T06-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T05.` |
+
 ## Goal
 
 Extract the lower-risk shared components that shape the shell but do not yet require full pane ownership.

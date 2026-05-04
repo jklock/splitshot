@@ -14,6 +14,16 @@
 | owned-tests-docs | full cleanup-related browser tests required by the task packet |
 | proof-file | `activedev/modularization/proof/PROOF-T10-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `blocked` |
+| last-synced | `2026-05-03` |
+| blocker | `The workspace is recovered to a healthy modularized baseline, but the remaining cleanup is blocked by shared browser-contract tests and runtime globals that still pin app.js wrapper/compat seams outside the current T10 touch list; see proof/PROOF-T10-run1.md.` |
+
 ## Goal
 
 Delete the retired monolithic rendering/event-wiring scaffolding after all panes and shared components have moved to dedicated modules.

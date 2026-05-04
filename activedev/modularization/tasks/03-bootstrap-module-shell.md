@@ -14,6 +14,18 @@
 | owned-tests-docs | `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_control.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T03-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `claimed` |
+| last-synced | `2026-05-02` |
+| owner | `copilot-orchestrator-20260502-t03-run1` |
+| proof | `pending` |
+| notes | Candidate bootstrap edits are present in `src/splitshot/browser/static/index.html`, `src/splitshot/browser/static/app.js`, and `tests/browser/test_browser_static_ui.py`, but acceptance review and Tier B validation are still pending. |
+
 ## Goal
 
 Prepare the browser shell for module loading while preserving the existing runtime behavior and DOM contract.
@@ -34,9 +46,9 @@ Out of scope:
 
 ## Preconditions
 
-- [ ] `T01` and `T02` are `done`
-- [ ] ownership anchors for `index.html` and `app.js` are present in `audit.md`
-- [ ] QA-doc-backed tests are passing on the starting revision
+- [x] `T01` and `T02` are `done`
+- [x] ownership anchors for `index.html` and `app.js` are present in `audit.md`
+- [x] QA-doc-backed tests are passing on the starting revision
 
 ## Implementation checklist
 

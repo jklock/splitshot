@@ -91,7 +91,9 @@ The screenshot script covers:
 ## Development Docs
 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
-- [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
+- [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md) — summarized browser surface-to-suite ownership
+- [project/browser-control-coverage-plan.md](project/browser-control-coverage-plan.md) — exhaustive browser control inventory and suite anchors
+- [project/browser-full-e2e-qa-plan.md](project/browser-full-e2e-qa-plan.md) — phase-gated browser truth-gate criteria
 - [scripts/README.md](../scripts/README.md)
 
 ## Repository Files
@@ -101,5 +103,5 @@ The screenshot script covers:
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-05-02
+**Referenced files last updated:** 2026-05-02

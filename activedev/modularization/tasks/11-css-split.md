@@ -14,6 +14,16 @@
 | owned-tests-docs | `tests/browser/test_browser_static_ui.py` and any audit artifacts required to prove visual parity |
 | proof-file | `activedev/modularization/proof/PROOF-T11-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T10.` |
+
 ## Goal
 
 Split the monolithic stylesheet into navigable CSS modules without changing the rendered UI.

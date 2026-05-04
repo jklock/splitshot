@@ -14,6 +14,16 @@
 | owned-tests-docs | export/review-owned assertions inside `tests/browser/test_merge_export_contracts.py`, review-owned assertions inside `tests/browser/test_overlay_review_contracts.py`, `tests/browser/test_browser_interactions.py` |
 | proof-file | `activedev/modularization/proof/PROOF-T09C-runN.md` |
 
+## Progress snapshot
+
+Informational only; authoritative task state remains `activedev/modularization/progress.md`.
+
+| Field | Value |
+| --- | --- |
+| current-status | `pending` |
+| last-synced | `2026-05-02` |
+| blocker | `Awaiting T08 before the parallel A/B/C wave can open.` |
+
 ## Goal
 
 Extract the export and review panes without changing export controls, review box behavior, or shared overlay-adjacent workflows.

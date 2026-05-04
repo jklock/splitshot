@@ -49,16 +49,18 @@ files followed by a directory swap. This was never started — `src2/` does not 
 the phase-specific sub-documents (`01-phase0-*.md` through `13-phase12-*.md`) were never
 written. The in-place extraction in `modular.md` supersedes this approach.
 
-## Current codebase snapshot (v1.0.0)
+## Current codebase snapshot (audited 2026-05-02)
 
 | File | Size | Description |
 | --- | --- | --- |
-| `src/.../static/index.html` | 1,194 lines | HTML shell with `<script>` tag (not module) |
-| `src/.../static/app.js` | 14,376 lines | Monolithic JS — 0 imports, 0 classes, ~740 functions |
+| `repo branch` | `modularization` | Active branch for the modularization program |
+| `src/.../static/index.html` | 1,194 lines | HTML shell with classic `<script src="/static/app.js">` bootstrap (not module-based) |
+| `src/.../static/app.js` | 14,376 lines | Monolithic JS — 0 `import`/`export` statements, 0 classes, 91 top-level `let` globals, 739 named functions |
 | `src/.../static/styles.css` | 4,587 lines | Single CSS file |
-| `src/.../browser/server.py` | 1,712 lines | 42 route handlers + 13 utility endpoints |
+| `src/.../browser/server.py` | 1,712 lines | Browser server entrypoint and API route implementation |
 | `src/.../browser/state.py` | 227 lines | Single function builds full state dict |
-| `tests/browser/` | 226 test functions | Playwright-based browser test suite |
+| `tests/browser/` | 18 test files / 225 test functions | Playwright-based browser test inventory verified from the live repo |
+| `docs/project/browser-*.md` QA docs | missing | `browser-control-qa-matrix.md`, `browser-control-coverage-plan.md`, and `browser-full-e2e-qa-plan.md` are absent and owned by `T02` |
 
 ## Supporting Docs
 
@@ -72,11 +74,15 @@ written. The in-place extraction in `modular.md` supersedes this approach.
 ## Program status
 
 As of 2026-05-02, the modularization control workspace has been initialized under
-`activedev/modularization/`. The next required gates are:
+`activedev/modularization/` and `T01` has locked the audited baseline facts and
+ownership anchors for the monolith hotspots. The next required gates are:
 
-1. baseline truth audit (`T01`)
-2. restoration of the missing browser QA/coverage docs (`T02`)
-3. module-shell bootstrap (`T03`)
+1. restoration of the missing browser QA/coverage docs (`T02`)
+2. module-shell bootstrap (`T03`)
+
+`T01` did not record any new blocker beyond the existing `T02` dependency; once `T02`
+restores the missing QA docs, the current overlap rules and line anchors are ready in
+`activedev/modularization/audit.md`.
 
 ## Verification
 

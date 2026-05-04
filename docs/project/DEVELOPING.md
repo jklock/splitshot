@@ -101,9 +101,11 @@ As of 2026-04-18, `uv run pytest --cov=src/splitshot --cov-report=term-missing` 
 - coverage work stays honest about the remaining branches that need deterministic tests;
 - we do not claim 100% until the measured command actually reports it.
 
-Browser-visible controls also have an explicit coverage map in [browser-control-qa-matrix.md](browser-control-qa-matrix.md). When you change a button or field, update that matrix row and the matching tests in the same change so the browser QA claim stays explicit.
+Browser-visible controls also have an explicit coverage map in [browser-control-qa-matrix.md](browser-control-qa-matrix.md). When you change a button or field, update that matrix row, the exhaustive coverage plan, and the matching tests in the same change so the browser QA claim stays explicit.
 
 The exhaustive control-by-control worklist lives in [browser-control-coverage-plan.md](browser-control-coverage-plan.md). Use it when you need to see every user-facing control rather than the summarized coverage matrix.
+
+The phase-gated definition of what counts as truthful full-control end-to-end browser coverage lives in [browser-full-e2e-qa-plan.md](browser-full-e2e-qa-plan.md). Treat `tests/browser/test_browser_control_inventory_audit.py` and `tests/browser/test_browser_control_coverage_matrix.py` as the Tier A guardrails for those QA docs.
 
 The browser interaction smoke tests now cover waveform expand/zoom/amplitude, waveform pan and shot movement, layout lock/resize persistence, waveform navigator drag/reload persistence, timing/scoring workbench row actions, overlay visibility and badge toggles, and review text-box creation and drag in [tests/browser/test_browser_interactions.py](../../tests/browser/test_browser_interactions.py).
 
@@ -129,5 +131,5 @@ The browser interaction smoke tests now cover waveform expand/zoom/amplitude, wa
 - Update both the project bundle load/save path and the browser state serialization when the project schema changes.
 - Use the technical docs in `src/splitshot/.../README.md` to locate the owning module before adding new behavior.
 
-**Last updated:** 2026-04-27
-**Referenced files last updated:** 2026-04-27
+**Last updated:** 2026-05-02
+**Referenced files last updated:** 2026-05-02

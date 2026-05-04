@@ -72,7 +72,7 @@ Tests the browser-based UI shell, API routes, Playwright-driven interactions, st
 - `test_browser_static_ui.py` (21 tests) — Static analysis of `index.html`, `app.js`, `styles.css` — no browser needed. Verifies element structure, CSS rules, JS function signatures, HTML attribute correctness
 - `test_browser_interactions.py` (40 tests) — Playwright-driven UI simulation: waveform controls, marker workbench, overlay badges, text-box editing, export log modal, color picker, popup bubbles, motion paths
 - `test_browser_rail_layout.py` — Layout resize handles, tool routing, layout lock, status bar, marker workbench bottom resize
-- `test_browser_full_app_e2e.py` (6 tests) — End-to-end workflow truth gates covering PractiScore+tIming+scoring persistence, markers+review+overlay parity, merge+export sync, settings defaults, ShotML rerun
+- `test_browser_full_app_e2e.py` (6 tests) — End-to-end workflow truth gates covering PractiScore+timing+scoring persistence, markers+review+overlay parity, merge+export sync, settings defaults, and ShotML rerun
 - `test_browser_remaining_controls_e2e.py` — Edge controls: waveform shell remaining buttons, marker templates, color picker, badge style grid, merge defaults, export encoding, ShotML numeric controls
 - `test_metrics_e2e.py` — Metrics pane reflects scoring workbench edits and timing event changes
 - `test_merge_export_contracts.py` — Export path contract, merge source offset persistence
@@ -209,6 +209,10 @@ Tests in `test_scoring_and_merge.py`, `test_presentation.py`, and `test_persiste
 
 `test_browser_control_coverage_matrix.py` reads `docs/project/browser-control-qa-matrix.md` and asserts that every browser control mentioned in the matrix has a corresponding test. This serves as a contract ensuring test coverage documentation stays in sync with the actual test suite.
 
+`test_browser_control_inventory_audit.py` reads `docs/project/browser-control-coverage-plan.md` and `docs/project/browser-full-e2e-qa-plan.md` and asserts that the restored QA docs still describe the live static mutable-control inventory and the current phase-gated truth boundary.
+
+When a browser-visible control changes, update all three QA docs in `docs/project/` and the owning browser tests in the same change.
+
 ## Writing Tests
 
 ### Adding a New Test
@@ -276,4 +280,4 @@ For browser workflow regressions, prefer:
 Do not run browser audit scripts unless browser UI, routes, or controller behavior changed.
 Do not run ShotML pipeline scripts unless analysis or timing behavior changed.
 
-**Last updated:** 2026-05-01
+**Last updated:** 2026-05-02
