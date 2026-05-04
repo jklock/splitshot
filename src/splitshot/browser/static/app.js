@@ -8533,6 +8533,11 @@ function buildExportPayload(path) {
     },
     overlay: readOverlayPayload(),
     popups: state?.project?.popups || [],
+    analysis: {
+      shots: state?.project?.analysis?.shots || [],
+      events: state?.project?.analysis?.events || [],
+      beep_time_ms_primary: state?.project?.analysis?.beep_time_ms_primary,
+    },
     merge: {
       ...readMergePayload(),
       sources: (state?.project?.merge_sources || []).map((source, index) => ({
