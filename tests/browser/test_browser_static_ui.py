@@ -41,6 +41,14 @@ def _extract_not_in_js_snippets(test_fn) -> set[str]:
     return snippets
 
 
+def _read_shell_runtime_source() -> str:
+    return (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
+
+
+def _read_app_shell_source() -> str:
+    return "\n".join([(STATIC_ROOT / "app.js").read_text(), _read_shell_runtime_source()]).replace("documentObject.", "document.").replace("windowObject.", "window.")
+
+
 def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     js = (STATIC_ROOT / "app.js").read_text()
@@ -454,6 +462,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> None:
     html = (STATIC_ROOT / "index.html").read_text()
     app_js = (STATIC_ROOT / "app.js").read_text()
+    shell_runtime_js = _read_shell_runtime_source().replace("documentObject.", "document.").replace("windowObject.", "window.")
     activity_js = (STATIC_ROOT / "lib" / "activity.js").read_text()
     api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
     pane_base_js = (STATIC_ROOT / "panes" / "pane-base.js").read_text()
@@ -478,6 +487,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         combined_source="\n".join(
             [
                 app_js,
+                shell_runtime_js,
                 activity_js,
                 api_js,
                 export_pane,
@@ -741,7 +751,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'review_show_pip: $("show-pip")?.checked ?? DEFAULT_PROJECT_UI_STATE.review_show_pip,' in js
     assert '$("markers-enable")?.checked' in js
     assert 'syncControlChecked($("show-markers"), normalized.review_show_markers);' in js
-    assert '$("reset-layout")?.addEventListener("click", resetLayout);\n  [\n    ["resize-rail", "railWidth"],' in js
+    assert '$("reset-layout")?.addEventListener("click", resetLayout);' in js
+    assert '["resize-rail", "railWidth"],' in js
     assert 'syncControlChecked($("show-pip"), normalized.review_show_pip);' in js
     assert 'const position = showOverlay ? (getOverlayVisibilityPosition() || currentState()?.settings?.overlay_position || "bottom") : "none";' in overlay_pane
     assert 'sync_offset_ms: currentSourceSyncOffsetMs(source),' in js
@@ -756,7 +767,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'if (requestId !== getProjectFolderProbeRequestId()) {' in project_pane
     assert 'if (targetId === "export-path") exportPathDraft = data.path;' in js
     assert '$("export-path").addEventListener("input", () => {' in js
-    assert 'exportPathDraft = $("export-path").value;' in js
+    assert 'setExportPathDraft($("export-path").value);' in js
     assert 'const path = requireValue("export-path", "Output video path");' in js
     assert 'exportPathDraft = path;' in js
     assert 'input.step = "0.01";' in js
@@ -1059,8 +1070,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
     assert 'syncControlChecked($("markers-enable"), normalized.review_show_markers);' in js
-    assert 'syncControlChecked($("show-markers"), state.project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
-    assert 'syncControlChecked($("show-pip"), state.project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);' in js
+    assert 'syncControlChecked($("show-markers"), project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
+    assert 'syncControlChecked($("show-pip"), project.ui_state?.review_show_pip ?? DEFAULT_PROJECT_UI_STATE.review_show_pip);' in js
     assert 'const showOverlay = $("show-overlay")?.checked ?? true;' in js
     assert 'if (!($("show-markers")?.checked ?? true)) {' in js
     assert 'if (!($("show-pip")?.checked ?? true)) {' in js
@@ -1322,7 +1333,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
 
 
 def test_browser_ui_includes_webkit_rendering_guards() -> None:
-    js = (STATIC_ROOT / "app.js").read_text()
+    js = _read_app_shell_source()
     layout_js = (STATIC_ROOT / "lib" / "layout.js").read_text()
     overlay_canvas_js = (STATIC_ROOT / "components" / "overlay-canvas.js").read_text()
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
@@ -1397,12 +1408,12 @@ def test_browser_ui_includes_webkit_rendering_guards() -> None:
     assert 'const mediaTimeS = Number.isFinite(metadata?.mediaTime) ? metadata.mediaTime : null;' in overlay_canvas_js
     assert 'frame_source: mediaTimeS === null ? "animation-frame" : "video-frame",' in overlay_canvas_js
     assert 'syncPrimaryAudioPreview({ allowDriftCorrection: true });' not in js
-    assert 'if (overlayFrame !== null) return;' in js
+    assert 'if (getOverlayFrame() !== null) return;' in js
 
 
 def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     api_js = (STATIC_ROOT / "lib" / "api.js").read_text()
-    js = (STATIC_ROOT / "app.js").read_text()
+    js = _read_app_shell_source()
     merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
     video_player_js = (STATIC_ROOT / "components" / "video-player.js").read_text()
@@ -1676,7 +1687,7 @@ def test_browser_overlay_payload_filters_unknown_badge_cards() -> None:
 
 def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     export_pane = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
-    js = (STATIC_ROOT / "app.js").read_text()
+    js = _read_app_shell_source()
     merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
     project_pane = (STATIC_ROOT / "panes" / "project-pane.js").read_text()
 
@@ -1710,13 +1721,16 @@ def test_browser_auto_apply_snapshots_form_payloads_before_debounce() -> None:
     assert 'autoApplyExportSettings(payload);' in export_pane
     assert '$("threshold").addEventListener("change", scheduleThresholdApply);' in js
     assert '$("apply-threshold").addEventListener("click", applyThresholdNow);' in js
-    assert '$("new-project").addEventListener("click", async () => {\n    await createNewProject();' in js
+    assert '$("new-project").addEventListener("click", async () => {' in js
+    assert 'await createNewProject();' in js
     assert 'const shouldReplace = windowObject.confirm(`A SplitShot project already exists in:' in project_pane
     assert 'Replace it with a new blank project?`);' in project_pane
     assert 'const resetResult = await callApi("/api/project/new", {});' in project_pane
     assert 'const savedResult = await callApi("/api/project/save", { path: projectPath });' in project_pane
     assert 'const shouldDelete = window.confirm(`Delete project metadata for:\\n\\n${projectPath}\\n\\nProject folders and files will be kept on disk.`);' in js
-    assert 'if (!shouldDelete) return;\n    await flushPendingProjectDrafts();\n    await callApi("/api/project/delete", {});' in js
+    assert 'if (!shouldDelete) return;' in js
+    assert 'await flushPendingProjectDrafts();' in js
+    assert 'await callApi("/api/project/delete", {});' in js
 
 
 def test_browser_merge_file_uploads_treat_partial_success_as_success() -> None:
