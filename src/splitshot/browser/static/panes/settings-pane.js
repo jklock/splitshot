@@ -175,15 +175,6 @@ export function createSettingsPane({
   function renderSettingsPane() {
     const state = currentState();
     const persistedSettings = currentSettings();
-    const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
-    if (!settingsPaneIsActive()) {
-      settingsDraft = null;
-    } else if (liveSettingsPayload && !sameSettingsValue(liveSettingsPayload.settings, persistedSettings)) {
-      settingsDraft = liveSettingsPayload;
-    } else if (settingsDraft && sameSettingsValue(settingsDraft.settings, persistedSettings)) {
-      settingsDraft = null;
-    }
-    const settings = settingsDraft?.settings || persistedSettings;
     const layers = state?.settings_layers || {};
     const hasProjectPath = Boolean(state?.project?.path);
     const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
@@ -191,7 +182,7 @@ export function createSettingsPane({
     const projectExport = state?.project?.export || {};
     const projectScoring = state?.project?.scoring || {};
     const projectAnalysis = state?.project?.analysis || {};
-    const markerTemplate = normalizePopupTemplate(settings.marker_template || state?.project?.popup_template || {});
+
     const scopeSelect = $("settings-scope");
     const scopeStatus = $("settings-scope-status");
     if (scopeSelect) {
@@ -210,31 +201,34 @@ export function createSettingsPane({
             ? "Folder defaults are active for this project and override the global template here."
             : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
     }
-    const shotmlDefaults = settings.shotml_defaults || {};
-    renderExportPresetOptions("settings-export-preset", null, settings.export_preset ?? projectExport.preset ?? "source");
-    syncControlValue($("settings-default-match-type"), settings.default_match_type ?? projectScoring.match_type ?? "uspsa");
-    syncControlValue($("settings-overlay-position"), settings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
-    syncControlValue($("settings-badge-size"), settings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
-    syncControlValue($("settings-overlay-custom-background-color"), settings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
-    syncControlValue($("settings-overlay-custom-text-color"), settings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
-    syncControlValue($("settings-overlay-custom-opacity"), settings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
-    syncSettingsBadgeStyle("settings-timer-badge", settings.timer_badge || projectOverlay.timer_badge || {});
-    syncSettingsBadgeStyle("settings-shot-badge", settings.shot_badge || projectOverlay.shot_badge || {});
-    syncSettingsBadgeStyle("settings-current-shot-badge", settings.current_shot_badge || projectOverlay.current_shot_badge || {});
-    syncSettingsBadgeStyle("settings-hit-factor-badge", settings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
-    syncControlValue($("settings-merge-layout"), settings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
-    syncControlValue($("settings-pip-size"), settings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
-    syncControlValue($("settings-merge-pip-x"), settings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
-    syncControlValue($("settings-merge-pip-y"), settings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
-    syncControlValue($("settings-export-quality"), settings.export_quality ?? state?.project?.export?.quality ?? "high");
-    syncControlValue($("settings-export-frame-rate"), settings.export_frame_rate ?? projectExport.frame_rate ?? "source");
-    syncControlValue($("settings-export-video-codec"), settings.export_video_codec ?? projectExport.video_codec ?? "h264");
-    syncControlValue($("settings-export-audio-codec"), settings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
-    syncControlValue($("settings-export-color-space"), settings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
-    syncControlChecked($("settings-export-two-pass"), Boolean(settings.export_two_pass ?? projectExport.two_pass ?? false));
-    syncControlValue($("settings-export-ffmpeg-preset"), settings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
-    syncControlValue($("settings-default-tool"), settings.default_tool ?? "project");
-    syncControlChecked($("settings-reopen-last-tool"), Boolean(settings.reopen_last_tool ?? true));
+
+    const shotmlDefaults = persistedSettings.shotml_defaults || {};
+    const markerTemplate = normalizePopupTemplate(persistedSettings.marker_template || state?.project?.popup_template || {});
+
+    renderExportPresetOptions("settings-export-preset", null, persistedSettings.export_preset ?? projectExport.preset ?? "source");
+    syncControlValue($("settings-default-match-type"), persistedSettings.default_match_type ?? projectScoring.match_type ?? "uspsa");
+    syncControlValue($("settings-overlay-position"), persistedSettings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
+    syncControlValue($("settings-badge-size"), persistedSettings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
+    syncControlValue($("settings-overlay-custom-background-color"), persistedSettings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
+    syncControlValue($("settings-overlay-custom-text-color"), persistedSettings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
+    syncControlValue($("settings-overlay-custom-opacity"), persistedSettings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
+    syncSettingsBadgeStyle("settings-timer-badge", persistedSettings.timer_badge || projectOverlay.timer_badge || {});
+    syncSettingsBadgeStyle("settings-shot-badge", persistedSettings.shot_badge || projectOverlay.shot_badge || {});
+    syncSettingsBadgeStyle("settings-current-shot-badge", persistedSettings.current_shot_badge || projectOverlay.current_shot_badge || {});
+    syncSettingsBadgeStyle("settings-hit-factor-badge", persistedSettings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
+    syncControlValue($("settings-merge-layout"), persistedSettings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
+    syncControlValue($("settings-pip-size"), persistedSettings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
+    syncControlValue($("settings-merge-pip-x"), persistedSettings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
+    syncControlValue($("settings-merge-pip-y"), persistedSettings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
+    syncControlValue($("settings-export-quality"), persistedSettings.export_quality ?? state?.project?.export?.quality ?? "high");
+    syncControlValue($("settings-export-frame-rate"), persistedSettings.export_frame_rate ?? projectExport.frame_rate ?? "source");
+    syncControlValue($("settings-export-video-codec"), persistedSettings.export_video_codec ?? projectExport.video_codec ?? "h264");
+    syncControlValue($("settings-export-audio-codec"), persistedSettings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
+    syncControlValue($("settings-export-color-space"), persistedSettings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
+    syncControlChecked($("settings-export-two-pass"), Boolean(persistedSettings.export_two_pass ?? projectExport.two_pass ?? false));
+    syncControlValue($("settings-export-ffmpeg-preset"), persistedSettings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
+    syncControlValue($("settings-default-tool"), persistedSettings.default_tool ?? "project");
+    syncControlChecked($("settings-reopen-last-tool"), Boolean(persistedSettings.reopen_last_tool ?? true));
     syncControlValue(
       $("settings-shotml-threshold"),
       Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
@@ -247,6 +241,15 @@ export function createSettingsPane({
         : "App template";
     }
     renderSettingsSections();
+
+    const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
+    if (!settingsPaneIsActive()) {
+      settingsDraft = null;
+    } else if (liveSettingsPayload && !sameSettingsValue(liveSettingsPayload.settings, persistedSettings)) {
+      settingsDraft = liveSettingsPayload;
+    } else if (settingsDraft && sameSettingsValue(settingsDraft.settings, persistedSettings)) {
+      settingsDraft = null;
+    }
   }
 
   function readSettingsDefaultsPayload({ projectDefaults = false } = {}) {

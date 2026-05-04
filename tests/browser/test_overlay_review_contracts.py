@@ -555,17 +555,18 @@ def test_overlay_canvas_component_owns_frame_scheduler_contract() -> None:
 
 def test_overlay_review_drag_cleanup_is_bound_to_cancel_lost_capture_and_window_interruptions() -> None:
     js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    shell_runtime_js = (STATIC_ROOT / "lib/shell-runtime.js").read_text(encoding="utf-8").replace("documentObject.", "document.").replace("windowObject.", "window.")
 
     assert "function cancelOverlayDragInteractions(reason = \"interrupted\") {" in js
     assert "overlayBadgeDrag = null;" in js
     assert "textBoxDrag = null;" in js
-    assert 'document.addEventListener("pointercancel", endOverlayBadgeDrag);' in js
-    assert 'document.addEventListener("lostpointercapture", endOverlayBadgeDrag);' in js
-    assert 'document.addEventListener("pointercancel", endTextBoxDrag);' in js
-    assert 'document.addEventListener("lostpointercapture", endTextBoxDrag);' in js
-    assert 'window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));' in js
-    assert 'document.addEventListener("visibilitychange", () => {' in js
-    assert 'cancelOverlayDragInteractions("document.hidden");' in js
+    assert 'document.addEventListener("pointercancel", endOverlayBadgeDrag);' in shell_runtime_js
+    assert 'document.addEventListener("lostpointercapture", endOverlayBadgeDrag);' in shell_runtime_js
+    assert 'document.addEventListener("pointercancel", endTextBoxDrag);' in shell_runtime_js
+    assert 'document.addEventListener("lostpointercapture", endTextBoxDrag);' in shell_runtime_js
+    assert 'window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));' in shell_runtime_js
+    assert 'document.addEventListener("visibilitychange", () => {' in shell_runtime_js
+    assert 'cancelOverlayDragInteractions("document.hidden");' in shell_runtime_js
 
 
 def test_overlay_drag_math_uses_client_preview_frame_rect() -> None:
@@ -672,6 +673,7 @@ def test_review_box_unlock_and_drag_preserve_rendered_position_contract() -> Non
 
 def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:
     app_js = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    shell_runtime_js = (STATIC_ROOT / "lib/shell-runtime.js").read_text(encoding="utf-8").replace("documentObject.", "document.").replace("windowObject.", "window.")
     overlay_js = (STATIC_ROOT / "panes/overlay-pane.js").read_text(encoding="utf-8")
     review_js = (STATIC_ROOT / "panes/review-pane.js").read_text(encoding="utf-8")
 
@@ -688,6 +690,6 @@ def test_overlay_mode_switches_seed_from_rendered_baselines_contract() -> None:
     assert 'syncControlValue($(config.xId), coords.x);' in overlay_js
     assert 'syncControlValue($(config.yId), coords.y);' in overlay_js
     assert 'const effectiveKind = initialConfig?.lockId && $(initialConfig.lockId)?.checked ? "shots" : kind;' in overlay_js
-    assert 'resetOverlayPlacementBaseline(id);' in app_js
+    assert 'resetOverlayPlacementBaseline(id);' in shell_runtime_js
     assert 'syncOverlayBadgeCoordinateControlValues();' in overlay_js
     assert '["timer-x", "timer-y", "draw-x", "draw-y"]' not in app_js
