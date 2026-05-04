@@ -23,7 +23,6 @@ from splitshot.domain.models import (
     MergeLayout,
     MergeSource,
     Project,
-    VideoAsset,
 )
 from splitshot.media.ffmpeg import ffmpeg_command
 from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect

@@ -17,7 +17,6 @@ from splitshot.domain.models import (
     ExportVideoCodec,
     MergeLayout,
     OverlayPosition,
-    OverlayTextBox,
     PipSize,
     PopupTemplate,
     ShotMLSettings,

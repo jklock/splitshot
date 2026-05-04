@@ -4,7 +4,6 @@ import json
 import urllib.request
 from pathlib import Path
 
-import pytest
 
 import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
