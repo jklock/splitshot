@@ -1682,6 +1682,9 @@ class BrowserControlServer:
                 overlay_payload = payload.get("overlay")
                 if isinstance(overlay_payload, dict):
                     self._set_overlay(overlay_payload)
+                popups_payload = payload.get("popups")
+                if isinstance(popups_payload, list):
+                    self._set_popups({"popups": popups_payload})
                 merge_payload = payload.get("merge")
                 if isinstance(merge_payload, dict):
                     self._set_merge(merge_payload)

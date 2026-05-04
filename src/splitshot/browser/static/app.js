@@ -8532,6 +8532,7 @@ function buildExportPayload(path) {
       ...readScoringPayload(),
     },
     overlay: readOverlayPayload(),
+    popups: state?.project?.popups || [],
     merge: {
       ...readMergePayload(),
       sources: (state?.project?.merge_sources || []).map((source, index) => ({
