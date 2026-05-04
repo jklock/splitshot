@@ -1829,16 +1829,38 @@ def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
     assert 'layoutRuntime = createLayoutRuntime({' in js
     assert 'keyRuntime = createKeyRuntime({' in js
     assert 'apiRuntime = createApiRuntime({' in js
-    assert 'installValueGlobals(browserGlobal, {' in js
-    assert 'installMutableGlobals(browserGlobal, legacyGlobalState);' in js
-    assert 'installMutableGlobals(browserGlobal, createMutableBindings({' in js
-    assert '...activityRuntime,' in js
-    assert '...metricsPane,' in js
-    assert 'browserGlobal.__splitshotBackbone = Object.freeze({ bus: appBus, store: appStore });' in js
+    assert 'installLegacyGlobalCompat({' in js
+    assert 'target: window,' in js
+    assert 'valueSources: [' in js
+    assert 'activityRuntime,' in js
+    assert 'metricsPane,' in js
+    assert 'mutableSources: [legacyGlobalState],' in js
+    assert 'mutableBindings: legacyGlobalMutableBindings,' in js
+    assert 'backbone: runtimeBackbone,' in js
 
     assert 'export function createMutableBindings(bindings = {}) {' in global_compat
     assert 'export function installMutableGlobals(target, source) {' in global_compat
     assert 'export function installValueGlobals(target, values = {}) {' in global_compat
+    assert 'export function installLegacyGlobalCompat({' in global_compat
+    assert 'installValueGlobals(target, mergedValues);' in global_compat
+    assert 'installMutableGlobals(target, source);' in global_compat
+    assert 'installMutableGlobals(target, createMutableBindings(mutableBindings));' in global_compat
+    assert 'target.__splitshotBackbone = Object.freeze({ bus: backbone.bus, store: backbone.store });' in global_compat
+    assert 'target.__splitshotBootstrapMode = bootstrapMode;' in global_compat
+
+    legacy_mutable_bindings = js.split("const legacyGlobalMutableBindings = {", 1)[1].split("\n};\n\ninstallLegacyGlobalCompat({", 1)[0]
+    legacy_values = js.split("  values: {", 1)[1].split("\n  },\n  mutableSources:", 1)[0]
+
+    assert "sendKeepaliveJson: [() => sendKeepaliveJson" not in legacy_mutable_bindings
+    assert "sendProjectUiStateKeepalive: [() => sendProjectUiStateKeepalive" not in legacy_mutable_bindings
+    assert "createNewProject: [() => createNewProject" in legacy_mutable_bindings
+    assert "renderTextBoxEditors: [() => renderTextBoxEditors" in legacy_mutable_bindings
+    assert "setPopupBubbles: [() => setPopupBubbles" in legacy_mutable_bindings
+
+    assert "renderControls, renderStyleControls," not in legacy_values
+    assert "sendKeepaliveJson, sendProjectUiStateKeepalive," not in legacy_values
+    assert "scheduleThresholdApply, applyThresholdNow, scheduleShotMLSettingsApply, scheduleProjectUiStateApply," not in legacy_values
+    assert "flushQueuedProjectUiStateApply, scheduleOverlayApply, wireEvents," not in legacy_values
 
     assert 'export const $ = (id) => document.getElementById(id);' in utils
     assert 'export function debounce(fn, delayMs = 250) {' in utils

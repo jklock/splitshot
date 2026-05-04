@@ -13,6 +13,8 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "app.js"
+SHELL_RUNTIME_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "shell-runtime.js"
+EXPORT_PANE_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "panes" / "export-pane.js"
 MERGE_PANE_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "panes" / "merge-pane.js"
 
 
@@ -44,21 +46,33 @@ def _function_body(source: str, function_name: str) -> str:
 
 def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     source = APP_JS.read_text(encoding="utf-8")
+    shell_runtime_source = SHELL_RUNTIME_JS.read_text(encoding="utf-8")
+    export_pane_source = EXPORT_PANE_JS.read_text(encoding="utf-8")
     merge_pane_source = MERGE_PANE_JS.read_text(encoding="utf-8")
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
-    export_click = source[source.index('$("export-video").addEventListener("click"') :]
+    export_click = shell_runtime_source[shell_runtime_source.index('$("export-video").addEventListener("click"') :]
     export_click = export_click[: export_click.index('$("show-export-log")')]
 
     assert 'import { createMergePane } from "./panes/merge-pane.js";' in source
+    assert 'import { createExportPane } from "./panes/export-pane.js";' in source
     assert "mergePane = createMergePane({" in source
+    assert "exportPane = createExportPane({" in source
+    assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in source
+    assert '$("export-video").addEventListener("click", async () => {' not in source
     assert "function previewFrameClientRect(video, container) {" in source
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in begin_drag_body
     assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in move_drag_body
     assert "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
     assert 'callApi("/api/merge/source"' not in drag_body
+    assert 'const path = requireValue("export-path", "Output video path");' in export_click
+    assert 'setExportPathDraft(path);' in export_click
+    assert 'const payload = buildExportPayload(path);' in export_click
+    assert 'applyExportDraft(payload);' in export_click
+    assert 'cancelPendingExportDrafts();' in export_click
     assert "await flushPendingMergeSourceCommits();" in export_click
+    assert 'await callApi("/api/export", payload);' in export_click
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
     assert 'state.project.export.last_error = null;' in _function_body(source, "clearCurrentExportLogState")
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
@@ -70,6 +84,12 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {" in merge_pane_source
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
+
+    assert "export function createExportPane({" in export_pane_source
+    assert "function readExportLayoutPayload() {" in export_pane_source
+    assert "function readExportSettingsPayload() {" in export_pane_source
+    assert "function scheduleExportLayoutApply() {" in export_pane_source
+    assert "function scheduleExportSettingsApply() {" in export_pane_source
 
 
 def test_merge_source_offsets_persist_reopen_and_export_in_order(

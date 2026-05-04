@@ -38,3 +38,38 @@ export function installValueGlobals(target, values = {}) {
   });
   return target;
 }
+
+export function installLegacyGlobalCompat({
+  target,
+  valueSources = [],
+  values = {},
+  mutableSources = [],
+  mutableBindings = {},
+  backbone = null,
+  bootstrapMode = "module",
+} = {}) {
+  if (!target) return target;
+
+  const mergedValues = Object.assign(
+    {},
+    ...((Array.isArray(valueSources) ? valueSources : []).filter(Boolean)),
+    values || {},
+  );
+
+  installValueGlobals(target, mergedValues);
+
+  (Array.isArray(mutableSources) ? mutableSources : []).forEach((source) => {
+    if (!source) return;
+    installMutableGlobals(target, source);
+  });
+
+  if (mutableBindings && Object.keys(mutableBindings).length > 0) {
+    installMutableGlobals(target, createMutableBindings(mutableBindings));
+  }
+
+  if (backbone?.bus || backbone?.store) {
+    target.__splitshotBackbone = Object.freeze({ bus: backbone.bus, store: backbone.store });
+  }
+  target.__splitshotBootstrapMode = bootstrapMode;
+  return target;
+}

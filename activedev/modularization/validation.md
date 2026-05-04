@@ -77,9 +77,20 @@ uv run pytest tests/browser/test_project_lifecycle_contracts.py tests/browser/te
 uv run pytest tests/browser/test_overlay_review_contracts.py tests/browser/test_browser_interactions.py
 ```
 
-### Tier D — cleanup, CSS split, and final certification (`T10`–`T12`)
+### Tier D — late-stage implementation and final certification (`T10`–`T12`)
 
-These tasks require the strictest scope.
+For `T10` and `T10.5`, validation is implementation support: rerun only the narrowest tests that cover the edited seams and migrated contracts. Do **not** run the full browser suite, canonical runner, or browser audits until the latest sensible certification gate after the last implementation task in the chain, normally `T12` after `T11`.
+
+Targeted implementation examples:
+
+```text
+uv run pytest tests/browser/test_browser_static_ui.py::test_name
+uv run pytest tests/browser/test_browser_interactions.py -k "touched-flow"
+uv run pytest tests/browser/test_project_lifecycle_contracts.py::test_name
+uv run pytest tests/browser/test_merge_export_contracts.py::test_name
+```
+
+Final certification gate commands (normally `T12`):
 
 ```text
 uv run pytest tests/browser/
@@ -88,7 +99,7 @@ uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
 uv run python scripts/audits/browser/run_browser_interaction_audit.py
 ```
 
-If the task packet requires export or AV audits, include:
+If the final certification gate requires export or AV audits, include:
 
 ```text
 uv run python scripts/audits/browser/run_browser_av_audit.py
@@ -121,10 +132,10 @@ Every proof file must state:
 
 1. which validation tier applied
 2. the exact commands that were run
-3. whether the full suite was run or intentionally deferred
+3. whether the full suite was run or intentionally deferred; if deferred, name the later task that owns the broad certification gate
 4. the final pass/fail result for the required scope
 5. any remaining risks
 
 ## Sign-off standard
 
-The sign-off standard for this program is **100% pass rate on the required validation scope for the task and final certification suite**. This program does **not** claim 100% code coverage unless the measured coverage command actually reports that result.
+The sign-off standard for this program is **100% pass rate on the required certification gate for the task chain and the final certification suite**. Intermediate implementation runs may use targeted validation only if the proof file explicitly records the deferral owner. This program does **not** claim 100% code coverage unless the measured coverage command actually reports that result.
