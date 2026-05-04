@@ -81,9 +81,10 @@ The task packets in `tasks/` are the executable work units for subagents.
 | `T09C` | Export and review panes | Extract export and review panes and their shared test ownership | `T08` | yes |
 | `T09D` | ShotML and overlay panes | Extract shotml and overlay after review/overlay contracts are stable | `T09C` | limited |
 | `T09E` | Markers and timing panes | Extract the highest-coupling panes last | `T09D` | no |
-| `T10` | Monolith cleanup | Remove wrappers and retired monolithic scaffolding | `T09A`, `T09B`, `T09C`, `T09D`, `T09E` | no |
-| `T11` | CSS split | Split `styles.css` while preserving the exact visual result | `T10` | no |
-| `T12` | Final certification and PWA readiness | Prove modular completion, zero UX drift, and future PWA readiness | `T10`, `T11` | no |
+| `T10` | Monolith cleanup | Finish owned cleanup implementation, shrink `app.js` to bootstrap plus only documented bridge anchors, and hand any remaining cross-lane bridge work to `T10.5` | `T09A`, `T09B`, `T09C`, `T09D`, `T09E` | no |
+| `T10.5` | Cleanup bridge | Immediately after `T10`, migrate shared browser contracts off temporary `app.js` seams, close residual `T01`–`T09` cleanup debt that still needs bridge ownership, and unblock `T11` using targeted validation only | `T10` | no |
+| `T11` | CSS split | Split `styles.css` while preserving the exact visual result after the cleanup bridge is closed | `T10.5` | no |
+| `T12` | Final certification and PWA readiness | Final broad browser/audit certification and PWA-readiness proof after cleanup bridge and CSS split | `T10.5`, `T11` | no |
 
 ## Execution order and concurrency
 
@@ -94,7 +95,7 @@ T00 -> T01 -> T02 -> T03 -> T04 -> T05 -> T06 -> T07 -> T08
                                                 ├-> T09A
                                                 ├-> T09B
                                                 └-> T09C -> T09D -> T09E
-T09A/T09B/T09C/T09D/T09E -> T10 -> T11 -> T12
+T09A/T09B/T09C/T09D/T09E -> T10 -> T10.5 -> T11 -> T12
 ```
 
 Parallelism is only allowed when the `touches-files` lists in the task packets do not intersect and when shared test ownership has already been partitioned.
@@ -115,6 +116,8 @@ The following files require explicit single-owner control during any active task
 | `tests/browser/test_browser_control_inventory_audit.py` | `T02`, then `T12` |
 | `tests/browser/test_browser_control_coverage_matrix.py` | `T02`, then `T12` |
 | `docs/project/browser-control-qa-matrix.md` | `T02`, then task-specific doc updates, then `T12` reconciliation |
+
+Cleanup bridge note: `T10.5` temporarily owns the shared browser contract files it migrates off `app.js` internals, including `test_project_lifecycle_contracts.py`, `test_merge_export_contracts.py`, `test_overlay_review_contracts.py`, `test_scoring_metrics_contracts.py`, `test_timing_waveform_contracts.py`, `test_browser_control.py`, `test_browser_remaining_controls_e2e.py`, the bridge-related assertions in `test_browser_static_ui.py` / `test_browser_interactions.py`, and the PractiScore session/sync suites when project-pane bridge seams move.
 
 `T01` must extend `audit.md` with exact ownership anchors or line-range notes before `T03` can start.
 

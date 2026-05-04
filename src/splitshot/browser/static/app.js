@@ -35,7 +35,7 @@ import { createEventBus } from "./lib/event-bus.js";
 import { createKeyRuntime } from "./lib/keys.js";
 import { createLayoutRuntime } from "./lib/layout.js";
 import { createShellRuntime } from "./lib/shell-runtime.js";
-import { createMutableBindings, installMutableGlobals, installValueGlobals } from "./lib/global-compat.js";
+import { createMutableBindings, installLegacyGlobalCompat } from "./lib/global-compat.js";
 import { createProcessingRuntime } from "./lib/processing.js";
 import { createStore } from "./lib/store.js";
 import { createWaveformState } from "./lib/waveform-state.js";
@@ -5556,164 +5556,12 @@ const SETTINGS_LAYER_FIELDS = [
   },
 ];
 
-function settingsValueAtPath(value, path) {
-  let current = value;
-  for (const key of path) {
-    if (!(current && typeof current === "object" && key in current)) return undefined;
-    current = current[key];
-  }
-  return current;
-}
-
-function settingsHasPath(value, path) {
-  let current = value;
-  for (const key of path) {
-    if (!(current && typeof current === "object" && key in current)) return false;
-    current = current[key];
-  }
-  return true;
-}
-
-function sameSettingsValue(left, right) {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function settingsSourceLabel(source) {
-  return {
-    project: "Project",
-    folder: "Folder",
-    app: "App",
-    effective: "Effective",
-  }[source] || "Effective";
-}
-
-function formatSettingsValue(value) {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
-  return String(value);
-}
-
-function settingFieldCurrentValue(field, settings, markerTemplate) {
-  if (!field.usesProjectTemplate) return settingsValueAtPath(settings, field.path);
-  const markerKey = field.path[field.path.length - 1];
-  return markerTemplate?.[markerKey];
-}
-
-function settingFieldSource(field, currentValue, layers) {
-  const effectivePath = ["effective", ...field.path];
-  const appPath = ["app", ...field.path];
-  const folderPath = ["folder", ...field.path];
-  const effectiveValue = settingsValueAtPath(layers, effectivePath);
-  if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
-    const projectValue = settingsValueAtPath(layers, field.projectPath);
-    if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
-      return "project";
-    }
-  }
-  if (settingsHasPath(layers, folderPath)) {
-    const folderValue = settingsValueAtPath(layers, folderPath);
-    if (sameSettingsValue(folderValue, currentValue)) return "folder";
-  }
-  if (settingsHasPath(layers, appPath)) {
-    const appValue = settingsValueAtPath(layers, appPath);
-    if (sameSettingsValue(appValue, currentValue)) return "app";
-  }
-  return "effective";
-}
-
 function renderSettingsLayerSummary(settings, markerTemplate, layers) {
-  if (settingsPane) return settingsPane.renderSettingsLayerSummary(settings, markerTemplate, layers);
-  const container = $("settings-layer-summary");
-  if (!container) return;
-  const table = document.createElement("table");
-  table.className = "data-table";
-  table.setAttribute("aria-label", "Settings layer summary");
-  table.innerHTML = "<thead><tr><th>Setting</th><th>Value</th><th>Source</th></tr></thead>";
-  const body = document.createElement("tbody");
-  SETTINGS_LAYER_FIELDS.forEach((field) => {
-    const currentValue = settingFieldCurrentValue(field, settings, markerTemplate);
-    const source = settingFieldSource(field, currentValue, layers);
-    const row = document.createElement("tr");
-    const labelCell = document.createElement("td");
-    labelCell.textContent = field.label;
-    const valueCell = document.createElement("td");
-    valueCell.textContent = formatSettingsValue(currentValue);
-    const sourceCell = document.createElement("td");
-    sourceCell.textContent = settingsSourceLabel(source);
-    row.append(labelCell, valueCell, sourceCell);
-    body.appendChild(row);
-  });
-  table.appendChild(body);
-  container.replaceChildren(table);
+  return settingsPane?.renderSettingsLayerSummary(settings, markerTemplate, layers);
 }
 
 function renderSettingsPane() {
-  if (settingsPane) return settingsPane.renderSettingsPane();
-  const settings = currentSettings();
-  const layers = state?.settings_layers || {};
-  const hasProjectPath = Boolean(state?.project?.path);
-  const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
-  const projectOverlay = state?.project?.overlay || {};
-  const projectExport = state?.project?.export || {};
-  const projectScoring = state?.project?.scoring || {};
-  const projectAnalysis = state?.project?.analysis || {};
-  const markerTemplate = normalizePopupTemplate(settings.marker_template || state?.project?.popup_template || {});
-  const scopeSelect = $("settings-scope");
-  const scopeStatus = $("settings-scope-status");
-  if (scopeSelect) {
-    const folderOption = scopeSelect.querySelector('option[value="folder"]');
-    if (folderOption) folderOption.disabled = !hasProjectPath;
-    if (!hasProjectPath && scopeSelect.value === "folder") syncControlValue(scopeSelect, "app");
-    if (hasProjectPath && !scopeSelect.value) syncControlValue(scopeSelect, "folder");
-  }
-  if (scopeStatus) {
-    const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
-    scopeStatus.textContent = folderSettingsError
-      ? folderSettingsError
-      : !hasProjectPath
-      ? "No project folder is open. App defaults are the global template."
-      : (hasFolderLayer
-        ? "Folder defaults are active for this project and override the global template here."
-        : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
-  }
-  const shotmlDefaults = settings.shotml_defaults || {};
-  renderExportPresetOptions("settings-export-preset", null, settings.export_preset ?? projectExport.preset ?? "source");
-  syncControlValue($("settings-default-match-type"), settings.default_match_type ?? projectScoring.match_type ?? "uspsa");
-  syncControlValue($("settings-overlay-position"), settings.overlay_position ?? state?.project?.overlay?.position ?? "bottom");
-  syncControlValue($("settings-badge-size"), settings.badge_size ?? state?.project?.overlay?.badge_size ?? "M");
-  syncControlValue($("settings-overlay-custom-background-color"), settings.overlay_custom_box_background_color ?? projectOverlay.custom_box_background_color ?? "#000000");
-  syncControlValue($("settings-overlay-custom-text-color"), settings.overlay_custom_box_text_color ?? projectOverlay.custom_box_text_color ?? "#ffffff");
-  syncControlValue($("settings-overlay-custom-opacity"), settings.overlay_custom_box_opacity ?? projectOverlay.custom_box_opacity ?? 0.9);
-  syncSettingsBadgeStyle("settings-timer-badge", settings.timer_badge || projectOverlay.timer_badge || {});
-  syncSettingsBadgeStyle("settings-shot-badge", settings.shot_badge || projectOverlay.shot_badge || {});
-  syncSettingsBadgeStyle("settings-current-shot-badge", settings.current_shot_badge || projectOverlay.current_shot_badge || {});
-  syncSettingsBadgeStyle("settings-hit-factor-badge", settings.hit_factor_badge || projectOverlay.hit_factor_badge || {});
-  syncControlValue($("settings-merge-layout"), settings.merge_layout ?? state?.project?.merge?.layout ?? "side_by_side");
-  syncControlValue($("settings-pip-size"), settings.pip_size ?? state?.project?.merge?.pip_size ?? "35%");
-  syncControlValue($("settings-merge-pip-x"), settings.merge_pip_x ?? state?.project?.merge?.pip_x ?? 1.0);
-  syncControlValue($("settings-merge-pip-y"), settings.merge_pip_y ?? state?.project?.merge?.pip_y ?? 1.0);
-  syncControlValue($("settings-export-quality"), settings.export_quality ?? state?.project?.export?.quality ?? "high");
-  syncControlValue($("settings-export-frame-rate"), settings.export_frame_rate ?? projectExport.frame_rate ?? "source");
-  syncControlValue($("settings-export-video-codec"), settings.export_video_codec ?? projectExport.video_codec ?? "h264");
-  syncControlValue($("settings-export-audio-codec"), settings.export_audio_codec ?? projectExport.audio_codec ?? "aac");
-  syncControlValue($("settings-export-color-space"), settings.export_color_space ?? projectExport.color_space ?? "bt709_sdr");
-  syncControlChecked($("settings-export-two-pass"), Boolean(settings.export_two_pass ?? projectExport.two_pass ?? false));
-  syncControlValue($("settings-export-ffmpeg-preset"), settings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
-  syncControlValue($("settings-default-tool"), settings.default_tool ?? "project");
-  syncControlChecked($("settings-reopen-last-tool"), Boolean(settings.reopen_last_tool ?? true));
-  syncControlValue(
-    $("settings-shotml-threshold"),
-    Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
-  );
-  syncSettingsMarkerTemplate(markerTemplate);
-  const markerSource = $("settings-marker-source");
-  if (markerSource) {
-    markerSource.textContent = hasProjectPath
-      ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
-      : "App template";
-  }
-  renderSettingsSections();
+  return settingsPane?.renderSettingsPane();
 }
 
 function mergeSourcePipRect(...args) {
@@ -9117,44 +8965,6 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
   };
 };
 
-const LEGACY_WIRE_EVENTS_SOURCE_ANCHORS = String.raw`
-$("primary-file-input").addEventListener("change", async (event) => {
-    if (!hasActiveProject()) {
-      setStatus(gatedProjectActionMessage());
-      event.target.value = "";
-      return;
-    }
-    const selectedFile = event.target.files?.[0] || null;
-    if (!selectedFile) {
-      event.target.value = "";
-      return;
-    }
-    await flushPendingProjectDrafts({ primaryImport: true });
-  });
-$("export-video").addEventListener("click", async () => {
-    const path = requireValue("export-path", "Output video path");
-    exportPathDraft = path;
-    const payload = buildExportPayload(path);
-    applyExportDraft(payload);
-    cancelPendingExportDrafts();
-    await flushPendingMergeSourceCommits();
-    await callApi("/api/export", payload);
-  });
-$("show-export-log")?.addEventListener("click", openExportLogModal);
-document.addEventListener("pointercancel", endOverlayBadgeDrag);
-document.addEventListener("lostpointercapture", endOverlayBadgeDrag);
-document.addEventListener("pointercancel", endTextBoxDrag);
-document.addEventListener("lostpointercapture", endTextBoxDrag);
-resetOverlayPlacementBaseline(id);
-document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState && document.visibilityState !== "visible") {
-      cancelOverlayDragInteractions("document.hidden");
-    }
-  });
-window.addEventListener("blur", () => cancelOverlayDragInteractions("window.blur"));
-`;
-void LEGACY_WIRE_EVENTS_SOURCE_ANCHORS;
-
 function wireEvents() {
   return shellRuntime?.wireEvents();
 }
@@ -10101,30 +9911,53 @@ shellRuntime = createShellRuntime({
   DEFAULT_PROJECT_UI_STATE,
 });
 
-function installLegacyGlobalCompat() {
-  const browserGlobal = window;
-  installValueGlobals(browserGlobal, {
-    ...activityRuntime,
-    ...processingRuntime,
-    ...layoutRuntime,
-    ...keyRuntime,
-    ...apiRuntime,
-    ...statusBarComponent,
-    ...videoPlayerComponent,
-    ...waveformStateRuntime,
-    ...waveformComponent,
-    ...overlayCanvasComponent,
-    ...shotmlPane,
-    ...markersPane,
-    ...overlayPane,
-    ...exportPane,
-    ...settingsPane,
-    ...mergePane,
-    ...projectPane,
-    ...reviewPane,
-    ...timingPane,
-    ...scoringPane,
-    ...metricsPane,
+const legacyGlobalMutableBindings = {
+  api: [() => api, (value) => { api = value; }],
+  callApi: [() => callApi, (value) => { callApi = value; }],
+  postFile: [() => postFile, (value) => { postFile = value; }],
+  pickPath: [() => pickPath, (value) => { pickPath = value; }],
+  pickPathForElement: [() => pickPathForElement, (value) => { pickPathForElement = value; }],
+  openHiddenFileInput: [() => openHiddenFileInput, (value) => { openHiddenFileInput = value; }],
+  postFiles: [() => postFiles, (value) => { postFiles = value; }],
+  createNewProject: [() => createNewProject, (value) => { createNewProject = value; }],
+  useProjectFolder: [() => useProjectFolder, (value) => { useProjectFolder = value; }],
+  openPractiScoreDashboard: [() => openPractiScoreDashboard, (value) => { openPractiScoreDashboard = value; }],
+  applySettingsDefaults: [() => applySettingsDefaults, (value) => { applySettingsDefaults = value; }],
+  flushPendingSettingsDefaults: [() => flushPendingSettingsDefaults, (value) => { flushPendingSettingsDefaults = value; }],
+  renderTextBoxEditors: [() => renderTextBoxEditors, (value) => { renderTextBoxEditors = value; }],
+  setReviewTextBoxExpanded: [() => setReviewTextBoxExpanded, (value) => { setReviewTextBoxExpanded = value; }],
+  setPopupBubbles: [() => setPopupBubbles, (value) => { setPopupBubbles = value; }],
+  autoTracePopupBubbleMotion: [() => autoTracePopupBubbleMotion, (value) => { autoTracePopupBubbleMotion = value; }],
+  render: [() => render, (value) => { render = value; }],
+  refresh: [() => refresh, (value) => { refresh = value; }],
+};
+
+installLegacyGlobalCompat({
+  target: window,
+  valueSources: [
+    activityRuntime,
+    processingRuntime,
+    layoutRuntime,
+    keyRuntime,
+    apiRuntime,
+    statusBarComponent,
+    videoPlayerComponent,
+    waveformStateRuntime,
+    waveformComponent,
+    overlayCanvasComponent,
+    shotmlPane,
+    markersPane,
+    overlayPane,
+    exportPane,
+    settingsPane,
+    mergePane,
+    projectPane,
+    reviewPane,
+    timingPane,
+    scoringPane,
+    metricsPane,
+  ],
+  values: {
     normalizeToolId, normalizeExportDraftValue, applyExportDraft, mergeExportDraft,
     seconds, precise, splitSeconds, numericMs,
     orderedShotsByTime, orderedShotsByTimeFromState, shotSelectionContext, fallbackSelectedShotId,
@@ -10191,7 +10024,6 @@ function installLegacyGlobalCompat() {
     seekPrimaryVideoToTimeMs, seekPrimaryVideoToShot, selectedShot, shotLabelForEvent,
     formatTimingValue, toggleTimingRowEdit, restoreOriginalScore, renderTimingTable,
     renderTimingTables, markersWorkbenchShown, popupEditingActive,
-    renderControls, renderStyleControls,
     visibleTimingEventsByShot, textBiasForDirection, overlayBadgeContentText, overlayBadgeFontSizePx,
     overlayBadgeMeasureContext, overlayBadgeFontSpec, measureOverlayBadgeContent, overlayAutoSizedBadgeContents,
     overlayAutoBubbleSize, syncOverlayBubbleSizeControls, badgeElement, videoContentRect,
@@ -10204,38 +10036,14 @@ function installLegacyGlobalCompat() {
     setWaveformZoom, panWaveform, handleWaveformWheel, setWaveformAmplitude,
     resetWaveformView, openHiddenFileInput, postFiles, buildExportPayload,
     cancelPendingExportDrafts, flushPendingSettingsDefaults, applySettingsDefaults, applySettingsShotMLDefaults,
-    applyProjectUiStatePayload, resetProjectUiStateApplyState, sendKeepaliveJson, sendProjectUiStateKeepalive,
-    scheduleThresholdApply, applyThresholdNow, scheduleShotMLSettingsApply, scheduleProjectUiStateApply,
-    flushQueuedProjectUiStateApply, scheduleOverlayApply, wireEvents,
-  });
-  installMutableGlobals(browserGlobal, legacyGlobalState);
-  installMutableGlobals(browserGlobal, createMutableBindings({
-    api: [() => api, (value) => { api = value; }],
-    callApi: [() => callApi, (value) => { callApi = value; }],
-    postFile: [() => postFile, (value) => { postFile = value; }],
-    pickPath: [() => pickPath, (value) => { pickPath = value; }],
-    pickPathForElement: [() => pickPathForElement, (value) => { pickPathForElement = value; }],
-    openHiddenFileInput: [() => openHiddenFileInput, (value) => { openHiddenFileInput = value; }],
-    postFiles: [() => postFiles, (value) => { postFiles = value; }],
-    createNewProject: [() => createNewProject, (value) => { createNewProject = value; }],
-    useProjectFolder: [() => useProjectFolder, (value) => { useProjectFolder = value; }],
-    openPractiScoreDashboard: [() => openPractiScoreDashboard, (value) => { openPractiScoreDashboard = value; }],
-    applySettingsDefaults: [() => applySettingsDefaults, (value) => { applySettingsDefaults = value; }],
-    flushPendingSettingsDefaults: [() => flushPendingSettingsDefaults, (value) => { flushPendingSettingsDefaults = value; }],
-    sendKeepaliveJson: [() => sendKeepaliveJson, (value) => { sendKeepaliveJson = value; }],
-    sendProjectUiStateKeepalive: [() => sendProjectUiStateKeepalive, (value) => { sendProjectUiStateKeepalive = value; }],
-    renderTextBoxEditors: [() => renderTextBoxEditors, (value) => { renderTextBoxEditors = value; }],
-    setReviewTextBoxExpanded: [() => setReviewTextBoxExpanded, (value) => { setReviewTextBoxExpanded = value; }],
-    setPopupBubbles: [() => setPopupBubbles, (value) => { setPopupBubbles = value; }],
-    autoTracePopupBubbleMotion: [() => autoTracePopupBubbleMotion, (value) => { autoTracePopupBubbleMotion = value; }],
-    render: [() => render, (value) => { render = value; }],
-    refresh: [() => refresh, (value) => { refresh = value; }],
-  }));
-  browserGlobal.__splitshotBackbone = Object.freeze({ bus: appBus, store: appStore });
-  browserGlobal.__splitshotBootstrapMode = "module";
-}
+    applyProjectUiStatePayload, resetProjectUiStateApplyState,
+  },
+  mutableSources: [legacyGlobalState],
+  mutableBindings: legacyGlobalMutableBindings,
+  backbone: runtimeBackbone,
+  bootstrapMode: "module",
+});
 
-installLegacyGlobalCompat();
 applyLayoutState();
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
 wireGlobalActivityLogging();
