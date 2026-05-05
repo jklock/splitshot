@@ -50,13 +50,23 @@ function resolveSymlinks(binDir) {
   }
 }
 
+function findTool(tool) {
+  const cmd = process.platform === 'win32' ? `where ${tool} 2>nul` : `which ${tool} 2>/dev/null`;
+  try {
+    const result = execSync(cmd, { encoding: 'utf8', cwd: ROOT }).trim().split(/\r?\n/)[0];
+    return result || '';
+  } catch {
+    return '';
+  }
+}
+
 function bundleFfmpeg() {
   const ffmpegDir = path.join(BUNDLE_SRC_DIR, 'splitshot', 'resources', 'ffmpeg');
   const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
   const platformDir = path.join(ffmpegDir, platform);
   fs.mkdirSync(platformDir, { recursive: true });
   for (const tool of ['ffmpeg', 'ffprobe']) {
-    const result = execSync(`which ${tool} 2>/dev/null || echo ""`, { encoding: 'utf8', cwd: ROOT }).trim();
+    const result = findTool(tool);
     if (result) {
       const dest = path.join(platformDir, tool);
       fs.cpSync(result, dest);
