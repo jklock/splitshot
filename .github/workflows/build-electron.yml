@@ -8,6 +8,7 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [macos-14, windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -49,7 +50,7 @@ jobs:
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
             libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
             libgtk-3-0 libnotify4 libnss3 libnspr4 \
-            libxss1 libxtst6 libasound2 \
+            libxss1 libxtst6 libasound2t64 \
             libdrm2 libgbm1 libatspi2.0-0 libcups2 \
             build-essential python3-dev \
             libblas-dev liblapack-dev gfortran \
@@ -58,27 +59,32 @@ jobs:
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg -y --no-progress
+        timeout-minutes: 5
 
       - name: Sync Python dependencies
         run: uv sync --extra dev
+        timeout-minutes: 15
 
       - name: Verify CLI
         run: uv run splitshot --check
 
       - name: Bundle Python
         run: npm --prefix electron run bundle
+        timeout-minutes: 20
 
       - name: Verify bundle
         run: npm --prefix electron run check
 
       - name: Install Node dependencies
         run: npm --prefix electron install
+        timeout-minutes: 10
 
       - name: Run parity audit
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
 
       - name: Build Electron app
         run: npm --prefix electron run build
+        timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
