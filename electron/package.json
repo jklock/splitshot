@@ -1,0 +1,84 @@
+{
+  "name": "splitshot",
+  "version": "1.1.0",
+  "description": "Competition shooting video analysis, scoring, and export",
+  "main": "main.js",
+  "scripts": {
+    "bundle": "node ../scripts/bundle-python.js",
+    "dev": "electron .",
+    "start": "node ../scripts/bundle-python.js && electron .",
+    "check": "node ../scripts/bundle-python.js check",
+    "build": "node ../scripts/bundle-python.js && electron-builder",
+    "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac",
+    "build:win": "node ../scripts/bundle-python.js && electron-builder --win",
+    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux"
+  },
+  "author": "SplitShot",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "studio.splitshot.app",
+    "productName": "SplitShot",
+    "directories": {
+      "output": "build"
+    },
+    "compression": "maximum",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "bundle",
+        "to": "bundle",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.sports",
+      "target": ["dmg"],
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "SplitShot Project",
+            "CFBundleTypeRole": "Editor",
+            "LSHandlerRank": "Owner",
+            "LSItemContentTypes": ["studio.splitshot.ssproj"]
+          }
+        ]
+      }
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "assets/icon.png",
+      "category": "Sports",
+      "mimeTypes": ["application/x-splitshot-project"],
+      "desktop": {
+        "MimeType": "application/x-splitshot-project"
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": "ssproj",
+        "name": "SplitShot Project",
+        "description": "SplitShot project bundle",
+        "mimeType": "application/x-splitshot-project",
+        "role": "Editor"
+      }
+    ],
+    "protocols": {
+      "name": "SplitShot",
+      "schemes": ["splitshot"]
+    }
+  }
+}
