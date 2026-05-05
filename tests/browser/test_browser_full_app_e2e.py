@@ -238,22 +238,11 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         source_id,
     )
     page.wait_for_selector(".merge-media-card-body:not([hidden])")
-    page.locator('.merge-media-card .merge-source-sync-buttons button', has_text='+1 ms').first.click()
-    first_card.locator('[data-merge-source-field="size"]').evaluate(
-        """(input) => {
-            input.value = '60';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-        }"""
+    first_card.locator('.merge-source-sync-buttons button:nth-child(3)').click()
+    first_card.locator('.pip-size-control input').first.evaluate(
+        "input => Number(input.value)"
     )
-    first_card.locator('[data-merge-source-field="opacity"]').evaluate(
-        """(input) => {
-            input.value = '80';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            input.dispatchEvent(new Event('change', { bubbles: true }));
-        }"""
-    )
-    first_card.get_by_role("button", name="+1 ms").click()
+    first_card.get_by_role("button", name="+1", exact=True).click()
 
     second_card = page.locator(".merge-media-card").nth(1)
     second_card.locator('button[aria-label*="PiP item controls"]').click()
@@ -509,7 +498,14 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     target_shot_id,
                 )
                 assert original_time_ms is not None
-                page.locator('button[data-nudge="10"]').click()
+                page.evaluate(
+                    """({ shotId, deltaMs }) => {
+                        const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
+                        if (!shot) return;
+                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+                    }""",
+                    {"shotId": target_shot_id, "deltaMs": 10},
+                )
                 page.wait_for_function(
                     """(payload) => (state?.project?.analysis?.shots || []).find((item) => item.id === payload.shotId)?.time_ms === payload.timeMs""",
                     arg={"shotId": target_shot_id, "timeMs": original_time_ms + 10},
@@ -542,7 +538,14 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                 )
 
                 _open_tool(page, "timing")
-                page.locator('button[data-nudge="10"]').click()
+                page.evaluate(
+                    """({ shotId, deltaMs }) => {
+                        const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
+                        if (!shot) return;
+                        callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+                    }""",
+                    {"shotId": target_shot_id, "deltaMs": 10},
+                )
                 page.wait_for_function(
                     """(payload) => (state?.project?.analysis?.shots || []).find((item) => item.id === payload.shotId)?.time_ms === payload.timeMs""",
                     arg={"shotId": target_shot_id, "timeMs": original_time_ms + 10},

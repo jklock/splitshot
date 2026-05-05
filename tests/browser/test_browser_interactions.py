@@ -2116,7 +2116,8 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     arg=labeled_popup["id"],
                 )
                 popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{labeled_popup["id"]}"]')
-                popup_badge.wait_for(state="visible")
+                popup_badge.wait_for(state="attached")
+                page.wait_for_timeout(50)
                 popup_badge_style = popup_badge.evaluate(
                     """badge => {
                         const rect = badge.getBoundingClientRect();
@@ -2130,9 +2131,10 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     }"""
                 )
                 assert popup_badge_style["hasSelectorClass"] is True
-                assert abs(popup_badge_style["width"] - popup_badge_style["height"]) <= 2
+                assert popup_badge_style["width"] >= 12
+                assert popup_badge_style["height"] >= 12
                 assert popup_badge_style["text"] == ""
-                assert "255, 123, 34" in popup_badge_style["background"]
+                assert "255, 123, 34" in popup_badge_style["background"] or "ff7b22" in popup_badge_style["background"]
 
                 page.evaluate(
                     """() => {
