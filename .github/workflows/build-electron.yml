@@ -89,8 +89,8 @@ jobs:
       - name: Verify installer
         shell: bash
         run: |
-          shopt -s nullglob
-          found=( electron/build/*.{dmg,exe,AppImage} )
+          shopt -s nullglob extglob
+          found=( electron/build/*.@(dmg|exe|AppImage) )
           if [ ${#found[@]} -eq 0 ]; then
             echo "No installers found in electron/build/"
             exit 1
@@ -103,7 +103,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: splitshot-${{ runner.os }}
-          path: electron/build/*.{dmg,exe,AppImage}
+          path: |
+            electron/build/*.dmg
+            electron/build/*.exe
+            electron/build/*.AppImage
 
   release:
     needs: test
