@@ -27,7 +27,6 @@
       "output": "build"
     },
     "compression": "maximum",
-    "publish": "never",
     "files": [
       "main.js",
       "preload.js"
