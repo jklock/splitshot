@@ -76,14 +76,14 @@ jobs:
         run: node scripts/bundle-python.js check
 
       - name: Install Node dependencies
-        run: npm --prefix electron install
+        run: cd electron && npm install
         timeout-minutes: 10
 
       - name: Run parity audit
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
 
       - name: Build Electron app
-        run: npm --prefix electron run build
+        run: cd electron && npm run build
         timeout-minutes: 30
 
       - name: Verify installer
