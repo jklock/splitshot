@@ -114,3 +114,4 @@ jobs:
         with:
           files: splitshot-*/*
           generate_release_notes: true
+
