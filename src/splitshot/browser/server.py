@@ -6,10 +6,12 @@ import errno
 import json
 import mimetypes
 import re
+import socket
 import subprocess
 import sys
 import threading
 import webbrowser
+from contextlib import closing
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -461,6 +463,18 @@ def _sync_export_payload(controller: ProjectController, payload: dict[str, Any])
     controller.apply_export_preset(selected_preset)
     if selected_preset == "custom" or not _payload_matches_export_state(controller.project, payload):
         controller.set_export_settings(payload)
+
+
+def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: int = 10) -> int:
+    for attempt in range(max_attempts):
+        port = desired + attempt
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            try:
+                sock.bind((host, port))
+                return port
+            except OSError:
+                continue
+    raise OSError(f"No free port found on {host} in range {desired}-{desired + max_attempts - 1}")
 
 
 class QuietThreadingHTTPServer(ThreadingHTTPServer):

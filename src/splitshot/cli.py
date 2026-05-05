@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 from importlib import resources
 from pathlib import Path
 from typing import Sequence
@@ -21,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Launch the local browser control interface. This is the default.",
     )
+    parser.add_argument("--headless", action="store_true", help="Start the HTTP server without a GUI. Uses the browser control interface without Qt.")
     parser.add_argument("--host", default="127.0.0.1", help="Browser bind host.")
     parser.add_argument("--port", type=int, default=8765, help="Browser bind port.")
     parser.add_argument("--no-open", action="store_true", help="Do not open the browser automatically.")
@@ -120,6 +123,57 @@ def _check_dialog_runtime() -> str:
     return "tkinter"
 
 
+def run_headless(
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    project_path: Path | None = None,
+    log_level: str = "off",
+) -> int:
+    try:
+        from splitshot.browser.server import BrowserControlServer, find_free_port
+        from splitshot.ui.controller import ProjectController
+    except Exception as exc:
+        raise SystemExit(f"SplitShot browser runtime is unavailable: {exc}") from exc
+
+    controller = ProjectController()
+    if project_path is not None:
+        controller.open_project(str(project_path))
+    server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+
+    shutdown = threading.Event()
+
+    def _handle_signal(_signum, _frame) -> None:
+        shutdown.set()
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+
+    try:
+        actual_port = find_free_port(host, port)
+    except OSError as exc:
+        print(f"SplitShot could not bind to {host}:{port}: {exc}")
+        return 1
+
+    if actual_port != port:
+        print(f"Port {port} in use; using {actual_port} instead")
+        server = BrowserControlServer(controller=controller, host=host, port=actual_port, log_level=log_level)
+
+    server.start_background(open_browser=False)
+
+    print(f"Open SplitShot at {server.url}")
+    if log_level != "off":
+        print(f"SplitShot activity log: {server.activity.path}")
+
+    try:
+        shutdown.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+
+    return 0
+
+
 def run_check() -> int:
     print("SplitShot runtime check")
     print(f"- platform: {_platform_label()}")
@@ -163,6 +217,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.check:
         return run_check()
+    if args.headless:
+        return run_headless(
+            host=args.host,
+            port=args.port,
+            project_path=args.project,
+            log_level=args.log_level,
+        )
     return run_browser(
         host=args.host,
         port=args.port,

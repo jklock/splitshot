@@ -21,3 +21,8 @@ Stage*.mp4
 artifacts/*.png
 development/
 .archive/
+
+# Electron
+electron/bundle/
+electron/build/
+electron/node_modules/
