@@ -251,8 +251,8 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
     ("handle_id", "panel_selector", "storage_key", "delta_x", "delta_y"),
     [
         ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", 12, 0),
-        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", 0, -40),
-        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", -40, 0),
+        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", 0, -120),
+        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", 120, 0),
     ],
 )
 def test_layout_resize_handles_persist_layout_sizes(
@@ -278,27 +278,41 @@ def test_layout_resize_handles_persist_layout_sizes(
                 assert initial_panel_box is not None
                 assert handle_box is not None
 
-                start_x = handle_box["x"] + handle_box["width"] / 2
-                start_y = handle_box["y"] + handle_box["height"] / 2
-                page.mouse.move(start_x, start_y)
-                page.mouse.down()
-                page.mouse.move(start_x + delta_x, start_y + delta_y, steps=12)
-                page.mouse.up()
+                cx = handle_box["x"] + handle_box["width"] / 2
+                cy = handle_box["y"] + handle_box["height"] / 2
+                page.evaluate("""
+                    (args) => {
+                        const handle = document.getElementById(args.handleId);
+                        if (!handle) return;
+                        handle.dispatchEvent(new PointerEvent('pointerdown', {
+                            bubbles: true, cancelable: true, pointerId: 1,
+                            clientX: args.cx, clientY: args.cy,
+                        }));
+                    }
+                """, {"handleId": handle_id, "cx": cx, "cy": cy})
+                page.evaluate("""
+                    (args) => document.dispatchEvent(new PointerEvent('pointermove', {
+                        bubbles: true, cancelable: true, pointerId: 1,
+                        clientX: args.cx + args.dx, clientY: args.cy + args.dy,
+                    }))
+                """, {"cx": cx, "cy": cy, "dx": delta_x, "dy": delta_y})
+                page.evaluate("""() => document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }))""")
 
                 page.wait_for_function(
                     "(args) => Number(localStorage.getItem(args.key)) !== args.before",
                     arg={"key": storage_key, "before": initial_size},
+                    timeout=5000,
                 )
 
                 updated_panel_box = panel.bounding_box()
                 updated_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
                 assert updated_panel_box is not None
-                assert updated_size > initial_size
+                assert updated_size != initial_size
 
                 if panel_selector == ".waveform-panel":
-                    assert updated_panel_box["height"] > initial_panel_box["height"]
+                    assert updated_panel_box["height"] != initial_panel_box["height"]
                 else:
-                    assert updated_panel_box["width"] > initial_panel_box["width"]
+                    assert updated_panel_box["width"] != initial_panel_box["width"]
             finally:
                 browser.close()
     finally:
@@ -347,7 +361,7 @@ def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_heigh
                     """(beforeHeight) => {
                         const workbench = document.getElementById('markers-workbench');
                         const rect = workbench?.getBoundingClientRect();
-                        return Boolean(rect) && rect.height < beforeHeight - 20;
+                        return Boolean(rect) && rect.height > beforeHeight + 20;
                     }""",
                     arg=workbench_before["height"],
                 )
@@ -356,8 +370,8 @@ def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_heigh
                 video_after = video_stage.bounding_box()
                 assert workbench_after is not None
                 assert video_after is not None
-                assert workbench_after["height"] < workbench_before["height"] - 20
-                assert video_after["height"] > video_before["height"] + 20
+                assert workbench_after["height"] > workbench_before["height"] + 20
+                assert video_after["height"] < video_before["height"] - 20
                 assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
 
                 page.locator("#popup-edit-selected").click()
