@@ -38,7 +38,6 @@ def _beep_window(rng: np.random.Generator) -> np.ndarray:
     signal = _background_window(rng)
     length = int(rng.integers(int(SAMPLE_RATE * 0.05), min(WINDOW_SIZE - 8, int(SAMPLE_RATE * 0.13))))
     start = int(rng.integers(0, max(1, WINDOW_SIZE - length)))
-    time = np.arange(length, dtype=np.float32) / SAMPLE_RATE
     start_frequency = float(rng.uniform(1800.0, 3400.0))
     end_frequency = start_frequency + float(rng.uniform(-250.0, 350.0))
     frequencies = np.linspace(start_frequency, end_frequency, length, dtype=np.float32)

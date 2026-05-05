@@ -534,7 +534,6 @@ class OverlayRenderer:
         if not badges:
             return []
 
-        position = project.overlay.position
         font_size = project.overlay.font_size or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
         font = QFont(project.overlay.font_family or "Helvetica Neue")
         font.setPixelSize(max(1, int(font_size)))
