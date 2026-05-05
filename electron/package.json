@@ -8,10 +8,10 @@
     "dev": "electron .",
     "start": "node ../scripts/bundle-python.js && electron .",
     "check": "node ../scripts/bundle-python.js check",
-    "build": "node ../scripts/bundle-python.js && electron-builder",
-    "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac",
-    "build:win": "node ../scripts/bundle-python.js && electron-builder --win",
-    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux"
+    "build": "node ../scripts/bundle-python.js && electron-builder --publish=never",
+    "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac --publish=never",
+    "build:win": "node ../scripts/bundle-python.js && electron-builder --win --publish=never",
+    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux --publish=never"
   },
   "repository": "github:jklock/splitshot",
   "author": "SplitShot",
@@ -27,6 +27,7 @@
       "output": "build"
     },
     "compression": "maximum",
+    "publish": "never",
     "files": [
       "main.js",
       "preload.js"
