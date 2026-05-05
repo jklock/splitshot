@@ -79,7 +79,6 @@ def extract_window_features(window: np.ndarray, sample_rate: int) -> np.ndarray:
     split = signal.size // 3
     attack = absolute[:split]
     sustain = absolute[split : split * 2]
-    tail = absolute[split * 2 :]
     attack_ratio = float(np.mean(attack) / (np.mean(absolute) + eps))
     sustain_ratio = float(np.mean(sustain) / (np.mean(absolute) + eps))
     attack_peak = float(np.max(np.abs(np.diff(signal[: max(2, split)])))) + eps

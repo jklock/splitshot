@@ -351,8 +351,8 @@ def _scoring_color_options(preset: ScoringPreset) -> list[dict[str, object]]:
 
     for letter in preset.score_options:
         add_option(letter, "Score token")
-    for field in preset.penalty_fields:
-        add_option(penalty_field_short_label(field.id, field.label), field.label)
+    for penalty_field in preset.penalty_fields:
+        add_option(penalty_field_short_label(penalty_field.id, penalty_field.label), penalty_field.label)
     return options
 
 

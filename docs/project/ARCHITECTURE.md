@@ -45,28 +45,63 @@ The browser server in [src/splitshot/browser/server.py](../src/splitshot/browser
 
 - `GET /api/state` for the current serialized project state.
 - `GET /api/practiscore/session/status`, `POST /api/practiscore/session/start`, and `POST /api/practiscore/session/clear` for the visible manual PractiScore login flow backed by a reusable persistent browser profile.
-- `GET /api/practiscore/matches` and `POST /api/practiscore/sync/start` for the remote PractiScore match-list and selected-match import surface. Task A ships these as safe route placeholders that return structured unavailable errors until Task B controller hooks exist.
+- `GET /api/practiscore/matches` and `POST /api/practiscore/sync/start` for the remote PractiScore match-list and selected-match import surface.
 - `GET /media/primary` and `GET /media/secondary` for media playback.
 - `POST /api/files/primary`, `POST /api/files/secondary`, and `POST /api/files/merge` for imports.
 - `POST /api/project/*`, `POST /api/analysis/shotml-*`, `POST /api/analysis/shotml/*`, `POST /api/shots/*`, `POST /api/scoring/*`, `POST /api/overlay`, `POST /api/merge`, and `POST /api/export` for edits and export.
 
 The browser shell keeps its own view state, but all authoritative data still lives in the controller and `Project` model.
 
+### Browser Static Module Architecture
+
+The frontend static assets (`src/splitshot/browser/static/`) have been modularized into ES modules:
+
+```
+static/
+  app.js                  # Bootstrap — 26 imports, delegates to module factories
+  index.html              # Shell HTML with module script tag
+  styles.css              # @import loader (5 split files)
+  lib/                    # Shared backbone modules (11 files)
+    api.js                # API client with stale-request tracking
+    store.js              # In-memory state container
+    event-bus.js          # Pub/sub event bus
+    layout.js             # Layout resize/apply/persist
+    keys.js               # Keyboard shortcut handler
+    shell-runtime.js      # Central render() and wireEvents()
+    global-compat.js      # Legacy page-global bridge installer
+    utils.js              # Shared DOM and math helpers
+    activity.js           # Activity logging
+    processing.js         # Processing bar state
+    waveform-state.js     # Waveform viewport math
+  components/             # Reusable UI components (4 files)
+    status-bar.js         # Header, stats, timing summary
+    video-player.js       # Video stage rendering
+    waveform.js           # Waveform canvas + interaction
+    overlay-canvas.js     # Overlay frame scheduler
+  panes/                  # Pane modules (12 files)
+    pane-base.js          # Generic expand/collapse base
+    scoring-pane.js       # Scoring workbench
+    settings-pane.js      # Settings defaults
+    metrics-pane.js       # Metrics display/export
+    project-pane.js       # Project + PractiScore import
+    merge-pane.js         # Merge source management
+    export-pane.js        # Export controls
+    review-pane.js        # Review text boxes
+    overlay-pane.js       # Live overlay + ShotML controls
+    shotml-pane.js        # ShotML threshold/proposals
+    markers-pane.js       # Popup bubble markers
+    timing-pane.js        # Timing events/splits
+  styles/                 # Split CSS modules (5 files)
+    theme.css             # CSS variables + element base styles
+    layout.css            # Shell grid, rail, status bar, resize handles
+    components.css        # Video stage, overlays, waveform, inspector
+    panes.css             # Pane-specific styles
+    widgets.css           # Responsive breakpoints + container queries
+```
+
+Pane modules import only the generic `pane-base.js` — no pane imports another pane. Shared behavior flows through backbone modules.
+
 The PractiScore session foundation lives in [src/splitshot/browser/practiscore_profile.py](../src/splitshot/browser/practiscore_profile.py), [src/splitshot/browser/practiscore_session.py](../src/splitshot/browser/practiscore_session.py), and the desktop runtime in [src/splitshot/browser/practiscore_qt_runtime.py](../src/splitshot/browser/practiscore_qt_runtime.py). SplitShot opens a visible app-owned Qt WebEngine window for manual PractiScore authentication, stores the persistent profile under the app data directory, and never collects PractiScore credentials through SplitShot form fields.
 
-Media endpoints treat normal browser cancellations and local socket buffer exhaustion as client disconnects. Large video requests can stop mid-stream when the browser seeks or abandons a previous range request; the server logs those cases as `media.client_disconnect` warnings rather than surfacing a fatal traceback.
-
-For the ShotML-specific data flow, proposal workflow, browser API, and line-level implementation map, see [SHOTML_ARCHITECTURE.md](SHOTML_ARCHITECTURE.md).
-
-## Runtime Artifacts
-
-- Settings are stored in `~/.splitshot/settings.json`.
-- Browser activity logs are written under `logs/` by default.
-- Benchmark CSV output is written to `artifacts/` when requested.
-
-## Design Constraints
-
-The codebase is intentionally local-first. It does not depend on a remote service for detection, scoring, merge math, or export rendering. The main external dependencies are FFmpeg, FFprobe, NumPy, and PySide6.
-
-**Last updated:** 2026-04-27
-**Referenced files last updated:** 2026-04-27
+**Last updated:** 2026-05-04
+**Referenced files last updated:** 2026-05-04
