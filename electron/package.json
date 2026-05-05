@@ -13,6 +13,7 @@
     "build:win": "node ../scripts/bundle-python.js && electron-builder --win",
     "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux"
   },
+  "repository": "github:jklock/splitshot",
   "author": "SplitShot",
   "license": "MIT",
   "devDependencies": {

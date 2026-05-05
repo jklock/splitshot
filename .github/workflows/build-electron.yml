@@ -69,11 +69,12 @@ jobs:
         run: uv run splitshot --check
 
       - name: Bundle Python
-        run: npm --prefix electron run bundle
+        run: node scripts/bundle-python.js
+        working-directory: .
         timeout-minutes: 20
 
       - name: Verify bundle
-        run: npm --prefix electron run check
+        run: node scripts/bundle-python.js check
 
       - name: Install Node dependencies
         run: npm --prefix electron install
@@ -83,7 +84,8 @@ jobs:
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
 
       - name: Build Electron app
-        run: npm --prefix electron run build
+        working-directory: ./electron
+        run: npx electron-builder
         timeout-minutes: 30
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
