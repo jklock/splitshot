@@ -105,12 +105,11 @@ jobs:
           # 2. Package .app with signing (must use --mac --dir, not just --dir)
           npx electron-builder --mac --dir --publish=never
 
-          # 3. Sign Python bundle that electron-builder misses
-          APP="build/mac-arm64/SplitShot.app"
-          find "$APP/Contents/Resources/bundle" -type f \( -name "python*" -o -name "*.dylib" \) -perm -0100 -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # Resign main app to ensure everything is covered
-          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP"
+          # 3. Sign Python bundle executables (electron-builder doesn't know about these)
+          find "build/mac-arm64/SplitShot.app/Contents/Resources/bundle" -type f \
+            \( -name "python*" -o -name "*.dylib" \) -perm -0100 -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp \
+              -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "{}" 2>/dev/null || true
 
           # 4. Create DMG
           DMG="build/SplitShot-1.1.0-arm64.dmg"
