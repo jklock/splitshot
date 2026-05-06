@@ -18,7 +18,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 BUNDLE = REPO / "electron" / "bundle"
-TIMEOUT = 30
+TIMEOUT = 60 if sys.platform == "win32" else 30
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,10 @@ class BackendSpec:
     @property
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
+
+
+class BackendStartupError(RuntimeError):
+    """Backend did not become ready."""
 
 
 def _build_specs() -> tuple[BackendSpec, BackendSpec]:
@@ -81,15 +85,44 @@ def _summarize_mismatch(left: Any, right: Any) -> str:
     return "(values differ)"
 
 
-def _wait_for_server(base_url: str, timeout: int = TIMEOUT) -> dict[str, Any]:
+def _read_process_tail(proc: subprocess.Popen[bytes]) -> str:
+    chunks: list[bytes] = []
+    for stream in (proc.stdout, proc.stderr):
+        if stream is None:
+            continue
+        try:
+            chunks.append(stream.read() or b"")
+        except Exception:
+            continue
+    combined = b"".join(chunks).decode(errors="replace").strip()
+    if not combined:
+        return "no process output captured"
+    lines = combined.splitlines()
+    return "\n".join(lines[-20:])
+
+
+def _wait_for_server(
+    spec: BackendSpec,
+    proc: subprocess.Popen[bytes],
+    timeout: int = TIMEOUT,
+) -> dict[str, Any]:
     deadline = time.time() + timeout
     while time.time() < deadline:
+        exit_code = proc.poll()
+        if exit_code is not None:
+            detail = _read_process_tail(proc)
+            raise BackendStartupError(
+                f"{spec.name} backend exited before startup with code {exit_code}\n{detail}"
+            )
         try:
-            response = urllib.request.urlopen(f"{base_url}/api/state", timeout=5)
+            response = urllib.request.urlopen(f"{spec.base_url}/api/state", timeout=5)
             return json.loads(response.read().decode())
         except (urllib.error.URLError, ConnectionResetError, json.JSONDecodeError):
             time.sleep(0.5)
-    raise TimeoutError(f"Server at {base_url} did not start within {timeout}s")
+    detail = _read_process_tail(proc) if proc.poll() is not None else "process still running without responding"
+    raise BackendStartupError(
+        f"{spec.name} backend at {spec.base_url} did not start within {timeout}s\n{detail}"
+    )
 
 
 def _start_backend(spec: BackendSpec) -> subprocess.Popen[bytes]:
@@ -168,8 +201,8 @@ def run_parity_audit() -> int:
     native_proc = _start_backend(native)
     bundled_proc = _start_backend(bundled)
     try:
-        _wait_for_server(native.base_url)
-        _wait_for_server(bundled.base_url)
+        _wait_for_server(native, native_proc)
+        _wait_for_server(bundled, bundled_proc)
         failures += _report("backend startup", True, "(native + bundled ready)")
         native_contracts = _collect_contracts(native)
         bundled_contracts = _collect_contracts(bundled)
@@ -181,6 +214,8 @@ def run_parity_audit() -> int:
                 passed,
                 "" if passed else _summarize_mismatch(native_value, bundled_value),
             )
+    except BackendStartupError as exc:
+        failures += _report("backend startup", False, f"({exc})")
     finally:
         _stop_backend(native_proc)
         _stop_backend(bundled_proc)
