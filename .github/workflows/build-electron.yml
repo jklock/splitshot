@@ -95,37 +95,38 @@ jobs:
           set -euo pipefail
           cd electron
 
-          # 1. Import cert to temp keychain
+          # 1. Set up signing environment
+          KEYCHAIN_PATH=/tmp/splitshot.keychain
+          KEYCHAIN_PASS=splitshot
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
           echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
-          security import /tmp/devid.p12 -k ~/Library/Keychains/login.keychain-db \
-            -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -A
+          security import /tmp/devid.p12 -k "$KEYCHAIN_PATH" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
           rm -f /tmp/devid.p12
-          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
+          CERT_SHA="49C2A7CDD2C1C84BDE7F719CB4B359E61AF7227C"
+          security find-identity -v | grep "$CERT_SHA"
 
-          # 2. Package .app with signing (must use --mac --dir, not just --dir)
+          # 2. Package .app with electron-builder
           npx electron-builder --mac --dir --publish=never
 
-          # 3. Sign every Mach-O binary individually (electron-builder only signs the .app wrapper)
+          # 3. Sign everything
           APP="build/mac-arm64/SplitShot.app"
-          # 3a. Main binary + all helper Mach-O files
-          find "$APP" -path "*/MacOS/*" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "{}" 2>/dev/null || true
-          # 3b. All dylibs and shared objects
-          find "$APP" \( -name "*.dylib" -o -name "*.so" \) -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "{}" 2>/dev/null || true
-          # 3c. All framework binaries (not just .framework wrappers)
-          find "$APP/Contents/Frameworks" -name "*.framework" -type d -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "{}" 2>/dev/null || true
-          # 3d. Python bundle executables
-          find "$APP/Contents/Resources/bundle" -name "python*" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "{}" 2>/dev/null || true
-          # 3e. Re-sign main .app wrapper (must be last)
-          codesign --force --options runtime --timestamp \
-            -s "Developer ID Application: John Klockenkemper (7DJ75AWV5R)" "$APP"
+          echo "=== Signing helpers ==="
+          for h in "$APP/Contents/Frameworks/"*.app; do
+            [ -d "$h" ] && codesign --force --options runtime --timestamp -s "$CERT_SHA" "$h"
+          done
+          echo "=== Signing frameworks ==="
+          for f in "$APP/Contents/Frameworks/"*.framework; do
+            [ -d "$f" ] && codesign --force --options runtime --timestamp -s "$CERT_SHA" "$f"
+          done
+          echo "=== Signing Python bundle ==="
+          find "$APP/Contents/Resources/bundle" -name "python*" -type f | while read f; do
+            codesign --force --options runtime --timestamp -s "$CERT_SHA" "$f" 2>/dev/null || true
+          done
+          echo "=== Signing main app ==="
+          codesign --force --options runtime --timestamp -s "$CERT_SHA" "$APP"
 
           # 4. Create DMG
           DMG="build/SplitShot-1.1.0-arm64.dmg"
