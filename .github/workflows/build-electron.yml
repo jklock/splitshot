@@ -112,18 +112,16 @@ jobs:
           # 4. Verify cert is findable
           security find-identity -v -p basic | grep "$SHA" || echo "WARNING: cert not found in keychain"
 
-          # 5. Sign helpers using the login keychain
+          # 5. Sign ALL executables inside the .app (electron-builder misses these)
           APP="build/mac-arm64/SplitShot.app"
-          for h in "$APP/Contents/Frameworks/"*.app; do
-            codesign --force --options runtime --timestamp -s "$SHA" \
-              "$h/Contents/MacOS/$(basename "$h" .app)"
-          done
-          for fw in "$APP/Contents/Frameworks/"*.framework; do
-            codesign --force --options runtime --timestamp -s "$SHA" "$fw"
-          done
-          find "$APP/Contents/Resources/bundle" -name "python*" -type f | while read f; do
-            codesign --force --options runtime --timestamp -s "$SHA" "$f" 2>/dev/null || true
-          done
+          find "$APP/Contents/Frameworks" -type f -perm -0100 -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}" 2>/dev/null || true
+          # Also sign frameworks themselves
+          find "$APP/Contents/Frameworks" -name "*.framework" -type d -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}" 2>/dev/null || true
+          # Sign Python bundle executables
+          find "$APP/Contents/Resources/bundle" -name "python*" -type f -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}" 2>/dev/null || true
 
           # 5. Create DMG
           DMG="build/SplitShot-1.1.0-arm64.dmg"
