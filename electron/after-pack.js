@@ -5,13 +5,19 @@ const path = require('path');
 const os = require('os');
 
 exports.default = async function(context) {
-  // Find the .app directory
-  const appDir = context.appOutDir || (context.packager && context.packager.appDir);
-  if (!appDir) {
-    console.error('[afterPack] ERROR: appDir not found');
+  // Find the .app path
+  const appName = context.packager.appInfo.productFilename;
+  const appOutDir = context.appOutDir || context.outDir;
+  const appPath = path.join(appOutDir, `${appName}.app`);
+  console.log('[afterPack] deep-signing:', appPath);
+  console.log('[afterPack] appOutDir:', appOutDir);
+
+  // Check if the .app exists
+  if (!fs.existsSync(appPath)) {
+    console.error('[afterPack] ERROR: .app not found at', appPath);
+    console.error('[afterPack] contents:', fs.readdirSync(appOutDir));
     return;
   }
-  console.log('[afterPack] deep-signing:', appDir);
 
   // Import cert into login keychain
   if (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD) {
@@ -23,18 +29,17 @@ exports.default = async function(context) {
     } catch (e) {
       console.error('[afterPack] import failed:', e.message);
     }
-    fs.unlinkSync(p12);
+    try { fs.unlinkSync(p12); } catch {}
   }
 
   // Unlock login keychain
   try {
     execSync('security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db 2>/dev/null', { stdio: 'ignore' });
-    execSync('security default-keychain -s ~/Library/Keychains/login.keychain-db 2>/dev/null', { stdio: 'ignore' });
   } catch {}
 
   // Deep-sign the entire .app
   const identity = 'Developer ID Application: John Klockenkemper (7DJ75AWV5R)';
-  const cmd = `codesign --deep --force --options runtime --timestamp -s "${identity}" "${appDir}" 2>&1`;
+  const cmd = `codesign --deep --force --options runtime --timestamp -s "${identity}" "${appPath}" 2>&1`;
   console.log('[afterPack] signing...');
   const result = execSync(cmd, { encoding: 'utf8', timeout: 300000 });
   if (result.trim()) console.log('[afterPack]', result.trim().substring(0, 300));
