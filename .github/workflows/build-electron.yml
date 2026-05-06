@@ -84,7 +84,6 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
-        run: cd electron && npm run build:mac
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -92,6 +91,44 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd electron
+
+          # 1. Import cert to temp keychain
+          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
+          security import /tmp/devid.p12 -k ~/Library/Keychains/login.keychain-db \
+            -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -A
+          rm -f /tmp/devid.p12
+          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
+
+          # 2. Package .app (dir only)
+          npx electron-builder --dir --publish=never
+
+          # 3. Sign everything explicitly
+          APP="build/mac-arm64/SplitShot.app"
+          # 3a. Sign all individual dylibs, sos, and executables
+          find "$APP" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -0100 \) -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
+          # 3b. Sign all nested .app bundles (helpers)
+          find "$APP" -name "*.app" -type d -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
+          # 3c. Sign all frameworks
+          find "$APP" -name "*.framework" -type d -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
+          # 3d. Sign the main .app
+          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP"
+
+          # 4. Create DMG
+          DMG="build/SplitShot-1.1.0-arm64.dmg"
+          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
+
+          # 5. Notarize
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+
+          # 6. Staple
+          xcrun stapler staple "$DMG"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
