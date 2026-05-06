@@ -45,6 +45,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "forceCodeSigning": true,
+      "entitlements": "assets/entitlements.mac.plist",
+      "entitlementsInherit": "assets/entitlements.mac.plist",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
