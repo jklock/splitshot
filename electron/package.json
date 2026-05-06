@@ -27,7 +27,7 @@
       "output": "build"
     },
     "compression": "maximum",
-    "afterSign": "../scripts/after-sign.js",
+    "afterPack": "../scripts/after-sign.js",
     "files": [
       "main.js",
       "preload.js"
