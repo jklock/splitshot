@@ -109,9 +109,9 @@ jobs:
           # 2. Package .app
           npx electron-builder --dir --publish=never
 
-          # 3. Sign every file in the app (codesign skips non-binaries harmlessly)
+          # 3. Sign all executable files in the app
           APP="build/mac-arm64/SplitShot.app"
-          find "$APP" -type f -print0 | while IFS= read -r -d '' f; do
+          find "$APP" -type f -perm -0100 -print0 | while IFS= read -r -d '' f; do
             codesign --force --options runtime --timestamp -s "$CERT_NAME" "$f" 2>/dev/null || true
           done
           # Sign all frameworks
