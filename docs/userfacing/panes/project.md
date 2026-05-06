@@ -69,5 +69,5 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 Previous: [../USER_GUIDE.md](../USER_GUIDE.md)
 Next: [shotml.md](shotml.md)
 
-**Last updated:** 2026-04-30
-**Referenced files last updated:** 2026-04-30
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

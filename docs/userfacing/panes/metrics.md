@@ -82,5 +82,5 @@ Metrics does not edit the project. It changes when the source data changes:
 Previous: [settings.md](settings.md)
 Next: [../workflow.md](../workflow.md)
 
-**Last updated:** 2026-05-01
-**Referenced files last updated:** 2026-05-01
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

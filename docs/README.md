@@ -58,14 +58,9 @@ The screenshot script covers:
 - Expanded Metrics table.
 - Shared Color Picker modal used by color swatches across Overlay, Markers, and Review.
 
-## Archived Notes
-
-- [archive/wizard.md](archive/wizard.md) - Retired workflow wizard reference.
-
 ## Current Limitations
 
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
-- [project/QUALITY_ELEVATION_PLAN.md](project/QUALITY_ELEVATION_PLAN.md)
 
 ## Technical Docs
 
@@ -103,5 +98,5 @@ The screenshot script covers:
 - [../CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md)
 - [../SECURITY.md](../SECURITY.md)
 
-**Last updated:** 2026-05-02
-**Referenced files last updated:** 2026-05-02
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

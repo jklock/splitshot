@@ -35,5 +35,5 @@ The export package turns a project into a rendered local video file with overlay
 - Two-pass encoding is supported and uses a temporary pass log directory.
 - The final export log is stored on `project.export.last_log`, the last error on `project.export.last_error`, and browser mode can stream incremental progress and log lines through the activity logger while export is running.
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

@@ -280,4 +280,4 @@ For browser workflow regressions, prefer:
 Do not run browser audit scripts unless browser UI, routes, or controller behavior changed.
 Do not run ShotML pipeline scripts unless analysis or timing behavior changed.
 
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06

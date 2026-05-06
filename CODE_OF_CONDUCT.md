@@ -19,5 +19,5 @@ This project expects professional, respectful collaboration.
 
 Project maintainers may remove content or restrict participation when behavior harms the project or its contributors.
 
-**Last updated:** 2026-04-13
+**Last updated:** 2026-05-06
 **Referenced files last updated:** n/a

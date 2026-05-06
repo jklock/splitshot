@@ -215,7 +215,7 @@ function main() {
 
 function pruneBundle() {
   const pruneDirs = ['__pycache__', '.pytest_cache', '.ruff_cache', 'node_modules'];
-  const pruneExts = ['.pyc', '.pyo', '.pyd'];
+  const pruneExts = ['.pyc', '.pyo'];
 
   function walkAndPrune(dir) {
     if (!fs.existsSync(dir)) return;

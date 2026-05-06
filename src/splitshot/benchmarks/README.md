@@ -29,5 +29,5 @@ Each benchmark row includes:
 - The benchmark code uses the same analysis and presentation helpers as the application itself.
 - The generated CSV in `artifacts/stage_suite_analysis.csv` is a convenience output, not a committed source file.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-10
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

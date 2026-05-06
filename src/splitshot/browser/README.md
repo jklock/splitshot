@@ -43,5 +43,5 @@ Every record now carries a `level` field. File logging stays on for every run, w
 - On macOS it uses AppleScript dialogs for native file selection.
 - The server keeps a temporary session directory for imported local files that need to survive long enough for analysis or export.
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

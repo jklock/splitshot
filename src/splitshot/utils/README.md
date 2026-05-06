@@ -17,5 +17,5 @@ The utils package contains the small shared helpers that do not belong to a larg
 
 These helpers are used by the analysis, presentation, browser, and export layers wherever a small time conversion or display formatting helper is needed.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-10
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

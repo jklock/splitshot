@@ -10,5 +10,5 @@ Start with:
 
 Pane references are under [userfacing/panes/](userfacing/panes/), and the current screenshot set is under [screenshots/](screenshots/).
 
-**Last updated:** 2026-04-22
-**Referenced files last updated:** 2026-04-22
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

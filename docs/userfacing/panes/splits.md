@@ -86,5 +86,5 @@ The Splits pane is the manual timing workbench. It shows the selected shot, nudg
 Previous: [shotml.md](shotml.md)
 Next: [score.md](score.md)
 
-**Last updated:** 2026-04-23
-**Referenced files last updated:** 2026-04-23
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

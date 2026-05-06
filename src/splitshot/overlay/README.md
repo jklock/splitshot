@@ -28,5 +28,5 @@ The overlay package draws the review badges that appear on top of the video prev
 - Custom boxes can use their own position, dimensions, colors, opacity, and text.
 - The renderer paints the exported overlay frames directly during render.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06
