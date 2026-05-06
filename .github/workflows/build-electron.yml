@@ -86,7 +86,6 @@ jobs:
         if: runner.os == 'macOS'
         timeout-minutes: 30
         env:
-          CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           CSC_KEYCHAIN: /tmp/splitshot.keychain
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -96,21 +95,22 @@ jobs:
           set -euo pipefail
           cd electron
 
-          # 1. Create a single keychain that BOTH electron-builder and codesign will use
+          # 1. Create keychain and import the cert
           KC=/tmp/splitshot.keychain
           KCP=splitshot
           security create-keychain -p "$KCP" "$KC"
           security unlock-keychain -p "$KCP" "$KC"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCP" "$KC"
-          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
-          security import /tmp/devid.p12 -k "$KC" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          # Import cert directly from secret (CSC_LINK not set to avoid electron-builder creating its own keychain)
+          echo '${{ secrets.MAC_CERT_BASE64 }}' | base64 -d > /tmp/devid.p12
+          security import /tmp/devid.p12 -k "$KC" -P "${{ secrets.MAC_CERT_PASSWORD }}" -T /usr/bin/codesign
           rm -f /tmp/devid.p12
           SHA="49C2A7CDD2C1C84BDE7F719CB4B359E61AF7227C"
 
-          # 2. Package .app (reads CSC_KEYCHAIN env var for the keychain path)
+          # 2. Package .app (finds cert in $KC via CSC_KEYCHAIN)
           npx electron-builder --mac --dir --publish=never
 
-          # 3. Sign helpers using the SAME keychain
+          # 3. Sign helpers using the same keychain
           APP="build/mac-arm64/SplitShot.app"
           for h in "$APP/Contents/Frameworks/"*.app; do
             codesign --force --options runtime --timestamp -s "$SHA" --keychain "$KC" "$h/Contents/MacOS/$(basename "$h" .app)"
@@ -126,7 +126,7 @@ jobs:
           DMG="build/SplitShot-1.1.0-arm64.dmg"
           hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
 
-          # 5. Notarize + staple
+          # 5. Notarize
           xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
           xcrun stapler staple "$DMG"
