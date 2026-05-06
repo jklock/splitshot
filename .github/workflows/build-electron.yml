@@ -112,22 +112,23 @@ jobs:
           # 3. Restore OUR keychain as default (electron-builder changed it)
           security default-keychain -s "$MY_KC"
 
-          # 4. Sign all the helper binaries that electron-builder missed
+          # 4. Sign all the helper binaries (must use --keychain to find the cert)
           APP="build/mac-arm64/SplitShot.app"
+          KC_FLAG="--keychain $MY_KC"
           # Main binary
-          codesign --force --options runtime --timestamp -s "$CERT" "$APP/Contents/MacOS/SplitShot"
+          codesign --force --options runtime --timestamp $KC_FLAG -s "$CERT" "$APP/Contents/MacOS/SplitShot"
           # Each helper app's inner executable
           for h in "$APP/Contents/Frameworks/"*.app; do
             h_name=$(basename "$h" .app)
-            codesign --force --options runtime --timestamp -s "$CERT" "$h/Contents/MacOS/$h_name"
+            codesign --force --options runtime --timestamp $KC_FLAG -s "$CERT" "$h/Contents/MacOS/$h_name"
           done
           # All frameworks
           for fw in "$APP/Contents/Frameworks/"*.framework; do
-            codesign --force --options runtime --timestamp -s "$CERT" "$fw"
+            codesign --force --options runtime --timestamp $KC_FLAG -s "$CERT" "$fw"
           done
           # Python bundle
           find "$APP/Contents/Resources/bundle" -name "python*" -type f | while read f; do
-            codesign --force --options runtime --timestamp -s "$CERT" "$f" 2>/dev/null || true
+            codesign --force --options runtime --timestamp $KC_FLAG -s "$CERT" "$f" 2>/dev/null || true
           done
 
           # 5. Create DMG
