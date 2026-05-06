@@ -8976,6 +8976,25 @@ function wireEvents() {
   return shellRuntime?.wireEvents();
 }
 
+function wireElectronProjectOpen() {
+  if (!window.splitshot || typeof window.splitshot.onOpenProject !== "function") {
+    return;
+  }
+  window.splitshot.onOpenProject((projectPath) => {
+    void (async () => {
+      if (!projectPath) return;
+      try {
+        const result = await projectPane?.useProjectFolder(projectPath);
+        if (!result) {
+          setStatus("Project open cancelled.");
+        }
+      } catch (error) {
+        setStatus(error?.message || "Failed to open project.");
+      }
+    })();
+  });
+}
+
 const runtimeBackbone = Object.freeze({
   bus: appBus,
   store: appStore,
@@ -10053,6 +10072,7 @@ installLegacyGlobalCompat({
 
 applyLayoutState();
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
+wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();
 startActivityPolling();

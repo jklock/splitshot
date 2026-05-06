@@ -8,6 +8,8 @@
     "dev": "electron .",
     "start": "node ../scripts/bundle-python.js && electron .",
     "check": "node ../scripts/bundle-python.js check",
+    "test:launch-intent": "node --test tests/launch-intent.test.js",
+    "test:electron-smoke": "node tests/smoke.test.js",
     "build": "node ../scripts/bundle-python.js && electron-builder --publish=never",
     "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac --publish=never",
     "build:win": "node ../scripts/bundle-python.js && electron-builder --win --publish=never",
@@ -18,7 +20,8 @@
   "license": "MIT",
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "playwright": "^1.52.0"
   },
   "build": {
     "appId": "studio.splitshot.app",
@@ -29,7 +32,8 @@
     "compression": "maximum",
     "files": [
       "main.js",
-      "preload.js"
+      "preload.js",
+      "launch-intent.js"
     ],
     "extraResources": [
       {
@@ -69,7 +73,7 @@
       "category": "Sports",
       "mimeTypes": ["application/x-splitshot-project"],
       "desktop": {
-        "MimeType": "application/x-splitshot-project"
+        "MimeType": "application/x-splitshot-project;x-scheme-handler/splitshot;"
       }
     },
     "fileAssociations": [

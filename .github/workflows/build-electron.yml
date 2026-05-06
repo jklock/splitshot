@@ -80,8 +80,24 @@ jobs:
         run: cd electron && npm install
         timeout-minutes: 10
 
+      - name: Run Electron launch-intent unit tests
+        run: cd electron && npm run test:launch-intent
+
+      - name: Run headless Electron backend tests
+        run: uv run pytest tests/electron/test_headless_server.py --no-header -q
+
       - name: Run parity audit
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
+
+      - name: Run Electron source smoke tests (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bash -lc 'cd electron && npm run test:electron-smoke'
+        timeout-minutes: 15
+
+      - name: Run Electron source smoke tests (macOS/Windows)
+        if: runner.os != 'Linux'
+        run: cd electron && npm run test:electron-smoke
+        timeout-minutes: 15
 
       - name: Prepare macOS signing certificate
         if: runner.os == 'macOS'
@@ -198,6 +214,30 @@ jobs:
           for f in "${found[@]}"; do
             ls -lh "$f"
           done
+
+      - name: Verify Linux artifact metadata
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          appimages=( electron/build/*.AppImage )
+          if [ ${#appimages[@]} -eq 0 ]; then
+            echo "No AppImage found for metadata verification"
+            exit 1
+          fi
+          tmp_dir="$(mktemp -d)"
+          chmod +x "${appimages[0]}"
+          (
+            cd "${tmp_dir}"
+            "${GITHUB_WORKSPACE}/${appimages[0]}" --appimage-extract >/dev/null
+          )
+          desktop_file="$(find "${tmp_dir}/squashfs-root" -name '*.desktop' | head -n 1)"
+          if [ -z "${desktop_file}" ]; then
+            echo "No desktop file found in AppImage"
+            exit 1
+          fi
+          grep -q 'application/x-splitshot-project' "${desktop_file}"
+          grep -q 'x-scheme-handler/splitshot' "${desktop_file}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
