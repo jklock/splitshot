@@ -26,8 +26,9 @@
 | `2026-05-05` | **Phase 2 complete**: A02 (find_free_port auto-resolution in server.py), A03 (backend.py deleted, clean shutdown via signals), B02 (main.js uses CLI entrypoint, preload.js cleaned up, macOS open-file handler). |
 | `2026-05-05` | **Phase 3 complete**: B03 (all IPC methods wired), B04 (app menu with File/Edit/View/Window/Help), B05 (file associations for all 3 platforms + MIME types), B06 (dev workflow with fast `npm run dev`). |
 | `2026-05-05` | **Phase 4 complete**: B07 (bundle-python.js rewritten — no hardcoded paths, icons in assets/, dynamic Python version, check mode, cleaner verification). |
-| `2026-05-05` | **Phase 5 complete**: B08 (parity audit uses --headless, tests/electron/ created with server/port/check tests). |
-| `2026-05-05` | **ALL 11 TASKS COMPLETE**. Proceeding to validation. |
+| `2026-05-05` | **Phase 5 complete**: B08 (initial parity audit + headless tests landed, but proof overstated scope). |
+| `2026-05-06` | Remediation audit corrected B05/B08 proof. Added launch-intent runtime handling, Electron source smoke tests, bundled parity comparison, and workflow-backed Linux metadata verification. |
+| `2026-05-06` | Task implementation is complete, but installed-artifact proof is intentionally deferred to the current CI/build evidence instead of claiming “all complete” from configuration alone. |
 
 ## Done criteria (entire program)
 
@@ -39,10 +40,10 @@
 - [ ] Every IPC method in `electron/preload.js` has a working handler
 - [ ] Native application menu with File > Open/Save, Edit, View, Window, Help
 - [ ] `.ssproj` double-click opens project on macOS, Windows, Linux
-- [ ] `splitshot://` deep links work
+- [x] `splitshot://` deep links work
 - [ ] `npm run dev` starts Electron in <5s using `uv run splitshot`
 - [ ] `npm run check` validates bundle integrity + runs parity audit
 - [ ] Build pipeline produces `.dmg`/`.exe`/`.AppImage` — one bundling, no duplication
-- [ ] CI runs: bundle → integrity check → parity audit → browser tests → e2e → build → verify → release
-- [ ] Parity audit proves `uv run splitshot --headless` == bundled backend (identical JSON)
+- [x] CI runs: bundle → integrity check → parity audit → browser tests → e2e → build → verify → release
+- [x] Parity audit proves `uv run splitshot --headless` == bundled backend (identical JSON)
 - [ ] Dev workflow unchanged: `uv run splitshot --check`, `uv run pytest tests/ -q`
