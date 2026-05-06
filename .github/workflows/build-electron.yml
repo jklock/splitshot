@@ -79,35 +79,17 @@ jobs:
         run: cd electron && npm install
         timeout-minutes: 10
 
-      - name: Import signing cert and deep-sign bundle (macOS)
-        if: runner.os == 'macOS'
-        env:
-          CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-        run: |
-          # Import the cert from CSC_LINK into the temporary keychain
-          CERT_PATH=$(mktemp /tmp/cert.p12.XXXXXX)
-          echo "$CSC_LINK" | base64 -d > "$CERT_PATH"
-          security create-keychain -p temp temp.keychain
-          security default-keychain -s temp.keychain
-          security unlock-keychain -p temp temp.keychain
-          security import "$CERT_PATH" -k temp.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign 2>/dev/null
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp temp.keychain
-          rm -f "$CERT_PATH"
-          # Deep-sign all dylibs in the bundle
-          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-          find electron/bundle/.venv -name "*.dylib" -o -name "*.so" -type f | while read f; do
-            codesign --deep --force --options runtime -s "$CERT_NAME" "$f" 2>/dev/null || true
-          done
-          # Restore default keychain
-          security default-keychain -s login.keychain-db
-          echo "Imported cert and deep-signed Python bundle"
-
       - name: Run parity audit
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
 
-      - name: Build Electron app
-        run: cd electron && npm run build
+      - name: Build Electron app (macOS — deep-sign then DMG)
+        if: runner.os == 'macOS'
+        run: |
+          cd electron
+          npx electron-builder --dir --publish=never
+          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
+          codesign --deep --force --options runtime -s "$CERT_NAME" build/mac-arm64/SplitShot.app
+          npx electron-builder --prepackaged build/mac-arm64/SplitShot.app --publish=never
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -115,6 +97,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+
+      - name: Build Electron app (Windows/Linux)
+        if: runner.os != 'macOS'
+        run: cd electron && npm run build
+        timeout-minutes: 30
 
       - name: Verify installer
         shell: bash
