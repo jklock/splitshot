@@ -17,6 +17,7 @@ SplitShot scripts are organized by purpose so users can find setup, validation, 
 uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --mode one-by-one --format table --raw-output artifacts/test-run.raw.txt
 uv run python scripts/testing/run_test_suite.py --mode all-together --format json --json-output artifacts/test-run.json
+uv run python scripts/testing/run_electron_preflight.py
 uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
 uv run python scripts/analysis/audit_training_corpus.py .training --format table --json-output artifacts/training-corpus-audit.json
 uv run python scripts/analysis/bootstrap_training_manifest.py .training --output .training/shotml-label-manifest.json
@@ -35,6 +36,7 @@ uv run python scripts/tooling/validate_toolchain.py
 ## Notes
 
 - The master test runner supports per-suite execution, one-file-at-a-time runs, combined runs, and raw or JSON output artifacts.
+- `scripts/testing/run_electron_preflight.py` is the local release-critical Electron gate. It runs source smoke, parity, a current-platform smoke build, and a packaged-app launch check before CI.
 - The video preflight analysis helper uses the same ShotML detection path as the application and is intended to help choose a starting sensitivity slider value before import.
 - The timing accuracy evaluator compares detected beep, split, last-shot, and stage-time timestamps against accepted manifest labels across a threshold sweep. It uses manual verified labels first and accepted auto-consensus labels when manual labels are absent.
 - The training corpus audit helper now also reports shot-pass disagreement and duplicate-stage consistency so repeated recordings can be compared for count drift.
