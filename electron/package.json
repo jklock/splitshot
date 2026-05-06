@@ -19,8 +19,8 @@
   "author": "SplitShot",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.0.0",
     "playwright": "^1.52.0"
   },
   "build": {
