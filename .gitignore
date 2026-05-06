@@ -26,3 +26,6 @@ development/
 electron/bundle/
 electron/build/
 electron/node_modules/
+
+# CI artifacts (downloaded for local comparison)
+ci-artifacts*/
