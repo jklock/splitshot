@@ -75,10 +75,11 @@ def _spawn_app(
         "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
         "SPLITSHOT_TEST_PORT": str(port),
     }
-    if sys.platform == "darwin":
-        command = [str(executable), str(project_path)]
-    else:
-        command = [str(executable), str(project_path)]
+    command = [str(executable)]
+    if sys.platform.startswith("linux"):
+        env["ELECTRON_DISABLE_SANDBOX"] = "1"
+        command.append("--no-sandbox")
+    command.append(str(project_path))
     with stdout_path.open("w", encoding="utf-8") as stdout_handle, stderr_path.open("w", encoding="utf-8") as stderr_handle:
         return subprocess.Popen(
             command,

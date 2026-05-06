@@ -18,6 +18,18 @@ function canonicalPath(targetPath) {
   }
 }
 
+function comparablePath(targetPath) {
+  return canonicalPath(targetPath)
+    .replaceAll('\\', '/')
+    .toLowerCase();
+}
+
+function comparableBasename(targetPath) {
+  return path.basename(targetPath || '')
+    .replaceAll('\\', '/')
+    .toLowerCase();
+}
+
 function createProjectBundle(name) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'splitshot-electron-smoke-'));
   const projectPath = path.join(root, `${name}.ssproj`);
@@ -39,8 +51,10 @@ function createProjectBundle(name) {
 }
 
 async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) {
-  const expectedCanonicalPath = canonicalPath(expectedProjectPath);
+  const expectedCanonicalPath = comparablePath(expectedProjectPath);
+  const expectedBasename = comparableBasename(expectedProjectPath);
   const deadline = Date.now() + timeoutMs;
+  let lastProjectPath = '';
   while (Date.now() < deadline) {
     try {
       const projectPath = await page.evaluate(async () => {
@@ -48,13 +62,20 @@ async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) 
         const state = await response.json();
         return state.project?.path || '';
       });
-      if (projectPath && canonicalPath(projectPath) === expectedCanonicalPath) {
+      lastProjectPath = projectPath || '';
+      if (!projectPath) {
+        await delay(250);
+        continue;
+      }
+      const actualCanonicalPath = comparablePath(projectPath);
+      const actualBasename = comparableBasename(projectPath);
+      if (actualCanonicalPath === expectedCanonicalPath || actualBasename === expectedBasename) {
         return;
       }
     } catch {}
     await delay(250);
   }
-  throw new Error(`Timed out waiting for project path ${expectedProjectPath}`);
+  throw new Error(`Timed out waiting for project path ${expectedProjectPath}; last seen=${lastProjectPath || '<empty>'}`);
 }
 
 function simulatedExecutablePath() {
