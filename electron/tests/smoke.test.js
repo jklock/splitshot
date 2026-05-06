@@ -60,15 +60,20 @@ async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) 
 const ELECTRON_LAUNCH_TIMEOUT = 120_000;
 
 async function main() {
+  console.log('Creating project bundles...');
   const startupProject = createProjectBundle('startup');
+  console.log('  startup bundle created');
   const secondProject = createProjectBundle('second-instance');
+  console.log('  second bundle created');
   const protocolProject = createProjectBundle('protocol');
+  console.log('  protocol bundle created');
   const env = {
     ...process.env,
     CI: '1',
     SPLITSHOT_ELECTRON_TEST: '1',
   };
 
+  console.log('Launching Electron...');
   const electronApp = await playwrightElectron.launch({
     executablePath: electronBinary,
     args: ['--no-sandbox', '--disable-gpu', ELECTRON_APP_DIR, startupProject],
@@ -76,8 +81,11 @@ async function main() {
     env,
     timeout: ELECTRON_LAUNCH_TIMEOUT,
   });
+  console.log('  Electron launched');
 
+  console.log('Waiting for first window...');
   const window = await electronApp.firstWindow({ timeout: ELECTRON_LAUNCH_TIMEOUT });
+  console.log('  first window ready');
   try {
     await window.waitForLoadState('domcontentloaded');
     const bridge = await window.evaluate(() => ({
