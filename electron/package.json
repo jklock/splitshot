@@ -10,6 +10,9 @@
     "check": "node ../scripts/bundle-python.js check",
     "test:launch-intent": "node --test tests/launch-intent.test.js",
     "test:electron-smoke": "node tests/smoke.test.js",
+    "build:smoke:mac": "node ../scripts/bundle-python.js && electron-builder --mac dir --publish=never",
+    "build:smoke:win": "node ../scripts/bundle-python.js && electron-builder --win dir --publish=never",
+    "build:smoke:linux": "node ../scripts/bundle-python.js && electron-builder --linux dir --publish=never",
     "build": "node ../scripts/bundle-python.js && electron-builder --publish=never",
     "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac --publish=never",
     "build:win": "node ../scripts/bundle-python.js && electron-builder --win --publish=never",
@@ -64,17 +67,14 @@
       }
     },
     "win": {
-      "target": ["nsis"],
+      "target": ["nsis", "dir"],
       "icon": "assets/icon.ico"
     },
     "linux": {
-      "target": ["AppImage"],
+      "target": ["AppImage", "dir"],
       "icon": "assets/icon.png",
       "category": "Sports",
-      "mimeTypes": ["application/x-splitshot-project"],
-      "desktop": {
-        "MimeType": "application/x-splitshot-project;x-scheme-handler/splitshot;"
-      }
+      "mimeTypes": ["application/x-splitshot-project"]
     },
     "fileAssociations": [
       {

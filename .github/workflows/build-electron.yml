@@ -202,6 +202,15 @@ jobs:
         run: cd electron && npm run build
         timeout-minutes: 30
 
+      - name: Run packaged Electron smoke test
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a uv run python scripts/testing/test_electron_app.py
+          else
+            uv run python scripts/testing/test_electron_app.py
+          fi
+        timeout-minutes: 10
+
       - name: Verify installer
         shell: bash
         run: |

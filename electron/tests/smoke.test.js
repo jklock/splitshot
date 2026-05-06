@@ -57,6 +57,12 @@ async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) 
   throw new Error(`Timed out waiting for project path ${expectedProjectPath}`);
 }
 
+function simulatedExecutablePath() {
+  return process.platform === 'win32'
+    ? 'C:\\Program Files\\SplitShot\\SplitShot.exe'
+    : '/Applications/SplitShot.app/Contents/MacOS/SplitShot';
+}
+
 const ELECTRON_TIMEOUT = 120_000;
 const TEST_TIMEOUT = 4 * 60_000;
 
@@ -127,26 +133,22 @@ async function main() {
     await waitForProjectPath(window, startupProject);
     console.log('  startup project loaded');
 
-    if (process.platform === 'win32') {
-      console.log('  SKIP: second instance / protocol tests on Windows (SPA init timing)');
-    } else {
-      console.log('Simulating second instance...');
-      const queued = await window.evaluate((targetPath) => (
-        window.splitshot.testSimulateSecondInstance([
-          '/Applications/SplitShot.app/Contents/MacOS/SplitShot',
-          targetPath,
-        ])
-      ), secondProject);
-      assert.equal(queued, true);
-      await waitForProjectPath(window, secondProject);
-      console.log('  second instance handled');
+    console.log('Simulating second instance...');
+    const queued = await window.evaluate(({ executablePath, targetPath }) => (
+      window.splitshot.testSimulateSecondInstance([executablePath, targetPath])
+    ), {
+      executablePath: simulatedExecutablePath(),
+      targetPath: secondProject,
+    });
+    assert.equal(queued, true);
+    await waitForProjectPath(window, secondProject);
+    console.log('  second instance handled');
 
-      console.log('Simulating protocol URL...');
-      const injected = await window.evaluate((targetUrl) => window.splitshot.testOpenUrl(targetUrl), `splitshot://open?path=${encodeURIComponent(protocolProject)}`);
-      assert.equal(injected, true);
-      await waitForProjectPath(window, protocolProject);
-      console.log('  protocol URL handled');
-    }
+    console.log('Simulating protocol URL...');
+    const injected = await window.evaluate((targetUrl) => window.splitshot.testOpenUrl(targetUrl), `splitshot://open?path=${encodeURIComponent(protocolProject)}`);
+    assert.equal(injected, true);
+    await waitForProjectPath(window, protocolProject);
+    console.log('  protocol URL handled');
   } finally {
     console.log('Closing Electron...');
     await closeApp(electronApp);

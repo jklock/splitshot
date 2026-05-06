@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const {
@@ -12,9 +13,14 @@ let mainWindow = null;
 let pythonProcess = null;
 let backendStarted = false;
 let initialLaunchIntent = launchIntentFromArgv(process.argv);
-const PORT = 8765;
+let windowLoaded = false;
+let windowReadyToShow = false;
+const PORT = Number.parseInt(process.env.SPLITSHOT_TEST_PORT || '8765', 10);
 const PYTHON_URL = `http://127.0.0.1:${PORT}`;
 const launchIntentRouter = createLaunchIntentRouter(dispatchLaunchIntent);
+const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
+const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
+let appReadyRecorded = false;
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -27,6 +33,34 @@ function getBundlePath() {
   return path.join(__dirname, 'bundle');
 }
 
+function appendTestEvent(event, payload = {}) {
+  if (!TEST_READY_FILE) return;
+  const record = {
+    event,
+    pid: process.pid,
+    ts: new Date().toISOString(),
+    ...payload,
+  };
+  fs.mkdirSync(path.dirname(TEST_READY_FILE), { recursive: true });
+  fs.appendFileSync(TEST_READY_FILE, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+function maybeRecordAppReady() {
+  if (appReadyRecorded || !launchIntentRouter.isBackendReady() || !windowLoaded || !windowReadyToShow) {
+    return;
+  }
+  appReadyRecorded = true;
+  appendTestEvent('app-ready', {
+    url: PYTHON_URL,
+    initialProjectPath: initialLaunchIntent?.projectPath || null,
+  });
+  if (TEST_EXIT_AFTER_READY) {
+    setTimeout(() => {
+      app.quit();
+    }, 1000);
+  }
+}
+
 function getPythonBinary() {
   const bundle = getBundlePath();
   const binDir = process.platform === 'win32' ? 'Scripts' : 'bin';
@@ -35,12 +69,13 @@ function getPythonBinary() {
 }
 
 function getPythonArgs(initialProjectPath = null) {
+  const portArgs = ['--port', String(PORT)];
   const projectArgs = initialProjectPath ? ['--project', initialProjectPath] : [];
   if (app.isPackaged) {
-    return ['-m', 'splitshot', '--headless', '--no-open', ...projectArgs];
+    return ['-m', 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
   }
   const root = path.resolve(__dirname, '..');
-  return ['run', '--directory', root, 'splitshot', '--headless', '--no-open', ...projectArgs];
+  return ['run', '--directory', root, 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
 }
 
 function startPythonBackend(initialProjectPath = null) {
@@ -74,10 +109,16 @@ function startPythonBackend(initialProjectPath = null) {
   });
 
   pythonProcess.on('exit', (code) => {
+    appendTestEvent('backend-exit', { code });
     console.log(`Python backend exited with code ${code}`);
     if (!app.isQuitting) {
       app.quit();
     }
+  });
+
+  pythonProcess.on('error', (error) => {
+    appendTestEvent('backend-spawn-error', { error: String(error) });
+    console.error(`Python backend spawn failed: ${error}`);
   });
 }
 
@@ -123,15 +164,24 @@ function createWindow() {
   mainWindow.loadURL(PYTHON_URL);
 
   mainWindow.webContents.once('did-finish-load', () => {
+    windowLoaded = true;
     launchIntentRouter.setWindowReady(true);
+    appendTestEvent('window-loaded', { url: PYTHON_URL });
+    maybeRecordAppReady();
   });
 
   mainWindow.once('ready-to-show', () => {
+    windowReadyToShow = true;
     mainWindow.show();
+    appendTestEvent('window-ready-to-show');
+    maybeRecordAppReady();
   });
 
   mainWindow.on('closed', () => {
+    windowLoaded = false;
+    windowReadyToShow = false;
     launchIntentRouter.setWindowReady(false);
+    appendTestEvent('window-closed');
     mainWindow = null;
   });
 }
@@ -145,6 +195,10 @@ function dispatchLaunchIntent(intent) {
   }
   mainWindow.show();
   mainWindow.focus();
+  appendTestEvent('launch-intent-dispatched', {
+    source: intent.source,
+    projectPath: intent.projectPath,
+  });
   mainWindow.webContents.send('open-project', intent.projectPath);
   return true;
 }
@@ -327,14 +381,21 @@ if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
 }
 
 app.on('ready', async () => {
+  appendTestEvent('app-ready-start', {
+    argv: process.argv,
+    port: PORT,
+  });
   buildAppMenu();
   startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
   try {
     await waitForServer();
     console.log('Python backend is ready');
     launchIntentRouter.setBackendReady(true);
+    appendTestEvent('backend-ready', { url: PYTHON_URL });
+    maybeRecordAppReady();
     createWindow();
   } catch (err) {
+    appendTestEvent('startup-error', { error: String(err) });
     console.error(err);
     dialog.showErrorBox('Startup Error', 'Failed to start the SplitShot backend. Please try reinstalling the application.');
     app.quit();
@@ -360,6 +421,7 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+  appendTestEvent('before-quit');
   launchIntentRouter.setWindowReady(false);
   if (pythonProcess) {
     pythonProcess.kill();
