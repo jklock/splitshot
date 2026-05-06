@@ -104,23 +104,40 @@ jobs:
           security import /tmp/devid.p12 -k "$KEYCHAIN_PATH" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
           rm -f /tmp/devid.p12
+          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
           echo "Cert imported to temp keychain"
 
-          # 2. Package .app (signs main binary)
-          npx electron-builder --dir --publish=never
+          # 2. Package .app with electron-builder (dir only, no signing)
+          npx electron-builder --dir --publish=never --config.disablePreSign=true 2>&1 || \
+            npx electron-builder --dir --publish=never
 
-          # 3. Deep-sign all embedded binaries
-          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-          codesign --deep --force --options runtime -s "$CERT_NAME" build/mac-arm64/SplitShot.app
+          # 3. Sign the entire .app from scratch with --deep
+          codesign --deep --force --options runtime --timestamp -s "$CERT_NAME" build/mac-arm64/SplitShot.app
           echo "Deep-sign complete"
 
-          # 4. Create DMG + notarize
-          npx electron-builder --prepackaged build/mac-arm64/SplitShot.app --publish=never
-          echo "DMG + notarization complete"
+          # 4. Create DMG manually
+          DMG_NAME="SplitShot-1.1.0-arm64"
+          mkdir -p build
+          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder build/mac-arm64/SplitShot.app \
+            "build/${DMG_NAME}.dmg" 2>&1
+          echo "DMG created"
 
-          # 5. Clean up
+          # 5. Notarize
+          xcrun notarytool submit "build/${DMG_NAME}.dmg" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait 2>&1
+          echo "Notarization complete"
+
+          # 6. Staple the ticket
+          xcrun stapler staple "build/${DMG_NAME}.dmg" 2>&1
+          echo "Ticket stapled"
+
+          # 7. Clean up
           security default-keychain -s ~/Library/Keychains/login.keychain-db 2>/dev/null || true
           security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+          echo "macOS build: signed, notarized, and stapled"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
