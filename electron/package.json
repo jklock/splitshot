@@ -27,6 +27,7 @@
       "output": "build"
     },
     "compression": "maximum",
+    "afterPack": "after-pack.js",
     "files": [
       "main.js",
       "preload.js"
@@ -45,7 +46,6 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "forceCodeSigning": true,
-      "sign": "./sign-deep.js",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
