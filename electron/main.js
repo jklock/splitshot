@@ -122,7 +122,7 @@ function createWindow() {
 
   mainWindow.loadURL(PYTHON_URL);
 
-  mainWindow.webContents.once('did-finish-load', () => {
+  mainWindow.webContents.once('dom-ready', () => {
     launchIntentRouter.setWindowReady(true);
   });
 

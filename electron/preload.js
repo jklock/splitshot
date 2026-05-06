@@ -1,12 +1,25 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+let _pendingProjectPath = null;
+
+ipcRenderer.on('open-project', (_event, path) => {
+  if (typeof _pendingProjectPath === 'function') {
+    _pendingProjectPath(path);
+  } else {
+    _pendingProjectPath = path;
+  }
+});
+
 const splitshotBridge = {
   getVersion: () => ipcRenderer.invoke('get-version'),
   getPlatform: () => ipcRenderer.invoke('get-platform'),
   openFile: () => ipcRenderer.invoke('open-file'),
   openProjectDialog: () => ipcRenderer.invoke('open-project-dialog'),
   onOpenProject: (callback) => {
-    ipcRenderer.on('open-project', (_event, path) => callback(path));
+    if (_pendingProjectPath !== null && typeof _pendingProjectPath !== 'function') {
+      callback(_pendingProjectPath);
+    }
+    _pendingProjectPath = callback;
   },
 };
 
