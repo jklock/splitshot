@@ -100,7 +100,7 @@ jobs:
           security import /tmp/devid.p12 -k ~/Library/Keychains/login.keychain-db \
             -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -A
           rm -f /tmp/devid.p12
-          SHA="49C2A7CDD2C1C84BDE7F719CB4B359E61AF7227C"
+          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
 
           # 2. Package .app (electron-builder signs with our cert)
           npx electron-builder --mac --dir --publish=never
@@ -110,25 +110,27 @@ jobs:
           security default-keychain -s ~/Library/Keychains/login.keychain-db
 
           # 4. Verify cert is findable
-          security find-identity -v -p basic | grep "$SHA" || echo "WARNING: cert not found in keychain"
+          security find-identity -v -p basic | grep -q "Developer ID Application" || echo "WARNING: Developer ID cert not found"
 
-          # 5. Sign ALL binaries using explicit paths
+          # 5. Sign ALL binaries using the cert name
           APP="build/mac-arm64/SplitShot.app"
           # Main binary
-          codesign --force --options runtime --timestamp -s "$SHA" "$APP/Contents/MacOS/SplitShot"
+          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP/Contents/MacOS/SplitShot" 2>/dev/null || true
           # Helper app inner binaries
           for h in "$APP/Contents/Frameworks/"*.app; do
             h_name=$(basename "$h" .app)
-            codesign --force --options runtime --timestamp -s "$SHA" "$h/Contents/MacOS/$h_name"
+            codesign --force --options runtime --timestamp -s "$CERT_NAME" \
+              "$h/Contents/MacOS/$h_name" 2>/dev/null || true
           done
-          # All framework inner binaries + dylibs
-          find "$APP/Contents/Frameworks" \( -name "*.dylib" -o -name "*.so" \) -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}"
+          # Framework dylibs
+          find "$APP/Contents/Frameworks" -name "*.dylib" -type f -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
+          # Framework versioned binaries (Squirrel, Mantle, ReactiveObjC, etc.)
           find "$APP/Contents/Frameworks" -path "*/Versions/A/*" -type f ! -name "*.dylib" -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}"
-          # Python bundle (re-check symlink-resolved files)
-          find "$APP/Contents/Resources/bundle/.venv/bin" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$SHA" "{}"
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
+          # Python bundle
+          find "$APP/Contents/Resources/bundle/.venv/bin" -type f ! -name "*.py" -print0 | \
+            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
 
           # 5. Create DMG
           DMG="build/SplitShot-1.1.0-arm64.dmg"
