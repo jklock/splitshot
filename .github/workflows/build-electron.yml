@@ -84,7 +84,7 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
-        run: cd electron && npm run build:mac
+        run: cd electron && npx electron-builder --mac --publish=never
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -95,7 +95,7 @@ jobs:
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
-        run: cd electron && npm run build
+        run: cd electron && npx electron-builder --publish=never
         timeout-minutes: 30
 
       - name: Build Electron app (Windows/Linux)
