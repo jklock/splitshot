@@ -27,7 +27,6 @@
       "output": "build"
     },
     "compression": "maximum",
-    "afterPack": "after-pack.js",
     "files": [
       "main.js",
       "preload.js"
