@@ -175,7 +175,12 @@ function main() {
     const pythonExe = path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
 
     // Install deps BEFORE symlink resolution (venv python is a working symlink here)
-    run(`uv pip install --python "${pythonExe}" "."`);
+    run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+
+    if (process.platform === 'win32') {
+      console.log('[bundle] Windows: ensuring numpy .pyd extensions are present...');
+      run(`uv pip install --python "${pythonExe}" --link-mode copy --force-reinstall numpy --quiet`);
+    }
 
     // Copy libpython dylib so the resolved binary works on other machines
     if (process.platform === 'darwin') {
