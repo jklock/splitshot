@@ -84,6 +84,7 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
+        run: cd electron && npm run build:mac
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -91,60 +92,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cd electron
-
-          # 1. Import signing cert to a temp keychain that we control
-          KC=/tmp/splitshot-sign.keychain
-          KCP=splitshot
-          security create-keychain -p "$KCP" "$KC"
-          security unlock-keychain -p "$KCP" "$KC"
-          security default-keychain -s "$KC"
-          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
-          security import /tmp/devid.p12 -k "$KC" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCP" "$KC"
-          rm -f /tmp/devid.p12
-          CERT="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-
-          # 2. Package .app (electron-builder signs outer .app with our cert)
-          npx electron-builder --mac --dir --publish=never
-
-          # 3. Sign individual binaries one-by-one (--deep is broken)
-          APP="build/mac-arm64/SplitShot.app"
-          # 3a. Main executable
-          codesign --force --options runtime --timestamp -s "$CERT" "$APP/Contents/MacOS/SplitShot"
-          # 3b. Helper executables (inside the helper .apps)
-          for h in "$APP/Contents/Frameworks/"*.app; do
-            [ -d "$h" ] && codesign --force --options runtime --timestamp -s "$CERT" "$h/Contents/MacOS/$(basename "$h" .app)" 2>/dev/null || true
-          done
-          # 3c. Framework binaries
-          for fw in "$APP/Contents/Frameworks/"*.framework; do
-            [ -d "$fw" ] && codesign --force --options runtime --timestamp -s "$CERT" "$fw" 2>/dev/null || true
-          done
-          # 3d. Electron framework dylibs
-          find "$APP/Contents/Frameworks" -name "*.dylib" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "$CERT" "{}" 2>/dev/null || true
-          # 3e. Python bundle
-          find "$APP/Contents/Resources/bundle" -name "python*" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp \
-              -s "$CERT" "{}" 2>/dev/null || true
-          # 3f. Re-sign outer .app
-          codesign --force --options runtime --timestamp -s "$CERT" "$APP"
-
-          # 4. Create DMG
-          DMG="build/SplitShot-1.1.0-arm64.dmg"
-          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
-
-          # 5. Notarize + staple
-          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
-          xcrun stapler staple "$DMG"
-
-          # 6. Clean up
-          security default-keychain -s ~/Library/Keychains/login.keychain-db
-          security delete-keychain "$KC"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
