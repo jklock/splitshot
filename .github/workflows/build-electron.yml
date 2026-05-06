@@ -84,7 +84,6 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
-        run: cd electron && npx electron-builder --mac --publish=never
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -92,6 +91,33 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd electron
+
+          # 1. Import signing cert to login keychain
+          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
+          security import /tmp/devid.p12 -k ~/Library/Keychains/login.keychain-db \
+            -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -A
+          rm -f /tmp/devid.p12
+
+          # 2. Package .app with electron-builder (signs with our cert)
+          npx electron-builder --mac --dir --publish=never
+
+          # 3. deep-sign everything (cert is in login keychain from step 1)
+          APP="build/mac-arm64/SplitShot.app"
+          codesign --deep --force --options runtime --timestamp \
+            -s 49C2A7CDD2C1C84BDE7F719CB4B359E61AF7227C "$APP"
+
+          # 4. Create DMG
+          DMG="build/SplitShot-1.1.0-arm64.dmg"
+          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
+
+          # 5. Notarize + staple
+          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+          xcrun stapler staple "$DMG"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
