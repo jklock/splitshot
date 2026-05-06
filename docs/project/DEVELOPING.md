@@ -29,6 +29,7 @@ uv run python scripts/audits/browser/run_browser_av_audit.py
 uv run python scripts/audits/browser/run_browser_interaction_audit.py --primary-video /path/to/Stage1.MP4 --merge-video /path/to/Stage2.MP4 --practiscore /path/to/IDPA.csv
 uv run python scripts/analysis/analyze_video_shots.py /path/to/Stage1.MP4 --format table --json-output artifacts/shot-preview.json
 uv run python scripts/export/export_stage_suite_csv.py --output artifacts/stage_suite_analysis.csv
+scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'your-password'
 ```
 
 ## Working Areas
@@ -43,5 +44,11 @@ uv run python scripts/export/export_stage_suite_csv.py --output artifacts/stage_
 - Shared project mutation logic lives in [src/splitshot/ui/controller.py](../src/splitshot/ui/controller.py).
 - Analysis and export code live in [src/splitshot/analysis](../src/splitshot/analysis) and [src/splitshot/export](../src/splitshot/export).
 
-**Last updated:** 2026-05-04
-**Referenced files last updated:** 2026-05-04
+## Electron Release
+
+- The supported macOS signing and notarization flow is documented in [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md).
+- Use the GitHub Actions `workflow_dispatch` entrypoint for Electron smoke builds.
+- Use `v*` tags only for real release builds.
+
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06
