@@ -45,8 +45,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "forceCodeSigning": true,
-      "entitlements": "assets/entitlements.mac.plist",
-      "entitlementsInherit": "assets/entitlements.mac.plist",
+      "sign": "../scripts/sign-deep.js",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
