@@ -105,10 +105,14 @@ jobs:
           # 2. Package .app (electron-builder signs with our cert)
           npx electron-builder --mac --dir --publish=never
 
-          # 3. Restore login keychain as default (electron-builder changed it)
+          # 3. Unlock login keychain and restore as default
+          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
           security default-keychain -s ~/Library/Keychains/login.keychain-db
 
-          # 4. Sign helpers using the login keychain
+          # 4. Verify cert is findable
+          security find-identity -v -p basic | grep "$SHA" || echo "WARNING: cert not found in keychain"
+
+          # 5. Sign helpers using the login keychain
           APP="build/mac-arm64/SplitShot.app"
           for h in "$APP/Contents/Frameworks/"*.app; do
             codesign --force --options runtime --timestamp -s "$SHA" \
