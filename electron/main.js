@@ -1,11 +1,24 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const {
+  createLaunchIntentRouter,
+  createProjectIntent,
+  launchIntentFromArgv,
+  launchIntentFromUrl,
+} = require('./launch-intent');
 
 let mainWindow = null;
 let pythonProcess = null;
+let backendStarted = false;
+let initialLaunchIntent = launchIntentFromArgv(process.argv);
 const PORT = 8765;
 const PYTHON_URL = `http://127.0.0.1:${PORT}`;
+const launchIntentRouter = createLaunchIntentRouter(dispatchLaunchIntent);
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
 
 function getBundlePath() {
   if (app.isPackaged) {
@@ -21,19 +34,21 @@ function getPythonBinary() {
   return path.join(bundle, '.venv', binDir, `python${ext}`);
 }
 
-function getPythonArgs() {
+function getPythonArgs(initialProjectPath = null) {
+  const projectArgs = initialProjectPath ? ['--project', initialProjectPath] : [];
   if (app.isPackaged) {
-    return ['-m', 'splitshot', '--headless', '--no-open'];
+    return ['-m', 'splitshot', '--headless', '--no-open', ...projectArgs];
   }
   const root = path.resolve(__dirname, '..');
-  return ['run', '--directory', root, 'splitshot', '--headless', '--no-open'];
+  return ['run', '--directory', root, 'splitshot', '--headless', '--no-open', ...projectArgs];
 }
 
-function startPythonBackend() {
-  const args = getPythonArgs();
+function startPythonBackend(initialProjectPath = null) {
+  const args = getPythonArgs(initialProjectPath);
   const python = getPythonBinary();
   const bundlePath = getBundlePath();
   const env = { ...process.env };
+  backendStarted = true;
 
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
@@ -107,13 +122,56 @@ function createWindow() {
 
   mainWindow.loadURL(PYTHON_URL);
 
+  mainWindow.webContents.once('did-finish-load', () => {
+    launchIntentRouter.setWindowReady(true);
+  });
+
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
   });
 
   mainWindow.on('closed', () => {
+    launchIntentRouter.setWindowReady(false);
     mainWindow = null;
   });
+}
+
+function dispatchLaunchIntent(intent) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  if (mainWindow.isMinimized()) {
+    mainWindow.restore();
+  }
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('open-project', intent.projectPath);
+  return true;
+}
+
+function ensureWindowForQueuedLaunchIntent() {
+  if (app.isReady() && !mainWindow && launchIntentRouter.isBackendReady()) {
+    createWindow();
+  }
+}
+
+function queueLaunchIntent(intent, { allowStartupProject = false } = {}) {
+  if (!intent) return false;
+  if (!backendStarted && allowStartupProject && !initialLaunchIntent) {
+    initialLaunchIntent = intent;
+    return true;
+  }
+  const queued = launchIntentRouter.queueIntent(intent);
+  if (queued) ensureWindowForQueuedLaunchIntent();
+  return queued;
+}
+
+function handleFileOpenPath(filePath, options = {}) {
+  return queueLaunchIntent(createProjectIntent(filePath, options.source || 'file'), options);
+}
+
+function handleProtocolUrl(targetUrl, options = {}) {
+  return queueLaunchIntent(launchIntentFromUrl(targetUrl), options);
 }
 
 function buildAppMenu() {
@@ -143,7 +201,7 @@ function buildAppMenu() {
               filters: [{ name: 'SplitShot Projects', extensions: ['ssproj'] }],
             });
             if (!result.canceled && result.filePaths[0] && mainWindow) {
-              mainWindow.webContents.send('open-project', result.filePaths[0]);
+              handleFileOpenPath(result.filePaths[0], { source: 'dialog' });
             }
           },
         },
@@ -231,12 +289,50 @@ ipcMain.handle('open-project-dialog', async () => {
   return result.canceled ? null : result.filePaths[0];
 });
 
+if (process.platform === 'darwin') {
+  app.on('open-file', (event, filePath) => {
+    event.preventDefault();
+    handleFileOpenPath(filePath, { source: 'open-file', allowStartupProject: true });
+  });
+
+  app.on('open-url', (event, targetUrl) => {
+    event.preventDefault();
+    handleProtocolUrl(targetUrl, { allowStartupProject: true });
+  });
+}
+
+app.on('second-instance', (_event, commandLine) => {
+  const argvIntent = launchIntentFromArgv(commandLine);
+  if (argvIntent) {
+    queueLaunchIntent(argvIntent);
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
+  ipcMain.handle('test-open-project', async (_event, targetPath) => handleFileOpenPath(targetPath, { source: 'test' }));
+  ipcMain.handle('test-open-url', async (_event, targetUrl) => handleProtocolUrl(targetUrl));
+  ipcMain.handle('test-simulate-second-instance', async (_event, argv) => {
+    const argvIntent = launchIntentFromArgv(Array.isArray(argv) ? argv : [argv]);
+    if (!argvIntent) return false;
+    queueLaunchIntent(argvIntent);
+    return true;
+  });
+}
+
 app.on('ready', async () => {
   buildAppMenu();
-  startPythonBackend();
+  startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
   try {
     await waitForServer();
     console.log('Python backend is ready');
+    launchIntentRouter.setBackendReady(true);
     createWindow();
   } catch (err) {
     console.error(err);
@@ -246,6 +342,7 @@ app.on('ready', async () => {
 });
 
 app.on('window-all-closed', () => {
+  launchIntentRouter.setWindowReady(false);
   if (pythonProcess) {
     pythonProcess.kill();
     pythonProcess = null;
@@ -263,15 +360,9 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true;
+  launchIntentRouter.setWindowReady(false);
   if (pythonProcess) {
     pythonProcess.kill();
     pythonProcess = null;
-  }
-});
-
-app.on('open-file', (event, filePath) => {
-  event.preventDefault();
-  if (mainWindow) {
-    mainWindow.webContents.send('open-project', filePath);
   }
 });
