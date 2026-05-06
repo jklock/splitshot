@@ -84,6 +84,7 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
+        run: cd electron && npm run build:mac
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -91,53 +92,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cd electron
-
-          # 1. Set up signing environment
-          KEYCHAIN_PATH=/tmp/splitshot.keychain
-          KEYCHAIN_PASS=splitshot
-          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
-          security import /tmp/devid.p12 -k "$KEYCHAIN_PATH" -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
-          rm -f /tmp/devid.p12
-          CERT_SHA="49C2A7CDD2C1C84BDE7F719CB4B359E61AF7227C"
-          security find-identity -v | grep "$CERT_SHA"
-
-          # 2. Package .app with electron-builder
-          npx electron-builder --mac --dir --publish=never
-
-          # 3. Sign everything
-          APP="build/mac-arm64/SplitShot.app"
-          echo "=== Signing helpers ==="
-          for h in "$APP/Contents/Frameworks/"*.app; do
-            [ -d "$h" ] && codesign --force --options runtime --timestamp -s "$CERT_SHA" "$h"
-          done
-          echo "=== Signing frameworks ==="
-          for f in "$APP/Contents/Frameworks/"*.framework; do
-            [ -d "$f" ] && codesign --force --options runtime --timestamp -s "$CERT_SHA" "$f"
-          done
-          echo "=== Signing Python bundle ==="
-          find "$APP/Contents/Resources/bundle" -name "python*" -type f | while read f; do
-            codesign --force --options runtime --timestamp -s "$CERT_SHA" "$f" 2>/dev/null || true
-          done
-          echo "=== Signing main app ==="
-          codesign --force --options runtime --timestamp -s "$CERT_SHA" "$APP"
-
-          # 4. Create DMG
-          DMG="build/SplitShot-1.1.0-arm64.dmg"
-          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
-
-          # 5. Notarize
-          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
-
-          # 6. Staple
-          xcrun stapler staple "$DMG"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'

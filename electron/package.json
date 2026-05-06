@@ -46,6 +46,7 @@
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
+      "afterSign": "../scripts/after-sign.js",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
