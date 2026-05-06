@@ -44,5 +44,5 @@ The primary dataclasses are:
 - Still-image assets are preserved through the `is_still_image` flag and suffix-based fallback.
 - `Project` is the shared schema used by both UIs and by the export pipeline.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

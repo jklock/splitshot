@@ -119,3 +119,6 @@ Tag-triggered runs:
 - `MAC verification failed during PKCS12 import`: the `.p12` payload and `MAC_CERT_PASSWORD` do not match, or the export is malformed or incompatible with macOS `security import`. Re-export it from Keychain Access with the private key included.
 - Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
 - Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets.
+
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

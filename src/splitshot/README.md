@@ -23,5 +23,5 @@ The default entry path is browser mode:
 - App settings are persisted in `~/.splitshot/settings.json` through `config.py`.
 - The package version is exported from `__init__.py` as `__version__`.
 
-**Last updated:** 2026-04-15
-**Referenced files last updated:** 2026-04-15
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

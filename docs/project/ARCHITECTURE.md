@@ -103,5 +103,5 @@ Pane modules import only the generic `pane-base.js` — no pane imports another 
 
 The PractiScore session foundation lives in [src/splitshot/browser/practiscore_profile.py](../src/splitshot/browser/practiscore_profile.py), [src/splitshot/browser/practiscore_session.py](../src/splitshot/browser/practiscore_session.py), and the desktop runtime in [src/splitshot/browser/practiscore_qt_runtime.py](../src/splitshot/browser/practiscore_qt_runtime.py). SplitShot opens a visible app-owned Qt WebEngine window for manual PractiScore authentication, stores the persistent profile under the app data directory, and never collects PractiScore credentials through SplitShot form fields.
 
-**Last updated:** 2026-05-04
-**Referenced files last updated:** 2026-05-04
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

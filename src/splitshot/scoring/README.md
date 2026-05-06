@@ -38,5 +38,5 @@ Each preset defines its point map, scoring mode, human-readable description, pen
 - Hit factor is only meaningful when scoring is enabled and the active preset is a hit-factor ruleset.
 - Time-plus presets report a final time instead of hit factor.
 
-**Last updated:** 2026-04-13
-**Referenced files last updated:** 2026-04-13
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

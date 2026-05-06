@@ -7,6 +7,7 @@ This page records the current constraints that are visible in the source tree an
 - SplitShot requires `ffmpeg` and `ffprobe`.
 - If those tools are not on `PATH`, the app can use `SPLITSHOT_FFMPEG_DIR` or vendored binaries under `splitshot/resources/ffmpeg/<platform>`.
 - The export pipeline expects a Qt GUI application context before it draws overlay frames.
+- Headless mode (`--headless`) runs the HTTP server without Qt, but export still requires Qt for overlay frame rendering.
 
 ## Export Scope
 
@@ -35,11 +36,17 @@ This page records the current constraints that are visible in the source tree an
 - Project saves are bundle directories with a `.ssproj` suffix, not single flat files.
 - Saved bundles copy browser-session media when the source path points into a temporary browser session directory.
 
+## Electron Desktop App
+
+- The Electron shell is macOS-only in CI. Windows and Linux builds are configured but not tested in CI.
+- The Electron app bundles the Python backend via `scripts/bundle-python.js`. The bundle must be regenerated when `src/splitshot/` or `pyproject.toml` changes.
+- The `--headless` CLI flag is used by the Electron shell to start the Python backend. Running `splitshot` directly (without `--headless`) launches the Qt desktop runtime, which is redundant inside Electron.
+
 ## Governance
 
 - The repository includes a root LICENSE file and uses the MIT License.
 - Historical planning directories are not part of the active documentation set.
 - Current product guidance lives in this `docs/` directory, the package-level `src/splitshot/.../README.md` files, and the browser audit scripts under `scripts/`.
 
-**Last updated:** 2026-04-17
-**Referenced files last updated:** 2026-04-17
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

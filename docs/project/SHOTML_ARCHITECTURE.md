@@ -157,5 +157,6 @@ This means saved projects can reopen with the exact detector settings and pendin
 - Keep proposal application delegated to existing controller mutation methods when possible. That avoids duplicating scoring, timeline, selection, and autosave side effects.
 - Keep browser state authoritative from the server response. The ShotML UI should render from `project.analysis`, not from unsaved local-only state.
 
-**Last updated:** 2026-04-20
-**Referenced files last updated:** 2026-04-20
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06
+> **Note:** Line number references in this document may be stale after controller refactoring. Verify against the current source before updating code.

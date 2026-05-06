@@ -34,5 +34,5 @@ For the implementation-level walkthrough of ShotML, raw model confidence, thresh
 - The browser waveform and stage presentation use the derived shot list and waveform envelope.
 - The benchmark CLI uses the same analysis pipeline to produce CSV output for Stage*.MP4 files.
 
-**Last updated:** 2026-04-19
-**Referenced files last updated:** 2026-04-19
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

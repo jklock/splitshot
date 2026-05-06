@@ -21,104 +21,19 @@ SplitShot is a local-first browser app for competition shooting video analysis, 
 
 ## Install SplitShot
 
-SplitShot runs directly from this repository. You need the SplitShot source folder, `uv`, `ffmpeg`, and the browser you already use. No browser install is required.
+SplitShot runs from source or as an Electron desktop app. You need `uv`, `ffmpeg`, and the browser you already use.
 
-### Direct Downloads
+### Prerequisites
 
-- SplitShot stable release ZIP: [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip)
-- SplitShot source snapshot ZIP: [main.zip](https://github.com/jklock/splitshot/archive/refs/heads/main.zip)
-- Git for Windows: [git-scm.com/download/win](https://git-scm.com/download/win)
-- `uv`: [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/)
-- FFmpeg downloads: [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
-- FFmpeg Windows essentials ZIP: [gyan.dev ffmpeg-release-essentials.zip](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip)
-- Homebrew: [brew.sh](https://brew.sh)
-- Chocolatey: [chocolatey.org/install](https://chocolatey.org/install)
+- **`uv`:** [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/)
+- **FFmpeg:** [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+- **Git:** [git-scm.com/downloads](https://git-scm.com/downloads)
 
-### 1. Automated Install
-
-This path does not require Git. Download and unzip the stable release archive [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip), then run the commands from the extracted folder.
-
-**Prerequisites:** The setup script installs `uv` and `ffmpeg` for you but requires a package manager to do so:
-- **macOS:** [Homebrew](https://brew.sh) must already be installed.
-- **Linux:** `apt-get`, `dnf`, `pacman`, or `zypper` — the script auto-detects.
-- **Windows:** [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) must already be installed (ships with Windows 11 and recent Windows 10).
-
-If your platform's package manager is not available, follow the manual install for your system instead.
-
-#### macOS or Linux
+### Source Install (All Platforms)
 
 ```bash
-cd ~/Downloads/splitshot-1.0.0
-bash scripts/setup/setup_splitshot.sh
-uv run splitshot
-```
-
-#### Windows PowerShell
-
-```powershell
-Set-Location "$HOME\Downloads\splitshot-1.0.0"
-powershell -ExecutionPolicy Bypass -File .\scripts\setup\setup_splitshot.ps1
-uv run splitshot
-```
-
-If you already have Git, you can clone `https://github.com/jklock/splitshot.git` and run the same commands from the `splitshot` folder instead.
-
-Optional check:
-
-```bash
-uv run splitshot --check
-```
-
-### 2. Manual Install
-
-#### macOS with Homebrew
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-brew install uv ffmpeg
-brew install git
 git clone https://github.com/jklock/splitshot.git
 cd splitshot
-uv python install 3.12
-uv sync
-uv run splitshot
-```
-
-#### Ubuntu or Debian with apt-get
-
-```bash
-sudo apt-get update
-sudo apt-get install -y git curl ffmpeg
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-git clone https://github.com/jklock/splitshot.git
-cd splitshot
-uv python install 3.12
-uv sync
-uv run splitshot
-```
-
-#### Fedora, RHEL, or CentOS with dnf or yum
-
-```bash
-sudo dnf install -y git curl ffmpeg ffmpeg-libs || sudo yum install -y git curl ffmpeg
-curl -LsSf https://astral.sh/uv/install.sh | sh
-export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-git clone https://github.com/jklock/splitshot.git
-cd splitshot
-uv python install 3.12
-uv sync
-uv run splitshot
-```
-
-#### Windows PowerShell with winget
-
-```powershell
-winget install --id Git.Git --exact --accept-source-agreements --accept-package-agreements
-winget install --id astral-sh.uv --exact --accept-source-agreements --accept-package-agreements
-winget install --id Gyan.FFmpeg --exact --accept-source-agreements --accept-package-agreements
-git clone https://github.com/jklock/splitshot.git
-Set-Location .\splitshot
 uv python install 3.12
 uv sync
 uv run splitshot
@@ -126,36 +41,26 @@ uv run splitshot
 
 If the browser does not open automatically, retry with `uv run splitshot --no-open` and open the URL shown in the terminal manually.
 
-#### Windows PowerShell with Chocolatey
+Optional check:
 
-```powershell
-Set-ExecutionPolicy Bypass -Scope Process -Force
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-choco install git ffmpeg -y
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-git clone https://github.com/jklock/splitshot.git
-Set-Location .\splitshot
-uv python install 3.12
-uv sync
-uv run splitshot
+```bash
+uv run splitshot --check
 ```
 
-#### Windows without winget or Chocolatey
+### Electron Desktop App (macOS)
 
-Download and install these manually, ensuring each is on your PATH:
+The Electron build produces a signed, notarized macOS DMG. See [docs/project/ELECTRON_RELEASE.md](docs/project/ELECTRON_RELEASE.md) for the signing and release workflow.
 
-- **Git:** [git-scm.com/download/win](https://git-scm.com/download/win) — adds itself to PATH during install.
-- **`uv`:** [docs.astral.sh/uv/getting-started/installation](https://docs.astral.sh/uv/getting-started/installation/) — the installer adds it to PATH.
-- **FFmpeg:** Download the essentials ZIP from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip), extract it, and add the `bin` folder (e.g. `C:\ffmpeg\bin`) to your system PATH. Verify with `ffmpeg -version` in a new PowerShell window.
-- **SplitShot:** [v1.0.0.zip](https://github.com/jklock/splitshot/archive/refs/tags/v1.0.0.zip) — extract to a folder.
+### CLI Options
 
-Then open PowerShell in the extracted `splitshot-1.0.0` folder and run:
-
-```powershell
-uv python install 3.12
-uv sync
-uv run splitshot
+```bash
+uv run splitshot                          # Default: browser mode with Qt desktop runtime
+uv run splitshot --headless               # HTTP server only, no Qt window
+uv run splitshot --no-open                # Start server without opening browser
+uv run splitshot --host 0.0.0.0 --port 8765  # Custom bind address/port
+uv run splitshot --project /path/to/project.ssproj  # Open project at startup
+uv run splitshot --log-level info         # Mirror activity log to terminal
+uv run splitshot --check                  # Validate toolchain and assets
 ```
 
 ## Basic Workflow
@@ -190,6 +95,7 @@ uv run splitshot
 - [Troubleshooting](docs/userfacing/troubleshooting.md)
 - [Documentation hub](docs/README.md)
 - [Current limitations](docs/project/LIMITATIONS.md)
+- [Electron release and signing](docs/project/ELECTRON_RELEASE.md)
 - [Contributing](CONTRIBUTING.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Security](SECURITY.md)

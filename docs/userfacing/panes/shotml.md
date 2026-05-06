@@ -122,5 +122,5 @@ ShotML controls automatic detection. Splits controls the final timeline. Rerun S
 Previous: [project.md](project.md)
 Next: [splits.md](splits.md)
 
-**Last updated:** 2026-04-30
-**Referenced files last updated:** 2026-04-30
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

@@ -77,5 +77,5 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 Previous: [review.md](review.md)
 Next: [settings.md](settings.md)
 
-**Last updated:** 2026-04-30
-**Referenced files last updated:** 2026-04-30
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

@@ -47,5 +47,5 @@ uv run python scripts/tooling/validate_toolchain.py
 - The dataset trainer builds a candidate MLP bundle from extracted NPZ features without overwriting the shipped model by default; it now supports balanced class weighting, early stopping, per-class validation recall, and separate verified-validation metrics so automated or draft-only runs do not get confused with actual reviewed-label performance.
 - Browser audit scripts are the real validation layer for route-backed UI behavior. By default they use the bundled repo-local media in `tests/artifacts/test_video/` plus `example_data/IDPA/IDPA.csv`, so a fresh clone can run them without private stage files.
 
-**Last updated:** 2026-04-18
-**Referenced files last updated:** 2026-04-18
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

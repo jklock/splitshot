@@ -64,5 +64,5 @@ The main loop is:
 - After editing static assets, reload the running page before validating behavior so you are not testing a stale bundle.
 - When adding a new pane, create a `panes/<name>-pane.js` module, import it in `app.js`, create its HTML section in `index.html`, and register it in the global compat bridge if needed.
 
-**Last updated:** 2026-05-04
-**Referenced files last updated:** 2026-05-04
+**Last updated:** 2026-05-06
+**Referenced files last updated:** 2026-05-06

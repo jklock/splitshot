@@ -16,6 +16,9 @@ The runtime locates media binaries from `PATH` first, then from bundled resource
 ```bash
 uv run splitshot
 uv run splitshot --no-open
+uv run splitshot --headless
+uv run splitshot --headless --log-level info
+uv run splitshot --project /path/to/project.ssproj
 uv run splitshot --check
 uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 uv run pytest --cov=src/splitshot --cov-report=term-missing
