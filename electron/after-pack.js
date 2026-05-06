@@ -5,43 +5,41 @@ const path = require('path');
 const os = require('os');
 
 exports.default = async function(context) {
-  // Find the .app path
   const appName = context.packager.appInfo.productFilename;
   const appOutDir = context.appOutDir || context.outDir;
   const appPath = path.join(appOutDir, `${appName}.app`);
-  console.log('[afterPack] deep-signing:', appPath);
-  console.log('[afterPack] appOutDir:', appOutDir);
+  console.log('[afterPack] signing:', appPath);
 
-  // Check if the .app exists
   if (!fs.existsSync(appPath)) {
-    console.error('[afterPack] ERROR: .app not found at', appPath);
-    console.error('[afterPack] contents:', fs.readdirSync(appOutDir));
+    console.error('[afterPack] ERROR: .app not found');
     return;
   }
 
-  // Import cert into login keychain
   if (process.env.CSC_LINK && process.env.CSC_KEY_PASSWORD) {
     const p12 = path.join(os.tmpdir(), `devid-${Date.now()}.p12`);
     fs.writeFileSync(p12, Buffer.from(process.env.CSC_LINK, 'base64'));
     try {
-      execSync(`security import "${p12}" -k ~/Library/Keychains/login.keychain-db -P "${process.env.CSC_KEY_PASSWORD}" -T /usr/bin/codesign -A`, { stdio: 'inherit' });
-      console.log('[afterPack] cert imported');
+      execSync(`security import "${p12}" -k ~/Library/Keychains/login.keychain-db -P "${process.env.CSC_KEY_PASSWORD}" -T /usr/bin/codesign -A`, { stdio: 'pipe' });
     } catch (e) {
-      console.error('[afterPack] import failed:', e.message);
+      console.error('[afterPack] import failed:', e.stderr ? e.stderr.toString().trim().substring(0,200) : e.message);
     }
     try { fs.unlinkSync(p12); } catch {}
   }
 
-  // Unlock login keychain
   try {
-    execSync('security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db 2>/dev/null', { stdio: 'ignore' });
+    execSync('security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db', { stdio: 'pipe' });
   } catch {}
 
-  // Deep-sign the entire .app
   const identity = 'Developer ID Application: John Klockenkemper (7DJ75AWV5R)';
-  const cmd = `codesign --deep --force --options runtime --timestamp -s "${identity}" "${appPath}" 2>&1`;
-  console.log('[afterPack] signing...');
-  const result = execSync(cmd, { encoding: 'utf8', timeout: 300000 });
-  if (result.trim()) console.log('[afterPack]', result.trim().substring(0, 300));
-  console.log('[afterPack] done');
+  const cmd = `codesign --deep --force --options runtime --timestamp -s "${identity}" "${appPath}"`;
+  console.log('[afterPack] running:', cmd);
+  try {
+    const result = execSync(cmd, { timeout: 300000, stdio: 'pipe' });
+    console.log('[afterPack] signed successfully');
+  } catch (e) {
+    const stderr = e.stderr ? e.stderr.toString().trim() : '';
+    const stdout = e.stdout ? e.stdout.toString().trim() : '';
+    console.error('[afterPack] codesign failed:', stderr || stdout || e.message);
+    // Don't throw — let the build continue without deep-signing
+  }
 };
