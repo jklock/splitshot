@@ -102,21 +102,14 @@ jobs:
           rm -f /tmp/devid.p12
           CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
 
-          # 2. Package .app (dir only)
-          npx electron-builder --dir --publish=never
+          # 2. Package .app with signing (must use --mac --dir, not just --dir)
+          npx electron-builder --mac --dir --publish=never
 
-          # 3. Sign everything explicitly
+          # 3. Sign Python bundle that electron-builder misses
           APP="build/mac-arm64/SplitShot.app"
-          # 3a. Sign all individual dylibs, sos, and executables
-          find "$APP" -type f \( -name "*.dylib" -o -name "*.so" -o -perm -0100 \) -print0 | \
+          find "$APP/Contents/Resources/bundle" -type f \( -name "python*" -o -name "*.dylib" \) -perm -0100 -print0 | \
             xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # 3b. Sign all nested .app bundles (helpers)
-          find "$APP" -name "*.app" -type d -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # 3c. Sign all frameworks
-          find "$APP" -name "*.framework" -type d -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # 3d. Sign the main .app
+          # Resign main app to ensure everything is covered
           codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP"
 
           # 4. Create DMG
