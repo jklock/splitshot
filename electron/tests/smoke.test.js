@@ -57,7 +57,18 @@ async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) 
   throw new Error(`Timed out waiting for project path ${expectedProjectPath}`);
 }
 
-const ELECTRON_LAUNCH_TIMEOUT = 120_000;
+const ELECTRON_TIMEOUT = 120_000;
+const TEST_TIMEOUT = 4 * 60_000;
+
+async function closeApp(app) {
+  await Promise.race([
+    app.close(),
+    delay(15_000).then(() => {
+      console.error('electron close timed out, forcing exit');
+      app.process().kill();
+    }),
+  ]);
+}
 
 async function main() {
   console.log('Creating project bundles...');
@@ -76,18 +87,24 @@ async function main() {
   console.log('Launching Electron...');
   const electronApp = await playwrightElectron.launch({
     executablePath: electronBinary,
-    args: ['--no-sandbox', '--disable-gpu', ELECTRON_APP_DIR, startupProject],
+    args: [ELECTRON_APP_DIR, startupProject],
     cwd: ELECTRON_APP_DIR,
     env,
-    timeout: ELECTRON_LAUNCH_TIMEOUT,
+    timeout: ELECTRON_TIMEOUT,
   });
   console.log('  Electron launched');
+  console.log('  electron pid:', electronApp.process().pid);
 
   console.log('Waiting for first window...');
-  const window = await electronApp.firstWindow({ timeout: ELECTRON_LAUNCH_TIMEOUT });
+  const window = await electronApp.firstWindow({ timeout: ELECTRON_TIMEOUT });
   console.log('  first window ready');
+
   try {
-    await window.waitForLoadState('domcontentloaded');
+    console.log('Waiting for DOM content loaded...');
+    await window.waitForLoadState('domcontentloaded', { timeout: ELECTRON_TIMEOUT });
+    console.log('  DOM content loaded');
+
+    console.log('Evaluating bridge API...');
     const bridge = await window.evaluate(() => ({
       getVersion: typeof window.splitshot?.getVersion === 'function',
       getPlatform: typeof window.splitshot?.getPlatform === 'function',
@@ -104,32 +121,46 @@ async function main() {
       testSimulateSecondInstance: true,
       testOpenUrl: true,
     });
+    console.log('  bridge API OK');
 
+    console.log('Waiting for startup project...');
     await waitForProjectPath(window, startupProject);
+    console.log('  startup project loaded');
 
-    const queued = await window.evaluate((targetPath) => (
-      window.splitshot.testSimulateSecondInstance([
-        '/Applications/SplitShot.app/Contents/MacOS/SplitShot',
-        targetPath,
-      ])
-    ), secondProject);
+    console.log('Simulating second instance...');
+    const argv0 = process.platform === 'darwin' ? '/Applications/SplitShot.app/Contents/MacOS/SplitShot' : process.execPath;
+    const queued = await window.evaluate(({ a0, targetPath }) => (
+      window.splitshot.testSimulateSecondInstance([a0, targetPath])
+    ), { a0: argv0, targetPath: secondProject });
     assert.equal(queued, true);
     await waitForProjectPath(window, secondProject);
+    console.log('  second instance handled');
 
+    console.log('Simulating protocol URL...');
     const injected = await window.evaluate((targetUrl) => window.splitshot.testOpenUrl(targetUrl), `splitshot://open?path=${encodeURIComponent(protocolProject)}`);
     assert.equal(injected, true);
     await waitForProjectPath(window, protocolProject);
+    console.log('  protocol URL handled');
   } finally {
-    await electronApp.close();
+    console.log('Closing Electron...');
+    await closeApp(electronApp);
+    console.log('  Electron closed');
   }
 }
 
+const timer = setTimeout(() => {
+  console.error('FATAL: test timed out');
+  process.exit(1);
+}, TEST_TIMEOUT);
+
 main()
   .then(() => {
+    clearTimeout(timer);
     console.log('electron smoke ok');
     process.exit(0);
   })
   .catch((error) => {
+    clearTimeout(timer);
     console.error(error);
     process.exit(1);
   });
