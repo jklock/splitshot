@@ -57,6 +57,8 @@ async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) 
   throw new Error(`Timed out waiting for project path ${expectedProjectPath}`);
 }
 
+const ELECTRON_LAUNCH_TIMEOUT = 120_000;
+
 async function main() {
   const startupProject = createProjectBundle('startup');
   const secondProject = createProjectBundle('second-instance');
@@ -69,12 +71,13 @@ async function main() {
 
   const electronApp = await playwrightElectron.launch({
     executablePath: electronBinary,
-    args: [ELECTRON_APP_DIR, startupProject],
+    args: ['--no-sandbox', '--disable-gpu', ELECTRON_APP_DIR, startupProject],
     cwd: ELECTRON_APP_DIR,
     env,
+    timeout: ELECTRON_LAUNCH_TIMEOUT,
   });
 
-  const window = await electronApp.firstWindow();
+  const window = await electronApp.firstWindow({ timeout: ELECTRON_LAUNCH_TIMEOUT });
   try {
     await window.waitForLoadState('domcontentloaded');
     const bridge = await window.evaluate(() => ({
