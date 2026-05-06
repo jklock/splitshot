@@ -84,6 +84,7 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: runner.os == 'macOS'
+        run: cd electron && npm run build:mac
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
@@ -91,61 +92,6 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          cd electron
-
-          # 1. Import cert to login keychain (persists after electron-builder runs)
-          echo "$CSC_LINK" | base64 -d > /tmp/devid.p12
-          security import /tmp/devid.p12 -k ~/Library/Keychains/login.keychain-db \
-            -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign -A
-          rm -f /tmp/devid.p12
-          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-
-          # 2. Package .app (electron-builder signs with our cert)
-          npx electron-builder --mac --dir --publish=never
-
-          # 3. Unlock login keychain and restore as default
-          security unlock-keychain -p "" ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-          security default-keychain -s ~/Library/Keychains/login.keychain-db
-
-          # 4. Verify cert is findable
-          security find-identity -v -p basic | grep -q "Developer ID Application" || echo "WARNING: Developer ID cert not found"
-
-          # 5. Sign ALL binaries using the cert name
-          APP="build/mac-arm64/SplitShot.app"
-          # Main binary (no 2>/dev/null — we want to see errors)
-          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP/Contents/MacOS/SplitShot"
-          echo "Main binary signed OK"
-          # Helper app inner binaries
-          for h in "$APP/Contents/Frameworks/"*.app; do
-            h_name=$(basename "$h" .app)
-            h_bin="$h/Contents/MacOS/$h_name"
-            if [ -f "$h_bin" ]; then
-              codesign --force --options runtime --timestamp -s "$CERT_NAME" "$h_bin"
-              echo "Signed: $h_name"
-            else
-              echo "MISSING: $h_bin"
-            fi
-          done
-          # Framework dylibs
-          find "$APP/Contents/Frameworks" -name "*.dylib" -type f -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # Framework versioned binaries (Squirrel, Mantle, ReactiveObjC, etc.)
-          find "$APP/Contents/Frameworks" -path "*/Versions/A/*" -type f ! -name "*.dylib" -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-          # Python bundle
-          find "$APP/Contents/Resources/bundle/.venv/bin" -type f ! -name "*.py" -print0 | \
-            xargs -0 -I{} codesign --force --options runtime --timestamp -s "$CERT_NAME" "{}" 2>/dev/null || true
-
-          # 5. Create DMG
-          DMG="build/SplitShot-1.1.0-arm64.dmg"
-          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG"
-
-          # 6. Notarize
-          xcrun notarytool submit "$DMG" --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
-          xcrun stapler staple "$DMG"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
