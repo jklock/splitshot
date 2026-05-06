@@ -82,21 +82,13 @@ jobs:
       - name: Run parity audit
         run: uv run python scripts/audits/electron_parity_audit.py --mode parity
 
-      - name: Build Electron app (macOS — deep-sign then DMG)
+      - name: Build Electron app (macOS — signed DMG)
         if: runner.os == 'macOS'
-        run: |
-          cd electron
-          npx electron-builder --dir --publish=never
-          CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-          codesign --deep --force --options runtime -s "$CERT_NAME" build/mac-arm64/SplitShot.app
-          npx electron-builder --prepackaged build/mac-arm64/SplitShot.app --publish=never
+        run: cd electron && npm run build:mac
         timeout-minutes: 30
         env:
           CSC_LINK: ${{ secrets.MAC_CERT_BASE64 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
