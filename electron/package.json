@@ -45,7 +45,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "forceCodeSigning": true,
-      "sign": "../scripts/sign-deep.js",
+      "sign": "sign-deep.js",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
