@@ -114,13 +114,19 @@ jobs:
 
           # 5. Sign ALL binaries using the cert name
           APP="build/mac-arm64/SplitShot.app"
-          # Main binary
-          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP/Contents/MacOS/SplitShot" 2>/dev/null || true
+          # Main binary (no 2>/dev/null — we want to see errors)
+          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP/Contents/MacOS/SplitShot"
+          echo "Main binary signed OK"
           # Helper app inner binaries
           for h in "$APP/Contents/Frameworks/"*.app; do
             h_name=$(basename "$h" .app)
-            codesign --force --options runtime --timestamp -s "$CERT_NAME" \
-              "$h/Contents/MacOS/$h_name" 2>/dev/null || true
+            h_bin="$h/Contents/MacOS/$h_name"
+            if [ -f "$h_bin" ]; then
+              codesign --force --options runtime --timestamp -s "$CERT_NAME" "$h_bin"
+              echo "Signed: $h_name"
+            else
+              echo "MISSING: $h_bin"
+            fi
           done
           # Framework dylibs
           find "$APP/Contents/Frameworks" -name "*.dylib" -type f -print0 | \
