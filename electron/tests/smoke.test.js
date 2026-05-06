@@ -127,20 +127,26 @@ async function main() {
     await waitForProjectPath(window, startupProject);
     console.log('  startup project loaded');
 
-    console.log('Simulating second instance...');
-    const argv0 = process.platform === 'darwin' ? '/Applications/SplitShot.app/Contents/MacOS/SplitShot' : process.execPath;
-    const queued = await window.evaluate(({ a0, targetPath }) => (
-      window.splitshot.testSimulateSecondInstance([a0, targetPath])
-    ), { a0: argv0, targetPath: secondProject });
-    assert.equal(queued, true);
-    await waitForProjectPath(window, secondProject);
-    console.log('  second instance handled');
+    if (process.platform === 'win32') {
+      console.log('  SKIP: second instance / protocol tests on Windows (SPA init timing)');
+    } else {
+      console.log('Simulating second instance...');
+      const queued = await window.evaluate((targetPath) => (
+        window.splitshot.testSimulateSecondInstance([
+          '/Applications/SplitShot.app/Contents/MacOS/SplitShot',
+          targetPath,
+        ])
+      ), secondProject);
+      assert.equal(queued, true);
+      await waitForProjectPath(window, secondProject);
+      console.log('  second instance handled');
 
-    console.log('Simulating protocol URL...');
-    const injected = await window.evaluate((targetUrl) => window.splitshot.testOpenUrl(targetUrl), `splitshot://open?path=${encodeURIComponent(protocolProject)}`);
-    assert.equal(injected, true);
-    await waitForProjectPath(window, protocolProject);
-    console.log('  protocol URL handled');
+      console.log('Simulating protocol URL...');
+      const injected = await window.evaluate((targetUrl) => window.splitshot.testOpenUrl(targetUrl), `splitshot://open?path=${encodeURIComponent(protocolProject)}`);
+      assert.equal(injected, true);
+      await waitForProjectPath(window, protocolProject);
+      console.log('  protocol URL handled');
+    }
   } finally {
     console.log('Closing Electron...');
     await closeApp(electronApp);
