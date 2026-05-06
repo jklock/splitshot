@@ -105,39 +105,40 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN_PATH"
           rm -f /tmp/devid.p12
           CERT_NAME="Developer ID Application: John Klockenkemper (7DJ75AWV5R)"
-          echo "Cert imported to temp keychain"
 
-          # 2. Package .app with electron-builder (dir only, no signing)
-          npx electron-builder --dir --publish=never --config.disablePreSign=true 2>&1 || \
-            npx electron-builder --dir --publish=never
+          # 2. Package .app
+          npx electron-builder --dir --publish=never
 
-          # 3. Sign the entire .app from scratch with --deep
-          codesign --deep --force --options runtime --timestamp -s "$CERT_NAME" build/mac-arm64/SplitShot.app
-          echo "Deep-sign complete"
+          # 3. Sign every binary inside the .app
+          APP="build/mac-arm64/SplitShot.app"
+          # Sign all individual dylib, so, and executable files
+          find "$APP" -type f \( -name "*.dylib" -o -name "*.so" -o -perm /111 \) | while read f; do
+            codesign --force --options runtime --timestamp -s "$CERT_NAME" "$f" 2>/dev/null || true
+          done
+          # Sign all frameworks
+          find "$APP" -name "*.framework" -type d | while read f; do
+            codesign --force --options runtime --timestamp -s "$CERT_NAME" "$f" 2>/dev/null || true
+          done
+          # Sign the main .app last
+          codesign --force --options runtime --timestamp -s "$CERT_NAME" "$APP"
 
-          # 4. Create DMG manually
-          DMG_NAME="SplitShot-1.1.0-arm64"
-          mkdir -p build
-          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder build/mac-arm64/SplitShot.app \
-            "build/${DMG_NAME}.dmg" 2>&1
-          echo "DMG created"
+          # 4. Create DMG
+          DMG_PATH="build/SplitShot-1.1.0-arm64.dmg"
+          hdiutil create -volname "SplitShot" -fs HFS+ -srcfolder "$APP" "$DMG_PATH"
 
           # 5. Notarize
-          xcrun notarytool submit "build/${DMG_NAME}.dmg" \
+          xcrun notarytool submit "$DMG_PATH" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
-            --wait 2>&1
-          echo "Notarization complete"
+            --wait
 
-          # 6. Staple the ticket
-          xcrun stapler staple "build/${DMG_NAME}.dmg" 2>&1
-          echo "Ticket stapled"
+          # 6. Staple ticket
+          xcrun stapler staple "$DMG_PATH"
 
           # 7. Clean up
-          security default-keychain -s ~/Library/Keychains/login.keychain-db 2>/dev/null || true
-          security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
-          echo "macOS build: signed, notarized, and stapled"
+          security default-keychain -s ~/Library/Keychains/login.keychain-db
+          security delete-keychain "$KEYCHAIN_PATH"
 
       - name: Build Electron app (Windows/Linux)
         if: runner.os != 'macOS'
