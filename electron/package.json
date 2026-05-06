@@ -27,7 +27,6 @@
       "output": "build"
     },
     "compression": "maximum",
-    "afterPack": "../scripts/after-sign.js",
     "files": [
       "main.js",
       "preload.js"
@@ -47,6 +46,7 @@
       "gatekeeperAssess": false,
       "entitlements": "assets/entitlements.mac.plist",
       "entitlementsInherit": "assets/entitlements.mac.plist",
+      "sign": "../scripts/sign-deep.js",
       "extendInfo": {
         "CFBundleDocumentTypes": [
           {
