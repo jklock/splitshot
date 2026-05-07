@@ -44,6 +44,9 @@ jobs:
       - name: Install managed Python 3.12
         run: uv python install 3.12
 
+      - name: Install Linux runtime dependencies
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+
       - name: Verify CLI
         run: |
           uv sync --frozen --extra dev --python 3.12
