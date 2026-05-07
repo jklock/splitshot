@@ -25,18 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install uv
-        run: pip install uv
+      - name: Verify host toolchain
+        run: |
+          python3 --version
+          node --version
+          npm --version
+          uv --version
 
       - name: Install system dependencies
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
@@ -114,18 +108,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install uv
-        run: pip install uv
+      - name: Verify host toolchain
+        run: |
+          python --version
+          node --version
+          npm --version
+          uv --version
 
       - name: Install system dependencies
         run: choco install ffmpeg -y --no-progress
