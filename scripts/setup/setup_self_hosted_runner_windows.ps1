@@ -185,7 +185,42 @@ function RunnerDirCandidates([string]$ExplicitRunnerDir) {
     return $candidates
 }
 
+function Find-RunnerDirFromService {
+    $service = Get-CimInstance Win32_Service -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like 'actions.runner.*' } |
+        Select-Object -First 1
+    if (-not $service) {
+        return $null
+    }
+
+    $pathLine = $service.PathName
+    if (-not $pathLine) {
+        return $null
+    }
+
+    $matches = [regex]::Matches($pathLine, '"([^"]+)"')
+    foreach ($match in $matches) {
+        $candidate = $match.Groups[1].Value
+        if (-not $candidate) {
+            continue
+        }
+        if ($candidate -like '*runsvc.cmd' -or $candidate -like '*run.cmd' -or $candidate -like '*RunnerService.exe') {
+            $dir = Split-Path -Parent $candidate
+            if ($dir -and (Test-Path $dir)) {
+                return (Resolve-Path $dir).Path
+            }
+        }
+    }
+
+    return $null
+}
+
 function Find-ExistingRunnerDir([string]$ExplicitRunnerDir) {
+    $serviceDir = Find-RunnerDirFromService
+    if ($serviceDir) {
+        return $serviceDir
+    }
+
     $candidates = RunnerDirCandidates $ExplicitRunnerDir
 
     foreach ($candidate in $candidates) {
@@ -251,6 +286,11 @@ function Ensure-RunnerFiles([string]$ResolvedRunnerDir) {
 }
 
 function Ensure-RunnerConfigured([string]$ResolvedRunnerDir) {
+    $existingService = Get-Service 'actions.runner.*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($existingService) {
+        Write-Setup "Runner service $($existingService.Name) already exists; skipping configuration"
+        return
+    }
     if (Test-Path (Join-Path $ResolvedRunnerDir '.runner')) {
         Write-Setup 'Runner already configured'
         return
