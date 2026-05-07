@@ -6,40 +6,22 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
-      target_set:
-        description: "Targets to run"
+      target:
+        description: "Remote target to package"
         type: choice
-        required: false
-        default: "all"
+        required: true
+        default: linux
         options:
-          - all
-          - macos-linux
-          - macos
           - linux
           - windows
 
 jobs:
-  package:
-    if: >-
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.target_set == 'all' ||
-      (github.event.inputs.target_set == 'macos-linux' && (matrix.name == 'macos' || matrix.name == 'linux')) ||
-      github.event.inputs.target_set == matrix.name
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macos
-            runner: '["macos-14"]'
-          - name: windows
-            runner: '["self-hosted", "Windows", "X64"]'
-          - name: linux
-            runner: '["self-hosted", "Linux", "X64"]'
-    runs-on: ${{ fromJSON(matrix.runner) }}
+  package-linux:
+    if: github.event_name == 'push' || github.event.inputs.target == 'linux'
+    runs-on: [self-hosted, Linux, X64]
     defaults:
       run:
         shell: bash
-
     steps:
       - uses: actions/checkout@v4
 
@@ -56,18 +38,8 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      - name: Install system dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
-
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Install system dependencies
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
-
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y --no-progress
-        timeout-minutes: 5
 
       - name: Sync Python dependencies
         run: uv sync --extra dev
@@ -84,125 +56,20 @@ jobs:
         run: cd electron && npm install
         timeout-minutes: 10
 
-      - name: Prepare macOS signing certificate
-        if: runner.os == 'macOS'
-        env:
-          MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
-          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${MAC_CERT_BASE64}" ]; then
-            echo "Missing MAC_CERT_BASE64 secret"
-            exit 1
-          fi
-          if [ -z "${MAC_CERT_PASSWORD}" ]; then
-            echo "Missing MAC_CERT_PASSWORD secret"
-            exit 1
-          fi
-
-          tmp_dir="$(mktemp -d)"
-          cert_file="${tmp_dir}/developer-id.p12"
-          keychain_file="${tmp_dir}/splitshot-signing.keychain-db"
-          keychain_password="$(openssl rand -base64 24 | tr -d '\n')"
-
-          CERT_FILE="${cert_file}" MAC_CERT_BASE64="${MAC_CERT_BASE64}" python3 - <<'PY'
-          import base64
-          import os
-          from pathlib import Path
-
-          Path(os.environ["CERT_FILE"]).write_bytes(base64.b64decode(os.environ["MAC_CERT_BASE64"]))
-          PY
-
-          openssl pkcs12 -in "${cert_file}" -info -noout -passin env:MAC_CERT_PASSWORD >/dev/null
-
-          security create-keychain -p "${keychain_password}" "${keychain_file}"
-          security unlock-keychain -p "${keychain_password}" "${keychain_file}"
-          security set-keychain-settings "${keychain_file}"
-          security list-keychains -d user -s "${keychain_file}" $(security list-keychains -d user | tr -d '"')
-          if ! security import "${cert_file}" -k "${keychain_file}" -T /usr/bin/codesign -T /usr/bin/productbuild -P "${MAC_CERT_PASSWORD}"; then
-            echo "macOS rejected the .p12 during security import."
-            echo "Re-export the Developer ID Application certificate from Keychain Access and confirm the private key is included."
-            exit 1
-          fi
-          security find-identity -v -p codesigning "${keychain_file}"
-
-          {
-            echo "MAC_CERT_FILE=${cert_file}"
-            echo "MAC_CERT_KEYCHAIN=${keychain_file}"
-            echo "MAC_CERT_TMPDIR=${tmp_dir}"
-          } >> "${GITHUB_ENV}"
-
-      - name: Configure macOS notarization credentials
-        if: runner.os == 'macOS'
-        env:
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -n "${APPLE_API_KEY}" ] || [ -n "${APPLE_API_KEY_ID}" ] || [ -n "${APPLE_API_ISSUER}" ]; then
-            if [ -z "${APPLE_API_KEY}" ] || [ -z "${APPLE_API_KEY_ID}" ] || [ -z "${APPLE_API_ISSUER}" ]; then
-              echo "APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER must all be set together"
-              exit 1
-            fi
-            {
-              echo "APPLE_API_KEY_ID=${APPLE_API_KEY_ID}"
-              echo "APPLE_API_ISSUER=${APPLE_API_ISSUER}"
-              echo "APPLE_API_KEY<<__SPLITSHOT_API_KEY__"
-              printf '%s\n' "${APPLE_API_KEY}"
-              echo "__SPLITSHOT_API_KEY__"
-            } >> "${GITHUB_ENV}"
-          elif [ -n "${APPLE_ID}" ] || [ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ] || [ -n "${APPLE_TEAM_ID}" ]; then
-            if [ -z "${APPLE_ID}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD}" ] || [ -z "${APPLE_TEAM_ID}" ]; then
-              echo "APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID must all be set together"
-              exit 1
-            fi
-            {
-              echo "APPLE_ID=${APPLE_ID}"
-              echo "APPLE_APP_SPECIFIC_PASSWORD=${APPLE_APP_SPECIFIC_PASSWORD}"
-              echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}"
-            } >> "${GITHUB_ENV}"
-          else
-            echo "No notarization credentials configured; build will sign but skip notarization."
-          fi
-
-      - name: Build Electron app (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          set -euo pipefail
-          export CSC_LINK="${MAC_CERT_FILE}"
-          export CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
-          cd electron
-          npm run build:mac
-        timeout-minutes: 30
-        env:
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-
-      - name: Build Electron app (Windows/Linux)
-        if: runner.os != 'macOS'
+      - name: Build Electron app
         run: cd electron && npm run build
         timeout-minutes: 30
 
       - name: Run packaged Electron smoke test
-        run: |
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            xvfb-run -a uv run python scripts/testing/test_electron_app.py
-          else
-            uv run python scripts/testing/test_electron_app.py
-          fi
+        run: xvfb-run -a uv run python scripts/testing/test_electron_app.py
         timeout-minutes: 10
 
       - name: Verify installer
-        shell: bash
         run: |
           shopt -s nullglob extglob
-          found=( electron/build/*.@(dmg|exe|AppImage) )
+          found=( electron/build/*.AppImage )
           if [ ${#found[@]} -eq 0 ]; then
-            echo "No installers found in electron/build/"
+            echo "No Linux installers found in electron/build/"
             exit 1
           fi
           for f in "${found[@]}"; do
@@ -210,7 +77,6 @@ jobs:
           done
 
       - name: Verify Linux artifact metadata
-        if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -236,26 +102,81 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: splitshot-${{ matrix.name }}
-          path: |
-            electron/build/*.dmg
-            electron/build/*.exe
-            electron/build/*.AppImage
+          name: splitshot-linux
+          path: electron/build/*.AppImage
 
-      - name: Cleanup macOS signing artifacts
-        if: runner.os == 'macOS' && always()
+  package-windows:
+    if: github.event_name == 'push' || github.event.inputs.target == 'windows'
+    runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install system dependencies
+        run: choco install ffmpeg -y --no-progress
+        timeout-minutes: 5
+
+      - name: Sync Python dependencies
+        run: uv sync --extra dev
+        timeout-minutes: 15
+
+      - name: Bundle Python
+        run: node scripts/bundle-python.js
+        timeout-minutes: 20
+
+      - name: Verify bundle
+        run: node scripts/bundle-python.js check
+
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+
+      - name: Build Electron app
+        run: cd electron && npm run build
+        timeout-minutes: 30
+
+      - name: Run packaged Electron smoke test
+        run: uv run python scripts/testing/test_electron_app.py
+        timeout-minutes: 10
+
+      - name: Verify installer
         run: |
-          set -euo pipefail
-          if [ -n "${MAC_CERT_KEYCHAIN:-}" ]; then
-            security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
+          shopt -s nullglob extglob
+          found=( electron/build/*.exe )
+          if [ ${#found[@]} -eq 0 ]; then
+            echo "No Windows installers found in electron/build/"
+            exit 1
           fi
-          if [ -n "${MAC_CERT_TMPDIR:-}" ]; then
-            rm -rf "${MAC_CERT_TMPDIR}"
-          fi
+          for f in "${found[@]}"; do
+            ls -lh "$f"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-windows
+          path: electron/build/*.exe
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    needs:
+      - package-linux
+      - package-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write

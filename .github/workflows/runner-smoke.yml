@@ -3,39 +3,57 @@ name: Runner Smoke
 on:
   workflow_dispatch:
     inputs:
-      target_set:
-        description: "Targets to run"
+      target:
+        description: "Remote target to validate"
         type: choice
-        required: false
-        default: "all"
+        required: true
+        default: linux
         options:
-          - all
-          - macos-linux
-          - macos
           - linux
           - windows
 
 jobs:
-  smoke:
-    if: >-
-      github.event.inputs.target_set == 'all' ||
-      (github.event.inputs.target_set == 'macos-linux' && (matrix.name == 'macos' || matrix.name == 'linux')) ||
-      github.event.inputs.target_set == matrix.name
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macos
-            runner: '["macos-14"]'
-          - name: windows
-            runner: '["self-hosted", "Windows", "X64"]'
-          - name: linux
-            runner: '["self-hosted", "Linux", "X64"]'
-    runs-on: ${{ fromJSON(matrix.runner) }}
+  smoke-linux:
+    if: github.event.inputs.target == 'linux'
+    runs-on: [self-hosted, Linux, X64]
     defaults:
       run:
         shell: bash
+    steps:
+      - uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Print runner details
+        run: |
+          echo "runner_os=${RUNNER_OS}"
+          echo "runner_arch=${RUNNER_ARCH}"
+          python --version
+          node --version
+          uv --version
+
+      - name: Verify CLI
+        run: |
+          uv sync --extra dev
+          uv run splitshot --check
+
+  smoke-windows:
+    if: github.event.inputs.target == 'windows'
+    runs-on: [self-hosted, Windows, X64]
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
