@@ -27,6 +27,11 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Print runner details
         run: |
           echo "runner_os=${RUNNER_OS}"
@@ -36,9 +41,12 @@ jobs:
           npm --version
           uv --version
 
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+
       - name: Verify CLI
         run: |
-          uv sync --extra dev
+          uv sync --frozen --extra dev --python 3.12
           uv run splitshot --check
 
   smoke-windows:
