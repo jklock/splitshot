@@ -5,9 +5,15 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated target list: macos,linux,windows"
+        required: false
+        default: "macos,linux,windows"
 
 jobs:
   package:
+    if: github.event_name != 'workflow_dispatch' || contains(github.event.inputs.targets, matrix.name)
     strategy:
       fail-fast: false
       matrix:

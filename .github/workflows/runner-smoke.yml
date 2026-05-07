@@ -2,9 +2,15 @@ name: Runner Smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "Comma-separated target list: macos,linux,windows"
+        required: false
+        default: "macos,linux,windows"
 
 jobs:
   smoke:
+    if: contains(github.event.inputs.targets || 'macos,linux,windows', matrix.name)
     strategy:
       fail-fast: false
       matrix:
