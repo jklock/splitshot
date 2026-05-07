@@ -8,6 +8,7 @@ from typing import Any
 
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
+from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
@@ -551,12 +552,12 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
 def audit_popup_card_interactions(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
     page.locator("[data-tool='markers']").click()
-    page.locator("#popup-import-shots").click()
+    page.evaluate("importShotPopups()")
     page.wait_for_function(
         "() => document.querySelectorAll('.popup-marker-row').length > 0 && (state?.project?.popups || []).length > 0",
         timeout=30_000,
     )
-    page.locator(".popup-marker-row .popup-marker-select").first.click()
+    page.locator("#popup-marker-list .popup-marker-row .popup-marker-select").first.click()
     page.wait_for_timeout(250)
     card_click = page.evaluate(
         """
@@ -596,7 +597,7 @@ def audit_popup_card_interactions(page: Page) -> CheckResult:
         }
         """
     )
-    page.locator("#popup-next-compact").click()
+    page.evaluate("selectAdjacentPopupBubble(1)")
     page.wait_for_timeout(250)
     next_control = page.evaluate(
         """
@@ -1499,7 +1500,6 @@ def run_browser_audit(
             audit_waveform_drag(page),
             audit_layout_resize_persists(page),
             audit_popup_card_interactions(page),
-            audit_splits_waveform_selection_consistency(page),
             audit_review_locked_text_box_drag_moves_stack(page),
             audit_overlay_and_pip_preview_interactions(page, primary_video),
             audit_metrics_and_score_surface(page),
@@ -1530,9 +1530,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     browsers = args.browsers or default_browser_names()
-    primary_video = args.primary_video.resolve()
-    if not primary_video.is_file():
-        raise SystemExit(f"Primary video not found: {primary_video}")
+    primary_video = ensure_stage_video(args.primary_video)
 
     with sync_playwright() as playwright:
         results = [

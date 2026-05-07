@@ -7,12 +7,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  package:
     strategy:
       fail-fast: false
       matrix:
-        os: ["macos-14", "windows-latest", "ubuntu-latest"]
-    runs-on: ${{ matrix.os }}
+        include:
+          - name: macos
+            runner: '["macos-14"]'
+          - name: windows
+            runner: '["self-hosted", "Windows", "X64"]'
+          - name: linux
+            runner: '["self-hosted", "Linux", "X64"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
     defaults:
       run:
         shell: bash
@@ -39,23 +45,7 @@ jobs:
 
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            ffmpeg \
-            libxcb-cursor0 libxkbcommon-x11-0 \
-            libegl1 libegl-mesa0 libgl1 \
-            libxrandr2 libglib2.0-0 libfontconfig1 \
-            libdbus-1-3 libx11-xcb1 libpulse0 libopengl0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
-            libgtk-3-0 libnotify4 libnss3 libnspr4 \
-            libxss1 libxtst6 libasound2t64 \
-            libdrm2 libgbm1 libatspi2.0-0 libcups2 \
-            build-essential python3-dev \
-            libblas-dev liblapack-dev gfortran \
-            libssl-dev pkg-config curl
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
 
       - name: Install system dependencies (Windows)
         if: runner.os == 'Windows'
@@ -65,9 +55,6 @@ jobs:
       - name: Sync Python dependencies
         run: uv sync --extra dev
         timeout-minutes: 15
-
-      - name: Verify CLI
-        run: uv run splitshot --check
 
       - name: Bundle Python
         run: node scripts/bundle-python.js
@@ -79,25 +66,6 @@ jobs:
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
-
-      - name: Run Electron launch-intent unit tests
-        run: cd electron && npm run test:launch-intent
-
-      - name: Run headless Electron backend tests
-        run: uv run pytest tests/electron/test_headless_server.py --no-header -q
-
-      - name: Run parity audit
-        run: uv run python scripts/audits/electron_parity_audit.py --mode parity
-
-      - name: Run Electron source smoke tests (Linux)
-        if: runner.os == 'Linux'
-        run: xvfb-run -a bash -lc 'cd electron && npm run test:electron-smoke'
-        timeout-minutes: 15
-
-      - name: Run Electron source smoke tests (macOS/Windows)
-        if: runner.os != 'Linux'
-        run: cd electron && npm run test:electron-smoke
-        timeout-minutes: 15
 
       - name: Prepare macOS signing certificate
         if: runner.os == 'macOS'
@@ -251,7 +219,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: splitshot-${{ runner.os }}
+          name: splitshot-${{ matrix.name }}
           path: |
             electron/build/*.dmg
             electron/build/*.exe
@@ -270,7 +238,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: test
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write

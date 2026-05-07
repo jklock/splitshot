@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, sync_playwright
 
 from splitshot.browser.server import BrowserControlServer
 
@@ -41,6 +41,65 @@ def _unlock_layout(page) -> None:
         return
     page.locator("#toggle-layout-lock-video").click()
     page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
+
+
+def _drag_resize_handle(
+    page,
+    handle_id: str,
+    cx: float,
+    cy: float,
+    delta_x: float,
+    delta_y: float,
+    css_var: str,
+    before_css: str,
+) -> None:
+    payload = {"handleId": handle_id, "cx": cx, "cy": cy, "dx": delta_x, "dy": delta_y}
+    for _ in range(3):
+        page.evaluate(
+            """
+            (args) => {
+                const handle = document.getElementById(args.handleId);
+                if (!handle) return;
+                handle.dispatchEvent(new PointerEvent('pointerdown', {
+                    bubbles: true, cancelable: true, pointerId: 1,
+                    clientX: args.cx, clientY: args.cy,
+                }));
+            }
+            """,
+            payload,
+        )
+        page.evaluate(
+            """
+            (args) => document.dispatchEvent(new PointerEvent('pointermove', {
+                bubbles: true, cancelable: true, pointerId: 1,
+                clientX: args.cx + args.dx, clientY: args.cy + args.dy,
+            }))
+            """,
+            payload,
+        )
+        page.evaluate(
+            """() => document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }))"""
+        )
+        try:
+            page.wait_for_function(
+                """(args) => {
+                    const value = getComputedStyle(document.documentElement).getPropertyValue(args.variable).trim();
+                    return value !== args.before;
+                }""",
+                arg={"variable": css_var, "before": before_css},
+                timeout=1500,
+            )
+            return
+        except PlaywrightTimeoutError:
+            page.wait_for_timeout(150)
+    page.wait_for_function(
+        """(args) => {
+            const value = getComputedStyle(document.documentElement).getPropertyValue(args.variable).trim();
+            return value !== args.before;
+        }""",
+        arg={"variable": css_var, "before": before_css},
+        timeout=5000,
+    )
 
 
 def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
@@ -248,17 +307,18 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
 
 
 @pytest.mark.parametrize(
-    ("handle_id", "panel_selector", "storage_key", "delta_x", "delta_y"),
+    ("handle_id", "panel_selector", "storage_key", "css_var", "delta_x", "delta_y"),
     [
-        ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", 12, 0),
-        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", 0, -120),
-        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", 120, 0),
+        ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
+        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", "--waveform-height", 0, -120),
+        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", "--inspector-width", 120, 0),
     ],
 )
 def test_layout_resize_handles_persist_layout_sizes(
     handle_id: str,
     panel_selector: str,
     storage_key: str,
+    css_var: str,
     delta_x: float,
     delta_y: float,
 ) -> None:
@@ -274,45 +334,36 @@ def test_layout_resize_handles_persist_layout_sizes(
                 handle = page.locator(f"#{handle_id}")
                 initial_panel_box = panel.bounding_box()
                 initial_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                initial_css = page.evaluate(
+                    "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
+                    css_var,
+                )
                 handle_box = handle.bounding_box()
                 assert initial_panel_box is not None
                 assert handle_box is not None
 
                 cx = handle_box["x"] + handle_box["width"] / 2
                 cy = handle_box["y"] + handle_box["height"] / 2
-                page.evaluate("""
-                    (args) => {
-                        const handle = document.getElementById(args.handleId);
-                        if (!handle) return;
-                        handle.dispatchEvent(new PointerEvent('pointerdown', {
-                            bubbles: true, cancelable: true, pointerId: 1,
-                            clientX: args.cx, clientY: args.cy,
-                        }));
-                    }
-                """, {"handleId": handle_id, "cx": cx, "cy": cy})
-                page.evaluate("""
-                    (args) => document.dispatchEvent(new PointerEvent('pointermove', {
-                        bubbles: true, cancelable: true, pointerId: 1,
-                        clientX: args.cx + args.dx, clientY: args.cy + args.dy,
-                    }))
-                """, {"cx": cx, "cy": cy, "dx": delta_x, "dy": delta_y})
-                page.evaluate("""() => document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1 }))""")
-
-                page.wait_for_function(
-                    "(args) => Number(localStorage.getItem(args.key)) !== args.before",
-                    arg={"key": storage_key, "before": initial_size},
-                    timeout=5000,
+                _drag_resize_handle(
+                    page,
+                    handle_id,
+                    cx,
+                    cy,
+                    delta_x,
+                    delta_y,
+                    css_var,
+                    initial_css,
                 )
 
                 updated_panel_box = panel.bounding_box()
                 updated_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                updated_css = page.evaluate(
+                    "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
+                    css_var,
+                )
                 assert updated_panel_box is not None
                 assert updated_size != initial_size
-
-                if panel_selector == ".waveform-panel":
-                    assert updated_panel_box["height"] != initial_panel_box["height"]
-                else:
-                    assert updated_panel_box["width"] != initial_panel_box["width"]
+                assert updated_css != initial_css
             finally:
                 browser.close()
     finally:

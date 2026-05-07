@@ -75,12 +75,41 @@ openssl pkcs12 -export \
 
 The resulting file must still pass `scripts/release/verify_macos_cert.sh` before you upload it to GitHub Actions.
 
+## Local-First Release Gate
+
+Before any GitHub Actions Electron run, complete the local preflight on the target platform:
+
+```bash
+uv run python scripts/testing/run_electron_preflight.py
+```
+
+That script is the source-of-truth gate for:
+
+- runtime check
+- Python bundle generation and verification
+- Electron launch-intent unit tests
+- headless backend tests
+- parity audit
+- source Electron smoke
+- current-platform smoke packaging
+- packaged-app launch verification
+
+Do not use GitHub Actions as the first place to discover source-level or parity failures.
+
 ## GitHub Actions Workflow
 
 `/.github/workflows/build-electron.yml` has two entry points:
 
 - `workflow_dispatch`: manual smoke build for a selected branch
 - `push` on `v*` tags: real release build and GitHub release publishing
+
+The workflow is intentionally limited to packaging and packaged-artifact validation. It is not the first-line test runner for source-level Electron behavior.
+
+Runner targets:
+
+- macOS packaging: GitHub-hosted `macos-14`
+- Windows packaging: self-hosted runner with labels `self-hosted`, `Windows`, `X64`
+- Linux packaging: self-hosted runner with labels `self-hosted`, `Linux`, `X64`
 
 The macOS job now:
 
@@ -99,8 +128,10 @@ If no notarization credentials are configured, the workflow signs the app and sk
 Use GitHub Actions `workflow_dispatch` for signing and notarization smoke tests.
 
 - Choose the target branch in the Actions UI.
+- Run the local Electron preflight first.
+- Confirm the `Runner Smoke` workflow is green after any runner maintenance or host changes.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
-- Use these runs to validate secret rotation, cert export, and notarization credentials.
+- Use these runs to validate packaging, secret rotation, cert export, signing, notarization, and packaged-app launch.
 
 Do not create `ci-test` or debug release tags for smoke testing.
 

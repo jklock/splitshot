@@ -8,6 +8,7 @@ from typing import Any
 
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
+from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
@@ -381,9 +382,7 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     browsers = args.browsers or default_browser_names()
-    primary_video = args.primary_video.resolve()
-    if not primary_video.is_file():
-        raise SystemExit(f"Primary video not found: {primary_video}")
+    primary_video = ensure_stage_video(args.primary_video)
 
     with sync_playwright() as playwright:
         results = [

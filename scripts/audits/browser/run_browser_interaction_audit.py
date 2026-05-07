@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
+from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.ui.controller import ProjectController
 
@@ -1161,11 +1162,16 @@ def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     browsers = args.browsers or default_browser_names()
-    primary_video = require_existing_file(args.primary_video, "Primary video")
+    primary_video = ensure_stage_video(args.primary_video)
     merge_video = require_existing_file(args.merge_video, "Merge video")
     practiscore_path = require_existing_file(args.practiscore, "PractiScore file")
-    if primary_video is None:
-        raise SystemExit("Primary video not found. Pass --primary-video with a real stage video path.")
+    if merge_video is None and args.merge_video == DEFAULT_MERGE_VIDEO:
+        merge_video = ensure_stage_video(
+            args.merge_video,
+            beep_ms=350,
+            shot_times_ms=[700, 1_000, 1_500],
+            seed=11,
+        )
 
     with sync_playwright() as playwright:
         results = [

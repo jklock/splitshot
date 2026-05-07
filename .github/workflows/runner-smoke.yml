@@ -1,0 +1,50 @@
+name: Runner Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            runner: '["macos-14"]'
+          - name: windows
+            runner: '["self-hosted", "Windows", "X64"]'
+          - name: linux
+            runner: '["self-hosted", "Linux", "X64"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Print runner details
+        run: |
+          echo "runner_os=${RUNNER_OS}"
+          echo "runner_arch=${RUNNER_ARCH}"
+          python --version
+          node --version
+          uv --version
+
+      - name: Verify CLI
+        run: |
+          uv sync --extra dev
+          uv run splitshot --check

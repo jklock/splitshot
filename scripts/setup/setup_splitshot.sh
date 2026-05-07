@@ -64,6 +64,7 @@ APT_PACKAGES=(
   libegl-mesa0
   libgl1-mesa-glx
   libxrandr2
+  libxkbfile1
   libglib2.0-0
   libfontconfig1
   libdbus-1-3

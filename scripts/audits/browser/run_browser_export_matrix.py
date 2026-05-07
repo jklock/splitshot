@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
 from splitshot.media.ffmpeg import resolve_media_binary
 from splitshot.ui.controller import ProjectController
@@ -211,14 +212,25 @@ def _create_clip(source: Path, destination: Path, clip_seconds: float) -> None:
 
 
 def prepare_stage_videos(artifact_dir: Path, clip_seconds: float | None) -> list[Path]:
+    stage_videos = list(DEFAULT_STAGE_VIDEOS)
+    if not stage_videos:
+        stage_videos = [
+            ensure_stage_video(TEST_VIDEO_DIR / "TestVideo1.MP4"),
+            ensure_stage_video(
+                TEST_VIDEO_DIR / "TestVideo2.MP4",
+                beep_ms=350,
+                shot_times_ms=[700, 1_000, 1_500],
+                seed=11,
+            ),
+        ]
     if clip_seconds is None:
-        return list(DEFAULT_STAGE_VIDEOS)
+        return stage_videos
     if clip_seconds <= 0:
         raise ValueError("clip_seconds must be greater than zero.")
 
     clips_dir = artifact_dir / "clips"
     clipped_videos: list[Path] = []
-    for source in DEFAULT_STAGE_VIDEOS:
+    for source in stage_videos:
         destination = clips_dir / source.name
         if not destination.exists() or destination.stat().st_size <= 0:
             _create_clip(source, destination, clip_seconds)

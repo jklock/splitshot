@@ -18,6 +18,11 @@ uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --mode one-by-one --format table --raw-output artifacts/test-run.raw.txt
 uv run python scripts/testing/run_test_suite.py --mode all-together --format json --json-output artifacts/test-run.json
 uv run python scripts/testing/run_electron_preflight.py
+uv run python scripts/testing/run_ci_locally.py --job source-local
+uv run python scripts/testing/run_ci_locally.py --job browser-local
+uv run python scripts/testing/run_ci_locally.py --job electron-release-local
+powershell -ExecutionPolicy Bypass -File scripts/setup/setup_self_hosted_runner_windows.ps1
+bash scripts/setup/setup_self_hosted_runner_linux.sh
 uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
 uv run python scripts/analysis/audit_training_corpus.py .training --format table --json-output artifacts/training-corpus-audit.json
 uv run python scripts/analysis/bootstrap_training_manifest.py .training --output .training/shotml-label-manifest.json
@@ -36,7 +41,10 @@ uv run python scripts/tooling/validate_toolchain.py
 ## Notes
 
 - The master test runner supports per-suite execution, one-file-at-a-time runs, combined runs, and raw or JSON output artifacts.
-- `scripts/testing/run_electron_preflight.py` is the local release-critical Electron gate. It runs source smoke, parity, a current-platform smoke build, and a packaged-app launch check before CI.
+- `scripts/testing/run_ci_locally.py` is the local-first gate runner. It owns the source-local suites, browser-local suite, and the local Electron release preflight before any GitHub Actions workflow is triggered.
+- `scripts/testing/run_electron_preflight.py` is the local release-critical Electron gate. Run it before any Electron workflow trigger. It owns the source-side checks that do not belong in the packaging workflow: runtime check, bundle verification, launch-intent unit tests, headless backend tests, parity audit, source smoke, current-platform smoke build, and packaged-app launch.
+- The Electron packaging workflow now targets the self-hosted Windows and Linux runners by labels and keeps macOS on `macos-14`. Use the `Runner Smoke` workflow to validate those appliances after host changes.
+- `scripts/setup/setup_self_hosted_runner_windows.ps1` and `scripts/setup/setup_self_hosted_runner_linux.sh` are idempotent host-prep scripts for the existing self-hosted runners. They install only missing prerequisites, locate the existing runner service, and start it if needed.
 - The video preflight analysis helper uses the same ShotML detection path as the application and is intended to help choose a starting sensitivity slider value before import.
 - The timing accuracy evaluator compares detected beep, split, last-shot, and stage-time timestamps against accepted manifest labels across a threshold sweep. It uses manual verified labels first and accepted auto-consensus labels when manual labels are absent.
 - The training corpus audit helper now also reports shot-pass disagreement and duplicate-stage consistency so repeated recordings can be compared for count drift.
@@ -47,7 +55,7 @@ uv run python scripts/tooling/validate_toolchain.py
 - The training dataset extractor now supports deterministic waveform augmentation for beep and shot windows so early experiments can better cover gain shifts, noise, filtering, and clipping without changing serving-time feature extraction.
 - The unattended auto-training pipeline bootstraps the manifest, auto-labels stable clips, extracts a trusted auto-consensus dataset, and trains a candidate bundle in one command so corpus-driven tuning can run without manual review in the loop.
 - The dataset trainer builds a candidate MLP bundle from extracted NPZ features without overwriting the shipped model by default; it now supports balanced class weighting, early stopping, per-class validation recall, and separate verified-validation metrics so automated or draft-only runs do not get confused with actual reviewed-label performance.
-- Browser audit scripts are the real validation layer for route-backed UI behavior. By default they use the bundled repo-local media in `tests/artifacts/test_video/` plus `example_data/IDPA/IDPA.csv`, so a fresh clone can run them without private stage files.
+- The CI browser gate uses the maintained `tests/browser/` Playwright-backed pytest suite. The standalone browser audit scripts remain available for deeper manual audits, and they now synthesize deterministic local MP4 fixtures if the default stage videos are missing.
 
 **Last updated:** 2026-05-06
 **Referenced files last updated:** 2026-05-06
