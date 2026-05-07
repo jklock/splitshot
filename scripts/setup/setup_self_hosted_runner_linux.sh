@@ -25,6 +25,16 @@ pkg_installed() {
   dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"
 }
 
+any_pkg_installed() {
+  local pkg
+  for pkg in "$@"; do
+    if pkg_installed "$pkg"; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 ensure_packages() {
   local missing=()
   for pkg in "$@"; do
@@ -51,7 +61,6 @@ ensure_ci_linux_deps() {
     libnspr4
     libxss1
     libxtst6
-    libasound2
     libdrm2
     libgbm1
     libatspi2.0-0
@@ -66,6 +75,9 @@ ensure_ci_linux_deps() {
       break
     fi
   done
+  if ! any_pkg_installed libasound2t64 libasound2; then
+    need_install=1
+  fi
 
   if [ "$need_install" -eq 0 ]; then
     log "Electron Linux dependency set already installed"

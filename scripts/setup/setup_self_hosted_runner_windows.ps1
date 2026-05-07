@@ -4,6 +4,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -ge 7) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Write-Setup([string]$Message) {
     Write-Host "[splitshot-runner-setup] $Message"
@@ -80,36 +83,83 @@ function Ensure-FFmpeg {
     }
 }
 
-function Ensure-Python312 {
+function Add-Python312Paths {
+    $candidates = @(
+        'C:\Python312',
+        'C:\Python312\Scripts',
+        'C:\tools\python312',
+        'C:\tools\python312\Scripts',
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\Scripts')
+    )
+    foreach ($candidate in $candidates) {
+        Add-PathIfPresent $candidate
+    }
+}
+
+function Get-Python312Exe {
     if (Test-Command py) {
-        $null = & py -3.12 --version 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return
+        try {
+            $exe = (& py -3.12 -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1).Trim()
+            if ($LASTEXITCODE -eq 0 -and $exe -and (Test-Path $exe)) {
+                return $exe
+            }
+        } catch {
         }
     }
+
+    $candidates = @(
+        'C:\Python312\python.exe',
+        'C:\tools\python312\python.exe',
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe')
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    if (Test-Command python) {
+        try {
+            $version = (& python -c "import sys; print(f'{sys.version_info[0]}.{sys.version_info[1]}')" 2>$null | Select-Object -First 1).Trim()
+            if ($LASTEXITCODE -eq 0 -and $version -eq '3.12') {
+                return (Get-Command python).Source
+            }
+        } catch {
+        }
+    }
+
+    return $null
+}
+
+function Ensure-Python312 {
+    Add-Python312Paths
+    $pythonExe = Get-Python312Exe
+    if ($pythonExe) {
+        return $pythonExe
+    }
     Ensure-ChocoPackage 'python312'
-    if (-not (Test-Command py)) {
-        throw 'Python 3.12 was installed but py is still unavailable in this shell.'
+    Add-Python312Paths
+    $pythonExe = Get-Python312Exe
+    if ($pythonExe) {
+        return $pythonExe
     }
-    $null = & py -3.12 --version 2>$null
-    if ($LASTEXITCODE -eq 0) {
-        return
-    }
-    throw 'Python 3.12 was installed but py -3.12 is still unavailable in this shell.'
+    throw 'Python 3.12 was installed but no usable Python 3.12 executable could be found.'
 }
 
 function Ensure-Uv {
     if (Test-Command uv) {
-        return
+        return (Ensure-Python312)
     }
-    Ensure-Python312
+    $pythonExe = Ensure-Python312
     Write-Setup 'Installing uv with pip'
-    & py -3.12 -m pip install --upgrade pip uv
-    $scriptsDir = & py -3.12 -c "import site; print(site.USER_BASE + r'\Scripts')"
+    & $pythonExe -m pip install --upgrade pip uv
+    $scriptsDir = & $pythonExe -c "import site; print(site.USER_BASE + r'\Scripts')"
     Add-PathIfPresent $scriptsDir
     if (-not (Test-Command uv)) {
         throw 'uv was installed but is still unavailable in this shell.'
     }
+    return $pythonExe
 }
 
 function Resolve-RunnerDir {
@@ -183,8 +233,7 @@ function Ensure-RunnerService([string]$ResolvedRunnerDir) {
 Ensure-Chocolatey
 Ensure-GitBash
 Ensure-FFmpeg
-Ensure-Python312
-Ensure-Uv
+$pythonExe = Ensure-Uv
 
 $resolvedRunnerDir = Resolve-RunnerDir -ExplicitRunnerDir $RunnerDir
 Write-Setup "Using runner directory $resolvedRunnerDir"
@@ -192,6 +241,6 @@ Ensure-RunnerService $resolvedRunnerDir
 
 Write-Setup "bash: $(bash --version | Select-Object -First 1)"
 Write-Setup "git: $(git --version)"
-Write-Setup "python: $(py -3.12 --version)"
+Write-Setup "python: $((& $pythonExe --version | Select-Object -First 1))"
 Write-Setup "uv: $(uv --version)"
 Write-Setup "ffmpeg: $((ffmpeg -version | Select-Object -First 1))"
