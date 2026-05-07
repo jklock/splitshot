@@ -27,6 +27,14 @@ function Add-PathIfPresent([string]$PathEntry) {
     $env:Path = "$PathEntry;$env:Path"
 }
 
+function Require-Env([string]$Name) {
+    $value = [Environment]::GetEnvironmentVariable($Name)
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        throw "Missing required environment variable: $Name"
+    }
+    return $value
+}
+
 function Ensure-Chocolatey {
     if (Test-Command choco) {
         return
@@ -162,24 +170,23 @@ function Ensure-Uv {
     return $pythonExe
 }
 
-function Resolve-RunnerDir {
-    param([string]$ExplicitRunnerDir)
-
+function RunnerDirCandidates([string]$ExplicitRunnerDir) {
     $candidates = @()
-    if ($ExplicitRunnerDir) {
-        $candidates += $ExplicitRunnerDir
-    }
-    if ($env:SPLITSHOT_RUNNER_DIR) {
-        $candidates += $env:SPLITSHOT_RUNNER_DIR
-    }
+    if ($ExplicitRunnerDir) { $candidates += $ExplicitRunnerDir }
+    if ($env:SPLITSHOT_RUNNER_DIR) { $candidates += $env:SPLITSHOT_RUNNER_DIR }
     $candidates += @(
         'C:\actions-runner\splitshot-win',
-        'C:\actions-runner',
         'D:\actions-runner\splitshot-win',
-        'D:\actions-runner',
         (Join-Path $env:USERPROFILE 'actions-runner\splitshot-win'),
+        'C:\actions-runner',
+        'D:\actions-runner',
         (Join-Path $env:USERPROFILE 'actions-runner')
     )
+    return $candidates
+}
+
+function Find-ExistingRunnerDir([string]$ExplicitRunnerDir) {
+    $candidates = RunnerDirCandidates $ExplicitRunnerDir
 
     foreach ($candidate in $candidates) {
         if (-not $candidate) {
@@ -197,7 +204,83 @@ function Resolve-RunnerDir {
         }
     }
 
-    throw 'Could not locate the existing GitHub Actions runner directory. Set -RunnerDir or SPLITSHOT_RUNNER_DIR.'
+    return $null
+}
+
+function Resolve-RunnerDir {
+    param([string]$ExplicitRunnerDir)
+
+    $existing = Find-ExistingRunnerDir $ExplicitRunnerDir
+    if ($existing) {
+        return $existing
+    }
+    $desired = $ExplicitRunnerDir
+    if (-not $desired) {
+        $desired = if ($env:SPLITSHOT_RUNNER_DIR) { $env:SPLITSHOT_RUNNER_DIR } else { 'C:\actions-runner\splitshot-win' }
+    }
+    return $desired
+}
+
+function Get-LatestRunnerAssetUrl {
+    Ensure-Chocolatey
+    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/actions/runner/releases/latest' -Headers @{ 'User-Agent' = 'splitshot-runner-setup' }
+    $asset = $release.assets | Where-Object { $_.name -match '^actions-runner-win-x64-.*\.zip$' } | Select-Object -First 1
+    if (-not $asset) {
+        throw 'Could not find a Windows x64 runner asset in the latest actions/runner release.'
+    }
+    return $asset.browser_download_url
+}
+
+function Ensure-RunnerFiles([string]$ResolvedRunnerDir) {
+    if ((Test-Path (Join-Path $ResolvedRunnerDir 'config.cmd')) -and (Test-Path (Join-Path $ResolvedRunnerDir 'run.cmd'))) {
+        Write-Setup "Runner files already present in $ResolvedRunnerDir"
+        return
+    }
+
+    Write-Setup "Installing GitHub Actions runner into $ResolvedRunnerDir"
+    New-Item -ItemType Directory -Path $ResolvedRunnerDir -Force | Out-Null
+    $zipPath = Join-Path ([IO.Path]::GetTempPath()) 'actions-runner-win-x64.zip'
+    $extractDir = Join-Path ([IO.Path]::GetTempPath()) ("actions-runner-extract-" + [guid]::NewGuid().ToString("N"))
+    $assetUrl = Get-LatestRunnerAssetUrl
+    Invoke-WebRequest -Uri $assetUrl -OutFile $zipPath
+    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+    Copy-Item -Path (Join-Path $extractDir '*') -Destination $ResolvedRunnerDir -Recurse -Force
+    Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+    Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Ensure-RunnerConfigured([string]$ResolvedRunnerDir) {
+    if (Test-Path (Join-Path $ResolvedRunnerDir '.runner')) {
+        Write-Setup 'Runner already configured'
+        return
+    }
+
+    $url = Require-Env 'GITHUB_RUNNER_URL'
+    $token = Require-Env 'GITHUB_RUNNER_TOKEN'
+    $runnerName = if ($env:GITHUB_RUNNER_NAME) { $env:GITHUB_RUNNER_NAME } else { $env:COMPUTERNAME }
+    $runnerWorkDir = if ($env:GITHUB_RUNNER_WORKDIR) { $env:GITHUB_RUNNER_WORKDIR } else { '_work' }
+    $labels = if ($env:GITHUB_RUNNER_LABELS) { $env:GITHUB_RUNNER_LABELS } else { '' }
+
+    Write-Setup "Configuring runner $runnerName"
+    $arguments = @(
+        '--unattended',
+        '--replace',
+        '--runasservice',
+        '--url', $url,
+        '--token', $token,
+        '--name', $runnerName,
+        '--work', $runnerWorkDir
+    )
+    if ($labels) {
+        $arguments += @('--labels', $labels)
+    }
+    Push-Location $ResolvedRunnerDir
+    try {
+        & .\config.cmd @arguments
+    } finally {
+        Pop-Location
+    }
 }
 
 function Ensure-RunnerService([string]$ResolvedRunnerDir) {
@@ -236,6 +319,8 @@ Ensure-FFmpeg
 $pythonExe = Ensure-Uv
 
 $resolvedRunnerDir = Resolve-RunnerDir -ExplicitRunnerDir $RunnerDir
+Ensure-RunnerFiles $resolvedRunnerDir
+Ensure-RunnerConfigured $resolvedRunnerDir
 Write-Setup "Using runner directory $resolvedRunnerDir"
 Ensure-RunnerService $resolvedRunnerDir
 

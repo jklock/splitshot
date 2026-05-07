@@ -7,6 +7,12 @@ RUNNER_DIR="${1:-${SPLITSHOT_RUNNER_DIR:-}}"
 log() { printf '[splitshot-runner-setup] %s\n' "$*"; }
 fail() { printf '[splitshot-runner-setup] error: %s\n' "$*" >&2; exit 1; }
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  [ -n "$value" ] || fail "Missing required environment variable: $name"
+  printf '%s\n' "$value"
+}
 report_optional_version() {
   local name="$1"
   shift
@@ -109,6 +115,15 @@ ensure_uv() {
   have_cmd uv || fail "uv was installed but is still unavailable in this shell."
 }
 
+ensure_node() {
+  if have_cmd node && have_cmd npm; then
+    return
+  fi
+  log "Installing Node.js"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+}
+
 resolve_runner_dir() {
   local candidates=()
   if [ -n "$RUNNER_DIR" ]; then
@@ -140,6 +155,77 @@ resolve_runner_dir() {
   return 1
 }
 
+latest_runner_asset_url() {
+  python3 - <<'PY'
+import json
+import urllib.request
+
+req = urllib.request.Request(
+    "https://api.github.com/repos/actions/runner/releases/latest",
+    headers={"User-Agent": "splitshot-runner-setup"},
+)
+with urllib.request.urlopen(req) as response:
+    release = json.load(response)
+for asset in release["assets"]:
+    name = asset["name"]
+    if name.startswith("actions-runner-linux-x64-") and name.endswith(".tar.gz"):
+        print(asset["browser_download_url"])
+        break
+else:
+    raise SystemExit("No linux x64 runner asset found")
+PY
+}
+
+ensure_runner_files() {
+  local dir="$1"
+  if [ -x "$dir/config.sh" ] && [ -x "$dir/run.sh" ]; then
+    log "Runner files already present in $dir"
+    return
+  fi
+
+  log "Installing GitHub Actions runner into $dir"
+  mkdir -p "$dir"
+  local asset_url
+  asset_url="$(latest_runner_asset_url)"
+  local archive
+  archive="$(mktemp /tmp/actions-runner-linux-x64-XXXXXX.tar.gz)"
+  curl -L "$asset_url" -o "$archive"
+  tar -xzf "$archive" -C "$dir"
+  rm -f "$archive"
+}
+
+ensure_runner_configured() {
+  local dir="$1"
+  if [ -f "$dir/.runner" ]; then
+    log "Runner already configured"
+    return
+  fi
+
+  local url token name labels workdir
+  url="$(require_env GITHUB_RUNNER_URL)"
+  token="$(require_env GITHUB_RUNNER_TOKEN)"
+  name="${GITHUB_RUNNER_NAME:-$(hostname)}"
+  labels="${GITHUB_RUNNER_LABELS:-}"
+  workdir="${GITHUB_RUNNER_WORKDIR:-_work}"
+
+  log "Configuring runner $name"
+  pushd "$dir" >/dev/null
+  local args=(
+    --unattended
+    --replace
+    --url "$url"
+    --token "$token"
+    --name "$name"
+    --work "$workdir"
+  )
+  if [ -n "$labels" ]; then
+    args+=(--labels "$labels")
+  fi
+  ./config.sh "${args[@]}"
+  sudo ./svc.sh install
+  popd >/dev/null
+}
+
 ensure_runner_service() {
   local dir="$1"
   cd "$dir"
@@ -159,8 +245,14 @@ ensure_packages git curl ca-certificates jq xvfb
 ensure_ci_linux_deps
 ensure_needrestart_override
 ensure_uv
+ensure_node
 
-resolved_runner_dir="$(resolve_runner_dir)" || fail "Could not locate the existing GitHub Actions runner directory. Pass it as the first argument or set SPLITSHOT_RUNNER_DIR."
+resolved_runner_dir="$(resolve_runner_dir || true)"
+if [ -z "$resolved_runner_dir" ]; then
+  resolved_runner_dir="${RUNNER_DIR:-/opt/actions-runner/splitshot-linux}"
+fi
+ensure_runner_files "$resolved_runner_dir"
+ensure_runner_configured "$resolved_runner_dir"
 ensure_runner_service "$resolved_runner_dir"
 
 log "bash: $(bash --version | head -n 1)"
