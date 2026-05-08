@@ -624,7 +624,7 @@ def test_open_project_reimports_practiscore_when_saved_context_exists_but_import
     assert reopened.project.scoring.imported_stage.source_name == "IDPA.csv"
     assert reopened.project.scoring.imported_stage.stage_number == 1
     assert reopened.project.scoring.imported_stage.competitor_name == "Jeff Graff"
-    assert reopened.project.scoring.imported_stage.final_time == 9.15
+    assert reopened.project.scoring.imported_stage.final_time == 10.15
 
 
 def test_open_project_recovers_renamed_media_from_project_input_folder(synthetic_video_factory, tmp_path: Path) -> None:
@@ -756,7 +756,7 @@ def test_importing_new_practiscore_csv_preserves_current_selection_when_place_ch
     assert controller.project.scoring.imported_stage is not None
     assert controller.project.scoring.imported_stage.source_name == "thursday-night.csv"
     assert controller.project.scoring.imported_stage.stage_number == 2
-    assert controller.project.scoring.imported_stage.final_time == 20.57
+    assert controller.project.scoring.imported_stage.final_time == 30.57
 
 
 def test_importing_new_practiscore_csv_restores_imported_summary_box_when_missing(tmp_path: Path) -> None:

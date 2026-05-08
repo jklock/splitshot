@@ -1071,13 +1071,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;' in js
     assert 'const currentResultLabel = state.scoring_summary?.display_label || "Result";' in js
     assert 'const currentResultValue = state.scoring_summary?.display_value || "";' in js
+    assert 'const videoResultLabel = currentResultLabel === "Final"' in js
     assert '["Source File", importedSourceFile],' in js
     assert '["Match Type", importedMatchType],' in js
     assert '["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],' in js
     assert '["Video Raw", formatPractiScoreTime(videoRawSeconds)],' in js
     assert '["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
-    assert '[currentResultLabel, currentResultValue],' in js
+    assert '[videoResultLabel, currentResultValue],' in js
     assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
+    assert '["Recorded Score", importedStageRecordedScoreLabel(imported)],' in js
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
     assert 'syncControlChecked($("markers-enable"), normalized.review_show_markers);' in js
     assert 'syncControlChecked($("show-markers"), project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js

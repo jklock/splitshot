@@ -407,7 +407,7 @@ def _import_idpa(
         last_name_key="Last Name",
     )
     stage_prefix = f"Stage {stage_number}"
-    final_time = _required_float(row.get(f"{stage_prefix} Time"), f"{stage_prefix} Time")
+    stage_time = _required_float(row.get(f"{stage_prefix} Time"), f"{stage_prefix} Time")
     points_down = _float_or_zero(row.get(f"{stage_prefix} PD"))
     non_threats = _float_or_zero(row.get(f"{stage_prefix} Hits on Non-Threat"))
     procedural_errors = _float_or_zero(row.get(f"{stage_prefix} Procedural Error"))
@@ -429,7 +429,20 @@ def _import_idpa(
         IDPA_PENALTY_SECONDS[key] * value
         for key, value in penalty_counts.items()
     )
-    raw_seconds = max(0.0, final_time - points_down - other_penalties)
+    final_time = stage_time + points_down + other_penalties
+    score_counts = {}
+    if points_down:
+        score_counts["Points Down"] = points_down
+    if non_threats:
+        score_counts["Non-Threat"] = non_threats
+    if procedural_errors:
+        score_counts["Procedural Error"] = procedural_errors
+    if failures_to_do_right:
+        score_counts["Failure To Do Right"] = failures_to_do_right
+    if flagrant_penalties:
+        score_counts["Flagrant Penalty"] = flagrant_penalties
+    if finger_penalties:
+        score_counts["Finger PE"] = finger_penalties
     imported_stage = ImportedStageScore(
         source_name=source_name,
         source_path=str(path),
@@ -440,11 +453,11 @@ def _import_idpa(
         stage_name=stage_prefix,
         division=str(row.get("Division", "")).strip(),
         classification=str(row.get("Class", "")).strip(),
-        raw_seconds=raw_seconds,
+        raw_seconds=stage_time,
         aggregate_points=points_down,
         shot_penalties=0.0,
         final_time=final_time,
-        score_counts={"Points Down": points_down} if points_down else {},
+        score_counts=score_counts,
     )
     return PractiScoreStageImport(
         ruleset="idpa_time_plus",

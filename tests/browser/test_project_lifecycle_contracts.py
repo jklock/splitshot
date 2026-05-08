@@ -248,7 +248,7 @@ def test_practiscore_reimport_preserves_name_fallback_when_place_changes(tmp_pat
         assert changed_file["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
         assert changed_file["project"]["scoring"]["competitor_place"] == 6
         assert changed_file["project"]["scoring"]["imported_stage"]["source_name"] == "thursday-night.csv"
-        assert changed_file["project"]["scoring"]["imported_stage"]["final_time"] == 20.57
+        assert changed_file["project"]["scoring"]["imported_stage"]["final_time"] == 30.57
         assert changed_file["project"]["overlay"]["custom_box_mode"] == "imported_summary"
     finally:
         server.shutdown()

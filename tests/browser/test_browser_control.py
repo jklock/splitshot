@@ -927,7 +927,7 @@ def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(tmp
         assert state["project"]["scoring"]["competitor_name"] == "John Klockenkemper"
         assert state["project"]["scoring"]["competitor_place"] == 6
         assert state["project"]["scoring"]["imported_stage"]["source_name"] == "thursday-night.csv"
-        assert state["project"]["scoring"]["imported_stage"]["final_time"] == 20.57
+        assert state["project"]["scoring"]["imported_stage"]["final_time"] == 30.57
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
         imported_box = next(box for box in state["project"]["overlay"]["text_boxes"] if box["source"] == "imported_summary")
         assert imported_box["quadrant"] == "above_final"
@@ -936,7 +936,7 @@ def test_browser_control_loading_new_practiscore_csv_keeps_current_selection(tmp
         assert imported_box["width"] == 0
         assert imported_box["height"] == 0
         assert state["scoring_summary"]["display_label"] == "Final"
-        assert state["scoring_summary"]["display_value"] == "20.57"
+        assert state["scoring_summary"]["display_value"] == "30.57"
     finally:
         server.shutdown()
 
@@ -983,13 +983,13 @@ def test_browser_project_open_restores_practiscore_state(tmp_path: Path) -> None
         assert reopened["project"]["scoring"]["imported_stage"]["source_name"] == "IDPA.csv"
         assert reopened["project"]["scoring"]["imported_stage"]["stage_number"] == 2
         assert reopened["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
-        assert reopened["project"]["scoring"]["imported_stage"]["final_time"] == 29.83
+        assert reopened["project"]["scoring"]["imported_stage"]["final_time"] == 39.83
         assert reopened["practiscore_options"]["has_source"] is True
         assert reopened["practiscore_options"]["source_name"] == "IDPA.csv"
         assert reopened["practiscore_options"]["detected_match_type"] == "idpa"
         assert reopened["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
         assert reopened["scoring_summary"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
-        assert reopened["scoring_summary"]["display_value"] == "29.83"
+        assert reopened["scoring_summary"]["display_value"] == "39.83"
     finally:
         server.shutdown()
 

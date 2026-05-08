@@ -385,12 +385,9 @@ export function createScoringPane({
   function importedStageRecordedScoreLabel(imported) {
     if (!imported) return "";
     if (imported.match_type === "idpa") {
-      const parts = [];
-      parts.push(`Points Down ${formatNumber(imported.aggregate_points ?? 0, 4)}`);
-      if (imported.final_time !== null && imported.final_time !== undefined) {
-        parts.push(`Final ${formatPractiScoreTime(imported.final_time, { includeUnits: false })}`);
-      }
-      return parts.join(" • ");
+      return imported.final_time !== null && imported.final_time !== undefined
+        ? `Final ${formatPractiScoreTime(imported.final_time, { includeUnits: false })}`
+        : "";
     }
     const parts = [];
     const pointsValue = imported.total_points ?? imported.aggregate_points;
@@ -439,6 +436,10 @@ export function createScoringPane({
     const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;
     const currentResultLabel = state.scoring_summary?.display_label || "Result";
     const currentResultValue = state.scoring_summary?.display_value || "";
+    const videoResultLabel = currentResultLabel === "Final"
+      ? "Video Final"
+      : (currentResultLabel === "Hit Factor" ? "Video Hit Factor" : currentResultLabel);
+    const countsRowLabel = imported.match_type === "idpa" ? "Recorded Penalty" : "Recorded Counts";
     if (status) status.textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
     renderDetailsList("practiscore-import-summary", [
       ["Source File", importedSourceFile],
@@ -446,15 +447,15 @@ export function createScoringPane({
       ["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],
       ["Video Raw", formatPractiScoreTime(videoRawSeconds)],
       ["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],
-      [currentResultLabel, currentResultValue],
+      [videoResultLabel, currentResultValue],
       ["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
     ]);
     renderDetailsList("scoring-imported-summary", [
       ["Source", imported.source_name || "Selected file"],
       ["Stage", stageLabel],
       ["Competitor", imported.competitor_name],
-      ["Recorded via PractiScore", importedStageRecordedScoreLabel(imported)],
-      ["Counts", countsLabel],
+      ["Recorded Score", importedStageRecordedScoreLabel(imported)],
+      [countsRowLabel, countsLabel],
       ["Official Points", imported.total_points !== null && imported.total_points !== undefined ? formatNumber(imported.total_points, 4) : ""],
       ["Stage Points", imported.stage_points !== null && imported.stage_points !== undefined ? formatNumber(imported.stage_points, 4) : ""],
       ["Stage Place", imported.stage_place ? `#${imported.stage_place}` : ""],
