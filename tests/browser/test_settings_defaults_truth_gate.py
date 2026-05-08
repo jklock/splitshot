@@ -418,3 +418,54 @@ def test_settings_scope_separates_app_and_folder_defaults_for_new_projects(tmp_p
                 browser.close()
     finally:
         server.shutdown()
+
+
+def test_settings_scope_switch_shows_saved_layer_values_without_rewriting_other_scope(tmp_path: Path) -> None:
+    folder_scoped_project = tmp_path / f'scope-display-project-{uuid.uuid4().hex[:8]}'
+    shutil.rmtree(folder_scoped_project, ignore_errors=True)
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                _expand_settings_section(page, 'global-template')
+
+                _set_global_template_defaults(page, scope='app', default_tool='metrics', reopen_last_tool=True)
+                _apply_settings_defaults_and_wait(
+                    page,
+                    "() => state?.settings_layers?.app?.default_tool === 'metrics'",
+                )
+
+                _set_project_path(page, folder_scoped_project)
+                page.evaluate('(path) => createNewProject(path)', str(folder_scoped_project))
+                page.wait_for_function('(path) => state?.project?.path === path', arg=str(folder_scoped_project))
+
+                _open_settings(page)
+                _expand_settings_section(page, 'global-template')
+                _set_global_template_defaults(page, scope='folder', default_tool='review', reopen_last_tool=True)
+                _apply_settings_defaults_and_wait(
+                    page,
+                    "() => state?.settings_layers?.folder?.default_tool === 'review'",
+                )
+
+                page.locator("#settings-scope").select_option("app")
+                _wait_for_page_predicate(
+                    page,
+                    "() => document.getElementById('settings-default-tool')?.value === 'metrics'",
+                )
+                assert page.evaluate("() => state?.settings_layers?.folder?.default_tool") == "review"
+                assert page.evaluate("() => state?.settings_layers?.app?.default_tool") == "metrics"
+
+                page.locator("#settings-scope").select_option("folder")
+                _wait_for_page_predicate(
+                    page,
+                    "() => document.getElementById('settings-default-tool')?.value === 'review'",
+                )
+                assert page.evaluate("() => state?.settings_layers?.folder?.default_tool") == "review"
+                assert page.evaluate("() => state?.settings_layers?.app?.default_tool") == "metrics"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()

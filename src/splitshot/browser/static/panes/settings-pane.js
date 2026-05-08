@@ -174,7 +174,7 @@ export function createSettingsPane({
 
   function renderSettingsPane() {
     const state = currentState();
-    const persistedSettings = currentSettings();
+    const effectiveSettings = currentSettings();
     const layers = state?.settings_layers || {};
     const hasProjectPath = Boolean(state?.project?.path);
     const folderSettingsError = String(layers?.project?.folder_settings_error || "").trim();
@@ -191,6 +191,10 @@ export function createSettingsPane({
       if (!hasProjectPath && scopeSelect.value === "folder") syncControlValue(scopeSelect, "app");
       if (hasProjectPath && !scopeSelect.value) syncControlValue(scopeSelect, "folder");
     }
+    const selectedScope = scopeSelect?.value === "folder" && hasProjectPath ? "folder" : "app";
+    const persistedSettings = selectedScope === "folder"
+      ? (Object.keys(layers.folder || {}).length > 0 ? (layers.folder || {}) : (layers.app || {}))
+      : (layers.app || {});
     if (scopeStatus) {
       const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
       scopeStatus.textContent = folderSettingsError
@@ -241,13 +245,14 @@ export function createSettingsPane({
         : "App template";
     }
     renderSettingsSections();
+    renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);
 
     const liveSettingsPayload = settingsPaneIsActive() ? readSettingsDefaultsPayload() : null;
     if (!settingsPaneIsActive()) {
       settingsDraft = null;
-    } else if (liveSettingsPayload && !sameSettingsValue(liveSettingsPayload.settings, persistedSettings)) {
+    } else if (liveSettingsPayload && !sameSettingsValue(liveSettingsPayload.settings, effectiveSettings)) {
       settingsDraft = liveSettingsPayload;
-    } else if (settingsDraft && sameSettingsValue(settingsDraft.settings, persistedSettings)) {
+    } else if (settingsDraft && sameSettingsValue(settingsDraft.settings, effectiveSettings)) {
       settingsDraft = null;
     }
   }

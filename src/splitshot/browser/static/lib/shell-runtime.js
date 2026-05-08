@@ -820,8 +820,8 @@ export function createShellRuntime({
     });
 
     $("settings-import-current")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true }));
+    $("settings-scope")?.addEventListener("change", () => renderSettingsPane());
     [
-      "settings-scope",
       "settings-default-tool",
       "settings-reopen-last-tool",
       "settings-default-match-type",
