@@ -382,6 +382,30 @@ export function createScoringPane({
     description.textContent = preset ? `${preset.sport}: ${preset.description}` : "";
   }
 
+  function importedStageRecordedScoreLabel(imported) {
+    if (!imported) return "";
+    if (imported.match_type === "idpa") {
+      const parts = [];
+      parts.push(`Points Down ${formatNumber(imported.aggregate_points ?? 0, 4)}`);
+      if (imported.final_time !== null && imported.final_time !== undefined) {
+        parts.push(`Final ${formatPractiScoreTime(imported.final_time, { includeUnits: false })}`);
+      }
+      return parts.join(" • ");
+    }
+    const parts = [];
+    const pointsValue = imported.total_points ?? imported.aggregate_points;
+    if (pointsValue !== null && pointsValue !== undefined) {
+      parts.push(`Points ${formatNumber(pointsValue, 4)}`);
+    }
+    if (imported.hit_factor !== null && imported.hit_factor !== undefined) {
+      parts.push(`Hit Factor ${formatNumber(imported.hit_factor, 4)}`);
+    }
+    if (imported.stage_points !== null && imported.stage_points !== undefined) {
+      parts.push(`Stage Points ${formatNumber(imported.stage_points, 4)}`);
+    }
+    return parts.join(" • ");
+  }
+
   function renderPractiScoreSummaries() {
     const state = currentState();
     const imported = state.scoring_summary?.imported_stage;
@@ -429,6 +453,7 @@ export function createScoringPane({
       ["Source", imported.source_name || "Selected file"],
       ["Stage", stageLabel],
       ["Competitor", imported.competitor_name],
+      ["Recorded via PractiScore", importedStageRecordedScoreLabel(imported)],
       ["Counts", countsLabel],
       ["Official Points", imported.total_points !== null && imported.total_points !== undefined ? formatNumber(imported.total_points, 4) : ""],
       ["Stage Points", imported.stage_points !== null && imported.stage_points !== undefined ? formatNumber(imported.stage_points, 4) : ""],

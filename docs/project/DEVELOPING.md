@@ -52,8 +52,8 @@ scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'your-password'
 - The supported macOS signing and notarization flow is documented in [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md).
 - Run `uv run python scripts/testing/run_electron_preflight.py` locally before any Electron workflow run.
 - Use `Runner Smoke` after Windows or Linux runner maintenance to confirm the self-hosted runner toolchain is still healthy.
-- Use the GitHub Actions `workflow_dispatch` entrypoint only for packaging, signing, notarization, and packaged-app smoke after local preflight passes.
-- Use `v*` tags only for real release builds.
+- Use the GitHub Actions `workflow_dispatch` entrypoint only for packaging, signing, notarization, packaged-app smoke, and per-target release publishing after local preflight passes.
+- Publish Electron releases one target at a time. Use the same release tag across the three `Build Electron` runs instead of one all-platform workflow run.
 
 **Last updated:** 2026-05-06
 **Referenced files last updated:** 2026-05-06

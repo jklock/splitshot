@@ -324,19 +324,21 @@ function Ensure-RunnerConfigured([string]$ResolvedRunnerDir) {
 }
 
 function Ensure-RunnerService([string]$ResolvedRunnerDir) {
-    $serviceMarker = Join-Path $ResolvedRunnerDir '.service'
-    if (-not (Test-Path $serviceMarker)) {
-        throw "Runner directory $ResolvedRunnerDir does not contain a .service file."
-    }
+    $service = Get-Service 'actions.runner.*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    $serviceName = $service.Name
 
-    $serviceName = (Get-Content $serviceMarker -ErrorAction Stop | Select-Object -First 1).Trim()
-    if (-not $serviceName) {
-        throw "Runner service marker $serviceMarker is empty."
-    }
-
-    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if (-not $service) {
-        $service = Get-Service 'actions.runner.*' -ErrorAction SilentlyContinue | Select-Object -First 1
+        $serviceMarker = Join-Path $ResolvedRunnerDir '.service'
+        if (-not (Test-Path $serviceMarker)) {
+            throw "Runner directory $ResolvedRunnerDir does not contain a .service file and no actions.runner.* service is installed."
+        }
+
+        $serviceName = (Get-Content $serviceMarker -ErrorAction Stop | Select-Object -First 1).Trim()
+        if (-not $serviceName) {
+            throw "Runner service marker $serviceMarker is empty."
+        }
+
+        $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     }
     if (-not $service) {
         throw "Could not find a Windows service for runner $serviceName."

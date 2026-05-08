@@ -98,10 +98,13 @@ Do not use GitHub Actions as the first place to discover source-level or parity 
 
 ## GitHub Actions Workflow
 
-`/.github/workflows/build-electron.yml` has two entry points:
+`/.github/workflows/build-electron.yml` is now `workflow_dispatch` only.
 
-- `workflow_dispatch`: manual smoke build for a selected branch
-- `push` on `v*` tags: real release build and GitHub release publishing
+Each run packages exactly one target:
+
+- `macos`
+- `linux`
+- `windows`
 
 The workflow is intentionally limited to packaging and packaged-artifact validation. It is not the first-line test runner for source-level Electron behavior.
 
@@ -111,7 +114,9 @@ Runner targets:
 - Windows packaging: self-hosted runner with labels `self-hosted`, `Windows`, `X64`
 - Linux packaging: self-hosted runner with labels `self-hosted`, `Linux`, `X64`
 
-The macOS job now:
+When `publish_release=true`, the selected target artifact is attached to the `release_tag` GitHub release. Run the workflow once per target you want on that release.
+
+The macOS packaging job:
 
 1. Decodes `MAC_CERT_BASE64` to a temporary `.p12`.
 2. Validates it with OpenSSL.
@@ -125,9 +130,10 @@ If no notarization credentials are configured, the workflow signs the app and sk
 
 ## Smoke Builds
 
-Use GitHub Actions `workflow_dispatch` for signing and notarization smoke tests.
+Use GitHub Actions `workflow_dispatch` for target-specific packaging smoke tests.
 
 - Choose the target branch in the Actions UI.
+- Choose exactly one target.
 - Run the local Electron preflight first.
 - Confirm the `Runner Smoke` workflow is green after any runner maintenance or host changes.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
@@ -137,13 +143,14 @@ Do not create `ci-test` or debug release tags for smoke testing.
 
 ## Real Releases
 
-Use a real `v*` tag only when the smoke workflow is already green.
+Use one release tag for all three platforms, but publish them separately:
 
-Tag-triggered runs:
+1. Create the GitHub release tag once.
+2. Run `Build Electron` with `publish_release=true` and that `release_tag` for `macos`.
+3. Run it again for `linux`.
+4. Run it again for `windows`.
 
-- build the signed installers
-- upload the build artifacts
-- create the GitHub release
+This keeps the three platform targets independent. An unavailable Windows runner no longer blocks macOS or Linux packaging work in the same run.
 
 ## Troubleshooting
 
@@ -151,5 +158,5 @@ Tag-triggered runs:
 - Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
 - Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+**Last updated:** 2026-05-07
+**Referenced files last updated:** 2026-05-07

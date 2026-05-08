@@ -1,29 +1,46 @@
 name: Build Electron
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       target:
-        description: "Remote target to package"
+        description: "Platform target to package"
         type: choice
         required: true
         default: linux
         options:
+          - macos
           - linux
           - windows
+      publish_release:
+        description: "Attach this target artifact to a GitHub release"
+        type: boolean
+        required: true
+        default: false
+      release_tag:
+        description: "Release tag to create/update when publish_release is enabled"
+        type: string
+        required: false
 
 jobs:
-  package-linux:
-    if: github.event_name == 'push' || github.event.inputs.target == 'linux'
-    runs-on: [self-hosted, Linux, X64]
+  package-macos:
+    if: github.event.inputs.target == 'macos'
+    runs-on: macos-14
+    permissions:
+      contents: write
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate release publish inputs
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
+            echo "release_tag is required when publish_release=true"
+            exit 1
+          fi
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -35,12 +52,196 @@ jobs:
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+
+      - name: Install system dependencies
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            brew install ffmpeg
+          fi
+
       - name: Verify host toolchain
         run: |
           python3 --version
           node --version
           npm --version
           uv --version
+          ffmpeg -version | head -n 1
+
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+        timeout-minutes: 15
+
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+
+      - name: Prepare macOS signing certificate
+        env:
+          MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAC_CERT_BASE64}" ]; then
+            echo "Missing MAC_CERT_BASE64 secret"
+            exit 1
+          fi
+          if [ -z "${MAC_CERT_PASSWORD}" ]; then
+            echo "Missing MAC_CERT_PASSWORD secret"
+            exit 1
+          fi
+
+          tmp_dir="$(mktemp -d)"
+          cert_file="${tmp_dir}/developer-id.p12"
+          keychain_file="${tmp_dir}/splitshot-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24 | tr -d '\n')"
+
+          CERT_FILE="${cert_file}" MAC_CERT_BASE64="${MAC_CERT_BASE64}" python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          Path(os.environ["CERT_FILE"]).write_bytes(base64.b64decode(os.environ["MAC_CERT_BASE64"]))
+          PY
+
+          openssl pkcs12 -in "${cert_file}" -info -noout -passin env:MAC_CERT_PASSWORD >/dev/null
+
+          security create-keychain -p "${keychain_password}" "${keychain_file}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_file}"
+          security set-keychain-settings "${keychain_file}"
+          security list-keychains -d user -s "${keychain_file}" $(security list-keychains -d user | tr -d '"')
+          if ! security import "${cert_file}" -k "${keychain_file}" -T /usr/bin/codesign -T /usr/bin/productbuild -P "${MAC_CERT_PASSWORD}"; then
+            echo "macOS rejected the .p12 during security import."
+            echo "Re-export the Developer ID Application certificate from Keychain Access and confirm the private key is included."
+            exit 1
+          fi
+          security find-identity -v -p codesigning "${keychain_file}"
+
+          {
+            echo "MAC_CERT_FILE=${cert_file}"
+            echo "MAC_CERT_KEYCHAIN=${keychain_file}"
+            echo "MAC_CERT_TMPDIR=${tmp_dir}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Configure macOS notarization credentials
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -n "${APPLE_API_KEY}" ] || [ -n "${APPLE_API_KEY_ID}" ] || [ -n "${APPLE_API_ISSUER}" ]; then
+            if [ -z "${APPLE_API_KEY}" ] || [ -z "${APPLE_API_KEY_ID}" ] || [ -z "${APPLE_API_ISSUER}" ]; then
+              echo "APPLE_API_KEY, APPLE_API_KEY_ID, and APPLE_API_ISSUER must all be set together"
+              exit 1
+            fi
+            {
+              echo "APPLE_API_KEY_ID=${APPLE_API_KEY_ID}"
+              echo "APPLE_API_ISSUER=${APPLE_API_ISSUER}"
+              echo "APPLE_API_KEY<<__SPLITSHOT_API_KEY__"
+              printf '%s\n' "${APPLE_API_KEY}"
+              echo "__SPLITSHOT_API_KEY__"
+            } >> "${GITHUB_ENV}"
+          elif [ -n "${APPLE_ID}" ] || [ -n "${APPLE_APP_SPECIFIC_PASSWORD}" ] || [ -n "${APPLE_TEAM_ID}" ]; then
+            if [ -z "${APPLE_ID}" ] || [ -z "${APPLE_APP_SPECIFIC_PASSWORD}" ] || [ -z "${APPLE_TEAM_ID}" ]; then
+              echo "APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID must all be set together"
+              exit 1
+            fi
+            {
+              echo "APPLE_ID=${APPLE_ID}"
+              echo "APPLE_APP_SPECIFIC_PASSWORD=${APPLE_APP_SPECIFIC_PASSWORD}"
+              echo "APPLE_TEAM_ID=${APPLE_TEAM_ID}"
+            } >> "${GITHUB_ENV}"
+          else
+            echo "No notarization credentials configured; build will sign but skip notarization."
+          fi
+
+      - name: Build Electron app
+        run: |
+          set -euo pipefail
+          export CSC_LINK="${MAC_CERT_FILE}"
+          export CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
+          cd electron
+          npm run build:mac
+        timeout-minutes: 30
+        env:
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+
+      - name: Run packaged Electron smoke test
+        run: uv run python scripts/testing/test_electron_app.py
+        timeout-minutes: 10
+
+      - name: Verify installer
+        run: |
+          shopt -s nullglob
+          found=( electron/build/*.dmg )
+          if [ ${#found[@]} -eq 0 ]; then
+            echo "No macOS installers found in electron/build/"
+            exit 1
+          fi
+          for f in "${found[@]}"; do
+            ls -lh "$f"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-macos
+          path: electron/build/*.dmg
+
+      - name: Publish release artifacts
+        if: github.event.inputs.publish_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          files: electron/build/*.dmg
+          generate_release_notes: true
+
+      - name: Cleanup macOS signing artifacts
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -n "${MAC_CERT_KEYCHAIN:-}" ] && [ -f "${MAC_CERT_KEYCHAIN}" ]; then
+            security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
+          fi
+          if [ -n "${MAC_CERT_TMPDIR:-}" ] && [ -d "${MAC_CERT_TMPDIR}" ]; then
+            rm -rf "${MAC_CERT_TMPDIR}"
+          fi
+
+  package-linux:
+    if: github.event.inputs.target == 'linux'
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate release publish inputs
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
+            echo "release_tag is required when publish_release=true"
+            exit 1
+          fi
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Install managed Python 3.12
         run: uv python install 3.12
@@ -48,23 +249,24 @@ jobs:
       - name: Install system dependencies
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
 
+      - name: Verify host toolchain
+        run: |
+          python3 --version
+          node --version
+          npm --version
+          uv --version
+          ffmpeg -version | head -n 1
+
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-
-      - name: Bundle Python
-        run: node scripts/bundle-python.js
-        timeout-minutes: 20
-
-      - name: Verify bundle
-        run: node scripts/bundle-python.js check
 
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
 
       - name: Build Electron app
-        run: cd electron && npm run build
+        run: cd electron && npm run build:linux
         timeout-minutes: 30
 
       - name: Run packaged Electron smoke test
@@ -73,7 +275,7 @@ jobs:
 
       - name: Verify installer
         run: |
-          shopt -s nullglob extglob
+          shopt -s nullglob
           found=( electron/build/*.AppImage )
           if [ ${#found[@]} -eq 0 ]; then
             echo "No Linux installers found in electron/build/"
@@ -112,48 +314,63 @@ jobs:
           name: splitshot-linux
           path: electron/build/*.AppImage
 
+      - name: Publish release artifacts
+        if: github.event.inputs.publish_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          files: electron/build/*.AppImage
+          generate_release_notes: true
+
   package-windows:
-    if: github.event_name == 'push' || github.event.inputs.target == 'windows'
+    if: github.event.inputs.target == 'windows'
     runs-on: [self-hosted, Windows, X64]
+    permissions:
+      contents: write
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate release publish inputs
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
+            echo "release_tag is required when publish_release=true"
+            exit 1
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
+      - name: Bootstrap runner toolchain
+        run: powershell -ExecutionPolicy Bypass -File scripts/setup/setup_self_hosted_runner_windows.ps1
+        timeout-minutes: 15
+
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+
       - name: Verify host toolchain
         run: |
-          python --version
           node --version
           npm --version
           uv --version
-
-      - name: Install system dependencies
-        run: choco install ffmpeg -y --no-progress
-        timeout-minutes: 5
+          ffmpeg -version | head -n 1
 
       - name: Sync Python dependencies
-        run: uv sync --extra dev
+        run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-
-      - name: Bundle Python
-        run: node scripts/bundle-python.js
-        timeout-minutes: 20
-
-      - name: Verify bundle
-        run: node scripts/bundle-python.js check
 
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
 
       - name: Build Electron app
-        run: cd electron && npm run build
+        run: cd electron && npm run build:win
         timeout-minutes: 30
 
       - name: Run packaged Electron smoke test
@@ -162,7 +379,7 @@ jobs:
 
       - name: Verify installer
         run: |
-          shopt -s nullglob extglob
+          shopt -s nullglob
           found=( electron/build/*.exe )
           if [ ${#found[@]} -eq 0 ]; then
             echo "No Windows installers found in electron/build/"
@@ -178,18 +395,11 @@ jobs:
           name: splitshot-windows
           path: electron/build/*.exe
 
-  release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs:
-      - package-linux
-      - package-windows
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-      - name: Create Release
+      - name: Publish release artifacts
+        if: github.event.inputs.publish_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: splitshot-*/*
+          tag_name: ${{ github.event.inputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          files: electron/build/*.exe
           generate_release_notes: true
