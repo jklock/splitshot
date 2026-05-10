@@ -69,9 +69,10 @@ function bundleFfmpeg() {
     const result = findTool(tool);
     if (result) {
       const dest = path.join(platformDir, tool);
-      fs.cpSync(result, dest);
+      const real = fs.realpathSync(result);
+      fs.copyFileSync(real, dest);
       fs.chmodSync(dest, 0o755);
-      console.log(`[bundle] bundled ${tool}: ${result} -> ${dest}`);
+      console.log(`[bundle] bundled ${tool}: ${real} -> ${dest}`);
     } else {
       console.warn(`[bundle] WARNING: ${tool} not found on PATH, skipping`);
     }
@@ -193,12 +194,11 @@ function main() {
     // Now resolve symlinks (replace with real copies for distribution)
     resolveSymlinks(binDir);
 
-    bundleFfmpeg();
-
     rmrf(BUNDLE_SRC_DIR);
     fs.cpSync(SRC_DIR, BUNDLE_SRC_DIR, { recursive: true });
     fs.cpSync(path.join(ROOT, 'pyproject.toml'), path.join(BUNDLE_DIR, 'pyproject.toml'));
 
+    bundleFfmpeg();
     generateIcons();
 
     pruneBundle();
