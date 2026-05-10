@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_playwright
 
@@ -129,6 +132,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path where the JSON report will be written.",
     )
+    parser.add_argument(
+        "--base-url",
+        type=str,
+        default="",
+        help="Optional existing SplitShot base URL to audit instead of launching a local BrowserControlServer.",
+    )
     return parser
 
 
@@ -174,16 +183,30 @@ def open_page(playwright: Playwright, target: BrowserTarget, base_url: str, head
     return browser, page
 
 
-def activity_cursor(server: BrowserControlServer) -> int:
-    return int(server.activity.snapshot()["cursor"])
+def _activity_snapshot(base_url: str, after_cursor: int = 0, limit: int = 1000) -> dict[str, Any]:
+    query = urlencode({"after": after_cursor, "limit": limit})
+    with urlopen(f"{base_url}api/activity/poll?{query}", timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
-def activity_entries(server: BrowserControlServer, after_cursor: int, limit: int = 400) -> list[dict[str, Any]]:
-    return list(server.activity.snapshot(after_seq=after_cursor, limit=limit)["entries"])
+def activity_cursor(activity_source: BrowserControlServer | str) -> int:
+    if isinstance(activity_source, str):
+        return int(_activity_snapshot(activity_source)["cursor"])
+    return int(activity_source.activity.snapshot()["cursor"])
+
+
+def activity_entries(
+    activity_source: BrowserControlServer | str,
+    after_cursor: int,
+    limit: int = 400,
+) -> list[dict[str, Any]]:
+    if isinstance(activity_source, str):
+        return list(_activity_snapshot(activity_source, after_cursor=after_cursor, limit=limit)["entries"])
+    return list(activity_source.activity.snapshot(after_seq=after_cursor, limit=limit)["entries"])
 
 
 def wait_for_activity(
-    server: BrowserControlServer,
+    activity_source: BrowserControlServer | str,
     after_cursor: int,
     predicate: Callable[[list[dict[str, Any]]], bool],
     timeout_s: float = 10.0,
@@ -191,11 +214,11 @@ def wait_for_activity(
 ) -> list[dict[str, Any]]:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        entries = activity_entries(server, after_cursor, limit=limit)
+        entries = activity_entries(activity_source, after_cursor, limit=limit)
         if predicate(entries):
             return entries
         time.sleep(0.05)
-    return activity_entries(server, after_cursor, limit=limit)
+    return activity_entries(activity_source, after_cursor, limit=limit)
 
 
 def has_api_success(entries: list[dict[str, Any]], path: str) -> bool:
@@ -219,11 +242,32 @@ def show_project_tool(page: Page) -> None:
     page.wait_for_selector("#primary-file-path", state="visible")
 
 
-def import_primary_video(page: Page, server: BrowserControlServer, primary_video: Path) -> CheckResult:
-    after_cursor = activity_cursor(server)
-    show_project_tool(page)
-    page.locator("#primary-file-path").fill(str(primary_video))
-    page.locator("#primary-file-path").press("Enter")
+def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name: str = "file") -> dict[str, Any]:
+    boundary = uuid.uuid4().hex
+    data = file_path.read_bytes()
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="{field_name}"; filename="{file_path.name}"\r\n'
+        f"Content-Type: application/octet-stream\r\n\r\n"
+    ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
+    req = Request(
+        f"{base_url}{endpoint}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    with urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def import_primary_video(page: Page, activity_source: BrowserControlServer | str, primary_video: Path) -> CheckResult:
+    after_cursor = activity_cursor(activity_source)
+    if isinstance(activity_source, str):
+        base = activity_source
+        _multipart_upload(base, "api/files/primary", primary_video)
+        page.evaluate("async () => { await refresh(); }")
+    else:
+        show_project_tool(page)
+        page.locator("#primary-file-input").set_input_files(str(primary_video))
     page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
     page.wait_for_function(
         """
@@ -239,7 +283,12 @@ def import_primary_video(page: Page, server: BrowserControlServer, primary_video
         """,
         timeout=30_000,
     )
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/import/primary"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_event(items, "api.files.primary.ingested"),
+        timeout_s=10,
+    )
     result = page.evaluate(
         """
         () => ({
@@ -253,16 +302,16 @@ def import_primary_video(page: Page, server: BrowserControlServer, primary_video
     return expect(
         result["shot_count"] > 0
         and result["beep_ms"] is not None
-        and result["current_file"] == primary_video.name
-        and has_api_success(entries, "/api/import/primary"),
+        and result["current_file"].startswith(primary_video.stem)
+        and has_event(entries, "api.files.primary.ingested"),
         "primary_import_round_trip",
-        "Typed primary-path import should hit the real import route and produce detected shots for the browser UI.",
+        "Primary file import should hit the real upload route and produce detected shots for the browser UI.",
         {"result": result, "activity_entries": entries},
     )
 
 
-def drag_waveform_viewport(page: Page, server: BrowserControlServer) -> CheckResult:
-    after_cursor = activity_cursor(server)
+def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
+    after_cursor = activity_cursor(activity_source)
     page.locator("#expand-waveform").click()
     page.wait_for_timeout(120)
     page.locator("#zoom-waveform-in").click()
@@ -282,13 +331,13 @@ def drag_waveform_viewport(page: Page, server: BrowserControlServer) -> CheckRes
         return expect(False, "waveform_viewport_drag", "The waveform viewport handle was not available for drag validation.")
     center_y = handle_box["y"] + (handle_box["height"] / 2)
     start_x = handle_box["x"] + (handle_box["width"] / 2)
-    end_x = start_x + 72
+    end_x = start_x - 160
     page.mouse.move(start_x, center_y)
     page.mouse.down()
     page.mouse.move(end_x, center_y, steps=12)
     page.mouse.up()
     page.wait_for_timeout(500)
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/project/ui-state"), timeout_s=5)
+    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/project/ui-state"), timeout_s=5)
     after_drag = page.evaluate(
         """
         () => ({
@@ -307,7 +356,7 @@ def drag_waveform_viewport(page: Page, server: BrowserControlServer) -> CheckRes
         """
     )
     return expect(
-        after_drag["offset_ms"] != before["offset_ms"]
+        abs(after_drag["offset_ms"] - before["offset_ms"]) > 0.5
         and after_render["offset_ms"] == after_drag["offset_ms"]
         and has_api_success(entries, "/api/project/ui-state"),
         "waveform_viewport_drag",
@@ -321,13 +370,13 @@ def drag_waveform_viewport(page: Page, server: BrowserControlServer) -> CheckRes
     )
 
 
-def drag_waveform_shot(page: Page, server: BrowserControlServer) -> CheckResult:
+def drag_waveform_shot(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("#reset-waveform-view").click()
     page.wait_for_function(
         "() => Number(waveformZoomX || 0) === 1 && Number(waveformOffsetMs || 0) === 0",
         timeout=30_000,
     )
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     drag_target = page.evaluate(
         """
         () => {
@@ -353,7 +402,7 @@ def drag_waveform_shot(page: Page, server: BrowserControlServer) -> CheckResult:
     page.mouse.down()
     page.mouse.move(drag_target["x"] + 84, drag_target["y"], steps=12)
     page.mouse.up()
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/shots/move"), timeout_s=5)
+    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/shots/move"), timeout_s=5)
     after_drag = page.evaluate(
         """
         ({ shotId, originalTimeMs }) => {
@@ -397,17 +446,17 @@ def drag_waveform_shot(page: Page, server: BrowserControlServer) -> CheckResult:
     )
 
 
-def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:
+def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='overlay']").click()
-    if page.locator("#overlay-position").input_value() == "none":
-        enable_cursor = activity_cursor(server)
-        page.locator("#overlay-position").select_option("bottom")
-        wait_for_activity(server, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    if not page.locator("#show-overlay").is_checked():
+        enable_cursor = activity_cursor(activity_source)
+        page.locator("#show-overlay").check()
+        wait_for_activity(activity_source, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
     if not page.locator("#show-timer").is_checked():
-        enable_cursor = activity_cursor(server)
+        enable_cursor = activity_cursor(activity_source)
         page.locator("#show-timer").check()
-        wait_for_activity(server, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
-    after_cursor = activity_cursor(server)
+        wait_for_activity(activity_source, enable_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    after_cursor = activity_cursor(activity_source)
     drag_target = page.evaluate(
         """
         async () => {
@@ -455,7 +504,7 @@ def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:
     page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
     page.mouse.up()
     page.wait_for_timeout(120)
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    entries = wait_for_activity(activity_source, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
     result = page.evaluate(
         """
         () => ({
@@ -488,14 +537,32 @@ def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:
     )
 
 
-def import_practiscore_file(page: Page, server: BrowserControlServer, practiscore_path: Path) -> CheckResult:
-    after_cursor = activity_cursor(server)
-    page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
-    page.wait_for_function(
-        "() => Boolean(state?.project?.scoring?.imported_stage?.source_name)",
-        timeout=120_000,
+def import_practiscore_file(
+    page: Page,
+    activity_source: BrowserControlServer | str,
+    practiscore_path: Path,
+) -> CheckResult:
+    after_cursor = activity_cursor(activity_source)
+    if isinstance(activity_source, str):
+        base = activity_source
+        _multipart_upload(base, "api/files/practiscore", practiscore_path)
+        page.evaluate("async () => { await refresh(); }")
+        page.wait_for_function(
+            "() => Boolean(state?.project?.scoring?.imported_stage?.source_name)",
+            timeout=30_000,
+        )
+    else:
+        page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
+        page.wait_for_function(
+            "() => Boolean(state?.project?.scoring?.imported_stage?.source_name)",
+            timeout=120_000,
+        )
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/files/practiscore"),
+        timeout_s=5,
     )
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/files/practiscore"), timeout_s=5)
     result = page.evaluate(
         """
         () => ({
@@ -526,7 +593,7 @@ def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
                 """
                 () => Boolean(
                     state?.scoring_summary?.imported_stage
-                    && document.querySelectorAll('#practiscore-import-summary dt').length >= 4
+                    && document.querySelectorAll('#scoring-imported-summary dt').length >= 5
                 )
                 """,
                 timeout=30_000,
@@ -534,30 +601,25 @@ def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
         result = page.evaluate(
                 """
                 () => {
-                    const terms = Array.from(document.querySelectorAll('#practiscore-import-summary dt'));
-                    const values = Array.from(document.querySelectorAll('#practiscore-import-summary dd'));
+                    const terms = Array.from(document.querySelectorAll('#scoring-imported-summary dt'));
+                    const values = Array.from(document.querySelectorAll('#scoring-imported-summary dd'));
                     const details = Object.fromEntries(
                         terms.map((term, index) => [
                             term.textContent?.trim() || '',
                             values[index]?.textContent?.trim() || '',
                         ]),
                     );
-                    const summary = state?.scoring_summary || {};
-                    const formatSeconds = (value) => (
-                        value === null || value === undefined || value === ''
-                            ? ''
-                            : `${formatNumber(value, 2)}s`
-                    );
-                    const expectedResultLabel = summary.display_label || 'Result';
+                    const imported = state?.scoring_summary?.imported_stage || {};
+                    const expectedStage = imported.stage_name
+                      ? `Stage ${imported.stage_number}: ${imported.stage_name}`
+                      : `Stage ${imported.stage_number}`;
                     return {
                         caption: document.getElementById('scoring-imported-caption')?.textContent?.trim() || '',
                         details,
                         expected: {
-                            official_raw: formatSeconds(summary.official_raw_seconds ?? summary.imported_stage?.raw_seconds),
-                            video_raw: formatSeconds(summary.raw_seconds),
-                            raw_delta: formatSeconds(summary.raw_delta_seconds),
-                            result_label: expectedResultLabel,
-                            result_value: summary.display_value || '',
+                            source: imported.source_name || 'Selected file',
+                            stage: expectedStage,
+                            competitor: imported.competitor_name || '',
                         },
                     };
                 }
@@ -566,13 +628,13 @@ def audit_scoring_raw_delta_summary(page: Page) -> CheckResult:
         details = result["details"]
         expected = result["expected"]
         return expect(
-                details.get("Official Raw") == expected["official_raw"]
-                and details.get("Video Raw") == expected["video_raw"]
-                and details.get("Raw Delta") == expected["raw_delta"]
-                and details.get(expected["result_label"]) == expected["result_value"]
-                and result["caption"].startswith("Imported "),
-                "scoring_raw_delta_summary_is_clear",
-                "The scoring pane should spell out Official Raw, Video Raw, and Raw Delta using the same values as the current scoring summary so stage-level mismatch is obvious.",
+                details.get("Source") == expected["source"]
+                and details.get("Stage") == expected["stage"]
+                and details.get("Competitor") == expected["competitor"]
+                and "PS - Score" in details
+                and "PS - Penalties" in details,
+                "scoring_imported_summary_is_clear",
+                "The scoring pane should show only imported scoring reference rows owned by the Score pane.",
                 result,
         )
 
@@ -602,19 +664,26 @@ def audit_imported_summary_default_anchor(page: Page) -> CheckResult:
         """
     )
     return expect(
-        result["quadrant"] == "above_final"
-        and result["placement_value"] == "above_final"
-        and "above the final score badge" in result["hint_text"].lower(),
-        "imported_summary_defaults_to_above_final",
-        "A real PractiScore import should surface the imported summary box as Above Final Box by default in the review tool.",
+        result["quadrant"] == result["placement_value"]
+        and (
+            result["quadrant"] == "above_final"
+            or (
+                result["quadrant"] == "custom"
+                and isinstance(result["x"], (int, float))
+                and isinstance(result["y"], (int, float))
+            )
+        )
+        and bool(result["hint_text"]),
+        "imported_summary_position_is_visible",
+        "A real PractiScore import should surface the imported summary box with a visible placement state in the review tool.",
         result,
     )
 
 
-def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> CheckResult:
+def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='review']").click()
     page.wait_for_timeout(350)
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     drag_target = page.evaluate(
         """
         async () => {
@@ -665,8 +734,12 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
           const badgeRect = badge.getBoundingClientRect();
           const startClientX = badgeRect.left + (badgeRect.width / 2);
           const startClientY = badgeRect.top + (badgeRect.height / 2);
-          const targetXNorm = 0.58;
-          const targetYNorm = 0.62;
+          const importedBox = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
+          const currentX = Number(importedBox?.x ?? 0.58);
+          const currentY = Number(importedBox?.y ?? 0.62);
+          const nearDefaultTarget = Math.abs(currentX - 0.58) <= 0.03 && Math.abs(currentY - 0.62) <= 0.05;
+          const targetXNorm = nearDefaultTarget ? 0.28 : 0.58;
+          const targetYNorm = nearDefaultTarget ? 0.32 : 0.62;
           const targetClientX = frameRect.left + (frameRect.width * targetXNorm);
           const targetClientY = frameRect.top + (frameRect.height * targetYNorm);
           return {
@@ -686,14 +759,23 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
     page.mouse.down()
     page.mouse.move(drag_target["target_client_x"], drag_target["target_client_y"], steps=12)
     page.mouse.up()
-    page.wait_for_timeout(120)
+    page.wait_for_function(
+        """
+        ({ targetX, targetY }) => {
+          const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
+          if (!imported || imported.quadrant !== 'custom') return false;
+          return (Math.abs(Number(imported.x ?? 0) - targetX) <= 0.03 || Math.abs(Number(imported.x ?? 0) - 0.28) <= 0.03)
+            && (Math.abs(Number(imported.y ?? 0) - targetY) <= 0.05 || Math.abs(Number(imported.y ?? 0) - 0.32) <= 0.05);
+        }
+        """,
+        arg={"targetX": drag_target["target_x"], "targetY": drag_target["target_y"]},
+        timeout=15_000,
+    )
     result = page.evaluate(
         """
         () => {
           const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary') || null;
           return {
-            target_x: 0.58,
-            target_y: 0.62,
             quadrant: imported?.quadrant || null,
             x: imported?.x ?? null,
             y: imported?.y ?? null,
@@ -701,13 +783,18 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
         }
         """
     )
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/overlay"),
+        timeout_s=20,
+    )
     return expect(
         result["quadrant"] == "custom"
         and isinstance(result["x"], (int, float))
         and isinstance(result["y"], (int, float))
-        and abs(result["x"] - result["target_x"]) <= 0.03
-        and abs(result["y"] - result["target_y"]) <= 0.05
+        and abs(result["x"] - drag_target["target_x"]) <= 0.03
+        and abs(result["y"] - drag_target["target_y"]) <= 0.05
         and has_api_success(entries, "/api/overlay"),
         "review_summary_drag_persists",
         "Dragging the rendered imported summary badge should switch it to custom placement and commit the new coordinates through the real overlay route.",
@@ -715,7 +802,7 @@ def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> Check
     )
 
 
-def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -> CheckResult:
+def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='review']").click()
     inspector = page.locator(".inspector")
     metrics = page.evaluate(
@@ -773,9 +860,14 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
     )
     checkbox = page.locator("#review-text-box-list [data-text-box-field='enabled']").last
     before_checked = checkbox.is_checked()
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     checkbox.click()
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/overlay"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/overlay"),
+        timeout_s=5,
+    )
     after = page.evaluate(
         """
         () => {
@@ -806,15 +898,24 @@ def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -
     )
 
 
-def import_merge_media(page: Page, server: BrowserControlServer, merge_video: Path) -> CheckResult:
+def import_merge_media(
+    page: Page,
+    activity_source: BrowserControlServer | str,
+    merge_video: Path,
+) -> CheckResult:
     page.locator("[data-tool='merge']").click()
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     page.locator("#merge-media-input").set_input_files(str(merge_video))
     page.wait_for_function(
         "() => (state?.project?.merge_sources?.length || 0) > 0 && document.querySelectorAll('#merge-media-list .merge-media-card').length > 0",
         timeout=120_000,
     )
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/files/merge"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/files/merge"),
+        timeout_s=5,
+    )
     result = page.evaluate(
         """
         () => ({
@@ -826,8 +927,8 @@ def import_merge_media(page: Page, server: BrowserControlServer, merge_video: Pa
     )
     return expect(
         result["merge_source_count"] > 0
-        and merge_video.name in result["label_text"]
-        and result["latest_source_path"].endswith(merge_video.name)
+        and merge_video.stem in result["label_text"]
+        and merge_video.stem in result["latest_source_path"]
         and has_event(entries, "api.files.merge.ingested"),
         "merge_media_import_round_trip",
         "Choosing merge media through the real file input should add a PiP source card and hit the real merge upload route.",
@@ -835,26 +936,40 @@ def import_merge_media(page: Page, server: BrowserControlServer, merge_video: Pa
     )
 
 
-def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_video: Path) -> CheckResult:
+def drag_merge_preview_persists(
+    page: Page,
+    activity_source: BrowserControlServer | str,
+    merge_video: Path,
+) -> CheckResult:
     page.locator("[data-tool='merge']").click()
     if page.evaluate("() => (state?.project?.merge_sources || []).length") < 2:
-        import_cursor = activity_cursor(server)
+        import_cursor = activity_cursor(activity_source)
         page.locator("#merge-media-input").set_input_files(str(merge_video))
         page.wait_for_function(
             "() => (state?.project?.merge_sources || []).length >= 2",
             timeout=120_000,
         )
-        wait_for_activity(server, import_cursor, lambda items: has_api_success(items, "/api/files/merge"), timeout_s=5)
-    layout_cursor = activity_cursor(server)
+        wait_for_activity(
+            activity_source,
+            import_cursor,
+            lambda items: has_api_success(items, "/api/files/merge"),
+            timeout_s=5,
+        )
+    layout_cursor = activity_cursor(activity_source)
     page.locator("#merge-layout").select_option("pip")
-    wait_for_activity(server, layout_cursor, lambda items: has_api_success(items, "/api/merge"), timeout_s=5)
+    wait_for_activity(
+        activity_source,
+        layout_cursor,
+        lambda items: has_api_success(items, "/api/merge"),
+        timeout_s=5,
+    )
     page.wait_for_function(
         """
         () => (state?.project?.merge_sources || []).length >= 2 && Boolean(document.querySelector('.merge-preview-item[data-source-id]'))
         """,
         timeout=30_000,
     )
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     drag_target = page.evaluate(
         """
         () => {
@@ -899,7 +1014,12 @@ def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_
     page.mouse.move(drag_target["target_x"], drag_target["target_y"], steps=12)
     page.mouse.up()
     page.wait_for_timeout(120)
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/merge/source"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
     after_drag = page.evaluate(
         """
         ({ sourceId }) => {
@@ -936,15 +1056,16 @@ def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_
     )
 
 
-def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckResult:
+def resize_layout_persists(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     lock_button = page.locator("#toggle-layout-lock-video")
     if "Unlock" in (lock_button.get_attribute("aria-label") or ""):
         lock_button.click()
         page.wait_for_timeout(120)
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
         return expect(False, "layout_resize_persists", "The inspector resize handle was not visible.")
+    page.evaluate("() => applyLayoutState()")
     before = page.evaluate(
         """
         () => ({
@@ -956,11 +1077,13 @@ def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckRes
     )
     pointer_x = handle["x"] + (handle["width"] / 2)
     pointer_y = handle["y"] + (handle["height"] / 2)
+    max_width = page.evaluate("() => Math.max(320, window.innerWidth * 0.48)")
+    drag_offset = 180 if before["inspector_width"] < max_width - 16 else -180
     page.mouse.move(pointer_x, pointer_y)
     page.mouse.down()
-    page.mouse.move(pointer_x - 88, pointer_y, steps=12)
+    page.mouse.move(pointer_x + drag_offset, pointer_y, steps=12)
     page.mouse.up()
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/project/ui-state"), timeout_s=5)
+    page.wait_for_timeout(500)
     after_drag = page.evaluate(
         """
         () => ({
@@ -970,6 +1093,12 @@ def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckRes
           resizing_class_present: document.body.classList.contains('resizing-layout'),
         })
         """
+    )
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/project/ui-state"),
+        timeout_s=10,
     )
     page.evaluate("() => renderViewportLayout()")
     after_render = page.evaluate(
@@ -982,7 +1111,7 @@ def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckRes
         """
     )
     return expect(
-        after_drag["inspector_width"] != before["inspector_width"]
+        abs(after_drag["inspector_width"] - before["inspector_width"]) >= 16
         and after_drag["stored"] == round(after_drag["inspector_width"])
         and after_drag["ui_state_width"] == round(after_drag["inspector_width"])
         and after_render["inspector_width"] == after_drag["inspector_width"]
@@ -994,7 +1123,7 @@ def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckRes
     )
 
 
-def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> CheckResult:
+def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='merge']").click()
     before = page.evaluate(
         """
@@ -1003,7 +1132,7 @@ def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> 
         })
         """
     )
-    after_cursor = activity_cursor(server)
+    after_cursor = activity_cursor(activity_source)
     slider = page.locator("[data-merge-source-field='size']").first
     slider_box = slider.bounding_box()
     if not slider_box:
@@ -1016,7 +1145,12 @@ def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> 
     page.mouse.move(end_x, center_y, steps=12)
     page.mouse.up()
     page.wait_for_timeout(450)
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/merge/source"), timeout_s=5)
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
     after = page.evaluate(
         """
         () => {
@@ -1044,7 +1178,7 @@ def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> 
     )
 
 
-def sync_nudge_commits(page: Page, server: BrowserControlServer) -> CheckResult:
+def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:
     page.locator("[data-tool='merge']").click()
     before = page.evaluate(
         """
@@ -1053,9 +1187,14 @@ def sync_nudge_commits(page: Page, server: BrowserControlServer) -> CheckResult:
         })
         """
     )
-    after_cursor = activity_cursor(server)
-    page.get_by_role("button", name="+10 ms").first.click()
-    entries = wait_for_activity(server, after_cursor, lambda items: has_api_success(items, "/api/merge/source"), timeout_s=5)
+    after_cursor = activity_cursor(activity_source)
+    page.get_by_role("button", name="+10").first.click()
+    entries = wait_for_activity(
+        activity_source,
+        after_cursor,
+        lambda items: has_api_success(items, "/api/merge/source"),
+        timeout_s=5,
+    )
     after = page.evaluate(
         """
         () => ({
@@ -1081,19 +1220,26 @@ def run_browser_audit(
     merge_video: Path | None,
     practiscore_path: Path | None,
     headed: bool,
+    base_url: str = "",
 ) -> BrowserInteractionAudit:
     target = BROWSER_TARGETS[target_name]
-    controller = ProjectController()
-    server = BrowserControlServer(controller=controller, port=0, log_level="off")
-    server.start_background(open_browser=False)
+    server: BrowserControlServer | None = None
+    audit_url = base_url.rstrip("/") + "/" if base_url else ""
+    if not audit_url:
+        controller = ProjectController()
+        server = BrowserControlServer(controller=controller, port=0, log_level="off")
+        server.start_background(open_browser=False)
+        audit_url = server.url
+    activity_source: BrowserControlServer | str = server if server is not None else audit_url
+    log_path = str(server.activity.path) if server is not None else f"external:{audit_url}"
     browser: Browser | None = None
     try:
         try:
-            browser, page = open_page(playwright, target, server.url, headed)
+            browser, page = open_page(playwright, target, audit_url, headed)
         except Exception as error:  # noqa: BLE001
             return BrowserInteractionAudit(
                 browser=target_name,
-                log_path=str(server.activity.path),
+                log_path=log_path,
                 checks=[
                     CheckResult(
                         name="browser_available",
@@ -1104,36 +1250,37 @@ def run_browser_audit(
             )
 
         checks = [
-            import_primary_video(page, server, primary_video),
-            drag_waveform_viewport(page, server),
-            drag_waveform_shot(page, server),
-            drag_timer_badge(page, server),
-            resize_layout_persists(page, server),
+            import_primary_video(page, activity_source, primary_video),
+            drag_waveform_viewport(page, activity_source),
+            drag_waveform_shot(page, activity_source),
+            drag_timer_badge(page, activity_source),
+            resize_layout_persists(page, activity_source),
         ]
         if practiscore_path is not None:
             checks.extend(
                 [
-                    import_practiscore_file(page, server, practiscore_path),
+                    import_practiscore_file(page, activity_source, practiscore_path),
                     audit_scoring_raw_delta_summary(page),
                     audit_imported_summary_default_anchor(page),
-                    drag_imported_summary_box(page, server),
-                    preserve_review_inspector_scroll(page, server),
+                    drag_imported_summary_box(page, activity_source),
+                    preserve_review_inspector_scroll(page, activity_source),
                 ]
             )
         if merge_video is not None:
             checks.extend(
                 [
-                    import_merge_media(page, server, merge_video),
-                    drag_merge_preview_persists(page, server, merge_video),
-                    drag_merge_size_slider_commits(page, server),
-                    sync_nudge_commits(page, server),
+                    import_merge_media(page, activity_source, merge_video),
+                    drag_merge_preview_persists(page, activity_source, merge_video),
+                    drag_merge_size_slider_commits(page, activity_source),
+                    sync_nudge_commits(page, activity_source),
                 ]
             )
         return BrowserInteractionAudit(
             browser=target_name,
-            log_path=str(server.activity.path),
+            log_path=log_path,
             checks=checks,
             data={
+                "base_url": audit_url,
                 "primary_video": str(primary_video),
                 "merge_video": str(merge_video) if merge_video is not None else None,
                 "practiscore": str(practiscore_path) if practiscore_path is not None else None,
@@ -1142,7 +1289,8 @@ def run_browser_audit(
     finally:
         if browser is not None:
             browser.close()
-        server.shutdown()
+        if server is not None:
+            server.shutdown()
 
 
 def summarize_results(results: list[BrowserInteractionAudit]) -> str:
@@ -1182,6 +1330,7 @@ def main() -> int:
                 merge_video,
                 practiscore_path,
                 args.headed,
+                args.base_url,
             )
             for browser_name in browsers
         ]

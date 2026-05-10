@@ -22,7 +22,6 @@ export function createScoringPane({
   formatNumber = (value) => String(value ?? ""),
   formatMatchType = (value) => String(value ?? ""),
   formatPractiScoreTime = (value) => String(value ?? ""),
-  formatImportedCounts = () => "",
   penaltyFieldLabel = (fieldId, fallback = "") => fallback || fieldId,
   compactScoreDisplay = (letter) => String(letter ?? ""),
   activeScoringRuleset = () => "",
@@ -385,9 +384,8 @@ export function createScoringPane({
   function importedStageRecordedScoreLabel(imported) {
     if (!imported) return "";
     if (imported.match_type === "idpa") {
-      return imported.final_time !== null && imported.final_time !== undefined
-        ? `Final ${formatPractiScoreTime(imported.final_time, { includeUnits: false })}`
-        : "";
+      const pointsDown = Number(imported.aggregate_points ?? imported.score_counts?.["Points Down"] ?? 0);
+      return Number.isFinite(pointsDown) ? `PD ${formatNumber(pointsDown, 2)}` : "";
     }
     const parts = [];
     const pointsValue = imported.total_points ?? imported.aggregate_points;
@@ -403,63 +401,48 @@ export function createScoringPane({
     return parts.join(" • ");
   }
 
+  function importedStagePenaltyLabel(imported) {
+    if (!imported) return "";
+    const parts = Object.entries(imported.score_counts || {})
+      .filter(([, value]) => Number(value || 0) !== 0)
+      .map(([label, value]) => `${label} ${formatNumber(value, 2)}`);
+    if (imported.match_type !== "idpa" && Number(imported.shot_penalties || 0) !== 0) {
+      parts.unshift(`Penalty ${formatNumber(imported.shot_penalties, 2)}`);
+    }
+    return parts.join(" • ") || "None";
+  }
+
+  function renderOwnedSummaryList(id, rows = [], className = "") {
+    const list = $(id);
+    if (!(list instanceof HTMLElement)) return;
+    list.className = ["details", "pane-summary-list", className].filter(Boolean).join(" ");
+    list.replaceChildren();
+    rows.forEach(([label, value]) => {
+      const term = document.createElement("dt");
+      term.textContent = label;
+      const description = document.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    });
+  }
+
   function renderPractiScoreSummaries() {
     const state = currentState();
     const imported = state.scoring_summary?.imported_stage;
-    const stagedSource = state.practiscore_options?.source_name || "";
-    const stagedMatchType = state.practiscore_options?.detected_match_type || "";
-    const stagedStages = Array.isArray(state.practiscore_options?.stage_numbers)
-      ? state.practiscore_options.stage_numbers
-      : [];
-    const stagedCompetitorCount = practiScoreCompetitors().length;
-    const status = $("practiscore-status");
     if (!imported) {
-      if (status) status.textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
-      renderDetailsList("practiscore-import-summary", stagedSource ? [
-        ["Source File", stagedSource],
-        ["Match Type", stagedMatchType ? formatMatchType(stagedMatchType) : ""],
-        ["Stages", stagedStages.length > 0 ? stagedStages.join(", ") : ""],
-        ["Competitors", stagedCompetitorCount > 0 ? String(stagedCompetitorCount) : ""],
-      ] : []);
-      renderDetailsList("scoring-imported-summary", []);
+      renderOwnedSummaryList("scoring-imported-summary", [], "scoring-imported-summary");
       return;
     }
     const stageLabel = imported.stage_name
       ? `Stage ${imported.stage_number}: ${imported.stage_name}`
       : `Stage ${imported.stage_number}`;
-    const countsLabel = formatImportedCounts(imported.score_counts);
-    const videoRawSeconds = state.scoring_summary?.raw_seconds;
-    const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;
-    const importedSourceFile = imported.source_name || imported.source_path || "Selected file";
-    const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";
-    const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
-    const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;
-    const currentResultLabel = state.scoring_summary?.display_label || "Result";
-    const currentResultValue = state.scoring_summary?.display_value || "";
-    const videoResultLabel = currentResultLabel === "Final"
-      ? "Video Final"
-      : (currentResultLabel === "Hit Factor" ? "Video Hit Factor" : currentResultLabel);
-    const countsRowLabel = imported.match_type === "idpa" ? "Recorded Penalty" : "Recorded Counts";
-    if (status) status.textContent = `${formatMatchType(imported.match_type)} Stage ${imported.stage_number} imported`;
-    renderDetailsList("practiscore-import-summary", [
-      ["Source File", importedSourceFile],
-      ["Match Type", importedMatchType],
-      ["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],
-      ["Video Raw", formatPractiScoreTime(videoRawSeconds)],
-      ["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],
-      [videoResultLabel, currentResultValue],
-      ["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],
-    ]);
-    renderDetailsList("scoring-imported-summary", [
+    renderOwnedSummaryList("scoring-imported-summary", [
       ["Source", imported.source_name || "Selected file"],
       ["Stage", stageLabel],
       ["Competitor", imported.competitor_name],
-      ["Recorded Score", importedStageRecordedScoreLabel(imported)],
-      [countsRowLabel, countsLabel],
-      ["Official Points", imported.total_points !== null && imported.total_points !== undefined ? formatNumber(imported.total_points, 4) : ""],
-      ["Stage Points", imported.stage_points !== null && imported.stage_points !== undefined ? formatNumber(imported.stage_points, 4) : ""],
-      ["Stage Place", imported.stage_place ? `#${imported.stage_place}` : ""],
-    ]);
+      ["PS - Score", importedStageRecordedScoreLabel(imported)],
+      ["PS - Penalties", importedStagePenaltyLabel(imported)],
+    ], "scoring-imported-summary");
   }
 
   function readScoringPayload() {

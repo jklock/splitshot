@@ -112,6 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional path where the JSON report will be written.",
     )
+    parser.add_argument(
+        "--base-url",
+        type=str,
+        default="",
+        help="Optional existing SplitShot base URL to audit instead of launching a local BrowserControlServer.",
+    )
     return parser
 
 
@@ -328,19 +334,7 @@ def audit_waveform_drag(page: Page) -> CheckResult:
     page.mouse.down()
     page.mouse.move(drag_target["x"] + 80, drag_target["y"], steps=8)
     page.mouse.up()
-    page.wait_for_function(
-        """
-        ({ shotId, originalTimeMs }) => {
-          const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
-          return Boolean(shot)
-            && shot.time_ms > originalTimeMs
-            && selectedShotId === shotId
-            && draggingShotId === null;
-        }
-        """,
-          arg={"shotId": drag_target["shot_id"], "originalTimeMs": drag_target["original_time_ms"]},
-        timeout=30_000,
-    )
+    page.wait_for_timeout(600)
     result = page.evaluate(
         """
         ({ shotId, originalTimeMs }) => {
@@ -349,13 +343,16 @@ def audit_waveform_drag(page: Page) -> CheckResult:
             selected_shot_id: selectedShotId,
             new_time_ms: shot?.time_ms || null,
             delta_ms: shot ? shot.time_ms - originalTimeMs : null,
+            dragging_shot_id: draggingShotId,
           };
         }
         """,
         {"shotId": drag_target["shot_id"], "originalTimeMs": drag_target["original_time_ms"]},
     )
     return expect(
-        result["selected_shot_id"] == drag_target["shot_id"] and (result["delta_ms"] or 0) > 0,
+        result["selected_shot_id"] == drag_target["shot_id"]
+        and (result["delta_ms"] or 0) > 0
+        and result["dragging_shot_id"] is None,
         "waveform_drag_moves_shot",
         "Dragging a waveform marker should move the selected shot and commit the new time through the browser UI.",
         result,
@@ -364,15 +361,9 @@ def audit_waveform_drag(page: Page) -> CheckResult:
 
 def audit_layout_resize_persists(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
-    page.evaluate(
-        """
-        () => {
-          layoutLocked = false;
-          window.localStorage.setItem("splitshot.layoutLocked", "false");
-          applyLayoutState();
-        }
-        """
-    )
+    lock_btn = page.locator("#toggle-layout-lock-video")
+    if "Unlock" in (lock_btn.get_attribute("aria-label") or ""):
+        lock_btn.click()
     handle = page.locator("#resize-sidebar").bounding_box()
     if handle is None:
         return expect(False, "layout_resize_persists", "The inspector resize handle was not visible.")
@@ -386,20 +377,24 @@ def audit_layout_resize_persists(page: Page) -> CheckResult:
     )
     pointer_x = handle["x"] + (handle["width"] / 2)
     pointer_y = handle["y"] + (handle["height"] / 2)
+    max_width = page.evaluate("() => Math.max(320, window.innerWidth * 0.48)")
+    midpoint = (320 + max_width) / 2
+    drag_offset = 120 if before["inspector_width"] < midpoint else -120
     page.mouse.move(pointer_x, pointer_y)
     page.mouse.down()
-    page.mouse.move(pointer_x - 80, pointer_y, steps=8)
+    page.mouse.move(pointer_x + drag_offset, pointer_y, steps=8)
     page.mouse.up()
     page.wait_for_function(
         """
         (originalWidth) => {
           const stored = Number(window.localStorage.getItem("splitshot.layout.inspectorWidth") || 0);
-          return stored > 0 && stored !== Math.round(originalWidth) && !document.body.classList.contains("resizing-layout");
+          return stored > 0 && stored !== Math.round(originalWidth);
         }
         """,
         arg=before["inspector_width"],
         timeout=30_000,
     )
+    page.wait_for_timeout(120)
     result = page.evaluate(
         """
         () => ({
@@ -532,8 +527,9 @@ def audit_project_practiscore_context(page: Page) -> CheckResult:
     )
     return expect(
         result["status"] == "IDPA Stage 4 imported"
-        and result["summary_terms"] == ["Source File", "Match Type", "Official Raw", "Video Raw", "Raw Delta", "Final", "Official Final"]
-        and result["summary_values"][:2] == ["local-idpa.csv", "IDPA"]
+        and result["summary_terms"] == ["Stage Start (Beep)", "Shots in Stage", "SS Stage Time", "PS Stage Time", "Video Length", "ShotML Confidence"]
+        and len(result["summary_values"]) == 6
+        and result["summary_values"][3] == "17.87s"
         and result["match_type"] == "idpa"
         and result["stage_options"] == ["4", "5"]
         and "John Klockenkemper" in result["competitor_options"]
@@ -1258,31 +1254,33 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
           setActiveTool("scoring", { collapseExpandedLayout: false, persistUiState: false });
           render();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
-          const scoreRows = Array.from(document.querySelectorAll(".scoring-shot-row"));
-          const secondRow = scoreRows[1] || scoreRows[0];
-          const secondShotId = state.timing_segments?.[1]?.shot_id || state.timing_segments?.[0]?.shot_id || "";
-          scoringShotExpansion.set(secondShotId, false);
-          renderScoringShotList();
-          const rowAfterRerender = Array.from(document.querySelectorAll(".scoring-shot-row"))[1] || document.querySelector(".scoring-shot-row");
+          renderPractiScoreSummaries();
+          setScoringWorkbenchExpanded(true, { persistUiState: false });
+          renderScoringTables();
+          await new Promise((resolve) => window.setTimeout(resolve, 100));
+          const importedTerms = Array.from(document.querySelectorAll("#scoring-imported-summary dt")).map((cell) => cell.textContent.trim());
+          const importedValues = Array.from(document.querySelectorAll("#scoring-imported-summary dd")).map((cell) => cell.textContent.trim());
+          const lockButton = document.querySelector("#scoring-workbench-table .lock-button");
+          const rowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const collapsedBefore = {
-            text: rowAfterRerender?.querySelector(".scoring-shot-toggle")?.textContent.trim() || "",
-            hidden: rowAfterRerender?.querySelector(".scoring-shot-controls")?.hidden ?? null,
+            button_text: lockButton?.textContent?.trim() || "",
+            has_select: Boolean(rowScope?.querySelector("[data-score-field='letter']")),
           };
-          rowAfterRerender?.querySelector(".scoring-shot-toggle")?.click();
+          lockButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
-          const openedRow = Array.from(document.querySelectorAll(".scoring-shot-row"))[1] || document.querySelector(".scoring-shot-row");
+          const unlockedButton = document.querySelector("#scoring-workbench-table .lock-button");
+          const unlockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const opened = {
-            text: openedRow?.querySelector(".scoring-shot-toggle")?.textContent.trim() || "",
-            hidden: openedRow?.querySelector(".scoring-shot-controls")?.hidden ?? null,
-            expanded: Boolean(scoringShotExpansion.get(secondShotId)),
+            button_text: unlockedButton?.textContent?.trim() || "",
+            has_select: Boolean(unlockedRowScope?.querySelector("[data-score-field='letter']")),
           };
-          openedRow?.querySelector(".scoring-shot-toggle")?.click();
+          unlockedButton?.click();
           await new Promise((resolve) => window.setTimeout(resolve, 100));
-          const closedRow = Array.from(document.querySelectorAll(".scoring-shot-row"))[1] || document.querySelector(".scoring-shot-row");
+          const relockedButton = document.querySelector("#scoring-workbench-table .lock-button");
+          const relockedRowScope = document.querySelector("#scoring-workbench-table .scoring-row-scope");
           const closed = {
-            text: closedRow?.querySelector(".scoring-shot-toggle")?.textContent.trim() || "",
-            hidden: closedRow?.querySelector(".scoring-shot-controls")?.hidden ?? null,
-            expanded: Boolean(scoringShotExpansion.get(secondShotId)),
+            button_text: relockedButton?.textContent?.trim() || "",
+            has_select: Boolean(relockedRowScope?.querySelector("[data-score-field='letter']")),
           };
           return {
             trend: {
@@ -1300,6 +1298,7 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
               overflow: detailOverflow,
               status: document.getElementById("metrics-score-status")?.textContent?.trim() || "",
             },
+            imported: { terms: importedTerms, values: importedValues },
             score: { collapsedBefore, opened, closed },
           };
         }
@@ -1316,14 +1315,15 @@ def audit_metrics_and_score_surface(page: Page) -> CheckResult:
         and "Imported" not in result["details"]["terms"]
         and "Imported Stage" not in result["details"]["terms"]
         and not result["details"]["overflow"]
-        and result["score"]["opened"]["text"] == "v"
-        and result["score"]["opened"]["hidden"] is False
-        and result["score"]["opened"]["expanded"] is True
-        and result["score"]["closed"]["text"] == ">"
-        and result["score"]["closed"]["hidden"] is True
-        and result["score"]["closed"]["expanded"] is False,
+        and result["imported"]["terms"] == ["Source", "Stage", "Competitor", "PS - Score", "PS - Penalties"]
+        and result["score"]["collapsedBefore"]["button_text"] == "Unlock"
+        and result["score"]["collapsedBefore"]["has_select"] is False
+        and result["score"]["opened"]["button_text"] == "Lock"
+        and result["score"]["opened"]["has_select"] is True
+        and result["score"]["closed"]["button_text"] == "Unlock"
+        and result["score"]["closed"]["has_select"] is False,
         "metrics_and_score_surfaces_are_consistent",
-        "Metrics should use table/scoring-context layouts and Score chevrons should open and close reliably.",
+        "Metrics should use table/scoring-context layouts and Score row edit locks should open and close reliably.",
         result,
     )
 
@@ -1472,15 +1472,20 @@ def run_browser_audit(
     target_name: str,
     primary_video: Path,
     headed: bool,
+    base_url: str = "",
 ) -> BrowserAudit:
     target = BROWSER_TARGETS[target_name]
-    controller = ProjectController()
-    server = BrowserControlServer(controller=controller, port=0, log_level="off")
-    server.start_background(open_browser=False)
+    server: BrowserControlServer | None = None
+    audit_url = base_url.rstrip("/") + "/" if base_url else ""
+    if not audit_url:
+        controller = ProjectController()
+        server = BrowserControlServer(controller=controller, port=0, log_level="off")
+        server.start_background(open_browser=False)
+        audit_url = server.url
     browser: Browser | None = None
     try:
         try:
-            browser, page = open_page(playwright, target, server.url, headed)
+            browser, page = open_page(playwright, target, audit_url, headed)
         except Exception as error:  # noqa: BLE001
             return BrowserAudit(
                 browser=target_name,
@@ -1511,7 +1516,8 @@ def run_browser_audit(
     finally:
         if browser is not None:
             browser.close()
-        server.shutdown()
+        if server is not None:
+            server.shutdown()
 
 
 def summarize_results(results: list[BrowserAudit]) -> str:
@@ -1534,7 +1540,7 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         results = [
-            run_browser_audit(playwright, browser_name, primary_video, args.headed)
+            run_browser_audit(playwright, browser_name, primary_video, args.headed, args.base_url)
             for browser_name in browsers
         ]
 

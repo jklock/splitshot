@@ -317,3 +317,69 @@ def test_settings_remaining_defaults_commit_and_reset_all_panels() -> None:
                 browser.close()
     finally:
         server.shutdown()
+
+
+def test_settings_layout_section_captures_current_layout_and_resets() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                _expand_settings_section(page, "layout")
+                page.evaluate(
+                    """() => {
+                        layoutLocked = false;
+                        layoutSizes = { railWidth: 96, inspectorWidth: 620, waveformHeight: 240 };
+                        syncLocalProjectUiState();
+                        renderSettingsPane();
+                    }"""
+                )
+
+                page.locator("#settings-use-current-layout").click()
+                page.wait_for_function(
+                    """() => state?.settings?.layout_locked === false
+                      && state?.settings?.layout_rail_width === 96
+                      && state?.settings?.layout_inspector_width === 620
+                      && state?.settings?.layout_waveform_height === 240"""
+                )
+
+                page.locator("#settings-release-layout").click()
+                page.wait_for_function(
+                    """() => state?.settings?.layout_locked === null
+                      && state?.settings?.layout_rail_width === null
+                      && state?.settings?.layout_inspector_width === null
+                      && state?.settings?.layout_waveform_height === null"""
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_settings_section_reset_preserves_other_sections() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                _expand_settings_section(page, "pip")
+                _expand_settings_section(page, "export")
+
+                page.locator("#settings-pip-size").select_option("50%")
+                _apply_settings_defaults_and_wait(page, "() => state?.settings?.pip_size === '50%'")
+                page.locator("#settings-export-quality").select_option("low")
+                _apply_settings_defaults_and_wait(page, "() => state?.settings?.export_quality === 'low'")
+
+                page.locator("#settings-reset-section-export").click()
+                page.wait_for_function(
+                    """() => state?.settings?.pip_size === '50%'
+                      && state?.settings?.export_quality === 'high'"""
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()

@@ -317,6 +317,19 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-release-layout"' in html
     assert 'id="settings-layout-status"' in html
     assert 'id="settings-layout-summary"' in html
+    assert 'id="settings-save-current-scoring"' in html
+    assert 'id="settings-reset-section-scoring"' in html
+    assert 'id="settings-save-current-pip"' in html
+    assert 'id="settings-reset-section-pip"' in html
+    assert 'id="settings-pip-summary"' in html
+    assert 'id="settings-save-current-overlay"' in html
+    assert 'id="settings-reset-section-overlay"' in html
+    assert 'id="settings-save-current-markers"' in html
+    assert 'id="settings-reset-section-markers"' in html
+    assert 'id="settings-save-current-export"' in html
+    assert 'id="settings-reset-section-export"' in html
+    assert 'id="settings-save-current-shotml"' in html
+    assert 'id="settings-reset-section-shotml"' in html
     assert 'id="settings-merge-layout"' in html
     assert 'id="settings-merge-pip-x"' in html
     assert 'id="settings-pip-size"' in html
@@ -1063,23 +1076,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'function syncPrimaryAudioPreview({ forceSeek = false, allowDriftCorrection = false } = {}) {' not in js
     assert 'text.startsWith("Hit Factor") || text.startsWith("Final ")' in js
     assert 'function formatPractiScoreTime(value, { includeUnits = true } = {}) {' in js
-    assert 'const videoRawSeconds = state.scoring_summary?.raw_seconds;' in js
-    assert 'const rawDeltaSeconds = state.scoring_summary?.raw_delta_seconds;' in js
-    assert 'const importedSourceFile = imported.source_name || imported.source_path || "Selected file";' in js
-    assert 'const importedMatchType = imported.match_type ? formatMatchType(imported.match_type) : "";' in js
-    assert 'const importedOfficialRawSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;' in js
-    assert 'const importedFinalTime = imported.final_time ?? state.scoring_summary?.official_final_time;' in js
-    assert 'const currentResultLabel = state.scoring_summary?.display_label || "Result";' in js
-    assert 'const currentResultValue = state.scoring_summary?.display_value || "";' in js
-    assert 'const videoResultLabel = currentResultLabel === "Final"' in js
-    assert '["Source File", importedSourceFile],' in js
-    assert '["Match Type", importedMatchType],' in js
-    assert '["Official Raw", formatPractiScoreTime(importedOfficialRawSeconds)],' in js
-    assert '["Video Raw", formatPractiScoreTime(videoRawSeconds)],' in js
-    assert '["Raw Delta", formatPractiScoreTime(rawDeltaSeconds)],' in js
-    assert '[videoResultLabel, currentResultValue],' in js
-    assert '["Official Final", formatPractiScoreTime(importedFinalTime, { includeUnits: false })],' in js
-    assert '["Recorded Score", importedStageRecordedScoreLabel(imported)],' in js
+    assert '["PS - Score", importedStageRecordedScoreLabel(imported)],' in js
+    assert '["PS - Penalties", importedStagePenaltyLabel(imported)],' in js
+    assert '"Stage Place"' not in js
+    assert 'id="practiscore-import-summary"' in html
+    assert 'class="details metrics-details scoring-imported-details"' not in html
     assert 'syncControlChecked($("show-overlay"), overlayPosition !== "none");' in js
     assert 'syncControlChecked($("markers-enable"), normalized.review_show_markers);' in js
     assert 'syncControlChecked($("show-markers"), project.ui_state?.review_show_markers ?? DEFAULT_PROJECT_UI_STATE.review_show_markers);' in js
@@ -1583,8 +1584,20 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "show-pip",
         "expand-scoring",
         "collapse-scoring",
-                "settings-import-current",
+        "settings-import-current",
             "settings-reset-defaults",
+        "settings-save-current-scoring",
+        "settings-reset-section-scoring",
+        "settings-save-current-pip",
+        "settings-reset-section-pip",
+        "settings-save-current-overlay",
+        "settings-reset-section-overlay",
+        "settings-save-current-markers",
+        "settings-reset-section-markers",
+        "settings-save-current-export",
+        "settings-reset-section-export",
+        "settings-save-current-shotml",
+        "settings-reset-section-shotml",
             "add-timing-event",
         "timing-enabled",
         "expand-timing",
@@ -1950,3 +1963,26 @@ def test_readme_documents_one_command_uv_launch() -> None:
 
 def test_browser_static_logo_is_packaged() -> None:
     assert (STATIC_ROOT / "logo.png").is_file()
+
+
+def test_static_browser_shell_audit_keeps_all_panes_modularized() -> None:
+    app_js = (STATIC_ROOT / "app.js").read_text()
+    expected_imports = {
+        "createProjectPane": "./panes/project-pane.js",
+        "createReviewPane": "./panes/review-pane.js",
+        "createTimingPane": "./panes/timing-pane.js",
+        "createScoringPane": "./panes/scoring-pane.js",
+        "createMarkersPane": "./panes/markers-pane.js",
+        "createOverlayPane": "./panes/overlay-pane.js",
+        "createMergePane": "./panes/merge-pane.js",
+        "createExportPane": "./panes/export-pane.js",
+        "createMetricsPane": "./panes/metrics-pane.js",
+        "createShotMLPane": "./panes/shotml-pane.js",
+        "createSettingsPane": "./panes/settings-pane.js",
+    }
+    for factory, path in expected_imports.items():
+        assert f'import {{ {factory} }} from "{path}";' in app_js
+        assert f"{factory}({{" in app_js
+    assert "function renderPractiScoreSummaries() {" in app_js
+    assert "projectPane?.renderPractiScoreImportSummary?.();" in app_js
+    assert "return scoringPane?.renderPractiScoreSummaries();" in app_js

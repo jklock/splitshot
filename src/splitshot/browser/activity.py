@@ -85,7 +85,7 @@ class ActivityLogger:
         if self._should_echo(record_level):
             print(f"[splitshot:{record_level}] {line}", flush=True)
 
-    def snapshot(self, after_seq: int = 0, limit: int = 250) -> dict[str, object]:
+    def snapshot(self, after_seq: int = 0, limit: int = 1000) -> dict[str, object]:
         with self._lock:
             entries = [record for record in self._recent_records if int(record.get("seq", 0)) > after_seq]
             if limit > 0:

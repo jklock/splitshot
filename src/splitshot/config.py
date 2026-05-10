@@ -141,6 +141,7 @@ class AppSettings:
     merge_pip_x: float = 1.0
     merge_pip_y: float = 1.0
     pip_size: PipSize = PipSize.MEDIUM
+    merge_source_defaults: list[dict[str, object]] = field(default_factory=list)
     export_quality: ExportQuality = ExportQuality.HIGH
     export_preset: ExportPreset = ExportPreset.SOURCE
     export_frame_rate: ExportFrameRate = ExportFrameRate.SOURCE
@@ -185,6 +186,7 @@ class AppSettings:
             "merge_pip_x": self.merge_pip_x,
             "merge_pip_y": self.merge_pip_y,
             "pip_size": self.pip_size.value,
+            "merge_source_defaults": deepcopy(self.merge_source_defaults),
             "export_quality": self.export_quality.value,
             "export_preset": self.export_preset.value,
             "export_frame_rate": self.export_frame_rate.value,
@@ -244,6 +246,12 @@ class AppSettings:
         # Preserve an explicit shotml_defaults threshold supplied in saved settings or templates.
         # A factory default is only used when the payload omits the threshold entirely.
         review_text_boxes = _review_text_boxes_from_dict(data.get("review_text_boxes"))
+        merge_source_defaults = _review_text_boxes_from_dict(data.get("merge_source_defaults"))
+        if not merge_source_defaults and isinstance(data.get("merge_source_defaults_json"), str):
+            try:
+                merge_source_defaults = _review_text_boxes_from_dict(json.loads(str(data["merge_source_defaults_json"])))
+            except json.JSONDecodeError:
+                merge_source_defaults = []
         settings_templates = _settings_templates_from_dict(data.get("settings_templates"))
         active_template_name = str(data.get("active_template_name", "Default") or "Default")
         default_stage_number = data.get("default_stage_number")
@@ -296,6 +304,7 @@ class AppSettings:
             merge_pip_x=_float_or_default(data.get("merge_pip_x"), 1.0),
             merge_pip_y=_float_or_default(data.get("merge_pip_y"), 1.0),
             pip_size=PipSize(str(data.get("pip_size", PipSize.MEDIUM.value))),
+            merge_source_defaults=merge_source_defaults,
             export_quality=ExportQuality(str(data.get("export_quality", ExportQuality.HIGH.value))),
             export_preset=ExportPreset(str(data.get("export_preset", ExportPreset.SOURCE.value))),
             export_frame_rate=ExportFrameRate(str(data.get("export_frame_rate", ExportFrameRate.SOURCE.value))),
@@ -386,6 +395,7 @@ def save_folder_settings(project_path: str | Path, settings: AppSettings) -> Non
         f'merge_pip_y = {data["merge_pip_y"]}',
         f'merge_layout = "{data["merge_layout"]}"',
         f'pip_size = "{data["pip_size"]}"',
+        f'merge_source_defaults_json = {json.dumps(json.dumps(data["merge_source_defaults"]))}',
         f'export_quality = "{data["export_quality"]}"',
         f'export_preset = "{data["export_preset"]}"',
         f'export_frame_rate = "{data["export_frame_rate"]}"',

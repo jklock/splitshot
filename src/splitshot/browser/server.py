@@ -934,11 +934,16 @@ class BrowserControlServer:
             def _poll_activity(self, query_string: str) -> None:
                 params = parse_qs(query_string or "", keep_blank_values=False)
                 raw_after = params.get("after", ["0"])[0]
+                raw_limit = params.get("limit", ["400"])[0]
                 try:
                     after_seq = max(0, int(raw_after))
                 except ValueError:
                     after_seq = 0
-                self._send_json(activity.snapshot(after_seq=after_seq))
+                try:
+                    limit = max(0, int(raw_limit))
+                except ValueError:
+                    limit = 400
+                self._send_json(activity.snapshot(after_seq=after_seq, limit=limit))
 
             def _browser_state(self) -> dict[str, Any]:
                 payload = browser_state(
@@ -1519,7 +1524,10 @@ class BrowserControlServer:
                 controller.reset_shotml_settings()
 
             def _reset_settings_defaults(self, payload: dict[str, Any]) -> None:
-                controller.restore_defaults()
+                controller.reset_settings_defaults(
+                    scope=str(payload.get("scope", "app") or "app"),
+                    section=(str(payload.get("section") or "").strip() or None),
+                )
 
             def _set_settings_defaults(self, payload: dict[str, Any]) -> None:
                 controller.set_settings_defaults(

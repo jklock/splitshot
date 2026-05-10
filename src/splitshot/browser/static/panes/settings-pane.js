@@ -6,6 +6,7 @@ export function createSettingsPane({
   syncControlValue = () => {},
   syncControlChecked = () => {},
   readNumberSetting = (_id, defaultValue) => defaultValue,
+  readProjectUiStatePayload = () => ({}),
   normalizePopupTemplate = (template = {}) => template,
   renderExportPresetOptions = () => {},
   ensureSectionToggle = () => {},
@@ -107,6 +108,7 @@ export function createSettingsPane({
     const appPath = ["app", ...field.path];
     const folderPath = ["folder", ...field.path];
     const effectiveValue = settingsValueAtPath(layers, effectivePath);
+    const appValue = settingsValueAtPath(layers, appPath);
     if (field.usesProjectTemplate && field.projectPath && settingsHasPath(layers, field.projectPath)) {
       const projectValue = settingsValueAtPath(layers, field.projectPath);
       if (!sameSettingsValue(projectValue, effectiveValue) && sameSettingsValue(projectValue, currentValue)) {
@@ -115,13 +117,110 @@ export function createSettingsPane({
     }
     if (settingsHasPath(layers, folderPath)) {
       const folderValue = settingsValueAtPath(layers, folderPath);
+      if (sameSettingsValue(folderValue, appValue)) return "app";
       if (sameSettingsValue(folderValue, currentValue)) return "folder";
     }
     if (settingsHasPath(layers, appPath)) {
-      const appValue = settingsValueAtPath(layers, appPath);
       if (sameSettingsValue(appValue, currentValue)) return "app";
     }
     return "effective";
+  }
+
+  function sanitizeMergeSourceDefaults(mergeSources = []) {
+    return (Array.isArray(mergeSources) ? mergeSources : [])
+      .filter((source) => source && typeof source === "object")
+      .map((source) => ({
+        asset: { ...(source.asset || {}) },
+        pip_size_percent: source.pip_size_percent ?? null,
+        pip_x: Number(source.pip_x ?? 1.0),
+        pip_y: Number(source.pip_y ?? 1.0),
+        opacity: Number(source.opacity ?? 1.0),
+        sync_offset_ms: Number(source.sync_offset_ms ?? 0),
+      }));
+  }
+
+  function sectionSettingsPayload(section, { projectDefaults = false } = {}) {
+    const state = currentState();
+    const projectOverlay = state?.project?.overlay || {};
+    const projectExport = state?.project?.export || {};
+    const projectScoring = state?.project?.scoring || {};
+    const projectAnalysis = state?.project?.analysis || {};
+    const projectMerge = state?.project?.merge || {};
+    const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || {});
+    const projectUiState = readProjectUiStatePayload() || state?.project?.ui_state || {};
+    const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
+    const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
+    const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
+    const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
+    const markerTemplate = projectDefaults
+      ? projectPopupTemplate
+      : normalizePopupTemplate({
+        enabled: $("settings-marker-enabled")?.checked ?? true,
+        content_type: $("settings-marker-content-type")?.value || "text",
+        text_source: $("settings-marker-text-source")?.value || "score",
+        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
+        use_shot_split_duration: $("settings-marker-use-shot-split-duration")?.checked ?? false,
+        quadrant: $("settings-marker-quadrant")?.value || projectPopupTemplate.quadrant || "middle_middle",
+        width: Number($("settings-marker-width")?.value || 0),
+        height: Number($("settings-marker-height")?.value || 0),
+        follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
+        motion_mode: $("settings-marker-motion-mode")?.value || projectPopupTemplate.motion_mode,
+        background_color: $("settings-marker-background-color")?.value || "#000000",
+        text_color: $("settings-marker-text-color")?.value || "#ffffff",
+        opacity: readNumberSetting("settings-marker-opacity", 0.9),
+      });
+    const payloads = {
+      "global-template": {
+        default_tool: $("settings-default-tool")?.value || "project",
+        reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
+      },
+      layout: {
+        layout_locked: projectDefaults ? Boolean(projectUiState.layout_locked ?? true) : ($("settings-layout-locked")?.checked ?? true),
+        layout_rail_width: projectDefaults ? Number(projectUiState.rail_width ?? 84) : readNumberSetting("settings-layout-rail-width", 84),
+        layout_inspector_width: projectDefaults ? Number(projectUiState.inspector_width ?? 440) : readNumberSetting("settings-layout-inspector-width", 440),
+        layout_waveform_height: projectDefaults ? Number(projectUiState.waveform_height ?? 206) : readNumberSetting("settings-layout-waveform-height", 206),
+      },
+      scoring: {
+        default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
+      },
+      pip: {
+        merge_layout: projectDefaults ? (projectMerge.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
+        pip_size: projectDefaults ? (projectMerge.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
+        merge_pip_x: projectDefaults ? (projectMerge.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
+        merge_pip_y: projectDefaults ? (projectMerge.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+        merge_source_defaults: projectDefaults ? sanitizeMergeSourceDefaults(state?.project?.merge_sources || []) : undefined,
+      },
+      overlay: {
+        overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
+        badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
+        overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
+        overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
+        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
+        timer_badge: timerBadge,
+        shot_badge: shotBadge,
+        current_shot_badge: currentShotBadge,
+        hit_factor_badge: hitFactorBadge,
+      },
+      markers: {
+        marker_template: markerTemplate,
+      },
+      export: {
+        export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
+        export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
+        export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
+        export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
+        export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
+        export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
+        export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
+        export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
+      },
+      shotml: {
+        detection_threshold: projectDefaults
+          ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
+          : readNumberSetting("settings-shotml-threshold", 0.35),
+      },
+    };
+    return Object.fromEntries(Object.entries(payloads[section] || {}).filter(([, value]) => value !== undefined));
   }
 
   function renderSettingsLayerSummary(settings, markerTemplate, layers) {
@@ -233,6 +332,10 @@ export function createSettingsPane({
     syncControlValue($("settings-export-ffmpeg-preset"), persistedSettings.export_ffmpeg_preset ?? projectExport.ffmpeg_preset ?? "medium");
     syncControlValue($("settings-default-tool"), persistedSettings.default_tool ?? "project");
     syncControlChecked($("settings-reopen-last-tool"), Boolean(persistedSettings.reopen_last_tool ?? true));
+    syncControlChecked($("settings-layout-locked"), Boolean(persistedSettings.layout_locked ?? state?.project?.ui_state?.layout_locked ?? true));
+    syncControlValue($("settings-layout-rail-width"), persistedSettings.layout_rail_width ?? state?.project?.ui_state?.rail_width ?? 84);
+    syncControlValue($("settings-layout-inspector-width"), persistedSettings.layout_inspector_width ?? state?.project?.ui_state?.inspector_width ?? 440);
+    syncControlValue($("settings-layout-waveform-height"), persistedSettings.layout_waveform_height ?? state?.project?.ui_state?.waveform_height ?? 206);
     syncControlValue(
       $("settings-shotml-threshold"),
       Number(shotmlDefaults.detection_threshold ?? projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35),
@@ -243,6 +346,28 @@ export function createSettingsPane({
       markerSource.textContent = hasProjectPath
         ? (Object.keys(layers.folder || {}).length > 0 ? "Folder template" : "Project template")
         : "App template";
+    }
+    const layoutStatus = $("settings-layout-status");
+    if (layoutStatus) {
+      const persistedParts = [
+        persistedSettings.layout_locked === null || persistedSettings.layout_locked === undefined ? null : `Lock ${persistedSettings.layout_locked ? "on" : "off"}`,
+        persistedSettings.layout_rail_width ? `Rail ${persistedSettings.layout_rail_width}` : null,
+        persistedSettings.layout_inspector_width ? `Inspector ${persistedSettings.layout_inspector_width}` : null,
+        persistedSettings.layout_waveform_height ? `Waveform ${persistedSettings.layout_waveform_height}` : null,
+      ].filter(Boolean);
+      layoutStatus.textContent = persistedParts.length ? persistedParts.join(" • ") : "No saved layout defaults.";
+    }
+    const layoutSummary = $("settings-layout-summary");
+    if (layoutSummary) {
+      const currentLayout = readProjectUiStatePayload() || state?.project?.ui_state || {};
+      layoutSummary.textContent = `Current layout: rail ${currentLayout.rail_width ?? 84}, inspector ${currentLayout.inspector_width ?? 440}, waveform ${currentLayout.waveform_height ?? 206}.`;
+    }
+    const pipSummary = $("settings-pip-summary");
+    if (pipSummary) {
+      const sourceCount = Array.isArray(persistedSettings.merge_source_defaults) ? persistedSettings.merge_source_defaults.length : 0;
+      pipSummary.textContent = sourceCount > 0
+        ? `${sourceCount} saved PiP source${sourceCount === 1 ? "" : "s"} in defaults.`
+        : "No saved PiP media defaults.";
     }
     renderSettingsSections();
     renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);
@@ -257,66 +382,24 @@ export function createSettingsPane({
     }
   }
 
-  function readSettingsDefaultsPayload({ projectDefaults = false } = {}) {
-    const state = currentState();
-    const projectOverlay = state?.project?.overlay || {};
-    const projectExport = state?.project?.export || {};
-    const projectScoring = state?.project?.scoring || {};
-    const projectAnalysis = state?.project?.analysis || {};
-    const projectPopupTemplate = normalizePopupTemplate(state?.project?.popup_template || {});
-    const timerBadge = projectDefaults ? (projectOverlay.timer_badge || {}) : readSettingsBadgeStyle("settings-timer-badge");
-    const shotBadge = projectDefaults ? (projectOverlay.shot_badge || {}) : readSettingsBadgeStyle("settings-shot-badge");
-    const currentShotBadge = projectDefaults ? (projectOverlay.current_shot_badge || {}) : readSettingsBadgeStyle("settings-current-shot-badge");
-    const hitFactorBadge = projectDefaults ? (projectOverlay.hit_factor_badge || {}) : readSettingsBadgeStyle("settings-hit-factor-badge");
-    const markerTemplate = projectDefaults
-      ? projectPopupTemplate
-      : normalizePopupTemplate({
-        enabled: $("settings-marker-enabled")?.checked ?? true,
-        content_type: $("settings-marker-content-type")?.value || "text",
-        text_source: $("settings-marker-text-source")?.value || "score",
-        duration_ms: Math.max(1, Math.round((Number($("settings-marker-duration")?.value || 1) || 1) * 1000)),
-        use_shot_split_duration: $("settings-marker-use-shot-split-duration")?.checked ?? false,
-        quadrant: $("settings-marker-quadrant")?.value || projectPopupTemplate.quadrant || "middle_middle",
-        width: Number($("settings-marker-width")?.value || 0),
-        height: Number($("settings-marker-height")?.value || 0),
-        follow_motion: $("settings-marker-follow-motion")?.checked ?? false,
-        motion_mode: $("settings-marker-motion-mode")?.value || projectPopupTemplate.motion_mode,
-        background_color: $("settings-marker-background-color")?.value || "#000000",
-        text_color: $("settings-marker-text-color")?.value || "#ffffff",
-        opacity: readNumberSetting("settings-marker-opacity", 0.9),
-      });
+  function readSettingsDefaultsPayload({ projectDefaults = false, section = null } = {}) {
+    const sectionName = String(section || "").trim().toLowerCase();
+    const settings = sectionName
+      ? sectionSettingsPayload(sectionName, { projectDefaults })
+      : {
+        ...sectionSettingsPayload("global-template", { projectDefaults }),
+        ...sectionSettingsPayload("layout", { projectDefaults }),
+        ...sectionSettingsPayload("scoring", { projectDefaults }),
+        ...sectionSettingsPayload("pip", { projectDefaults }),
+        ...sectionSettingsPayload("overlay", { projectDefaults }),
+        ...sectionSettingsPayload("markers", { projectDefaults }),
+        ...sectionSettingsPayload("export", { projectDefaults }),
+        ...sectionSettingsPayload("shotml", { projectDefaults }),
+      };
     return {
       scope: $("settings-scope")?.value || "app",
-      settings: {
-        default_match_type: projectDefaults ? (projectScoring.match_type || "uspsa") : ($("settings-default-match-type")?.value || "uspsa"),
-        overlay_position: projectDefaults ? (projectOverlay.position || "bottom") : ($("settings-overlay-position")?.value || "bottom"),
-        badge_size: projectDefaults ? (projectOverlay.badge_size || "M") : ($("settings-badge-size")?.value || "M"),
-        overlay_custom_box_background_color: projectDefaults ? (projectOverlay.custom_box_background_color || "#000000") : ($("settings-overlay-custom-background-color")?.value || "#000000"),
-        overlay_custom_box_text_color: projectDefaults ? (projectOverlay.custom_box_text_color || "#ffffff") : ($("settings-overlay-custom-text-color")?.value || "#ffffff"),
-        overlay_custom_box_opacity: projectDefaults ? (projectOverlay.custom_box_opacity ?? 0.9) : readNumberSetting("settings-overlay-custom-opacity", 0.9),
-        timer_badge: timerBadge,
-        shot_badge: shotBadge,
-        current_shot_badge: currentShotBadge,
-        hit_factor_badge: hitFactorBadge,
-        merge_layout: projectDefaults ? (state?.project?.merge?.layout || "side_by_side") : ($("settings-merge-layout")?.value || "side_by_side"),
-        pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
-        merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
-        merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
-        export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
-        export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
-        export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
-        export_video_codec: projectDefaults ? (projectExport.video_codec || "h264") : ($("settings-export-video-codec")?.value || "h264"),
-        export_audio_codec: projectDefaults ? (projectExport.audio_codec || "aac") : ($("settings-export-audio-codec")?.value || "aac"),
-        export_color_space: projectDefaults ? (projectExport.color_space || "bt709_sdr") : ($("settings-export-color-space")?.value || "bt709_sdr"),
-        export_two_pass: projectDefaults ? Boolean(projectExport.two_pass ?? false) : ($("settings-export-two-pass")?.checked ?? false),
-        export_ffmpeg_preset: projectDefaults ? (projectExport.ffmpeg_preset || "medium") : ($("settings-export-ffmpeg-preset")?.value || "medium"),
-        default_tool: $("settings-default-tool")?.value || "project",
-        reopen_last_tool: $("settings-reopen-last-tool")?.checked ?? true,
-        detection_threshold: projectDefaults
-          ? (projectAnalysis?.shotml_settings?.detection_threshold ?? 0.35)
-          : readNumberSetting("settings-shotml-threshold", 0.35),
-        marker_template: markerTemplate,
-      },
+      section: sectionName || undefined,
+      settings,
     };
   }
 
