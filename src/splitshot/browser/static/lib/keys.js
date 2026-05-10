@@ -10,17 +10,36 @@ export function createKeyRuntime({
   activity = () => {},
   callApi = () => null,
   deleteShotById = () => null,
+  getState = () => null,
 } = {}) {
+  function selectedBeep() {
+    return getState()?.project?.analysis?.beep_time_ms_primary ?? null;
+  }
+
   function moveSelectedShot(deltaMs) {
     const shot = selectedShot();
-    if (!shot) return;
-    emitBackbone(backbone, "keys.shot.nudge", { shot_id: shot.id, delta_ms: deltaMs });
-    activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
-    callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+    if (shot) {
+      emitBackbone(backbone, "keys.shot.nudge", { shot_id: shot.id, delta_ms: deltaMs });
+      activity("shot.keyboard_nudge", { shot_id: shot.id, delta_ms: deltaMs });
+      callApi("/api/shots/move", { shot_id: shot.id, time_ms: shot.time_ms + deltaMs, preserve_following_splits: true });
+      return;
+    }
+    const beep = selectedBeep();
+    if (beep !== null && beep !== undefined) {
+      activity("beep.keyboard_nudge", { time_ms: beep + deltaMs });
+      callApi("/api/beep", { time_ms: beep + deltaMs });
+    }
   }
 
   function deleteSelectedShot() {
-    return deleteShotById(runtime.selectedShotId, "selected");
+    if (runtime.selectedShotId) {
+      return deleteShotById(runtime.selectedShotId, "selected");
+    }
+    const beep = selectedBeep();
+    if (beep !== null && beep !== undefined) {
+      activity("beep.keyboard_delete", {});
+      callApi("/api/beep", { time_ms: null });
+    }
   }
 
   function keyboardEditTargetIsEditable(event) {
@@ -34,7 +53,6 @@ export function createKeyRuntime({
   }
 
   function handleKeyboardEdit(event) {
-    if (!runtime.selectedShotId) return;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       moveSelectedShot(event.shiftKey ? -10 : -1);

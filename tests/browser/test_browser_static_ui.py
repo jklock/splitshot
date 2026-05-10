@@ -1783,7 +1783,7 @@ def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> No
     assert 'def audit_overlay_surfaces(page: Page) -> CheckResult:' in script
     assert 'def audit_waveform_drag(page: Page) -> CheckResult:' in script
     assert 'def audit_layout_resize_persists(page: Page) -> CheckResult:' in script
-    assert 'def audit_merge_file_input_change(page: Page, primary_video: Path) -> CheckResult:' in script
+    assert 'def audit_merge_file_input_change(page: Page, primary_video: Path, base_url: str = "") -> CheckResult:' in script
 
 
 def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> None:
@@ -1793,19 +1793,21 @@ def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> 
     assert '"firefox": BrowserTarget(' in script
     assert '"safari": BrowserTarget(' in script
     assert '"webkit": BrowserTarget(' in script
-    assert 'def import_primary_video(page: Page, server: BrowserControlServer, primary_video: Path) -> CheckResult:' in script
-    assert 'def drag_waveform_viewport(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def drag_waveform_shot(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def drag_timer_badge(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def resize_layout_persists(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def import_practiscore_file(page: Page, server: BrowserControlServer, practiscore_path: Path) -> CheckResult:' in script
+    assert 'def import_primary_video(page: Page, activity_source: BrowserControlServer | str, primary_video: Path) -> CheckResult:' in script
+    assert 'def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def drag_waveform_shot(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def drag_timer_badge(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def resize_layout_persists(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def import_practiscore_file(' in script
+    assert 'activity_source: BrowserControlServer | str' in script
+    assert 'practiscore_path: Path' in script
     assert 'def audit_imported_summary_default_anchor(page: Page) -> CheckResult:' in script
-    assert 'def drag_imported_summary_box(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def preserve_review_inspector_scroll(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def import_merge_media(page: Page, server: BrowserControlServer, merge_video: Path) -> CheckResult:' in script
-    assert 'def drag_merge_preview_persists(page: Page, server: BrowserControlServer, merge_video: Path) -> CheckResult:' in script
-    assert 'def drag_merge_size_slider_commits(page: Page, server: BrowserControlServer) -> CheckResult:' in script
-    assert 'def sync_nudge_commits(page: Page, server: BrowserControlServer) -> CheckResult:' in script
+    assert 'def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def preserve_review_inspector_scroll(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def import_merge_media(' in script
+    assert 'def drag_merge_preview_persists(' in script
+    assert 'def drag_merge_size_slider_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
+    assert 'def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:' in script
 
 
 def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:

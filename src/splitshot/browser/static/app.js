@@ -9166,6 +9166,7 @@ keyRuntime = createKeyRuntime({
   activity,
   callApi,
   deleteShotById,
+  getState: () => state,
 });
 
 apiRuntime = createApiRuntime({
@@ -9272,6 +9273,7 @@ waveformComponent = createWaveformComponent({
   isLowConfidence,
   activity,
   callApi,
+  deleteShotById,
   scheduleInteractionPreviewRender,
   flushInteractionPreviewRender,
   flushQueuedProjectUiStateApply,

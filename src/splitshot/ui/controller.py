@@ -1850,7 +1850,7 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def set_beep_time(self, time_ms: int) -> None:
+    def set_beep_time(self, time_ms: int | None) -> None:
         self.project.analysis.beep_time_ms_primary = time_ms
         self.project.touch()
         self.project_changed.emit()

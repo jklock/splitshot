@@ -1536,7 +1536,8 @@ class BrowserControlServer:
                 )
 
             def _set_beep(self, payload: dict[str, Any]) -> None:
-                controller.set_beep_time(int(payload["time_ms"]))
+                time_ms = payload.get("time_ms")
+                controller.set_beep_time(int(time_ms) if time_ms is not None else None)
 
             def _add_shot(self, payload: dict[str, Any]) -> None:
                 controller.add_shot(int(payload["time_ms"]))
