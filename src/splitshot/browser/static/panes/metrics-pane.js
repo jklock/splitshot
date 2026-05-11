@@ -1023,6 +1023,109 @@ export function createMetricsPane({
     ];
   }
 
+  function buildCompetitorComparisonGraphs() {
+    const state = currentState();
+    const importedStage = state?.scoring_summary?.imported_stage || {};
+    const myName = importedStage.competitor_name || "";
+    const myRaw = importedStage.raw_seconds;
+    const myDivision = importedStage.division || "";
+    const myClassification = importedStage.classification || "";
+    const comparisonData = Array.isArray(state?.practiscore_options?.comparison_competitors)
+      ? state.practiscore_options.comparison_competitors
+      : [];
+    if (!myName || myRaw === null || myRaw === undefined || comparisonData.length === 0) return [];
+    const allCompetitors = [
+      {
+        name: myName,
+        place: importedStage.competitor_place,
+        division: myDivision,
+        classification: myClassification,
+        raw_seconds: myRaw,
+        final_time: importedStage.final_time,
+        hit_factor: importedStage.hit_factor,
+        stage_place: importedStage.stage_place,
+        stage_points: importedStage.stage_points,
+      },
+      ...comparisonData,
+    ];
+    const withTime = allCompetitors
+      .filter((c) => c.raw_seconds !== null && c.raw_seconds !== undefined)
+      .map((c) => ({ ...c, raw_seconds: Number(c.raw_seconds) }))
+      .sort((a, b) => a.raw_seconds - b.raw_seconds);
+
+    if (withTime.length < 2) return [];
+
+    const userBarColor = "#ff7b22";
+    const otherBarColor = "#4ea7ff";
+
+    function buildBars(competitors) {
+      return competitors.map((c) => ({
+        key: c.name,
+        label: c.name,
+        shortLabel: c.name.split(" ").pop() || c.name,
+        value: c.raw_seconds,
+        category: { color: c.name === myName ? userBarColor : otherBarColor },
+        highlight: c.name === myName,
+        detail: c.division ? `${c.classification || ""} ${c.division}`.trim() : "",
+      }));
+    }
+
+    const overallBars = buildBars(withTime);
+    const myIndex = withTime.findIndex((c) => c.name === myName);
+    const total = withTime.length;
+    const graphs = [];
+
+    graphs.push({
+      id: "competitor_overall_placement",
+      type: "bars",
+      title: "Overall Stage Placement",
+      subtitle: `${total} competitor${total === 1 ? "" : "s"} — sorted fastest to slowest. You are #${myIndex + 1} of ${total}.`,
+      unit: "s",
+      bars: overallBars,
+      summary: [
+        { label: "Fastest", value: metricsGraphValueLabel(withTime[0].raw_seconds, "s"), color: "#39d06f" },
+        { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
+        { label: `#${total}`, value: metricsGraphValueLabel(withTime[withTime.length - 1].raw_seconds, "s"), color: "#ef4444" },
+      ],
+    });
+
+    const sameDivision = withTime.filter((c) => c.division && c.division === myDivision);
+    if (sameDivision.length >= 2) {
+      const divIndex = sameDivision.findIndex((c) => c.name === myName);
+      graphs.push({
+        id: "competitor_division_placement",
+        type: "bars",
+        title: `${myDivision} Division Placement`,
+        subtitle: `${sameDivision.length} in division — you are #${divIndex + 1} of ${sameDivision.length}.`,
+        unit: "s",
+        bars: buildBars(sameDivision),
+        summary: [
+          { label: "Fastest", value: metricsGraphValueLabel(sameDivision[0].raw_seconds, "s"), color: "#39d06f" },
+          { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
+        ],
+      });
+    }
+
+    const sameClass = withTime.filter((c) => c.classification && c.classification === myClassification);
+    if (sameClass.length >= 2) {
+      const clsIndex = sameClass.findIndex((c) => c.name === myName);
+      graphs.push({
+        id: "competitor_classification_placement",
+        type: "bars",
+        title: `${myClassification} Classification Placement`,
+        subtitle: `${sameClass.length} in classification — you are #${clsIndex + 1} of ${sameClass.length}.`,
+        unit: "s",
+        bars: buildBars(sameClass),
+        summary: [
+          { label: "Fastest", value: metricsGraphValueLabel(sameClass[0].raw_seconds, "s"), color: "#39d06f" },
+          { label: "You", value: metricsGraphValueLabel(myRaw, "s"), color: userBarColor },
+        ],
+      });
+    }
+
+    return graphs;
+  }
+
   function renderMetricsPanel() {
     const summaryGrid = $("metrics-summary-grid");
     const trendList = $("metrics-trend-list");
@@ -1032,6 +1135,7 @@ export function createMetricsPane({
     const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
     const rows = buildMetricsRows();
     const graphs = buildMetricsGraphSeries(rows);
+    const compGraphs = buildCompetitorComparisonGraphs();
 
     const summaryCards = [
       ["Draw", splitSeconds(state.metrics?.draw_ms), "First-shot timing"],
@@ -1071,8 +1175,9 @@ export function createMetricsPane({
       : "Scoring disabled.";
     const details = metricsScoringDetailRows(summary);
     renderDetailsList("metrics-score-summary", details);
-    renderMetricsGraphs($("metrics-graph-list"), graphs, { compact: true });
-    renderMetricsGraphs($("metrics-workbench-graphs"), graphs, { compact: false });
+    const allGraphs = [...compGraphs, ...graphs];
+    renderMetricsGraphs($("metrics-graph-list"), allGraphs, { compact: true });
+    renderMetricsGraphs($("metrics-workbench-graphs"), allGraphs, { compact: false });
     renderMetricsSections();
     renderMetricsTable($("metrics-workbench-table"));
   }
