@@ -788,7 +788,13 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["practiscore_options"]["detected_match_type"] == "uspsa"
         assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4, 5, 6]
         assert any(
-            option == {"name": "Stephen Lutman", "place": 1}
+            option["name"] == "Stephen Lutman" and option["place"] == 1
+            for option in state["practiscore_options"]["competitors"]
+        )
+        assert any(
+            option["name"] == "Stephen Lutman"
+            and option.get("division") == "Limited"
+            and option.get("classification") == "M"
             for option in state["practiscore_options"]["competitors"]
         )
         assert state["project"]["overlay"]["custom_box_enabled"] is True

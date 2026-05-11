@@ -691,6 +691,7 @@ class ProjectController(QObject):
         self._practiscore_source_path: Path | None = None
         self._practiscore_source_name: str = ""
         self._practiscore_options: PractiScoreOptions | None = None
+        self._practiscore_comparison_competitors: list[dict[str, object]] = []
         self._practiscore_session_payload = _default_practiscore_session_payload()
         self._practiscore_sync_payload = _default_practiscore_sync_payload()
         self.status_message = "Ready."
@@ -890,7 +891,13 @@ class ProjectController(QObject):
     def _practiscore_options_browser_payload(self) -> dict[str, object]:
         options = self._practiscore_options
         competitors = [] if options is None else [
-            {"name": option.name, "place": option.place}
+            {
+                "name": option.name,
+                "place": option.place,
+                "division": option.division,
+                "classification": option.classification,
+                "power_factor": option.power_factor,
+            }
             for option in options.competitors
         ]
         return {
@@ -905,6 +912,7 @@ class ProjectController(QObject):
         payload = self._practiscore_options_browser_payload()
         payload["_session_payload"] = deepcopy(self._practiscore_session_payload)
         payload["_sync_payload"] = deepcopy(self._practiscore_sync_payload)
+        payload["comparison_competitors"] = deepcopy(self._practiscore_comparison_competitors)
         return payload
 
     def _set_practiscore_session_payload(self, payload: dict[str, object]) -> None:
@@ -1148,6 +1156,7 @@ class ProjectController(QObject):
         self._practiscore_source_path = None
         self._practiscore_source_name = ""
         self._practiscore_options = None
+        self._practiscore_comparison_competitors = []
         self.project.scoring.practiscore_source_path = ""
         self.project.scoring.practiscore_source_name = ""
 
@@ -1589,6 +1598,23 @@ class ProjectController(QObject):
         )
         self._practiscore_options = normalized.options
         imported = normalized.stage_import
+        self._practiscore_comparison_competitors = [
+            {
+                "name": c.name,
+                "place": c.place,
+                "division": c.division,
+                "classification": c.classification,
+                "power_factor": c.power_factor,
+                "raw_seconds": c.raw_seconds,
+                "hit_factor": c.hit_factor,
+                "final_time": c.final_time,
+                "stage_points": c.stage_points,
+                "stage_place": c.stage_place,
+                "total_points": c.total_points,
+                "class_place": c.class_place,
+            }
+            for c in imported.comparison_competitors
+        ]
         apply_scoring_preset(self.project, imported.ruleset)
         self.project.scoring.enabled = True
         self.project.scoring.penalties = max(0.0, float(imported.manual_penalties))

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from splitshot.domain.models import ImportedStageScore
@@ -14,6 +14,7 @@ class PractiScoreStageImport:
     manual_penalties: float
     penalty_counts: dict[str, float]
     imported_stage: ImportedStageScore
+    comparison_competitors: list[PractiScoreCompetitorOption] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,16 @@ class PractiScoreContext:
 class PractiScoreCompetitorOption:
     name: str
     place: int | None = None
+    division: str = ""
+    classification: str = ""
+    power_factor: str = ""
+    raw_seconds: float | None = None
+    hit_factor: float | None = None
+    final_time: float | None = None
+    stage_points: float | None = None
+    stage_place: int | None = None
+    total_points: float | None = None
+    class_place: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,15 +86,18 @@ def describe_practiscore_file(path: str | Path, source_name: str | None = None) 
 
     if normalized_match_type == "idpa":
         rows = _load_idpa_rows(results_path)
+        stage_numbers = _idpa_stage_numbers(rows)
         return PractiScoreOptions(
             source_name=display_name,
             match_type=normalized_match_type,
-            stage_numbers=_idpa_stage_numbers(rows),
+            stage_numbers=stage_numbers,
             competitors=_competitor_options(
                 rows,
                 place_key="Place",
                 first_name_key="First Name",
                 last_name_key="Last Name",
+                division_key="Division",
+                class_key="Class",
             ),
         )
 
@@ -98,6 +112,9 @@ def describe_practiscore_file(path: str | Path, source_name: str | None = None) 
             first_name_key="FirstName",
             last_name_key="LastName",
             reentry_key="Reentry",
+            division_key="Division",
+            class_key="Class",
+            power_factor_key="Power Factor",
         ),
     )
 
@@ -459,11 +476,34 @@ def _import_idpa(
         final_time=final_time,
         score_counts=score_counts,
     )
+    comparison_competitors = []
+    for other_row in rows:
+        other_name = _row_name(other_row, "First Name", "Last Name")
+        if not other_name or other_name == imported_stage.competitor_name:
+            continue
+        other_time = _float_or_none(other_row.get(f"{stage_prefix} Time"))
+        other_pd = _float_or_zero(other_row.get(f"{stage_prefix} PD"))
+        other_nt = _float_or_zero(other_row.get(f"{stage_prefix} Hits on Non-Threat"))
+        other_pe = _float_or_zero(other_row.get(f"{stage_prefix} Procedural Error"))
+        other_penalty_sum = sum(
+            IDPA_PENALTY_SECONDS[k] * v
+            for k, v in {"non_threats": other_nt, "procedural_errors": other_pe}.items()
+            if v
+        )
+        comparison_competitors.append(PractiScoreCompetitorOption(
+            name=other_name,
+            place=_int_or_none(other_row.get("Place")),
+            division=str(other_row.get("Division", "")).strip(),
+            classification=str(other_row.get("Class", "")).strip(),
+            raw_seconds=other_time,
+            final_time=other_time + other_pd + other_penalty_sum if other_time is not None else None,
+        ))
     return PractiScoreStageImport(
         ruleset="idpa_time_plus",
         manual_penalties=0.0,
         penalty_counts=penalty_counts,
         imported_stage=imported_stage,
+        comparison_competitors=comparison_competitors,
     )
 
 
@@ -548,11 +588,37 @@ def _import_hit_factor_report(
         score_counts=score_counts,
     )
     penalty_counts = {"procedural_errors": procedural_errors} if procedural_errors else {}
+    comparison_competitors = []
+    competitor_id_to_name = {
+        str(r.get("Comp", "")).strip(): _row_name(r, "FirstName", "LastName")
+        for r in competitor_rows
+    }
+    for sr in stage_results:
+        if str(sr.get("Stage", "")).strip() != stage_key:
+            continue
+        sr_comp_id = str(sr.get("Comp", "")).strip()
+        sr_name = competitor_id_to_name.get(sr_comp_id)
+        if not sr_name or sr_name == imported_stage.competitor_name:
+            continue
+        sr_row = next((r for r in competitor_rows if str(r.get("Comp", "")).strip() == sr_comp_id), None)
+        comparison_competitors.append(PractiScoreCompetitorOption(
+            name=sr_name,
+            place=_int_or_none(sr_row.get("Place Overall")) if sr_row else None,
+            division=str(sr_row.get("Division", "")).strip() if sr_row else "",
+            classification=str(sr_row.get("Class", "")).strip() if sr_row else "",
+            power_factor=str(sr_row.get("Power Factor", "")).strip() if sr_row else "",
+            raw_seconds=_float_or_none(sr.get("Time")),
+            hit_factor=_float_or_none(sr.get("Hit Factor")),
+            stage_points=_float_or_none(sr.get("Stage Points")),
+            stage_place=_int_or_none(sr.get("Stage Place")),
+            total_points=_float_or_none(sr.get("Total Points")),
+        ))
     return PractiScoreStageImport(
         ruleset=ruleset,
         manual_penalties=manual_penalties,
         penalty_counts=penalty_counts,
         imported_stage=imported_stage,
+        comparison_competitors=comparison_competitors,
     )
 
 
@@ -613,6 +679,9 @@ def _competitor_options(
     first_name_key: str,
     last_name_key: str,
     reentry_key: str | None = None,
+    division_key: str = "",
+    class_key: str = "",
+    power_factor_key: str = "",
 ) -> list[PractiScoreCompetitorOption]:
     deduped_rows: dict[tuple[str, int | None], dict[str, str]] = {}
     for row in rows:
@@ -637,6 +706,9 @@ def _competitor_options(
             PractiScoreCompetitorOption(
                 name=_row_name(row, first_name_key, last_name_key),
                 place=_int_or_none(row.get(place_key)),
+                division=str(row.get(division_key, "")).strip() if division_key else "",
+                classification=str(row.get(class_key, "")).strip() if class_key else "",
+                power_factor=str(row.get(power_factor_key, "")).strip() if power_factor_key else "",
             )
             for row in deduped_rows.values()
         ],
