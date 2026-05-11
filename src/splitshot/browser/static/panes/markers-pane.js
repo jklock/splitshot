@@ -34,6 +34,7 @@ export function createMarkersPane({
   orderedShotsByTime = () => [],
   timingSegmentForShot = () => null,
   shotById = () => null,
+  scoreBadgeTokens = () => [],
   compactScoreDisplay = (value) => value,
   activeScoringRuleset = () => null,
   popupTextForShotId = () => "",
@@ -1342,7 +1343,6 @@ export function createMarkersPane({
       }
       if (entry.hasText && (!selectorStyle || selectorHasText)) {
         const text = documentObject.createElement("div");
-        text.textContent = selectorToken || entry.text;
         text.style.alignItems = "center";
         text.style.display = "flex";
         text.style.flex = "1 1 auto";
@@ -1357,6 +1357,29 @@ export function createMarkersPane({
         text.style.textAlign = "center";
         text.style.whiteSpace = "nowrap";
         text.style.width = "100%";
+        if (selectorToken) {
+          text.textContent = selectorToken;
+        } else if (bubble.anchor_mode === "shot" && bubble.shot_id) {
+          const shot = shotById(bubble.shot_id);
+          if (shot) {
+            const tokens = scoreBadgeTokens(shot);
+            if (tokens.length > 0) {
+              tokens.forEach((token) => {
+                const span = documentObject.createElement("span");
+                span.textContent = token.text;
+                if (token.color) span.style.color = token.color;
+                span.style.whiteSpace = "pre";
+                text.appendChild(span);
+              });
+            } else {
+              text.textContent = entry.text;
+            }
+          } else {
+            text.textContent = entry.text;
+          }
+        } else {
+          text.textContent = entry.text;
+        }
         badge.appendChild(text);
       }
       const allowDrag = editingActive && entry.selected;

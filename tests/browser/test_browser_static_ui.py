@@ -956,7 +956,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'popupBubbleMotionUiMode(bubble) === "fixed"' in js
     assert 'dataset.popupKeyframeOffset' in js
     assert 'const selectorToken = selectorHasText ? String(selectorStyle?.token || "") : "";' in js
-    assert 'text.textContent = selectorToken || entry.text;' in js
+    assert 'span.style.color = token.color;' in js
+    assert 'scoreBadgeTokens(shot)' in js
     assert 'badge.style.width = `${scaledWidth}px`;' in js
     assert '<option value="above_final">Above Final Box</option>' in js
     assert 'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";' in review_pane

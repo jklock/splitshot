@@ -9395,6 +9395,7 @@ markersPane = createMarkersPane({
   autoTracePopupBubbleMotion: (...args) => autoTracePopupBubbleMotion(...args),
   VALID_POPUP_FILTER_MODES,
   CUSTOM_QUADRANT_VALUE,
+  scoreBadgeTokens,
 });
 
 overlayPane = createOverlayPane({
