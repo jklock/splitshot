@@ -32,16 +32,30 @@ class ActivityLogger:
         "media.range_invalid",
         "static.missing",
     }
+    _MAX_LOG_FILES = 100
 
     def __init__(self, log_dir: str | Path | None = None, console_level: str = "off") -> None:
-        root = Path(log_dir) if log_dir is not None else Path.cwd() / "logs"
+        import tempfile
+        default = Path(tempfile.gettempdir()) / "splitshot-activity-logs"
+        root = Path(log_dir) if log_dir is not None else default
         root.mkdir(parents=True, exist_ok=True)
+        self._prune_old_logs(root)
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         self.path = root / f"splitshot-browser-{stamp}-{uuid4().hex[:8]}.log"
         self._lock = threading.Lock()
         self._console_level = self.normalize_level(console_level)
         self._sequence = 0
         self._recent_records: list[dict[str, object]] = []
+
+    @classmethod
+    def _prune_old_logs(cls, log_dir: Path, max_files: int = 100) -> None:
+        try:
+            files = sorted(log_dir.glob("splitshot-browser-*.log"), key=lambda p: p.stat().st_mtime)
+            while len(files) > max_files:
+                files[0].unlink(missing_ok=True)
+                files = files[1:]
+        except OSError:
+            pass
 
     @classmethod
     def normalize_level(cls, value: str) -> str:
