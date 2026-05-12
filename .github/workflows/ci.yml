@@ -251,7 +251,7 @@ jobs:
           fi
           chmod +x "${appimages[0]}"
           echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=env LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:\${LD_LIBRARY_PATH} xvfb-run -a" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox --disable-gpu --disable-software-rasterizer" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
@@ -308,7 +308,11 @@ jobs:
           echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
 
       - name: Full E2E test against installed app (with video)
-        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" -- ${E2E_APP_ARGS}
+        run: |
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          fi
+          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" -- ${E2E_APP_ARGS}
         timeout-minutes: 15
 
       - name: Upload E2E test video
