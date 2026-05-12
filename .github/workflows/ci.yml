@@ -184,6 +184,7 @@ jobs:
             echo "MAC_CERT_FILE=${cert_file}"
             echo "MAC_CERT_KEYCHAIN=${keychain_file}"
             echo "MAC_CERT_TMPDIR=${tmp_dir}"
+            echo "MAC_CERT_PASSWORD=${MAC_CERT_PASSWORD}"
           } >> "${GITHUB_ENV}"
 
       - name: Configure macOS notarization credentials
