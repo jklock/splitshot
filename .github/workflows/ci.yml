@@ -241,16 +241,15 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          appimages=( electron/build/*.AppImage )
-          if [ ${#appimages[@]} -eq 0 ]; then
-            echo "No AppImage found"
+          unpacked="electron/build/linux-unpacked/splitshot"
+          if [ ! -f "${unpacked}" ]; then
+            echo "No linux-unpacked/splitshot found at ${unpacked}"
             echo "Checking electron/build/..."
             ls electron/build/
             exit 1
           fi
-          chmod +x "${appimages[0]}"
-          echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
+          chmod +x "${unpacked}"
+          echo "APP_EXECUTABLE=${unpacked}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox --disable-gpu --disable-software-rasterizer" >> "${GITHUB_ENV}"
 
