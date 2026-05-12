@@ -40,9 +40,14 @@ def _create_test_video(out_dir):
 
 
 def main():
-    executable = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
-    if not executable or not executable.exists():
-        print("Usage: test_packaged_app_e2e.py <executable>", file=sys.stderr)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--app", type=Path, required=True)
+    parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR)
+    args = parser.parse_args()
+
+    executable = args.app.resolve()
+    if not executable.exists():
+        print(f"FAIL: executable not found at {executable}", file=sys.stderr)
         return 1
 
     work_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-"))
