@@ -211,16 +211,21 @@ def main() -> int:
         from playwright.sync_api import sync_playwright
 
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            browser = pw.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-gpu", "--disable-software-rasterizer"],
+            )
             context = browser.new_context(
                 viewport={"width": 1280, "height": 900},
                 record_video_dir=str(args.video_dir / "playwright-video") if not args.no_video else None,
             )
             page = context.new_page()
-            page.goto(f"http://127.0.0.1:{port}", wait_until="domcontentloaded")
-
+            try:
+                page.goto(f"http://127.0.0.1:{port}", wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                print(f"FAIL: Playwright page.goto failed: {e}", file=sys.stderr)
+                raise
             summary = _e2e_interactions(page, video_path)
-
             context.close()
             browser.close()
 
