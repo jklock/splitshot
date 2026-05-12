@@ -290,6 +290,13 @@ jobs:
           echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
+      - name: Check Playwright import
+        shell: bash
+        run: |
+          echo "=== Checking Playwright import ==="
+          uv run python -c "from playwright.sync_api import sync_playwright; print('Playwright import OK')" 2>&1
+        timeout-minutes: 2
+
       - name: Full E2E test with Playwright + video recording
         shell: bash
         run: |
