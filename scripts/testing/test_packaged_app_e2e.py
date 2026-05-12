@@ -210,10 +210,29 @@ def main() -> int:
 
         from playwright.sync_api import sync_playwright
 
+        # Verify Playwright chromium can launch
+        import shutil
+        print(f"PLAYWRIGHT_BROWSERS_PATH: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')}")
+        chromium_path = None
+        cache_dir = Path(os.environ.get('PLAYWRIGHT_BROWSERS_PATH', Path.home() / '.cache' / 'ms-playwright'))
+        for p in cache_dir.rglob('chrome-headless-shell'):
+            if p.is_file() and os.access(p, os.X_OK):
+                chromium_path = p
+                break
+        if not chromium_path:
+            for p in cache_dir.rglob('chromium'):
+                if p.is_file() and os.access(p, os.X_OK):
+                    chromium_path = p
+                    break
+        print(f"CHROMIUM_PATH: {chromium_path}")
+        if chromium_path:
+            result = subprocess.run([str(chromium_path), '--version'], capture_output=True, text=True, timeout=10)
+            print(f"CHROMIUM_VERSION: {result.stdout.strip() or result.stderr.strip()}")
+
         with sync_playwright() as pw:
             browser = pw.chromium.launch(
                 headless=True,
-                args=["--no-sandbox", "--disable-gpu", "--disable-software-rasterizer"],
+                args=["--no-sandbox", "--disable-gpu", "--disable-software-rasterizer", "--disable-dev-shm-usage"],
             )
             context = browser.new_context(
                 viewport={"width": 1280, "height": 900},
