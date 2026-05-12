@@ -168,17 +168,20 @@ def _terminate(proc: subprocess.Popen[str]) -> None:
 
 
 def main() -> int:
+    print("E2E_SCRIPT_STARTED", flush=True)
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", type=Path, required=True, help="Installed app executable")
     parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR, help="Output dir for recorded video")
     parser.add_argument("--no-video", action="store_true", help="Skip video recording")
     parser.add_argument("extra_args", nargs='*', help="Extra args passed to the app executable (use -- before them)")
     args = parser.parse_args()
+    print("E2E_ARGS_PARSED", flush=True)
 
     executable = args.app.resolve()
     if not executable.exists():
         print(f"FAIL: executable not found at {executable}", file=sys.stderr)
         return 1
+    print("E2E_EXECUTABLE_OK", flush=True)
 
     args.video_dir.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix="splitshot-e2e-"))
@@ -212,7 +215,7 @@ def main() -> int:
 
         # Verify Playwright chromium can launch
         import shutil
-        print(f"PLAYWRIGHT_BROWSERS_PATH: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')}")
+        print(f"PLAYWRIGHT_BROWSERS_PATH: {os.environ.get('PLAYWRIGHT_BROWSERS_PATH', 'not set')}", flush=True)
         chromium_path = None
         cache_dir = Path(os.environ.get('PLAYWRIGHT_BROWSERS_PATH', Path.home() / '.cache' / 'ms-playwright'))
         for p in cache_dir.rglob('chrome-headless-shell'):
