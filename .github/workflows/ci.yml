@@ -317,6 +317,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Verify installer artifact
+        shell: bash
         run: |
           echo "Contents of electron/build/:"
           ls -la electron/build/ 2>/dev/null || echo "(no electron/build/ directory)"
