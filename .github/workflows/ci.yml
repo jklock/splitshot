@@ -102,6 +102,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -247,11 +248,12 @@ jobs:
           fi
           chmod +x "${appimages[0]}"
           echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -276,6 +278,7 @@ jobs:
 
       - name: Mount package (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -284,18 +287,19 @@ jobs:
             echo "No DMG found"
             exit 1
           fi
-          volume=$(hdiutil attach -nobrowse "${dmgs[0]}" | tail -1 | awk '{print $3}')
-          app_exec="${volume}/SplitShot.app/Contents/MacOS/SplitShot"
+          mount_point=$(mktemp -d)
+          hdiutil attach -nobrowse -mountpoint "${mount_point}" "${dmgs[0]}"
+          app_exec="${mount_point}/SplitShot.app/Contents/MacOS/SplitShot"
           if [ ! -f "${app_exec}" ]; then
-            hdiutil detach "${volume}"
             echo "Executable not found in DMG at ${app_exec}"
+            hdiutil detach "${mount_point}"
             exit 1
           fi
           codesign -dv "${app_exec}"
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
-          echo "E2E_DMG_VOLUME=${volume}" >> "${GITHUB_ENV}"
+          echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
 
       - name: Full E2E test against installed app (with video)
         run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" ${E2E_APP_ARGS}
