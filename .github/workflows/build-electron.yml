@@ -1,6 +1,10 @@
 name: Build Electron
 
 on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       target:
@@ -9,35 +13,72 @@ on:
         required: true
         default: linux
         options:
+          - all
           - macos
           - linux
           - windows
       publish_release:
-        description: "Attach this target artifact to a GitHub release"
+        description: "Attach artifacts to a GitHub release"
         type: boolean
         required: true
         default: false
       release_tag:
-        description: "Release tag to create/update when publish_release is enabled"
+        description: "Release tag (required when publish_release=true)"
         type: string
         required: false
 
 jobs:
-  package-macos:
-    if: github.event.inputs.target == 'macos'
-    runs-on: macos-14
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runs-on: macos-14
+            build-command: npm run build:mac
+            smoke-prefix: ""
+            artifact-name: splitshot-macos
+            artifact-glob: electron/build/*.dmg
+            deps: brew
+
+          - platform: linux
+            runs-on: [self-hosted, Linux, X64]
+            build-command: npm run build:linux
+            smoke-prefix: xvfb-run -a
+            artifact-name: splitshot-linux
+            artifact-glob: electron/build/*.AppImage
+            deps: linux-apt
+
+          - platform: windows
+            runs-on: [self-hosted, Windows, X64]
+            build-command: npm run build:win
+            smoke-prefix: ""
+            artifact-name: splitshot-windows
+            artifact-glob: electron/build/*.exe
+            deps: windows-choco
+
+    if: |
+      !cancelled() && (
+        github.event_name != 'workflow_dispatch' ||
+        github.event.inputs.target == 'all' ||
+        github.event.inputs.target == matrix.platform
+      )
+
     permissions:
       contents: write
+
     defaults:
       run:
         shell: bash
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Validate release publish inputs
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true'
         run: |
           set -euo pipefail
-          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
+          if [ -z "${{ github.event.inputs.release_tag }}" ]; then
             echo "release_tag is required when publish_release=true"
             exit 1
           fi
@@ -55,11 +96,22 @@ jobs:
       - name: Install managed Python 3.12
         run: uv python install 3.12
 
-      - name: Install system dependencies
+      - name: Install system dependencies (macOS)
+        if: matrix.deps == 'brew'
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then
             brew install ffmpeg
           fi
+
+      - name: Install system dependencies (Linux)
+        if: matrix.deps == 'linux-apt'
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+        timeout-minutes: 15
+
+      - name: Bootstrap runner toolchain (Windows)
+        if: matrix.deps == 'windows-choco'
+        run: powershell -ExecutionPolicy Bypass -File scripts/setup/setup_self_hosted_runner_windows.ps1
+        timeout-minutes: 15
 
       - name: Verify host toolchain
         run: |
@@ -78,6 +130,7 @@ jobs:
         timeout-minutes: 10
 
       - name: Prepare macOS signing certificate
+        if: matrix.platform == 'macos'
         env:
           MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
@@ -125,6 +178,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Configure macOS notarization credentials
+        if: matrix.platform == 'macos'
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -163,129 +217,49 @@ jobs:
       - name: Build Electron app
         run: |
           set -euo pipefail
-          export CSC_LINK="${MAC_CERT_FILE}"
-          export CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
+          if [ "${{ matrix.platform }}" = "macos" ]; then
+            export CSC_LINK="${MAC_CERT_FILE}"
+            export CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
+          fi
           cd electron
-          npm run build:mac
+          ${{ matrix.build-command }}
         timeout-minutes: 30
         env:
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
           MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
 
       - name: Run packaged Electron smoke test
-        run: uv run python scripts/testing/test_electron_app.py
+        run: ${{ matrix.smoke-prefix }} uv run python scripts/testing/test_electron_app.py
         timeout-minutes: 10
 
       - name: Verify installer
         run: |
           shopt -s nullglob
-          found=( electron/build/*.dmg )
+          found=( ${{ matrix.artifact-glob }} )
           if [ ${#found[@]} -eq 0 ]; then
-            echo "No macOS installers found in electron/build/"
+            echo "No ${{ matrix.platform }} installers found in electron/build/"
             exit 1
           fi
           for f in "${found[@]}"; do
             ls -lh "$f"
           done
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: splitshot-macos
-          path: electron/build/*.dmg
-
-      - name: Publish release artifacts
-        if: github.event.inputs.publish_release == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          files: electron/build/*.dmg
-          generate_release_notes: true
-
-      - name: Cleanup macOS signing artifacts
-        if: always()
+      - name: Verify installer signed (macOS)
+        if: matrix.platform == 'macos'
         run: |
           set -euo pipefail
-          if [ -n "${MAC_CERT_KEYCHAIN:-}" ] && [ -f "${MAC_CERT_KEYCHAIN}" ]; then
-            security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
-          fi
-          if [ -n "${MAC_CERT_TMPDIR:-}" ] && [ -d "${MAC_CERT_TMPDIR}" ]; then
-            rm -rf "${MAC_CERT_TMPDIR}"
-          fi
-
-  package-linux:
-    if: github.event.inputs.target == 'linux'
-    runs-on: [self-hosted, Linux, X64]
-    permissions:
-      contents: write
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate release publish inputs
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
-            echo "release_tag is required when publish_release=true"
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
-      - name: Install managed Python 3.12
-        run: uv python install 3.12
-
-      - name: Install system dependencies
-        run: sudo bash scripts/testing/install_ci_linux_deps.sh
-
-      - name: Verify host toolchain
-        run: |
-          python3 --version
-          node --version
-          npm --version
-          uv --version
-          ffmpeg -version | head -n 1
-
-      - name: Sync Python dependencies
-        run: uv sync --frozen --extra dev --python 3.12
-        timeout-minutes: 15
-
-      - name: Install Node dependencies
-        run: cd electron && npm install
-        timeout-minutes: 10
-
-      - name: Build Electron app
-        run: cd electron && npm run build:linux
-        timeout-minutes: 30
-
-      - name: Run packaged Electron smoke test
-        run: xvfb-run -a uv run python scripts/testing/test_electron_app.py
-        timeout-minutes: 10
-
-      - name: Verify installer
-        run: |
           shopt -s nullglob
-          found=( electron/build/*.AppImage )
-          if [ ${#found[@]} -eq 0 ]; then
-            echo "No Linux installers found in electron/build/"
+          apps=( electron/build/*/SplitShot.app )
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "No .app bundle found in electron/build/"
             exit 1
           fi
-          for f in "${found[@]}"; do
-            ls -lh "$f"
+          for app in "${apps[@]}"; do
+            codesign -dv "$app"
           done
 
-      - name: Verify Linux artifact metadata
+      - name: Verify AppImage metadata (Linux)
+        if: matrix.platform == 'linux'
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -308,98 +282,53 @@ jobs:
           grep -q 'application/x-splitshot-project' "${desktop_file}"
           grep -q 'x-scheme-handler/splitshot' "${desktop_file}"
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: splitshot-linux
-          path: electron/build/*.AppImage
-
-      - name: Publish release artifacts
-        if: github.event.inputs.publish_release == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.release_tag }}
-          target_commitish: ${{ github.sha }}
-          files: electron/build/*.AppImage
-          generate_release_notes: true
-
-  package-windows:
-    if: github.event.inputs.target == 'windows'
-    runs-on: [self-hosted, Windows, X64]
-    permissions:
-      contents: write
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Validate release publish inputs
+      - name: Verify installer metadata (Windows)
+        if: matrix.platform == 'windows'
         run: |
           set -euo pipefail
-          if [ "${{ github.event.inputs.publish_release }}" = "true" ] && [ -z "${{ github.event.inputs.release_tag }}" ]; then
-            echo "release_tag is required when publish_release=true"
-            exit 1
-          fi
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Bootstrap runner toolchain
-        run: powershell -ExecutionPolicy Bypass -File scripts/setup/setup_self_hosted_runner_windows.ps1
-        timeout-minutes: 15
-
-      - name: Install managed Python 3.12
-        run: uv python install 3.12
-
-      - name: Verify host toolchain
-        run: |
-          node --version
-          npm --version
-          uv --version
-          ffmpeg -version | head -n 1
-
-      - name: Sync Python dependencies
-        run: uv sync --frozen --extra dev --python 3.12
-        timeout-minutes: 15
-
-      - name: Install Node dependencies
-        run: cd electron && npm install
-        timeout-minutes: 10
-
-      - name: Build Electron app
-        run: cd electron && npm run build:win
-        timeout-minutes: 30
-
-      - name: Run packaged Electron smoke test
-        run: uv run python scripts/testing/test_electron_app.py
-        timeout-minutes: 10
-
-      - name: Verify installer
-        run: |
           shopt -s nullglob
-          found=( electron/build/*.exe )
-          if [ ${#found[@]} -eq 0 ]; then
-            echo "No Windows installers found in electron/build/"
+          installers=( electron/build/*.exe )
+          if [ ${#installers[@]} -eq 0 ]; then
+            echo "No Windows installer found for metadata verification"
             exit 1
           fi
-          for f in "${found[@]}"; do
-            ls -lh "$f"
-          done
+          powershell -ExecutionPolicy Bypass -Command "
+            \$installer = Get-Item '${installers[0]}'
+            \$version = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(\$installer.FullName)
+            Write-Output \"File: \$(\$installer.Name)\"
+            Write-Output \"Size: \$(\$installer.Length) bytes\"
+            Write-Output \"ProductName: \$(\$version.ProductName)\"
+            Write-Output \"FileVersion: \$(\$version.FileVersion)\"
+            if (-not \$version.ProductName -or \$version.ProductName -notlike '*SplitShot*') {
+              Write-Error 'Installer ProductName does not contain SplitShot'
+              exit 1
+            }
+          "
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: splitshot-windows
-          path: electron/build/*.exe
+          name: ${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-glob }}
 
       - name: Publish release artifacts
-        if: github.event.inputs.publish_release == 'true'
+        if: >
+          (github.event_name == 'release') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.release_tag }}
+          tag_name: ${{ github.event.release.tag_name || github.event.inputs.release_tag }}
           target_commitish: ${{ github.sha }}
-          files: electron/build/*.exe
-          generate_release_notes: true
+          files: ${{ matrix.artifact-glob }}
+          generate_release_notes: ${{ github.event_name == 'release' }}
+
+      - name: Cleanup macOS signing artifacts
+        if: matrix.platform == 'macos'
+        run: |
+          set -euo pipefail
+          if [ -n "${MAC_CERT_KEYCHAIN:-}" ] && [ -f "${MAC_CERT_KEYCHAIN}" ]; then
+            security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
+          fi
+          if [ -n "${MAC_CERT_TMPDIR:-}" ] && [ -d "${MAC_CERT_TMPDIR}" ]; then
+            rm -rf "${MAC_CERT_TMPDIR}"
+          fi
