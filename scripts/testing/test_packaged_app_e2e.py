@@ -118,13 +118,17 @@ def main():
 
         video_file = args.video_dir / f"e2e-{sys.platform}.mp4"
 
+        pw_env = dict(os.environ)
+        pw_env.pop("QT_QPA_PLATFORM", None)
+        pw_env.pop("APPIMAGE_EXTRACT_AND_RUN", None)
+        pw_env["CI"] = "1"
         pw_result = subprocess.run(
             [sys.executable, str(PLAYWRIGHT_SCRIPT),
              "--port", str(port),
              "--video", str(video_path),
              "--video-output", str(video_file)],
             capture_output=True, text=True, timeout=300,
-            env={**os.environ, "CI": "1"})
+            env=minimal_env)
         print(pw_result.stdout, flush=True)
         if pw_result.returncode != 0:
             print(pw_result.stderr, file=sys.stderr, flush=True)
