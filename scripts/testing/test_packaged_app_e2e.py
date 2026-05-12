@@ -178,8 +178,24 @@ def main():
                 record_video_dir=str(args.video_dir / "pw-video") if not args.no_video else None)
             page = context.new_page()
 
-            page.goto(f"http://127.0.0.1:{port}", wait_until="domcontentloaded", timeout=30000)
-            print("PASS: Playwright connected to app", flush=True)
+            import urllib.request
+            try:
+                root_resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10)
+                print(f"PASS: HTTP / responds HTTP {root_resp.status} ({len(root_resp.read())} bytes)", flush=True)
+            except Exception as e:
+                print(f"WARN: HTTP / failed: {e}", flush=True)
+
+            try:
+                api_resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=10)
+                api_data = json.loads(api_resp.read().decode())
+                print(f"PASS: API /api/state responds: project={bool(api_data.get('project'))}", flush=True)
+            except Exception as e:
+                print(f"WARN: API /api/state failed: {e}", flush=True)
+
+            page.goto(f"http://127.0.0.1:{port}", wait_until="commit", timeout=10000)
+            print("PASS: Playwright page navigation committed", flush=True)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            print("PASS: Playwright DOM content loaded", flush=True)
 
             state = page.evaluate("typeof state !== 'undefined'")
             print(f"PASS: app state object available: {state}", flush=True)
