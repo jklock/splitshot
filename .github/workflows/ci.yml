@@ -314,8 +314,9 @@ jobs:
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+            export DISPLAY="${DISPLAY:-:99}"
           fi
-          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" -- ${E2E_APP_ARGS}
+          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
         timeout-minutes: 15
 
       - name: Upload E2E test video
