@@ -2,7 +2,9 @@
 set -euo pipefail
 
 package_exists() {
-  apt-cache show "$1" >/dev/null 2>&1
+  local candidate
+  candidate=$(apt-cache policy "$1" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2}')
+  [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
 }
 
 choose_package() {

@@ -16,8 +16,7 @@
     "build": "node ../scripts/bundle-python.js && electron-builder --publish=never",
     "build:mac": "node ../scripts/bundle-python.js && electron-builder --mac --publish=never",
     "build:win": "node ../scripts/bundle-python.js && electron-builder --win --publish=never",
-    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux --publish=never",
-
+    "build:linux": "node ../scripts/bundle-python.js && electron-builder --linux --publish=never"
   },
   "repository": "github:jklock/splitshot",
   "author": "SplitShot",
