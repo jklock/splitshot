@@ -310,13 +310,17 @@ jobs:
           echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
           echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
 
-      - name: Full E2E test against installed app (with video)
+      - name: Test installed app (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: |
-          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-            export DISPLAY="${DISPLAY:-:99}"
-          fi
-          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
+          export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          ${E2E_PREFIX} uv run python scripts/testing/test_electron_app.py --app "${APP_EXECUTABLE}"
+        timeout-minutes: 10
+
+      - name: Full E2E test against installed app (macOS / Windows)
+        if: matrix.os != 'ubuntu-latest'
+        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
+        timeout-minutes: 15
         timeout-minutes: 15
 
       - name: Upload E2E test video

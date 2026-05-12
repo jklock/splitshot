@@ -29,7 +29,8 @@ def _find_free_port() -> int:
 
 def _create_synthetic_video(output_dir: Path) -> Path:
     video_path = output_dir / "e2e-test-video.mp4"
-    subprocess.run(
+    print("[video] creating synthetic video...", flush=True)
+    result = subprocess.run(
         [
             "ffmpeg", "-y", "-v", "error",
             "-f", "lavfi",
@@ -37,12 +38,16 @@ def _create_synthetic_video(output_dir: Path) -> Path:
             "-f", "lavfi",
             "-i", "sine=frequency=440:duration=4",
             "-c:v", "libx264", "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-shortest",
+            "-c:a", "aac", "-shortest",
             str(video_path),
         ],
-        check=True,
+        capture_output=True,
+        text=True,
     )
+    if result.returncode != 0:
+        print(f"[video] ffmpeg exit {result.returncode}: {result.stderr}", flush=True)
+        result.check_returncode()
+    print(f"[video] created {video_path}", flush=True)
     return video_path
 
 
@@ -184,10 +189,18 @@ def main() -> int:
     print("E2E_EXECUTABLE_OK", flush=True)
 
     args.video_dir.mkdir(parents=True, exist_ok=True)
+    print("E2E_MKDIR_OK", flush=True)
     work_dir = Path(tempfile.mkdtemp(prefix="splitshot-e2e-"))
+    print("E2E_WORKDIR_OK", flush=True)
     log_dir = Path(tempfile.mkdtemp(prefix="splitshot-e2e-logs-"))
-    video_path = _create_synthetic_video(work_dir)
+    print("E2E_LOGDIR_OK", flush=True)
     ready_file = work_dir / "events.jsonl"
+    print("E2E_READYFILE_OK", flush=True)
+    video_path = _create_synthetic_video(work_dir) if os.environ.get("E2E_SKIP_VIDEO") != "1" else None
+    print("E2E_VIDEO_OK", flush=True)
+    if video_path is None:
+        video_path = work_dir / "e2e-test-video.mp4"
+        video_path.write_text("")
     port = _find_free_port()
     stdout_log = log_dir / "stdout.log"
     stderr_log = log_dir / "stderr.log"
