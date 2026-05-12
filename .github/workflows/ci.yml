@@ -321,7 +321,6 @@ jobs:
         if: matrix.os != 'ubuntu-latest'
         run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
         timeout-minutes: 15
-        timeout-minutes: 15
 
       - name: Upload E2E test video
         if: always()
