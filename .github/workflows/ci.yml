@@ -140,8 +140,10 @@ jobs:
         timeout-minutes: 10
 
       - name: Install Playwright browsers
-        run: uv run python -m playwright install --with-deps chromium
-        timeout-minutes: 10
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+        timeout-minutes: 15
 
       - name: Prepare macOS signing certificate
         if: matrix.os == 'macos-latest'
