@@ -251,7 +251,7 @@ jobs:
           chmod +x "${unpacked}"
           echo "APP_EXECUTABLE=${unpacked}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=env LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH} QT_QPA_PLATFORM=offscreen xvfb-run -a" >> "${GITHUB_ENV}"
-          echo "E2E_APP_ARGS=--no-sandbox" >> "${GITHUB_ENV}"
+          echo "E2E_APP_ARGS=--no-sandbox --disable-gpu --disable-software-rasterizer" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
         if: matrix.os == 'windows-latest'
