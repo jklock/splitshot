@@ -262,14 +262,17 @@ jobs:
             echo "No Windows installer found"
             exit 1
           fi
-          install_dir="C:/tools/splitshot-test"
-          "${installers[0]}" /S "/D=${install_dir}"
-          installed_exe="${install_dir}/SplitShot.exe"
-          if [ ! -f "${installed_exe}" ]; then
-            installed_exe="/c/Program Files/SplitShot/SplitShot.exe"
+          "${installers[0]}" /S
+          sleep 5
+          installed_exe=$(find "/c/Program Files" "/c/Program Files (x86)" -name "SplitShot.exe" -path "*/SplitShot/*" 2>/dev/null | head -1)
+          if [ -z "${installed_exe}" ]; then
+            installed_exe=$(find "/c/Users" -name "SplitShot.exe" -path "*/AppData/Local/*" 2>/dev/null | head -1)
           fi
-          if [ ! -f "${installed_exe}" ]; then
+          if [ -z "${installed_exe}" ]; then
             echo "Could not find installed SplitShot.exe"
+            echo "Searching common paths..."
+            ls -la "/c/Program Files/SplitShot/" 2>/dev/null || echo "Not in Program Files"
+            ls -la "/c/Program Files (x86)/SplitShot/" 2>/dev/null || echo "Not in Program Files (x86)"
             exit 1
           fi
           echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
@@ -302,7 +305,7 @@ jobs:
           echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
 
       - name: Full E2E test against installed app (with video)
-        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" ${E2E_APP_ARGS}
+        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" -- ${E2E_APP_ARGS}
         timeout-minutes: 15
 
       - name: Upload E2E test video

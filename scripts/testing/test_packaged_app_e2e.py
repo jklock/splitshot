@@ -172,7 +172,7 @@ def main() -> int:
     parser.add_argument("--app", type=Path, required=True, help="Installed app executable")
     parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR, help="Output dir for recorded video")
     parser.add_argument("--no-video", action="store_true", help="Skip video recording")
-    parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Extra args passed to the app executable")
+    parser.add_argument("extra_args", nargs='*', help="Extra args passed to the app executable (use -- before them)")
     args = parser.parse_args()
 
     executable = args.app.resolve()
