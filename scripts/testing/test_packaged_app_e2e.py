@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Full E2E test of installed Electron app via Playwright with video recording."""
+#!/usr/bin/env python3
+"""Full E2E test: launch app, run Playwright browser interactions, record video."""
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import shutil
@@ -19,28 +19,47 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
 TIMEOUT = 120
-PLAYWRIGHT_SCRIPT = REPO / "scripts" / "testing" / "_playwright_e2e.py"
 
 
-def _find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+def _free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
-def _create_test_video(output_dir: Path) -> Path:
-    video_path = output_dir / "e2e-test-video.mp4"
+def _create_test_video(out_dir):
+    path = out_dir / "e2e-vid.mp4"
     subprocess.run(
         ["ffmpeg", "-y", "-v", "error",
          "-f", "lavfi", "-i", "color=c=black:s=640x360:d=4:r=30",
          "-f", "lavfi", "-i", "sine=frequency=440:duration=4",
          "-c:v", "libx264", "-pix_fmt", "yuv420p",
-         "-c:a", "aac", "-shortest", str(video_path)],
+         "-c:a", "aac", "-shortest", str(path)],
         check=True, capture_output=True, timeout=30)
-    return video_path
+    return path
 
 
-def _spawn_app(executable, ready_file, port, project_path, stdout_path, stderr_path):
+def main():
+    executable = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else None
+    if not executable or not executable.exists():
+        print("Usage: test_packaged_app_e2e.py <executable>", file=sys.stderr)
+        return 1
+
+    work_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-"))
+    log_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-logs-"))
+    ready_file = work_dir / "events.jsonl"
+    port = _free_port()
+
+    try:
+        video_path = _create_test_video(work_dir)
+    except Exception as e:
+        print(f"WARN: video failed ({e})", flush=True)
+        video_path = work_dir / "e2e-vid.mp4"
+        video_path.write_text("")
+
+    log_out = log_dir / "stdout.log"
+    log_err = log_dir / "stderr.log"
+
     env = {**os.environ, "CI": "1", "SPLITSHOT_ELECTRON_TEST": "1",
            "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
            "SPLITSHOT_TEST_PORT": str(port)}
@@ -48,91 +67,47 @@ def _spawn_app(executable, ready_file, port, project_path, stdout_path, stderr_p
     if sys.platform.startswith("linux"):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
         cmd.append("--no-sandbox")
-    if project_path:
-        cmd.append(str(project_path))
-    with stdout_path.open("w") as out, stderr_path.open("w") as err:
-        return subprocess.Popen(cmd, cwd=executable.parent, env=env, stdout=out, stderr=err, text=True)
+    cmd.append(str(video_path.parent / "e2e.ssproj"))
 
-
-def _wait_for_backend(proc, port, timeout=TIMEOUT):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            raise RuntimeError("App exited before backend was ready")
-        try:
-            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=5)
-            return
-        except (urllib.error.URLError, ConnectionResetError):
-            time.sleep(0.25)
-    raise TimeoutError("Backend did not respond")
-
-
-def _terminate(proc):
-    if proc and proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait(timeout=5)
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--app", type=Path, required=True)
-    parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR)
-    parser.add_argument("--no-video", action="store_true")
-    args = parser.parse_args()
-
-    executable = args.app.resolve()
-    if not executable.exists():
-        print(f"FAIL: executable not found at {executable}", file=sys.stderr)
-        return 1
-
-    args.video_dir.mkdir(parents=True, exist_ok=True)
-    work_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-"))
-    log_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-logs-"))
-
-    try:
-        video_path = _create_test_video(work_dir)
-    except Exception as e:
-        print(f"WARN: video creation failed ({e})", flush=True)
-        video_path = work_dir / "e2e-test-video.mp4"
-        video_path.write_text("")
-
-    ready_file = work_dir / "events.jsonl"
-    port = _find_free_port()
-    stdout_log = log_dir / "stdout.log"
-    stderr_log = log_dir / "stderr.log"
-
-    print(f"E2E executable={executable}", flush=True)
     print(f"E2E port={port}", flush=True)
-    print(f"E2E video={video_path}", flush=True)
-
-    proc = _spawn_app(executable, ready_file, port, video_path.parent / "e2e.ssproj",
-                       stdout_log, stderr_log)
+    with log_out.open("w") as o, log_err.open("w") as e:
+        proc = subprocess.Popen(cmd, cwd=executable.parent, env=env, stdout=o, stderr=e, text=True)
 
     try:
-        _wait_for_backend(proc, port)
-        print("PASS: backend is responding", flush=True)
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if proc.poll() is not None:
+                raise RuntimeError(f"App exited (code {proc.returncode})")
+            try:
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/api/state", timeout=5)
+                break
+            except (urllib.error.URLError, ConnectionResetError):
+                time.sleep(0.25)
+        else:
+            raise TimeoutError("Backend did not respond")
+        print("PASS: backend responding", flush=True)
 
-        video_file = args.video_dir / f"e2e-{sys.platform}.mp4"
+        video_file = ARTIFACTS_DIR / f"e2e-{sys.platform}.mp4"
+        ARTIFACTS_DIR.mkdir(exist_ok=True)
 
-        pw_env = dict(os.environ)
-        pw_env.pop("QT_QPA_PLATFORM", None)
-        pw_env.pop("APPIMAGE_EXTRACT_AND_RUN", None)
-        pw_env["CI"] = "1"
-        pw_result = subprocess.run(
-            [sys.executable, str(PLAYWRIGHT_SCRIPT),
-             "--port", str(port),
-             "--video", str(video_path),
-             "--video-output", str(video_file)],
+        # Run Playwright Node.js script (avoids Python C extension crashes on Linux)
+        electron_dir = REPO / "electron"
+        pw_script = REPO / "scripts" / "testing" / "e2e-playwright.mjs"
+        pw_env = {**os.environ, "E2E_PORT": str(port)}
+        for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
+            pw_env.pop(bad, None)
+
+        result = subprocess.run(
+            ["node", str(pw_script)],
             capture_output=True, text=True, timeout=300,
-            env=minimal_env)
-        print(pw_result.stdout, flush=True)
-        if pw_result.returncode != 0:
-            print(pw_result.stderr, file=sys.stderr, flush=True)
-            raise RuntimeError(f"Playwright E2E test failed (exit {pw_result.returncode})")
+            cwd=electron_dir, env=pw_env)
+
+        print(result.stdout, flush=True)
+        if result.returncode != 0:
+            print(f"FAIL: Playwright exited code {result.returncode}", file=sys.stderr, flush=True)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr, flush=True)
+            raise RuntimeError("Playwright E2E failed")
 
         print("PASS: full E2E test completed", flush=True)
         return 0
@@ -141,17 +116,24 @@ def main():
         print(f"FAIL: {exc}", file=sys.stderr, flush=True)
         if proc.poll() is not None:
             print(f"FAIL: exit code {proc.returncode}", file=sys.stderr, flush=True)
-        for log in [stdout_log, stderr_log]:
-            if log and log.exists():
-                lines = log.read_text(encoding="utf-8").splitlines()
-                print(f"--- {log.name} tail ---", file=sys.stderr, flush=True)
+        for l in [log_out, log_err]:
+            if l and l.exists():
+                lines = l.read_text().splitlines()
+                print(f"--- {l.name} tail ---", file=sys.stderr, flush=True)
                 print("\n".join(lines[-20:]), file=sys.stderr, flush=True)
         return 1
     finally:
-        _terminate(proc)
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
         shutil.rmtree(work_dir, ignore_errors=True)
         shutil.rmtree(log_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
