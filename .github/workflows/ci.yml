@@ -311,6 +311,7 @@ jobs:
           echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
 
       - name: Smoke test installed app
+        shell: bash
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
