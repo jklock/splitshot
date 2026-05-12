@@ -103,6 +103,7 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       APPIMAGE_EXTRACT_AND_RUN: "1"
+      QT_QPA_PLATFORM: "offscreen"
     steps:
       - uses: actions/checkout@v4
 
@@ -240,17 +241,17 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           set -euo pipefail
-          sudo apt-get install -y --no-install-recommends libegl1 libgl1-mesa-glx 2>/dev/null || sudo apt-get install -y --no-install-recommends libegl1 libgl1 2>/dev/null || true
-          unpacked="electron/build/linux-unpacked/splitshot"
-          if [ ! -f "${unpacked}" ]; then
-            echo "No linux-unpacked/splitshot found at ${unpacked}"
+          shopt -s nullglob
+          appimages=( electron/build/*.AppImage )
+          if [ ${#appimages[@]} -eq 0 ]; then
+            echo "No AppImage found"
             echo "Checking electron/build/..."
             ls electron/build/
             exit 1
           fi
-          chmod +x "${unpacked}"
-          echo "APP_EXECUTABLE=${unpacked}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=env LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH} QT_QPA_PLATFORM=offscreen xvfb-run -a" >> "${GITHUB_ENV}"
+          chmod +x "${appimages[0]}"
+          echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox --disable-gpu --disable-software-rasterizer" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
