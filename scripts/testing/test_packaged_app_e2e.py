@@ -93,14 +93,15 @@ def main():
         # Run Playwright Node.js script (avoids Python C extension crashes on Linux)
         electron_dir = REPO / "electron"
         pw_script = REPO / "scripts" / "testing" / "e2e-playwright.mjs"
-        pw_env = {**os.environ, "E2E_PORT": str(port)}
+        pw_env = {**os.environ, "E2E_PORT": str(port),
+                   "NODE_PATH": str(electron_dir / "node_modules")}
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
             pw_env.pop(bad, None)
 
         result = subprocess.run(
             ["node", str(pw_script)],
             capture_output=True, text=True, timeout=300,
-            cwd=electron_dir, env=pw_env)
+            cwd=REPO, env=pw_env)
 
         print(result.stdout, flush=True)
         if result.returncode != 0:
