@@ -53,6 +53,7 @@ def _spawn_app(
     project_path: Path | None,
     stdout_path: Path,
     stderr_path: Path,
+    extra_args: list[str] | None = None,
 ) -> subprocess.Popen[str]:
     env = {
         **os.environ,
@@ -62,9 +63,11 @@ def _spawn_app(
         "SPLITSHOT_TEST_PORT": str(port),
     }
     command = [str(executable)]
-    if sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux") and "--no-sandbox" not in (extra_args or []):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
         command.append("--no-sandbox")
+    if extra_args:
+        command.extend(extra_args)
     if project_path:
         command.append(str(project_path))
     with stdout_path.open("w", encoding="utf-8") as out, stderr_path.open("w", encoding="utf-8") as err:
@@ -169,6 +172,7 @@ def main() -> int:
     parser.add_argument("--app", type=Path, required=True, help="Installed app executable")
     parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR, help="Output dir for recorded video")
     parser.add_argument("--no-video", action="store_true", help="Skip video recording")
+    parser.add_argument("extra_args", nargs=argparse.REMAINDER, help="Extra args passed to the app executable")
     args = parser.parse_args()
 
     executable = args.app.resolve()
@@ -192,7 +196,10 @@ def main() -> int:
     print(f"E2E_STDOUT={stdout_log}")
     print(f"E2E_STDERR={stderr_log}")
 
-    proc = _spawn_app(executable, ready_file, port, video_path.parent / "e2e.ssproj", stdout_log, stderr_log)
+    proc = _spawn_app(
+        executable, ready_file, port, video_path.parent / "e2e.ssproj",
+        stdout_log, stderr_log, extra_args=args.extra_args,
+    )
 
     try:
         _wait_for_backend(proc, port)

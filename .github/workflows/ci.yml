@@ -224,6 +224,7 @@ jobs:
           fi
 
       - name: Build Electron app
+        shell: bash
         run: |
           set -euo pipefail
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
@@ -233,9 +234,6 @@ jobs:
           cd electron
           ${{ matrix.build-command }}
         timeout-minutes: 30
-        env:
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
-          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
 
       - name: Extract or install package (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -248,14 +246,9 @@ jobs:
             exit 1
           fi
           chmod +x "${appimages[0]}"
-          extract_dir="$(mktemp -d)"
-          cd "${extract_dir}"
-          "${OLDPWD}/${appimages[0]}" --appimage-extract >/dev/null
-          cd "${OLDPWD}"
-          apprun="${extract_dir}/squashfs-root/AppRun"
-          chmod +x "${apprun}"
-          echo "APP_EXECUTABLE=${apprun}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
+          echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a" >> "${GITHUB_ENV}"
+          echo "E2E_APP_ARGS=--no-sandbox" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
         if: matrix.os == 'windows-latest'
@@ -279,6 +272,7 @@ jobs:
           fi
           echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
+          echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
 
       - name: Mount package (macOS)
         if: matrix.os == 'macos-latest'
@@ -300,10 +294,11 @@ jobs:
           codesign -dv "${app_exec}"
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
+          echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
           echo "E2E_DMG_VOLUME=${volume}" >> "${GITHUB_ENV}"
 
       - name: Full E2E test against installed app (with video)
-        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
+        run: ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}" ${E2E_APP_ARGS}
         timeout-minutes: 15
 
       - name: Upload E2E test video
