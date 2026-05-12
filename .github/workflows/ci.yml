@@ -240,6 +240,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           set -euo pipefail
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1-mesa-glx 2>/dev/null || sudo apt-get install -y --no-install-recommends libegl1 libgl1 2>/dev/null || true
           unpacked="electron/build/linux-unpacked/splitshot"
           if [ ! -f "${unpacked}" ]; then
             echo "No linux-unpacked/splitshot found at ${unpacked}"
@@ -249,7 +250,7 @@ jobs:
           fi
           chmod +x "${unpacked}"
           echo "APP_EXECUTABLE=${unpacked}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=env LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox" >> "${GITHUB_ENV}"
 
       - name: Install package (Windows)
