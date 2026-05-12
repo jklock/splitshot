@@ -98,7 +98,7 @@ def main():
 
         # Run Playwright Node.js script (avoids Python C extension crashes on Linux)
         electron_dir = REPO / "electron"
-        pw_script = REPO / "scripts" / "testing" / "e2e-playwright.mjs"
+        pw_script = REPO / "scripts" / "testing" / "e2e-playwright.cjs"
         pw_env = {**os.environ, "E2E_PORT": str(port),
                    "NODE_PATH": str(electron_dir / "node_modules")}
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
