@@ -102,7 +102,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
       - uses: actions/checkout@v4
 
