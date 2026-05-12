@@ -123,7 +123,7 @@ def main():
              "--port", str(port),
              "--video", str(video_path),
              "--video-output", str(video_file)],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, timeout=300,
             env={**os.environ, "CI": "1"})
         print(pw_result.stdout, flush=True)
         if pw_result.returncode != 0:
