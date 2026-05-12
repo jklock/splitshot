@@ -257,58 +257,41 @@ jobs:
           echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=--no-sandbox --disable-gpu --disable-software-rasterizer" >> "${GITHUB_ENV}"
 
-      - name: Install package (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          installers=( electron/build/*.exe )
-          if [ ${#installers[@]} -eq 0 ]; then
-            echo "No Windows installer found"
-            exit 1
-          fi
-          "${installers[0]}" /S
-          sleep 5
-          installed_exe=$(find "/c/Program Files" "/c/Program Files (x86)" -name "SplitShot.exe" -path "*/SplitShot/*" 2>/dev/null | head -1)
-          if [ -z "${installed_exe}" ]; then
-            installed_exe=$(find "/c/Users" -name "SplitShot.exe" -path "*/AppData/Local/*" 2>/dev/null | head -1)
-          fi
-          if [ -z "${installed_exe}" ]; then
-            echo "Could not find installed SplitShot.exe"
-            echo "Searching common paths..."
-            ls -la "/c/Program Files/SplitShot/" 2>/dev/null || echo "Not in Program Files"
-            ls -la "/c/Program Files (x86)/SplitShot/" 2>/dev/null || echo "Not in Program Files (x86)"
-            exit 1
-          fi
-          echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
-          echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
-          echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
-
-      - name: Mount package (macOS)
+      - name: Use unpacked build (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-          dmgs=( electron/build/*.dmg )
-          if [ ${#dmgs[@]} -eq 0 ]; then
-            echo "No DMG found"
+          apps=( electron/build/*/SplitShot.app )
+          if [ ${#apps[@]} -eq 0 ]; then
+            echo "No .app bundle found in electron/build/"
             exit 1
           fi
-          mount_point=$(mktemp -d)
-          hdiutil attach -nobrowse -mountpoint "${mount_point}" "${dmgs[0]}"
-          app_exec="${mount_point}/SplitShot.app/Contents/MacOS/SplitShot"
+          app_exec="${apps[0]}/Contents/MacOS/SplitShot"
           if [ ! -f "${app_exec}" ]; then
-            echo "Executable not found in DMG at ${app_exec}"
-            hdiutil detach "${mount_point}"
+            echo "Executable not found at ${app_exec}"
             exit 1
           fi
           codesign -dv "${app_exec}"
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
           echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
-          echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
+
+      - name: Use unpacked build (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          installed_exe="electron/build/win-unpacked/SplitShot.exe"
+          if [ ! -f "${installed_exe}" ]; then
+            echo "No win-unpacked/SplitShot.exe found at ${installed_exe}"
+            ls electron/build/
+            exit 1
+          fi
+          echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
+          echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
+          echo "E2E_APP_ARGS=" >> "${GITHUB_ENV}"
 
       - name: Smoke test installed app
         shell: bash
@@ -344,13 +327,6 @@ jobs:
           for f in "${found[@]}"; do
             ls -lh "$f"
           done
-
-      - name: Cleanup DMG mount (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          if [ -n "${E2E_DMG_VOLUME:-}" ]; then
-            hdiutil detach "${E2E_DMG_VOLUME}" 2>/dev/null || true
-          fi
 
       - name: Cleanup macOS signing artifacts
         if: matrix.os == 'macos-latest'
