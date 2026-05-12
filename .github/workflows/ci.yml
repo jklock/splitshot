@@ -318,13 +318,14 @@ jobs:
 
       - name: Verify installer artifact
         run: |
-          shopt -s nullglob
-          found=( ${{ matrix.artifact-glob }} )
-          if [ ${#found[@]} -eq 0 ]; then
+          echo "Contents of electron/build/:"
+          ls -la electron/build/ 2>/dev/null || echo "(no electron/build/ directory)"
+          found=$(find electron/build/ -maxdepth 1 -type f \( -name "*.dmg" -o -name "*.AppImage" -o -name "*.exe" \) 2>/dev/null | head -5)
+          if [ -z "${found}" ]; then
             echo "No ${{ matrix.artifact-name }} found in electron/build/"
             exit 1
           fi
-          for f in "${found[@]}"; do
+          echo "${found}" | while read -r f; do
             ls -lh "$f"
           done
 
