@@ -27,6 +27,20 @@ def _free_port():
         return s.getsockname()[1]
 
 
+def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
+    script = (
+        "from pathlib import Path; import sys; "
+        "from splitshot.domain.models import Project; "
+        "from splitshot.persistence.projects import save_project; "
+        "save_project(Project(name=sys.argv[2]), Path(sys.argv[1]))"
+    )
+    subprocess.run(
+        ["uv", "run", "python", "-c", script, str(project_path), name],
+        cwd=REPO, capture_output=True, text=True, timeout=60, check=True,
+    )
+    return project_path
+
+
 def _create_test_video(out_dir):
     path = out_dir / "e2e-vid.mp4"
     subprocess.run(
@@ -54,6 +68,7 @@ def main():
     log_dir = Path(tempfile.mkdtemp(prefix="sshot-e2e-logs-"))
     ready_file = work_dir / "events.jsonl"
     port = _free_port()
+    project_path = work_dir / "e2e.ssproj"
 
     try:
         video_path = _create_test_video(work_dir)
@@ -61,6 +76,9 @@ def main():
         print(f"WARN: video failed ({e})", flush=True)
         video_path = work_dir / "e2e-vid.mp4"
         video_path.write_text("")
+
+    print("Creating project bundle...", flush=True)
+    _create_project_bundle(project_path)
 
     log_out = log_dir / "stdout.log"
     log_err = log_dir / "stderr.log"
@@ -72,7 +90,7 @@ def main():
     if sys.platform.startswith("linux"):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
         cmd.append("--no-sandbox")
-    cmd.append(str(video_path.parent / "e2e.ssproj"))
+    cmd.append(str(project_path))
 
     print(f"E2E port={port}", flush=True)
     with log_out.open("w") as o, log_err.open("w") as e:
@@ -95,7 +113,7 @@ def main():
         video_file = ARTIFACTS_DIR / f"e2e-{sys.platform}.mp4"
         ARTIFACTS_DIR.mkdir(exist_ok=True)
 
-        # Run Playwright Node.js script (avoids Python C extension crashes on Linux)
+        # Run Playwright Node.js script
         electron_dir = REPO / "electron"
         pw_script = REPO / "scripts" / "testing" / "e2e-playwright.cjs"
         pw_log_dir = ARTIFACTS_DIR / "e2e-logs"
@@ -112,13 +130,11 @@ def main():
             capture_output=True, text=True, timeout=300,
             cwd=REPO, env=pw_env)
 
-        # Always print Playwright output (stdout + stderr), even on success
         if result.stdout:
             print(result.stdout, flush=True)
         if result.stderr:
             print(result.stderr, file=sys.stderr, flush=True)
 
-        # Print log summary
         summary_file = pw_log_dir / "summary.json"
         if summary_file.exists():
             try:
@@ -129,15 +145,13 @@ def main():
             except Exception:
                 pass
 
-        # List captured artifacts
         captured = list(pw_log_dir.glob("*"))
         if captured:
             print(f"E2E ARTIFACTS ({len(captured)} files):", flush=True)
             for f in sorted(captured):
                 sz = f.stat().st_size
-                print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz > 0 else f"  {f.name} (empty)", flush=True)
+                print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True)
 
-        print(result.stdout, flush=True)
         if result.returncode != 0:
             print(f"FAIL: Playwright exited code {result.returncode}", file=sys.stderr, flush=True)
             if result.stderr:
@@ -171,4 +185,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

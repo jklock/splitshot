@@ -298,14 +298,28 @@ jobs:
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
-      - name: Use unpacked build (Windows)
+      - name: Install from NSIS (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail
-          app="electron/build/win-unpacked/SplitShot.exe"
-          if [ ! -f "$app" ]; then echo "No win-unpacked found"; ls electron/build/; exit 1; fi
-          echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
+          shopt -s nullglob
+          installers=( electron/build/*.exe )
+          if [ ${#installers[@]} -eq 0 ]; then
+            echo "No installer found, falling back to win-unpacked"
+            app="electron/build/win-unpacked/SplitShot.exe"
+            if [ ! -f "$app" ]; then echo "No win-unpacked either"; ls electron/build/; exit 1; fi
+            echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
+          else
+            "${installers[0]}" /S
+            sleep 5
+            found=$(find "/c/Program Files" "/c/Program Files (x86)" "/c/Users" -name "SplitShot.exe" -path "*/SplitShot/*" 2>/dev/null | head -1)
+            if [ -z "$found" ]; then
+              echo "NSIS installed but exe not in search paths, using win-unpacked"
+              found="electron/build/win-unpacked/SplitShot.exe"
+            fi
+            echo "APP_EXECUTABLE=$found" >> "${GITHUB_ENV}"
+          fi
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
       - name: Full E2E test with Playwright + video recording

@@ -222,8 +222,25 @@ async function main() {
       }
       if (fileFound) {
         const sz = fs.statSync(exportFile).size;
-        log(`export verified: ${exportFile} (${(sz / 1024 / 1024).toFixed(2)} MB)`);
+        log(`export file exists: ${exportFile} (${(sz / 1024 / 1024).toFixed(2)} MB)`);
         artifacts.push(exportFile);
+
+        // Validate exported file with ffprobe
+        const { execSync } = require('child_process');
+        try {
+          const probe = execSync(`ffprobe -v error -show_entries format=format_name,duration,size -of json "${exportFile}"`, { encoding: 'utf8', timeout: 15 });
+          const info = JSON.parse(probe);
+          const fmt = info.format?.format_name || 'unknown';
+          const dur = info.format?.duration || '0';
+          log(`export validation: format=${fmt} duration=${dur}s size=${(sz / 1024 / 1024).toFixed(2)}MB`);
+          if (sz < 1024) { // less than 1KB is probably corrupt
+            warn(`export file suspiciously small (${sz} bytes)`);
+            await screenshot(page, 'fail-export-small');
+          }
+        } catch (e) {
+          warn(`export ffprobe validation failed: ${e.message}`);
+          await screenshot(page, 'fail-export-ffprobe');
+        }
       } else {
         warn('export file not found after waiting');
         await screenshot(page, 'fail-export-file');
