@@ -22,7 +22,11 @@ const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
 let appReadyRecorded = false;
 
-if (!app.requestSingleInstanceLock()) {
+// On Windows, requestSingleInstanceLock() silently fails when elevated (admin/SYSTEM).
+// GitHub Actions runners run elevated, causing app.quit() immediately.
+// See https://github.com/electron/electron/issues/35681
+// When SPLITSHOT_ELECTRON_TEST is set (CI), bypass the lock entirely.
+if (!process.env.SPLITSHOT_ELECTRON_TEST && !app.requestSingleInstanceLock()) {
   app.quit();
 }
 
