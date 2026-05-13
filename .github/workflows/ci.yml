@@ -257,21 +257,9 @@ jobs:
             echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
           else
             chmod +x "${appimages[0]}"
-            extract_dir="$(mktemp -d)"
-            cd "${extract_dir}"
-            "${OLDPWD}/${appimages[0]}" --appimage-extract >/dev/null
-            cd "${OLDPWD}"
-            # Find the actual binary inside the extracted AppImage
-            app_bin=$(find "${extract_dir}/squashfs-root" -type f \( -name "splitshot" -o -name "SplitShot" \) ! -name "AppRun" 2>/dev/null | head -1)
-            if [ -n "$app_bin" ]; then
-              chmod +x "$app_bin"
-              echo "APP_EXECUTABLE=$app_bin" >> "${GITHUB_ENV}"
-            else
-              # Fall back to AppRun if binary not found
-              apprun="${extract_dir}/squashfs-root/AppRun"
-              chmod +x "${apprun}"
-              echo "APP_EXECUTABLE=${apprun}" >> "${GITHUB_ENV}"
-            fi
+            # Use AppImage directly (APPIMAGE_EXTRACT_AND_RUN=1 at job level handles auto-extract)
+            echo "APP_EXECUTABLE=${appimages[0]}" >> "${GITHUB_ENV}"
+            echo "E2E_APP_ARGS=--no-sandbox" >> "${GITHUB_ENV}"
           fi
           echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
 
