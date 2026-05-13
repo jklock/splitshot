@@ -99,7 +99,10 @@ def main():
         # Run Playwright Node.js script (avoids Python C extension crashes on Linux)
         electron_dir = REPO / "electron"
         pw_script = REPO / "scripts" / "testing" / "e2e-playwright.cjs"
+        pw_log_dir = ARTIFACTS_DIR / "e2e-logs"
+        pw_log_dir.mkdir(parents=True, exist_ok=True)
         pw_env = {**os.environ, "E2E_PORT": str(port),
+                   "E2E_LOG_DIR": str(pw_log_dir),
                    "NODE_PATH": str(electron_dir / "node_modules")}
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
             pw_env.pop(bad, None)
@@ -108,6 +111,31 @@ def main():
             ["node", str(pw_script)],
             capture_output=True, text=True, timeout=300,
             cwd=REPO, env=pw_env)
+
+        # Always print Playwright output (stdout + stderr), even on success
+        if result.stdout:
+            print(result.stdout, flush=True)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr, flush=True)
+
+        # Print log summary
+        summary_file = pw_log_dir / "summary.json"
+        if summary_file.exists():
+            try:
+                summary = json.loads(summary_file.read_text())
+                print(f"E2E SUMMARY: result={summary.get('result')} "
+                      f"errors={summary.get('pageErrors', 0)} "
+                      f"artifacts={summary.get('artifacts', 0)}", flush=True)
+            except Exception:
+                pass
+
+        # List captured artifacts
+        captured = list(pw_log_dir.glob("*"))
+        if captured:
+            print(f"E2E ARTIFACTS ({len(captured)} files):", flush=True)
+            for f in sorted(captured):
+                sz = f.stat().st_size
+                print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz > 0 else f"  {f.name} (empty)", flush=True)
 
         print(result.stdout, flush=True)
         if result.returncode != 0:

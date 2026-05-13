@@ -302,12 +302,14 @@ jobs:
           ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
         timeout-minutes: 15
 
-      - name: Upload E2E test video
+      - name: Upload E2E test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-video-${{ matrix.os }}
-          path: artifacts/e2e-*.mp4
+          name: e2e-artifacts-${{ matrix.os }}
+          path: |
+            artifacts/e2e-*.mp4
+            artifacts/e2e-logs/
           if-no-files-found: warn
 
       - name: Verify installer artifact
