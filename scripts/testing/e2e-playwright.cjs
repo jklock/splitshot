@@ -99,8 +99,38 @@ async function main() {
     log('project created');
   }
 
+  // Import a test video to get real shot data
+  const videoCandidates = [
+    '/tmp/e2e-test-video.mp4',
+    path.join(__dirname, '..', '..', 'example_data', 'stage.mp4'),
+    path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'test_video.mp4'),
+  ];
+  let videoFile = null;
+  for (const v of videoCandidates) {
+    try { if (fs.statSync(v).isFile()) { videoFile = v; break; } } catch {}
+  }
+  if (videoFile) {
+    log(`importing video: ${videoFile}`);
+    const inputEl = page.locator('#primary-file-input');
+    if (await inputEl.isVisible()) {
+      await inputEl.set_input_files(videoFile);
+      try {
+        await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
+        await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 120000 });
+        await screenshot(page, '03b-video-imported');
+        log('video imported, shots detected');
+      } catch (e) {
+        warn(`video import timed out: ${e.message}`);
+        await screenshot(page, 'fail-video-import');
+      }
+    }
+  } else {
+    warn('no test video found, skipping import');
+  }
+
   const tools = ['project', 'merge', 'scoring', 'timing', 'markers',
                  'overlay', 'review', 'export', 'metrics', 'settings'];
+  const TOOL_COUNT = tools.length;
   let toolScreenshotDelay = 1;
   for (const t of tools) {
     const btn = page.locator(`button[data-tool="${t}"]`);
@@ -147,20 +177,19 @@ async function main() {
 
   await screenshot(page, '05-final-state');
 
-  const state = await page.evaluate(() => ({
-    shots: state?.project?.analysis?.shots?.length || 0,
-    popups: state?.project?.popups?.length || 0,
-    tools: tools.length,
+  const browserState = await page.evaluate(() => ({
+    shots: (typeof state !== 'undefined' && state?.project?.analysis?.shots?.length) || 0,
+    popups: (typeof state !== 'undefined' && state?.project?.popups?.length) || 0,
   }));
-  log(`final state: shots=${state.shots} popups=${state.popups}`);
+  log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
 
   // Save summary
   const summary = {
     result: 'passed',
-    totalTools: tools.length,
+    totalTools: TOOL_COUNT,
     activatedTools: toolScreenshotDelay - 1,
-    shots: state.shots,
-    popups: state.popups,
+    shots: browserState.shots,
+    popups: browserState.popups,
     consoleLogs: consoleLogs.length,
     pageErrors: pageErrors.length,
     artifacts: artifacts.length,
