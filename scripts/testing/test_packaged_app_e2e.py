@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 """Full E2E test: launch app, run Playwright browser interactions, record video."""
 
 from __future__ import annotations
@@ -103,6 +102,7 @@ def main():
         pw_log_dir.mkdir(parents=True, exist_ok=True)
         pw_env = {**os.environ, "E2E_PORT": str(port),
                    "E2E_LOG_DIR": str(pw_log_dir),
+                   "E2E_VIDEO_PATH": str(video_path),
                    "NODE_PATH": str(electron_dir / "node_modules")}
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
             pw_env.pop(bad, None)

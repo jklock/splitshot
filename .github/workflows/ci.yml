@@ -243,53 +243,83 @@ jobs:
           ${{ matrix.build-command }}
         timeout-minutes: 30
 
-      - name: Extract or install package (Linux)
+      - name: Install from AppImage (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           set -euo pipefail
-          unpacked="electron/build/linux-unpacked/splitshot"
-          if [ ! -f "${unpacked}" ]; then
-            echo "No linux-unpacked/splitshot found at ${unpacked}"
-            echo "Checking electron/build/..."
-            ls electron/build/
-            exit 1
+          shopt -s nullglob
+          appimages=( electron/build/*.AppImage )
+          if [ ${#appimages[@]} -eq 0 ]; then
+            echo "No AppImage found, falling back to linux-unpacked"
+            app="electron/build/linux-unpacked/splitshot"
+            if [ ! -f "$app" ]; then echo "No linux-unpacked either"; ls electron/build/; exit 1; fi
+            chmod +x "$app"
+            echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
+          else
+            chmod +x "${appimages[0]}"
+            extract_dir="$(mktemp -d)"
+            cd "${extract_dir}"
+            "${OLDPWD}/${appimages[0]}" --appimage-extract >/dev/null
+            cd "${OLDPWD}"
+            apprun="${extract_dir}/squashfs-root/AppRun"
+            chmod +x "${apprun}"
+            echo "APP_EXECUTABLE=${apprun}" >> "${GITHUB_ENV}"
           fi
-          chmod +x "${unpacked}"
-          echo "APP_EXECUTABLE=${unpacked}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=xvfb-run -a" >> "${GITHUB_ENV}"
 
-      - name: Use unpacked build (macOS)
+      - name: Install from DMG (macOS)
         if: matrix.os == 'macos-latest'
         shell: bash
         run: |
           set -euo pipefail
           shopt -s nullglob
-          apps=( electron/build/*/SplitShot.app )
-          if [ ${#apps[@]} -eq 0 ]; then
-            echo "No .app bundle found in electron/build/"
-            exit 1
-          fi
-          app_exec="${apps[0]}/Contents/MacOS/SplitShot"
-          if [ ! -f "${app_exec}" ]; then
-            echo "Executable not found at ${app_exec}"
-            exit 1
+          dmgs=( electron/build/*.dmg )
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "No DMG found, falling back to unpacked .app"
+            apps=( electron/build/*/SplitShot.app )
+            if [ ${#apps[@]} -eq 0 ]; then echo "No .app either"; ls electron/build/; exit 1; fi
+            app_exec="${apps[0]}/Contents/MacOS/SplitShot"
+          else
+            mount_point=$(mktemp -d)
+            hdiutil attach -nobrowse -mountpoint "${mount_point}" "${dmgs[0]}"
+            app_exec="${mount_point}/SplitShot.app/Contents/MacOS/SplitShot"
+            if [ ! -f "${app_exec}" ]; then
+              hdiutil detach "${mount_point}"
+              echo "Executable not found in DMG at ${app_exec}"
+              exit 1
+            fi
+            echo "E2E_DMG_VOLUME=${mount_point}" >> "${GITHUB_ENV}"
           fi
           codesign -dv "${app_exec}"
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
-      - name: Use unpacked build (Windows)
+      - name: Install from NSIS (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail
-          installed_exe="electron/build/win-unpacked/SplitShot.exe"
-          if [ ! -f "${installed_exe}" ]; then
-            echo "No win-unpacked/SplitShot.exe found at ${installed_exe}"
-            ls electron/build/
-            exit 1
+          shopt -s nullglob
+          installers=( electron/build/*.exe )
+          if [ ${#installers[@]} -eq 0 ]; then
+            echo "No installer found, falling back to win-unpacked"
+            app="electron/build/win-unpacked/SplitShot.exe"
+            if [ ! -f "$app" ]; then echo "No win-unpacked either"; ls electron/build/; exit 1; fi
+            echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
+          else
+            "${installers[0]}" /S
+            sleep 5
+            found=$(find "/c/Program Files" "/c/Program Files (x86)" "/c/Users" -name "SplitShot.exe" -path "*/SplitShot/*" 2>/dev/null | head -1)
+            if [ -z "$found" ]; then
+              echo "NSIS install finished but SplitShot.exe not found in Program Files"
+              echo "Falling back to win-unpacked"
+              app="electron/build/win-unpacked/SplitShot.exe"
+              if [ ! -f "$app" ]; then echo "No win-unpacked either"; exit 1; fi
+              echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
+            else
+              echo "APP_EXECUTABLE=$found" >> "${GITHUB_ENV}"
+            fi
           fi
-          echo "APP_EXECUTABLE=${installed_exe}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
       - name: Full E2E test with Playwright + video recording
@@ -301,6 +331,14 @@ jobs:
           fi
           ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
         timeout-minutes: 15
+
+      - name: Cleanup DMG mount (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          if [ -n "${E2E_DMG_VOLUME:-}" ]; then
+            hdiutil detach "${E2E_DMG_VOLUME}" 2>/dev/null || true
+          fi
 
       - name: Upload E2E test artifacts
         if: always()

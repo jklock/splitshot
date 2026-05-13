@@ -4,6 +4,7 @@ const path = require('path');
 
 const port = process.env.E2E_PORT || '8765';
 const logDir = process.env.E2E_LOG_DIR || '/tmp/splitshot-e2e-logs';
+const videoPath = process.env.E2E_VIDEO_PATH || '';
 const baseUrl = `http://127.0.0.1:${port}`;
 const artifacts = [];
 
@@ -100,14 +101,16 @@ async function main() {
   }
 
   // Import a test video to get real shot data
-  const videoCandidates = [
-    '/tmp/e2e-test-video.mp4',
-    path.join(__dirname, '..', '..', 'example_data', 'stage.mp4'),
-    path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'test_video.mp4'),
-  ];
   let videoFile = null;
-  for (const v of videoCandidates) {
-    try { if (fs.statSync(v).isFile()) { videoFile = v; break; } } catch {}
+  if (videoPath) {
+    try { if (fs.statSync(videoPath).isFile()) { videoFile = videoPath; } } catch {}
+  }
+  if (!videoFile) {
+    for (const v of [
+      path.join(__dirname, '..', '..', 'example_data', 'stage.mp4'),
+    ]) {
+      try { if (fs.statSync(v).isFile()) { videoFile = v; break; } } catch {}
+    }
   }
   if (videoFile) {
     log(`importing video: ${videoFile}`);
@@ -117,11 +120,13 @@ async function main() {
       try {
         await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
         await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 120000 });
+        const shotCount = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
         await screenshot(page, '03b-video-imported');
-        log('video imported, shots detected');
+        log(`video imported, ${shotCount} shots detected`);
       } catch (e) {
         warn(`video import timed out: ${e.message}`);
         await screenshot(page, 'fail-video-import');
+        await dumpHtml(page, 'fail-video-import');
       }
     }
   } else {
@@ -175,7 +180,67 @@ async function main() {
     await page.waitForTimeout(300);
   }
 
-  await screenshot(page, '05-final-state');
+  // === Export verification ===
+  const exportDir = '/tmp/sshot-e2e-export';
+  try { fs.mkdirSync(exportDir, { recursive: true }); } catch {}
+  const exportFile = path.join(exportDir, 'e2e-export-test.mp4');
+
+  log('testing export...');
+  await page.locator('button[data-tool="export"]').click({ force: true });
+  await page.waitForFunction(() => activeTool === 'export', { timeout: 10000 });
+  await page.waitForTimeout(500);
+  await screenshot(page, '06-export-tool');
+
+  // Set output path and trigger export
+  const exportPathInput = page.locator('#export-output-path, [data-export-field="output_path"], .export-output-path');
+  if (await exportPathInput.isVisible()) {
+    await exportPathInput.fill(exportFile);
+    await page.waitForTimeout(200);
+    log('export output path set');
+
+    const exportBtn = page.locator('#export-start, [data-action="export"], .export-start-btn, button:has-text("Export")');
+    if (await exportBtn.isVisible()) {
+      await exportBtn.click({ force: true });
+      log('export triggered, waiting for completion...');
+
+      // Wait for export to complete (file appears or UI confirms)
+      try {
+        await page.waitForFunction(() => {
+          const el = document.querySelector('.export-progress, .export-status, [data-export-status]');
+          return el && (el.textContent.includes('complete') || el.textContent.includes('done') || el.textContent.includes('saved'));
+        }, { timeout: 120000 });
+        log('export UI reports completion');
+      } catch (e) {
+        warn(`export completion UI not detected: ${e.message}`);
+      }
+
+      // Wait for file to appear
+      let fileFound = false;
+      for (let i = 0; i < 30; i++) {
+        try { if (fs.statSync(exportFile).isFile() && fs.statSync(exportFile).size > 0) { fileFound = true; break; } } catch {}
+        await page.waitForTimeout(1000);
+      }
+      if (fileFound) {
+        const sz = fs.statSync(exportFile).size;
+        log(`export verified: ${exportFile} (${(sz / 1024 / 1024).toFixed(2)} MB)`);
+        artifacts.push(exportFile);
+      } else {
+        warn('export file not found after waiting');
+        await screenshot(page, 'fail-export-file');
+        await dumpHtml(page, 'fail-export-file');
+      }
+    } else {
+      warn('export button not found');
+      await screenshot(page, 'fail-export-btn');
+      await dumpHtml(page, 'fail-export-btn');
+    }
+  } else {
+    warn('export output path input not found');
+    await screenshot(page, 'fail-export-input');
+    await dumpHtml(page, 'fail-export-input');
+  }
+
+  await screenshot(page, '07-after-export');
 
   const browserState = await page.evaluate(() => ({
     shots: (typeof state !== 'undefined' && state?.project?.analysis?.shots?.length) || 0,
