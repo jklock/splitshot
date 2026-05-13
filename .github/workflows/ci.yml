@@ -298,34 +298,30 @@ jobs:
           echo "APP_EXECUTABLE=${app_exec}" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
-      - name: Install from NSIS (Windows)
+      - name: Use unpacked build (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          installers=( electron/build/*.exe )
-          if [ ${#installers[@]} -eq 0 ]; then
-            echo "No installer found, falling back to win-unpacked"
-            app="electron/build/win-unpacked/SplitShot.exe"
-            if [ ! -f "$app" ]; then echo "No win-unpacked either"; ls electron/build/; exit 1; fi
-            echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
-          else
-            "${installers[0]}" /S
-            sleep 5
-            found=$(find "/c/Program Files" "/c/Program Files (x86)" "/c/Users" -name "SplitShot.exe" -path "*/SplitShot/*" 2>/dev/null | head -1)
-            if [ -z "$found" ]; then
-              echo "NSIS installed but exe not in search paths, using win-unpacked"
-              found="electron/build/win-unpacked/SplitShot.exe"
-            fi
-            echo "APP_EXECUTABLE=$found" >> "${GITHUB_ENV}"
-          fi
+          app="electron/build/win-unpacked/SplitShot.exe"
+          if [ ! -f "$app" ]; then echo "No win-unpacked found"; ls electron/build/; exit 1; fi
+          echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
+          echo "E2E_USE_PLAYWRIGHT=1" >> "${GITHUB_ENV}"
 
-      - name: Full E2E test with Playwright + video recording
+      - name: App launch and backend verification
         shell: bash
         run: |
-          set -euo pipefail
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          fi
+          ${E2E_PREFIX} uv run python scripts/testing/test_electron_app.py --app "${APP_EXECUTABLE}"
+        timeout-minutes: 5
+
+      - name: Full E2E with Playwright (all tools, export, video)
+        if: matrix.os != 'windows-latest'
+        shell: bash
+        run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
           fi
