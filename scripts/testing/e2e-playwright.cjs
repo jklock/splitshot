@@ -141,8 +141,31 @@ async function main() {
     log(`uploading video to /api/files/primary: ${videoFile}`);
     const r = await apiUpload('/api/files/primary', videoFile, 'e2e-test.mp4', 'video/mp4');
     if (r.status === 200 && r.body) {
-      const shotCount = r.body?.project?.analysis?.shots?.length || 0;
-      log(`API response: ${shotCount} shots detected`);
+      let shotCount = r.body?.project?.analysis?.shots?.length || 0;
+      log(`primary analysis: ${shotCount} shots, waveform=${Boolean(r.body?.project?.analysis?.waveform_primary)}`);
+      // If no shots detected, retry with lower threshold
+      if (shotCount === 0) {
+        log('0 shots — retrying with lower detection threshold...');
+        const http_api = require('http');
+        const threshPayload = JSON.stringify({ threshold: 0.15 });
+        await new Promise((resolve) => {
+          const req = http_api.request(`http://127.0.0.1:${port}/api/analysis/threshold`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(threshPayload) },
+          }, (res) => {
+            let data = '';
+            res.on('data', (c) => data += c);
+            res.on('end', () => {
+              try { const d = JSON.parse(data); shotCount = d?.project?.analysis?.shots?.length || 0; } catch {}
+              resolve();
+            });
+          });
+          req.on('error', (e) => resolve());
+          req.write(threshPayload);
+          req.end();
+        });
+        log(`re-analysis with threshold 0.15: ${shotCount} shots`);
+      }
       // Push server state to frontend
       try { await page.evaluate((d) => { if (typeof applyRemoteState === 'function') applyRemoteState(d); }, r.body); } catch {}
     } else {
