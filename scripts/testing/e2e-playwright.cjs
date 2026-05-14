@@ -339,7 +339,7 @@ async function main() {
   }));
   log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
 
-  // === PractiScore import via API ===
+  // === PractiScore import via API multipart upload ===
   const practiscorePaths = [
     path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'IDPA.csv'),
     path.join(__dirname, '..', '..', 'example_data', 'practiscore.csv'),
@@ -351,28 +351,35 @@ async function main() {
   if (practiscoreFile) {
     log('importing PractiScore data via API...');
     try {
-      const csvContent = fs.readFileSync(practiscoreFile, 'utf8');
+      const fs_api = require('fs');
       const http_api = require('http');
-      const payload = JSON.stringify({ csv: csvContent });
-      await new Promise((resolve, reject) => {
-        const req = http_api.request(`http://127.0.0.1:${port}/api/project/practiscore`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      const boundary = '----PS' + Date.now().toString(36);
+      const fileData = fs_api.readFileSync(practiscoreFile);
+      const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="IDPA.csv"\r\nContent-Type: text/csv\r\n\r\n`;
+      const footer = `\r\n--${boundary}--\r\n`;
+      const body = Buffer.concat([Buffer.from(header), fileData, Buffer.from(footer)]);
+      await new Promise((resolve) => {
+        const req = http_api.request(`http://127.0.0.1:${port}/api/files/practiscore`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
         }, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
           res.on('end', () => {
-            log(`PractiScore API response: ${res.statusCode}`);
+            log(`PractiScore upload response: ${res.statusCode}`);
             resolve();
           });
         });
-        req.on('error', (e) => { warn(`PractiScore API error: ${e.message}`); resolve(); });
-        req.write(payload);
+        req.on('error', (e) => { warn(`PractiScore upload error: ${e.message}`); resolve(); });
+        req.write(body);
         req.end();
       });
-      // Reload state to verify
       await page.waitForTimeout(1000);
       const hasPS = await page.evaluate(() => Boolean(state?.project?.practiscore));
+      log(`PractiScore imported: ${hasPS}`);
       if (hasPS) {
         const pCount = await page.evaluate(() => state?.project?.practiscore?.participants?.length || 0);
         const sCount = await page.evaluate(() => state?.project?.practiscore?.stages?.length || 0);
@@ -386,20 +393,35 @@ async function main() {
     warn('no PractiScore CSV found, skipping');
   }
 
-  // === Merge: import second video ===
+  // === Merge: import second video via API ===
   if (videoFile) {
     log('testing merge with second video...');
-    await page.locator('button[data-tool="merge"]').click({ force: true });
-    await page.waitForFunction(() => activeTool === 'merge', { timeout: 10000 });
-    await page.waitForTimeout(500);
-    // The merge pane opens with a hidden file input triggered by "Add Media" button
-    const mergeInput = page.locator('#merge-media-input');
     try {
-      // setInputFiles works on hidden elements
-      await mergeInput.setInputFiles(videoFile);
-      await page.evaluate(() => {
-        const el = document.getElementById('merge-media-input');
-        if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
+      const fs_api = require('fs');
+      const http_api = require('http');
+      const boundary = '----MG' + Date.now().toString(36);
+      const fileData = fs_api.readFileSync(videoFile);
+      const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="merge-video.mp4"\r\nContent-Type: video/mp4\r\n\r\n`;
+      const footer = `\r\n--${boundary}--\r\n`;
+      const body = Buffer.concat([Buffer.from(header), fileData, Buffer.from(footer)]);
+      await new Promise((resolve) => {
+        const req = http_api.request(`http://127.0.0.1:${port}/api/files/merge`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            log(`merge upload response: ${res.statusCode}`);
+            resolve();
+          });
+        });
+        req.on('error', (e) => { warn(`merge upload error: ${e.message}`); resolve(); });
+        req.write(body);
+        req.end();
       });
       await page.waitForTimeout(2000);
       const mergeSources = await page.evaluate(() => state?.project?.merge?.sources?.length || 0);
@@ -407,7 +429,6 @@ async function main() {
       await screenshot(page, '09-merge');
     } catch (e) {
       warn(`merge import failed: ${e.message}`);
-      await screenshot(page, 'warn-merge');
     }
   } else {
     warn('no video for merge test, skipping');
