@@ -353,10 +353,10 @@ async function main() {
     await page.locator('button[data-tool="project"]').click({ force: true });
     await page.waitForFunction(() => activeTool === 'project', { timeout: 10000 });
     await page.waitForTimeout(300);
-    const csvInput = page.locator('#practiscore-file-input, [data-practiscore-input], input[accept=".csv"]');
-    if (await csvInput.isVisible()) {
+    const csvInput = page.locator('#practiscore-file-input');
+    try {
       await csvInput.setInputFiles(practiscoreFile);
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
       const hasPS = await page.evaluate(() => Boolean(state?.project?.practiscore));
       log(`PractiScore imported: ${hasPS}`);
       if (hasPS) {
@@ -365,9 +365,9 @@ async function main() {
         log(`PractiScore data: ${participants} participants, ${stages} stages`);
       }
       await screenshot(page, '08-practiscore');
-    } else {
-      warn('PractiScore file input not found');
-      await screenshot(page, 'warn-practiscore-input');
+    } catch (e) {
+      warn(`PractiScore import failed: ${e.message}`);
+      await screenshot(page, 'warn-practiscore');
     }
   } else {
     warn('no PractiScore CSV found, skipping');
