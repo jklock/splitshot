@@ -356,6 +356,11 @@ async function main() {
     const csvInput = page.locator('#practiscore-file-input');
     try {
       await csvInput.setInputFiles(practiscoreFile);
+      // Dispatch change event to trigger the app's import handler
+      await page.evaluate(() => {
+        const el = document.getElementById('practiscore-file-input');
+        if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
       await page.waitForTimeout(3000);
       const hasPS = await page.evaluate(() => Boolean(state?.project?.practiscore));
       log(`PractiScore imported: ${hasPS}`);
@@ -387,6 +392,10 @@ async function main() {
       const mergeInput = page.locator('#merge-media-input');
       if (await mergeInput.isVisible()) {
         await mergeInput.setInputFiles(secondVideo);
+        await page.evaluate(() => {
+          const el = document.getElementById('merge-media-input');
+          if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
         await page.waitForTimeout(2000);
         const mergeSources = await page.evaluate(() => state?.project?.merge?.sources?.length || 0);
         log(`merge sources after import: ${mergeSources}`);

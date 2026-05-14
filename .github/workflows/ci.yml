@@ -306,26 +306,35 @@ jobs:
           shopt -s nullglob
           installers=( electron/build/*.exe )
           if [ ${#installers[@]} -eq 0 ]; then
-            echo "No installer found, falling back to win-unpacked"
+            echo "No installer found, using win-unpacked"
             app="electron/build/win-unpacked/SplitShot.exe"
           else
             installer="${installers[0]}"
-            # NSIS silent install (/S) crashes with SIGSEGV on GH Windows runners.
-            # Extract the NSIS archive directly using 7z (available on GH runner).
             extract_dir="C:/tools/splitshot-installed"
             rm -rf "${extract_dir}"
             mkdir -p "${extract_dir}"
-            7z x "${installer}" -o"${extract_dir}" -y >/dev/null 2>&1 || {
-              echo "7z extraction failed, trying silent install..."
-              "${installer}" /S && sleep 5
-            }
+            # Try 7z first, then innoextract, then fall back to win-unpacked
+            if command -v 7z &>/dev/null; then
+              7z x "${installer}" -o"${extract_dir}" -y >/dev/null 2>&1 && \
+                echo "7z extraction succeeded" || echo "7z extraction failed"
+            elif command -v innoextract &>/dev/null; then
+              innoextract "${installer}" -d "${extract_dir}" >/dev/null 2>&1 && \
+                echo "innoextract succeeded" || echo "innoextract failed"
+            else
+              powershell -ExecutionPolicy Bypass -Command "
+                Add-Type -AssemblyName System.IO.Compression.FileSystem;
+                try {
+                  [System.IO.Compression.ZipFile]::ExtractToDirectory('${installer}', '${extract_dir}');
+                  Write-Output 'Zip extraction attempted';
+                } catch { Write-Output 'Zip extraction failed: ' + \$_.Exception.Message }
+              "
+            fi
             app="${extract_dir}/SplitShot.exe"
             if [ ! -f "$app" ]; then
-              echo "Extracted exe not found, checking subdirs..."
               app=$(find "${extract_dir}" -name "SplitShot.exe" -type f 2>/dev/null | head -1)
             fi
             if [ ! -f "$app" ]; then
-              echo "NSIS extraction failed, using win-unpacked"
+              echo "All extraction methods failed, using win-unpacked"
               app="electron/build/win-unpacked/SplitShot.exe"
             fi
           fi
