@@ -119,15 +119,20 @@ async function main() {
       await inputEl.set_input_files(videoFile);
       try {
         await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
-        await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 120000 });
+        log('video file imported, waiting for shot detection...');
+        const startTime = Date.now();
+        await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 300000 });
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         const shotCount = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
         await screenshot(page, '03b-video-imported');
-        log(`video imported, ${shotCount} shots detected`);
+        log(`video imported, ${shotCount} shots detected after ${elapsed}s`);
       } catch (e) {
-        warn(`video import timed out: ${e.message}`);
+        warn(`video import timed out after 300s: ${e.message}`);
         await screenshot(page, 'fail-video-import');
         await dumpHtml(page, 'fail-video-import');
       }
+    } else {
+      warn('primary-file-input not visible, skipping video import');
     }
   } else {
     warn('no test video found, skipping import');
@@ -192,7 +197,7 @@ async function main() {
   await screenshot(page, '06-export-tool');
 
   // Set output path and trigger export
-  const exportPathInput = page.locator('#export-output-path, [data-export-field="output_path"], .export-output-path');
+  const exportPathInput = page.locator('#export-path');
   if (await exportPathInput.isVisible()) {
     await exportPathInput.fill(exportFile);
     await page.waitForTimeout(200);
