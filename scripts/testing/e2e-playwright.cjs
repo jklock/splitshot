@@ -115,9 +115,9 @@ async function main() {
   if (videoFile) {
     log(`importing video: ${videoFile}`);
     const inputEl = page.locator('#primary-file-input');
-    // set_input_files works even when element is not visible
-    await inputEl.set_input_files(videoFile);
     try {
+      // Use setInputFiles (Node.js API); supports hidden elements
+      await inputEl.setInputFiles(videoFile);
       await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
       log('video file imported, waiting for shot detection...');
       const startTime = Date.now();
@@ -127,7 +127,7 @@ async function main() {
       await screenshot(page, '03b-video-imported');
       log(`video imported, ${shotCount} shots detected after ${elapsed}s`);
     } catch (e) {
-      warn(`video import timed out after 300s: ${e.message}`);
+      warn(`video import failed: ${e.message}`);
       await screenshot(page, 'fail-video-import');
       await dumpHtml(page, 'fail-video-import');
     }
