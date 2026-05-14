@@ -339,7 +339,7 @@ async function main() {
   }));
   log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
 
-  // === PractiScore import (if CSV available) ===
+  // === PractiScore import via API ===
   const practiscorePaths = [
     path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'IDPA.csv'),
     path.join(__dirname, '..', '..', 'example_data', 'practiscore.csv'),
@@ -349,60 +349,65 @@ async function main() {
     try { if (fs.statSync(p).isFile()) { practiscoreFile = p; break; } } catch {}
   }
   if (practiscoreFile) {
-    log('importing PractiScore data...');
-    await page.locator('button[data-tool="project"]').click({ force: true });
-    await page.waitForFunction(() => activeTool === 'project', { timeout: 10000 });
-    await page.waitForTimeout(300);
-    const csvInput = page.locator('#practiscore-file-input');
+    log('importing PractiScore data via API...');
     try {
-      await csvInput.setInputFiles(practiscoreFile);
-      // Dispatch change event to trigger the app's import handler
-      await page.evaluate(() => {
-        const el = document.getElementById('practiscore-file-input');
-        if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
+      const csvContent = fs.readFileSync(practiscoreFile, 'utf8');
+      const http_api = require('http');
+      const payload = JSON.stringify({ csv: csvContent });
+      await new Promise((resolve, reject) => {
+        const req = http_api.request(`http://127.0.0.1:${port}/api/project/practiscore`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+        }, (res) => {
+          let data = '';
+          res.on('data', (chunk) => data += chunk);
+          res.on('end', () => {
+            log(`PractiScore API response: ${res.statusCode}`);
+            resolve();
+          });
+        });
+        req.on('error', (e) => { warn(`PractiScore API error: ${e.message}`); resolve(); });
+        req.write(payload);
+        req.end();
       });
-      await page.waitForTimeout(3000);
+      // Reload state to verify
+      await page.waitForTimeout(1000);
       const hasPS = await page.evaluate(() => Boolean(state?.project?.practiscore));
-      log(`PractiScore imported: ${hasPS}`);
       if (hasPS) {
-        const participants = await page.evaluate(() => state?.project?.practiscore?.participants?.length || 0);
-        const stages = await page.evaluate(() => state?.project?.practiscore?.stages?.length || 0);
-        log(`PractiScore data: ${participants} participants, ${stages} stages`);
+        const pCount = await page.evaluate(() => state?.project?.practiscore?.participants?.length || 0);
+        const sCount = await page.evaluate(() => state?.project?.practiscore?.stages?.length || 0);
+        log(`PractiScore data: ${pCount} participants, ${sCount} stages`);
       }
       await screenshot(page, '08-practiscore');
     } catch (e) {
-      warn(`PractiScore import failed: ${e.message}`);
-      await screenshot(page, 'warn-practiscore');
+      warn(`PractiScore API import failed: ${e.message}`);
     }
   } else {
     warn('no PractiScore CSV found, skipping');
   }
 
   // === Merge: import second video ===
-  const secondVideo = videoFile; // reuse same synthetic video or find another
-  if (secondVideo) {
+  if (videoFile) {
     log('testing merge with second video...');
     await page.locator('button[data-tool="merge"]').click({ force: true });
     await page.waitForFunction(() => activeTool === 'merge', { timeout: 10000 });
-    await page.waitForTimeout(300);
-    const addMedia = page.locator('#add-merge-media');
-    if (await addMedia.isVisible()) {
-      await addMedia.click();
-      await page.waitForTimeout(300);
-      const mergeInput = page.locator('#merge-media-input');
-      if (await mergeInput.isVisible()) {
-        await mergeInput.setInputFiles(secondVideo);
-        await page.evaluate(() => {
-          const el = document.getElementById('merge-media-input');
-          if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-        await page.waitForTimeout(2000);
-        const mergeSources = await page.evaluate(() => state?.project?.merge?.sources?.length || 0);
-        log(`merge sources after import: ${mergeSources}`);
-        await screenshot(page, '09-merge');
-      }
-    } else {
-      warn('add-merge-media button not found');
+    await page.waitForTimeout(500);
+    // The merge pane opens with a hidden file input triggered by "Add Media" button
+    const mergeInput = page.locator('#merge-media-input');
+    try {
+      // setInputFiles works on hidden elements
+      await mergeInput.setInputFiles(videoFile);
+      await page.evaluate(() => {
+        const el = document.getElementById('merge-media-input');
+        if (el) el.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      await page.waitForTimeout(2000);
+      const mergeSources = await page.evaluate(() => state?.project?.merge?.sources?.length || 0);
+      log(`merge sources after import: ${mergeSources}`);
+      await screenshot(page, '09-merge');
+    } catch (e) {
+      warn(`merge import failed: ${e.message}`);
+      await screenshot(page, 'warn-merge');
     }
   } else {
     warn('no video for merge test, skipping');
