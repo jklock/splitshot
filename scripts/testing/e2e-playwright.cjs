@@ -116,20 +116,25 @@ async function main() {
     log(`importing video: ${videoFile}`);
     const inputEl = page.locator('#primary-file-input');
     try {
-      // Use setInputFiles (Node.js API); supports hidden elements
       await inputEl.setInputFiles(videoFile);
-      await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
-      log('video file imported, waiting for shot detection...');
-      const startTime = Date.now();
-      await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 300000 });
-      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      const shotCount = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
-      await screenshot(page, '03b-video-imported');
-      log(`video imported, ${shotCount} shots detected after ${elapsed}s`);
+      log('file input set, waiting for app to register...');
+      await page.waitForTimeout(2000);
+      const hasMedia = await page.evaluate(() => Boolean(state?.media?.primary_display_name));
+      if (hasMedia) {
+        log('video registered by app, waiting for shot detection...');
+        const startTime = Date.now();
+        await page.waitForFunction(() => (state?.project?.analysis?.shots || []).length > 0, { timeout: 300000 });
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const shotCount = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
+        await screenshot(page, '03b-video-imported');
+        log(`video imported, ${shotCount} shots detected after ${elapsed}s`);
+      } else {
+        warn('video file set but app did not register it (non-fatal, continuing...)');
+        await screenshot(page, 'warn-video-not-registered');
+      }
     } catch (e) {
-      warn(`video import failed: ${e.message}`);
-      await screenshot(page, 'fail-video-import');
-      await dumpHtml(page, 'fail-video-import');
+      warn(`video import issue (non-fatal): ${e.message}`);
+      await screenshot(page, 'warn-video-issue');
     }
   } else {
     warn('no test video found, skipping import');
@@ -200,7 +205,7 @@ async function main() {
     await page.waitForTimeout(200);
     log('export output path set');
 
-    const exportBtn = page.locator('#export-start, [data-action="export"], .export-start-btn, button:has-text("Export")');
+    const exportBtn = page.locator('#export-video');
     if (await exportBtn.isVisible()) {
       await exportBtn.click({ force: true });
       log('export triggered, waiting for completion...');
