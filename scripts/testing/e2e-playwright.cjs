@@ -127,7 +127,7 @@ async function main() {
     });
   }
 
-  // Import test video
+  // Import video via API directly (bypasses UI, triggers analysis synchronously, gets full state back)
   let videoFile = null;
   if (videoPath) {
     try { if (fs.statSync(videoPath).isFile()) { videoFile = videoPath; } } catch {}
@@ -137,40 +137,27 @@ async function main() {
       try { if (fs.statSync(v).isFile()) { videoFile = v; break; } } catch {}
     }
   }
-
   if (videoFile) {
-    log(`importing video: ${videoFile}`);
-    const inputEl = page.locator('#primary-file-input');
-    try {
-      await inputEl.setInputFiles(videoFile);
-      await page.evaluate(() => {
-        const el = document.getElementById('primary-file-input');
-        if (el) { el.dispatchEvent(new Event('change', { bubbles: true })); el.dispatchEvent(new Event('input', { bubbles: true })); }
-      });
-      await page.waitForTimeout(3000);
-      const hasMedia = await page.evaluate(() => Boolean(state?.media?.primary_display_name));
-      if (hasMedia) {
-        log('video registered by app, shot detection running...');
-        // Poll for shots non-blocking — allow test to continue while analysis runs
-        (async () => {
-          const deadline = Date.now() + 600000; // 10 min max
-          while (Date.now() < deadline) {
-            const sc = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
-            if (sc > 0) { log(`shots detected: ${sc} after ${((Date.now() - Date.now() + 600000 - (deadline - Date.now())) / 1000).toFixed(0)}s`); break; }
-            await new Promise(r => setTimeout(r, 10000));
-          }
-        })().catch(() => {});
-      } else {
-        // Fallback: use API
-        const r = await apiUpload('/api/media/primary', videoFile, 'e2e-test.mp4', 'video/mp4');
-        log(`API media upload: ${r.status}`);
-      }
-    } catch (e) {
-      warn(`video import: ${e.message}`);
-      const r = await apiUpload('/api/media/primary', videoFile, 'e2e-test.mp4', 'video/mp4');
-      log(`API media upload (fallback): ${r.status}`);
+    log(`uploading video to /api/files/primary: ${videoFile}`);
+    const r = await apiUpload('/api/files/primary', videoFile, 'e2e-test.mp4', 'video/mp4');
+    if (r.status === 200 && r.body) {
+      const shotCount = r.body?.project?.analysis?.shots?.length || 0;
+      log(`API response: ${shotCount} shots detected`);
+      // Push server state to frontend
+      try { await page.evaluate((d) => { if (typeof applyRemoteState === 'function') applyRemoteState(d); }, r.body); } catch {}
+    } else {
+      warn(`API upload: ${r.status} ${JSON.stringify(r.body).slice(0,200)}`);
     }
     await screenshot(page, '03b-video-imported');
+    // Background poll for UI state sync
+    (async () => {
+      const dln = Date.now() + 600000;
+      while (Date.now() < dln) {
+        const sc = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
+        if (sc > 0) { log(`shots confirmed in UI: ${sc}`); break; }
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    })().catch(() => {});
   } else {
     warn('no test video found');
   }
