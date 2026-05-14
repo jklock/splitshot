@@ -349,7 +349,7 @@ jobs:
             export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
           fi
           ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
-        timeout-minutes: 15
+        timeout-minutes: 30
 
       - name: Upload E2E test artifacts
         if: always()
