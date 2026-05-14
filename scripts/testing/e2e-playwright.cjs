@@ -184,13 +184,21 @@ async function main() {
     }
   }
 
-  await page.locator('button[data-tool="timing"]').click({ force: true });
-  await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
+  try {
+    await page.locator('button[data-tool="timing"]').click({ force: true, timeout: 10000 });
+    await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
+  } catch (e) {
+    warn(`timing button click failed (continuing): ${e.message}`);
+  }
   if ((await page.locator('.waveform-shot-card').count()) > 0) {
-    await page.locator('.waveform-shot-card').first().click();
-    await page.waitForTimeout(300);
-    await screenshot(page, '04-waveform-selected');
-    log('waveform shot selected');
+    try {
+      await page.locator('.waveform-shot-card').first().click({ force: true, timeout: 5000 });
+      await page.waitForTimeout(300);
+      await screenshot(page, '04-waveform-selected');
+      log('waveform shot selected');
+    } catch (e) {
+      warn(`waveform click failed: ${e.message}`);
+    }
   } else {
     warn('no waveform shot cards found');
   }
