@@ -319,11 +319,14 @@ async function main() {
   if (practiscoreFile) {
     log('importing PractiScore data...');
     const r = await apiUpload('/api/files/practiscore', practiscoreFile, 'IDPA.csv', 'text/csv');
-    if (r.status === 200 && r.body?.project?.practiscore) {
-      const ps = r.body.project.practiscore;
-      log(`PractiScore: ${ps.participants?.length || 0} participants, ${ps.stages?.length || 0} stages`);
+    if (r.status === 200) {
+      const psOpts = r.body?.practiscore_options;
+      const psProj = r.body?.project?.practiscore;
+      log(`PractiScore: options=${Boolean(psOpts)} project_key=${Boolean(psProj)}`);
+      if (psOpts?.match_types?.length) log(`  match_types: ${psOpts.match_types.length}`);
+      if (psProj?.participants?.length) log(`  participants: ${psProj.participants.length}`);
     } else {
-      warn(`PractiScore upload status ${r.status}, state has practiscore: ${Boolean(r.body?.project?.practiscore)}`);
+      warn(`PractiScore upload status ${r.status}`);
     }
     await screenshot(page, '08-practiscore');
   } else {
@@ -336,13 +339,9 @@ async function main() {
     const r = await apiUpload('/api/files/merge', videoFile, 'merge-video.mp4', 'video/mp4');
     if (r.status === 200) {
       const sources = r.body?.project?.merge?.sources || [];
-      log(`merge sources after import: ${sources.length}`);
-      // Update page state with the merged browser state from the API response
-      if (r.body?.project) {
-        await page.evaluate((state) => { /* state auto-syncs via websocket */ }, r.body);
-        await page.waitForTimeout(500);
-        const verifiedSources = await page.evaluate(() => state?.project?.merge?.sources?.length || 0);
-        log(`merge sources verified in UI state: ${verifiedSources}`);
+      log(`merge sources: ${sources.length} (from API response)`);
+      if (sources.length > 0) {
+        log(`  first source: ${sources[0].name || sources[0].path}`);
       }
     } else {
       warn(`merge upload status ${r.status}`);
