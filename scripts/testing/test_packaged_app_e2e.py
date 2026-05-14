@@ -42,9 +42,8 @@ def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
 
 
 def _create_test_video(out_dir):
+    import numpy as np, wave
     path = out_dir / "e2e-vid.mp4"
-    subprocess.run(
-        import numpy as np, wave
     audio_path = out_dir / "audio_tone.wav"
     sr, dur = 22050, 4
     ns = int(sr * dur)
