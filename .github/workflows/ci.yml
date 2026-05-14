@@ -318,14 +318,14 @@ jobs:
           echo "APP_EXECUTABLE=$app" >> "${GITHUB_ENV}"
           echo "E2E_PREFIX=" >> "${GITHUB_ENV}"
 
-      - name: Comprehensive E2E test (all features, export, combinations)
+      - name: Full E2E test with Playwright + export validation
         shell: bash
         run: |
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
             export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
           fi
-          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_comprehensive.py --app "${APP_EXECUTABLE}"
-        timeout-minutes: 20
+          ${E2E_PREFIX} uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
+        timeout-minutes: 15
 
       - name: Upload E2E test artifacts
         if: always()
