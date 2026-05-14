@@ -392,6 +392,8 @@ async function main() {
   }
 
   // Save summary
+  const summary = {
+    result: 'passed',
     totalTools: TOOL_COUNT,
     activatedTools: toolScreenshotDelay - 1,
     shots: browserState.shots,
