@@ -114,8 +114,9 @@ async function main() {
   }
   if (videoFile) {
     log(`importing video: ${videoFile}`);
-    // set_input_files works on hidden elements; skip visibility check
-    await page.locator('#primary-file-input').set_input_files(videoFile);
+    const inputEl = page.locator('#primary-file-input');
+    // set_input_files works even when element is not visible
+    await inputEl.set_input_files(videoFile);
     try {
       await page.waitForFunction(() => Boolean(state?.media?.primary_display_name), { timeout: 60000 });
       log('video file imported, waiting for shot detection...');
