@@ -36,26 +36,28 @@ jobs:
           - platform: macos
             runs-on: macos-14
             build-command: npm run build:mac
-            smoke-prefix: ""
-            artifact-name: splitshot-macos
             artifact-glob: electron/build/*.dmg
+            artifact-name: splitshot-macos
             deps: brew
+            smoke-prefix: ""
 
           - platform: linux
             runs-on: [self-hosted, Linux, X64]
             build-command: npm run build:linux
-            smoke-prefix: xvfb-run -a
-            artifact-name: splitshot-linux
             artifact-glob: electron/build/*.AppImage
+            artifact-name: splitshot-linux
             deps: linux-apt
+            smoke-prefix: xvfb-run -a
 
           - platform: windows
             runs-on: [self-hosted, Windows, X64]
             build-command: npm run build:win
-            smoke-prefix: ""
-            artifact-name: splitshot-windows
             artifact-glob: electron/build/*.exe
+            artifact-name: splitshot-windows
             deps: windows-choco
+            smoke-prefix: ""
+
+    runs-on: ${{ matrix.runs-on }}
 
     if: |
       !cancelled() && (
