@@ -159,18 +159,18 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/download-artifact@v4
-      - name: Create v1 tag and release
+      - name: Create v1 GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git push origin :refs/tags/v1 2>/dev/null || true
-          git tag -a v1 -m "SplitShot V1"
-          git push origin v1
           gh release create v1 \
             --title "SplitShot V1" \
             --notes "SplitShot V1 release" \
-            --target main
+            --target "$GITHUB_SHA" \
+            --generate-notes 2>/dev/null || gh release edit v1 --notes "" 2>/dev/null || true
           for dir in splitshot-macos splitshot-linux splitshot-windows; do
             [ -d "$dir" ] && for f in "$dir"/*; do
               gh release upload v1 "$f" --clobber
