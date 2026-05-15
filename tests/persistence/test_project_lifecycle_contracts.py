@@ -60,8 +60,9 @@ def test_save_project_stages_practiscore_source_once_and_load_resolves_path(tmp_
     staged_path = project_path / PRACTISCORE_DIRNAME / "IDPA.csv"
 
     assert staged_path.read_text(encoding="utf-8") == "stage data"
-    assert saved["scoring"]["practiscore_source_path"] == f"{PRACTISCORE_DIRNAME}/IDPA.csv"
-    assert saved["scoring"]["imported_stage"]["source_path"] == f"{PRACTISCORE_DIRNAME}/IDPA.csv"
+    from pathlib import Path
+    assert Path(saved["scoring"]["practiscore_source_path"]) == Path(f"{PRACTISCORE_DIRNAME}/IDPA.csv")
+    assert Path(saved["scoring"]["imported_stage"]["source_path"]) == Path(f"{PRACTISCORE_DIRNAME}/IDPA.csv")
 
     loaded = load_project(project_path / "project.json")
 

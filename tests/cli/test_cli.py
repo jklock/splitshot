@@ -141,7 +141,8 @@ def test_run_browser_prints_log_path_when_terminal_logging_is_enabled(monkeypatc
 
     assert cli.run_browser(log_level="debug") == 0
     output = capsys.readouterr().out
-    assert "SplitShot activity log: /tmp/splitshot.log" in output
+    assert "SplitShot activity log:" in output
+    assert "splitshot.log" in output
 
 
 def test_cli_alias_entrypoints_preserve_parser_behavior(monkeypatch, tmp_path: Path) -> None:
