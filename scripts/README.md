@@ -35,6 +35,7 @@ If you are new to the repo, read:
 | `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
 | `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
 | `release/apply_github_rulesets.sh` | release | Creates or updates the `main` and `v*` repository rulesets through `gh api` | Initial V1 governance setup or later protection refresh | Inputs: authenticated GitHub CLI session. Outputs: live repository rulesets |
+| `release/extract_release_notes.py` | release | Extracts one semver section from `CHANGELOG.md` into a release-body markdown file | Before publishing or manually editing a GitHub release | Inputs: tag name and changelog path. Outputs: markdown notes file |
 
 ### Browser audits
 

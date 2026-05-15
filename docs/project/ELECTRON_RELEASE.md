@@ -106,7 +106,7 @@ Electron packaging and release work is split across dedicated workflows:
 - `.github/workflows/release.yml`
 - platform smoke/test coverage in `.github/workflows/test-macos.yml`, `test-windows.yml`, and `test-linux.yml`
 
-The three `build-*` workflows are manual packaging helpers. They package one platform target each and upload artifacts for inspection, but they do not publish GitHub releases. `release.yml` is the only publisher. It runs on semver tags like `v1.0.0`, builds all three platforms, extracts the matching release notes from [../../CHANGELOG.md](../../CHANGELOG.md), and publishes the GitHub release with all three platform artifacts.
+The three `build-*` workflows are manual packaging helpers. They package one platform target each and upload artifacts for inspection, but they do not publish GitHub releases. `release.yml` is the only publisher. It runs on semver tags like `v1.0.1`, builds all three platforms, extracts the matching release notes from [../../CHANGELOG.md](../../CHANGELOG.md) through `scripts/release/extract_release_notes.py`, and publishes the GitHub release with all three platform artifacts.
 
 Runner targets:
 
@@ -140,19 +140,25 @@ Do not create fake release tags for smoke testing.
 
 ## Real Releases
 
-Use the semver tag flow when you want a coordinated three-platform release.
+Use the semver tag flow when you want a coordinated three-platform release. The existing first-release baseline is `v1.0.0`. Use the next patch tag, such as `v1.0.1`, for the next normal release.
 
 1. Update the versioned files in the repo.
 2. Finalize the matching release notes section in [../../CHANGELOG.md](../../CHANGELOG.md).
 3. Merge the release-ready state into `main`.
-4. Create and push the release tag:
+4. Extract the exact release body:
 
 ```bash
-git tag -a v1.0.0 -m "SplitShot v1.0.0"
-git push origin v1.0.0
+uv run python scripts/release/extract_release_notes.py v1.0.1 --output artifacts/release-notes.md
 ```
 
-5. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
+5. Create and push the release tag:
+
+```bash
+git tag -a v1.0.1 -m "SplitShot v1.0.1"
+git push origin v1.0.1
+```
+
+6. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
 
 ## Troubleshooting
 

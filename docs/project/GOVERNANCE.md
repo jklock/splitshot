@@ -41,17 +41,33 @@ bash scripts/release/apply_github_rulesets.sh
 
 ## Release Flow
 
+Current release baseline:
+
+- published first release line: `v1.0.0`
+- next patch example: `v1.0.1`
+
 1. Update versioned source of truth files in the repo.
 2. Finalize the release notes in [../../CHANGELOG.md](../../CHANGELOG.md).
 3. Merge the release-ready changes into `main`.
-4. Create and push the semver tag, for example:
+4. Extract the exact GitHub release body from the changelog:
 
 ```bash
-git tag -a v1.0.0 -m "SplitShot v1.0.0"
-git push origin v1.0.0
+uv run python scripts/release/extract_release_notes.py v1.0.1 --output artifacts/release-notes.md
 ```
 
-5. Let `.github/workflows/release.yml` build all three platform artifacts and publish the GitHub release from that tag.
+5. Create and push the semver tag, for example:
+
+```bash
+git tag -a v1.0.1 -m "SplitShot v1.0.1"
+git push origin v1.0.1
+```
+
+6. Let `.github/workflows/release.yml` build all three platform artifacts and publish the GitHub release from that tag.
+7. If the GitHub release body needs a manual refresh after publish:
+
+```bash
+gh release edit v1.0.1 --title "SplitShot 1.0.1" --notes-file artifacts/release-notes.md --latest
+```
 
 ## Branch Cleanup
 

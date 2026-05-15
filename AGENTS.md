@@ -70,6 +70,38 @@ Update documentation only when the change affects:
 
 Do not over-document obvious code.
 
+## Release Flow
+
+SplitShot release work must follow the semver flow exactly.
+
+Current release baseline:
+- first real release: `v1.0.0`
+- future examples should use the next patch tag, such as `v1.0.1`, unless the manager asks for a different version
+
+When a release or release-note task is requested:
+
+1. Update every version source together:
+   - `pyproject.toml`
+   - `src/splitshot/__init__.py`
+   - `uv.lock`
+   - `electron/package.json`
+2. Update the matching section in `CHANGELOG.md`.
+3. Extract release notes with:
+   `uv run python scripts/release/extract_release_notes.py vX.Y.Z --output artifacts/release-notes.md`
+4. Verify with:
+   - `uv run splitshot --check`
+   - `uv run python scripts/testing/run_test_suite.py --mode all-together --format table`
+5. Merge the release-ready state into `main`.
+6. Refresh GitHub rulesets when governance changed:
+   `bash scripts/release/apply_github_rulesets.sh`
+7. Create and push the semver tag:
+   - `git tag -a vX.Y.Z -m "SplitShot vX.Y.Z"`
+   - `git push origin vX.Y.Z`
+8. Use `.github/workflows/release.yml` as the only publisher.
+9. If a release already exists and its body is stale, update it with:
+   `gh release edit vX.Y.Z --title "SplitShot X.Y.Z" --notes-file artifacts/release-notes.md --latest`
+10. Keep release tags semver-only. Do not create or preserve moving release tags like `v1` once a real `v1.0.0` release exists.
+
 ## SplitShot Testing
 
 Prefer this order:

@@ -164,27 +164,7 @@ jobs:
       - uses: actions/download-artifact@v4
       - name: Extract release notes
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8").splitlines()
-          release_tag = "${{ github.ref_name }}"
-          header = f"## {release_tag}"
-          capture = []
-          active = False
-          for line in changelog:
-              if line.startswith("## "):
-                  if active:
-                      break
-                  active = line.strip() == header
-                  continue
-              if active:
-                  capture.append(line)
-          body = "\n".join(capture).strip()
-          if not body:
-              raise SystemExit(f"No release notes found for {release_tag} in CHANGELOG.md")
-          Path("artifacts").mkdir(exist_ok=True)
-          Path("artifacts/release-notes.md").write_text(body + "\n", encoding="utf-8")
-          PY
+          uv run python scripts/release/extract_release_notes.py "${GITHUB_REF_NAME}" --output artifacts/release-notes.md
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
