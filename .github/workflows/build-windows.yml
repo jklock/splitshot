@@ -6,7 +6,6 @@ on:
       - 'build-windows'
   workflow_dispatch:
   workflow_call:
-  workflow_call:
 
 jobs:
   package:
