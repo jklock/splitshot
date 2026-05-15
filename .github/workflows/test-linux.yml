@@ -112,4 +112,5 @@ jobs:
       - name: Install Playwright browsers
         run: uv run python -m playwright install --with-deps chromium firefox webkit
       - name: Run browser test suite
-        run: uv run pytest tests/browser -q
+        run: uv run pytest tests/browser -q --timeout=120
+        timeout-minutes: 20
