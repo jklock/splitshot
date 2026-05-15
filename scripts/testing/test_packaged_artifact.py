@@ -165,7 +165,7 @@ def main() -> int:
     try:
         installed = _install_artifact(artifact)
         env = {**os.environ, **installed.env}
-        command = ["uv", "run", "python", str(validation_script), "--app", str(installed.executable)]
+        command = [sys.executable, str(validation_script), "--app", str(installed.executable)]
         result = subprocess.run(command, cwd=REPO, env=env, check=False)
         return int(result.returncode)
     finally:
