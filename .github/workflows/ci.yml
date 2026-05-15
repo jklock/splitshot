@@ -1,6 +1,9 @@
-name: Manual Diagnostics
+name: Test Suite
 
 on:
+  push:
+    tags:
+      - 'test'
   workflow_dispatch:
 
 jobs:
