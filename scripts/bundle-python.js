@@ -189,6 +189,11 @@ function buildWindowsPythonRuntime() {
   if (!fs.existsSync(pythonExe)) {
     throw new Error(`Bundled Windows python.exe not found at ${pythonExe}`);
   }
+  const pythonAlias = path.join(WINDOWS_PYTHON_DIR, 'python3.exe');
+  if (fs.existsSync(pythonAlias)) {
+    fs.rmSync(pythonAlias, { force: true });
+    console.log('[bundle] removed windows alias python3.exe');
+  }
   run(`uv pip install --python "${pythonExe}" --system --break-system-packages --link-mode copy "."`);
   return pythonExe;
 }
