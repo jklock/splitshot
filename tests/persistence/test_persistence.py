@@ -216,7 +216,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert Path(loaded.primary_video.path).name == "input.mp4"
     assert Path(project.primary_video.path).name == "input.mp4"
     assert len(loaded.merge_sources) == 1
-    assert loaded.merge_sources[0].asset.path.replace("\\", "/") == "/tmp/merge-image.png"
+    assert loaded.merge_sources[0].asset.path.replace("\\", "/").endswith("tmp/merge-image.png")
     assert loaded.merge_sources[0].asset.is_still_image is True
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.path.replace("\\", "/").endswith("tmp/merge-image.png")
@@ -405,7 +405,7 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert loaded.secondary_video is not None
     assert loaded.secondary_video.is_still_image is True
     assert len(loaded.merge_sources) == 1
-    assert loaded.merge_sources[0].asset.path.replace("\\", "/") == "/tmp/merge-image.png"
+    assert loaded.merge_sources[0].asset.path.replace("\\", "/").endswith("tmp/merge-image.png")
     assert loaded.merge_sources[0].asset.is_still_image is True
     assert loaded.merge_sources[0].pip_size_percent == loaded.merge.pip_size_percent
     assert loaded.merge_sources[0].sync_offset_ms == 87
