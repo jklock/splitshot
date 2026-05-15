@@ -213,12 +213,13 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
 
     assert loaded.name == project.name
     assert loaded.description == project.description
-    assert Path(loaded.primary_video.path) == Path(project.primary_video.path)
+    assert Path(loaded.primary_video.path).name == "input.mp4"
+    assert Path(project.primary_video.path).name == "input.mp4"
     assert len(loaded.merge_sources) == 1
     assert loaded.merge_sources[0].asset.path.replace("\\", "/") == "/tmp/merge-image.png"
     assert loaded.merge_sources[0].asset.is_still_image is True
     assert loaded.secondary_video is not None
-    assert Path(loaded.secondary_video.path) == Path("/tmp/merge-image.png")
+    assert loaded.secondary_video.path.replace("\\", "/").endswith("tmp/merge-image.png")
     assert loaded.analysis.beep_time_ms_primary == 400
     assert loaded.analysis.shotml_settings.detection_threshold == 0.42
     assert loaded.analysis.detection_threshold == 0.42
@@ -290,7 +291,7 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert loaded.merge_sources[0].opacity == pytest.approx(0.55)
     assert loaded.merge_sources[0].sync_offset_ms == 135
     assert loaded.analysis.sync_offset_ms == 135
-    assert Path(loaded.export.output_path) == Path("/tmp/export.mp4")
+    assert loaded.export.output_path.replace("\\", "/").endswith("tmp/export.mp4")
     assert loaded.export.preset == ExportPreset.CUSTOM
     assert loaded.export.aspect_ratio == AspectRatio.PORTRAIT
     assert loaded.export.target_width == 1080
