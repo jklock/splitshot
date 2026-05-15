@@ -60,18 +60,24 @@ Use the platform-specific local instructions below if you are building or runnin
 ### macOS
 
 - Electron locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot/electron`
-  `npm install`
-  `npm start`
+  ```bash
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot/electron
+  npm install
+  npm start
+  ```
 - Electron build target:
-  `npm run build:mac`
+  ```bash
+  npm run build:mac
+  ```
 - Source locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot`
-  `uv python install 3.12`
-  `uv sync --extra dev`
-  `uv run splitshot`
+  ```bash
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot
+  uv python install 3.12
+  uv sync --extra dev
+  uv run splitshot
+  ```
 - If the browser does not open automatically:
   rerun with `uv run splitshot --no-open` and open the printed URL manually.
 - Release/signing details:
@@ -80,18 +86,24 @@ Use the platform-specific local instructions below if you are building or runnin
 ### Windows
 
 - Electron locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot\electron`
-  `npm install`
-  `npm start`
+  ```powershell
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot\electron
+  npm install
+  npm start
+  ```
 - Electron build target:
-  `npm run build:win`
+  ```powershell
+  npm run build:win
+  ```
 - Source locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot`
-  `uv python install 3.12`
-  `uv sync --extra dev`
-  `uv run splitshot`
+  ```powershell
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot
+  uv python install 3.12
+  uv sync --extra dev
+  uv run splitshot
+  ```
 - If the browser does not open automatically:
   rerun with `uv run splitshot --no-open`.
 - Current limitation:
@@ -100,30 +112,51 @@ Use the platform-specific local instructions below if you are building or runnin
 ### Linux
 
 - Electron locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot/electron`
-  `npm install`
-  `npm start`
+  ```bash
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot/electron
+  npm install
+  npm start
+  ```
 - Electron build target:
-  `npm run build:linux`
+  ```bash
+  npm run build:linux
+  ```
 - Source locally:
-  `git clone https://github.com/jklock/splitshot.git`
-  `cd splitshot`
-  `uv python install 3.12`
-  `uv sync --extra dev`
-  `uv run splitshot`
+  ```bash
+  git clone https://github.com/jklock/splitshot.git
+  cd splitshot
+  uv python install 3.12
+  uv sync --extra dev
+  uv run splitshot
+  ```
 - If the browser does not open automatically:
   rerun with `uv run splitshot --no-open`.
 - Current limitation:
   Linux packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
 
-## Runtime Check
+## SplitShot Arguments
 
-Run this after setup on any platform:
+SplitShot starts in browser mode by default. These are the supported CLI arguments from `splitshot`:
 
-```bash
-uv run splitshot --check
-```
+- `uv run splitshot`
+  Starts the normal local browser workflow with the desktop runtime.
+- `uv run splitshot --web`
+  Explicitly requests the browser control interface. This matches the default behavior.
+- `uv run splitshot --headless`
+  Starts the HTTP server without the desktop GUI so you can use the browser interface without Qt window hosting.
+- `uv run splitshot --host 127.0.0.1`
+  Overrides the bind host for the local browser server.
+- `uv run splitshot --port 8765`
+  Overrides the bind port for the local browser server.
+- `uv run splitshot --no-open`
+  Starts the app without automatically opening the browser.
+- `uv run splitshot --log-level off|error|warning|info|debug`
+  Mirrors browser activity logs to the terminal at or above the selected level while keeping file logging enabled.
+- `uv run splitshot --project /path/to/project.ssproj`
+  Opens an existing `.ssproj` bundle at startup.
+- `uv run splitshot --check`
+  Runs the runtime/toolchain check for FFmpeg, FFprobe, Qt WebEngine, native dialog support, and required browser assets.
 
 ## User Documentation
 
