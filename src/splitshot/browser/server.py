@@ -808,6 +808,7 @@ class BrowserControlServer:
                     "/api/merge/remove": self._remove_merge_source,
                     "/api/merge/reset-defaults": self._reset_merge_defaults,
                     "/api/merge/source": self._set_merge_source,
+                    "/api/merge/source/analyze": self._analyze_merge_source,
                     "/api/overlay": self._set_overlay,
                     "/api/popups": self._set_popups,
                     "/api/merge": self._set_merge,
@@ -1666,6 +1667,12 @@ class BrowserControlServer:
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
+
+            def _analyze_merge_source(self, payload: dict[str, Any]) -> None:
+                source_id = payload.get("source_id") or payload.get("id")
+                if source_id in {None, ""}:
+                    raise ValueError("source_id is required")
+                controller.rerun_merge_source_analysis(str(source_id))
 
             def _reset_merge_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_merge_defaults()

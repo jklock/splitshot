@@ -32,6 +32,7 @@ If you are new to the repo, read:
 | `testing/run_test_suite.py` | validation | Canonical grouped pytest runner | Any normal local validation run | Inputs: suite/mode flags. Outputs: console summary, optional raw or JSON artifact |
 | `testing/run_ci_locally.py` | validation | Runs CI-shaped local job groups | Before pushing or when reproducing CI locally | Inputs: job name. Outputs: job summary and command failures |
 | `testing/run_electron_preflight.py` | validation | Runs the local Electron release gate for the current platform | Before packaging or release workflow triggers | Inputs: local repo state. Outputs: preflight pass/fail |
+| `audits/run_v1_1_audit.py` | audit | Runs the `v1.1` baseline bundle, writes summary artifacts, and emits a ranked worklist | Start of the `v1.1` hardening cycle or any later non-regression refresh | Inputs: optional timing manifest/video. Outputs: `artifacts/v1_1_audit/summary.json`, `summary.md`, logs, and optional analysis JSON reports |
 | `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
 | `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
 | `release/apply_github_rulesets.sh` | release | Creates or updates the `main` and `v*` repository rulesets through `gh api` | Initial V1 governance setup or later protection refresh | Inputs: authenticated GitHub CLI session. Outputs: live repository rulesets |
@@ -45,6 +46,7 @@ If you are new to the repo, read:
 | `audits/browser/run_browser_interaction_audit.py` | audit | Exercises real browser interactions against local media fixtures | Interaction regressions or evidence gathering | Inputs: media paths and optional PractiScore file. Outputs: structured audit report |
 | `audits/browser/run_browser_av_audit.py` | audit | Checks audio/video playback and timeline stability | AV-specific browser regressions | Inputs: app runtime and media. Outputs: JSON/table audit summary |
 | `audits/browser/run_browser_export_matrix.py` | audit | Exercises browser export combinations | Export-surface investigation | Inputs: export matrix parameters. Outputs: matrix results |
+| `audits/run_v1_1_audit.py` | audit | Freezes the current `v1.1` non-regression baseline across toolchain, browser, timing, persistence, export, analysis, and packaged parity surfaces | Beginning of the `v1.1` cycle or before broad hardening work | Inputs: optional timing manifest/video. Outputs: summary JSON/markdown, logs, ranked worklist |
 
 ### Analysis and training
 

@@ -175,6 +175,25 @@ def _source_opacity(source: MergeSource) -> float:
     return max(0.0, min(1.0, float(raw_opacity)))
 
 
+def _source_uses_looped_still_input(source: MergeSource) -> bool:
+    return source.asset.is_still_image and source.asset.media_kind != "animated_gif"
+
+
+def _source_input_args(source: MergeSource, fps: float) -> list[str]:
+    asset = source.asset
+    offset_ms = _source_sync_offset_ms(source)
+    input_args: list[str] = []
+    if offset_ms > 0 and not asset.is_still_image and asset.media_kind != "animated_gif":
+        input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
+    if _source_uses_looped_still_input(source):
+        input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
+    elif asset.media_kind == "animated_gif":
+        input_args.extend(["-stream_loop", "-1", "-ignore_loop", "0", "-i", asset.path])
+    else:
+        input_args.extend(["-i", asset.path])
+    return input_args
+
+
 def _source_end_ms(source: MergeSource) -> int:
     duration_ms = int(source.asset.duration_ms or 0)
     if duration_ms <= 0:
@@ -210,13 +229,7 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
         project.primary_video.path,
     ]
     for source, asset in zip(merge_sources, merge_assets, strict=False):
-        offset_ms = _source_sync_offset_ms(source)
-        if offset_ms > 0 and not asset.is_still_image:
-            input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
-        if asset.is_still_image:
-            input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
-        else:
-            input_args.extend(["-i", asset.path])
+        input_args.extend(_source_input_args(source, fps))
     input_args.append("-an")
 
     chain_parts: list[str] = []
@@ -280,14 +293,7 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
         project.primary_video.path,
     ]
     for source in merge_sources:
-        asset = source.asset
-        offset_ms = _source_sync_offset_ms(source)
-        if offset_ms > 0 and not asset.is_still_image:
-            input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
-        if asset.is_still_image:
-            input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
-        else:
-            input_args.extend(["-i", asset.path])
+        input_args.extend(_source_input_args(source, fps))
     input_args.append("-an")
 
     filter_parts = [
@@ -397,12 +403,7 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         "-i",
         project.primary_video.path,
     ]
-    if offset_ms > 0 and not secondary.is_still_image:
-        input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
-    if secondary.is_still_image:
-        input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", secondary.path])
-    else:
-        input_args.extend(["-i", secondary.path])
+    input_args.extend(_source_input_args(secondary_source, fps))
     input_args.append("-an")
 
     secondary_chain = "[1:v]setpts=PTS-STARTPTS"

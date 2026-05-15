@@ -166,6 +166,17 @@ def browser_state(
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
+    merge_sources_payload = project_payload.get("merge_sources")
+    analysis_payload = project_payload.get("analysis")
+    if isinstance(merge_sources_payload, list) and isinstance(analysis_payload, dict):
+        analyzed_source_id = analysis_payload.get("analyzed_secondary_source_id")
+        for item in merge_sources_payload:
+            if not isinstance(item, dict):
+                continue
+            asset_payload = item.get("asset")
+            if isinstance(asset_payload, dict):
+                item["media_kind"] = str(asset_payload.get("media_kind") or ("still_image" if asset_payload.get("is_still_image") else "video"))
+            item["is_analyzed_sync_source"] = bool(analyzed_source_id and item.get("id") == analyzed_source_id)
     split_rows_payload = []
     for row in rows:
         row_payload = _normalize_scoring_row_payload(asdict(row), ruleset)
@@ -222,6 +233,7 @@ def browser_state(
                 if secondary_available
                 else None
             ),
+            "secondary_source_id": project.analysis.analyzed_secondary_source_id,
             "cache_token": media_cache_token or "",
         },
     }

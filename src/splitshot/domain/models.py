@@ -145,6 +145,7 @@ class VideoAsset:
     audio_sample_rate: int = 22050
     rotation: int = 0
     is_still_image: bool = False
+    media_kind: str = "video"
 
     @property
     def path_obj(self) -> Path:
@@ -274,6 +275,10 @@ class TimingChangeProposal:
 class AnalysisState:
     beep_time_ms_primary: int | None = None
     beep_time_ms_secondary: int | None = None
+    analyzed_secondary_source_id: str | None = None
+    secondary_analysis_status: str = "idle"
+    secondary_analysis_message: str = ""
+    secondary_sync_source: str = "manual"
     sync_offset_ms: int = 0
     detection_threshold: float = 0.35
     shotml_settings: ShotMLSettings = field(default_factory=ShotMLSettings)
@@ -445,6 +450,11 @@ class OverlayTextBox:
     opacity: float = 0.9
     width: int = 0
     height: int = 0
+    style_type: str = "square"
+    font_family: str = "Helvetica Neue"
+    font_size: int = 14
+    font_bold: bool = True
+    font_italic: bool = False
 
 
 @dataclass(slots=True)
@@ -476,6 +486,11 @@ class PopupBubble:
     opacity: float = 0.9
     width: int = 0
     height: int = 0
+    style_type: str = "square"
+    font_family: str = "Helvetica Neue"
+    font_size: int = 14
+    font_bold: bool = True
+    font_italic: bool = False
     content_type: str = "text"
     image_path: str = ""
     image_scale_mode: str = "contain"
@@ -496,6 +511,11 @@ class PopupTemplate:
     background_color: str = "#000000"
     text_color: str = "#ffffff"
     opacity: float = 0.9
+    style_type: str = "square"
+    font_family: str = "Helvetica Neue"
+    font_size: int = 14
+    font_bold: bool = True
+    font_italic: bool = False
 
 
 @dataclass(slots=True)
@@ -820,6 +840,11 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
         opacity=float(data.get("opacity", 0.9)),
         width=int(data.get("width", 0)),
         height=int(data.get("height", 0)),
+        style_type=str(data.get("style_type", "square") or "square"),
+        font_family=str(data.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
+        font_bold=bool(data.get("font_bold", True)),
+        font_italic=bool(data.get("font_italic", False)),
     )
     if box.x is not None or box.y is not None:
         box.quadrant = "custom"
@@ -856,6 +881,11 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         opacity=max(0.0, min(1.0, float(data.get("opacity", 0.9)))),
         width=max(0, int(data.get("width", 0) or 0)),
         height=max(0, int(data.get("height", 0) or 0)),
+        style_type=str(data.get("style_type", "square") or "square"),
+        font_family=str(data.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
+        font_bold=bool(data.get("font_bold", True)),
+        font_italic=bool(data.get("font_italic", False)),
         content_type=str(data.get("content_type", "text") or "text"),
         image_path=str(data.get("image_path", "") or ""),
         image_scale_mode=str(data.get("image_scale_mode", "contain") or "contain"),
@@ -879,6 +909,11 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         background_color=str(payload.get("background_color", "#000000") or "#000000"),
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", 0.9)))),
+        style_type=str(payload.get("style_type", "square") or "square"),
+        font_family=str(payload.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_size=max(8, min(72, int(payload.get("font_size", 14) or 14))),
+        font_bold=bool(payload.get("font_bold", True)),
+        font_italic=bool(payload.get("font_italic", False)),
     )
 
 
@@ -903,6 +938,11 @@ def legacy_custom_box_as_text_box(overlay: OverlaySettings, legacy_lock_to_stack
         opacity=float(overlay.custom_box_opacity),
         width=int(overlay.custom_box_width),
         height=int(overlay.custom_box_height),
+        style_type="square",
+        font_family=overlay.font_family,
+        font_size=overlay.font_size,
+        font_bold=overlay.font_bold,
+        font_italic=overlay.font_italic,
     )
     if box.x is not None or box.y is not None:
         box.quadrant = "custom"
@@ -1097,11 +1137,24 @@ def _shot_from_dict(data: dict[str, Any]) -> ShotEvent:
 def _video_from_dict(data: dict[str, Any] | None) -> VideoAsset:
     payload = data or {}
     path = str(payload.get("path", ""))
+    media_kind = str(payload.get("media_kind", "") or "").strip().lower()
+    inferred_still = _path_looks_like_still_image(path)
     still_image = payload.get("is_still_image")
-    if still_image is None:
-        still_image = _path_looks_like_still_image(path)
+    if media_kind == "animated_gif":
+        still_image_value = False
+    elif media_kind == "still_image":
+        still_image_value = True
+    elif still_image is None:
+        still_image_value = inferred_still
     else:
-        still_image = bool(still_image) or _path_looks_like_still_image(path)
+        still_image_value = bool(still_image) or inferred_still
+    if not media_kind:
+        if Path(path).suffix.lower() == ".gif" and not still_image_value:
+            media_kind = "animated_gif"
+        elif still_image_value:
+            media_kind = "still_image"
+        else:
+            media_kind = "video"
     return VideoAsset(
         path=path,
         duration_ms=int(payload.get("duration_ms", 0)),
@@ -1110,7 +1163,8 @@ def _video_from_dict(data: dict[str, Any] | None) -> VideoAsset:
         fps=float(payload.get("fps", 30.0)),
         audio_sample_rate=int(payload.get("audio_sample_rate", 22050)),
         rotation=int(payload.get("rotation", 0)),
-        is_still_image=bool(still_image),
+        is_still_image=bool(still_image_value),
+        media_kind=media_kind,
     )
 
 
@@ -1168,6 +1222,14 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         analysis=AnalysisState(
             beep_time_ms_primary=analysis_data.get("beep_time_ms_primary"),
             beep_time_ms_secondary=analysis_data.get("beep_time_ms_secondary"),
+            analyzed_secondary_source_id=(
+                None
+                if analysis_data.get("analyzed_secondary_source_id") in {None, ""}
+                else str(analysis_data.get("analyzed_secondary_source_id"))
+            ),
+            secondary_analysis_status=str(analysis_data.get("secondary_analysis_status", "idle") or "idle"),
+            secondary_analysis_message=str(analysis_data.get("secondary_analysis_message", "") or ""),
+            secondary_sync_source=str(analysis_data.get("secondary_sync_source", "manual") or "manual"),
             sync_offset_ms=int(analysis_data.get("sync_offset_ms", 0)),
             detection_threshold=float(analysis_data.get("detection_threshold", 0.35)),
             shotml_settings=_shotml_settings_from_dict(

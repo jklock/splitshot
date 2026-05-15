@@ -40,6 +40,7 @@ This is the primary reading path for people trying to use SplitShot rather than 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md)
 - [project/GOVERNANCE.md](project/GOVERNANCE.md)
+- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
 - [project/ELECTRON_RELEASE.md](project/ELECTRON_RELEASE.md)
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md)
@@ -90,6 +91,7 @@ Covered surfaces:
 - [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
 - [project/browser-control-coverage-plan.md](project/browser-control-coverage-plan.md)
 - [project/browser-full-e2e-qa-plan.md](project/browser-full-e2e-qa-plan.md)
+- [project/V1_1_AUDIT.md](project/V1_1_AUDIT.md)
 
 ## Read This Next
 

@@ -327,6 +327,18 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
         raw_opacity = payload.get("opacity")
         if raw_opacity not in {None, ""}:
             template.opacity = max(0.0, min(1.0, float(raw_opacity)))
+    if "style_type" in payload:
+        template.style_type = str(payload.get("style_type", template.style_type) or template.style_type)
+    if "font_family" in payload:
+        template.font_family = str(payload.get("font_family", template.font_family) or template.font_family)[:80]
+    if "font_size" in payload:
+        raw_font_size = payload.get("font_size")
+        if raw_font_size not in {None, ""}:
+            template.font_size = max(8, min(72, int(raw_font_size)))
+    if "font_bold" in payload:
+        template.font_bold = bool(payload.get("font_bold", template.font_bold))
+    if "font_italic" in payload:
+        template.font_italic = bool(payload.get("font_italic", template.font_italic))
 
 
 def _overlay_text_boxes_to_payload(boxes: list[OverlayTextBox]) -> list[dict[str, object]]:
@@ -434,16 +446,40 @@ def _project_media_recovery_score(
     return score
 
 
+def _source_supports_secondary_analysis(source: MergeSource | None) -> bool:
+    if source is None:
+        return False
+    asset = source.asset
+    return bool(asset.path) and not asset.is_still_image and asset.media_kind != "animated_gif"
+
+
+def _first_analyzable_merge_source(project: Project) -> MergeSource | None:
+    for source in project.merge_sources:
+        if _source_supports_secondary_analysis(source):
+            return source
+    return None
+
+
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
-    project.secondary_video = project.merge_sources[0].asset if project.merge_sources else None
+    source = _first_analyzable_merge_source(project)
+    project.secondary_video = None if source is None else source.asset
+
+
+def _clear_secondary_analysis_state(project: Project, *, preserve_sync_offset: bool = False) -> None:
+    project.analysis.beep_time_ms_secondary = None
+    project.analysis.analyzed_secondary_source_id = None
+    project.analysis.secondary_analysis_status = "idle"
+    project.analysis.secondary_analysis_message = ""
+    project.analysis.waveform_secondary = []
+    if not preserve_sync_offset:
+        project.analysis.sync_offset_ms = 0
+        project.analysis.secondary_sync_source = "manual"
 
 
 def _reset_media_dependent_state_for_primary_video(project: Project) -> None:
     project.analysis.beep_time_ms_primary = None
-    project.analysis.beep_time_ms_secondary = None
-    project.analysis.sync_offset_ms = 0
+    _clear_secondary_analysis_state(project)
     project.analysis.waveform_primary = []
-    project.analysis.waveform_secondary = []
     project.analysis.shots = []
     project.analysis.events = []
     project.analysis.timing_change_proposals = []
@@ -784,11 +820,18 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def analyze_secondary(self) -> None:
-        if self.project.secondary_video is None or not self.project.secondary_video.path:
+        source = _first_analyzable_merge_source(self.project)
+        if source is None or not source.asset.path:
+            _clear_secondary_analysis_state(self.project, preserve_sync_offset=True)
+            self.project.secondary_video = None
             return
+        self.project.secondary_video = source.asset
+        self.project.analysis.analyzed_secondary_source_id = source.id
+        self.project.analysis.secondary_analysis_status = "running"
+        self.project.analysis.secondary_analysis_message = "Analyzing PiP sync source."
         self._set_status("Analyzing secondary video and computing sync offset...")
         result = _run_analyze_video_audio(
-            self.project.secondary_video.path,
+            source.asset.path,
             self.project.analysis.shotml_settings.detection_threshold,
             self.project.analysis.shotml_settings,
         )
@@ -798,8 +841,14 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_primary,
             self.project.analysis.beep_time_ms_secondary,
         )
-        if self.project.merge_sources:
-            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        self.project.analysis.secondary_sync_source = "auto"
+        self.project.analysis.secondary_analysis_status = "ready" if result.beep_time_ms is not None else "no_beep"
+        self.project.analysis.secondary_analysis_message = (
+            "Secondary beep detected."
+            if result.beep_time_ms is not None
+            else "No secondary beep detected. Manual sync is still available."
+        )
+        source.sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status(
             "Secondary analysis complete."
             + ("" if result.beep_time_ms is None else f" Sync offset: {self.project.analysis.sync_offset_ms} ms.")
@@ -1645,6 +1694,11 @@ class ProjectController(QObject):
                     opacity=self.project.overlay.custom_box_opacity,
                     width=0,
                     height=0,
+                    style_type=self.project.overlay.style_type,
+                    font_family=self.project.overlay.font_family,
+                    font_size=self.project.overlay.font_size,
+                    font_bold=self.project.overlay.font_bold,
+                    font_italic=self.project.overlay.font_italic,
                 )
             )
             self.project.overlay.text_boxes = boxes
@@ -1672,7 +1726,7 @@ class ProjectController(QObject):
         )
         self.project.merge.enabled = True
         _sync_secondary_video_from_merge_sources(self.project)
-        if len(self.project.merge_sources) == 1 and not asset.is_still_image:
+        if _first_analyzable_merge_source(self.project) is not None:
             self._set_status("Imported merge media.")
             self.analyze_secondary()
             return
@@ -1688,18 +1742,26 @@ class ProjectController(QObject):
             return
         if not self.project.merge_sources:
             self.project.merge.enabled = False
-        removed_first = bool(before_sources and before_sources[0].id == source_id)
+        removed_analyzed = self.project.analysis.analyzed_secondary_source_id == source_id
         _sync_secondary_video_from_merge_sources(self.project)
-        if removed_first:
-            self.project.analysis.beep_time_ms_secondary = None
-            self.project.analysis.waveform_secondary = []
-            if self.project.merge_sources and not self.project.merge_sources[0].asset.is_still_image:
+        if removed_analyzed:
+            _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
+            if _first_analyzable_merge_source(self.project) is not None:
                 self.analyze_secondary()
                 return
-            self.project.analysis.sync_offset_ms = self.project.merge_sources[0].sync_offset_ms if self.project.merge_sources else 0
+            self.project.analysis.sync_offset_ms = 0
         self._set_status("Removed merge media.")
         self.project.touch()
         self.project_changed.emit()
+
+    def rerun_merge_source_analysis(self, source_id: str) -> None:
+        source = next((item for item in self.project.merge_sources if item.id == source_id), None)
+        if source is None:
+            raise ValueError("Merge source not found")
+        analyzed_source = _first_analyzable_merge_source(self.project)
+        if analyzed_source is None or analyzed_source.id != source_id:
+            raise ValueError("Only the first analyzable PiP video can be reanalyzed")
+        self.analyze_secondary()
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
@@ -1746,7 +1808,7 @@ class ProjectController(QObject):
             if changed:
                 self.project.analysis.timing_change_proposals = []
             self.analyze_primary()
-            if self.project.secondary_video is not None and not self.project.secondary_video.is_still_image:
+            if _first_analyzable_merge_source(self.project) is not None:
                 self.analyze_secondary()
             return
         if changed:
@@ -1772,8 +1834,8 @@ class ProjectController(QObject):
     def rerun_shotml(self) -> None:
         if self.project.primary_video.path:
             self.analyze_primary()
-            if self.project.secondary_video is not None and not self.project.secondary_video.is_still_image:
-                self.analyze_secondary()
+        if _first_analyzable_merge_source(self.project) is not None:
+            self.analyze_secondary()
             return
         self.project.touch()
         self._set_status("ShotML settings saved.")
@@ -2510,6 +2572,11 @@ class ProjectController(QObject):
                     opacity=max(0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))),
                     width=max(0, int(item.get("width", 0))),
                     height=max(0, int(item.get("height", 0))),
+                    style_type=str(item.get("style_type", overlay.style_type) or overlay.style_type),
+                    font_family=str(item.get("font_family", overlay.font_family) or overlay.font_family)[:80],
+                    font_size=max(8, min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size))),
+                    font_bold=bool(item.get("font_bold", overlay.font_bold)),
+                    font_italic=bool(item.get("font_italic", overlay.font_italic)),
                 )
                 if box.x is not None or box.y is not None:
                     box.quadrant = "custom"
@@ -2661,8 +2728,9 @@ class ProjectController(QObject):
             if source.id != source_id:
                 continue
             source.sync_offset_ms = int(offset_ms)
-            if index == 0:
+            if self.project.analysis.analyzed_secondary_source_id == source_id or index == 0:
                 self.project.analysis.sync_offset_ms = source.sync_offset_ms
+                self.project.analysis.secondary_sync_source = "manual"
             self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
             self.project.touch()
             self.project_changed.emit()
@@ -2803,16 +2871,30 @@ class ProjectController(QObject):
 
     def adjust_sync_offset(self, delta_ms: int) -> None:
         self.project.analysis.sync_offset_ms += delta_ms
-        if self.project.merge_sources:
+        source_id = self.project.analysis.analyzed_secondary_source_id
+        if source_id:
+            for source in self.project.merge_sources:
+                if source.id == source_id:
+                    source.sync_offset_ms = self.project.analysis.sync_offset_ms
+                    break
+        elif self.project.merge_sources:
             self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        self.project.analysis.secondary_sync_source = "manual"
         self._set_status(f"Adjusted sync offset to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
 
     def set_sync_offset(self, offset_ms: int) -> None:
         self.project.analysis.sync_offset_ms = offset_ms
-        if self.project.merge_sources:
+        source_id = self.project.analysis.analyzed_secondary_source_id
+        if source_id:
+            for source in self.project.merge_sources:
+                if source.id == source_id:
+                    source.sync_offset_ms = self.project.analysis.sync_offset_ms
+                    break
+        elif self.project.merge_sources:
             self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        self.project.analysis.secondary_sync_source = "manual"
         self._set_status(f"Sync offset set to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
@@ -2834,9 +2916,11 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_secondary,
             self.project.analysis.beep_time_ms_primary,
         )
+        analyzed_source = _first_analyzable_merge_source(self.project)
+        self.project.analysis.analyzed_secondary_source_id = None if analyzed_source is None else analyzed_source.id
         self.project.analysis.sync_offset_ms *= -1
-        if self.project.merge_sources:
-            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        if analyzed_source is not None:
+            analyzed_source.sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status("Swapped primary and secondary videos.")
         self.project.touch()
         self.project_changed.emit()
@@ -2928,6 +3012,11 @@ class ProjectController(QObject):
                     "background_color": self.project.popup_template.background_color,
                     "text_color": self.project.popup_template.text_color,
                     "opacity": self.project.popup_template.opacity,
+                    "style_type": self.project.popup_template.style_type,
+                    "font_family": self.project.popup_template.font_family,
+                    "font_size": self.project.popup_template.font_size,
+                    "font_bold": self.project.popup_template.font_bold,
+                    "font_italic": self.project.popup_template.font_italic,
                 },
                 "review_text_boxes": _overlay_text_boxes_to_payload(self.project.overlay.text_boxes),
             },
@@ -3295,8 +3384,10 @@ class ProjectController(QObject):
             if isinstance(item, dict)
         ]
         _sync_secondary_video_from_merge_sources(project)
-        if project.merge_sources and not project.merge_sources[0].asset.is_still_image:
-            project.analysis.sync_offset_ms = int(project.merge_sources[0].sync_offset_ms)
+        analyzed_source = _first_analyzable_merge_source(project)
+        if analyzed_source is not None:
+            project.analysis.analyzed_secondary_source_id = analyzed_source.id
+            project.analysis.sync_offset_ms = int(analyzed_source.sync_offset_ms)
         project.export.quality = effective.export_quality
         project.export.preset = effective.export_preset
         project.export.frame_rate = effective.export_frame_rate
