@@ -157,7 +157,7 @@ jobs:
 
   package-linux:
     if: github.event_name != 'workflow_dispatch' || github.event.inputs.target == 'linux'
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     defaults:
@@ -228,7 +228,7 @@ jobs:
 
   package-windows:
     if: github.event_name != 'workflow_dispatch' || github.event.inputs.target == 'windows'
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: windows-latest
     permissions:
       contents: write
     defaults:
