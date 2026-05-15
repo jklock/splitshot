@@ -37,7 +37,7 @@ def _create_project_bundle(name: str) -> Path:
         "save_project(Project(name=sys.argv[2]), Path(sys.argv[1]))"
     )
     result = subprocess.run(
-        ["uv", "run", "python", "-c", script, str(project_path), name],
+        [sys.executable, "-c", script, str(project_path), name],
         cwd=REPO,
         capture_output=True,
         text=True,
