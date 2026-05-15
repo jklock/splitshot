@@ -15,11 +15,11 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Install uv
@@ -53,7 +53,7 @@ jobs:
         env:
           LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: splitshot-linux
           path: electron/build/*.AppImage

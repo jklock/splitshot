@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Git ref to build and publish
+        required: true
+        default: v1.0.1
+      release_tag:
+        description: Release tag to publish
+        required: true
+        default: v1.0.1
+
+env:
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.release_ref || github.ref_name }}
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
 jobs:
   macos:
@@ -16,11 +30,13 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Install uv
@@ -60,7 +76,7 @@ jobs:
           cd electron && npm run build:mac
         timeout-minutes: 30
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: splitshot-macos
           path: electron/build/*.dmg
@@ -80,11 +96,13 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Install uv
@@ -105,7 +123,7 @@ jobs:
         run: cd electron && npm run build:linux
         timeout-minutes: 30
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: splitshot-linux
           path: electron/build/*.AppImage
@@ -120,11 +138,13 @@ jobs:
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
       - name: Install ffmpeg
@@ -147,7 +167,7 @@ jobs:
         run: cd electron && npm run build:win
         timeout-minutes: 30
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: splitshot-windows
           path: electron/build/*.exe
@@ -158,24 +178,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v4
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v5
       - name: Extract release notes
         run: |
-          uv run python scripts/release/extract_release_notes.py "${GITHUB_REF_NAME}" --output artifacts/release-notes.md
+          python3 scripts/release/extract_release_notes.py "${RELEASE_TAG}" --output artifacts/release-notes.md
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            --title "SplitShot ${GITHUB_REF_NAME#v}" \
-            --notes-file artifacts/release-notes.md \
-            --target "$GITHUB_SHA" \
-            2>/dev/null || gh release edit "${GITHUB_REF_NAME}" --notes-file artifacts/release-notes.md
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "SplitShot ${RELEASE_TAG#v}" \
+              --notes-file artifacts/release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" \
+              --title "SplitShot ${RELEASE_TAG#v}" \
+              --notes-file artifacts/release-notes.md
+          fi
           for dir in splitshot-macos splitshot-linux splitshot-windows; do
             [ -d "$dir" ] && for f in "$dir"/*; do
-              gh release upload "${GITHUB_REF_NAME}" "$f" --clobber
+              gh release upload "${RELEASE_TAG}" "$f" --clobber
             done
           done
