@@ -6,59 +6,14 @@ on:
       - 'release'
 
 jobs:
-  # === Phase 1: Version bump ===
-  version:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      new-version: ${{ steps.bump.outputs.new-version }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-      - name: Bump patch version
-        id: bump
-        run: |
-          OLD=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-          IFS='.' read -r MAJ MIN PAT <<< "$OLD"
-          PAT=$((PAT + 1))
-          NEW="${MAJ}.${MIN}.${PAT}"
-          echo "new-version=$NEW" >> "$GITHUB_OUTPUT"
-          sed -i 's/^version = ".*"/version = "'"$NEW"'"/' pyproject.toml
-          sed -i 's/"version": ".*"/"version": "'"$NEW"'"/' electron/package.json
-      - name: Commit and tag
-        run: |
-          git config user.name "splitshot-bot"
-          git config user.email "bot@splitshot.studio"
-          git add pyproject.toml electron/package.json
-          git commit -m "release: v${{ steps.bump.outputs.new-version }}"
-          git push
-          TAG="v${{ steps.bump.outputs.new-version }}"
-          git tag -a "$TAG" -m "SplitShot $TAG"
-          git push origin "$TAG"
-      - name: Create Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ steps.bump.outputs.new-version }}"
-          gh release create "$TAG" \
-            --title "SplitShot $TAG" \
-            --notes "Release $TAG" \
-            --target "$TAG"
-
-  # === Phase 2: Test all 3 platforms (must all pass to proceed) ===
+  # === Step 1: Unit tests — all 3 platforms, parallel ===
   test-macos:
-    needs: version
     runs-on: macos-latest
     env:
       QT_QPA_PLATFORM: offscreen
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -72,15 +27,12 @@ jobs:
         run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table --suite analysis --suite cli --suite export --suite media --suite persistence --suite presentation --suite scoring --suite benchmarks --suite scripts
 
   test-linux:
-    needs: version
     runs-on: ubuntu-latest
     env:
       QT_QPA_PLATFORM: offscreen
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -94,15 +46,12 @@ jobs:
         run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table --suite analysis --suite cli --suite export --suite media --suite persistence --suite presentation --suite scoring --suite benchmarks --suite scripts
 
   test-windows:
-    needs: version
     runs-on: windows-latest
     env:
       QT_QPA_PLATFORM: offscreen
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -115,9 +64,9 @@ jobs:
       - name: Run tests
         run: uv run python scripts/testing/run_test_suite.py --mode all-together --format table --suite analysis --suite cli --suite export --suite media --suite persistence --suite presentation --suite scoring --suite benchmarks --suite scripts
 
-  # === Phase 3: Build all 3 platforms (runs in parallel, only if tests pass) ===
+  # === Step 2: Build — each platform, depends on its test passing ===
   build-macos:
-    needs: [version, test-macos]
+    needs: test-macos
     runs-on: macos-14
     permissions:
       contents: write
@@ -128,8 +77,6 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -142,13 +89,13 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
-      - name: Sync Python dependencies
+      - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-      - name: Install Node dependencies
+      - name: Install Node deps
         run: cd electron && npm install
         timeout-minutes: 10
       - name: Prepare macOS signing certificate
@@ -175,12 +122,11 @@ jobs:
       - name: Verify installer
         run: |
           shopt -s nullglob; d=( electron/build/*.dmg ); [ ${#d[@]} -eq 0 ] && { echo "No DMG"; exit 1; }; ls -lh "${d[@]}"
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ needs.version.outputs.new-version }}"
-          for f in electron/build/*.dmg; do gh release upload "$TAG" "$f" --clobber; done
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-macos
+          path: electron/build/*.dmg
       - name: Cleanup
         if: always()
         run: |
@@ -188,7 +134,7 @@ jobs:
           [ -n "${MAC_CERT_TMPDIR:-}" ] && rm -rf "${MAC_CERT_TMPDIR}"
 
   build-linux:
-    needs: [version, test-linux]
+    needs: test-linux
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -199,8 +145,6 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -213,12 +157,12 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
-      - name: Install system dependencies
+      - name: Install system deps
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
-      - name: Sync Python dependencies
+      - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-      - name: Install Node dependencies
+      - name: Install Node deps
         run: cd electron && npm install
         timeout-minutes: 10
       - name: Build
@@ -227,15 +171,14 @@ jobs:
       - name: Verify installer
         run: |
           shopt -s nullglob; a=( electron/build/*.AppImage ); [ ${#a[@]} -eq 0 ] && { echo "No AppImage"; exit 1; }; ls -lh "${a[@]}"
-      - name: Upload to Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v${{ needs.version.outputs.new-version }}"
-          for f in electron/build/*.AppImage; do gh release upload "$TAG" "$f" --clobber; done
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-linux
+          path: electron/build/*.AppImage
 
   build-windows:
-    needs: [version, test-windows]
+    needs: test-windows
     runs-on: windows-latest
     permissions:
       contents: write
@@ -246,8 +189,6 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -264,10 +205,10 @@ jobs:
         run: uv python install 3.12
       - name: Verify host toolchain
         run: python3 --version; node --version; npm --version; uv --version; ffmpeg -version | head -n 1
-      - name: Sync Python dependencies
+      - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
-      - name: Install Node dependencies
+      - name: Install Node deps
         run: cd electron && npm install
         timeout-minutes: 10
       - name: Build
@@ -276,9 +217,40 @@ jobs:
       - name: Verify installer
         run: |
           shopt -s nullglob; e=( electron/build/*.exe ); [ ${#e[@]} -eq 0 ] && { echo "No NSIS"; exit 1; }; ls -lh "${e[@]}"
-      - name: Upload to Release
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-windows
+          path: electron/build/*.exe
+
+  # === Step 3: Publish — create v1 tag + release, attach all installers ===
+  publish:
+    needs: [build-macos, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      - name: Create v1 tag and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ needs.version.outputs.new-version }}"
-          for f in electron/build/*.exe; do gh release upload "$TAG" "$f" --clobber; done
+          # Create v1 tag (delete existing if present)
+          git push origin :refs/tags/v1 2>/dev/null || true
+          git tag -a v1 -m "SplitShot V1"
+          git push origin v1
+
+          # Create GitHub Release
+          gh release create v1 \
+            --title "SplitShot V1" \
+            --notes "SplitShot V1 release" \
+            --target main
+
+          # Upload all installers
+          for dir in splitshot-macos splitshot-linux splitshot-windows; do
+            [ -d "$dir" ] && for f in "$dir"/*; do
+              gh release upload v1 "$f" --clobber
+            done
+          done
