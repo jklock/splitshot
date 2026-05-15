@@ -167,8 +167,10 @@ Start here for product usage:
 Use these after the user-facing install and workflow docs:
 
 - [docs/README.md](docs/README.md): full documentation index by audience
+- [CHANGELOG.md](CHANGELOG.md): release history and launch-grade notes
 - [docs/project/DEVELOPING.md](docs/project/DEVELOPING.md): local setup, daily workflow, and first engineering reads
 - [docs/project/ARCHITECTURE.md](docs/project/ARCHITECTURE.md): runtime layers, controller/model boundaries, and data flow
+- [docs/project/GOVERNANCE.md](docs/project/GOVERNANCE.md): branch lifecycle, protections, and release-tag policy
 - [src/splitshot/README.md](src/splitshot/README.md): source tree map and subsystem entrypoints
 - [docs/tests/TEST_SUITE_GUIDE.md](docs/tests/TEST_SUITE_GUIDE.md): validation and suite ownership
 - [scripts/README.md](scripts/README.md): scripts, audits, and release helpers

@@ -61,6 +61,7 @@ uvx ruff check .
 - [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
 - [../../scripts/README.md](../../scripts/README.md)
 - [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md)
+- [GOVERNANCE.md](GOVERNANCE.md)
 
 ## Working Areas
 
@@ -84,3 +85,4 @@ uvx ruff check .
 - [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
 - [../../scripts/README.md](../../scripts/README.md)
 - [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md)
+- [GOVERNANCE.md](GOVERNANCE.md)

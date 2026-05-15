@@ -106,7 +106,7 @@ Electron packaging and release work is split across dedicated workflows:
 - `.github/workflows/release.yml`
 - platform smoke/test coverage in `.github/workflows/test-macos.yml`, `test-windows.yml`, and `test-linux.yml`
 
-The three `build-*` workflows package a single platform target each and can run by `workflow_dispatch`, `workflow_call`, or their dedicated tag trigger. `release.yml` is the orchestration workflow that bumps the version, creates the version tag, calls the three build workflows, and publishes the GitHub release with all three platform artifacts.
+The three `build-*` workflows are manual packaging helpers. They package one platform target each and upload artifacts for inspection, but they do not publish GitHub releases. `release.yml` is the only publisher. It runs on semver tags like `v1.0.0`, builds all three platforms, extracts the matching release notes from [../../CHANGELOG.md](../../CHANGELOG.md), and publishes the GitHub release with all three platform artifacts.
 
 Runner targets:
 
@@ -131,19 +131,36 @@ If no notarization credentials are configured, the workflow signs the app and sk
 Use the platform-specific build workflows and test workflows for packaging smoke checks.
 
 - Choose the target branch in the Actions UI.
-- Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform.
+- Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform without cutting a release.
 - Run the local Electron preflight first.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
 - Use these runs to validate packaging, secret rotation, cert export, signing, notarization, and packaged-app launch.
 
-Do not create `ci-test` or debug release tags for smoke testing.
+Do not create fake release tags for smoke testing.
 
 ## Real Releases
 
-Use the `release.yml` workflow when you want a coordinated three-platform release. It bumps the version, creates the `v<version>` tag, calls the three platform build workflows, and publishes the GitHub release with the macOS, Linux, and Windows artifacts attached.
+Use the semver tag flow when you want a coordinated three-platform release.
+
+1. Update the versioned files in the repo.
+2. Finalize the matching release notes section in [../../CHANGELOG.md](../../CHANGELOG.md).
+3. Merge the release-ready state into `main`.
+4. Create and push the release tag:
+
+```bash
+git tag -a v1.0.0 -m "SplitShot v1.0.0"
+git push origin v1.0.0
+```
+
+5. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
 
 ## Troubleshooting
 
 - `MAC verification failed during PKCS12 import`: the `.p12` payload and `MAC_CERT_PASSWORD` do not match, or the export is malformed or incompatible with macOS `security import`. Re-export it from Keychain Access with the private key included.
 - Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
 - Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets.
+
+## Read This Next
+
+- [GOVERNANCE.md](GOVERNANCE.md)
+- [../../CHANGELOG.md](../../CHANGELOG.md)

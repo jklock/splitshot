@@ -1,9 +1,6 @@
 name: Build Linux
 
 on:
-  push:
-    tags:
-      - 'build-linux'
   workflow_dispatch:
   workflow_call:
 
@@ -54,11 +51,3 @@ jobs:
         with:
           name: splitshot-linux
           path: electron/build/*.AppImage
-      - name: Publish to Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          shopt -s nullglob; imgs=( electron/build/*.AppImage )
-          for f in "${imgs[@]}"; do
-            gh release upload v1 "$f" --clobber && echo "Uploaded $f to v1"
-          done

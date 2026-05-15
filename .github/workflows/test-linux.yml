@@ -1,13 +1,14 @@
 name: Test Linux
 
 on:
-  push:
-    tags:
-      - 'test-linux'
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  unit:
+  linux-tests:
+    name: linux-tests
     runs-on: ubuntu-latest
     env:
       QT_QPA_PLATFORM: offscreen
@@ -42,7 +43,9 @@ jobs:
         if: steps.run_tests.outcome == 'failure'
         run: exit 1
 
-  electron-smoke:
+  linux-electron-smoke:
+    if: github.event_name != 'pull_request'
+    name: linux-electron-smoke
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -92,5 +95,4 @@ jobs:
         with:
           name: e2e-artifacts-linux
           path: artifacts/
-
 

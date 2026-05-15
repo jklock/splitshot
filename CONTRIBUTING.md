@@ -18,7 +18,8 @@ Read these before changing code:
 2. Run the narrowest useful validation first.
 3. Expand to the owning suite if behavior changed.
 4. Update docs when setup, commands, architecture, behavior, or troubleshooting changed.
-5. Open a pull request from a branch after the relevant checks pass.
+5. Open a pull request from a short-lived branch after the relevant checks pass.
+6. Delete the branch after merge unless it still carries active work.
 
 ## Required Checks
 
@@ -50,6 +51,7 @@ uvx ruff check .
 ## Pull Requests
 
 - Use a branch for every change.
+- Treat `main` as PR-first. Maintainer bypass exists for hotfixes and release recovery, not as the default workflow.
 - Describe the problem, exact fix, verification, and residual risks.
 - Call out browser UI, project-model, analysis, export, or release-flow changes explicitly.
 - Note follow-up work instead of hiding it in commit history.
@@ -59,3 +61,4 @@ uvx ruff check .
 - [docs/project/DEVELOPING.md](docs/project/DEVELOPING.md)
 - [docs/tests/TEST_SUITE_GUIDE.md](docs/tests/TEST_SUITE_GUIDE.md)
 - [scripts/README.md](scripts/README.md)
+- [docs/project/GOVERNANCE.md](docs/project/GOVERNANCE.md)

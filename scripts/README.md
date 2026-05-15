@@ -34,6 +34,7 @@ If you are new to the repo, read:
 | `testing/run_electron_preflight.py` | validation | Runs the local Electron release gate for the current platform | Before packaging or release workflow triggers | Inputs: local repo state. Outputs: preflight pass/fail |
 | `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
 | `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
+| `release/apply_github_rulesets.sh` | release | Creates or updates the `main` and `v*` repository rulesets through `gh api` | Initial V1 governance setup or later protection refresh | Inputs: authenticated GitHub CLI session. Outputs: live repository rulesets |
 
 ### Browser audits
 

@@ -36,8 +36,10 @@ This is the primary reading path for people trying to use SplitShot rather than 
 
 ### Fork owners and maintainers
 
+- [../CHANGELOG.md](../CHANGELOG.md)
 - [project/DEVELOPING.md](project/DEVELOPING.md)
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md)
+- [project/GOVERNANCE.md](project/GOVERNANCE.md)
 - [project/LIMITATIONS.md](project/LIMITATIONS.md)
 - [project/ELECTRON_RELEASE.md](project/ELECTRON_RELEASE.md)
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md)
@@ -95,4 +97,5 @@ Covered surfaces:
 - [userfacing/USER_GUIDE.md](userfacing/USER_GUIDE.md) for product usage
 - [project/DEVELOPING.md](project/DEVELOPING.md) for developer workflow
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md) for subsystem boundaries
+- [project/GOVERNANCE.md](project/GOVERNANCE.md) for branch and release policy
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md) for validation
