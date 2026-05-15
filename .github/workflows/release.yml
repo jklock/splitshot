@@ -193,11 +193,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${RELEASE_TAG}" \
-            --title "SplitShot ${RELEASE_TAG#v}" \
-            --notes-file artifacts/release-notes.md \
-            --target "${RELEASE_REF}" \
-            2>/dev/null || gh release edit "${RELEASE_TAG}" --notes-file artifacts/release-notes.md
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
+              --title "SplitShot ${RELEASE_TAG#v}" \
+              --notes-file artifacts/release-notes.md
+          else
+            gh release create "${RELEASE_TAG}" \
+              --title "SplitShot ${RELEASE_TAG#v}" \
+              --notes-file artifacts/release-notes.md
+          fi
           for dir in splitshot-macos splitshot-linux splitshot-windows; do
             [ -d "$dir" ] && for f in "$dir"/*; do
               gh release upload "${RELEASE_TAG}" "$f" --clobber
