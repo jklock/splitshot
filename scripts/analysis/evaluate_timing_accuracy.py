@@ -1,3 +1,5 @@
+"""Compare detected timing against reviewed labels across threshold and confidence settings."""
+
 from __future__ import annotations
 
 import argparse

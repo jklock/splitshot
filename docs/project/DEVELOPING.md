@@ -1,59 +1,86 @@
 # Developing SplitShot
 
-This project is designed to be run directly from source with `uv` and Python 3.12.
+This guide is the day-1 path for a developer or fork owner working from source.
+
+## Start Here
+
+Read in this order:
+
+1. [../../README.md](../../README.md)
+2. [ARCHITECTURE.md](ARCHITECTURE.md)
+3. [../../src/splitshot/README.md](../../src/splitshot/README.md)
+4. [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
+5. [../../scripts/README.md](../../scripts/README.md)
 
 ## Environment
 
-- Python version: 3.12
-- Package manager / runner: `uv`
-- Required media tools: `ffmpeg` and `ffprobe`
-- PractiScore remote sync in the live app uses PySide6 Qt WebEngine for background fetch after cookies are imported. **Automated browser UI tests** under `tests/browser/` use **Playwright** (typically headless Chromium via `sync_playwright`). Playwright is a dev/test dependency; it is not the runtime PractiScore engine.
+- Python: `3.12`
+- Package manager and runner: `uv`
+- Required media tools: `ffmpeg`, `ffprobe`
+- Browser UI runtime: local HTTP server plus desktop runtime support from PySide6
+- Automated browser tests: Playwright
 
-The runtime locates media binaries from `PATH` first, then from bundled resources, and it also honors `SPLITSHOT_FFMPEG_DIR`.
+The runtime resolves FFmpeg from `PATH`, bundled resources, or `SPLITSHOT_FFMPEG_DIR`.
 
-## Common Commands
+## Bootstrap
+
+```bash
+uv python install 3.12
+uv sync --extra dev
+uv run python -m playwright install chromium firefox webkit
+uv run splitshot --check
+```
+
+## First Commands To Run
 
 ```bash
 uv run splitshot
-uv run splitshot --no-open
 uv run splitshot --headless
-uv run splitshot --headless --log-level info
-uv run splitshot --project /path/to/project.ssproj
-uv run splitshot --check
+uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --mode all-together --format table
-uv run pytest --cov=src/splitshot --cov-report=term-missing
-uv sync --extra dev
-uv run python -m playwright install chromium firefox webkit
-uv run pytest tests/browser/test_practiscore_session_api.py
-uv run pytest tests/browser/test_browser_control.py -k practiscore
-uv run pytest tests/browser/test_project_lifecycle_contracts.py -k practiscore
-uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
-uv run python scripts/audits/browser/run_browser_av_audit.py
-uv run python scripts/audits/browser/run_browser_interaction_audit.py --primary-video /path/to/Stage1.MP4 --merge-video /path/to/Stage2.MP4 --practiscore /path/to/IDPA.csv
-uv run python scripts/analysis/analyze_video_shots.py /path/to/Stage1.MP4 --format table --json-output artifacts/shot-preview.json
-uv run python scripts/export/export_stage_suite_csv.py --output artifacts/stage_suite_analysis.csv
-scripts/release/verify_macos_cert.sh /path/to/DeveloperID.p12 'your-password'
+uvx ruff check .
 ```
+
+## Day-1 Reading Path
+
+### Product and runtime
+
+- [../../README.md](../../README.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [../../docs/userfacing/USER_GUIDE.md](../userfacing/USER_GUIDE.md)
+
+### Code entrypoints
+
+- [../../src/splitshot/cli.py](../../src/splitshot/cli.py)
+- [../../src/splitshot/browser/server.py](../../src/splitshot/browser/server.py)
+- [../../src/splitshot/ui/controller.py](../../src/splitshot/ui/controller.py)
+- [../../src/splitshot/domain/models.py](../../src/splitshot/domain/models.py)
+
+### Operations
+
+- [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
+- [../../scripts/README.md](../../scripts/README.md)
+- [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md)
 
 ## Working Areas
 
-- Browser UI assets live in [src/splitshot/browser/static](../src/splitshot/browser/static).
-  - `app.js` is now an ESM bootstrap module (26 imports, delegates to module factories).
-  - `lib/` contains shared backbone modules (API client, state store, event bus, layout, keys, shell-runtime).
-  - `components/` contains reusable UI components (status-bar, video-player, waveform, overlay-canvas).
-  - `panes/` contains individual pane modules (11 panes plus pane-base).
-  - `styles/` contains split CSS files (theme, layout, components, panes, widgets).
-- Browser API behavior lives in [src/splitshot/browser/server.py](../src/splitshot/browser/server.py).
-- Shared project mutation logic lives in [src/splitshot/ui/controller.py](../src/splitshot/ui/controller.py).
-- Analysis and export code live in [src/splitshot/analysis](../src/splitshot/analysis) and [src/splitshot/export](../src/splitshot/export).
+- Browser shell: [../../src/splitshot/browser/static/README.md](../../src/splitshot/browser/static/README.md)
+- Browser API and state serialization: [../../src/splitshot/browser/README.md](../../src/splitshot/browser/README.md)
+- Shared mutation layer: [../../src/splitshot/ui/README.md](../../src/splitshot/ui/README.md)
+- Project schema: [../../src/splitshot/domain/README.md](../../src/splitshot/domain/README.md)
+- Analysis pipeline: [../../src/splitshot/analysis/README.md](../../src/splitshot/analysis/README.md)
+- Export pipeline: [../../src/splitshot/export/README.md](../../src/splitshot/export/README.md)
 
-## Electron Release
+## Validation Strategy
 
-- The supported macOS signing and notarization flow is documented in [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md).
-- Run `uv run python scripts/testing/run_electron_preflight.py` locally before any Electron workflow run.
-- Use `Runner Smoke` after Windows or Linux runner maintenance to confirm the self-hosted runner toolchain is still healthy.
-- Use the GitHub Actions `workflow_dispatch` entrypoint only for packaging, signing, notarization, packaged-app smoke, and per-target release publishing after local preflight passes.
-- Publish Electron releases one target at a time. Use the same release tag across the three `Build Electron` runs instead of one all-platform workflow run.
+- Start with the narrowest owning pytest target.
+- Use [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md) to choose the right suite.
+- Use [../../scripts/README.md](../../scripts/README.md) for CI-local, Electron preflight, and browser audit commands.
+- Run browser audit scripts only when browser UI, routes, or interaction behavior changed.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Read This Next
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [../tests/TEST_SUITE_GUIDE.md](../tests/TEST_SUITE_GUIDE.md)
+- [../../scripts/README.md](../../scripts/README.md)
+- [ELECTRON_RELEASE.md](ELECTRON_RELEASE.md)

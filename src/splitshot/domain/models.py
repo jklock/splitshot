@@ -1,3 +1,5 @@
+"""Canonical SplitShot project schema, enums, dataclasses, and serialization helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields, is_dataclass

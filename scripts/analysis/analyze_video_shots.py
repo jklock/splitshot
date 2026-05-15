@@ -1,3 +1,5 @@
+"""Run the analysis pipeline on one video and report detected timing and confidence output."""
+
 from __future__ import annotations
 
 import argparse

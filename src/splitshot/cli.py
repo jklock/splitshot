@@ -1,3 +1,5 @@
+"""SplitShot CLI entrypoints for browser, headless, and runtime-check modes."""
+
 from __future__ import annotations
 
 import argparse

@@ -1,3 +1,5 @@
+"""Audit browser-side audio and video playback behavior against local SplitShot fixtures."""
+
 from __future__ import annotations
 
 import argparse

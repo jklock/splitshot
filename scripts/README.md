@@ -1,61 +1,78 @@
 # Scripts
 
-SplitShot scripts are organized by purpose so users can find setup, validation, analysis, and export helpers without scanning one flat directory.
+This directory is the operational toolbox for SplitShot. Use it to bootstrap machines, run tests, audit browser behavior, inspect ShotML output, validate release readiness, and refresh documentation assets.
 
-## Layout
+## Start Here
 
-- `scripts/setup/`: workstation bootstrap for macOS, Linux, and Windows PowerShell.
-- `scripts/testing/`: master test runner and related testing helpers.
-- `scripts/audits/browser/`: real browser validation scripts for UI surface, AV playback, interaction flows, and export matrices.
-- `scripts/analysis/`: ShotML and analysis helpers, including preflight split/confidence inspection and training-corpus audits.
-- `scripts/export/`: export-oriented utilities such as benchmark CSV generation.
-- `scripts/tooling/`: local environment and toolchain validation.
+If you are new to the repo, read:
+
+1. [../README.md](../README.md)
+2. [../docs/project/DEVELOPING.md](../docs/project/DEVELOPING.md)
+3. [../docs/tests/TEST_SUITE_GUIDE.md](../docs/tests/TEST_SUITE_GUIDE.md)
+
+## Script Groups
+
+| Path | Type | Use it for |
+| --- | --- | --- |
+| `setup/` | setup | Workstation or runner bootstrap |
+| `testing/` | validation | Suite execution, CI-local checks, Electron preflight, packaged-app smoke |
+| `audits/browser/` | audit | Browser UI, interaction, export, and AV validation |
+| `analysis/` | analysis | ShotML inspection, corpus review, manifest generation, training prep, timing evaluation |
+| `docs/` | docs | Documentation-support tasks such as screenshot capture |
+| `export/` | reporting | Export-oriented CSV utilities |
+| `tooling/` | validation | Local environment and toolchain checks |
+| `release/` | release | Signing and release-side helpers |
+
+## High-Value Entry Scripts
+
+### Developer workflow
+
+| Script | Type | What it does | When to use it | Inputs / outputs |
+| --- | --- | --- | --- | --- |
+| `testing/run_test_suite.py` | validation | Canonical grouped pytest runner | Any normal local validation run | Inputs: suite/mode flags. Outputs: console summary, optional raw or JSON artifact |
+| `testing/run_ci_locally.py` | validation | Runs CI-shaped local job groups | Before pushing or when reproducing CI locally | Inputs: job name. Outputs: job summary and command failures |
+| `testing/run_electron_preflight.py` | validation | Runs the local Electron release gate for the current platform | Before packaging or release workflow triggers | Inputs: local repo state. Outputs: preflight pass/fail |
+| `tooling/validate_toolchain.py` | validation | Checks FFmpeg, browser assets, and packaged resources | New machines, runner health, setup debugging | Inputs: local toolchain. Outputs: console status lines |
+| `docs/capture_browser_screenshots.py` | docs | Launches the app, seeds demo state, and regenerates the user-doc screenshot set | After browser UI changes or during doc refresh | Inputs: local fixtures. Outputs: refreshed files in `docs/screenshots/` |
+
+### Browser audits
+
+| Script | Type | What it does | When to use it | Inputs / outputs |
+| --- | --- | --- | --- | --- |
+| `audits/browser/run_browser_ui_surface_audit.py` | audit | Verifies UI-surface expectations against the running browser app | Browser-shell regressions or control audits | Inputs: app runtime. Outputs: audit summary |
+| `audits/browser/run_browser_interaction_audit.py` | audit | Exercises real browser interactions against local media fixtures | Interaction regressions or evidence gathering | Inputs: media paths and optional PractiScore file. Outputs: structured audit report |
+| `audits/browser/run_browser_av_audit.py` | audit | Checks audio/video playback and timeline stability | AV-specific browser regressions | Inputs: app runtime and media. Outputs: JSON/table audit summary |
+| `audits/browser/run_browser_export_matrix.py` | audit | Exercises browser export combinations | Export-surface investigation | Inputs: export matrix parameters. Outputs: matrix results |
+
+### Analysis and training
+
+| Script | Type | What it does | When to use it | Inputs / outputs |
+| --- | --- | --- | --- | --- |
+| `analysis/analyze_video_shots.py` | analysis | Runs the analysis pipeline on one video and summarizes detected shots | Quick timing inspection on a candidate clip | Inputs: video path. Outputs: console summary, optional JSON artifact |
+| `analysis/audit_training_corpus.py` | analysis | Audits a training corpus for quality and consistency | Corpus maintenance | Inputs: corpus root. Outputs: table or JSON audit |
+| `analysis/bootstrap_training_manifest.py` | analysis | Builds or refreshes the review manifest from the corpus | Start of a labeling or training pass | Inputs: corpus root. Outputs: manifest JSON |
+| `analysis/autolabel_training_manifest.py` | analysis | Promotes trusted detections into an auto-labeled tier | Review acceleration after manifest bootstrap | Inputs: manifest JSON. Outputs: updated manifest and optional summary |
+| `analysis/evaluate_timing_accuracy.py` | analysis | Compares detector timestamps against reviewed labels across thresholds | Timing-quality evaluation | Inputs: manifest JSON. Outputs: table or JSON summary |
+| `analysis/prioritize_training_review.py` | analysis | Ranks manifest entries for human review | Decide what to review next | Inputs: manifest JSON. Outputs: review queue JSON |
+| `analysis/extract_training_dataset.py` | analysis | Converts manifest labels into a training dataset | Training prep | Inputs: manifest JSON. Outputs: NPZ dataset and optional summary |
+| `analysis/train_audio_event_model_from_dataset.py` | analysis | Trains a candidate bundle from an extracted dataset | Model experiments | Inputs: NPZ dataset. Outputs: candidate bundle and training summary |
+| `analysis/run_auto_training_pipeline.py` | analysis | Chains bootstrap, auto-label, dataset extraction, and candidate training | Unattended corpus-driven experiments | Inputs: corpus root. Outputs: manifest, dataset, bundle, summary artifacts |
 
 ## Common Commands
 
 ```bash
 uv run python scripts/testing/run_test_suite.py --list
-uv run python scripts/testing/run_test_suite.py --mode one-by-one --format table --raw-output artifacts/test-run.raw.txt
-uv run python scripts/testing/run_test_suite.py --mode all-together --format json --json-output artifacts/test-run.json
-uv run python scripts/testing/run_electron_preflight.py
+uv run python scripts/testing/run_test_suite.py --mode all-together --format table
 uv run python scripts/testing/run_ci_locally.py --job source-local
-uv run python scripts/testing/run_ci_locally.py --job browser-local
-uv run python scripts/testing/run_ci_locally.py --job electron-release-local
-powershell -ExecutionPolicy Bypass -File scripts/setup/setup_self_hosted_runner_windows.ps1
-bash scripts/setup/setup_self_hosted_runner_linux.sh
-uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
-uv run python scripts/analysis/audit_training_corpus.py .training --format table --json-output artifacts/training-corpus-audit.json
-uv run python scripts/analysis/bootstrap_training_manifest.py .training --output .training/shotml-label-manifest.json
-uv run python scripts/analysis/autolabel_training_manifest.py .training/shotml-label-manifest.json --summary-output artifacts/training-autolabel-summary.json
-uv run python scripts/analysis/evaluate_timing_accuracy.py .training/shotml-label-manifest.json --format table --json-output artifacts/timing-accuracy-summary.json
-uv run python scripts/analysis/prioritize_training_review.py .training/shotml-label-manifest.json --json-output artifacts/training-review-queue.json
-uv run python scripts/analysis/extract_training_dataset.py .training/shotml-label-manifest.json --output artifacts/training-dataset-verified.npz
-uv run python scripts/analysis/extract_training_dataset.py .training/shotml-label-manifest.json --output artifacts/training-dataset.npz --use-detector-drafts --detector-draft-policy review-clean --augment-replicas-per-event 2
-uv run python scripts/analysis/train_audio_event_model_from_dataset.py artifacts/training-dataset.npz --output-bundle artifacts/model_bundle_candidate.py --summary-output artifacts/model-training-summary.json --class-weighting balanced
-uv run python scripts/analysis/run_auto_training_pipeline.py .training --manifest-output .training/shotml-label-manifest.json --dataset-output artifacts/training-dataset-auto.npz --output-bundle artifacts/model_bundle_candidate_auto.py --training-summary-output artifacts/model-training-auto-summary.json
-uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
-uv run python scripts/audits/browser/run_browser_interaction_audit.py
+uv run python scripts/testing/run_electron_preflight.py
+uv run python scripts/docs/capture_browser_screenshots.py
 uv run python scripts/tooling/validate_toolchain.py
+uv run python scripts/analysis/analyze_video_shots.py /path/to/stage.mp4 --format table --json-output artifacts/shot-preview.json
+uv run python scripts/audits/browser/run_browser_ui_surface_audit.py
 ```
 
-## Notes
+## Read This Next
 
-- The master test runner supports per-suite execution, one-file-at-a-time runs, combined runs, and raw or JSON output artifacts.
-- `scripts/testing/run_ci_locally.py` is the local-first gate runner. It owns the source-local suites, browser-local suite, and the local Electron release preflight before any GitHub Actions workflow is triggered.
-- `scripts/testing/run_electron_preflight.py` is the local release-critical Electron gate. Run it before any Electron workflow trigger. It owns the source-side checks that do not belong in the packaging workflow: runtime check, bundle verification, launch-intent unit tests, headless backend tests, parity audit, source smoke, current-platform smoke build, and packaged-app launch.
-- The Electron packaging workflow now packages one target per run. It targets the self-hosted Windows and Linux runners by labels and keeps macOS on `macos-14`. Use the `Runner Smoke` workflow to validate those appliances after host changes.
-- `scripts/setup/setup_self_hosted_runner_windows.ps1` and `scripts/setup/setup_self_hosted_runner_linux.sh` are idempotent host-prep scripts for the existing self-hosted runners. They install only missing prerequisites, locate the existing runner service, and start it if needed.
-- The video preflight analysis helper uses the same ShotML detection path as the application and is intended to help choose a starting sensitivity slider value before import.
-- The timing accuracy evaluator compares detected beep, split, last-shot, and stage-time timestamps against accepted manifest labels across a threshold sweep. It uses manual verified labels first and accepted auto-consensus labels when manual labels are absent.
-- The training corpus audit helper now also reports shot-pass disagreement and duplicate-stage consistency so repeated recordings can be compared for count drift.
-- The label-manifest bootstrap helper writes detector-draft beep and shot labels into a reviewable JSON manifest and preserves existing manual review fields when the manifest is regenerated.
-- The auto-label helper promotes accepted manifest entries into an `auto_labeled` tier without misreporting those clips as manual verified labels. The detector's primary start beep and shot timeline remain the anchor; tone/model passes refine confidence and consensus but should not replace a close first-pass timeline.
-- The training review prioritizer ranks manifest entries by how quickly they can produce trustworthy actuals, promotes one representative clip per duplicate stage, and pushes clipping or shot-disagreement cases behind cleaner first-pass review candidates.
-- The training dataset extractor turns a reviewed manifest into a compressed NPZ feature dataset for real-footage retraining, with optional detector-draft fallback for early experiments. It now records whether each extracted row came from verified labels, automated consensus labels, or detector drafts, and the default detector-draft path is review-clean rather than blindly trusting every draft row.
-- The training dataset extractor now supports deterministic waveform augmentation for beep and shot windows so early experiments can better cover gain shifts, noise, filtering, and clipping without changing serving-time feature extraction.
-- The unattended auto-training pipeline bootstraps the manifest, auto-labels stable clips, extracts a trusted auto-consensus dataset, and trains a candidate bundle in one command so corpus-driven tuning can run without manual review in the loop.
-- The dataset trainer builds a candidate MLP bundle from extracted NPZ features without overwriting the shipped model by default; it now supports balanced class weighting, early stopping, per-class validation recall, and separate verified-validation metrics so automated or draft-only runs do not get confused with actual reviewed-label performance.
-- The CI browser gate uses the maintained `tests/browser/` Playwright-backed pytest suite. The standalone browser audit scripts remain available for deeper manual audits, and they now synthesize deterministic local MP4 fixtures if the default stage videos are missing.
-
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+- [../docs/tests/TEST_SUITE_GUIDE.md](../docs/tests/TEST_SUITE_GUIDE.md)
+- [../docs/project/ARCHITECTURE.md](../docs/project/ARCHITECTURE.md)
+- [../src/splitshot/README.md](../src/splitshot/README.md)

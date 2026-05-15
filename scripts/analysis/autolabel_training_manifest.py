@@ -1,3 +1,5 @@
+"""Promote trusted detector output into the auto-labeled tier of a training manifest."""
+
 from __future__ import annotations
 
 import argparse

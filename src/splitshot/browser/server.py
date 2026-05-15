@@ -1,3 +1,5 @@
+"""Browser HTTP server, route handlers, and file/session plumbing for SplitShot."""
+
 from __future__ import annotations
 
 import csv

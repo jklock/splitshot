@@ -1,39 +1,41 @@
 # Export
 
-The export package turns a project into a rendered local video file with overlays, merge layouts, aspect-ratio cropping, and FFmpeg encoding.
+This package owns final render planning, export presets, overlay composition, merge integration, and FFmpeg encoding.
 
-## Files
+## Purpose
 
-- [presets.py](presets.py) defines export presets, preset summaries, and the helper that applies a preset to a project.
-- [pipeline.py](pipeline.py) builds render plans, crops the output, renders overlays, and writes the final file.
+Use it when the change affects output geometry, codec or preset behavior, overlay rendering during export, pass logging, or final file generation.
 
-## Pipeline Overview
+## Read This First
 
-1. `export_project` validates the project and ensures the primary video exists.
-2. `_ensure_qt_gui_application` creates a headless Qt GUI context when export runs outside the desktop app.
-3. `build_base_render_plan` chooses the single-video, dual-angle, or grid-merge render path.
-4. `compute_crop_box` and `_target_dimensions` determine the output framing.
-5. `_render_pass` decodes raw frames, draws overlays with `OverlayRenderer`, and pipes them into FFmpeg for encoding.
+- [pipeline.py](pipeline.py)
+- [presets.py](presets.py)
 
-## Presets and Settings
+## Main Files
 
-- `ExportPresetDefinition` describes the built-in preset catalog.
-- `apply_export_preset` updates the project export settings from a preset id.
-- `export_settings_summary` produces API-friendly export settings for the browser UI.
+- [pipeline.py](pipeline.py): export pipeline, render planning, encoding, log capture
+- [presets.py](presets.py): built-in export presets and API summaries
 
-## Output Constraints
+## Runtime Flow
 
-- Supported output extensions are `.mp4`, `.m4v`, `.mov`, and `.mkv`.
-- H.264 and HEVC are the available video codecs.
-- AAC is the available audio codec.
-- The pipeline uses BT.709 SDR color settings.
+1. Validate the project and source media.
+2. Build the render plan and crop geometry.
+3. Render merge layouts and overlays.
+4. Encode through FFmpeg and persist export logs and errors back to the project.
 
-## Implementation Notes
+## Key Extension Points
 
-- Merge export uses `calculate_merge_canvas` to determine layout geometry.
-- Still-image merge sources are looped so they can participate in video export.
-- Two-pass encoding is supported and uses a temporary pass log directory.
-- The final export log is stored on `project.export.last_log`, the last error on `project.export.last_error`, and browser mode can stream incremental progress and log lines through the activity logger while export is running.
+- `export_project`
+- `build_base_render_plan`
+- `apply_export_preset`
+- `export_settings_summary`
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Related Tests
+
+- [../../../tests/export/](../../../tests/export/)
+- [../../../tests/browser/test_merge_export_contracts.py](../../../tests/browser/test_merge_export_contracts.py)
+
+## Related Docs
+
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)
+- [../../../docs/userfacing/panes/export.md](../../../docs/userfacing/panes/export.md)

@@ -1,26 +1,38 @@
 # Presentation
 
-The presentation package builds the stage summary objects consumed by the browser dashboard.
+This package owns the derived stage metrics and timing summaries that the browser shell displays.
 
-## Files
+## Purpose
 
-- [stage.py](stage.py) defines the formatting helpers, stage metrics, timing segments, and `build_stage_presentation`.
+Use it when the change affects timing cards, stage metrics, dashboard summaries, or any derived presentation object built from the shared project state.
 
-## Data Model
+## Read This First
 
-- `StageMetrics` stores draw time, raw time, stage time, shot count, average split, beep time, and final shot time.
-- `TimingSegment` stores the per-shot labels and the formatted card data used in the browser UI.
-- `StagePresentation` groups the metrics and timing segments together.
+- [stage.py](stage.py)
+- [popups.py](popups.py)
 
-## Output Behavior
+## Main Files
 
-- `build_stage_presentation` sorts the shots, derives draw and split values, and labels each segment as Draw or Shot N.
-- `format_seconds_short` and `format_seconds_precise` format values for compact UI display.
-- The browser state exposes the same data as `metrics` and `timing_segments`.
+- [stage.py](stage.py): stage metrics, timing segments, and `build_stage_presentation`
+- [popups.py](popups.py): popup and marker presentation helpers
 
-## Consumers
+## Runtime Flow
 
-- `browser.state.browser_state` serializes the presentation data into the JSON API response.
+1. Read and sort the current shot list.
+2. Derive draw, split, raw, and stage timing metrics.
+3. Build formatted presentation objects for the browser state.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Key Extension Points
+
+- `build_stage_presentation`
+- popup presentation helpers
+
+## Related Tests
+
+- [../../../tests/presentation/](../../../tests/presentation/)
+- [../../../tests/browser/test_metrics_e2e.py](../../../tests/browser/test_metrics_e2e.py)
+
+## Related Docs
+
+- [../../../docs/userfacing/panes/metrics.md](../../../docs/userfacing/panes/metrics.md)
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)

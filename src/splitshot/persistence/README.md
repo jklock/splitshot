@@ -1,28 +1,39 @@
 # Persistence
 
-The persistence package stores and restores SplitShot project bundles.
+This package owns `.ssproj` bundle save, load, normalization, and deletion behavior.
 
-## Files
+## Purpose
 
-- [projects.py](projects.py) implements `.ssproj` bundle save, load, and delete operations.
+Use it when the change affects saved project format, bundle directory layout, project-path handling, or browser-session media preservation inside saved bundles.
 
-## Bundle Format
+## Read This First
 
-- `PROJECT_FILENAME` is `project.json`.
-- `MEDIA_DIRNAME` is `media`.
-- `save_project` writes a bundle directory with the project JSON and any copied media.
-- `load_project` reconstructs a `Project` from the saved JSON.
-- `delete_project` removes the bundle directory.
+- [projects.py](projects.py)
 
-## Media Copying Rules
+## Main Files
 
-`_copy_project_media_if_needed` clones the project and copies media into the bundle when the source path belongs to a browser session directory. That keeps temporary imported files alive after the browser session ends.
+- [projects.py](projects.py): bundle save/load/delete helpers and project-path normalization
 
-## Notes
+## Runtime Flow
 
-- `ensure_project_suffix` normalizes the bundle path to `.ssproj`.
-- The saved bundle is a directory, not a single archive file.
-- The controller tracks recently opened bundles in app settings.
+1. Normalize the target bundle path.
+2. Save or load `project.json`.
+3. Copy transient browser-session media into the bundle when needed.
+4. Return a fully reconstructed `Project`.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Key Extension Points
+
+- `save_project`
+- `load_project`
+- `delete_project`
+- `ensure_project_suffix`
+
+## Related Tests
+
+- [../../../tests/persistence/](../../../tests/persistence/)
+- [../../../tests/browser/test_project_lifecycle_contracts.py](../../../tests/browser/test_project_lifecycle_contracts.py)
+
+## Related Docs
+
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)
+- [../../../docs/userfacing/panes/project.md](../../../docs/userfacing/panes/project.md)

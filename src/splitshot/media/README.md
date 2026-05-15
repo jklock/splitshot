@@ -1,35 +1,45 @@
 # Media
 
-The media package locates FFmpeg binaries, probes video files, and extracts audio or thumbnails for review and export.
+This package owns FFmpeg resolution, media probing, waveform/audio extraction, and thumbnail generation.
 
-## Files
+## Purpose
 
-- [ffmpeg.py](ffmpeg.py) resolves `ffmpeg` and `ffprobe`, runs subprocesses, and raises `MediaError` on failure.
-- [probe.py](probe.py) turns a path into a `VideoAsset` and detects still-image inputs before treating them as video.
-- [audio.py](audio.py) extracts mono WAV audio, reads PCM samples, and builds the normalized waveform envelope.
-- [thumbnails.py](thumbnails.py) renders preview thumbnails.
+Use it when the change touches media metadata, audio extraction, still-image handling, FFmpeg discovery, or thumbnail behavior.
 
-## Binary Resolution
+## Read This First
 
-`resolve_media_binary` checks these locations in order:
+- [ffmpeg.py](ffmpeg.py)
+- [probe.py](probe.py)
+- [audio.py](audio.py)
 
-1. `SPLITSHOT_FFMPEG_DIR`
-2. Vendored binaries under `splitshot/resources/ffmpeg/<platform>`
-3. The current `PATH`
+## Main Files
 
-If none of those locations contains the requested tool, the module raises `MediaError`.
+- [ffmpeg.py](ffmpeg.py): binary resolution, FFmpeg subprocess helpers, media errors
+- [probe.py](probe.py): `VideoAsset` creation and still-image detection
+- [audio.py](audio.py): WAV extraction, sample loading, waveform envelope generation
+- [thumbnails.py](thumbnails.py): thumbnail rendering
 
-## Probe and Audio Details
+## Runtime Flow
 
-- `probe_video` first tries `QImage` so still images can be handled directly.
-- If the file is not a still image, the module uses `ffprobe` to gather duration, frame rate, sample rate, and rotation metadata.
-- `extract_audio_wav` writes a mono PCM WAV file that the analysis pipeline can consume.
-- `waveform_envelope` compresses the full waveform into a normalized envelope for UI rendering.
+1. Resolve `ffmpeg` and `ffprobe`.
+2. Probe media metadata and detect still images.
+3. Extract audio and derive waveform data when analysis needs it.
+4. Provide media helpers to controller, analysis, and export layers.
 
-## Consumer Notes
+## Key Extension Points
 
-- `ui.controller.ProjectController` uses `probe_video` when the user imports a primary or merge media path.
-- `export.pipeline` uses `ffmpeg_command` and `run_ffmpeg` to build and encode the final video.
+- `resolve_media_binary`
+- `probe_video`
+- `extract_audio_wav`
+- `waveform_envelope`
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Related Tests
+
+- [../../../tests/media/](../../../tests/media/)
+- [../../../tests/export/](../../../tests/export/)
+
+## Related Docs
+
+- [../../../docs/project/DEVELOPING.md](../../../docs/project/DEVELOPING.md)
+- [../analysis/README.md](../analysis/README.md)
+- [../export/README.md](../export/README.md)

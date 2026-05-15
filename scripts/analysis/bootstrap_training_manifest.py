@@ -1,3 +1,5 @@
+"""Build or refresh a review manifest from a training corpus and detector drafts."""
+
 from __future__ import annotations
 
 import argparse

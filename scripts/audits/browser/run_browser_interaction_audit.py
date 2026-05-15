@@ -1,3 +1,5 @@
+"""Drive real browser interactions against SplitShot to capture evidence for UI regressions."""
+
 from __future__ import annotations
 
 import argparse

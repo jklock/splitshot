@@ -1,3 +1,5 @@
+"""Audit a ShotML training corpus for coverage, disagreement, and dataset quality issues."""
+
 from __future__ import annotations
 
 import argparse

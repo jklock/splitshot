@@ -1,3 +1,5 @@
+"""Canonical grouped pytest runner for SplitShot suite-level local validation."""
+
 from __future__ import annotations
 
 import argparse

@@ -1,3 +1,5 @@
+"""Audit the live browser UI surface, control inventory, and expected pane structure."""
+
 from __future__ import annotations
 
 import argparse

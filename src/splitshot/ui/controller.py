@@ -1,3 +1,5 @@
+"""Shared controller layer that owns authoritative project mutations and settings flow."""
+
 from __future__ import annotations
 
 from copy import deepcopy

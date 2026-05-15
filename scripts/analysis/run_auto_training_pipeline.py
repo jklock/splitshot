@@ -1,3 +1,5 @@
+"""Chain manifest bootstrap, auto-labeling, dataset extraction, and candidate training in one command."""
+
 from __future__ import annotations
 
 import argparse

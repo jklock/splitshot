@@ -1,3 +1,5 @@
+"""Train a candidate ShotML bundle from an extracted NPZ dataset and emit summary artifacts."""
+
 from __future__ import annotations
 
 import argparse
