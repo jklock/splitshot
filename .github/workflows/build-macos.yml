@@ -6,6 +6,7 @@ on:
       - 'build-macos'
   workflow_dispatch:
   workflow_call:
+  workflow_call:
 
 jobs:
   package:

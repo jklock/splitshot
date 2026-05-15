@@ -38,42 +38,175 @@ jobs:
           TAG="v${{ steps.bump.outputs.new-version }}"
           git tag -a "$TAG" -m "SplitShot $TAG"
           git push origin "$TAG"
-
-  macos:
-    needs: version
-    uses: ./.github/workflows/build-macos.yml
-    secrets: inherit
-
-  linux:
-    needs: version
-    uses: ./.github/workflows/build-linux.yml
-    secrets: inherit
-
-  windows:
-    needs: version
-    uses: ./.github/workflows/build-windows.yml
-    secrets: inherit
-
-  publish:
-    needs: [version, macos, linux, windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: v${{ needs.version.outputs.new-version }}
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
       - name: Create Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ needs.version.outputs.new-version }}"
+          TAG="v${{ steps.bump.outputs.new-version }}"
           gh release create "$TAG" \
             --title "SplitShot $TAG" \
-            --notes "Automated release for $TAG" \
+            --notes "Release $TAG" \
             --target main
-          for dir in splitshot-macos splitshot-linux splitshot-windows; do
-            [ -d "$dir" ] && gh release upload "$TAG" "$dir"/* --clobber
-          done
+
+  macos:
+    needs: version
+    runs-on: macos-14
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.new-version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Install system dependencies
+        run: |
+          if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+        timeout-minutes: 15
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Prepare macOS signing certificate
+        env:
+          MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          [ -z "${MAC_CERT_BASE64}" ] && { echo "No cert secret"; exit 0; }
+          tmp_dir="$(mktemp -d)"; cert_file="${tmp_dir}/developer-id.p12"
+          keychain_file="${tmp_dir}/splitshot-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 24 | tr -d '\n')"
+          CERT_FILE="${cert_file}" MAC_CERT_BASE64="${MAC_CERT_BASE64}" python3 -c "import base64,os;from pathlib import Path;Path(os.environ['CERT_FILE']).write_bytes(base64.b64decode(os.environ['MAC_CERT_BASE64']))"
+          security create-keychain -p "${keychain_password}" "${keychain_file}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_file}"
+          security set-keychain-settings "${keychain_file}"
+          security list-keychains -d user -s "${keychain_file}" $(security list-keychains -d user | tr -d '"')
+          security import "${cert_file}" -k "${keychain_file}" -T /usr/bin/codesign -T /usr/bin/productbuild -P "${MAC_CERT_PASSWORD}"
+          { echo "MAC_CERT_FILE=${cert_file}"; echo "MAC_CERT_KEYCHAIN=${keychain_file}"; echo "MAC_CERT_TMPDIR=${tmp_dir}"; echo "MAC_CERT_PASSWORD=${MAC_CERT_PASSWORD}"; } >> "${GITHUB_ENV}"
+      - name: Build
+        run: |
+          export CSC_LINK="${MAC_CERT_FILE}" CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
+          cd electron && npm run build:mac
+        timeout-minutes: 30
+      - name: Verify installer
+        run: |
+          shopt -s nullglob; d=( electron/build/*.dmg ); [ ${#d[@]} -eq 0 ] && { echo "No DMG"; exit 1; }; ls -lh "${d[@]}"
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.version.outputs.new-version }}"
+          for f in electron/build/*.dmg; do gh release upload "$TAG" "$f" --clobber; done
+      - name: Cleanup
+        if: always()
+        run: |
+          [ -n "${MAC_CERT_KEYCHAIN:-}" ] && security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
+          [ -n "${MAC_CERT_TMPDIR:-}" ] && rm -rf "${MAC_CERT_TMPDIR}"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.new-version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Install system dependencies
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+        timeout-minutes: 15
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Build
+        run: cd electron && npm run build:linux
+        timeout-minutes: 30
+      - name: Verify installer
+        run: |
+          shopt -s nullglob; a=( electron/build/*.AppImage ); [ ${#a[@]} -eq 0 ] && { echo "No AppImage"; exit 1; }; ls -lh "${a[@]}"
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.version.outputs.new-version }}"
+          for f in electron/build/*.AppImage; do gh release upload "$TAG" "$f" --clobber; done
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.new-version }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+        timeout-minutes: 15
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Build
+        run: cd electron && npm run build:win
+        timeout-minutes: 30
+      - name: Verify installer
+        run: |
+          shopt -s nullglob; e=( electron/build/*.exe ); [ ${#e[@]} -eq 0 ] && { echo "No NSIS"; exit 1; }; ls -lh "${e[@]}"
+      - name: Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.version.outputs.new-version }}"
+          for f in electron/build/*.exe; do gh release upload "$TAG" "$f" --clobber; done
