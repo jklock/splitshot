@@ -52,3 +52,11 @@ jobs:
         with:
           name: splitshot-windows
           path: electron/build/*.exe
+      - name: Publish to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob; exes=( electron/build/*.exe )
+          for f in "${exes[@]}"; do
+            gh release upload v1 "$f" --clobber && echo "Uploaded $f to v1"
+          done

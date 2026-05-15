@@ -79,6 +79,14 @@ jobs:
         with:
           name: splitshot-macos
           path: electron/build/*.dmg
+      - name: Publish to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shopt -s nullglob; dmgs=( electron/build/*.dmg )
+          for f in "${dmgs[@]}"; do
+            gh release upload v1 "$f" --clobber && echo "Uploaded $f to v1"
+          done
       - name: Cleanup macOS signing artifacts
         if: always()
         run: |
