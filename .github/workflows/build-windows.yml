@@ -25,6 +25,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install ffmpeg
+        run: choco install ffmpeg -y --no-progress
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
