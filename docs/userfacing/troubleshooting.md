@@ -70,5 +70,3 @@ This page covers the most common user-facing problems and where to fix them.
 | Color picker does not apply | Click outside the modal or press Enter to commit the hex/HSL value. |
 | Export log modal stuck | Click outside the modal or press the `Close` button to dismiss. |
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

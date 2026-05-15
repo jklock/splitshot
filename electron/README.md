@@ -20,22 +20,23 @@ This directory contains the Electron shell that packages SplitShot as a native d
 ```bash
 cd electron
 npm install
-npm run dev       # Bundle Python and launch Electron
+npm start
 ```
 
-`npm run dev` runs `scripts/bundle-python.js` first, then starts Electron. The bundled Python backend runs in headless mode (`--headless --no-open`).
+`npm start` runs `scripts/bundle-python.js` first, then starts Electron. The bundled Python backend runs in headless mode (`--headless --no-open`).
 
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Bundle Python + launch electron |
-| `npm start` | Same as `npm run dev` |
+| `npm run bundle` | Rebuild the Electron Python bundle without launching the app |
+| `npm run dev` | Launch Electron without rebuilding the Python bundle first |
+| `npm start` | Rebuild the bundle, then launch Electron |
 | `npm run check` | Validate the Python bundle without launching Electron |
 | `npm run build:mac` | Production signed DMG (macOS) |
 | `npm run build:win` | Production NSIS installer (Windows) |
 | `npm run build:linux` | Production AppImage (Linux) |
-| `npm test` | Run `launch-intent.test.js` and `smoke.test.js` |
+| `npm test` | Run the Electron smoke test entrypoints when invoked directly in the package environment |
 
 ## How It Works
 
@@ -65,13 +66,12 @@ See [docs/project/ELECTRON_RELEASE.md](../docs/project/ELECTRON_RELEASE.md) for:
 
 ## CI
 
-The `.github/workflows/build-electron.yml` workflow:
+The Electron packaging and test workflows are split by platform:
 
-- Runs on `workflow_dispatch` (any branch) for smoke builds
-- Runs on `v*` tag pushes for real releases
-- macOS: signs and notarizes via electron-builder
-- Uses `MAC_CERT_BASE64` / `MAC_CERT_PASSWORD` for signing
-- Prefers Apple API key notarization; falls back to Apple ID credentials
+- `.github/workflows/build-macos.yml`
+- `.github/workflows/build-windows.yml`
+- `.github/workflows/build-linux.yml`
+- `.github/workflows/release.yml`
+- platform smoke and test coverage in `.github/workflows/test-*.yml`
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+macOS is the signed/notarized release path. Windows and Linux have configured packaging and smoke coverage, but their release flow does not use the macOS signing/notarization stack.

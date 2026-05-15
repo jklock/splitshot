@@ -76,5 +76,3 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 Previous: [pip.md](pip.md)
 Next: [popup.md](popup.md)
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

@@ -1,6 +1,6 @@
 # Electron Release and Signing
 
-This is the supported path for SplitShot Electron macOS signing and notarization.
+This is the supported path for SplitShot Electron packaging and release work, with macOS signing and notarization as the most specialized platform-specific flow.
 
 ## Secrets
 
@@ -96,25 +96,23 @@ That script is the source-of-truth gate for:
 
 Do not use GitHub Actions as the first place to discover source-level or parity failures.
 
-## GitHub Actions Workflow
+## GitHub Actions Workflows
 
-`/.github/workflows/build-electron.yml` is now `workflow_dispatch` only.
+Electron packaging and release work is split across dedicated workflows:
 
-Each run packages exactly one target:
+- `.github/workflows/build-macos.yml`
+- `.github/workflows/build-windows.yml`
+- `.github/workflows/build-linux.yml`
+- `.github/workflows/release.yml`
+- platform smoke/test coverage in `.github/workflows/test-macos.yml`, `test-windows.yml`, and `test-linux.yml`
 
-- `macos`
-- `linux`
-- `windows`
-
-The workflow is intentionally limited to packaging and packaged-artifact validation. It is not the first-line test runner for source-level Electron behavior.
+The three `build-*` workflows package a single platform target each and can run by `workflow_dispatch`, `workflow_call`, or their dedicated tag trigger. `release.yml` is the orchestration workflow that bumps the version, creates the version tag, calls the three build workflows, and publishes the GitHub release with all three platform artifacts.
 
 Runner targets:
 
 - macOS packaging: GitHub-hosted `macos-14`
-- Windows packaging: self-hosted runner with labels `self-hosted`, `Windows`, `X64`
-- Linux packaging: self-hosted runner with labels `self-hosted`, `Linux`, `X64`
-
-When `publish_release=true`, the selected target artifact is attached to the `release_tag` GitHub release. Run the workflow once per target you want on that release.
+- Windows packaging: GitHub-hosted `windows-latest`
+- Linux packaging: GitHub-hosted `ubuntu-latest`
 
 The macOS packaging job:
 
@@ -130,12 +128,11 @@ If no notarization credentials are configured, the workflow signs the app and sk
 
 ## Smoke Builds
 
-Use GitHub Actions `workflow_dispatch` for target-specific packaging smoke tests.
+Use the platform-specific build workflows and test workflows for packaging smoke checks.
 
 - Choose the target branch in the Actions UI.
-- Choose exactly one target.
+- Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform.
 - Run the local Electron preflight first.
-- Confirm the `Runner Smoke` workflow is green after any runner maintenance or host changes.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
 - Use these runs to validate packaging, secret rotation, cert export, signing, notarization, and packaged-app launch.
 
@@ -143,20 +140,10 @@ Do not create `ci-test` or debug release tags for smoke testing.
 
 ## Real Releases
 
-Use one release tag for all three platforms, but publish them separately:
-
-1. Create the GitHub release tag once.
-2. Run `Build Electron` with `publish_release=true` and that `release_tag` for `macos`.
-3. Run it again for `linux`.
-4. Run it again for `windows`.
-
-This keeps the three platform targets independent. An unavailable Windows runner no longer blocks macOS or Linux packaging work in the same run.
+Use the `release.yml` workflow when you want a coordinated three-platform release. It bumps the version, creates the `v<version>` tag, calls the three platform build workflows, and publishes the GitHub release with the macOS, Linux, and Windows artifacts attached.
 
 ## Troubleshooting
 
 - `MAC verification failed during PKCS12 import`: the `.p12` payload and `MAC_CERT_PASSWORD` do not match, or the export is malformed or incompatible with macOS `security import`. Re-export it from Keychain Access with the private key included.
 - Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
 - Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets.
-
-**Last updated:** 2026-05-07
-**Referenced files last updated:** 2026-05-07

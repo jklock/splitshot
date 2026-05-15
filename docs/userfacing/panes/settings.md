@@ -111,5 +111,3 @@ The Settings pane controls app-wide and folder-scoped defaults for layout, scori
 Previous: [export.md](export.md)
 Next: [metrics.md](metrics.md)
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

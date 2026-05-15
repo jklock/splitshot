@@ -57,5 +57,3 @@ This is the recommended path from raw stage video to finished local export.
 - [panes/export.md](panes/export.md) for final render settings.
 - [troubleshooting.md](troubleshooting.md) for common issues.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

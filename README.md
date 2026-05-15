@@ -107,7 +107,7 @@ Use the platform-specific local instructions below if you are building or runnin
 - If the browser does not open automatically:
   rerun with `uv run splitshot --no-open`.
 - Current limitation:
-  Windows packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
+  Windows packaging and smoke coverage exist in CI, but macOS remains the deepest documented signing/notarization path.
 
 ### Linux
 
@@ -133,7 +133,7 @@ Use the platform-specific local instructions below if you are building or runnin
 - If the browser does not open automatically:
   rerun with `uv run splitshot --no-open`.
 - Current limitation:
-  Linux packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
+  Linux packaging and smoke coverage exist in CI, but macOS remains the deepest documented signing/notarization path.
 
 ## SplitShot Arguments
 

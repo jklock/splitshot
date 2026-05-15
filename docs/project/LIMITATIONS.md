@@ -38,7 +38,7 @@ This page records the current constraints that are visible in the source tree an
 
 ## Electron Desktop App
 
-- The Electron shell is macOS-only in CI. Windows and Linux builds are configured but not tested in CI.
+- The Electron shell has build and smoke coverage for macOS, Windows, and Linux in CI, but macOS remains the only signed/notarized release path.
 - The Electron app bundles the Python backend via `scripts/bundle-python.js`. The bundle must be regenerated when `src/splitshot/` or `pyproject.toml` changes.
 - The `--headless` CLI flag is used by the Electron shell to start the Python backend. Running `splitshot` directly (without `--headless`) launches the Qt desktop runtime, which is redundant inside Electron.
 
@@ -47,6 +47,3 @@ This page records the current constraints that are visible in the source tree an
 - The repository includes a root LICENSE file and uses the MIT License.
 - Historical planning directories are not part of the active documentation set.
 - Current product guidance lives in this `docs/` directory, the package-level `src/splitshot/.../README.md` files, and the browser audit scripts under `scripts/`.
-
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

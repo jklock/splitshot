@@ -1,8 +1,10 @@
 # Test Remediation Summary
 
+This file is a historical remediation note, not the current source of truth for SplitShot test health. Use [docs/tests/TEST_SUITE_GUIDE.md](../../docs/tests/TEST_SUITE_GUIDE.md) plus the current `tests/` tree and `scripts/testing/` commands for live validation guidance.
+
 ## Overview
 
-This document summarizes the test remediation work performed on the SplitShot test suite. The work included fixing syntax errors in test files, updating stale assertions, and identifying remaining environment-dependent failures.
+This document summarizes one remediation pass over the SplitShot test suite. It records what was fixed in that run and what issues were still open at that time.
 
 ## Tests Passed
 

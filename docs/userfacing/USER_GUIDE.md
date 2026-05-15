@@ -53,5 +53,3 @@ The screenshot set covers every pane plus expanded timing, waveform, metrics, Sh
 
 Architecture, development, and technical notes live in [../README.md](../README.md).
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06

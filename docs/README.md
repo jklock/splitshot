@@ -44,7 +44,7 @@ This is the primary reading path for people trying to use SplitShot rather than 
 - [../scripts/README.md](../scripts/README.md)
 - [../CONTRIBUTING.md](../CONTRIBUTING.md)
 
-The repo supports macOS, Windows, and Linux source usage, and it also includes Electron packaging targets for all three platforms. macOS remains the deepest documented release-signing path, while Windows and Linux packaging are configured but not CI-tested to the same depth.
+The repo supports macOS, Windows, and Linux source usage, and it also includes Electron packaging targets for all three platforms. macOS remains the deepest documented signing/notarization path, while Windows and Linux also have packaging and smoke coverage in CI.
 
 ### Code readers
 
