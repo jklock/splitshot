@@ -10,11 +10,18 @@ SplitShot is a local-first browser app for competition shooting video analysis, 
 
 ## Start Here
 
-If you are new to SplitShot:
+If you are new to SplitShot, start here:
 
-1. Read this `README.md` for platform-specific install and launch paths.
-2. Use the `Quickstart` section below to get from install to first project quickly.
-3. Continue with [docs/userfacing/USER_GUIDE.md](docs/userfacing/USER_GUIDE.md) for the full app walkthrough.
+1. Releases page: [github.com/jklock/splitshot/releases](https://github.com/jklock/splitshot/releases)
+2. macOS:
+   download the current DMG from Releases, open it, and launch SplitShot like a normal macOS app.
+3. Windows:
+   download the current Windows installer from Releases, run it, and launch SplitShot from the installed app entry.
+4. Linux:
+   download the current Linux package from Releases, make it executable if needed, and launch SplitShot from the packaged app.
+5. If you are building or running SplitShot directly from the repo, use the `Platform-Specific Local Use` section below.
+6. Use the `Quickstart` section below to get from install to first project quickly.
+7. Continue with [docs/userfacing/USER_GUIDE.md](docs/userfacing/USER_GUIDE.md) for the full app walkthrough.
 
 If you just forked the repo and want maintainer context, use the developer section near the bottom after you finish the user-facing install path.
 
@@ -42,18 +49,6 @@ If you just forked the repo and want maintainer context, use the developer secti
 9. Check `Metrics` for the post-stage timing and scoring summary, then finish in `Export` with the output path, codec, and render settings you want.
 
 For the full user workflow, continue with [docs/userfacing/workflow.md](docs/userfacing/workflow.md).
-
-## Current Release / Download
-
-- Releases page: [github.com/jklock/splitshot/releases](https://github.com/jklock/splitshot/releases)
-- macOS:
-  download the current DMG from Releases, open it, and launch SplitShot like a normal macOS app.
-- Windows:
-  download the current Windows installer from Releases, run it, and launch SplitShot from the installed app entry.
-- Linux:
-  download the current Linux package from Releases, make it executable if needed, and launch SplitShot from the packaged app.
-
-Use the platform-specific local instructions below if you are building or running SplitShot directly from the repo.
 
 ## Platform-Specific Local Use
 
