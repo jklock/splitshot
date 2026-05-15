@@ -36,7 +36,7 @@ If you just forked the repo and want maintainer context, use the developer secti
 - **Post-stage metrics and export summaries:** Review timing graphs, expanded tables, CSV/text exports, and run summaries derived from the same corrected project state.
 - **Local final video rendering:** Export a finished video through FFmpeg with your chosen timing, overlays, review text, added media, and presentation settings.
 
-## Quickstart
+## Quickstart for Local Use
 
 1. Install SplitShot using the platform section below.
 2. Launch SplitShot from source with `uv run splitshot` or from the Electron shell with `npm start` inside `electron/`.
