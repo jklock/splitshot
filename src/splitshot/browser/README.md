@@ -1,47 +1,46 @@
 # Browser
 
-The browser package serves the primary SplitShot experience: a local HTTP server, JSON API, activity logging, and the browser shell assets.
+This package owns the browser-first runtime: the local HTTP server, JSON API, activity logging, PractiScore session plumbing, and browser-state serialization.
 
-## Files
+## Purpose
 
-- [cli.py](cli.py) exposes the browser entry point used by `splitshot-web`.
-- [server.py](server.py) runs the HTTP server, serves the static UI, and handles all browser API routes.
-- [state.py](state.py) converts the shared `Project` into the JSON payload consumed by the browser shell.
-- [activity.py](activity.py) writes per-run JSONL activity logs.
-- [static/](static) contains `index.html`, `app.js`, `styles.css`, and the branding image.
+Use this package when the change touches routes, browser-session behavior, file import/export surfaces, activity logs, PractiScore session flow, or browser JSON payloads.
 
-## Server Responsibilities
+## Read This First
 
-`BrowserControlServer` handles:
+- [server.py](server.py)
+- [state.py](state.py)
+- [static/README.md](static/README.md)
 
-- static file serving for the browser shell
-- `/api/state` serialization
-- `/media/primary` and `/media/secondary` playback URLs
-- project, analysis, scoring, merge, overlay, sync, and export POST routes
-- native file-picking dialogs for local media selection and export paths
+## Main Files
 
-## Activity Logging
+- [cli.py](cli.py): browser runtime entrypoint
+- [server.py](server.py): HTTP server and browser API surface
+- [state.py](state.py): `Project` to browser-state serializer
+- [activity.py](activity.py): JSONL activity logging
+- [practiscore_profile.py](practiscore_profile.py), [practiscore_session.py](practiscore_session.py), [practiscore_qt_runtime.py](practiscore_qt_runtime.py): manual PractiScore login flow and persistent profile handling
+- [static/](static): browser shell modules, styles, and assets
 
-`ActivityLogger` writes a timestamped JSONL log under `logs/` by default. The server logs HTTP requests, API calls, dialog selections, export progress, and streamed export log lines.
+## Runtime Flow
 
-Every record now carries a `level` field. File logging stays on for every run, while terminal mirroring is opt-in through `splitshot --log-level info` (or `debug`, `warning`, `error`). The default level is `off`, which keeps the terminal quiet unless you explicitly request live log output.
+1. The CLI starts `BrowserControlServer`.
+2. The server exposes `/api/state`, mutation routes, media routes, and static assets.
+3. `browser_state` serializes the shared controller-backed `Project`.
+4. Activity logs stream request, export, and dialog events to JSONL.
 
-## State Serialization
+## Key Extension Points
 
-`browser_state` combines:
+- `BrowserControlServer`
+- `browser_state`
+- activity logging and PractiScore session helpers
 
-- the serialized `Project`
-- derived stage metrics and timing segments
-- split rows
-- scoring and export preset summaries
-- media availability flags and playback URLs
-- repeatable overlay text-box state used by Review and Export
+## Related Tests
 
-## Runtime Notes
+- [../../../tests/browser/](../../../tests/browser/)
+- [../../../tests/electron/test_headless_server.py](../../../tests/electron/test_headless_server.py)
 
-- The browser server is local-only and binds to `127.0.0.1` by default.
-- On macOS it uses AppleScript dialogs for native file selection.
-- The server keeps a temporary session directory for imported local files that need to survive long enough for analysis or export.
+## Related Docs
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)
+- [static/README.md](static/README.md)
+- [../../../docs/project/browser-control-qa-matrix.md](../../../docs/project/browser-control-qa-matrix.md)

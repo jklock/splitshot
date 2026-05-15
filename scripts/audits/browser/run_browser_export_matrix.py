@@ -1,3 +1,5 @@
+"""Exercise browser export combinations and record pass/fail evidence for each matrix entry."""
+
 from __future__ import annotations
 
 import argparse

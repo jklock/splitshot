@@ -888,6 +888,28 @@ export function createShellRuntime({
     $("settings-reset-defaults")?.addEventListener("click", async () => {
       await callApi("/api/settings/reset-defaults", {});
     });
+    $("settings-use-current-layout")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true, section: "layout" }));
+    $("settings-release-layout")?.addEventListener("click", async () => {
+      await callApi("/api/settings/reset-defaults", {
+        scope: $("settings-scope")?.value || "app",
+        section: "layout",
+      });
+    });
+    documentObject.querySelectorAll("[data-settings-save-section]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const section = button.getAttribute("data-settings-save-section") || "";
+        applySettingsDefaults({ projectDefaults: true, section });
+      });
+    });
+    documentObject.querySelectorAll("[data-settings-reset-section]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const section = button.getAttribute("data-settings-reset-section") || "";
+        await callApi("/api/settings/reset-defaults", {
+          scope: $("settings-scope")?.value || "app",
+          section,
+        });
+      });
+    });
     $("badge-style-grid").addEventListener("input", (event) => {
       const target = event.target;
       if (isColorInput(target)) return;

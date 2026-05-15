@@ -1,3 +1,5 @@
+"""Validate the local SplitShot toolchain and packaged browser assets."""
+
 from __future__ import annotations
 
 import subprocess

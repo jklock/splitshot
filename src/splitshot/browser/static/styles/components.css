@@ -740,6 +740,26 @@ button:disabled {
   opacity: 1;
 }
 
+.waveform-shot-delete {
+  background: none;
+  border: 0;
+  color: #e53e3e;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  margin-left: auto;
+  padding: 0 0.25rem;
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.waveform-shot-delete:hover {
+  color: #fc8181;
+}
+
 .data-table div.selected {
   border-color: var(--accent);
   color: var(--accent);
@@ -868,17 +888,6 @@ button:disabled {
   font-weight: 900;
 }
 
-#practiscore-import-summary {
-  grid-template-columns: minmax(160px, 0.95fr) minmax(0, 1.05fr);
-}
-
-#practiscore-import-summary dt,
-#practiscore-import-summary dd {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: normal;
-}
-
 .practiscore-actions {
   background: #0e1012;
   border: 1px solid var(--line);
@@ -925,4 +934,3 @@ button:disabled {
 .threshold-control-row > button {
   white-space: nowrap;
 }
-

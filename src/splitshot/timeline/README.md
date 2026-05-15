@@ -1,24 +1,39 @@
 # Timeline
 
-The timeline package organizes shot detections into a table of split rows and derived timing totals.
+This package owns split-row generation and the core timing helpers derived from the shot list.
 
-## Files
+## Purpose
 
-- [model.py](model.py) defines `SplitRow` and the timing helpers.
+Use it when the change affects draw time, split calculations, stage time, shot ordering, or any timing table values shared across browser, metrics, and export views.
 
-## Key Functions
+## Read This First
 
-- `sort_shots` returns shots ordered by `time_ms`.
-- `compute_split_rows` converts the ordered shot list into `SplitRow` records.
-- `draw_time_ms` returns the time from beep to first shot.
-- `stage_time_ms` returns the time from beep to last shot.
-- `raw_time_ms` is the same value as `stage_time_ms` in the current model.
-- `average_split_ms` averages the non-empty split gaps between shots.
-- `total_time_ms` returns the absolute time of the last shot.
+- [model.py](model.py)
 
-## Browser Usage
+## Main Files
 
-The browser UI uses the split rows for the timing table, the split cards, and the waveform shot labels. The stage presentation layer consumes the same helpers to build its summary cards.
+- [model.py](model.py): split-row structures and timing helpers
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Runtime Flow
+
+1. Sort shots by `time_ms`.
+2. Build split rows and derived timing totals.
+3. Feed the browser state, metrics, and presentation layers from the same timing helpers.
+
+## Key Extension Points
+
+- `sort_shots`
+- `compute_split_rows`
+- `draw_time_ms`
+- `stage_time_ms`
+- `average_split_ms`
+
+## Related Tests
+
+- [../../../tests/presentation/test_timing_contracts.py](../../../tests/presentation/test_timing_contracts.py)
+- [../../../tests/browser/test_timing_waveform_contracts.py](../../../tests/browser/test_timing_waveform_contracts.py)
+
+## Related Docs
+
+- [../../../docs/userfacing/panes/splits.md](../../../docs/userfacing/panes/splits.md)
+- [../presentation/README.md](../presentation/README.md)

@@ -1,3 +1,5 @@
+"""Train or inspect the low-level audio-event model components used by the ShotML pipeline."""
+
 from __future__ import annotations
 
 import math

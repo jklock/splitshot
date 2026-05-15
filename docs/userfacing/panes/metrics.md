@@ -6,8 +6,6 @@ The Metrics pane is the read-only post-stage dashboard for the current run. It c
 
 <img src="../../screenshots/MetricsPane2.png" alt="Expanded Metrics view with post-stage graphs and the full shot-by-shot timing table" width="960">
 
-<img src="../../screenshots/MetricsCSV.png" alt="Metrics CSV export opened in a spreadsheet with run, timing, scoring, and confidence columns" width="760">
-
 ## When To Use This Pane
 
 - After timing and scoring are stable.

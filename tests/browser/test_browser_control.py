@@ -788,7 +788,13 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         assert state["practiscore_options"]["detected_match_type"] == "uspsa"
         assert state["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4, 5, 6]
         assert any(
-            option == {"name": "Stephen Lutman", "place": 1}
+            option["name"] == "Stephen Lutman" and option["place"] == 1
+            for option in state["practiscore_options"]["competitors"]
+        )
+        assert any(
+            option["name"] == "Stephen Lutman"
+            and option.get("division") == "Limited"
+            and option.get("classification") == "M"
             for option in state["practiscore_options"]["competitors"]
         )
         assert state["project"]["overlay"]["custom_box_enabled"] is True
@@ -2395,6 +2401,100 @@ def test_browser_settings_layout_defaults_round_trip_and_clear(tmp_path: Path, m
         assert "layout_rail_width" not in cleared_folder_text
         assert "layout_inspector_width" not in cleared_folder_text
         assert "layout_waveform_height" not in cleared_folder_text
+    finally:
+        server.shutdown()
+
+
+def test_browser_settings_section_reset_only_clears_selected_section(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    project_path = tmp_path / "settings-section-reset.ssproj"
+    controller = ProjectController()
+    controller.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
+
+        _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "app",
+                "settings": {
+                    "merge_layout": "pip",
+                    "export_quality": "low",
+                    "export_two_pass": True,
+                },
+            },
+        )
+
+        updated = _post_json(
+            f"{server.url}api/settings/reset-defaults",
+            {
+                "scope": "app",
+                "section": "export",
+            },
+        )
+
+        assert updated["settings"]["merge_layout"] == "pip"
+        assert updated["settings"]["export_quality"] == "high"
+        assert updated["settings"]["export_two_pass"] is False
+    finally:
+        server.shutdown()
+
+
+def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(controller_module, "load_settings", lambda: controller_module.AppSettings())
+    monkeypatch.setattr(controller_module, "save_settings", lambda settings: None)
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        _post_json(
+            f"{server.url}api/settings",
+            {
+                "scope": "app",
+                "settings": {
+                    "merge_layout": "pip",
+                    "pip_size": "50%",
+                    "merge_pip_x": 0.25,
+                    "merge_pip_y": 0.75,
+                    "merge_source_defaults": [
+                        {
+                            "asset": {
+                                "path": str(tmp_path / "reference.png"),
+                                "duration_ms": 0,
+                                "width": 1920,
+                                "height": 1080,
+                                "fps": 30.0,
+                                "audio_sample_rate": 22050,
+                                "rotation": 0,
+                                "is_still_image": True,
+                            },
+                            "pip_size_percent": 42,
+                            "pip_x": 0.25,
+                            "pip_y": 0.75,
+                            "opacity": 0.9,
+                            "sync_offset_ms": 0,
+                        }
+                    ],
+                },
+            },
+        )
+
+        created = _post_json(f"{server.url}api/project/new", {})
+
+        assert created["project"]["merge"]["layout"] == "pip"
+        assert created["project"]["merge"]["pip_size"] == "50%"
+        assert len(created["project"]["merge_sources"]) == 1
+        assert created["project"]["merge_sources"][0]["asset"]["path"] == str(tmp_path / "reference.png")
+        assert created["project"]["merge_sources"][0]["asset"]["is_still_image"] is True
+        assert created["project"]["merge_sources"][0]["pip_size_percent"] == 42
+        assert created["project"]["merge_sources"][0]["pip_x"] == 0.25
+        assert created["project"]["merge_sources"][0]["pip_y"] == 0.75
     finally:
         server.shutdown()
 

@@ -754,8 +754,8 @@
                 </div>
                 <label class="check-row"><input id="settings-reopen-last-tool" type="checkbox" /> Reopen the selected pane on new projects</label>
                 <div class="button-grid two-up">
-                  <button id="settings-import-current" type="button">Use Current Project As Defaults</button>
-                  <button id="settings-reset-defaults" type="button">Reset Defaults</button>
+                  <button id="settings-import-current" type="button">Save Current Settings</button>
+                  <button id="settings-reset-defaults" type="button">Reset to Default</button>
                 </div>
                 <p id="settings-scope-status" class="hint">No project folder is open. App defaults are the global template.</p>
               </section>
@@ -780,8 +780,8 @@
                   </label>
                 </div>
                 <div class="button-grid two-up settings-layout-actions">
-                  <button id="settings-use-current-layout" type="button">Use Current Layout</button>
-                  <button id="settings-release-layout" type="button">Release Layout</button>
+                  <button id="settings-use-current-layout" type="button">Save Current Settings</button>
+                  <button id="settings-release-layout" type="button">Reset to Default</button>
                 </div>
                 <p id="settings-layout-summary" class="hint">New projects are using SplitShot's built-in layout defaults.</p>
               </section>
@@ -803,6 +803,10 @@
                   </label>
                 </div>
                 <p class="hint">New projects start with this sport unless an import provides a match type.</p>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-scoring" data-settings-save-section="scoring" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-scoring" data-settings-reset-section="scoring" type="button">Reset to Default</button>
+                </div>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="pip">
@@ -834,6 +838,11 @@
                     <input id="settings-merge-pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset to Default</button>
+                </div>
+                <p id="settings-pip-summary" class="hint">No saved PiP media defaults.</p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="overlay">
@@ -938,6 +947,10 @@
                     </label>
                   </article>
                 </div>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-overlay" data-settings-save-section="overlay" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-overlay" data-settings-reset-section="overlay" type="button">Reset to Default</button>
+                </div>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="markers">
@@ -991,6 +1004,10 @@
                       </span>
                     </label>
                   </div>
+                </div>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-markers" data-settings-save-section="markers" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-markers" data-settings-reset-section="markers" type="button">Reset to Default</button>
                 </div>
               </section>
 
@@ -1049,6 +1066,10 @@
                   </label>
                   <label class="check-row"><input id="settings-export-two-pass" type="checkbox" /> Use two-pass export</label>
                 </div>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-export" data-settings-save-section="export" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-export" data-settings-reset-section="export" type="button">Reset to Default</button>
+                </div>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="shotml">
@@ -1062,6 +1083,10 @@
                   <label>ShotML threshold
                     <input id="settings-shotml-threshold" type="number" min="0.05" max="0.95" step="0.05" value="0.35" />
                   </label>
+                </div>
+                <div class="button-grid two-up">
+                  <button id="settings-save-current-shotml" data-settings-save-section="shotml" type="button">Save Current Settings</button>
+                  <button id="settings-reset-section-shotml" data-settings-reset-section="shotml" type="button">Reset to Default</button>
                 </div>
               </section>
             </section>

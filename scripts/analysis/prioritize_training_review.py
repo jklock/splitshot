@@ -1,3 +1,5 @@
+"""Rank training-manifest entries by expected review value and cleanliness."""
+
 from __future__ import annotations
 
 import argparse

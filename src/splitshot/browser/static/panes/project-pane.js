@@ -28,8 +28,12 @@ export function createProjectPane({
   sendProjectUiStateKeepalive = () => false,
   pickPath = async () => "",
   fileName = (value) => String(value || ""),
+  splitSeconds = (value) => String(value ?? ""),
+  formatNumber = (value) => String(value ?? ""),
+  formatPractiScoreTime = (value) => String(value ?? ""),
   autoApplyProjectDetails = () => {},
   autoApplyPractiScoreContext = () => {},
+  renderDetailsList = () => {},
   renderHeader = () => {},
   setStatus = () => {},
   activity = () => {},
@@ -332,6 +336,81 @@ export function createProjectPane({
     return String(path || "").trim();
   }
 
+  function formatShotMlConfidenceSummary(shots = []) {
+    const values = shots
+      .map((shot) => Number(shot?.shotml_confidence ?? shot?.confidence))
+      .filter((value) => Number.isFinite(value));
+    if (values.length === 0) return "--";
+    const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+    return `${formatNumber(average * 100, 1)}%`;
+  }
+
+  function renderOwnedSummaryList(id, rows = [], className = "") {
+    const list = $(id);
+    if (!(list instanceof HTMLElement)) return;
+    list.className = ["details", "pane-summary-list", className].filter(Boolean).join(" ");
+    list.replaceChildren();
+    rows.forEach(([label, value]) => {
+      const term = documentObject.createElement("dt");
+      term.textContent = label;
+      const description = documentObject.createElement("dd");
+      description.textContent = value;
+      list.append(term, description);
+    });
+  }
+
+  function ssStageTimeSeconds(state) {
+    const beepMs = Number(state?.project?.analysis?.beep_time_ms_primary);
+    const shots = Array.isArray(state?.project?.analysis?.shots) ? state.project.analysis.shots : [];
+    if (!Number.isFinite(beepMs) || shots.length === 0) return null;
+    let finalShotMs = null;
+    shots.forEach((shot) => {
+      const shotTimeMs = Number(shot?.time_ms);
+      if (!Number.isFinite(shotTimeMs)) return;
+      if (finalShotMs === null || shotTimeMs > finalShotMs) finalShotMs = shotTimeMs;
+    });
+    if (finalShotMs === null) return null;
+    return Math.max(0, (finalShotMs - beepMs) / 1000);
+  }
+
+  function renderPractiScoreImportSummary() {
+    const state = currentState();
+    const imported = state.scoring_summary?.imported_stage;
+    const stagedSource = state.practiscore_options?.source_name || "";
+    const stagedMatchType = state.practiscore_options?.detected_match_type || "";
+    const stagedStages = Array.isArray(state.practiscore_options?.stage_numbers)
+      ? state.practiscore_options.stage_numbers
+      : [];
+    const stagedCompetitorCount = practiScoreCompetitors().length;
+    const status = $("practiscore-status");
+    if (!imported) {
+      if (status) status.textContent = stagedSource ? `${stagedSource} loaded` : "No results imported";
+      renderOwnedSummaryList("practiscore-import-summary", stagedSource ? [
+        ["Stage Start (Beep)", "--"],
+        ["Shots in Stage", stagedCompetitorCount > 0 ? "0" : "0"],
+        ["SS Stage Time", "--"],
+        ["PS Stage Time", "--"],
+        ["Video Length", "--"],
+        ["ShotML Confidence", "--"],
+      ] : [], "project-practiscore-summary");
+      return;
+    }
+    const beepMs = state.project?.analysis?.beep_time_ms_primary;
+    const shots = Array.isArray(state.project?.analysis?.shots) ? state.project.analysis.shots : [];
+    const ssStageSeconds = ssStageTimeSeconds(state);
+    const psStageSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
+    const videoDurationMs = state.project?.primary_video?.duration_ms;
+    if (status) status.textContent = `${stagedMatchType ? stagedMatchType.toUpperCase() : "PractiScore"} Stage ${imported.stage_number} imported`;
+    renderOwnedSummaryList("practiscore-import-summary", [
+      ["Stage Start (Beep)", splitSeconds(beepMs)],
+      ["Shots in Stage", shots.length > 0 ? String(shots.length) : "0"],
+      ["SS Stage Time", formatPractiScoreTime(ssStageSeconds)],
+      ["PS Stage Time", formatPractiScoreTime(psStageSeconds)],
+      ["Video Length", splitSeconds(videoDurationMs)],
+      ["ShotML Confidence", formatShotMlConfidenceSummary(shots)],
+    ], "project-practiscore-summary");
+  }
+
   function hasActiveProject() {
     return Boolean(String(currentState()?.project?.path || "").trim());
   }
@@ -542,6 +621,7 @@ export function createProjectPane({
     flushPendingProjectDrafts,
     flushPendingProjectDraftsKeepalive,
     importTypedPath,
+    renderPractiScoreImportSummary,
     normalizeProjectFolderInput,
     hasActiveProject,
     gatedProjectActionMessage,

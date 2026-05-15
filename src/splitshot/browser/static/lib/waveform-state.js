@@ -135,6 +135,13 @@ export function createWaveformState({
     return nearestDistance <= 28 ? nearest : null;
   }
 
+  function nearestBeep(event) {
+    const beep = currentState()?.project?.analysis?.beep_time_ms_primary;
+    if (beep === null || beep === undefined) return null;
+    const distance = shotPixelDistance(event, { time_ms: beep });
+    return distance <= 28 ? { is_beep: true, time_ms: beep } : null;
+  }
+
   return Object.freeze({
     durationMs,
     waveformWindow,
@@ -149,5 +156,6 @@ export function createWaveformState({
     waveformTime,
     shotPixelDistance,
     nearestShot,
+    nearestBeep,
   });
 }

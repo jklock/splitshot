@@ -2,7 +2,9 @@
 set -euo pipefail
 
 package_exists() {
-  apt-cache show "$1" >/dev/null 2>&1
+  local candidate
+  candidate=$(apt-cache policy "$1" 2>/dev/null | awk -F': ' '/Candidate:/ {print $2}')
+  [ -n "$candidate" ] && [ "$candidate" != "(none)" ]
 }
 
 choose_package() {
@@ -52,8 +54,8 @@ packages=(
   tk
 )
 
-packages+=("$(choose_package libegl1-mesa libegl-mesa0 libegl1)")
-packages+=("$(choose_package libgl1-mesa libgl1-mesa-glx libgl1)")
+packages+=("$(choose_package libegl1-mesa libegl1 libegl-mesa0)")
+packages+=("$(choose_package libgl1-mesa libgl1 libgl1-mesa-glx)")
 packages+=("$(choose_package libasound2t64 libasound2)")
 
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages[@]}"

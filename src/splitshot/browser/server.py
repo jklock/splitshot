@@ -1,3 +1,5 @@
+"""Browser HTTP server, route handlers, and file/session plumbing for SplitShot."""
+
 from __future__ import annotations
 
 import csv
@@ -934,11 +936,16 @@ class BrowserControlServer:
             def _poll_activity(self, query_string: str) -> None:
                 params = parse_qs(query_string or "", keep_blank_values=False)
                 raw_after = params.get("after", ["0"])[0]
+                raw_limit = params.get("limit", ["400"])[0]
                 try:
                     after_seq = max(0, int(raw_after))
                 except ValueError:
                     after_seq = 0
-                self._send_json(activity.snapshot(after_seq=after_seq))
+                try:
+                    limit = max(0, int(raw_limit))
+                except ValueError:
+                    limit = 400
+                self._send_json(activity.snapshot(after_seq=after_seq, limit=limit))
 
             def _browser_state(self) -> dict[str, Any]:
                 payload = browser_state(
@@ -1519,7 +1526,10 @@ class BrowserControlServer:
                 controller.reset_shotml_settings()
 
             def _reset_settings_defaults(self, payload: dict[str, Any]) -> None:
-                controller.restore_defaults()
+                controller.reset_settings_defaults(
+                    scope=str(payload.get("scope", "app") or "app"),
+                    section=(str(payload.get("section") or "").strip() or None),
+                )
 
             def _set_settings_defaults(self, payload: dict[str, Any]) -> None:
                 controller.set_settings_defaults(
@@ -1528,7 +1538,8 @@ class BrowserControlServer:
                 )
 
             def _set_beep(self, payload: dict[str, Any]) -> None:
-                controller.set_beep_time(int(payload["time_ms"]))
+                time_ms = payload.get("time_ms")
+                controller.set_beep_time(int(time_ms) if time_ms is not None else None)
 
             def _add_shot(self, payload: dict[str, Any]) -> None:
                 controller.add_shot(int(payload["time_ms"]))

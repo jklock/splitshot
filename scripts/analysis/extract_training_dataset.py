@@ -1,3 +1,5 @@
+"""Convert reviewed or trusted manifest labels into a model-training dataset artifact."""
+
 from __future__ import annotations
 
 import argparse

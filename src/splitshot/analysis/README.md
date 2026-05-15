@@ -1,38 +1,47 @@
 # Analysis
 
-The analysis package extracts audio features, runs the embedded model, and turns the results into beep and shot detections.
+This package owns audio extraction inputs, ShotML inference, beep and shot detection, sync helpers, and review-suggestion generation.
 
-For the implementation-level walkthrough of ShotML, raw model confidence, threshold sweeps, and timeline reconciliation, see [docs/analysis/SHOTML.md](../../../docs/analysis/SHOTML.md). For the ShotML tab, settings persistence, browser API, and timing-change proposal architecture, see [docs/project/SHOTML_ARCHITECTURE.md](../../../docs/project/SHOTML_ARCHITECTURE.md).
+## Purpose
 
-## Files
+Use this package when the change affects detector behavior, confidence output, threshold handling, waveform-driven refinement, or training-corpus tooling.
 
-- [audio_features.py](audio_features.py) frames mono audio and builds the feature matrix used by the classifier.
-- [ml_runtime.py](ml_runtime.py) hosts the embedded `AudioEventClassifier`, `ModelPredictions`, and peak-picking helpers.
-- [detection.py](detection.py) combines model output with refinement heuristics and returns a `DetectionResult`.
-- [sync.py](sync.py) computes the primary/secondary beep offset.
-- [model_bundle.py](model_bundle.py) contains the generated classifier weights, metadata, and normalization constants.
+## Read This First
 
-## Processing Chain
+- [detection.py](detection.py)
+- [audio_features.py](audio_features.py)
+- [ml_runtime.py](ml_runtime.py)
 
-1. `media.audio.extract_audio_wav` writes a mono WAV file.
-2. `media.audio.read_wav_mono` loads the samples into NumPy.
-3. `extract_feature_matrix` and `AudioEventClassifier.predict_audio` produce class probabilities over time.
-4. `detect_beep` and `detect_shots` identify the timer beep and shot peaks.
-5. `analyze_video_audio` returns a `DetectionResult` with the beep time, shot events, waveform envelope, sample rate, and review suggestions.
+## Main Files
 
-## Important Behaviors
+- [audio_features.py](audio_features.py): feature extraction for classifier windows
+- [ml_runtime.py](ml_runtime.py): embedded model runtime and prediction helpers
+- [detection.py](detection.py): detector orchestration and `DetectionResult`
+- [sync.py](sync.py): primary and secondary timing offset calculation
+- [model_bundle.py](model_bundle.py): shipped classifier weights and metadata
+- [corpus.py](corpus.py), [training_dataset.py](training_dataset.py), [review_queue.py](review_queue.py), [auto_labeling.py](auto_labeling.py): corpus and training workflows
 
-- The classifier is cached with `lru_cache` so repeated detections reuse the same model instance.
-- Beep detection uses both tonal heuristics and model probabilities.
-- Shot detection respects the project-scoped `ShotMLSettings`, including threshold mapping, shot spacing, confidence source, and beep-region exclusion.
-- Refiner helpers adjust rough detections to the nearest stronger onset in the waveform.
-- Timing review suggestions can be converted into structured timing-change proposals for the ShotML tab.
+## Runtime Flow
 
-## Downstream Consumers
+1. Media helpers extract mono WAV audio and waveform data.
+2. Feature extraction builds classifier windows.
+3. The model runtime produces class probabilities.
+4. Detection combines probabilities with heuristics to find the start beep and shots.
+5. Review suggestions and timing proposals feed the browser and script workflows.
 
-- The controller stores detected shots and beep timing on the shared `Project` model.
-- The browser waveform and stage presentation use the derived shot list and waveform envelope.
-- The benchmark CLI uses the same analysis pipeline to produce CSV output for Stage*.MP4 files.
+## Key Extension Points
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+- `analyze_video_audio`
+- `detect_beep`
+- `detect_shots`
+- `timing_change_proposals_from_review_suggestions`
+
+## Related Tests
+
+- [../../../tests/analysis/](../../../tests/analysis/)
+- [../../../tests/scripts/](../../../tests/scripts/)
+
+## Related Docs
+
+- [../../../docs/analysis/SHOTML.md](../../../docs/analysis/SHOTML.md)
+- [../../../docs/project/SHOTML_ARCHITECTURE.md](../../../docs/project/SHOTML_ARCHITECTURE.md)

@@ -179,8 +179,9 @@ def test_static_scoring_pane_extracts_owned_scoring_blocks_into_module() -> None
     assert "function buildScoringPenaltyEditor(segment, rowScope, penaltyFields) {" in scoring_js
     assert "function importedStageRecordedScoreLabel(imported) {" in scoring_js
     assert "function renderPractiScoreSummaries() {" in scoring_js
-    assert '"Recorded Score"' in scoring_js
-    assert '"Recorded Penalty"' in scoring_js
+    assert '"PS - Score"' in scoring_js
+    assert '"PS - Penalties"' in scoring_js
+    assert '"Stage Place"' not in scoring_js
     assert "function readScoringPayload() {" in scoring_js
     assert "async function applyScoringSettings(scoringPayload = readScoringPayload(), ruleset = $(\"scoring-preset\")?.value || \"\") {" in scoring_js
     assert "function scheduleScoringApply() {" in scoring_js

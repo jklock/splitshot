@@ -25,6 +25,35 @@
   padding: 0.2rem 0.55rem;
 }
 
+.pane-summary-list {
+  align-items: center;
+  column-gap: 0.8rem;
+  grid-template-columns: minmax(148px, max-content) minmax(0, 1fr);
+}
+
+.pane-summary-list dt,
+.pane-summary-list dd {
+  min-height: 1.35rem;
+  overflow: visible;
+  padding: 0.45rem 0;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.pane-summary-list dd {
+  justify-self: stretch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-practiscore-summary {
+  grid-template-columns: minmax(172px, max-content) minmax(0, 1fr);
+}
+
+.scoring-imported-summary {
+  grid-template-columns: minmax(132px, max-content) minmax(0, 1fr);
+}
+
 .section-header-with-toggle {
   grid-template-columns: auto minmax(0, 1fr) auto;
 }
@@ -1636,6 +1665,7 @@
   color: var(--muted);
 }
 
+
 .metrics-trend-table {
   align-content: start;
   font-size: 0.66rem;
@@ -2541,4 +2571,3 @@
 .scoring-toggle-row > button {
   justify-self: end;
 }
-

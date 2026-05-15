@@ -6184,6 +6184,7 @@ function renderScoringPresetDescription() {
 }
 
 function renderPractiScoreSummaries() {
+  projectPane?.renderPractiScoreImportSummary?.();
   return scoringPane?.renderPractiScoreSummaries();
 }
 
@@ -8909,8 +8910,8 @@ const handleViewportLayoutChange = debounce(() => {
   syncTimingTableColumns();
 }, 120);
 
-const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
-  if (settingsPane) return settingsPane.readSettingsDefaultsPayload({ projectDefaults });
+const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null } = {}) => {
+  if (settingsPane) return settingsPane.readSettingsDefaultsPayload({ projectDefaults, section });
   const projectOverlay = state?.project?.overlay || {};
   const projectExport = state?.project?.export || {};
   const projectScoring = state?.project?.scoring || {};
@@ -8954,6 +8955,16 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false } = {}) => {
       pip_size: projectDefaults ? (state?.project?.merge?.pip_size || "35%") : ($("settings-pip-size")?.value || "35%"),
       merge_pip_x: projectDefaults ? (state?.project?.merge?.pip_x ?? 1.0) : readNumberSetting("settings-merge-pip-x", 1.0),
       merge_pip_y: projectDefaults ? (state?.project?.merge?.pip_y ?? 1.0) : readNumberSetting("settings-merge-pip-y", 1.0),
+      merge_source_defaults: projectDefaults
+        ? (state?.project?.merge_sources || []).map((source) => ({
+          asset: { ...(source.asset || {}) },
+          pip_size_percent: source.pip_size_percent ?? null,
+          pip_x: Number(source.pip_x ?? 1.0),
+          pip_y: Number(source.pip_y ?? 1.0),
+          opacity: Number(source.opacity ?? 1.0),
+          sync_offset_ms: Number(source.sync_offset_ms ?? 0),
+        }))
+        : undefined,
       export_quality: projectDefaults ? (projectExport.quality || "high") : ($("settings-export-quality")?.value || "high"),
       export_preset: projectDefaults ? (projectExport.preset || "source") : ($("settings-export-preset")?.value || "source"),
       export_frame_rate: projectDefaults ? (projectExport.frame_rate || "source") : ($("settings-export-frame-rate")?.value || "source"),
@@ -9155,6 +9166,7 @@ keyRuntime = createKeyRuntime({
   activity,
   callApi,
   deleteShotById,
+  getState: () => state,
 });
 
 apiRuntime = createApiRuntime({
@@ -9261,6 +9273,7 @@ waveformComponent = createWaveformComponent({
   isLowConfidence,
   activity,
   callApi,
+  deleteShotById,
   scheduleInteractionPreviewRender,
   flushInteractionPreviewRender,
   flushQueuedProjectUiStateApply,
@@ -9382,6 +9395,7 @@ markersPane = createMarkersPane({
   autoTracePopupBubbleMotion: (...args) => autoTracePopupBubbleMotion(...args),
   VALID_POPUP_FILTER_MODES,
   CUSTOM_QUADRANT_VALUE,
+  scoreBadgeTokens,
 });
 
 overlayPane = createOverlayPane({
@@ -9512,6 +9526,7 @@ settingsPane = createSettingsPane({
   syncControlValue,
   syncControlChecked,
   readNumberSetting,
+  readProjectUiStatePayload,
   normalizePopupTemplate,
   renderExportPresetOptions,
   ensureSectionToggle,
@@ -9580,8 +9595,12 @@ projectPane = createProjectPane({
   sendProjectUiStateKeepalive,
   pickPath,
   fileName,
+  splitSeconds,
+  formatNumber,
+  formatPractiScoreTime,
   autoApplyProjectDetails,
   autoApplyPractiScoreContext,
+  renderDetailsList,
   renderHeader,
   setStatus,
   activity,

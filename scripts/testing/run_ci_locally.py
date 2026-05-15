@@ -1,3 +1,5 @@
+"""Run CI-shaped local validation groups so the main jobs can be reproduced without GitHub Actions."""
+
 from __future__ import annotations
 
 import argparse

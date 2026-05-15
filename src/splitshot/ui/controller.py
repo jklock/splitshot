@@ -1,3 +1,5 @@
+"""Shared controller layer that owns authoritative project mutations and settings flow."""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -28,6 +30,7 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     ExportVideoCodec,
+    _merge_source_from_dict,
     _popup_bubble_from_dict,
     MergeLayout,
     OverlayPosition,
@@ -690,6 +693,7 @@ class ProjectController(QObject):
         self._practiscore_source_path: Path | None = None
         self._practiscore_source_name: str = ""
         self._practiscore_options: PractiScoreOptions | None = None
+        self._practiscore_comparison_competitors: list[dict[str, object]] = []
         self._practiscore_session_payload = _default_practiscore_session_payload()
         self._practiscore_sync_payload = _default_practiscore_sync_payload()
         self.status_message = "Ready."
@@ -889,7 +893,13 @@ class ProjectController(QObject):
     def _practiscore_options_browser_payload(self) -> dict[str, object]:
         options = self._practiscore_options
         competitors = [] if options is None else [
-            {"name": option.name, "place": option.place}
+            {
+                "name": option.name,
+                "place": option.place,
+                "division": option.division,
+                "classification": option.classification,
+                "power_factor": option.power_factor,
+            }
             for option in options.competitors
         ]
         return {
@@ -904,6 +914,7 @@ class ProjectController(QObject):
         payload = self._practiscore_options_browser_payload()
         payload["_session_payload"] = deepcopy(self._practiscore_session_payload)
         payload["_sync_payload"] = deepcopy(self._practiscore_sync_payload)
+        payload["comparison_competitors"] = deepcopy(self._practiscore_comparison_competitors)
         return payload
 
     def _set_practiscore_session_payload(self, payload: dict[str, object]) -> None:
@@ -1147,6 +1158,7 @@ class ProjectController(QObject):
         self._practiscore_source_path = None
         self._practiscore_source_name = ""
         self._practiscore_options = None
+        self._practiscore_comparison_competitors = []
         self.project.scoring.practiscore_source_path = ""
         self.project.scoring.practiscore_source_name = ""
 
@@ -1588,6 +1600,23 @@ class ProjectController(QObject):
         )
         self._practiscore_options = normalized.options
         imported = normalized.stage_import
+        self._practiscore_comparison_competitors = [
+            {
+                "name": c.name,
+                "place": c.place,
+                "division": c.division,
+                "classification": c.classification,
+                "power_factor": c.power_factor,
+                "raw_seconds": c.raw_seconds,
+                "hit_factor": c.hit_factor,
+                "final_time": c.final_time,
+                "stage_points": c.stage_points,
+                "stage_place": c.stage_place,
+                "total_points": c.total_points,
+                "class_place": c.class_place,
+            }
+            for c in imported.comparison_competitors
+        ]
         apply_scoring_preset(self.project, imported.ruleset)
         self.project.scoring.enabled = True
         self.project.scoring.penalties = max(0.0, float(imported.manual_penalties))
@@ -1849,7 +1878,7 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def set_beep_time(self, time_ms: int) -> None:
+    def set_beep_time(self, time_ms: int | None) -> None:
         self.project.analysis.beep_time_ms_primary = time_ms
         self.project.touch()
         self.project_changed.emit()
@@ -2990,6 +3019,12 @@ class ProjectController(QObject):
                 target.merge_pip_y = float(raw_pip_y)
         if "pip_size" in payload:
             target.pip_size = PipSize(str(payload["pip_size"]))
+        if "merge_source_defaults" in payload:
+            target.merge_source_defaults = [
+                deepcopy(item)
+                for item in payload.get("merge_source_defaults", [])
+                if isinstance(item, dict)
+            ]
         if "export_quality" in payload:
             target.export_quality = ExportQuality(str(payload["export_quality"]))
         if "export_preset" in payload:
@@ -3046,6 +3081,82 @@ class ProjectController(QObject):
             save_settings(self.settings)
         self.settings_changed.emit()
         self._set_status(f"Updated {'folder' if scope == 'folder' else 'app'} defaults.")
+
+    def reset_settings_defaults(self, *, scope: str = "app", section: str | None = None) -> None:
+        if not section:
+            self.restore_defaults()
+            return
+
+        section_name = str(section or "").strip().lower()
+        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        target = AppSettings.from_dict(base.to_dict())
+        fallback = self.settings if scope == "folder" else AppSettings()
+
+        def rebuild_with_updates(updates: dict[str, object]) -> None:
+            nonlocal target
+            payload = target.to_dict()
+            payload.update({key: deepcopy(value) for key, value in updates.items()})
+            refreshed = AppSettings.from_dict(payload)
+            refreshed.active_template_name = target.active_template_name
+            refreshed.settings_templates = deepcopy(target.settings_templates)
+            refreshed.recent_projects = target.recent_projects
+            target = refreshed
+
+        fallback_config = fallback.config_dict()
+        section_keys = {
+            "global-template": ("default_tool", "reopen_last_tool"),
+            "layout": ("layout_locked", "layout_rail_width", "layout_inspector_width", "layout_waveform_height"),
+            "scoring": ("default_match_type", "default_stage_number", "default_competitor_name", "default_competitor_place"),
+            "pip": ("merge_layout", "pip_size", "merge_pip_x", "merge_pip_y", "merge_source_defaults"),
+            "overlay": (
+                "overlay_position",
+                "badge_size",
+                "overlay_custom_box_background_color",
+                "overlay_custom_box_text_color",
+                "overlay_custom_box_opacity",
+                "timer_badge",
+                "shot_badge",
+                "current_shot_badge",
+                "hit_factor_badge",
+                "review_text_boxes",
+            ),
+            "markers": ("marker_template",),
+            "export": (
+                "export_quality",
+                "export_preset",
+                "export_frame_rate",
+                "export_video_codec",
+                "export_audio_codec",
+                "export_color_space",
+                "export_two_pass",
+                "export_ffmpeg_preset",
+            ),
+            "shotml": ("detection_threshold", "shotml_defaults"),
+        }
+        keys = section_keys.get(section_name)
+        if keys is None:
+            raise ValueError("Unknown settings section.")
+        rebuild_with_updates({key: fallback_config.get(key) for key in keys})
+
+        if scope == "folder":
+            if self.project_path is None:
+                raise ValueError("Save the project before writing folder defaults.")
+            if target.config_dict() == self.settings.config_dict():
+                delete_folder_settings(self.project_path)
+                self.folder_settings = None
+            else:
+                self.folder_settings = target
+                save_folder_settings(self.project_path, target)
+            self.folder_settings_error = None
+        else:
+            target.recent_projects = self.settings.recent_projects
+            target.active_template_name = self.settings.active_template_name
+            target.settings_templates = deepcopy(self.settings.settings_templates)
+            self.settings = target
+            self._sync_active_settings_template()
+            save_settings(self.settings)
+        self.settings_changed.emit()
+        self._set_status(f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope.")
 
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
@@ -3178,6 +3289,14 @@ class ProjectController(QObject):
         project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
         project.merge.pip_x = effective.merge_pip_x
         project.merge.pip_y = effective.merge_pip_y
+        project.merge_sources = [
+            _merge_source_from_dict(item)
+            for item in effective.merge_source_defaults
+            if isinstance(item, dict)
+        ]
+        _sync_secondary_video_from_merge_sources(project)
+        if project.merge_sources and not project.merge_sources[0].asset.is_still_image:
+            project.analysis.sync_offset_ms = int(project.merge_sources[0].sync_offset_ms)
         project.export.quality = effective.export_quality
         project.export.preset = effective.export_preset
         project.export.frame_rate = effective.export_frame_rate

@@ -1,32 +1,35 @@
 # Merge
 
-The merge package computes the canvas geometry used for dual-angle previews and export.
+This package owns layout geometry for side-by-side, above-below, and PiP composition.
 
-## Files
+## Purpose
 
-- [layouts.py](layouts.py) defines `Rect`, `MergeCanvas`, and `calculate_merge_canvas`.
+Use it when the change affects added-media placement, merge canvas sizing, or export and preview geometry for secondary media.
 
-## Layout Modes
+## Read This First
 
-- `MergeLayout.SIDE_BY_SIDE` scales both sources to the same height and places them horizontally.
-- `MergeLayout.ABOVE_BELOW` scales both sources to the same width and stacks them vertically.
-- `MergeLayout.PIP` keeps the primary frame full size and places the secondary source as an inset.
+- [layouts.py](layouts.py)
 
-## Inputs and Outputs
+## Main Files
 
-`calculate_merge_canvas` takes:
+- [layouts.py](layouts.py): `Rect`, `MergeCanvas`, and `calculate_merge_canvas`
 
-- the primary and optional secondary `VideoAsset`
-- the selected `MergeLayout`
-- the PiP size as a `PipSize`, integer percent, or float percent
-- optional PiP coordinates
+## Runtime Flow
 
-It returns a `MergeCanvas` with the output width and height plus the rectangle for each source.
+1. Accept the primary and optional secondary assets plus layout settings.
+2. Compute the output canvas size.
+3. Return the source rectangles used by preview and export layers.
 
-## Implementation Notes
+## Key Extension Points
 
-- PiP placement clamps coordinates to the unit interval and keeps the inset away from the frame edges.
-- The same geometry helper is used by the browser preview and the export pipeline.
+- `calculate_merge_canvas`
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Related Tests
+
+- [../../../tests/export/test_merge_export_contracts.py](../../../tests/export/test_merge_export_contracts.py)
+- [../../../tests/scoring/test_scoring_and_merge.py](../../../tests/scoring/test_scoring_and_merge.py)
+
+## Related Docs
+
+- [../export/README.md](../export/README.md)
+- [../../../docs/userfacing/panes/pip.md](../../../docs/userfacing/panes/pip.md)

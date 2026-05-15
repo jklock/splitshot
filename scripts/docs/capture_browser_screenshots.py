@@ -1,6 +1,9 @@
+"""Launch SplitShot, seed deterministic demo state, and refresh the user-doc screenshot set."""
+
 from __future__ import annotations
 
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from playwright.sync_api import Page, sync_playwright
 
@@ -14,6 +17,27 @@ PRIMARY_VIDEO = ROOT / "tests" / "artifacts" / "test_video" / "TestVideo1.MP4"
 MERGE_VIDEO = ROOT / "tests" / "artifacts" / "test_video" / "TestVideo2.MP4"
 PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
 VIEWPORT = {"width": 1440, "height": 1024}
+
+
+def create_project(page: Page, project_dir: Path) -> None:
+    page.evaluate(
+        """
+        async (projectPath) => {
+          await createNewProject(projectPath);
+        }
+        """,
+        str(project_dir),
+    )
+    page.wait_for_function(
+        """
+        () => {
+          const input = document.getElementById('primary-file-path');
+          return Boolean(input && !input.disabled);
+        }
+        """,
+        timeout=30_000,
+    )
+    wait_for_app_idle(page)
 
 
 def wait_for_app_idle(page: Page) -> None:
@@ -85,8 +109,14 @@ def stabilize_pip_controls(page: Page) -> None:
 
 def import_primary_video(page: Page) -> None:
     click_tool(page, "project")
-    page.locator("#primary-file-path").fill(str(PRIMARY_VIDEO))
-    page.locator("#primary-file-path").press("Enter")
+    page.evaluate(
+        """
+        async (path) => {
+          await callApi("/api/import/primary", { path });
+        }
+        """,
+        str(PRIMARY_VIDEO),
+    )
     page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
     page.wait_for_function(
         """
@@ -162,9 +192,7 @@ def prepare_demo_state(page: Page) -> None:
             source.pip_x = index === 0 ? 0.72 : 0.08;
             source.pip_y = index === 0 ? 0.68 : 0.08;
             source.opacity = 0.92;
-            mergeSourceExpansion.set(sourceIdentifier(source, String(index)), true);
           });
-          mergeSourceExpansion.set(PIP_DEFAULTS_SECTION_ID, true);
 
           const overlay = state?.project?.overlay;
           if (overlay) {
@@ -209,7 +237,7 @@ def prepare_demo_state(page: Page) -> None:
               ...box,
               enabled: true,
               source: 'imported_summary',
-              quadrant: ABOVE_FINAL_TEXT_BOX_VALUE,
+              quadrant: window.aboveFinalTextBoxValue,
               background_color: '#064e3b',
               text_color: '#ecfdf5',
               opacity: 0.94,
@@ -378,20 +406,22 @@ def main() -> int:
     server = BrowserControlServer(controller=controller, port=0, log_level="off")
     server.start_background(open_browser=False)
     try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True)
-            try:
-                page = browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
-                page.goto(server.url, wait_until="domcontentloaded")
-                page.wait_for_selector("#current-file")
-                import_primary_video(page)
-                import_practiscore(page)
-                import_merge_media(page)
-                page.wait_for_timeout(2000)
-                prepare_demo_state(page)
-                capture_all(page)
-            finally:
-                browser.close()
+        with TemporaryDirectory(prefix="splitshot-doc-screenshots-") as temp_dir:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                try:
+                    page = browser.new_page(viewport=VIEWPORT, device_scale_factor=1)
+                    page.goto(server.url, wait_until="domcontentloaded")
+                    page.wait_for_selector("#current-file")
+                    create_project(page, Path(temp_dir) / "ScreenshotProject")
+                    import_primary_video(page)
+                    import_practiscore(page)
+                    import_merge_media(page)
+                    page.wait_for_timeout(2000)
+                    prepare_demo_state(page)
+                    capture_all(page)
+                finally:
+                    browser.close()
     finally:
         server.shutdown()
     return 0

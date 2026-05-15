@@ -1,21 +1,31 @@
 # Utils
 
-The utils package contains the small shared helpers that do not belong to a larger domain area.
+This package owns small shared helpers that do not justify a larger subsystem.
 
-## Files
+## Purpose
 
-- [time.py](time.py) provides simple numeric and formatting helpers.
+Use it for compact utility functions that are reused across multiple layers and do not belong more naturally in analysis, browser, scoring, or export.
 
-## Helpers
+## Read This First
 
-- `clamp` bounds a numeric value between a minimum and maximum.
-- `ms_to_seconds` converts milliseconds to seconds.
-- `seconds_to_ms` converts seconds to milliseconds.
-- `format_time_ms` renders a millisecond value as `MM:SS.mmm` or a placeholder for missing values.
+- [time.py](time.py)
 
-## Usage
+## Main Files
 
-These helpers are used by the analysis, presentation, browser, and export layers wherever a small time conversion or display formatting helper is needed.
+- [time.py](time.py): numeric clamps, millisecond conversions, and display formatting helpers
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Key Extension Points
+
+- `clamp`
+- `ms_to_seconds`
+- `seconds_to_ms`
+- `format_time_ms`
+
+## Related Tests
+
+- covered indirectly by browser, presentation, analysis, and export tests
+
+## Related Docs
+
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)
+- [../presentation/README.md](../presentation/README.md)

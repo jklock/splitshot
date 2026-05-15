@@ -29,6 +29,7 @@ export function createWaveformComponent({
   isLowConfidence = () => false,
   activity = () => {},
   callApi = () => {},
+  deleteShotById = () => {},
   scheduleInteractionPreviewRender = () => {},
   flushInteractionPreviewRender = () => {},
   flushQueuedProjectUiStateApply = () => {},
@@ -239,7 +240,17 @@ export function createWaveformComponent({
         meta.className = "waveform-shot-card-meta";
         meta.textContent = segment.card_meta;
 
-        item.append(summary, subtitle, meta);
+        const deleteBtn = document.createElement("button");
+        deleteBtn.type = "button";
+        deleteBtn.className = "danger-button waveform-shot-delete";
+        deleteBtn.textContent = "×";
+        deleteBtn.title = "Delete this shot";
+        deleteBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          deleteShotById(segment.shot_id, "waveform");
+        });
+
+        item.append(summary, subtitle, meta, deleteBtn);
         item.addEventListener("click", () => selectShot(segment.shot_id, { revealInWaveform: true, centerWaveform: true }));
         list.appendChild(item);
       });
@@ -301,8 +312,14 @@ export function createWaveformComponent({
     }
     ctx.stroke();
 
-    const beep = currentState()?.project?.analysis?.beep_time_ms_primary;
-    if (beep !== null && beep !== undefined) drawMarker(ctx, beep, "#ff7b22", "BEEP", "rgba(226, 232, 240, 0.88)", width, height);
+    const beep = waveformBeepDragging
+      ? (getPendingDragTimeMs() ?? currentState()?.project?.analysis?.beep_time_ms_primary)
+      : (currentState()?.project?.analysis?.beep_time_ms_primary);
+    if (beep !== null && beep !== undefined) {
+      const beepColor = waveformBeepDragging ? "#ff9f4a" : "#ff7b22";
+      const beepLabel = waveformBeepDragging ? `BEEP ${seconds(beep)}` : "BEEP";
+      drawMarker(ctx, beep, beepColor, beepLabel, "rgba(226, 232, 240, 0.88)", width, height);
+    }
     const shots = currentState()?.project?.analysis?.shots || [];
     const draggedShotId = getDraggingShotId();
     const pendingDragTimeMs = getPendingDragTimeMs();
@@ -411,6 +428,8 @@ export function createWaveformComponent({
     flushDeferredRender();
   }
 
+  let waveformBeepDragging = false;
+
   function handleWaveformPointerDown(event) {
     if (event.button !== 0) return;
     $("waveform").focus();
@@ -418,6 +437,16 @@ export function createWaveformComponent({
     if (getWaveformMode() === "add") {
       activity("waveform.add_shot", { time_ms });
       callApi("/api/shots/add", { time_ms });
+      return;
+    }
+    const beep = waveformState?.nearestBeep?.(event) || null;
+    if (beep) {
+      setSelectedShotIdValue(null);
+      waveformBeepDragging = true;
+      setPendingDragTimeMs(beep.time_ms);
+      capturePointer($("waveform"), event.pointerId);
+      activity("waveform.beep_drag_start", { time_ms: beep.time_ms });
+      renderWaveform();
       return;
     }
     const shot = waveformState?.nearestShot?.(event) || null;
@@ -452,6 +481,11 @@ export function createWaveformComponent({
       updateWaveformPanDrag(event);
       return;
     }
+    if (waveformBeepDragging) {
+      setPendingDragTimeMs(waveformState?.waveformTime?.(event) ?? 0);
+      scheduleInteractionPreviewRender({ waveform: true });
+      return;
+    }
     if (!getDraggingShotId()) return;
     if (event.pointerId !== undefined && getDraggingShotPointerId() !== undefined && event.pointerId !== getDraggingShotPointerId()) return;
     setPendingDragTimeMs(waveformState?.waveformTime?.(event) ?? 0);
@@ -473,6 +507,16 @@ export function createWaveformComponent({
           activity("waveform.seek", { time_ms });
         }
       }
+      return;
+    }
+    if (waveformBeepDragging) {
+      waveformBeepDragging = false;
+      const timeMs = getPendingDragTimeMs() ?? (waveformState?.waveformTime?.(event) ?? 0);
+      flushInteractionPreviewRender();
+      setPendingDragTimeMs(null);
+      releasePointer($("waveform"), event.pointerId);
+      activity("waveform.beep_drag_commit", { time_ms: timeMs });
+      callApi("/api/beep", { time_ms: timeMs });
       return;
     }
     if (!getDraggingShotId()) return;

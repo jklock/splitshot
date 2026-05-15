@@ -1,32 +1,35 @@
 # Overlay
 
-The overlay package draws the review badges that appear on top of the video preview and exported frames.
+This package owns overlay badge and review-box rendering for preview and final export.
 
-## Files
+## Purpose
 
-- [render.py](render.py) defines `Badge` and `OverlayRenderer`.
+Use it when the change affects timer, shot, score, or review-box drawing, overlay layout rules, or export-time frame painting.
 
-## Rendering Responsibilities
+## Read This First
 
-`OverlayRenderer` builds and paints these visual elements:
+- [render.py](render.py)
 
-- the elapsed timer badge
-- the draw-time badge before the first shot
-- the current shot badge trail
-- the final score or hit-factor badge when scoring is enabled
-- the custom review box
+## Main Files
 
-## Dependencies
+- [render.py](render.py): `Badge`, `OverlayRenderer`, and overlay paint helpers
 
-- `draw_time_ms` and `current_shot_index` come from the timeline and scoring layers.
-- `calculate_scoring_summary` provides the final score label/value.
-- `format_time_ms` formats timer and split values for display.
+## Runtime Flow
 
-## Notes
+1. Read current timeline and scoring state.
+2. Build the active badge and text-box representation for the current frame.
+3. Paint the overlay into preview or export output.
 
-- The badge layout honors `OverlaySettings` fields such as position, spacing, margin, font family, badge size, and quadrant.
-- Custom boxes can use their own position, dimensions, colors, opacity, and text.
-- The renderer paints the exported overlay frames directly during render.
+## Key Extension Points
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+- `OverlayRenderer`
+
+## Related Tests
+
+- [../../../tests/export/test_export.py](../../../tests/export/test_export.py)
+- [../../../tests/browser/test_overlay_review_contracts.py](../../../tests/browser/test_overlay_review_contracts.py)
+
+## Related Docs
+
+- [../presentation/README.md](../presentation/README.md)
+- [../../../docs/userfacing/panes/overlay.md](../../../docs/userfacing/panes/overlay.md)

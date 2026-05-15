@@ -1,27 +1,37 @@
 # UI
 
-The UI package contains the shared controller used by the browser surface.
+This package owns the shared controller layer that mutates the canonical project state.
 
-## Files
+## Purpose
 
-- [controller.py](controller.py) owns project mutations, settings persistence, and signal emission.
+Use it when the change affects project mutation rules, settings persistence, import flows, analysis dispatch, merge or overlay state management, or saved-project lifecycle behavior.
 
-## Controller Responsibilities
+## Read This First
 
-`ProjectController` is the shared mutation layer for the whole application. It:
+- [controller.py](controller.py)
 
-- loads and saves `AppSettings`
-- loads and saves `.ssproj` project bundles
-- probes media files into `VideoAsset` objects
-- runs analysis for primary and secondary media
-- maintains merge, overlay, scoring, and export state on the shared `Project`
-- emits Qt signals when project state, settings, or status changes
+## Main Files
 
-The helper functions at the top of `controller.py` reset media-dependent state, derive PiP size and badge size defaults, and keep secondary media synchronized with the merge-source list.
+- [controller.py](controller.py): `ProjectController` and project mutation helpers
 
-## Shared Behavior
+## Ownership Boundaries
 
-The browser UI and other runtime services use the same controller, the same project model, and the same export pipeline. The controller remains the single mutation layer for project state.
+- The controller is the main mutation boundary for project state.
+- Browser routes should delegate business-state changes here instead of duplicating logic.
+- Persistence, analysis, scoring, merge, and export integrations flow through the controller.
 
-**Last updated:** 2026-05-06
-**Referenced files last updated:** 2026-05-06
+## Key Extension Points
+
+- `ProjectController`
+- media import and project lifecycle helpers
+- settings load/save hooks
+
+## Related Tests
+
+- [../../../tests/browser/test_browser_control.py](../../../tests/browser/test_browser_control.py)
+- [../../../tests/persistence/](../../../tests/persistence/)
+
+## Related Docs
+
+- [../../../docs/project/ARCHITECTURE.md](../../../docs/project/ARCHITECTURE.md)
+- [../domain/README.md](../domain/README.md)

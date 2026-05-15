@@ -50,6 +50,24 @@ function createProjectBundle(name) {
   return projectPath;
 }
 
+function findFreePort() {
+  const server = require('node:net').createServer();
+  return new Promise((resolve, reject) => {
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
+    server.on('error', reject);
+  });
+}
+
 async function waitForProjectPath(page, expectedProjectPath, timeoutMs = 20000) {
   const expectedCanonicalPath = comparablePath(expectedProjectPath);
   const expectedBasename = comparableBasename(expectedProjectPath);
@@ -105,13 +123,16 @@ async function main() {
   console.log('  second bundle created');
   const protocolProject = createProjectBundle('protocol');
   console.log('  protocol bundle created');
+  const testPort = await findFreePort();
   const env = {
     ...process.env,
     CI: '1',
     SPLITSHOT_ELECTRON_TEST: '1',
+    SPLITSHOT_TEST_PORT: String(testPort),
   };
 
   console.log('Launching Electron...');
+  console.log('  test port:', testPort);
   const electronApp = await playwrightElectron.launch({
     executablePath: electronBinary,
     args: [ELECTRON_APP_DIR, startupProject],
