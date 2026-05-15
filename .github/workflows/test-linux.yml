@@ -75,19 +75,20 @@ jobs:
           cd electron && npx playwright install chromium
         timeout-minutes: 15
       - name: Build Electron app
-        run: cd electron && npm run build:smoke:linux
+        run: cd electron && npm run build:linux
         timeout-minutes: 30
         env:
           LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
-      - name: Full E2E test with Playwright
+      - name: Validate AppImage package
         run: |
           export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-          unpacked="electron/build/linux-unpacked/splitshot"
-          if [ -f "$unpacked" ]; then
-            xvfb-run -a uv run python scripts/testing/test_packaged_app_e2e.py --app "$unpacked"
-          else
-            echo "No app executable, skipping"
-          fi
+          artifact=$(ls electron/build/*.AppImage | head -n 1)
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with AppImage package
+        run: |
+          export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          artifact=$(ls electron/build/*.AppImage | head -n 1)
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()
@@ -95,4 +96,3 @@ jobs:
         with:
           name: e2e-artifacts-linux
           path: artifacts/
-

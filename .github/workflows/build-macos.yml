@@ -71,6 +71,10 @@ jobs:
           shopt -s nullglob; apps=( electron/build/*/SplitShot.app )
           [ ${#apps[@]} -eq 0 ] && { echo "No .app"; exit 1; }
           for a in "${apps[@]}"; do codesign -dv "$a"; done
+      - name: Validate DMG package
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

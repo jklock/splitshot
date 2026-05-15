@@ -94,23 +94,19 @@ jobs:
           security list-keychains -d user -s "${keychain_file}" $(security list-keychains -d user | tr -d '"')
           security import "${cert_file}" -k "${keychain_file}" -T /usr/bin/codesign -T /usr/bin/productbuild -P "${MAC_CERT_PASSWORD}" && echo "Cert imported" || echo "Cert import skipped"
           { echo "MAC_CERT_FILE=${cert_file}"; echo "MAC_CERT_KEYCHAIN=${keychain_file}"; echo "MAC_CERT_TMPDIR=${tmp_dir}"; echo "MAC_CERT_PASSWORD=${MAC_CERT_PASSWORD}"; } >> "${GITHUB_ENV}"
-      - name: Use unpacked build
-        run: |
-          shopt -s nullglob; apps=( electron/build/*/SplitShot.app )
-          if [ ${#apps[@]} -eq 0 ]; then echo "No .app found"; exit 0; fi
-          echo "APP_EXECUTABLE=${apps[0]}/Contents/MacOS/SplitShot" >> "${GITHUB_ENV}"
       - name: Build Electron app
         run: |
           export CSC_LINK="${MAC_CERT_FILE}" CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
-          cd electron && npm run build:smoke:mac
+          cd electron && npm run build:mac
         timeout-minutes: 30
-      - name: Full E2E test with Playwright
+      - name: Validate DMG package
         run: |
-          if [ -f "${APP_EXECUTABLE}" ]; then
-            uv run python scripts/testing/test_packaged_app_e2e.py --app "${APP_EXECUTABLE}"
-          else
-            echo "No app executable found, skipping E2E"
-          fi
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with DMG package
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()
