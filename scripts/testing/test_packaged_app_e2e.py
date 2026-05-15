@@ -36,7 +36,7 @@ def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
     )
     subprocess.run(
         ["uv", "run", "python", "-c", script, str(project_path), name],
-        cwd=REPO, capture_output=True, text=True, timeout=60, check=True,
+        cwd=REPO, capture_output=True, encoding="utf-8", errors="replace", timeout=60, check=True,
     )
     return project_path
 
@@ -144,7 +144,7 @@ def main():
 
         result = subprocess.run(
             ["node", str(pw_script)],
-            capture_output=True, text=True, timeout=300,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=300,
             cwd=REPO, env=pw_env)
 
         if result.stdout:
@@ -184,7 +184,7 @@ def main():
             print(f"FAIL: exit code {proc.returncode}", file=sys.stderr, flush=True)
         for l in [log_out, log_err]:
             if l and l.exists():
-                lines = l.read_text().splitlines()
+                lines = l.read_text(encoding="utf-8", errors="replace").splitlines()
                 print(f"--- {l.name} tail ---", file=sys.stderr, flush=True)
                 print("\n".join(lines[-20:]), file=sys.stderr, flush=True)
         return 1
