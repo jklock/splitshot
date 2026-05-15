@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'release'
+  workflow_dispatch:
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      new-version: ${{ steps.bump.outputs.new-version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Bump version
+        id: bump
+        run: |
+          OLD=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          IFS='.' read -r MAJ MIN PAT <<< "$OLD"
+          PAT=$((PAT + 1))
+          NEW="${MAJ}.${MIN}.${PAT}"
+          echo "old=$OLD new=$NEW"
+          echo "new-version=$NEW" >> "$GITHUB_OUTPUT"
+          sed -i 's/^version = ".*"/version = "'"$NEW"'"/' pyproject.toml
+          sed -i 's/"version": ".*"/"version": "'"$NEW"'"/' electron/package.json
+      - name: Commit and tag
+        run: |
+          git config user.name "splitshot-bot"
+          git config user.email "bot@splitshot.studio"
+          git add pyproject.toml electron/package.json
+          git commit -m "release: v${{ steps.bump.outputs.new-version }}"
+          git push
+          TAG="v${{ steps.bump.outputs.new-version }}"
+          git tag -a "$TAG" -m "SplitShot $TAG"
+          git push origin "$TAG"
+
+  macos:
+    needs: version
+    uses: ./.github/workflows/build-macos.yml
+    secrets: inherit
+
+  linux:
+    needs: version
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+
+  windows:
+    needs: version
+    uses: ./.github/workflows/build-windows.yml
+    secrets: inherit
+
+  publish:
+    needs: [version, macos, linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.version.outputs.new-version }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+      - name: Create Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ needs.version.outputs.new-version }}"
+          gh release create "$TAG" \
+            --title "SplitShot $TAG" \
+            --notes "Automated release for $TAG" \
+            --target main
+          for dir in splitshot-macos splitshot-linux splitshot-windows; do
+            [ -d "$dir" ] && gh release upload "$TAG" "$dir"/* --clobber
+          done

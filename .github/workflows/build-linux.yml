@@ -1,0 +1,56 @@
+name: Build Linux
+
+on:
+  push:
+    tags:
+      - 'build-linux'
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Install system dependencies
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+      - name: Verify host toolchain
+        run: python3 --version; node --version; npm --version; uv --version; ffmpeg -version | head -n 1
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+        timeout-minutes: 15
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Build Electron app
+        run: cd electron && npm run build:linux
+        timeout-minutes: 30
+      - name: Verify installer
+        run: |
+          shopt -s nullglob; found=( electron/build/*.AppImage )
+          [ ${#found[@]} -eq 0 ] && { echo "No AppImage"; exit 1; }
+          ls -lh "${found[@]}"
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: splitshot-linux
+          path: electron/build/*.AppImage
