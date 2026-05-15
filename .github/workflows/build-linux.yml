@@ -46,6 +46,12 @@ jobs:
           shopt -s nullglob; found=( electron/build/*.AppImage )
           [ ${#found[@]} -eq 0 ] && { echo "No AppImage"; exit 1; }
           ls -lh "${found[@]}"
+      - name: Validate AppImage package
+        run: |
+          artifact=$(ls electron/build/*.AppImage | head -n 1)
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+        env:
+          LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

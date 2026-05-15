@@ -67,6 +67,9 @@ function maybeRecordAppReady() {
 
 function getPythonBinary() {
   const bundle = getBundlePath();
+  if (app.isPackaged && process.platform === 'win32') {
+    return path.join(bundle, 'python', 'python.exe');
+  }
   const binDir = process.platform === 'win32' ? 'Scripts' : 'bin';
   const ext = process.platform === 'win32' ? '.exe' : '';
   return path.join(bundle, '.venv', binDir, `python${ext}`);
@@ -91,6 +94,12 @@ function startPythonBackend(initialProjectPath = null) {
 
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
+    env.PYTHONNOUSERSITE = '1';
+    if (process.platform === 'win32') {
+      const pythonHome = path.join(bundlePath, 'python');
+      env.PYTHONHOME = pythonHome;
+      env.PATH = `${pythonHome};${path.join(pythonHome, 'Scripts')};${env.PATH || ''}`;
+    }
     pythonProcess = spawn(python, args, {
       cwd: bundlePath,
       env,

@@ -5,6 +5,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const BUNDLE_DIR = path.join(ROOT, 'electron', 'bundle');
 const VENV_DIR = path.join(BUNDLE_DIR, '.venv');
+const WINDOWS_PYTHON_DIR = path.join(BUNDLE_DIR, 'python');
 const SRC_DIR = path.join(ROOT, 'src');
 const BUNDLE_SRC_DIR = path.join(BUNDLE_DIR, 'src');
 
@@ -26,12 +27,35 @@ function getPythonVersion() {
   return match[1];
 }
 
+function getPythonBasePrefix() {
+  return execSync('uv run python -c "import sys; print(sys.base_prefix)"', {
+    encoding: 'utf8',
+    cwd: ROOT,
+  }).trim();
+}
+
 function getPythonBinDir(venvDir, pythonVersion) {
   const isWin = process.platform === 'win32';
   const binDir = isWin ? 'Scripts' : 'bin';
   const pythonBin = path.join(venvDir, binDir, `python${isWin ? '.exe' : ''}`);
   if (!fs.existsSync(pythonBin)) return null;
   return path.dirname(pythonBin);
+}
+
+function bundledPythonExecutable(pythonVersion) {
+  if (process.platform === 'win32') {
+    return path.join(WINDOWS_PYTHON_DIR, 'python.exe');
+  }
+  const binDir = getPythonBinDir(VENV_DIR, pythonVersion);
+  if (!binDir) throw new Error(`Python binary not found in venv at ${VENV_DIR}`);
+  return path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
+}
+
+function bundledSitePackagesDir(pythonVersion) {
+  if (process.platform === 'win32') {
+    return path.join(WINDOWS_PYTHON_DIR, 'Lib', 'site-packages');
+  }
+  return path.join(VENV_DIR, 'lib', `python${pythonVersion}`, 'site-packages');
 }
 
 function resolveSymlinks(binDir) {
@@ -143,13 +167,30 @@ print("- bundle verification: OK" if ok else "- bundle verification: WARN (non-c
 exit(0 if ok else 1)
 `;
   fs.writeFileSync(verifyScript, verifyCode, 'utf8');
-  const env = { ...process.env, PYTHONPATH: BUNDLE_SRC_DIR };
+  const env = { ...process.env, PYTHONPATH: BUNDLE_SRC_DIR, PYTHONNOUSERSITE: '1' };
+  if (process.platform === 'win32') {
+    env.PYTHONHOME = WINDOWS_PYTHON_DIR;
+    env.PATH = `${WINDOWS_PYTHON_DIR};${path.join(WINDOWS_PYTHON_DIR, 'Scripts')};${env.PATH || ''}`;
+  }
   try {
     run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
   } catch {
     console.warn('[bundle] WARNING: Verification had non-critical failures');
   }
   fs.rmSync(verifyScript);
+}
+
+function buildWindowsPythonRuntime() {
+  const sourcePrefix = getPythonBasePrefix();
+  console.log(`[bundle] Copying Windows Python runtime from ${sourcePrefix}`);
+  rmrf(WINDOWS_PYTHON_DIR);
+  fs.cpSync(sourcePrefix, WINDOWS_PYTHON_DIR, { recursive: true });
+  const pythonExe = path.join(WINDOWS_PYTHON_DIR, 'python.exe');
+  if (!fs.existsSync(pythonExe)) {
+    throw new Error(`Bundled Windows python.exe not found at ${pythonExe}`);
+  }
+  run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+  return pythonExe;
 }
 
 function main() {
@@ -164,19 +205,21 @@ function main() {
   const pythonVersion = getPythonVersion();
   console.log(`[bundle] Python version: ${pythonVersion}`);
 
-  if (!isCheck) {
+  if (!isCheck && process.platform !== 'win32') {
     run(`uv venv "${VENV_DIR}" --python ${pythonVersion} --seed`);
   }
 
-  const binDir = getPythonBinDir(VENV_DIR, pythonVersion);
-  if (!binDir) throw new Error(`Python binary not found in venv at ${VENV_DIR}`);
-  const pythonBin = path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
+  const pythonBin = isCheck ? bundledPythonExecutable(pythonVersion) : null;
 
   if (!isCheck) {
-    const pythonExe = path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
+    const pythonExe = process.platform === 'win32'
+      ? buildWindowsPythonRuntime()
+      : bundledPythonExecutable(pythonVersion);
 
-    // Install deps BEFORE symlink resolution (venv python is a working symlink here)
-    run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+    if (process.platform !== 'win32') {
+      // Install deps BEFORE symlink resolution (venv python is a working symlink here)
+      run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+    }
 
     // Copy libpython dylib so the resolved binary works on other machines
     if (process.platform === 'darwin') {
@@ -192,7 +235,9 @@ function main() {
     }
 
     // Now resolve symlinks (replace with real copies for distribution)
-    resolveSymlinks(binDir);
+    if (process.platform !== 'win32') {
+      resolveSymlinks(path.dirname(pythonExe));
+    }
 
     rmrf(BUNDLE_SRC_DIR);
     fs.cpSync(SRC_DIR, BUNDLE_SRC_DIR, { recursive: true });
@@ -202,9 +247,10 @@ function main() {
     generateIcons();
 
     pruneBundle();
+    verifyBundle(pythonExe);
+  } else {
+    verifyBundle(pythonBin);
   }
-
-  verifyBundle(pythonBin);
 
   if (!isCheck) {
     console.log('[bundle] Python bundle created successfully');
@@ -237,12 +283,18 @@ function pruneBundle() {
   }
   walkAndPrune(BUNDLE_DIR);
 
-  const SITE = path.join(VENV_DIR, 'lib', `python${getPythonVersion()}`, 'site-packages');
+  const pythonVersion = getPythonVersion();
+  const SITE = bundledSitePackagesDir(pythonVersion);
 
-  rmrf(path.join(VENV_DIR, '..', 'pip'));
-  rmrf(path.join(VENV_DIR, 'share'));
+  if (process.platform === 'win32') {
+    rmrf(path.join(WINDOWS_PYTHON_DIR, 'Tools'));
+    rmrf(path.join(WINDOWS_PYTHON_DIR, 'Doc'));
+    rmrf(path.join(WINDOWS_PYTHON_DIR, 'share'));
+  } else {
+    rmrf(path.join(VENV_DIR, '..', 'pip'));
+    rmrf(path.join(VENV_DIR, 'share'));
+  }
   rmrf(path.join(SITE, 'pip'));
-  rmrf(path.join(SITE, 'pip-*.dist-info'));
 
   const PYSIDE = path.join(SITE, 'PySide6');
   if (fs.existsSync(PYSIDE)) {

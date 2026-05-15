@@ -38,9 +38,22 @@ npm start
 | `npm run build:linux` | Production AppImage (Linux) |
 | `npm test` | Run the Electron smoke test entrypoints when invoked directly in the package environment |
 
+Artifact-native package validation uses:
+
+- [scripts/testing/test_packaged_artifact.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_packaged_artifact.py)
+- [scripts/testing/test_electron_app.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_electron_app.py)
+- [scripts/testing/test_packaged_app_e2e.py](/Volumes/Storage/GitHub/splitshot/scripts/testing/test_packaged_app_e2e.py)
+
+That path validates the actual user-download artifact instead of an unpacked stand-in:
+
+- macOS mounts the `.dmg`, copies the `.app`, then launches it
+- Windows silently installs the NSIS `.exe`, then launches the installed app
+- Linux launches the `.AppImage` itself
+
 ## How It Works
 
 1. `main.js` calls `getPythonBinary()` to find the bundled Python interpreter in `bundle/.venv/`.
+   On Windows the packaged app uses an app-local runtime under `bundle/python/` instead of a virtualenv so the installed NSIS app does not depend on the build machine's base Python location.
 2. The Python backend is started with `splitshot --headless --no-open`. If a `.ssproj` was opened, `--project <path>` is appended.
 3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`.
 4. The `launch-intent` module handles single-instance locking, `.ssproj` file associations, and `splitshot://` protocol URLs.
@@ -50,7 +63,7 @@ npm start
 The `bundle/` directory is created by `scripts/bundle-python.js`. It contains:
 
 - A full `uv sync` of the Python project into `bundle/`
-- The `.venv` with all dependencies
+- The `.venv` with all dependencies on macOS/Linux, or an app-local `python/` runtime on Windows
 - The `src/splitshot/` package installed in development mode
 
 Regenerate the bundle whenever `src/splitshot/`, `pyproject.toml`, or `uv.lock` changes.

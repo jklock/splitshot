@@ -46,6 +46,10 @@ jobs:
           shopt -s nullglob; found=( electron/build/*.exe )
           [ ${#found[@]} -eq 0 ] && { echo "No NSIS installer"; exit 1; }
           ls -lh "${found[@]}"
+      - name: Validate installed package
+        run: |
+          artifact=$(ls electron/build/*.exe | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
