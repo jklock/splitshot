@@ -186,4 +186,4 @@ SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 
 ## Support SplitShot
 
-[buymeacoffee.com/glockenkemper](https://buymeacoffee.com/glockenkemper)
+<script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="glockenkemper" data-color="#FFDD00" data-emoji="⏰️" data-font="Inter" data-text="Buy me some time" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff"></script>
