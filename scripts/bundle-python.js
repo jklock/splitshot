@@ -189,7 +189,7 @@ function buildWindowsPythonRuntime() {
   if (!fs.existsSync(pythonExe)) {
     throw new Error(`Bundled Windows python.exe not found at ${pythonExe}`);
   }
-  run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+  run(`uv pip install --python "${pythonExe}" --system --break-system-packages --link-mode copy "."`);
   return pythonExe;
 }
 
