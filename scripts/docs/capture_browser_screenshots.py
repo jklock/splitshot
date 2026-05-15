@@ -13,7 +13,7 @@ from splitshot.ui.controller import ProjectController
 
 ROOT = Path(__file__).resolve().parents[2]
 SCREENSHOT_DIR = ROOT / "docs" / "screenshots"
-PRIMARY_VIDEO = ROOT / "tests" / "artifacts" / "test_video" / "TestVideo1.MP4"
+PRIMARY_VIDEO = ROOT / "Stage0_Warmup.mp4"
 MERGE_VIDEO = ROOT / "tests" / "artifacts" / "test_video" / "TestVideo2.MP4"
 PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
 VIEWPORT = {"width": 1440, "height": 1024}

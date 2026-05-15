@@ -1,10 +1,10 @@
 # SplitShot Documentation
 
-This is the documentation index for SplitShot. Use it as the routing layer between user docs, maintainer docs, subsystem maps, tests, and scripts.
+This is the documentation index for SplitShot. It routes readers through user docs first, then maintainer, developer, and code-reader references.
 
 ## Start Here
 
-If you just forked SplitShot, read these in order:
+If you just forked SplitShot, read these in order after the top-level install path in the root README:
 
 1. [../README.md](../README.md)
 2. [project/DEVELOPING.md](project/DEVELOPING.md)
@@ -32,6 +32,8 @@ If you just forked SplitShot, read these in order:
 - [userfacing/panes/settings.md](userfacing/panes/settings.md)
 - [userfacing/panes/metrics.md](userfacing/panes/metrics.md)
 
+This is the primary reading path for people trying to use SplitShot rather than maintain it.
+
 ### Fork owners and maintainers
 
 - [project/DEVELOPING.md](project/DEVELOPING.md)
@@ -41,6 +43,8 @@ If you just forked SplitShot, read these in order:
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md)
 - [../scripts/README.md](../scripts/README.md)
 - [../CONTRIBUTING.md](../CONTRIBUTING.md)
+
+The repo supports macOS, Windows, and Linux source usage, and it also includes Electron packaging targets for all three platforms. macOS remains the deepest documented release-signing path, while Windows and Linux packaging are configured but not CI-tested to the same depth.
 
 ### Code readers
 
@@ -87,8 +91,8 @@ Covered surfaces:
 
 ## Read This Next
 
-- [../README.md](../README.md) for install and quickstart
-- [project/DEVELOPING.md](project/DEVELOPING.md) for first-run developer workflow
+- [../README.md](../README.md) for the per-OS install and launch paths
+- [userfacing/USER_GUIDE.md](userfacing/USER_GUIDE.md) for product usage
+- [project/DEVELOPING.md](project/DEVELOPING.md) for developer workflow
 - [project/ARCHITECTURE.md](project/ARCHITECTURE.md) for subsystem boundaries
 - [tests/TEST_SUITE_GUIDE.md](tests/TEST_SUITE_GUIDE.md) for validation
-- [../scripts/README.md](../scripts/README.md) for operational tooling

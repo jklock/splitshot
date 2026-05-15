@@ -4,7 +4,7 @@ SplitShot is a local-first browser app for turning stage footage into a reviewed
 
 ## Start Here
 
-1. Install and launch SplitShot from the root [README.md](../../README.md).
+1. Install and launch SplitShot from the per-platform instructions in the root [README.md](../../README.md).
 2. Open [panes/project.md](panes/project.md), name the run, and import the primary video.
 3. Use [workflow.md](workflow.md) for the full import-to-export path.
 4. Open the pane guide for any control you need to understand before changing it.
