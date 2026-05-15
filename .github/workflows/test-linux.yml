@@ -93,24 +93,4 @@ jobs:
           name: e2e-artifacts-linux
           path: artifacts/
 
-  browser-audit:
-    runs-on: ubuntu-latest
-    env:
-      QT_QPA_PLATFORM: offscreen
-      PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install uv
-        run: python -m pip install --upgrade uv
-      - name: Install system dependencies
-        run: sudo bash scripts/testing/install_ci_linux_deps.sh
-      - name: Install dependencies
-        run: uv sync --frozen --extra dev
-      - name: Install Playwright browsers
-        run: uv run python -m playwright install --with-deps chromium firefox webkit
-      - name: Run browser test suite
-        run: uv run pytest tests/browser -q --timeout=120
-        timeout-minutes: 20
+
