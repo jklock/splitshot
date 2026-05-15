@@ -1,12 +1,12 @@
 <p align="center">
-	<img src="newlogo.png" alt="SplitShot logo" width="894" />
+	<img src="src/splitshot/browser/static/githublogo.png" alt="SplitShot logo" width="894" />
 </p>
 
 # SplitShot
 
 SplitShot is a local-first browser app for competition shooting video analysis, split timing, scoring, review overlays, PiP comparison, metrics, and final video export.
 
-<img src="docs/screenshots/ProjectPane.png" alt="SplitShot browser app showing the Project pane and video review workspace" width="1000">
+<img src="docs/screenshots/ExportPane.png" alt="SplitShot browser app showing the Export pane with render settings and final output controls" width="894">
 
 ## Start Here
 
@@ -32,107 +32,90 @@ If you just forked the repo and want maintainer context, use the developer secti
 ## Quickstart
 
 1. Install SplitShot using the platform section below.
-2. Launch the app from source or through the Electron shell.
-3. Create or select a project in the `Project` pane.
-4. Import the primary video and let SplitShot detect the start beep and shots.
-5. Review timing in `ShotML` and `Splits`.
-6. Score the run, configure overlay/review output, and add PiP media if needed.
-7. Review metrics, then export the final video.
+2. Launch SplitShot from source with `uv run splitshot` or from the Electron shell with `npm start` inside `electron/`.
+3. Open or create a `.ssproj` bundle in the `Project` pane so the rest of the import and save controls are enabled.
+4. Import the primary stage video, wait for analysis to build the waveform and initial shot timeline, and confirm that the start beep and shot count look plausible.
+5. If the first pass is off, adjust detection in `ShotML`, rerun analysis, and only then move into manual cleanup in `Splits`.
+6. Use `Splits` to correct timing, add or remove shots, review timing events, and make the final timeline match the footage before deeper presentation work.
+7. Import PractiScore context if you need official stage and competitor data, then finish scoring in `Score`.
+8. Add secondary media in `PiP`, create marker callouts in `Markers`, tune badges in `Overlay`, and configure text boxes and visibility in `Review`.
+9. Check `Metrics` for the post-stage timing and scoring summary, then finish in `Export` with the output path, codec, and render settings you want.
 
 For the full user workflow, continue with [docs/userfacing/workflow.md](docs/userfacing/workflow.md).
 
-## Install - macOS
+## Current Release / Download
 
-### Electron install and use
+- Releases page: [github.com/jklock/splitshot/releases](https://github.com/jklock/splitshot/releases)
+- macOS:
+  download the current DMG from Releases, open it, and launch SplitShot like a normal macOS app.
+- Windows:
+  download the current Windows installer from Releases, run it, and launch SplitShot from the installed app entry.
+- Linux:
+  download the current Linux package from Releases, make it executable if needed, and launch SplitShot from the packaged app.
 
-The Electron shell is the native desktop packaging path for SplitShot. From a local clone:
+Use the platform-specific local instructions below if you are building or running SplitShot directly from the repo.
 
-```bash
-git clone https://github.com/jklock/splitshot.git
-cd splitshot/electron
-npm install
-npm start
-```
+## Platform-Specific Local Use
 
-Useful Electron commands:
+### macOS
 
-- `npm run build:mac` builds the macOS DMG packaging target.
-- `npm test` runs the Electron launch-intent and smoke tests.
-- [docs/project/ELECTRON_RELEASE.md](docs/project/ELECTRON_RELEASE.md) covers signing and notarization details.
+- Electron locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot/electron`
+  `npm install`
+  `npm start`
+- Electron build target:
+  `npm run build:mac`
+- Source locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot`
+  `uv python install 3.12`
+  `uv sync --extra dev`
+  `uv run splitshot`
+- If the browser does not open automatically:
+  rerun with `uv run splitshot --no-open` and open the printed URL manually.
+- Release/signing details:
+  [docs/project/ELECTRON_RELEASE.md](docs/project/ELECTRON_RELEASE.md)
 
-### Source-clone install and use
+### Windows
 
-```bash
-git clone https://github.com/jklock/splitshot.git
-cd splitshot
-uv python install 3.12
-uv sync --extra dev
-uv run splitshot
-```
+- Electron locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot\electron`
+  `npm install`
+  `npm start`
+- Electron build target:
+  `npm run build:win`
+- Source locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot`
+  `uv python install 3.12`
+  `uv sync --extra dev`
+  `uv run splitshot`
+- If the browser does not open automatically:
+  rerun with `uv run splitshot --no-open`.
+- Current limitation:
+  Windows packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
 
-If the browser does not open automatically, retry with `uv run splitshot --no-open` and open the printed URL manually.
+### Linux
 
-## Install - Windows
-
-### Electron install and use
-
-SplitShot includes a configured Windows Electron target through `electron-builder`:
-
-```powershell
-git clone https://github.com/jklock/splitshot.git
-cd splitshot\electron
-npm install
-npm start
-```
-
-Useful Electron commands:
-
-- `npm run build:win` builds the Windows NSIS installer target.
-- `npm test` runs the Electron launch-intent and smoke tests.
-- Windows packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
-
-### Source-clone install and use
-
-```powershell
-git clone https://github.com/jklock/splitshot.git
-cd splitshot
-uv python install 3.12
-uv sync --extra dev
-uv run splitshot
-```
-
-Use `uv run splitshot --no-open` if the browser does not open automatically.
-
-## Install - Linux
-
-### Electron install and use
-
-SplitShot includes a configured Linux Electron target through `electron-builder`:
-
-```bash
-git clone https://github.com/jklock/splitshot.git
-cd splitshot/electron
-npm install
-npm start
-```
-
-Useful Electron commands:
-
-- `npm run build:linux` builds the Linux AppImage target.
-- `npm test` runs the Electron launch-intent and smoke tests.
-- Linux packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
-
-### Source-clone install and use
-
-```bash
-git clone https://github.com/jklock/splitshot.git
-cd splitshot
-uv python install 3.12
-uv sync --extra dev
-uv run splitshot
-```
-
-Use `uv run splitshot --no-open` if the browser does not open automatically.
+- Electron locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot/electron`
+  `npm install`
+  `npm start`
+- Electron build target:
+  `npm run build:linux`
+- Source locally:
+  `git clone https://github.com/jklock/splitshot.git`
+  `cd splitshot`
+  `uv python install 3.12`
+  `uv sync --extra dev`
+  `uv run splitshot`
+- If the browser does not open automatically:
+  rerun with `uv run splitshot --no-open`.
+- Current limitation:
+  Linux packaging is configured in-repo, but it is not CI-tested at the same depth as the macOS packaging path.
 
 ## Runtime Check
 
