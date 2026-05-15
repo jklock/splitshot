@@ -2,6 +2,39 @@
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
+## v1.0.1
+
+SplitShot 1.0.1 is a packaging and release-proof patch focused on one thing: making the shipped desktop packages actually match the proof claimed by CI.
+
+### What Changed
+
+- Windows packaged runtime no longer depends on a build-machine virtualenv layout.
+- The packaged Windows app now uses an app-local Python runtime under `bundle/python`.
+- The bundled Windows runtime removes the unused `python3.exe` alias that broke `electron-builder` archive creation in the package-native E2E path.
+- Packaged artifact validation now launches the real release artifact on every platform:
+  - Windows installed NSIS app
+  - macOS DMG app
+  - Linux AppImage
+- The packaged validation harness no longer depends on shelling out to `uv` from inside the validation subprocesses.
+
+### Why This Release Exists
+
+The 1.0.0 line could report green CI while still leaving a gap between what was tested and what users actually downloaded. In particular, Windows could pass an unpacked-app or installer-exists check while the installed NSIS package still failed for a real user.
+
+Version 1.0.1 closes that gap by moving package proof to the actual Electron output artifacts and by fixing the Windows runtime bundling issues uncovered by that stricter validation path.
+
+### Release Proof
+
+This patch release is backed by fresh package-native E2E validation on the real shipped artifact class for each platform:
+
+- Linux AppImage built, launched, and passed packaged E2E
+- macOS DMG app built, launched, and passed packaged E2E
+- Windows installed NSIS app built, launched, and passed packaged E2E
+
+### Bottom Line
+
+SplitShot 1.0.1 is the release that turns “the packaged app was tested” into a literal statement about the user-download artifact on macOS, Windows, and Linux.
+
 ## v1.0.0
 
 SplitShot 1.0.0 is the first public release of a local-first competition shooting video analysis workstation built to get a shooter, coach, or editor from raw stage footage to a scored, reviewed, and export-ready presentation without handing the core workflow to a cloud service.
