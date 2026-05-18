@@ -16,6 +16,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from splitshot.domain.models import Project
+from splitshot.persistence.projects import save_project
+
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
 DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "fixtures" / "media" / "stage.mp4"
@@ -29,16 +32,7 @@ def _free_port():
 
 
 def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
-    script = (
-        "from pathlib import Path; import sys; "
-        "from splitshot.domain.models import Project; "
-        "from splitshot.persistence.projects import save_project; "
-        "save_project(Project(name=sys.argv[2]), Path(sys.argv[1]))"
-    )
-    subprocess.run(
-        ["uv", "run", "python", "-c", script, str(project_path), name],
-        cwd=REPO, capture_output=True, encoding="utf-8", errors="replace", timeout=60, check=True,
-    )
+    save_project(Project(name=name), project_path)
     return project_path
 
 

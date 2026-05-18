@@ -17,6 +17,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from splitshot.domain.models import Project
+from splitshot.persistence.projects import save_project
+
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
 ELECTRON_DIR = REPO / "electron"
@@ -105,13 +108,7 @@ def main():
         ready_file = log_dir / "events.jsonl"
 
         # Create project
-        subprocess.run(["uv", "run", "python", "-c",
-            "from pathlib import Path; import sys; "
-            "from splitshot.domain.models import Project; "
-            "from splitshot.persistence.projects import save_project; "
-            "save_project(Project(name=sys.argv[2]), Path(sys.argv[1]))",
-            str(project_path), "comprehensive"],
-            cwd=REPO, capture_output=True, text=True, timeout=60, check=True)
+        save_project(Project(name="comprehensive"), project_path)
 
         # Launch app
         env = {**os.environ, "CI": "1", "SPLITSHOT_ELECTRON_TEST": "1",
