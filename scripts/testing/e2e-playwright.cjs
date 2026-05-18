@@ -133,7 +133,7 @@ async function main() {
     try { if (fs.statSync(videoPath).isFile()) { videoFile = videoPath; } } catch {}
   }
   if (!videoFile) {
-    for (const v of [path.join(__dirname, '..', '..', 'example_data', 'stage.mp4')]) {
+    for (const v of [path.join(__dirname, '..', '..', 'tests', 'fixtures', 'media', 'stage.mp4')]) {
       try { if (fs.statSync(v).isFile()) { videoFile = v; break; } } catch {}
     }
   }

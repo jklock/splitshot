@@ -36,8 +36,8 @@ from splitshot.ui.controller import ProjectController
 
 
 ROOT = Path(__file__).resolve().parents[3]
-TEST_VIDEO_DIR = ROOT / "tests" / "artifacts" / "test_video"
-DEFAULT_PRIMARY_VIDEO = TEST_VIDEO_DIR / "TestVideo1.MP4"
+FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
+DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
 
 
 @dataclass(frozen=True, slots=True)

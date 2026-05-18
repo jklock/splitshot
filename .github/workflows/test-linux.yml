@@ -62,6 +62,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system dependencies
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Install Python dependencies
@@ -99,6 +101,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system dependencies
         run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
       - name: Install Python dependencies

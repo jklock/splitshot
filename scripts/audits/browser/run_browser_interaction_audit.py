@@ -20,9 +20,9 @@ from splitshot.ui.controller import ProjectController
 
 
 ROOT = Path(__file__).resolve().parents[3]
-TEST_VIDEO_DIR = ROOT / "tests" / "artifacts" / "test_video"
-DEFAULT_PRIMARY_VIDEO = TEST_VIDEO_DIR / "TestVideo1.MP4"
-DEFAULT_MERGE_VIDEO = TEST_VIDEO_DIR / "TestVideo2.MP4"
+FIXTURE_VIDEO_DIR = ROOT / "tests" / "fixtures" / "media"
+DEFAULT_PRIMARY_VIDEO = FIXTURE_VIDEO_DIR / "stage.mp4"
+DEFAULT_MERGE_VIDEO = FIXTURE_VIDEO_DIR / "stage-merge.mp4"
 DEFAULT_PRACTISCORE = ROOT / "example_data" / "IDPA" / "IDPA.csv"
 
 

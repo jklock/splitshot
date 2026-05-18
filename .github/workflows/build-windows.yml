@@ -30,6 +30,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Verify host toolchain
         run: python3 --version; node --version; npm --version; uv --version; ffmpeg -version | head -n 1
       - name: Sync Python dependencies
@@ -74,6 +76,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node dependencies

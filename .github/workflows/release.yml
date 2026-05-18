@@ -45,6 +45,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system deps
         run: |
           if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
@@ -159,6 +161,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps
@@ -212,6 +216,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system deps
         run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Sync Python deps
@@ -253,6 +259,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install system deps without ffmpeg
         run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
       - name: Sync Python deps
@@ -312,6 +320,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Verify host toolchain
         run: python3 --version; node --version; npm --version; uv --version; ffmpeg -version | head -n 1
       - name: Sync Python deps
@@ -353,6 +363,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install managed Python 3.12
         run: uv python install 3.12
+      - name: Verify Electron CI inputs
+        run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python deps
         run: uv sync --frozen --extra dev --python 3.12
       - name: Install Node deps

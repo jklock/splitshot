@@ -18,7 +18,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
-DEFAULT_VIDEO_FIXTURE = REPO / "example_data" / "stage.mp4"
+DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "fixtures" / "media" / "stage.mp4"
 TIMEOUT = 120
 
 
@@ -68,12 +68,7 @@ def main():
     port = _free_port()
     project_path = work_dir / "e2e.ssproj"
 
-    try:
-        video_path = _prepare_test_video(work_dir)
-    except Exception as e:
-        print(f"WARN: video failed ({e})", flush=True)
-        video_path = work_dir / "e2e-vid.mp4"
-        video_path.write_text("")
+    video_path = _prepare_test_video(work_dir)
 
     print("Creating project bundle...", flush=True)
     _create_project_bundle(project_path)
