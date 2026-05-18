@@ -323,12 +323,15 @@ async function main() {
       log(`PractiScore: options=${Boolean(psOpts)} project_key=${Boolean(psProj)}`);
       if (psOpts?.match_types?.length) log(`  match_types: ${psOpts.match_types.length}`);
       if (psProj?.participants?.length) log(`  participants: ${psProj.participants.length}`);
+      if (!psOpts && !psProj) {
+        fail('PractiScore upload returned 200 but produced no parsed options or project data');
+      }
     } else {
-      warn(`PractiScore upload status ${r.status}`);
+      fail(`PractiScore upload failed: ${r.status}`);
     }
     await screenshot(page, '08-practiscore');
   } else {
-    warn('no PractiScore CSV found, skipping');
+    fail('no PractiScore CSV found');
   }
 
   // === Merge: import second video via API ===
@@ -340,6 +343,8 @@ async function main() {
       log(`merge sources: ${sources.length} (from API response)`);
       if (sources.length > 0) {
         log(`  first source: ${sources[0].name || sources[0].path}`);
+      } else {
+        fail('merge upload returned 200 but produced 0 sources');
       }
     } else {
       fail(`merge upload failed: ${r.status}`);
@@ -371,9 +376,16 @@ async function main() {
     await page.waitForTimeout(500);
     const eventsAfter = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
     log(`timing events: ${eventsBefore} -> ${eventsAfter}`);
+    if (eventsAfter <= eventsBefore) {
+      fail(`timing event add did not change event count (${eventsBefore} -> ${eventsAfter})`);
+      await screenshot(page, 'fail-timing-event');
+      await dumpHtml(page, 'fail-timing-event');
+    }
     await screenshot(page, '10-timing-event');
   } else {
-    warn('add-timing-event button not found');
+    fail('add-timing-event button not found');
+    await screenshot(page, 'fail-timing-event-button');
+    await dumpHtml(page, 'fail-timing-event-button');
   }
 
   // Final check: poll for shot detection one more time (analysis may still be running)
@@ -391,6 +403,7 @@ async function main() {
       await screenshot(page, 'fail-zero-shots');
       await dumpHtml(page, 'fail-zero-shots');
     }
+    browserState.shots = finalShots;
   }
 
   // Save summary

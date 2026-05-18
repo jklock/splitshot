@@ -176,6 +176,13 @@ function verifyBundledMediaTool(toolPath) {
         throw new Error(`Bundled media tool depends on host-managed library path: ${forbidden} in ${toolPath}`);
       }
     }
+    return;
+  }
+  if (process.platform === 'linux') {
+    const linked = execFileSync('ldd', [toolPath], { encoding: 'utf8', cwd: ROOT });
+    if (linked.includes('not found')) {
+      throw new Error(`Bundled media tool has unresolved shared libraries: ${toolPath}\n${linked}`);
+    }
   }
 }
 
