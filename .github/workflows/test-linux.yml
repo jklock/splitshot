@@ -20,8 +20,8 @@ jobs:
           python-version: "3.12"
       - name: Install uv
         run: python -m pip install --upgrade uv
-      - name: Install system dependencies without ffmpeg
-        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
+      - name: Install system dependencies
+        run: sudo bash scripts/testing/install_ci_linux_deps.sh
       - name: Install dependencies
         run: uv sync --frozen --extra dev
       - name: Runtime check
@@ -64,8 +64,8 @@ jobs:
           node-version: '22'
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
-      - name: Install system dependencies
-        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+      - name: Install system dependencies without ffmpeg
+        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
       - name: Install Node dependencies
