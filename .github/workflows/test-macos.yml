@@ -132,10 +132,11 @@ jobs:
           export CSC_LINK="${MAC_CERT_FILE}" CSC_KEY_PASSWORD="${MAC_CERT_PASSWORD}"
           cd electron && npm run build:mac
         timeout-minutes: 30
-      - name: Verify notarization
+      - name: Verify signed app bundle
         run: |
-          app=$(ls electron/build/*/SplitShot.app | head -n 1)
-          xcrun stapler validate "$app"
+          app=$(find electron/build -maxdepth 2 -type d -name 'SplitShot.app' | head -n 1)
+          [ -n "$app" ] || { echo "SplitShot.app not found under electron/build"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute -vv "$app"
       - uses: actions/upload-artifact@v7
         with:

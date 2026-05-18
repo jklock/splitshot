@@ -109,10 +109,11 @@ jobs:
           shopt -s nullglob; apps=( electron/build/*/SplitShot.app )
           [ ${#apps[@]} -eq 0 ] && { echo "No .app"; exit 1; }
           for a in "${apps[@]}"; do codesign -dv "$a"; done
-      - name: Verify notarization
+      - name: Verify signed app bundle
         run: |
-          app=$(ls electron/build/*/SplitShot.app | head -n 1)
-          xcrun stapler validate "$app"
+          app=$(find electron/build -maxdepth 2 -type d -name 'SplitShot.app' | head -n 1)
+          [ -n "$app" ] || { echo "SplitShot.app not found under electron/build"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute -vv "$app"
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

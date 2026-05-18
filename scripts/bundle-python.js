@@ -225,8 +225,13 @@ function bundlePosixStdlib(pythonVersion) {
     throw new Error(`Bundled stdlib source not found at ${sourceStdlib}`);
   }
   fs.mkdirSync(targetStdlib, { recursive: true });
-  fs.cpSync(sourceStdlib, targetStdlib, { recursive: true, force: true });
-  console.log(`[bundle] copied stdlib: ${sourceStdlib} -> ${targetStdlib}`);
+  for (const entry of fs.readdirSync(sourceStdlib, { withFileTypes: true })) {
+    if (entry.name === 'site-packages') continue;
+    const from = path.join(sourceStdlib, entry.name);
+    const to = path.join(targetStdlib, entry.name);
+    fs.cpSync(from, to, { recursive: true, force: true });
+  }
+  console.log(`[bundle] copied stdlib contents: ${sourceStdlib} -> ${targetStdlib}`);
 }
 
 function main() {

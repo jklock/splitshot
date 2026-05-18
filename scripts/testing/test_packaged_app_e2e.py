@@ -18,7 +18,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
-DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "artifacts" / "test_video" / "TestVideo1.MP4"
+DEFAULT_VIDEO_FIXTURE = REPO / "example_data" / "stage.mp4"
 TIMEOUT = 120
 
 
