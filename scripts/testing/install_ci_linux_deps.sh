@@ -21,7 +21,6 @@ choose_package() {
 apt-get update
 
 packages=(
-  ffmpeg
   libxcb-cursor0
   libxkbcommon-x11-0
   libxrandr2
@@ -53,6 +52,10 @@ packages=(
   libcups2
   tk
 )
+
+if [ "${SKIP_FFMPEG:-0}" != "1" ]; then
+  packages=(ffmpeg "${packages[@]}")
+fi
 
 packages+=("$(choose_package libegl1-mesa libegl1 libegl-mesa0)")
 packages+=("$(choose_package libgl1-mesa libgl1 libgl1-mesa-glx)")

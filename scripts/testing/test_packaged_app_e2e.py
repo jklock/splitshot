@@ -18,6 +18,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
+DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "artifacts" / "test_video" / "TestVideo1.MP4"
 TIMEOUT = 120
 
 
@@ -41,33 +42,13 @@ def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
     return project_path
 
 
-def _create_test_video(out_dir):
-    import numpy as np, wave
-    path = out_dir / "e2e-vid.mp4"
-    audio_path = out_dir / "audio_tone.wav"
-    sr, dur = 22050, 4
-    ns = int(sr * dur)
-    samples = np.zeros(ns, dtype=np.float32)
-    beep_start = int(sr * 0.4)
-    bl = int(sr * 0.09)
-    bt = np.arange(bl) / sr
-    samples[beep_start:beep_start + bl] += (0.85 * np.sin(2 * np.pi * 2600 * bt) * np.hanning(bl)).astype(np.float32)
-    rng = np.random.default_rng(7)
-    for ms in [800, 1100, 1450]:
-        ss = int(sr * (ms / 1000.0))
-        sl = int(sr * 0.025)
-        samples[ss:ss + sl] += (rng.normal(0, 1, sl).astype(np.float32) * np.exp(-np.linspace(0, 8, sl)) * 0.95)
-    with wave.open(str(audio_path), "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
-        w.writeframes((np.clip(samples, -1, 1) * 32767).astype(np.int16).tobytes())
-    subprocess.run(["ffmpeg", "-y", "-v", "error",
-        "-f", "lavfi", "-i", "color=c=black:s=640x360:d=4:r=30",
-        "-i", str(audio_path),
-        "-c:v", "libx264", "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "192k", "-ar", "22050", "-ac", "1",
-        "-shortest", str(path)],
-        check=True, capture_output=True, timeout=30)
-    return path
+def _prepare_test_video(out_dir: Path) -> Path:
+    source = Path(os.environ.get("SPLITSHOT_E2E_VIDEO", DEFAULT_VIDEO_FIXTURE)).resolve()
+    if not source.exists():
+        raise FileNotFoundError(f"Packaged E2E video fixture not found at {source}")
+    target = out_dir / source.name
+    shutil.copy2(source, target)
+    return target
 
 
 def main():
@@ -88,7 +69,7 @@ def main():
     project_path = work_dir / "e2e.ssproj"
 
     try:
-        video_path = _create_test_video(work_dir)
+        video_path = _prepare_test_video(work_dir)
     except Exception as e:
         print(f"WARN: video failed ({e})", flush=True)
         video_path = work_dir / "e2e-vid.mp4"

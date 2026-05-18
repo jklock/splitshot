@@ -43,9 +43,9 @@ jobs:
         if: steps.run_tests.outcome == 'failure'
         run: exit 1
 
-  linux-electron-smoke:
+  linux-electron-package:
     if: github.event_name != 'pull_request'
-    name: linux-electron-smoke
+    name: linux-electron-package
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -69,16 +69,52 @@ jobs:
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
-      - name: Install Playwright browsers
-        run: |
-          uv run python -m playwright install --with-deps chromium
-          cd electron && npx playwright install chromium
-        timeout-minutes: 15
       - name: Build Electron app
         run: cd electron && npm run build:linux
         timeout-minutes: 30
         env:
           LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: splitshot-linux
+          path: electron/build/*.AppImage
+
+  linux-electron-validate:
+    if: github.event_name != 'pull_request'
+    needs: linux-electron-package
+    name: linux-electron-validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install system dependencies
+        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
+      - name: Install Python dependencies
+        run: uv sync --frozen --extra dev
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+        timeout-minutes: 15
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-linux
+          path: electron/build
       - name: Validate AppImage package
         run: |
           export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"

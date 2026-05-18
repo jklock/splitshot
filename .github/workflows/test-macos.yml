@@ -43,9 +43,9 @@ jobs:
         if: steps.run_tests.outcome == 'failure'
         run: exit 1
 
-  macos-electron-smoke:
+  macos-electron-package:
     if: github.event_name != 'pull_request'
-    name: macos-electron-smoke
+    name: macos-electron-package
     runs-on: macos-latest
     permissions:
       contents: write
@@ -71,11 +71,6 @@ jobs:
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
-      - name: Install Playwright browsers
-        run: |
-          uv run python -m playwright install --with-deps chromium
-          cd electron && npx playwright install chromium
-        timeout-minutes: 15
       - name: Prepare macOS signing certificate
         env:
           MAC_CERT_BASE64: ${{ secrets.MAC_CERT_BASE64 }}
@@ -142,6 +137,50 @@ jobs:
           app=$(ls electron/build/*/SplitShot.app | head -n 1)
           xcrun stapler validate "$app"
           spctl --assess --type execute -vv "$app"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: splitshot-macos
+          path: electron/build/*.dmg
+      - name: Cleanup macOS signing artifacts
+        if: always()
+        run: |
+          [ -n "${MAC_CERT_KEYCHAIN:-}" ] && [ -f "${MAC_CERT_KEYCHAIN}" ] && security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
+          [ -n "${MAC_CERT_TMPDIR:-}" ] && [ -d "${MAC_CERT_TMPDIR}" ] && rm -rf "${MAC_CERT_TMPDIR}"
+
+  macos-electron-validate:
+    if: github.event_name != 'pull_request'
+    needs: macos-electron-package
+    name: macos-electron-validate
+    runs-on: macos-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: python -m pip install --upgrade uv
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install Python dependencies
+        run: uv sync --frozen --extra dev
+      - name: Install Node dependencies
+        run: cd electron && npm install
+        timeout-minutes: 10
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+        timeout-minutes: 15
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-macos
+          path: electron/build
       - name: Validate DMG package
         run: |
           artifact=$(ls electron/build/*.dmg | head -n 1)
@@ -157,8 +196,3 @@ jobs:
         with:
           name: e2e-artifacts-macos
           path: artifacts/
-      - name: Cleanup macOS signing artifacts
-        if: always()
-        run: |
-          [ -n "${MAC_CERT_KEYCHAIN:-}" ] && [ -f "${MAC_CERT_KEYCHAIN}" ] && security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
-          [ -n "${MAC_CERT_TMPDIR:-}" ] && [ -d "${MAC_CERT_TMPDIR}" ] && rm -rf "${MAC_CERT_TMPDIR}"

@@ -4456,17 +4456,18 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
   const listStatus = $("popup-list-status");
   const selected = selectedPopupBubble();
   const hasSelectedBubble = Boolean(selected);
+  const workbenchShown = markersWorkbenchShown();
   if (bubbleList instanceof HTMLElement) bubbleList.hidden = false;
   if (bubbleListSection instanceof HTMLElement) {
-    bubbleListSection.hidden = false;
-    bubbleListSection.style.display = markersWorkbenchShown() ? "grid" : "";
+    bubbleListSection.hidden = workbenchShown;
+    bubbleListSection.style.display = "";
   }
   const enabledCount = allBubbles.filter((bubble) => bubble.enabled).length;
   if (paneStatus instanceof HTMLElement) paneStatus.textContent = `${enabledCount} enabled`;
   const editSelectedButton = $("popup-edit-selected");
   if (editSelectedButton instanceof HTMLButtonElement) {
     editSelectedButton.disabled = false;
-    const expanded = markersWorkbenchShown();
+    const expanded = workbenchShown;
     editSelectedButton.textContent = expanded ? "Collapse" : "Edit";
     editSelectedButton.title = expanded
       ? "Close the marker editor"
@@ -4474,7 +4475,7 @@ function renderPopupAuthoringControls(allBubbles, visibleBubbles) {
     editSelectedButton.setAttribute("aria-label", editSelectedButton.title);
   }
   const selectedEditorPanel = $("popup-selected-editor-panel");
-  if (selectedEditorPanel instanceof HTMLElement) selectedEditorPanel.hidden = !markersWorkbenchShown();
+  if (selectedEditorPanel instanceof HTMLElement) selectedEditorPanel.hidden = !workbenchShown;
   if (listStatus instanceof HTMLElement) {
     listStatus.textContent = visibleBubbles.length === 0 ? "No markers shown." : `${visibleBubbles.length} shown`;
   }

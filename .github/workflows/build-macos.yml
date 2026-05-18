@@ -114,10 +114,6 @@ jobs:
           app=$(ls electron/build/*/SplitShot.app | head -n 1)
           xcrun stapler validate "$app"
           spctl --assess --type execute -vv "$app"
-      - name: Validate DMG package
-        run: |
-          artifact=$(ls electron/build/*.dmg | head -n 1)
-          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -128,3 +124,52 @@ jobs:
         run: |
           [ -n "${MAC_CERT_KEYCHAIN:-}" ] && security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
           [ -n "${MAC_CERT_TMPDIR:-}" ] && rm -rf "${MAC_CERT_TMPDIR}"
+
+  validate:
+    needs: package
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Sync Python dependencies
+        run: uv sync --frozen --extra dev --python 3.12
+      - name: Install Node dependencies
+        run: cd electron && npm install
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-macos
+          path: electron/build
+      - name: Validate DMG package
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with DMG package
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts-macos
+          path: artifacts/

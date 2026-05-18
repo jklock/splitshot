@@ -424,6 +424,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'popup-motion-action-grid' in js
     assert 'Enable motion when this marker should move.' not in js
     assert 'const isSelectedEditorBubble = editingActive && bubble.id === selectedPopupBubbleId();' in markers_pane
+    assert 'bubbleListSection.hidden = workbenchShown;' in js
+    assert 'bubbleListSection.style.display = "";' in js
+    assert 'bubbleListSection.style.display = markersWorkbenchShown() ? "grid" : "";' not in js
     guided_motion_template = re.search(
         r'<section class="popup-motion-guide" data-popup-motion-mode="guided" hidden>.*?</section>',
         js,

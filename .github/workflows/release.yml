@@ -129,6 +129,58 @@ jobs:
           [ -n "${MAC_CERT_KEYCHAIN:-}" ] && security delete-keychain "${MAC_CERT_KEYCHAIN}" || true
           [ -n "${MAC_CERT_TMPDIR:-}" ] && rm -rf "${MAC_CERT_TMPDIR}"
 
+  macos-validate:
+    needs: macos
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Sync Python deps
+        run: uv sync --frozen --extra dev --python 3.12
+      - name: Install Node deps
+        run: cd electron && npm install
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-macos
+          path: electron/build
+      - name: Validate packaged DMG
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with packaged DMG
+        run: |
+          artifact=$(ls electron/build/*.dmg | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+        timeout-minutes: 30
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts-macos
+          path: artifacts/
+
   linux:
     runs-on: ubuntu-latest
     permissions:
@@ -170,6 +222,62 @@ jobs:
         with:
           name: splitshot-linux
           path: electron/build/*.AppImage
+
+  linux-validate:
+    needs: linux
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Install system deps without ffmpeg
+        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
+      - name: Sync Python deps
+        run: uv sync --frozen --extra dev --python 3.12
+      - name: Install Node deps
+        run: cd electron && npm install
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-linux
+          path: electron/build
+      - name: Validate packaged AppImage
+        run: |
+          export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          artifact=$(ls electron/build/*.AppImage | head -n 1)
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with packaged AppImage
+        run: |
+          export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
+          artifact=$(ls electron/build/*.AppImage | head -n 1)
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+        timeout-minutes: 30
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts-linux
+          path: artifacts/
 
   windows:
     runs-on: windows-latest
@@ -215,8 +323,60 @@ jobs:
           name: splitshot-windows
           path: electron/build/*.exe
 
+  windows-validate:
+    needs: windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install managed Python 3.12
+        run: uv python install 3.12
+      - name: Sync Python deps
+        run: uv sync --frozen --extra dev --python 3.12
+      - name: Install Node deps
+        run: cd electron && npm install
+      - name: Install Playwright browsers
+        run: |
+          uv run python -m playwright install --with-deps chromium
+          cd electron && npx playwright install chromium
+      - uses: actions/download-artifact@v5
+        with:
+          name: splitshot-windows
+          path: electron/build
+      - name: Validate packaged installer
+        run: |
+          artifact=$(ls electron/build/*.exe | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
+      - name: Full E2E test with packaged installer
+        run: |
+          artifact=$(ls electron/build/*.exe | head -n 1)
+          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+        timeout-minutes: 30
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-artifacts-windows
+          path: artifacts/
+
   publish:
-    needs: [macos, linux, windows]
+    needs: [macos, macos-validate, linux, linux-validate, windows, windows-validate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
