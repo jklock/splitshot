@@ -263,7 +263,8 @@ async function main() {
         // Validate exported file with ffprobe
         const { execSync } = require('child_process');
         try {
-          const probe = execSync(`ffprobe -v error -show_entries format=format_name,duration,size -of json "${exportFile}"`, { encoding: 'utf8', timeout: 15 });
+          const ffprobe = process.env.SPLITSHOT_PACKAGED_FFPROBE || 'ffprobe';
+          const probe = execSync(`"${ffprobe}" -v error -show_entries format=format_name,duration,size -of json "${exportFile}"`, { encoding: 'utf8', timeout: 15 });
           const info = JSON.parse(probe);
           const fmt = info.format?.format_name || 'unknown';
           const dur = info.format?.duration || '0';

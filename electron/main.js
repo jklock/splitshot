@@ -85,6 +85,18 @@ function getPythonArgs(initialProjectPath = null) {
   return ['run', '--directory', root, 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
 }
 
+function prependPathEntries(env, entries) {
+  const separator = process.platform === 'win32' ? ';' : ':';
+  const existing = (env.PATH || '').split(separator).filter(Boolean);
+  const next = [...entries.filter(Boolean), ...existing];
+  env.PATH = next.join(separator);
+}
+
+function getBundledFfmpegDir(bundlePath) {
+  const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
+  return path.join(bundlePath, 'src', 'splitshot', 'resources', 'ffmpeg', platform);
+}
+
 function startPythonBackend(initialProjectPath = null) {
   const args = getPythonArgs(initialProjectPath);
   const python = getPythonBinary();
@@ -95,10 +107,11 @@ function startPythonBackend(initialProjectPath = null) {
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
     env.PYTHONNOUSERSITE = '1';
+    prependPathEntries(env, [getBundledFfmpegDir(bundlePath)]);
     if (process.platform === 'win32') {
       const pythonHome = path.join(bundlePath, 'python');
       env.PYTHONHOME = pythonHome;
-      env.PATH = `${pythonHome};${path.join(pythonHome, 'Scripts')};${env.PATH || ''}`;
+      prependPathEntries(env, [pythonHome, path.join(pythonHome, 'Scripts')]);
     } else {
       env.PYTHONHOME = path.join(bundlePath, '.venv');
     }

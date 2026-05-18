@@ -8,7 +8,7 @@ This page covers the most common user-facing problems and where to fix them.
 | --- | --- |
 | `splitshot` command not found | Confirm `uv sync` completed and you are running from the project root. Use `uv run splitshot`. |
 | Browser does not open automatically | Retry with `uv run splitshot --no-open` and open the URL shown in the terminal manually. |
-| FFmpeg or FFprobe not found | Install `ffmpeg` and `ffprobe`, or set `SPLITSHOT_FFMPEG_DIR`. Run `uv run splitshot --check` to validate. |
+| FFmpeg or FFprobe not found | Source builds require `ffmpeg` and `ffprobe` on `PATH`. Packaged app builds should carry their own copies. Run `uv run splitshot --check` to validate. |
 | Port 8765 already in use | Stop the other process, or SplitShot will auto-select the next available port when running in headless mode. |
 | Qt/PySide6 import error | Install PySide6 via `uv sync --extra dev`. The export pipeline and PractiScore session require Qt. |
 | Headless mode fails to bind | Headless mode will auto-select a free port. Check firewall or use `--host 0.0.0.0` cautiously. |
@@ -69,4 +69,3 @@ This page covers the most common user-facing problems and where to fix them.
 | Browser page shows error on reload | The server session resets. Re-import media and reconfigure overlays. Save the project first to preserve work. |
 | Color picker does not apply | Click outside the modal or press Enter to commit the hex/HSL value. |
 | Export log modal stuck | Click outside the modal or press the `Close` button to dismiss. |
-

@@ -5,7 +5,8 @@ This page records the current constraints that are visible in the source tree an
 ## Media Toolchain
 
 - SplitShot requires `ffmpeg` and `ffprobe`.
-- If those tools are not on `PATH`, the app can use `SPLITSHOT_FFMPEG_DIR` or vendored binaries under `splitshot/resources/ffmpeg/<platform>`.
+- Source runs require those tools on `PATH`.
+- Packaged Electron builds are expected to bundle those tools and prepend the bundled directory to `PATH` at runtime.
 - The export pipeline expects a Qt GUI application context before it draws overlay frames.
 - Headless mode (`--headless`) runs the HTTP server without Qt, but export still requires Qt for overlay frame rendering.
 

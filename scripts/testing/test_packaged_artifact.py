@@ -34,6 +34,33 @@ class InstalledArtifact:
                 continue
 
 
+def _prepend_path(env: dict[str, str], *entries: str) -> dict[str, str]:
+    merged = dict(env)
+    current = merged.get("PATH", "")
+    merged["PATH"] = os.pathsep.join([*(entry for entry in entries if entry), current] if current else [*(entry for entry in entries if entry)])
+    return merged
+
+
+def _media_tool_free_path(preferred_dir: Path) -> str:
+    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+    ffprobe_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
+    filtered: list[str] = []
+    seen: set[str] = set()
+    for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = raw_entry.strip()
+        if not entry:
+            continue
+        candidate = Path(entry)
+        if candidate.resolve() == preferred_dir.resolve():
+            continue
+        if (candidate / ffmpeg_name).exists() or (candidate / ffprobe_name).exists():
+            continue
+        if entry not in seen:
+            filtered.append(entry)
+            seen.add(entry)
+    return os.pathsep.join([str(preferred_dir), *filtered])
+
+
 def _run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -82,7 +109,10 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     executable = Path(result.stdout.strip())
     if not executable.exists():
         raise FileNotFoundError("Installed SplitShot.exe not found after NSIS install")
-    return InstalledArtifact(executable=executable)
+    ffmpeg_dir = executable.parent / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "windows"
+    env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
+    env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe.exe")
+    return InstalledArtifact(executable=executable, env=env)
 
 
 def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
@@ -116,7 +146,10 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     executable = copied_app / "Contents" / "MacOS" / "SplitShot"
     if not executable.exists():
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")
-    return InstalledArtifact(executable=executable, cleanup_paths=[mount_dir, app_copy_root])
+    ffmpeg_dir = copied_app / "Contents" / "Resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "macos"
+    env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
+    env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
+    return InstalledArtifact(executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env)
 
 
 def _install_linux_artifact(artifact: Path) -> InstalledArtifact:

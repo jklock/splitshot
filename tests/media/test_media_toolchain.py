@@ -4,13 +4,22 @@ import stat
 import sys
 from pathlib import Path
 
-from splitshot.media.ffmpeg import resolve_media_binary
+import pytest
+
+from splitshot.media.ffmpeg import MediaError, resolve_media_binary
 
 
-def test_ffmpeg_resolver_prefers_configured_bundle(monkeypatch, tmp_path: Path) -> None:
+def test_ffmpeg_resolver_uses_path(monkeypatch, tmp_path: Path) -> None:
     executable = tmp_path / ("ffmpeg.exe" if sys.platform.startswith("win") else "ffmpeg")
     executable.write_text("#!/bin/sh\nexit 0\n")
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
-    monkeypatch.setenv("SPLITSHOT_FFMPEG_DIR", str(tmp_path))
+    monkeypatch.setenv("PATH", str(tmp_path))
 
     assert resolve_media_binary("ffmpeg") == str(executable)
+
+
+def test_ffmpeg_resolver_requires_path(monkeypatch) -> None:
+    monkeypatch.setenv("PATH", "")
+
+    with pytest.raises(MediaError, match="Could not find ffmpeg"):
+        resolve_media_binary("ffmpeg")

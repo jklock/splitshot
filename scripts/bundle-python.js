@@ -79,7 +79,8 @@ function resolveSymlinks(binDir) {
 }
 
 function findTool(tool) {
-  const cmd = process.platform === 'win32' ? `where ${tool} 2>nul` : `which ${tool} 2>/dev/null`;
+  const executable = process.platform === 'win32' ? `${tool}.exe` : tool;
+  const cmd = process.platform === 'win32' ? `where ${executable} 2>nul` : `which ${executable} 2>/dev/null`;
   try {
     const result = execSync(cmd, { encoding: 'utf8', cwd: ROOT }).trim().split(/\r?\n/)[0];
     return result || '';
@@ -88,22 +89,32 @@ function findTool(tool) {
   }
 }
 
-function bundleFfmpeg() {
+function bundledFfmpegDir() {
   const ffmpegDir = path.join(BUNDLE_SRC_DIR, 'splitshot', 'resources', 'ffmpeg');
   const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
-  const platformDir = path.join(ffmpegDir, platform);
+  return path.join(ffmpegDir, platform);
+}
+
+function prependPathEntries(env, entries) {
+  const separator = process.platform === 'win32' ? ';' : ':';
+  const existing = (env.PATH || '').split(separator).filter(Boolean);
+  env.PATH = [...entries.filter(Boolean), ...existing].join(separator);
+}
+
+function bundleFfmpeg() {
+  const platformDir = bundledFfmpegDir();
   fs.mkdirSync(platformDir, { recursive: true });
   for (const tool of ['ffmpeg', 'ffprobe']) {
     const result = findTool(tool);
-    if (result) {
-      const dest = path.join(platformDir, tool);
-      const real = fs.realpathSync(result);
-      fs.copyFileSync(real, dest);
-      fs.chmodSync(dest, 0o755);
-      console.log(`[bundle] bundled ${tool}: ${real} -> ${dest}`);
-    } else {
-      console.warn(`[bundle] WARNING: ${tool} not found on PATH, skipping`);
+    if (!result) {
+      throw new Error(`[bundle] ${tool} not found on PATH; packaged builds require vendored media tools`);
     }
+    const executable = process.platform === 'win32' ? `${tool}.exe` : tool;
+    const dest = path.join(platformDir, executable);
+    const real = fs.realpathSync(result);
+    fs.copyFileSync(real, dest);
+    fs.chmodSync(dest, 0o755);
+    console.log(`[bundle] bundled ${tool}: ${real} -> ${dest}`);
   }
 }
 
@@ -169,12 +180,13 @@ except Exception as e:
     ok = False
 print("- bundle verification: OK" if ok else "- bundle verification: WARN (non-critical failures)")
 exit(0 if ok else 1)
-`;
+	`;
   fs.writeFileSync(verifyScript, verifyCode, 'utf8');
   const env = { ...process.env, PYTHONPATH: BUNDLE_SRC_DIR, PYTHONNOUSERSITE: '1' };
+  prependPathEntries(env, [bundledFfmpegDir()]);
   if (process.platform === 'win32') {
     env.PYTHONHOME = WINDOWS_PYTHON_DIR;
-    env.PATH = `${WINDOWS_PYTHON_DIR};${path.join(WINDOWS_PYTHON_DIR, 'Scripts')};${env.PATH || ''}`;
+    prependPathEntries(env, [WINDOWS_PYTHON_DIR, path.join(WINDOWS_PYTHON_DIR, 'Scripts')]);
   } else {
     env.PYTHONHOME = bundledPosixPythonHome();
   }

@@ -20,7 +20,7 @@ Read in this order:
 - Browser UI runtime: local HTTP server plus desktop runtime support from PySide6
 - Automated browser tests: Playwright
 
-The runtime resolves FFmpeg from `PATH`, bundled resources, or `SPLITSHOT_FFMPEG_DIR`.
+The runtime resolves FFmpeg from `PATH`. Packaged Electron builds prepend their bundled media-tools directory to `PATH` before starting the backend.
 
 ## Bootstrap
 

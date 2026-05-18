@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -12,43 +11,18 @@ from pathlib import Path
 class MediaError(RuntimeError):
     pass
 
-
-def _platform_key() -> str:
-    if sys.platform.startswith("darwin"):
-        return "macos"
-    if sys.platform.startswith("win"):
-        return "windows"
-    return "linux"
-
-
 def _binary_name(tool: str) -> str:
     if sys.platform.startswith("win") and not tool.endswith(".exe"):
         return f"{tool}.exe"
     return tool
 
 
-def _resource_roots() -> list[Path]:
-    roots: list[Path] = []
-    if override := os.environ.get("SPLITSHOT_FFMPEG_DIR"):
-        roots.append(Path(override))
-    roots.append(Path(__file__).resolve().parents[1] / "resources" / "ffmpeg")
-    return roots
-
-
 def resolve_media_binary(tool: str) -> str:
     executable = _binary_name(tool)
-    platform = _platform_key()
-    for root in _resource_roots():
-        for candidate in (root / platform / executable, root / executable):
-            if candidate.exists() and candidate.is_file():
-                return str(candidate)
     resolved = shutil.which(executable)
     if resolved:
         return resolved
-    raise MediaError(
-        f"Could not find {tool}. Add {executable} to PATH, set SPLITSHOT_FFMPEG_DIR, "
-        f"or place it under splitshot/resources/ffmpeg/{platform}."
-    )
+    raise MediaError(f"Could not find {tool}. Add {executable} to PATH.")
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
