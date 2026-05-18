@@ -139,6 +139,11 @@ def main():
                 print(f"E2E SUMMARY: result={summary.get('result')} "
                       f"errors={summary.get('pageErrors', 0)} "
                       f"artifacts={summary.get('artifacts', 0)}", flush=True)
+                failures = summary.get("failures") or []
+                if failures:
+                    print("E2E FAILURES:", flush=True)
+                    for item in failures:
+                        print(f"  - {item}", flush=True)
             except Exception:
                 pass
 
@@ -148,6 +153,18 @@ def main():
             for f in sorted(captured):
                 sz = f.stat().st_size
                 print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True)
+
+        summary = None
+        if summary_file.exists():
+            try:
+                summary = json.loads(summary_file.read_text())
+            except Exception as exc:
+                raise RuntimeError(f"Could not parse Playwright summary: {exc}") from exc
+        else:
+            raise RuntimeError("Playwright did not produce summary.json")
+
+        if summary.get("result") != "passed":
+            raise RuntimeError(f"Playwright summary reported failure: {summary.get('failures') or summary.get('error') or 'unknown'}")
 
         if result.returncode != 0:
             print(f"FAIL: Playwright exited code {result.returncode}", file=sys.stderr, flush=True)

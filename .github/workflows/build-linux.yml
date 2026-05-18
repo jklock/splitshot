@@ -30,10 +30,10 @@ jobs:
         run: uv python install 3.12
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
-      - name: Install system dependencies
-        run: sudo bash scripts/testing/install_ci_linux_deps.sh
+      - name: Install system dependencies without ffmpeg
+        run: sudo env SKIP_FFMPEG=1 bash scripts/testing/install_ci_linux_deps.sh
       - name: Verify host toolchain
-        run: python3 --version; node --version; npm --version; uv --version; ffmpeg -version | head -n 1
+        run: python3 --version; node --version; npm --version; uv --version
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15

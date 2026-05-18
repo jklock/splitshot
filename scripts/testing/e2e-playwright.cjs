@@ -7,6 +7,12 @@ const logDir = process.env.E2E_LOG_DIR || '/tmp/splitshot-e2e-logs';
 const videoPath = process.env.E2E_VIDEO_PATH || '';
 const baseUrl = `http://127.0.0.1:${port}`;
 const artifacts = [];
+const failures = [];
+
+function fail(msg) {
+  failures.push(msg);
+  warn(msg);
+}
 
 function log(msg) {
   const line = `[E2E ${new Date().toISOString()}] ${msg}`;
@@ -55,6 +61,7 @@ async function main() {
   });
   const consoleLogs = [];
   const pageErrors = [];
+  const httpErrors = [];
 
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
@@ -73,6 +80,7 @@ async function main() {
   });
   page.on('response', resp => {
     if (resp.status() >= 400) {
+      httpErrors.push({ status: resp.status(), url: resp.url(), time: new Date().toISOString() });
       try { fs.appendFileSync(path.join(logDir, 'http-errors.log'),
         `[${new Date().toISOString()}] ${resp.status()} ${resp.url()}\n`); } catch {}
     }
@@ -143,21 +151,13 @@ async function main() {
     if (r.status === 200 && r.body) {
       let shotCount = r.body?.project?.analysis?.shots?.length || 0;
       log(`primary analysis: ${shotCount} shots, waveform=${Boolean(r.body?.project?.analysis?.waveform_primary)}`);
-      if (shotCount > 0) {
-        log(`shots detected: ${shotCount} — analysis works correctly`);
-      } else {
-        log('NOTE: 0 shots detected by ML model in this environment. Audio waveform IS extracted (waveform=true).');
-        log('NOTE: Shot detection depends on AudioEventClassifier ML model which may have numerical');
-        log('NOTE: compatibility issues with bundled numpy in certain environments. This is a model');
-        log('NOTE: inference issue, not an app functionality issue. All other features verified.');
-      }
       try { await page.evaluate((d) => { if (typeof applyRemoteState === 'function') applyRemoteState(d); }, r.body); } catch {}
     } else {
-      warn(`API upload: ${r.status} ${JSON.stringify(r.body).slice(0,200)}`);
+      fail(`primary upload failed: ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
     }
     await screenshot(page, '03b-video-imported');
   } else {
-    warn('no test video found');
+    fail('no test video found');
   }
 
   const tools = ['project', 'merge', 'scoring', 'timing', 'markers',
@@ -274,25 +274,25 @@ async function main() {
           const dur = info.format?.duration || '0';
           log(`export validation: format=${fmt} duration=${dur}s size=${(sz / 1024 / 1024).toFixed(2)}MB`);
           if (sz < 1024) { // less than 1KB is probably corrupt
-            warn(`export file suspiciously small (${sz} bytes)`);
+            fail(`export file suspiciously small (${sz} bytes)`);
             await screenshot(page, 'fail-export-small');
           }
         } catch (e) {
-          warn(`export ffprobe validation failed: ${e.message}`);
+          fail(`export ffprobe validation failed: ${e.message}`);
           await screenshot(page, 'fail-export-ffprobe');
         }
       } else {
-        warn('export file not found after waiting');
+        fail('export file not found after waiting');
         await screenshot(page, 'fail-export-file');
         await dumpHtml(page, 'fail-export-file');
       }
     } else {
-      warn('export button not found');
+      fail('export button not found');
       await screenshot(page, 'fail-export-btn');
       await dumpHtml(page, 'fail-export-btn');
     }
   } else {
-    warn('export output path input not found');
+    fail('export output path input not found');
     await screenshot(page, 'fail-export-input');
     await dumpHtml(page, 'fail-export-input');
   }
@@ -342,11 +342,11 @@ async function main() {
         log(`  first source: ${sources[0].name || sources[0].path}`);
       }
     } else {
-      warn(`merge upload status ${r.status}`);
+      fail(`merge upload failed: ${r.status}`);
     }
     await screenshot(page, '09-merge');
   } else {
-    warn('no video for merge test, skipping');
+    fail('no video for merge test');
   }
 
   // === Timing: add a custom event ===
@@ -386,11 +386,17 @@ async function main() {
       await new Promise(r => setTimeout(r, 5000));
     }
     log(`final state: shots=${finalShots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
+    if (finalShots <= 0) {
+      fail('primary analysis produced 0 shots');
+      await screenshot(page, 'fail-zero-shots');
+      await dumpHtml(page, 'fail-zero-shots');
+    }
   }
 
   // Save summary
+  const result = failures.length === 0 && pageErrors.length === 0 ? 'passed' : 'failed';
   const summary = {
-    result: 'passed',
+    result,
     totalTools: TOOL_COUNT,
     activatedTools: toolScreenshotDelay - 1,
     shots: browserState.shots,
@@ -399,7 +405,8 @@ async function main() {
     pageErrors: pageErrors.length,
     artifacts: artifacts.length,
     pageErrorsList: pageErrors,
-    httpErrors: consoleLogs.filter(l => l.type === 'error' || l.type === 'warning'),
+    httpErrors,
+    failures,
   };
   fs.writeFileSync(path.join(logDir, 'summary.json'), JSON.stringify(summary, null, 2));
   log(`summary saved: ${JSON.stringify(summary)}`);
@@ -413,6 +420,10 @@ async function main() {
 
   await context.close();
   await browser.close();
+  if (result === 'failed') {
+    log('=== E2E test failed ===');
+    process.exit(1);
+  }
   log('=== E2E test passed ===');
   process.exit(0);
 }

@@ -26,7 +26,7 @@ Use it when the change touches media metadata, audio extraction, still-image han
 3. Extract audio and derive waveform data when analysis needs it.
 4. Provide media helpers to controller, analysis, and export layers.
 
-`resolve_media_binary` is intentionally `PATH`-based. Packaged Electron builds make their vendored media tools available by prepending the bundled tool directory to `PATH` before the backend starts.
+`resolve_media_binary` is intentionally `PATH`-based. Packaged Electron builds make their vendored media tools available by prepending the bundled tool directory to `PATH` before the backend starts. Those packaged media tools are downloaded as portable release binaries at bundle time rather than copied from the build host's `PATH`.
 
 ## Key Extension Points
 

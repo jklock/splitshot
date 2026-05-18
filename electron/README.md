@@ -69,6 +69,8 @@ The `bundle/` directory is created by `scripts/bundle-python.js`. It contains:
 
 Regenerate the bundle whenever `src/splitshot/`, `pyproject.toml`, or `uv.lock` changes.
 
+Packaged builds no longer copy `ffmpeg` or `ffprobe` from the host machine. `scripts/bundle-python.js` fetches portable release binaries for the target platform, bundles them into the app resources, and rejects media tools that still reference Homebrew-managed libraries on macOS.
+
 ## Signing And Release
 
 See [docs/project/ELECTRON_RELEASE.md](../docs/project/ELECTRON_RELEASE.md) for:

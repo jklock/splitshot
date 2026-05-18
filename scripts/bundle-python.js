@@ -1,5 +1,6 @@
-const { execSync } = require('child_process');
+const { execFileSync, execSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -12,6 +13,15 @@ const BUNDLE_SRC_DIR = path.join(BUNDLE_DIR, 'src');
 function run(cmd, opts = {}) {
   console.log(`[bundle] ${cmd}`);
   execSync(cmd, { stdio: 'inherit', cwd: ROOT, ...opts });
+}
+
+function runFile(bin, args, opts = {}) {
+  console.log(`[bundle] ${bin} ${args.join(' ')}`);
+  execFileSync(bin, args, { stdio: 'inherit', cwd: ROOT, ...opts });
+}
+
+function repoPythonCommand(args, opts = {}) {
+  runFile('uv', ['run', 'python', ...args], opts);
 }
 
 function rmrf(target) {
@@ -89,6 +99,125 @@ function findTool(tool) {
   }
 }
 
+function downloadFile(url, target) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const curl = process.platform === 'win32' ? 'curl.exe' : 'curl';
+  runFile(curl, ['-LfsS', '-o', target, url]);
+}
+
+function extractZip(archive, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  repoPythonCommand([
+    '-c',
+    'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])',
+    archive,
+    destination,
+  ]);
+}
+
+function extractTarXz(archive, destination) {
+  fs.mkdirSync(destination, { recursive: true });
+  runFile('tar', ['-xf', archive, '-C', destination]);
+}
+
+function walkFiles(rootDir) {
+  const files = [];
+  const stack = [rootDir];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile()) {
+        files.push(full);
+      }
+    }
+  }
+  return files;
+}
+
+function findExtractedTool(rootDir, toolName) {
+  const matches = walkFiles(rootDir).filter((file) => path.basename(file) === toolName);
+  if (matches.length === 0) {
+    throw new Error(`Could not find ${toolName} under extracted archive ${rootDir}`);
+  }
+  return matches[0];
+}
+
+function portableMediaManifest() {
+  if (process.platform === 'win32') {
+    return {
+      archiveType: 'zip',
+      archiveUrl: 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip',
+      tools: {
+        ffmpeg: 'ffmpeg.exe',
+        ffprobe: 'ffprobe.exe',
+      },
+    };
+  }
+  const arch = process.arch === 'arm64' ? 'arm64' : 'amd64';
+  const osName = process.platform === 'darwin' ? 'macos' : 'linux';
+  return {
+    archiveType: 'zip',
+    tools: {
+      ffmpeg: `${osName}/${arch}/release/ffmpeg.zip`,
+      ffprobe: `${osName}/${arch}/release/ffprobe.zip`,
+    },
+  };
+}
+
+function verifyBundledMediaTool(toolPath) {
+  runFile(toolPath, ['-version']);
+  if (process.platform === 'darwin') {
+    const linked = execFileSync('otool', ['-L', toolPath], { encoding: 'utf8', cwd: ROOT });
+    for (const forbidden of ['/opt/homebrew/', '/usr/local/Cellar/', '/usr/local/opt/']) {
+      if (linked.includes(forbidden)) {
+        throw new Error(`Bundled media tool depends on host-managed library path: ${forbidden} in ${toolPath}`);
+      }
+    }
+  }
+}
+
+function copyTool(sourcePath, destinationPath) {
+  const real = fs.realpathSync(sourcePath);
+  fs.copyFileSync(real, destinationPath);
+  fs.chmodSync(destinationPath, 0o755);
+  verifyBundledMediaTool(destinationPath);
+}
+
+function fetchPortableMediaTools(platformDir) {
+  const cacheDir = path.join(os.tmpdir(), 'splitshot-vendored-ffmpeg', `${process.platform}-${process.arch}`);
+  rmrf(cacheDir);
+  fs.mkdirSync(cacheDir, { recursive: true });
+  const manifest = portableMediaManifest();
+  if (process.platform === 'win32') {
+    const archive = path.join(cacheDir, 'ffmpeg-release-essentials.zip');
+    const extracted = path.join(cacheDir, 'extracted');
+    downloadFile(manifest.archiveUrl, archive);
+    extractZip(archive, extracted);
+    for (const [tool, executable] of Object.entries(manifest.tools)) {
+      const source = findExtractedTool(extracted, executable);
+      const dest = path.join(platformDir, executable);
+      copyTool(source, dest);
+      console.log(`[bundle] bundled ${tool}: ${source} -> ${dest}`);
+    }
+    return;
+  }
+
+  for (const [tool, relativeUrl] of Object.entries(manifest.tools)) {
+    const archive = path.join(cacheDir, `${tool}.zip`);
+    const extracted = path.join(cacheDir, tool);
+    const url = `https://ffmpeg.martin-riedl.de/redirect/latest/${relativeUrl}`;
+    downloadFile(url, archive);
+    extractZip(archive, extracted);
+    const source = findExtractedTool(extracted, tool);
+    const dest = path.join(platformDir, tool);
+    copyTool(source, dest);
+    console.log(`[bundle] bundled ${tool}: ${source} -> ${dest}`);
+  }
+}
+
 function bundledFfmpegDir() {
   const ffmpegDir = path.join(BUNDLE_SRC_DIR, 'splitshot', 'resources', 'ffmpeg');
   const platform = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux';
@@ -104,18 +233,36 @@ function prependPathEntries(env, entries) {
 function bundleFfmpeg() {
   const platformDir = bundledFfmpegDir();
   fs.mkdirSync(platformDir, { recursive: true });
-  for (const tool of ['ffmpeg', 'ffprobe']) {
-    const result = findTool(tool);
-    if (!result) {
-      throw new Error(`[bundle] ${tool} not found on PATH; packaged builds require vendored media tools`);
+  const overrideDir = process.env.SPLITSHOT_BUNDLED_FFMPEG_DIR;
+  if (overrideDir) {
+    for (const tool of ['ffmpeg', 'ffprobe']) {
+      const executable = process.platform === 'win32' ? `${tool}.exe` : tool;
+      const source = path.join(overrideDir, executable);
+      if (!fs.existsSync(source)) {
+        throw new Error(`[bundle] ${executable} not found in SPLITSHOT_BUNDLED_FFMPEG_DIR=${overrideDir}`);
+      }
+      const dest = path.join(platformDir, executable);
+      copyTool(source, dest);
+      console.log(`[bundle] bundled ${tool} from override: ${source} -> ${dest}`);
     }
-    const executable = process.platform === 'win32' ? `${tool}.exe` : tool;
-    const dest = path.join(platformDir, executable);
-    const real = fs.realpathSync(result);
-    fs.copyFileSync(real, dest);
-    fs.chmodSync(dest, 0o755);
-    console.log(`[bundle] bundled ${tool}: ${real} -> ${dest}`);
+    return;
   }
+
+  if (process.env.SPLITSHOT_USE_HOST_FFMPEG === '1') {
+    for (const tool of ['ffmpeg', 'ffprobe']) {
+      const result = findTool(tool);
+      if (!result) {
+        throw new Error(`[bundle] ${tool} not found on PATH; packaged builds require vendored media tools`);
+      }
+      const executable = process.platform === 'win32' ? `${tool}.exe` : tool;
+      const dest = path.join(platformDir, executable);
+      copyTool(result, dest);
+      console.log(`[bundle] bundled ${tool} from PATH: ${result} -> ${dest}`);
+    }
+    return;
+  }
+
+  fetchPortableMediaTools(platformDir);
 }
 
 function generateIcons() {

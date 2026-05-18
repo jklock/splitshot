@@ -66,8 +66,6 @@ jobs:
           node-version: '22'
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
-      - name: Install FFmpeg
-        run: brew install ffmpeg
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
       - name: Install Node dependencies
