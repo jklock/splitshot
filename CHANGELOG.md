@@ -64,30 +64,40 @@ SplitShot 1.0.2 is the macOS release that fixes the broken packaged backend boot
 
 ## v1.0.3
 
-SplitShot 1.0.3 is the notarization repair release for macOS distribution.
+SplitShot 1.0.3 is the desktop packaging and release-hardening patch that turns the 1.0.2 line into a real clean-runner release for macOS, Windows, and Linux.
 
 ### What Changed
 
 - The macOS release workflows now materialize `APPLE_API_KEY` into a temporary `AuthKey_<id>.p8` file before invoking `electron-builder`.
-- The macOS release, build, and smoke workflows now export complete notarization credentials into the build environment instead of silently omitting them.
-- The macOS workflows now fail fast when notarization secrets are missing or incomplete.
-- The macOS workflows now verify notarization after packaging with `xcrun stapler validate` and `spctl --assess`.
+- The macOS workflows now fail fast when notarization secrets are missing or incomplete and release jobs verify the shipped DMG instead of only trusting a signed app bundle.
+- Packaged Electron validation now uses tracked media fixtures under `tests/fixtures/media/` instead of ignored local-only videos.
+- Packaged E2E now fails immediately if its required fixture is missing instead of warning and continuing with a fake empty file.
+- Packaged E2E now clears stale export output and prior log directories before each run so reruns cannot inherit false-positive artifacts.
+- Linux packaged startup now resolves bundled `site-packages` explicitly inside the AppImage runtime so bundled imports like `numpy` are available from the shipped artifact.
+- Bundle verification is now fatal during packaging, so a broken packaged Python runtime cannot be emitted as a “successful” artifact.
+- The Electron package, test, build, and release workflows now run a static CI-input verifier before packaging or validation work so missing tracked fixtures fail fast.
 
 ### Why This Release Exists
 
-Version 1.0.2 fixed the packaged runtime crash, but the published macOS artifact was still only signed, not notarized. That produced Gatekeeper malware-style warnings even though the app itself launched correctly once bypassed.
+Version 1.0.2 fixed the original packaged backend bootstrap problem, but the release line still had multiple proof gaps:
 
-Version 1.0.3 fixes the release pipeline so the shipped macOS DMG is expected to carry a valid notarization ticket instead of relying on a signed-only build.
+- macOS was signed but not properly notarized
+- packaged validation depended on ignored local-only media files
+- reruns could reuse stale E2E artifacts
+- Linux could still package an AppImage whose bundled backend failed to import `numpy` on a clean runner
+
+Version 1.0.3 closes those gaps by fixing the notarization path, moving packaged proof inputs onto tracked fixtures, hardening the E2E harness, and fixing the Linux packaged runtime import path.
 
 ### Release Proof
 
-- Workflow logic updated so `electron-builder` receives a real `.p8` key path for App Store Connect API-key notarization
-- macOS workflows now verify notarization explicitly after the build step
-- GitHub release publication is blocked if notarization credentials are absent or partial
+- Fresh macOS DMG package job passed and fresh DMG validation plus packaged E2E passed on a clean runner
+- Fresh Windows NSIS package job passed and fresh installed-package validation plus packaged E2E passed on a clean runner
+- Linux packaging was repaired to expose bundled `site-packages` and to fail packaging immediately if bundled-runtime verification breaks
+- The Electron CI verifier now confirms required packaged-test fixtures are tracked and rejects local-only fixture references before package work starts
 
 ### Bottom Line
 
-SplitShot 1.0.3 is the release intended to remove the macOS malware warning by shipping a notarized build instead of a merely signed one.
+SplitShot 1.0.3 is the release that hardens SplitShot’s desktop delivery path end to end: notarized macOS distribution, real packaged proof inputs, no stale E2E carryover, and a Linux bundle that is required to prove its own packaged Python runtime before shipping.
 
 ## v1.0.0
 
