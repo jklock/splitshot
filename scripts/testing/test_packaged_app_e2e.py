@@ -69,6 +69,9 @@ def main():
     project_path = work_dir / "e2e.ssproj"
 
     video_path = _prepare_test_video(work_dir)
+    export_dir = Path("/tmp/sshot-e2e-export")
+    export_file = export_dir / "e2e-export-test.mp4"
+    export_file.unlink(missing_ok=True)
 
     print("Creating project bundle...", flush=True)
     _create_project_bundle(project_path)
@@ -110,6 +113,7 @@ def main():
         electron_dir = REPO / "electron"
         pw_script = REPO / "scripts" / "testing" / "e2e-playwright.cjs"
         pw_log_dir = ARTIFACTS_DIR / "e2e-logs"
+        shutil.rmtree(pw_log_dir, ignore_errors=True)
         pw_log_dir.mkdir(parents=True, exist_ok=True)
         pw_env = {**os.environ, "E2E_PORT": str(port),
                    "E2E_LOG_DIR": str(pw_log_dir),
