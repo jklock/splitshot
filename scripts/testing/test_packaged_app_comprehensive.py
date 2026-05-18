@@ -184,7 +184,8 @@ def main():
             _check("API state verification", False, str(e))
 
         # Export verification - check if Node.js script created the export
-        export_files = list(work_dir.glob("*.mp4")) + list(Path("/tmp/sshot-e2e-export").glob("*.mp4"))
+        export_dir = Path(tempfile.gettempdir()) / "sshot-e2e-export"
+        export_files = list(work_dir.glob("*.mp4")) + list(export_dir.glob("*.mp4"))
         export_file = next((f for f in export_files if f.stat().st_size > 1024), None)
         if export_file:
             sz = export_file.stat().st_size

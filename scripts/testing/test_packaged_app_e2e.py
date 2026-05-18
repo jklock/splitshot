@@ -69,7 +69,7 @@ def main():
     project_path = work_dir / "e2e.ssproj"
 
     video_path = _prepare_test_video(work_dir)
-    export_dir = Path("/tmp/sshot-e2e-export")
+    export_dir = Path(tempfile.gettempdir()) / "sshot-e2e-export"
     export_file = export_dir / "e2e-export-test.mp4"
     export_file.unlink(missing_ok=True)
 

@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import os from 'os';
 
 const port = process.env.E2E_PORT || process.argv[2] || '8765';
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -21,7 +22,7 @@ async function main() {
   await page.waitForTimeout(1000);
 
   if (!(await page.evaluate(() => Boolean(state?.project?.path)))) {
-    const pp = `/tmp/sshot-e2e-project.ssproj`;
+    const pp = `${os.tmpdir()}/sshot-e2e-project.ssproj`;
     await page.evaluate((p) => createNewProject(p), pp);
     await page.waitForFunction(() => Boolean(state?.project?.path), { timeout: 15000 });
     await page.waitForTimeout(500);

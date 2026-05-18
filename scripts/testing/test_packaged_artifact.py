@@ -156,8 +156,14 @@ def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
     copied_artifact = Path(tempfile.mkdtemp(prefix="splitshot-appimage-")) / artifact.name
     shutil.copy2(artifact, copied_artifact)
     copied_artifact.chmod(copied_artifact.stat().st_mode | stat.S_IXUSR)
+    extracted_root = Path(tempfile.mkdtemp(prefix="splitshot-appimage-extract-"))
+    _run([str(copied_artifact), "--appimage-extract"], cwd=extracted_root)
+    squashfs_root = extracted_root / "squashfs-root"
+    ffmpeg_dir = squashfs_root / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "linux"
     env = {"APPIMAGE_EXTRACT_AND_RUN": "1"}
-    return InstalledArtifact(executable=copied_artifact, cleanup_paths=[copied_artifact.parent], env=env)
+    env["PATH"] = _media_tool_free_path(ffmpeg_dir)
+    env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
+    return InstalledArtifact(executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env)
 
 
 def _install_artifact(artifact: Path) -> InstalledArtifact:
