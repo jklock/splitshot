@@ -35,6 +35,33 @@ This patch release is backed by fresh package-native E2E validation on the real 
 
 SplitShot 1.0.1 is the release that turns “the packaged app was tested” into a literal statement about the user-download artifact on macOS, Windows, and Linux.
 
+## v1.0.2
+
+SplitShot 1.0.2 is an emergency macOS packaging fix for a shipped DMG that could install cleanly and then fail before the backend ever started.
+
+### What Changed
+
+- The packaged macOS/Linux Python bundle now includes its own stdlib inside the app-local virtualenv instead of depending on the build machine's managed Python home.
+- The packaged Electron launcher now sets `PYTHONHOME` for POSIX app launches so the installed app resolves the bundled stdlib and site-packages from inside the app.
+- The bundle verifier now runs under the same packaged `PYTHONHOME` assumptions used by the installed app, so this runtime break is caught before release.
+
+### Why This Release Exists
+
+The published `v1.0.1` macOS DMG could launch the Electron shell and still fail immediately when the bundled Python backend started. The concrete failure was a fatal `ModuleNotFoundError: No module named 'encodings'` because the packaged interpreter still pointed its stdlib lookup at the build host's `uv` Python home.
+
+Version 1.0.2 fixes that packaging error by making the POSIX bundle self-contained and by validating the bundled interpreter under packaged launch conditions before the DMG is produced.
+
+### Release Proof
+
+- Fresh macOS DMG built from the fixed bundle
+- Installed DMG app launched and loaded a real project through `scripts/testing/test_packaged_artifact.py`
+- Packaged Playwright E2E passed against the generated DMG
+- Generated export file verified directly with `ffprobe` as a 4.0 second MP4 containing H.264 video and AAC audio
+
+### Bottom Line
+
+SplitShot 1.0.2 is the macOS release that fixes the broken packaged backend bootstrap and restores a working downloadable DMG.
+
 ## v1.0.0
 
 SplitShot 1.0.0 is the first public release of a local-first competition shooting video analysis workstation built to get a shooter, coach, or editor from raw stage footage to a scored, reviewed, and export-ready presentation without handing the core workflow to a cloud service.

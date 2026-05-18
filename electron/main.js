@@ -99,6 +99,8 @@ function startPythonBackend(initialProjectPath = null) {
       const pythonHome = path.join(bundlePath, 'python');
       env.PYTHONHOME = pythonHome;
       env.PATH = `${pythonHome};${path.join(pythonHome, 'Scripts')};${env.PATH || ''}`;
+    } else {
+      env.PYTHONHOME = path.join(bundlePath, '.venv');
     }
     pythonProcess = spawn(python, args, {
       cwd: bundlePath,

@@ -54,6 +54,7 @@ That path validates the actual user-download artifact instead of an unpacked sta
 
 1. `main.js` calls `getPythonBinary()` to find the bundled Python interpreter in `bundle/.venv/`.
    On Windows the packaged app uses an app-local runtime under `bundle/python/` instead of a virtualenv so the installed NSIS app does not depend on the build machine's base Python location.
+   On macOS and Linux the packaged app now sets `PYTHONHOME` to the bundled `.venv`, which carries the copied stdlib needed for a self-contained installed runtime.
 2. The Python backend is started with `splitshot --headless --no-open`. If a `.ssproj` was opened, `--project <path>` is appended.
 3. Once the backend is ready, Electron creates a `BrowserWindow` pointed at `http://127.0.0.1:8765`.
 4. The `launch-intent` module handles single-instance locking, `.ssproj` file associations, and `splitshot://` protocol URLs.
@@ -63,7 +64,7 @@ That path validates the actual user-download artifact instead of an unpacked sta
 The `bundle/` directory is created by `scripts/bundle-python.js`. It contains:
 
 - A full `uv sync` of the Python project into `bundle/`
-- The `.venv` with all dependencies on macOS/Linux, or an app-local `python/` runtime on Windows
+- The `.venv` with all dependencies plus a copied stdlib on macOS/Linux, or an app-local `python/` runtime on Windows
 - The `src/splitshot/` package installed in development mode
 
 Regenerate the bundle whenever `src/splitshot/`, `pyproject.toml`, or `uv.lock` changes.

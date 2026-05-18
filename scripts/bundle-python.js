@@ -58,6 +58,10 @@ function bundledSitePackagesDir(pythonVersion) {
   return path.join(VENV_DIR, 'lib', `python${pythonVersion}`, 'site-packages');
 }
 
+function bundledPosixPythonHome() {
+  return VENV_DIR;
+}
+
 function resolveSymlinks(binDir) {
   if (process.platform === 'win32') return;
   for (const name of fs.readdirSync(binDir)) {
@@ -171,6 +175,8 @@ exit(0 if ok else 1)
   if (process.platform === 'win32') {
     env.PYTHONHOME = WINDOWS_PYTHON_DIR;
     env.PATH = `${WINDOWS_PYTHON_DIR};${path.join(WINDOWS_PYTHON_DIR, 'Scripts')};${env.PATH || ''}`;
+  } else {
+    env.PYTHONHOME = bundledPosixPythonHome();
   }
   try {
     run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
@@ -196,6 +202,19 @@ function buildWindowsPythonRuntime() {
   }
   run(`uv pip install --python "${pythonExe}" --system --break-system-packages --link-mode copy "."`);
   return pythonExe;
+}
+
+function bundlePosixStdlib(pythonVersion) {
+  if (process.platform === 'win32') return;
+  const sourcePrefix = getPythonBasePrefix();
+  const sourceStdlib = path.join(sourcePrefix, 'lib', `python${pythonVersion}`);
+  const targetStdlib = path.join(VENV_DIR, 'lib', `python${pythonVersion}`);
+  if (!fs.existsSync(sourceStdlib)) {
+    throw new Error(`Bundled stdlib source not found at ${sourceStdlib}`);
+  }
+  fs.mkdirSync(targetStdlib, { recursive: true });
+  fs.cpSync(sourceStdlib, targetStdlib, { recursive: true, force: true });
+  console.log(`[bundle] copied stdlib: ${sourceStdlib} -> ${targetStdlib}`);
 }
 
 function main() {
@@ -224,6 +243,7 @@ function main() {
     if (process.platform !== 'win32') {
       // Install deps BEFORE symlink resolution (venv python is a working symlink here)
       run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+      bundlePosixStdlib(pythonVersion);
     }
 
     // Copy libpython dylib so the resolved binary works on other machines
