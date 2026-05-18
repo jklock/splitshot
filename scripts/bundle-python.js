@@ -186,15 +186,14 @@ exit(0 if ok else 1)
   prependPathEntries(env, [bundledFfmpegDir()]);
   if (process.platform === 'win32') {
     env.PYTHONHOME = WINDOWS_PYTHON_DIR;
+    env.PYTHONPATH += ';' + bundledSitePackagesDir(getPythonVersion());
     prependPathEntries(env, [WINDOWS_PYTHON_DIR, path.join(WINDOWS_PYTHON_DIR, 'Scripts')]);
   } else {
-    env.PYTHONHOME = bundledPosixPythonHome();
+    const venvHome = bundledPosixPythonHome();
+    env.PYTHONHOME = venvHome;
+    env.PYTHONPATH += ':' + bundledSitePackagesDir(getPythonVersion());
   }
-  try {
-    run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
-  } catch {
-    console.warn('[bundle] WARNING: Verification had non-critical failures');
-  }
+  run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
   fs.rmSync(verifyScript);
 }
 

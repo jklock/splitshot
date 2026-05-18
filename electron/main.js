@@ -97,6 +97,19 @@ function getBundledFfmpegDir(bundlePath) {
   return path.join(bundlePath, 'src', 'splitshot', 'resources', 'ffmpeg', platform);
 }
 
+function getBundledSitePackagesDir(bundlePath) {
+  if (process.platform === 'win32') {
+    return path.join(bundlePath, 'python', 'Lib', 'site-packages');
+  }
+  const libRoot = path.join(bundlePath, '.venv', 'lib');
+  const entry = fs.readdirSync(libRoot, { withFileTypes: true })
+    .find((item) => item.isDirectory() && item.name.startsWith('python'));
+  if (!entry) {
+    throw new Error(`Bundled site-packages root not found under ${libRoot}`);
+  }
+  return path.join(libRoot, entry.name, 'site-packages');
+}
+
 function startPythonBackend(initialProjectPath = null) {
   const args = getPythonArgs(initialProjectPath);
   const python = getPythonBinary();
@@ -111,9 +124,12 @@ function startPythonBackend(initialProjectPath = null) {
     if (process.platform === 'win32') {
       const pythonHome = path.join(bundlePath, 'python');
       env.PYTHONHOME = pythonHome;
+      env.PYTHONPATH += ';' + getBundledSitePackagesDir(bundlePath);
       prependPathEntries(env, [pythonHome, path.join(pythonHome, 'Scripts')]);
     } else {
-      env.PYTHONHOME = path.join(bundlePath, '.venv');
+      const venvHome = path.join(bundlePath, '.venv');
+      env.PYTHONHOME = venvHome;
+      env.PYTHONPATH += ':' + getBundledSitePackagesDir(bundlePath);
     }
     pythonProcess = spawn(python, args, {
       cwd: bundlePath,
