@@ -171,9 +171,9 @@ def main():
             shots = len(prj.get("analysis", {}).get("shots", []))
             popups = len(prj.get("popups", []))
             boxes = len(prj.get("overlay", {}).get("text_boxes", []))
-            merged = len(prj.get("merge", {}).get("sources", []))
+            merged = len(prj.get("merge_sources", []))
             events = len(prj.get("analysis", {}).get("events", []))
-            ps = bool(prj.get("practiscore"))
+            ps = bool(prj.get("scoring", {}).get("imported_stage")) or bool(state.get("practiscore_options", {}).get("has_source"))
 
             _check(f"shots detected: {shots}", shots > 0)
             _check(f"text boxes created: {boxes}", boxes > 0)

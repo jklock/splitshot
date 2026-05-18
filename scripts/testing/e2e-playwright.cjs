@@ -52,6 +52,20 @@ async function dumpHtml(page, name) {
   }
 }
 
+async function openTimingWorkbench(page) {
+  await page.locator('button[data-tool="timing"]').click({ force: true, timeout: 10000 });
+  await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
+  const expandButton = page.locator('#expand-timing');
+  if (await expandButton.count()) {
+    const workbench = page.locator('#timing-workbench');
+    if (!(await workbench.isVisible().catch(() => false))) {
+      await expandButton.click({ force: true, timeout: 5000 });
+      await workbench.waitFor({ state: 'visible', timeout: 10000 });
+    }
+  }
+  await page.waitForTimeout(300);
+}
+
 async function main() {
   fs.mkdirSync(logDir, { recursive: true });
   log(`=== E2E test start === port=${port}`);
@@ -186,15 +200,21 @@ async function main() {
   }
 
   try {
-    await page.locator('button[data-tool="timing"]').click({ force: true, timeout: 10000 });
-    await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
+    await openTimingWorkbench(page);
   } catch (e) {
     warn(`timing button click failed (continuing): ${e.message}`);
   }
   if ((await page.locator('.waveform-shot-card').count()) > 0) {
     try {
-      await page.locator('.waveform-shot-card').first().click({ force: true, timeout: 5000 });
-      await page.waitForTimeout(300);
+      const targetShotId = await page.evaluate(() => state?.timing_segments?.[0]?.shot_id || null);
+      await page.locator('.waveform-shot-card').first().evaluate((card) => {
+        card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+      });
+      if (targetShotId) {
+        await page.waitForFunction((shotId) => selectedShotId === shotId, targetShotId, { timeout: 10000 });
+      } else {
+        await page.waitForTimeout(300);
+      }
       await screenshot(page, '04-waveform-selected');
       log('waveform shot selected');
     } catch (e) {
@@ -239,15 +259,18 @@ async function main() {
       await exportBtn.click({ force: true });
       log('export triggered, waiting for completion...');
 
-      // Wait for export to complete (file appears or UI confirms)
+      // Wait for export to complete (state/status update or file appears)
       try {
         await page.waitForFunction(() => {
-          const el = document.querySelector('.export-progress, .export-status, [data-export-status]');
-          return el && (el.textContent.includes('complete') || el.textContent.includes('done') || el.textContent.includes('saved'));
+          const status = String(state?.status || '');
+          const outputPath = String(state?.project?.export?.output_path || '');
+          return status.includes('Exported video to ') || outputPath.length > 0;
         }, { timeout: 120000 });
-        log('export UI reports completion');
+        log('export state reports completion');
       } catch (e) {
-        warn(`export completion UI not detected: ${e.message}`);
+        fail(`export completion state not detected: ${e.message}`);
+        await screenshot(page, 'fail-export-completion');
+        await dumpHtml(page, 'fail-export-completion');
       }
 
       // Wait for file to appear
@@ -306,7 +329,7 @@ async function main() {
   }));
   log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
 
-  // === PractiScore import via API multipart upload ===
+  // === PractiScore import via browser file input ===
   const practiscorePaths = [
     path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'IDPA.csv'),
     path.join(__dirname, '..', '..', 'example_data', 'practiscore.csv'),
@@ -317,38 +340,45 @@ async function main() {
   }
   if (practiscoreFile) {
     log('importing PractiScore data...');
-    const r = await apiUpload('/api/files/practiscore', practiscoreFile, 'IDPA.csv', 'text/csv');
-    if (r.status === 200) {
-      const psOpts = r.body?.practiscore_options;
-      const psProj = r.body?.project?.practiscore;
-      log(`PractiScore: options=${Boolean(psOpts)} project_key=${Boolean(psProj)}`);
-      if (psOpts?.match_types?.length) log(`  match_types: ${psOpts.match_types.length}`);
-      if (psProj?.participants?.length) log(`  participants: ${psProj.participants.length}`);
-      if (!psOpts && !psProj) {
-        warn('PractiScore upload returned 200 but produced no parsed options or project data');
-      }
-    } else {
-      warn(`PractiScore upload failed: ${r.status}`);
+    const practiscoreInput = page.locator('#practiscore-file-input');
+    await practiscoreInput.setInputFiles(practiscoreFile);
+    await page.waitForFunction(() => Boolean(state?.practiscore_options?.has_source), { timeout: 30000 });
+    const psState = await page.evaluate(() => ({
+      hasSource: Boolean(state?.practiscore_options?.has_source),
+      sourceName: String(state?.practiscore_options?.source_name || ''),
+      stageNumbers: Array.isArray(state?.practiscore_options?.stage_numbers) ? state.practiscore_options.stage_numbers.length : 0,
+      importedSource: String(state?.project?.scoring?.imported_stage?.source_name || ''),
+      competitorName: String(state?.project?.scoring?.imported_stage?.competitor_name || ''),
+    }));
+    log(`PractiScore: has_source=${psState.hasSource} source=${psState.sourceName || psState.importedSource} stages=${psState.stageNumbers} competitor=${psState.competitorName || 'n/a'}`);
+    if (!psState.hasSource || (!psState.sourceName && !psState.importedSource)) {
+      fail('PractiScore import did not retain imported source in browser state');
+      await screenshot(page, 'fail-practiscore-upload');
+      await dumpHtml(page, 'fail-practiscore-upload');
     }
     await screenshot(page, '08-practiscore');
   } else {
     warn('no PractiScore CSV found');
   }
 
-  // === Merge: import second video via API ===
+  // === Merge: import second video via browser file input ===
   if (videoFile) {
     log('testing merge with second video...');
-    const r = await apiUpload('/api/files/merge', videoFile, 'merge-video.mp4', 'video/mp4');
-    if (r.status === 200) {
-      const sources = r.body?.project?.merge?.sources || [];
-      log(`merge sources: ${sources.length} (from API response)`);
-      if (sources.length > 0) {
-        log(`  first source: ${sources[0].name || sources[0].path}`);
-      } else {
-        warn('merge upload returned 200 but produced 0 sources');
-      }
+    const mergeCountBefore = await page.evaluate(() => (state?.project?.merge_sources || []).length);
+    await page.locator('#merge-media-input').setInputFiles(videoFile);
+    await page.waitForFunction((before) => (state?.project?.merge_sources || []).length > before, mergeCountBefore, { timeout: 30000 });
+    const sources = await page.evaluate(() => (state?.project?.merge_sources || []).map((source) => ({
+        id: source.id,
+        path: source?.asset?.path || '',
+        mediaKind: source?.media_kind || source?.asset?.media_kind || '',
+      })));
+    log(`merge sources: ${sources.length} (from browser state)`);
+    if (sources.length > 0) {
+      log(`  first source: ${sources[0].path || sources[0].id} (${sources[0].mediaKind || 'unknown'})`);
     } else {
-      warn(`merge upload failed: ${r.status}`);
+      fail('merge import did not add any sources');
+      await screenshot(page, 'fail-merge-state');
+      await dumpHtml(page, 'fail-merge-state');
     }
     await screenshot(page, '09-merge');
   } else {
@@ -357,9 +387,7 @@ async function main() {
 
   // === Timing: add a custom event ===
   log('testing timing events...');
-  await page.locator('button[data-tool="timing"]').click({ force: true });
-  await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
-  await page.waitForTimeout(300);
+  await openTimingWorkbench(page);
   const eventsBefore = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
   const kindSelect = page.locator('#timing-event-kind');
   if (await kindSelect.isVisible()) {
@@ -374,17 +402,17 @@ async function main() {
   const addEventBtn = page.locator('#add-timing-event');
   if (await addEventBtn.isVisible()) {
     await addEventBtn.click();
-    await page.waitForTimeout(500);
+    await page.waitForFunction((before) => (state?.project?.analysis?.events?.length || 0) > before, eventsBefore, { timeout: 10000 });
     const eventsAfter = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
     log(`timing events: ${eventsBefore} -> ${eventsAfter}`);
     if (eventsAfter <= eventsBefore) {
-      warn(`timing event add did not change event count (${eventsBefore} -> ${eventsAfter})`);
+      fail(`timing event add did not change event count (${eventsBefore} -> ${eventsAfter})`);
       await screenshot(page, 'fail-timing-event');
       await dumpHtml(page, 'fail-timing-event');
     }
     await screenshot(page, '10-timing-event');
   } else {
-    warn('add-timing-event button not found');
+    fail('add-timing-event button not found');
     await screenshot(page, 'fail-timing-event-button');
     await dumpHtml(page, 'fail-timing-event-button');
   }

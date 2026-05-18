@@ -62,6 +62,51 @@ Version 1.0.2 fixes that packaging error by making the POSIX bundle self-contain
 
 SplitShot 1.0.2 is the macOS release that fixes the broken packaged backend bootstrap and restores a working downloadable DMG.
 
+## v1.0.4
+
+SplitShot 1.0.4 is the packaged-proof cleanup release that turns the repaired desktop pipelines into a clean cross-platform release signal instead of a green run with hidden warning debt.
+
+### What Changed
+
+- Packaged Playwright E2E now uses platform temp directories consistently for project, log, and export paths.
+- Packaged Linux validation now extracts the AppImage during install setup and injects the bundled `ffprobe` into the validator environment before E2E runs.
+- Packaged E2E now drives merge and PractiScore imports through the real browser file inputs instead of bypassing the app with direct backend-only uploads.
+- The packaged timing check now opens the timing workbench before interacting with waveform cards and timing-event controls, and it verifies event creation against the live browser state.
+- Export completion detection now waits on the app’s actual status/export state instead of a non-existent UI sentinel.
+- The broader packaged comprehensive verifier now reads the real browser-state contract for merge sources and PractiScore import state.
+
+### Why This Release Exists
+
+Version 1.0.3 fixed the bundle/runtime side of cross-platform packaging, but the proof layer still had stale assumptions:
+
+- Windows and Linux packaged validation had already exposed temp-path and bundled-`ffprobe` harness bugs.
+- Even after the pipelines passed, the uploaded artifacts still showed warning noise for merge, PractiScore, timing events, waveform selection, and export completion because the E2E script was checking the wrong browser-state fields or the wrong visible pane.
+- The broader packaged verifier also used the wrong state keys, so it could report false failures against a working packaged app.
+
+Version 1.0.4 closes those proof gaps so the packaged app is exercised through the real UI surfaces and the validation scripts read the same state contract the app actually exposes.
+
+### Release Proof
+
+- Local packaged macOS smoke launch passed against `SplitShot.app`
+- Local packaged macOS release-gate E2E passed with:
+  - primary upload
+  - `3` detected shots
+  - waveform selection
+  - real export file creation
+  - packaged `ffprobe` validation
+  - PractiScore import
+  - merge source creation
+  - timing-event creation
+- Local packaged macOS comprehensive packaged proof passed `8/8` checks after the harness/state-contract fixes
+- Cross-platform GitHub Actions package-validation matrix passed for:
+  - macOS DMG
+  - Windows NSIS installer
+  - Linux AppImage
+
+### Bottom Line
+
+SplitShot 1.0.4 is the release where the desktop artifacts and the packaged proof finally line up cleanly across macOS, Windows, and Linux.
+
 ## v1.0.3
 
 SplitShot 1.0.3 is the desktop packaging and release-hardening patch that turns the 1.0.2 line into a real clean-runner release for macOS, Windows, and Linux.
