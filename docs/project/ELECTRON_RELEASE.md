@@ -11,7 +11,7 @@ Required for macOS signing:
 
 Preferred notarization credentials:
 
-- `APPLE_API_KEY`
+- `APPLE_API_KEY` (the `.p8` key contents stored as a GitHub secret)
 - `APPLE_API_KEY_ID`
 - `APPLE_API_ISSUER`
 
@@ -22,6 +22,7 @@ Fallback notarization credentials:
 - `APPLE_TEAM_ID`
 
 The workflow prefers the API key set. If any API key variable is set, all three must be set. The Apple ID fallback is only used when the API key set is absent.
+In GitHub Actions, `APPLE_API_KEY` is written to a temporary `AuthKey_<id>.p8` file and that file path is what `electron-builder` receives for notarization.
 
 ## Export the Developer ID `.p12`
 
@@ -124,7 +125,7 @@ The macOS packaging job:
 6. Uses `CSC_KEY_PASSWORD` for signing.
 7. Lets `electron-builder` notarize with API key credentials when available, or Apple ID credentials as fallback.
 
-If no notarization credentials are configured, the workflow signs the app and skips notarization.
+The release and macOS packaging workflows now fail when notarization secrets are missing or incomplete. They no longer silently ship a signed-but-not-notarized macOS artifact.
 
 ## Smoke Builds
 
@@ -134,6 +135,7 @@ Use the platform-specific build workflows and test workflows for packaging smoke
 - Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform without cutting a release.
 - Run the local Electron preflight first.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
+- Confirm the `Prepare macOS notarization credentials` step passes and that `Verify notarization` validates the built app.
 - Use these runs to validate packaging, secret rotation, cert export, signing, notarization, and packaged-app launch.
 
 Do not create fake release tags for smoke testing.
@@ -164,7 +166,7 @@ git push origin v1.0.1
 
 - `MAC verification failed during PKCS12 import`: the `.p12` payload and `MAC_CERT_PASSWORD` do not match, or the export is malformed or incompatible with macOS `security import`. Re-export it from Keychain Access with the private key included.
 - Missing identity after import: the exported `.p12` does not include the private key, or it is not the expected Developer ID Application certificate.
-- Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets.
+- Notarization credential failure: set the full API key triple, or set the full Apple ID fallback triple. Do not mix partial sets. For the API key path, store the `.p8` file contents in the `APPLE_API_KEY` secret so the workflow can materialize it to a temporary file for `electron-builder`.
 
 ## Read This Next
 

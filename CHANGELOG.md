@@ -62,6 +62,33 @@ Version 1.0.2 fixes that packaging error by making the POSIX bundle self-contain
 
 SplitShot 1.0.2 is the macOS release that fixes the broken packaged backend bootstrap and restores a working downloadable DMG.
 
+## v1.0.3
+
+SplitShot 1.0.3 is the notarization repair release for macOS distribution.
+
+### What Changed
+
+- The macOS release workflows now materialize `APPLE_API_KEY` into a temporary `AuthKey_<id>.p8` file before invoking `electron-builder`.
+- The macOS release, build, and smoke workflows now export complete notarization credentials into the build environment instead of silently omitting them.
+- The macOS workflows now fail fast when notarization secrets are missing or incomplete.
+- The macOS workflows now verify notarization after packaging with `xcrun stapler validate` and `spctl --assess`.
+
+### Why This Release Exists
+
+Version 1.0.2 fixed the packaged runtime crash, but the published macOS artifact was still only signed, not notarized. That produced Gatekeeper malware-style warnings even though the app itself launched correctly once bypassed.
+
+Version 1.0.3 fixes the release pipeline so the shipped macOS DMG is expected to carry a valid notarization ticket instead of relying on a signed-only build.
+
+### Release Proof
+
+- Workflow logic updated so `electron-builder` receives a real `.p8` key path for App Store Connect API-key notarization
+- macOS workflows now verify notarization explicitly after the build step
+- GitHub release publication is blocked if notarization credentials are absent or partial
+
+### Bottom Line
+
+SplitShot 1.0.3 is the release intended to remove the macOS malware warning by shipping a notarized build instead of a merely signed one.
+
 ## v1.0.0
 
 SplitShot 1.0.0 is the first public release of a local-first competition shooting video analysis workstation built to get a shooter, coach, or editor from raw stage footage to a scored, reviewed, and export-ready presentation without handing the core workflow to a cloud service.
