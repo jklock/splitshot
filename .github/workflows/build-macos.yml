@@ -114,11 +114,6 @@ jobs:
           [ -n "$app" ] || { echo "SplitShot.app not found under electron/build"; exit 1; }
           codesign --verify --deep --strict --verbose=2 "$app"
           spctl --assess --type execute -vv "$app"
-      - name: Staple DMG
-        run: |
-          artifact=$(ls electron/build/*.dmg | head -n 1)
-          [ -n "$artifact" ] || { echo "SplitShot.dmg not found under electron/build"; exit 1; }
-          xcrun stapler staple "$artifact"
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
