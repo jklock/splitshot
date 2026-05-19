@@ -91,7 +91,9 @@ def _metadata_format_names(metadata: dict[str, Any]) -> set[str]:
     return {item.strip().lower() for item in format_name.split(",") if item.strip()}
 
 
-def _browser_audio_proxy_reason(path: Path, metadata: dict[str, Any]) -> tuple[str | None, str | None]:
+def _browser_audio_proxy_reason(
+    path: Path, metadata: dict[str, Any]
+) -> tuple[str | None, str | None]:
     streams = metadata.get("streams", [])
     if not isinstance(streams, list):
         return None, None
@@ -102,7 +104,9 @@ def _browser_audio_proxy_reason(path: Path, metadata: dict[str, Any]) -> tuple[s
     if not audio_codec or not audio_codec.startswith("pcm_"):
         return None, audio_codec
     format_names = _metadata_format_names(metadata)
-    if path.suffix.lower() in _PCM_BROWSER_PROXY_SUFFIXES or format_names.intersection(_PCM_BROWSER_PROXY_FORMATS):
+    if path.suffix.lower() in _PCM_BROWSER_PROXY_SUFFIXES or format_names.intersection(
+        _PCM_BROWSER_PROXY_FORMATS
+    ):
         return "pcm_audio_in_mov_mp4", audio_codec
     return None, audio_codec
 
@@ -112,21 +116,29 @@ def _browser_preview_output_path(session_path: Path, source_path: Path) -> Path:
     return session_path / f"{uuid4().hex}_{safe_stem}_browser.mp4"
 
 
-def _browser_preview_command(source_path: Path, preview_path: Path, metadata: dict[str, Any]) -> list[str]:
+def _browser_preview_command(
+    source_path: Path, preview_path: Path, metadata: dict[str, Any]
+) -> list[str]:
     streams = metadata.get("streams", [])
     video_stream = next(
         (item for item in streams if isinstance(item, dict) and item.get("codec_type") == "video"),
         None,
     )
-    video_codec = str(video_stream.get("codec_name", "")).lower() if isinstance(video_stream, dict) else ""
-    video_args = ["-c:v", "copy"] if video_codec in _BROWSER_COPY_SAFE_VIDEO_CODECS else [
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        "-preset",
-        "ultrafast",
-    ]
+    video_codec = (
+        str(video_stream.get("codec_name", "")).lower() if isinstance(video_stream, dict) else ""
+    )
+    video_args = (
+        ["-c:v", "copy"]
+        if video_codec in _BROWSER_COPY_SAFE_VIDEO_CODECS
+        else [
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-preset",
+            "ultrafast",
+        ]
+    )
     return [
         "-i",
         str(source_path),
@@ -200,7 +212,11 @@ def _browser_preview_matches_source_timeline(
 
     start_pts_source = _int_metadata_value(source_timeline.get("start_pts"))
     start_pts_preview = _int_metadata_value(preview_timeline.get("start_pts"))
-    if start_pts_source is not None and start_pts_preview is not None and start_pts_source != start_pts_preview:
+    if (
+        start_pts_source is not None
+        and start_pts_preview is not None
+        and start_pts_source != start_pts_preview
+    ):
         return False
 
     source_frames = _int_metadata_value(source_timeline.get("nb_frames"))
@@ -251,9 +267,9 @@ def _video_packet_timeline_rows(packet_csv: str) -> tuple[tuple[str, str, str], 
 def _browser_preview_matches_source_packets(source_path: Path, preview_path: Path) -> bool:
     # FFprobe packet flags can change after an audio-only compatibility remux even when
     # the copied video packet timeline remains exact. Compare timing only.
-    return _video_packet_timeline_rows(_ffprobe_video_packet_csv(source_path)) == _video_packet_timeline_rows(
-        _ffprobe_video_packet_csv(preview_path)
-    )
+    return _video_packet_timeline_rows(
+        _ffprobe_video_packet_csv(source_path)
+    ) == _video_packet_timeline_rows(_ffprobe_video_packet_csv(preview_path))
 
 
 def _validate_browser_preview_timeline(
@@ -325,7 +341,11 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                 title=(
                     "Choose stage video"
                     if kind == "primary"
-                    else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+                    else (
+                        "Choose secondary angle video"
+                        if kind == "secondary"
+                        else "Choose marker image"
+                    )
                 ),
                 initialdir=initial_dir,
                 filetypes=[
@@ -371,7 +391,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
                 "POSIX path of chosenFile",
             ]
         )
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, check=False
+        )
         if result.returncode == 0:
             return result.stdout.strip()
         if "User canceled" in result.stderr:
@@ -385,7 +407,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
                 "POSIX path of chosenFolder",
             ]
         )
-        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, check=False
+        )
         if result.returncode == 0:
             return result.stdout.strip()
         if "User canceled" in result.stderr:
@@ -404,7 +428,9 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
             "POSIX path of chosenFile",
         ]
     )
-    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True, check=False
+    )
     if result.returncode == 0:
         return result.stdout.strip()
     if "User canceled" in result.stderr:
@@ -463,7 +489,9 @@ def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> 
 def _sync_export_payload(controller: ProjectController, payload: dict[str, Any]) -> None:
     selected_preset = str(payload.get("preset") or controller.project.export.preset.value)
     controller.apply_export_preset(selected_preset)
-    if selected_preset == "custom" or not _payload_matches_export_state(controller.project, payload):
+    if selected_preset == "custom" or not _payload_matches_export_state(
+        controller.project, payload
+    ):
         controller.set_export_settings(payload)
 
 
@@ -516,7 +544,9 @@ class BrowserControlServer:
         self._media_url_token = uuid4().hex
         self.practiscore_session = PractiScoreSessionManager()
         prepare_export_runtime()
-        self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
+        self.activity.log(
+            "server.initialized", host=host, port=port, log_path=str(self.activity.path)
+        )
 
     @property
     def url(self) -> str:
@@ -635,7 +665,9 @@ class BrowserControlServer:
 
         preview_path = _browser_preview_output_path(self._session_path, path)
         run_ffmpeg(_browser_preview_command(path, preview_path, metadata))
-        timeline_valid, source_timeline, preview_timeline = _validate_browser_preview_timeline(path, metadata, preview_path)
+        timeline_valid, source_timeline, preview_timeline = _validate_browser_preview_timeline(
+            path, metadata, preview_path
+        )
         if not timeline_valid:
             preview_path.unlink(missing_ok=True)
             with self._browser_media_lock:
@@ -678,7 +710,11 @@ class BrowserControlServer:
 
     def _clear_browser_media_cache(self) -> None:
         with self._browser_media_lock:
-            cached_paths = [entry.preview_path for entry in self._browser_media_cache.values() if entry.preview_path]
+            cached_paths = [
+                entry.preview_path
+                for entry in self._browser_media_cache.values()
+                if entry.preview_path
+            ]
             self._browser_media_cache.clear()
         for preview_path in cached_paths:
             Path(preview_path).unlink(missing_ok=True)
@@ -781,6 +817,16 @@ class BrowserControlServer:
                     "/api/project/open": self._open_project,
                     "/api/project/save": self._save_project,
                     "/api/project/delete": self._delete_project,
+                    "/api/workspace/new": self._new_workspace,
+                    "/api/workspace/open": self._open_workspace,
+                    "/api/workspace/save": self._save_workspace,
+                    "/api/workspace/stage/add": self._workspace_add_stage,
+                    "/api/workspace/stage/remove": self._workspace_remove_stage,
+                    "/api/workspace/stage/open": self._workspace_open_stage,
+                    "/api/workspace/stage/return": self._workspace_return_to_workspace,
+                    "/api/workspace/defaults": self._workspace_set_defaults,
+                    "/api/workspace/stage/override": self._workspace_set_stage_override,
+                    "/api/workspace/stage/override/reset": self._workspace_reset_stage_override,
                     "/api/import/primary": self._import_primary,
                     "/api/import/secondary": self._import_merge,
                     "/api/import/merge": self._import_merge,
@@ -817,16 +863,58 @@ class BrowserControlServer:
                     "/api/export/settings": self._set_export_settings,
                     "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
+                    "/api/library/list": ("_handle_library_list", ["_no_body"]),
+                    "/api/library/filter": ("_handle_library_filter", []),
+                    "/api/library/stage/open": ("_handle_library_stage_open", []),
+                    "/api/library/match/open": ("_handle_library_match_open", []),
+                    "/api/proxy/status": ("_handle_proxy_status", []),
+                    "/api/library/proxy/refresh": ("_handle_proxy_refresh", []),
+                    "/api/proxy/refresh": ("_handle_proxy_refresh", []),
+                    "/api/library/proxy/open": ("_handle_library_proxy_open", []),
+                    "/api/output-profiles/list": ("_handle_output_profile_list", []),
+                    "/api/output-profiles/create": ("_handle_output_profile_create", []),
+                    "/api/output-profiles/update": ("_handle_output_profile_update", []),
+                    "/api/output-profiles/delete": ("_handle_output_profile_delete", []),
+                    "/api/output-profiles/render": ("_handle_output_profile_render", []),
+                    "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", []),
+                    "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", []),
+                    "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", []),
+                    "/api/angle/align": ("_handle_angle_align", []),
+                    "/api/angle/director/generate": ("_handle_angle_director_generate", []),
+                    "/api/angle/director/override": ("_handle_angle_director_override", []),
+                    "/api/audio/mix": ("_handle_audio_mix", []),
+                    "/api/result-cards/resolve": ("_handle_result_cards_resolve", []),
                 }
-                route = routes.get(self.path)
-                if route is None:
+                entry = routes.get(self.path)
+                if entry is None:
                     self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                if isinstance(entry, tuple):
+                    method_name, flags = entry
+                    handler = getattr(self, method_name)
+                    payload = {}
+                    if "_no_body" not in flags:
+                        payload = self._read_json()
+                    activity.log("api.start", path=self.path, payload=payload)
+                    try:
+                        response = handler(
+                            **{
+                                k: v
+                                for k, v in [("body", payload)]
+                                if "body" in handler.__code__.co_varnames
+                            }
+                        )
+                        activity.log("api.success", path=self.path)
+                        self._send_json(response)
+                    except Exception as exc:  # noqa: BLE001
+                        activity.log("api.error", path=self.path, error=str(exc))
+                        self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
                     return
                 try:
                     payload = self._read_json()
                     activity.log("api.start", path=self.path, payload=payload)
                     with controller_lock:
-                        route(payload)
+                        entry(payload)
                         controller.autosave_project_if_needed()
                     activity.log("api.success", path=self.path, status=controller.status_message)
                     self._send_json(self._browser_state())
@@ -853,7 +941,9 @@ class BrowserControlServer:
                 self.send_header("Pragma", "no-cache")
                 self.send_header("Expires", "0")
 
-            def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+            def _send_json(
+                self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK
+            ) -> None:
                 data = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -898,7 +988,9 @@ class BrowserControlServer:
                 try:
                     payload = self._read_json()
                     kind = str(payload.get("kind", ""))
-                    current = None if payload.get("current") in {"", None} else str(payload["current"])
+                    current = (
+                        None if payload.get("current") in {"", None} else str(payload["current"])
+                    )
                     activity.log("api.dialog.path.start", kind=kind, current=current)
                     selected_path = path_chooser(kind, current) or ""
                     activity.log("api.dialog.path.success", kind=kind, selected=selected_path)
@@ -914,7 +1006,9 @@ class BrowserControlServer:
                     if not target:
                         raise ValueError("Project path is required")
                     normalized_target = str(controller.normalize_project_folder_path(target))
-                    activity.log("api.project.probe.start", path=target, normalized_path=normalized_target)
+                    activity.log(
+                        "api.project.probe.start", path=target, normalized_path=normalized_target
+                    )
                     has_project_file = controller.project_folder_has_project_file(normalized_target)
                     missing_dirs = missing_required_project_dirs(normalized_target)
                     activity.log(
@@ -924,12 +1018,14 @@ class BrowserControlServer:
                         has_project_file=has_project_file,
                         missing_dirs=missing_dirs,
                     )
-                    self._send_json({
-                        "path": target,
-                        "normalized_path": str(normalize_project_path(normalized_target)),
-                        "has_project_file": has_project_file,
-                        "missing_required_dirs": missing_dirs,
-                    })
+                    self._send_json(
+                        {
+                            "path": target,
+                            "normalized_path": str(normalize_project_path(normalized_target)),
+                            "has_project_file": has_project_file,
+                            "missing_required_dirs": missing_dirs,
+                        }
+                    )
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.project.probe.error", error=str(exc))
                     self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -956,6 +1052,7 @@ class BrowserControlServer:
                     settings_layers=controller.settings_layers(),
                     practiscore_options=controller.practiscore_browser_state(),
                     media_cache_token=server._media_url_token,
+                    controller=controller,
                 )
                 primary_path = controller.project.primary_video.path
                 secondary_path = (
@@ -971,7 +1068,9 @@ class BrowserControlServer:
                     secondary_path,
                     display_name_for_path(secondary_path, "None"),
                 )
-                payload["project"]["path"] = "" if controller.project_path is None else str(controller.project_path)
+                payload["project"]["path"] = (
+                    "" if controller.project_path is None else str(controller.project_path)
+                )
                 return payload
 
             def _start_practiscore_session(self) -> None:
@@ -1010,7 +1109,9 @@ class BrowserControlServer:
                     )
                     return
                 if not opened:
-                    activity.log("api.practiscore.dashboard.open.error", error="browser open returned false")
+                    activity.log(
+                        "api.practiscore.dashboard.open.error", error="browser open returned false"
+                    )
                     self._send_structured_error(
                         code="practiscore_dashboard_open_failed",
                         message="Unable to open the PractiScore dashboard in your browser.",
@@ -1022,10 +1123,12 @@ class BrowserControlServer:
                     )
                     return
                 activity.log("api.practiscore.dashboard.open", url=dashboard_url)
-                self._send_json({
-                    "status": "Opened PractiScore dashboard in your browser.",
-                    "url": dashboard_url,
-                })
+                self._send_json(
+                    {
+                        "status": "Opened PractiScore dashboard in your browser.",
+                        "url": dashboard_url,
+                    }
+                )
 
             def _clear_practiscore_session(self) -> None:
                 with controller_lock:
@@ -1083,17 +1186,25 @@ class BrowserControlServer:
             def _set_project_details(self, payload: dict[str, Any]) -> None:
                 controller.set_project_details(
                     name=None if payload.get("name") in {None, ""} else str(payload["name"]),
-                    description=None if payload.get("description") is None else str(payload["description"]),
+                    description=None
+                    if payload.get("description") is None
+                    else str(payload["description"]),
                 )
 
             def _set_practiscore_context(self, payload: dict[str, Any]) -> None:
                 controller.set_practiscore_context(
-                    match_type=None if payload.get("match_type") is None else str(payload.get("match_type", "")),
+                    match_type=None
+                    if payload.get("match_type") is None
+                    else str(payload.get("match_type", "")),
                     stage_number=(
-                        None if payload.get("stage_number") in {None, ""} else int(payload["stage_number"])
+                        None
+                        if payload.get("stage_number") in {None, ""}
+                        else int(payload["stage_number"])
                     ),
                     competitor_name=(
-                        None if payload.get("competitor_name") is None else str(payload.get("competitor_name", ""))
+                        None
+                        if payload.get("competitor_name") is None
+                        else str(payload.get("competitor_name", ""))
                     ),
                     competitor_place=(
                         None
@@ -1117,7 +1228,9 @@ class BrowserControlServer:
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 data = target.read_bytes()
-                guessed = content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+                guessed = (
+                    content_type or mimetypes.guess_type(safe_name)[0] or "application/octet-stream"
+                )
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", guessed)
                 self.send_header("Content-Length", str(len(data)))
@@ -1167,7 +1280,9 @@ class BrowserControlServer:
                             end = min(end, size - 1)
                             status = HTTPStatus.PARTIAL_CONTENT
                     if start > end:
-                        activity.log("media.range_invalid", path=str(requested_path), start=start, end=end)
+                        activity.log(
+                            "media.range_invalid", path=str(requested_path), start=start, end=end
+                        )
                         self.send_error(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
                         return
                     content_length = end - start + 1
@@ -1175,7 +1290,9 @@ class BrowserControlServer:
                     if content_type and guessed_content_type in {None, "audio/x-wav"}:
                         resolved_content_type = content_type
                     else:
-                        resolved_content_type = guessed_content_type or content_type or "application/octet-stream"
+                        resolved_content_type = (
+                            guessed_content_type or content_type or "application/octet-stream"
+                        )
                     self.send_response(status)
                     self.send_header("Content-Type", resolved_content_type)
                     self.send_header("Accept-Ranges", "bytes")
@@ -1216,7 +1333,12 @@ class BrowserControlServer:
                             )
                             return
                         remaining -= len(chunk)
-                activity.log(f"{event_prefix}.complete", path=str(served_path), bytes=content_length, proxied=proxied)
+                activity.log(
+                    f"{event_prefix}.complete",
+                    path=str(served_path),
+                    bytes=content_length,
+                    proxied=proxied,
+                )
 
             def _send_media(self, path: Path) -> None:
                 if not path.exists() or not path.is_file():
@@ -1227,16 +1349,28 @@ class BrowserControlServer:
                 proxied = False
                 proxy_reason = None
                 try:
-                    served_path, proxied, proxy_reason, _audio_codec = server._prepare_browser_media(path)
+                    served_path, proxied, proxy_reason, _audio_codec = (
+                        server._prepare_browser_media(path)
+                    )
                 except Exception as exc:  # noqa: BLE001
                     activity.log("media.compatibility.error", source_path=str(path), error=str(exc))
                     served_path = path
                     proxied = False
                     proxy_reason = None
-                self._send_file_response(path, served_path, proxied=proxied, proxy_reason=proxy_reason, event_prefix="media", content_type="video/mp4")
+                self._send_file_response(
+                    path,
+                    served_path,
+                    proxied=proxied,
+                    proxy_reason=proxy_reason,
+                    event_prefix="media",
+                    content_type="video/mp4",
+                )
 
             def _send_merge_media(self, source_id: str) -> None:
-                source = next((item for item in controller.project.merge_sources if item.id == source_id), None)
+                source = next(
+                    (item for item in controller.project.merge_sources if item.id == source_id),
+                    None,
+                )
                 if source is None or not source.asset.path:
                     activity.log("media.missing", source_id=source_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
@@ -1244,7 +1378,9 @@ class BrowserControlServer:
                 self._send_media(Path(source.asset.path))
 
             def _send_popup_media(self, popup_id: str) -> None:
-                popup = next((item for item in controller.project.popups if item.id == popup_id), None)
+                popup = next(
+                    (item for item in controller.project.popups if item.id == popup_id), None
+                )
                 if popup is None or not popup.image_path:
                     activity.log("popup_media.missing", popup_id=popup_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
@@ -1270,7 +1406,12 @@ class BrowserControlServer:
                             continue
                         event = str(entry.get("event", "browser.event"))
                         detail = entry.get("detail", {})
-                        activity.log("browser.activity", browser_event=event, detail=detail, browser_ts=entry.get("ts"))
+                        activity.log(
+                            "browser.activity",
+                            browser_event=event,
+                            detail=detail,
+                            browser_ts=entry.get("ts"),
+                        )
                 else:
                     event = str(payload.get("event", "browser.event"))
                     detail = payload.get("detail", {})
@@ -1388,8 +1529,10 @@ class BrowserControlServer:
                             str(path),
                             source_name=display_names.get(str(path), Path(path).name),
                         )
-                        _preview_path, proxied, _reason, audio_codec = server._prepare_browser_media(
-                            Path(controller.project.primary_video.path)
+                        _preview_path, proxied, _reason, audio_codec = (
+                            server._prepare_browser_media(
+                                Path(controller.project.primary_video.path)
+                            )
                         )
                         if proxied:
                             controller.status_message = _append_browser_preview_status(
@@ -1474,6 +1617,46 @@ class BrowserControlServer:
                 server._bump_media_url_token()
                 controller.delete_current_project()
 
+            def _new_workspace(self, payload: dict[str, Any]) -> None:
+                controller.new_workspace()
+
+            def _open_workspace(self, payload: dict[str, Any]) -> None:
+                controller.open_workspace(str(payload["path"]))
+
+            def _save_workspace(self, payload: dict[str, Any]) -> None:
+                path_value = payload.get("path")
+                controller.save_workspace(path_value)
+
+            def _workspace_add_stage(self, payload: dict[str, Any]) -> None:
+                controller.workspace_add_stage(
+                    str(payload["stage_id"]),
+                    str(payload.get("display_name", "")),
+                    str(payload.get("project_path", "")),
+                )
+
+            def _workspace_remove_stage(self, payload: dict[str, Any]) -> None:
+                controller.workspace_remove_stage(str(payload["stage_id"]))
+
+            def _workspace_open_stage(self, payload: dict[str, Any]) -> None:
+                error = controller.workspace_open_stage(str(payload["stage_id"]))
+                if error is not None:
+                    controller._set_status(f"Failed to open stage: {error['reason']}")
+
+            def _workspace_return_to_workspace(self, payload: dict[str, Any]) -> None:
+                controller.workspace_return_to_workspace()
+
+            def _workspace_set_defaults(self, payload: dict[str, Any]) -> None:
+                controller.workspace_set_defaults(payload)
+
+            def _workspace_set_stage_override(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.pop("stage_id"))
+                controller.workspace_set_stage_override(stage_id, payload)
+
+            def _workspace_reset_stage_override(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload["stage_id"])
+                keys = payload.get("keys")
+                controller.workspace_reset_stage_override(stage_id, keys)
+
             def _import_primary(self, payload: dict[str, Any]) -> None:
                 server._bump_media_url_token()
                 controller.ingest_primary_video(str(payload["path"]))
@@ -1534,7 +1717,9 @@ class BrowserControlServer:
 
             def _set_settings_defaults(self, payload: dict[str, Any]) -> None:
                 controller.set_settings_defaults(
-                    payload.get("settings", payload) if isinstance(payload.get("settings", payload), dict) else {},
+                    payload.get("settings", payload)
+                    if isinstance(payload.get("settings", payload), dict)
+                    else {},
                     scope=str(payload.get("scope", "app") or "app"),
                 )
 
@@ -1572,10 +1757,7 @@ class BrowserControlServer:
                     controller.set_penalties(float(payload["penalties"]))
                 if "penalty_counts" in payload:
                     controller.set_penalty_counts(
-                        {
-                            str(key): float(value)
-                            for key, value in payload["penalty_counts"].items()
-                        }
+                        {str(key): float(value) for key, value in payload["penalty_counts"].items()}
                     )
 
             def _set_scoring_profile(self, payload: dict[str, Any]) -> None:
@@ -1594,10 +1776,7 @@ class BrowserControlServer:
                     None if letter_value in {None, ""} else ScoreLetter(str(letter_value)),
                     None
                     if penalty_counts is None
-                    else {
-                        str(key): float(value)
-                        for key, value in dict(penalty_counts).items()
-                    },
+                    else {str(key): float(value) for key, value in dict(penalty_counts).items()},
                 )
 
             def _set_score_position(self, payload: dict[str, Any]) -> None:
@@ -1656,17 +1835,23 @@ class BrowserControlServer:
                 if source_id in {None, ""}:
                     raise ValueError("source_id is required")
                 if payload.get("sync_delta_ms") not in {None, ""}:
-                    controller.adjust_merge_source_sync_offset(str(source_id), int(payload["sync_delta_ms"]))
+                    controller.adjust_merge_source_sync_offset(
+                        str(source_id), int(payload["sync_delta_ms"])
+                    )
                     return
                 controller.set_merge_source_position(
                     str(source_id),
-                    None if payload.get("pip_size_percent") in {None, ""} else int(payload["pip_size_percent"]),
+                    None
+                    if payload.get("pip_size_percent") in {None, ""}
+                    else int(payload["pip_size_percent"]),
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
-                    controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
+                    controller.set_merge_source_sync_offset(
+                        str(source_id), int(payload["sync_offset_ms"])
+                    )
 
             def _analyze_merge_source(self, payload: dict[str, Any]) -> None:
                 source_id = payload.get("source_id") or payload.get("id")
@@ -1680,8 +1865,12 @@ class BrowserControlServer:
             def _add_event(self, payload: dict[str, Any]) -> None:
                 controller.add_timing_event(
                     kind=str(payload.get("kind", "reload")),
-                    after_shot_id=None if payload.get("after_shot_id") in {None, ""} else str(payload["after_shot_id"]),
-                    before_shot_id=None if payload.get("before_shot_id") in {None, ""} else str(payload["before_shot_id"]),
+                    after_shot_id=None
+                    if payload.get("after_shot_id") in {None, ""}
+                    else str(payload["after_shot_id"]),
+                    before_shot_id=None
+                    if payload.get("before_shot_id") in {None, ""}
+                    else str(payload["before_shot_id"]),
                     label=None if payload.get("label") in {None, ""} else str(payload["label"]),
                     note=str(payload.get("note", "")),
                 )
@@ -1730,12 +1919,16 @@ class BrowserControlServer:
                     shots_payload = analysis_payload.get("shots")
                     if isinstance(shots_payload, list):
                         controller.project.analysis.shots = [
-                            _shot_from_dict(item) for item in shots_payload if isinstance(item, dict)
+                            _shot_from_dict(item)
+                            for item in shots_payload
+                            if isinstance(item, dict)
                         ]
                     events_payload = analysis_payload.get("events")
                     if isinstance(events_payload, list):
                         controller.project.analysis.events = [
-                            _timing_event_from_dict(item) for item in events_payload if isinstance(item, dict)
+                            _timing_event_from_dict(item)
+                            for item in events_payload
+                            if isinstance(item, dict)
                         ]
                     beep_ms = analysis_payload.get("beep_time_ms_primary")
                     if beep_ms is not None:
@@ -1746,7 +1939,9 @@ class BrowserControlServer:
                 exported_path = export_project(
                     controller.project,
                     output_path,
-                    progress_callback=lambda value: activity.log("api.export.progress", progress=value),
+                    progress_callback=lambda value: activity.log(
+                        "api.export.progress", progress=value
+                    ),
                     log_callback=lambda line: activity.log("api.export.log", line=line),
                 )
                 if not exported_path.exists() or exported_path.stat().st_size <= 0:
@@ -1759,5 +1954,286 @@ class BrowserControlServer:
                 )
                 controller.project.touch()
                 controller.status_message = f"Exported video to {exported_path}."
+
+            def _handle_library_list(self) -> dict[str, Any]:
+                """Return paginated list of library records."""
+                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
+
+                stage_metrics = read_stage_metrics()
+                match_metrics = read_match_metrics()
+
+                return {
+                    "stages": stage_metrics[-50:],
+                    "matches": match_metrics[-20:],
+                    "total_stages": len(stage_metrics),
+                    "total_matches": len(match_metrics),
+                }
+
+            def _handle_library_filter(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Filter library records by criteria."""
+                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
+
+                query = body or {}
+                stage_metrics = read_stage_metrics()
+                match_metrics = read_match_metrics()
+
+                filtered_stages = stage_metrics
+                if query.get("discipline"):
+                    filtered_stages = [
+                        s for s in filtered_stages if s.get("discipline") == query["discipline"]
+                    ]
+                if query.get("competitor"):
+                    competitor = query["competitor"].lower()
+                    filtered_stages = [
+                        s
+                        for s in filtered_stages
+                        if competitor in str(s.get("competitor_name", "")).lower()
+                    ]
+                if query.get("stage_id"):
+                    filtered_stages = [
+                        s for s in filtered_stages if s.get("stage_id") == query["stage_id"]
+                    ]
+                if query.get("match_id"):
+                    filtered_stages = [
+                        s for s in filtered_stages if s.get("match_id") == query["match_id"]
+                    ]
+                    filtered_matches = [
+                        m for m in match_metrics if m.get("match_id") == query["match_id"]
+                    ]
+                else:
+                    filtered_matches = match_metrics
+
+                sort_by = query.get("sort_by", "event_date")
+                sort_order = query.get("sort_order", "desc")
+                reverse = sort_order == "desc"
+                try:
+                    filtered_stages.sort(key=lambda x: str(x.get(sort_by) or ""), reverse=reverse)
+                except (TypeError, KeyError):
+                    pass
+
+                return {
+                    "stages": filtered_stages[-100:],
+                    "matches": filtered_matches[-50:],
+                    "total_stages": len(filtered_stages),
+                    "total_matches": len(filtered_matches),
+                }
+
+            def _handle_library_stage_open(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Get editor target for reopening a stage from library."""
+                from splitshot.persistence.library import load_stage_record
+
+                record_id = body.get("library_record_id") or body.get("stage_id")
+                if not record_id:
+                    return {"success": False, "error": "No record identifier provided"}
+
+                record = load_stage_record(record_id)
+                if record is None:
+                    return {
+                        "success": False,
+                        "error": f"Stage record {record_id} not found",
+                    }
+
+                return {
+                    "success": True,
+                    "record": {
+                        "library_record_id": record.library_record_id,
+                        "stage_id": record.stage_id,
+                        "display_name": record.display_name,
+                        "discipline": record.discipline,
+                        "competitor_name": record.competitor_name,
+                        "metric_summary": record.metric_summary,
+                        "truth_hash": record.truth_hash,
+                    },
+                    "editor_target": {
+                        "type": "single",
+                        "stage_id": record.stage_id,
+                    },
+                }
+
+            def _handle_library_match_open(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Get editor target for reopening a match from library."""
+                from splitshot.persistence.library import load_match_record
+
+                record_id = body.get("library_record_id") or body.get("match_id")
+                if not record_id:
+                    return {"success": False, "error": "No record identifier provided"}
+
+                record = load_match_record(record_id)
+                if record is None:
+                    return {
+                        "success": False,
+                        "error": f"Match record {record_id} not found",
+                    }
+
+                return {
+                    "success": True,
+                    "record": {
+                        "library_record_id": record.library_record_id,
+                        "match_id": record.match_id,
+                        "display_name": record.display_name,
+                        "stage_ids": record.stage_ids,
+                        "aggregate_metric_summary": record.aggregate_metric_summary,
+                        "truth_hash": record.truth_hash,
+                    },
+                    "editor_target": {
+                        "type": "multi",
+                        "match_id": record.match_id,
+                    },
+                }
+
+            def _handle_proxy_status(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Check retained proxy status and staleness."""
+                scope_type = str(body.get("scope_type") or "stage")
+                scope_id = body.get("scope_id") or None
+                return self.controller.proxy_status(scope_type, scope_id)
+
+            def _handle_proxy_refresh(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Request proxy regeneration."""
+                scope_type = str(body.get("scope_type") or "stage")
+                scope_id = body.get("scope_id") or None
+                return self.controller.proxy_refresh(scope_type, scope_id)
+
+            def _handle_library_proxy_open(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Get path to open a retained proxy for playback."""
+                scope_type = str(body.get("scope_type") or "stage")
+                scope_id = body.get("scope_id") or None
+                return self.controller.proxy_open_target(scope_type, scope_id)
+
+            def _handle_output_profile_list(self, body: dict) -> dict:
+                """List output profiles with optional filters."""
+                scope_type = body.get("scope_type") or None
+                scope_id = body.get("scope_id") or None
+                profiles = self.controller.output_profile_list(scope_type, scope_id)
+                return {"success": True, "profiles": profiles}
+
+            def _handle_output_profile_create(self, body: dict) -> dict:
+                """Create a new output profile."""
+                scope_type = str(body.get("scope_type") or "stage")
+                scope_id = str(body.get("scope_id") or self.controller.project.id)
+                profile_name = str(body.get("profile_name") or "Default")
+                profile_kind = str(body.get("profile_kind") or "stage_output")
+
+                kwargs = {}
+                for key in (
+                    "frame_profile",
+                    "metric_caption_preset",
+                    "lead_in_card",
+                    "brand_mark",
+                    "subject_track_crop",
+                    "visibility_recipe",
+                ):
+                    if key in body:
+                        kwargs[key] = body[key]
+
+                result = self.controller.output_profile_create(
+                    scope_type, scope_id, profile_name, profile_kind, **kwargs
+                )
+                return {"success": True, "profile": result}
+
+            def _handle_output_profile_update(self, body: dict) -> dict:
+                """Update an existing output profile."""
+                output_id = str(body.get("output_id") or "")
+                if not output_id:
+                    return {"success": False, "error": "output_id required"}
+
+                kwargs = {k: v for k, v in body.items() if k != "output_id"}
+                result = self.controller.output_profile_update(output_id, **kwargs)
+                if result is None:
+                    return {"success": False, "error": f"Profile {output_id} not found"}
+                return {"success": True, "profile": result}
+
+            def _handle_output_profile_delete(self, body: dict) -> dict:
+                """Delete an output profile."""
+                output_id = str(body.get("output_id") or "")
+                if not output_id:
+                    return {"success": False, "error": "output_id required"}
+                deleted = self.controller.output_profile_delete(output_id)
+                return {"success": deleted}
+
+            def _handle_output_profile_render(self, body: dict) -> dict:
+                """Get render plan for an output profile."""
+                output_id = str(body.get("output_id") or "")
+                if not output_id:
+                    return {"success": False, "error": "output_id required"}
+                return self.controller.output_profile_render(output_id)
+
+            def _handle_workspace_stage_clip_add(self, body: dict) -> dict:
+                """Add a clip to a stage for composite editing."""
+                stage_id = str(body.get("stage_id") or "")
+                source_path = str(body.get("source_path") or "")
+                angle_role = str(body.get("angle_role") or "primary")
+                clips = self.controller.workspace_stage_clip_add(
+                    stage_id,
+                    source_path,
+                    angle_role,
+                    **{
+                        k: v
+                        for k, v in body.items()
+                        if k not in ("stage_id", "source_path", "angle_role")
+                    },
+                )
+                return {"success": True, "clips": clips}
+
+            def _handle_workspace_stage_clip_update(self, body: dict) -> dict:
+                """Update a clip's properties."""
+                stage_id = str(body.get("stage_id") or "")
+                clip_id = str(body.get("clip_id") or "")
+                kwargs = {k: v for k, v in body.items() if k not in ("stage_id", "clip_id")}
+                result = self.controller.workspace_stage_clip_update(stage_id, clip_id, **kwargs)
+                if result is None:
+                    return {"success": False, "error": "Clip not found"}
+                return {"success": True, "clip": result}
+
+            def _handle_workspace_stage_clip_remove(self, body: dict) -> dict:
+                """Remove a clip from a stage."""
+                stage_id = str(body.get("stage_id") or "")
+                clip_id = str(body.get("clip_id") or "")
+                removed = self.controller.workspace_stage_clip_remove(stage_id, clip_id)
+                return {"success": removed}
+
+            def _handle_angle_align(self, body: dict) -> dict:
+                """Align clips for a stage."""
+                stage_id = str(body.get("stage_id") or "")
+                reference_clip_id = str(body.get("reference_clip_id") or "")
+                return self.controller.angle_align(stage_id, reference_clip_id)
+
+            def _handle_angle_director_generate(self, body: dict) -> dict:
+                """Generate auto-cut plan for multi-angle composition."""
+                stage_id = str(body.get("stage_id") or "")
+                return self.controller.angle_director_generate(stage_id)
+
+            def _handle_angle_director_override(self, body: dict) -> dict:
+                """Override a cut in the angle director plan."""
+                stage_id = str(body.get("stage_id") or "")
+                clip_id = str(body.get("clip_id") or "")
+                position = int(body.get("position", 0))
+                start_ms = int(body.get("start_ms", 0))
+                duration_ms = int(body.get("duration_ms", 0))
+                return self.controller.angle_director_override_cut(
+                    stage_id, clip_id, position, start_ms, duration_ms
+                )
+
+            def _handle_audio_mix(self, body: dict) -> dict:
+                """Set audio mix properties for a clip."""
+                stage_id = str(body.get("stage_id") or "")
+                clip_id = str(body.get("clip_id") or "")
+                gain = body.get("gain")
+                muted = body.get("muted")
+                primary = body.get("primary")
+                result = self.controller.audio_mix_set(
+                    stage_id,
+                    clip_id,
+                    gain=float(gain) if gain is not None else None,
+                    muted=bool(muted) if muted is not None else None,
+                    primary=bool(primary) if primary is not None else None,
+                )
+                if result is None:
+                    return {"success": False, "error": "Clip not found"}
+                return {"success": True, "clip": result}
+
+            def _handle_result_cards_resolve(self, body: dict) -> dict:
+                """Resolve result cards for a match recap."""
+                match_output_id = str(body.get("output_id") or body.get("match_output_id") or "")
+                return self.controller.resolve_result_cards(match_output_id)
 
         return Handler

@@ -2,6 +2,24 @@
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
+## v1.1.0 (2026-05-19)
+
+SplitShot 1.1.0 introduces automation features for multi-stage match assembly, multi-angle composition, recap export, and performance history so reviewers can move from raw footage to a finished presentation without leaving the workspace.
+
+### Added
+
+- **Match Workspace**: Multi-stage match workspace with stage membership, ordering, shared defaults, and stage-local overrides.
+- **Output Profiles**: Named output profiles supporting Run Window, Metric Captions, Frame Profiles, Lead-In Card, Brand Mark, and Subject Track Crop configuration.
+- **Performance Library**: Historical stage and match record storage with metric indexing, browse, filter, and editor reopen flows.
+- **Retained Proxy**: Review-video proxy metadata management with truth-hash-based staleness detection and refresh.
+- **Match Recap**: Many-stage recap assembly from workspace stages with shared settings.
+- **Stage Composite**: Same-stage multi-clip composition with angle roles and audio mix control.
+- **Angle Align**: Same-stage multi-angle alignment with sync offset management.
+- **Angle Director**: Suggested auto-cut plan generation for multi-angle composition with manual override support.
+- **Audio Mix Lanes**: Per-clip audio gain, mute, and primary-source control for recap and composite outputs.
+- **Result Cards**: Stage-transition summary cards sourced from reviewed scoring truth.
+- **Angle Roles**: Angle purpose tagging (primary, follow, static, detail) for guided multi-angle composition.
+
 ## v1.0.1
 
 SplitShot 1.0.1 is a packaging and release-proof patch focused on one thing: making the shipped desktop packages actually match the proof claimed by CI.

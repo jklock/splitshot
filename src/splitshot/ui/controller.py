@@ -7,10 +7,15 @@ from dataclasses import asdict, dataclass, fields
 from inspect import Parameter, signature
 from pathlib import Path
 import re
+from uuid import uuid4 as _uuid4
 
 from PySide6.QtCore import QObject, Signal
 
-from splitshot.analysis.detection import analyze_video_audio, timing_change_proposals_from_review_suggestions, TimingReviewSuggestion
+from splitshot.analysis.detection import (
+    analyze_video_audio,
+    timing_change_proposals_from_review_suggestions,
+    TimingReviewSuggestion,
+)
 from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import (
     AppSettings,
@@ -21,6 +26,8 @@ from splitshot.config import (
     save_settings,
 )
 from splitshot.domain.models import (
+    LibraryStageRecord,
+    LibraryMatchRecord,
     BadgeSize,
     BadgeStyle,
     AspectRatio,
@@ -32,8 +39,10 @@ from splitshot.domain.models import (
     ExportVideoCodec,
     _merge_source_from_dict,
     _popup_bubble_from_dict,
+    MatchWorkspace,
     MergeLayout,
     OverlayPosition,
+    OutputProfile,
     OverlayTextBox,
     PopupBubble,
     PopupTemplate,
@@ -45,6 +54,7 @@ from splitshot.domain.models import (
     ShotEvent,
     ShotMLSettings,
     ShotSource,
+    StageEntry,
     TimingEvent,
     TimingChangeProposal,
     VideoAsset,
@@ -68,6 +78,17 @@ from splitshot.persistence.projects import (
     normalize_project_path,
     project_has_metadata,
     save_project,
+)
+from splitshot.persistence.workspaces import (
+    load_workspace,
+    save_workspace,
+    workspace_has_metadata,
+)
+from splitshot.persistence.library import (
+    save_stage_record,
+    save_match_record,
+    append_stage_metric,
+    append_match_metric,
 )
 from splitshot.scoring.logic import (
     apply_scoring_preset,
@@ -193,7 +214,11 @@ def _serialize_practiscore_remote_matches(matches: object) -> list[dict[str, obj
         return []
     payloads: list[dict[str, object]] = []
     for item in matches:
-        match = item if isinstance(item, RemotePractiScoreMatch) else RemotePractiScoreMatch.from_dict(item)
+        match = (
+            item
+            if isinstance(item, RemotePractiScoreMatch)
+            else RemotePractiScoreMatch.from_dict(item)
+        )
         if match is None:
             continue
         payloads.append(match.to_dict())
@@ -205,7 +230,11 @@ def _practiscore_remote_match_objects(matches: object) -> list[RemotePractiScore
         return []
     resolved: list[RemotePractiScoreMatch] = []
     for item in matches:
-        match = item if isinstance(item, RemotePractiScoreMatch) else RemotePractiScoreMatch.from_dict(item)
+        match = (
+            item
+            if isinstance(item, RemotePractiScoreMatch)
+            else RemotePractiScoreMatch.from_dict(item)
+        )
         if match is not None:
             resolved.append(match)
     return resolved
@@ -213,7 +242,10 @@ def _practiscore_remote_match_objects(matches: object) -> list[RemotePractiScore
 
 def _practiscore_error_category_from_exception(exc: BaseException) -> str:
     message = str(exc).lower()
-    if any(token in message for token in ("timeout", "timed out", "network", "fetch", "net::", "connection")):
+    if any(
+        token in message
+        for token in ("timeout", "timed out", "network", "fetch", "net::", "connection")
+    ):
         return TRANSIENT_NETWORK_FAILURE_ERROR
     return MALFORMED_REMOTE_RESPONSE_ERROR
 
@@ -269,7 +301,9 @@ def _optional_payload_bool(value: object) -> bool | None:
 
 def _normalize_popup_motion_mode(value: object, *, follow_motion: bool = False) -> str:
     normalized = str(value or "").strip().lower()
-    if normalized in {"fixed", "guided", "manual", "auto"} and not (normalized == "fixed" and follow_motion):
+    if normalized in {"fixed", "guided", "manual", "auto"} and not (
+        normalized == "fixed" and follow_motion
+    ):
         return normalized
     return "manual" if follow_motion else "fixed"
 
@@ -278,7 +312,9 @@ def _badge_style_from_payload(style: BadgeStyle, payload: object) -> None:
     if not isinstance(payload, dict):
         return
     if "background_color" in payload:
-        style.background_color = str(payload.get("background_color", style.background_color) or style.background_color)
+        style.background_color = str(
+            payload.get("background_color", style.background_color) or style.background_color
+        )
     if "text_color" in payload:
         style.text_color = str(payload.get("text_color", style.text_color) or style.text_color)
     if "opacity" in payload:
@@ -293,15 +329,21 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
     if "enabled" in payload:
         template.enabled = bool(payload.get("enabled", template.enabled))
     if "content_type" in payload:
-        template.content_type = str(payload.get("content_type", template.content_type) or template.content_type)
+        template.content_type = str(
+            payload.get("content_type", template.content_type) or template.content_type
+        )
     if "text_source" in payload:
-        template.text_source = str(payload.get("text_source", template.text_source) or template.text_source)
+        template.text_source = str(
+            payload.get("text_source", template.text_source) or template.text_source
+        )
     if "duration_ms" in payload:
         raw_duration = payload.get("duration_ms")
         if raw_duration not in {None, ""}:
             template.duration_ms = max(1, int(raw_duration))
     if "use_shot_split_duration" in payload:
-        template.use_shot_split_duration = bool(payload.get("use_shot_split_duration", template.use_shot_split_duration))
+        template.use_shot_split_duration = bool(
+            payload.get("use_shot_split_duration", template.use_shot_split_duration)
+        )
     if "quadrant" in payload:
         template.quadrant = str(payload.get("quadrant", template.quadrant) or template.quadrant)
     if "width" in payload:
@@ -320,17 +362,25 @@ def _popup_template_from_payload(template: PopupTemplate, payload: object) -> No
             follow_motion=template.follow_motion,
         )
     if "background_color" in payload:
-        template.background_color = str(payload.get("background_color", template.background_color) or template.background_color)
+        template.background_color = str(
+            payload.get("background_color", template.background_color) or template.background_color
+        )
     if "text_color" in payload:
-        template.text_color = str(payload.get("text_color", template.text_color) or template.text_color)
+        template.text_color = str(
+            payload.get("text_color", template.text_color) or template.text_color
+        )
     if "opacity" in payload:
         raw_opacity = payload.get("opacity")
         if raw_opacity not in {None, ""}:
             template.opacity = max(0.0, min(1.0, float(raw_opacity)))
     if "style_type" in payload:
-        template.style_type = str(payload.get("style_type", template.style_type) or template.style_type)
+        template.style_type = str(
+            payload.get("style_type", template.style_type) or template.style_type
+        )
     if "font_family" in payload:
-        template.font_family = str(payload.get("font_family", template.font_family) or template.font_family)[:80]
+        template.font_family = str(
+            payload.get("font_family", template.font_family) or template.font_family
+        )[:80]
     if "font_size" in payload:
         raw_font_size = payload.get("font_size")
         if raw_font_size not in {None, ""}:
@@ -353,7 +403,9 @@ def _practiscore_name_matches(input_name: str, candidate_name: str) -> bool:
     if _normalize_name(input_name) == _normalize_name(candidate_name):
         return True
     input_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", input_name.lower()) if part)
-    candidate_parts = sorted(part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part)
+    candidate_parts = sorted(
+        part for part in re.split(r"[^A-Za-z0-9]+", candidate_name.lower()) if part
+    )
     return bool(input_parts) and input_parts == candidate_parts
 
 
@@ -374,9 +426,17 @@ def _project_media_recovery_score(
 ) -> int:
     if expected_asset.is_still_image != candidate_asset.is_still_image:
         return -1
-    if expected_asset.width and candidate_asset.width and expected_asset.width != candidate_asset.width:
+    if (
+        expected_asset.width
+        and candidate_asset.width
+        and expected_asset.width != candidate_asset.width
+    ):
         return -1
-    if expected_asset.height and candidate_asset.height and expected_asset.height != candidate_asset.height:
+    if (
+        expected_asset.height
+        and candidate_asset.height
+        and expected_asset.height != candidate_asset.height
+    ):
         return -1
     if expected_asset.rotation != candidate_asset.rotation:
         return -1
@@ -416,7 +476,9 @@ def _project_media_recovery_score(
     ):
         score += 650
     else:
-        score += 120 * len(_media_name_tokens(expected_path).intersection(_media_name_tokens(candidate_path)))
+        score += 120 * len(
+            _media_name_tokens(expected_path).intersection(_media_name_tokens(candidate_path))
+        )
 
     if Path(expected_path).suffix.lower() == candidate_path.suffix.lower():
         score += 20
@@ -440,7 +502,10 @@ def _project_media_recovery_score(
             score += 40
         else:
             score += 10
-    if expected_asset.audio_sample_rate and candidate_asset.audio_sample_rate == expected_asset.audio_sample_rate:
+    if (
+        expected_asset.audio_sample_rate
+        and candidate_asset.audio_sample_rate == expected_asset.audio_sample_rate
+    ):
         score += 25
     score += 10
     return score
@@ -465,7 +530,9 @@ def _sync_secondary_video_from_merge_sources(project: Project) -> None:
     project.secondary_video = None if source is None else source.asset
 
 
-def _clear_secondary_analysis_state(project: Project, *, preserve_sync_offset: bool = False) -> None:
+def _clear_secondary_analysis_state(
+    project: Project, *, preserve_sync_offset: bool = False
+) -> None:
     project.analysis.beep_time_ms_secondary = None
     project.analysis.analyzed_secondary_source_id = None
     project.analysis.secondary_analysis_status = "idle"
@@ -522,7 +589,10 @@ def _reset_project_merge_defaults(project: Project) -> None:
 
 def _run_analyze_video_audio(path: str, threshold: float, settings: ShotMLSettings):
     parameters = list(signature(analyze_video_audio).parameters.values())
-    if any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters) or len(parameters) >= 3:
+    if (
+        any(parameter.kind == Parameter.VAR_POSITIONAL for parameter in parameters)
+        or len(parameters) >= 3
+    ):
         return analyze_video_audio(path, threshold, settings)
     return analyze_video_audio(path, threshold)
 
@@ -692,16 +762,26 @@ def _reanchor_timing_events_for_shots(
         rebased_event = deepcopy(event)
 
         if previous_after is not None and previous_before is not None:
-            boundary_time_ms = previous_after.time_ms + max(1, (previous_before.time_ms - previous_after.time_ms) // 2)
+            boundary_time_ms = previous_after.time_ms + max(
+                1, (previous_before.time_ms - previous_after.time_ms) // 2
+            )
             boundary_index = _event_boundary_index(next_shots, boundary_time_ms)
-            rebased_event.after_shot_id = next_shots[boundary_index - 1].id if boundary_index > 0 else None
-            rebased_event.before_shot_id = next_shots[boundary_index].id if boundary_index < len(next_shots) else None
+            rebased_event.after_shot_id = (
+                next_shots[boundary_index - 1].id if boundary_index > 0 else None
+            )
+            rebased_event.before_shot_id = (
+                next_shots[boundary_index].id if boundary_index < len(next_shots) else None
+            )
         elif previous_after is not None:
-            rebased_event.after_shot_id = _nearest_shot_id_by_time(next_shots, previous_after.time_ms)
+            rebased_event.after_shot_id = _nearest_shot_id_by_time(
+                next_shots, previous_after.time_ms
+            )
             rebased_event.before_shot_id = None
         elif previous_before is not None:
             rebased_event.after_shot_id = None
-            rebased_event.before_shot_id = _nearest_shot_id_by_time(next_shots, previous_before.time_ms)
+            rebased_event.before_shot_id = _nearest_shot_id_by_time(
+                next_shots, previous_before.time_ms
+            )
         else:
             rebased_event.after_shot_id = None
             rebased_event.before_shot_id = None
@@ -713,11 +793,68 @@ def _reanchor_timing_events_for_shots(
     return reanchored_events
 
 
+def _workspace_to_dict_safe(workspace) -> dict | None:
+    """Safe workspace serialization returning dict or None."""
+    if workspace is None:
+        return None
+    try:
+        from splitshot.persistence.workspaces import _workspace_to_dict
+
+        return _workspace_to_dict(workspace)
+    except Exception:
+        return None
+
+
+def _utc_now():
+    """Return current UTC datetime."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc)
+
+
+def _autosave_workspace_if_needed(controller) -> None:
+    """Autosave workspace when changes are detected."""
+    if controller.workspace_path is None or controller.workspace is None:
+        return
+    try:
+        current_snapshot = _workspace_to_dict_safe(controller.workspace)
+        if current_snapshot == controller._workspace_saved_snapshot:
+            return
+        save_workspace(controller.workspace, controller.workspace_path)
+        controller._workspace_saved_snapshot = current_snapshot
+    except Exception:
+        pass
+
+
+_INHERITANCE_ELIGIBLE_FIELDS = frozenset(
+    {
+        "frame_profile",
+        "metric_caption_preset",
+        "lead_in_card",
+        "brand_mark",
+        "subject_track_crop",
+        "visibility_recipe",
+        "aspect_ratio",
+        "export_quality",
+        "export_preset",
+        "frame_rate",
+        "video_codec",
+        "audio_codec",
+    }
+)
+
+
+def _new_uuid() -> str:
+    return _uuid4().hex
+
+
 class ProjectController(QObject):
     project_changed = Signal()
     settings_changed = Signal()
     project_path_changed = Signal(str)
     status_changed = Signal(str)
+
+    VALID_FRAME_PROFILES = frozenset({"source", "16:9", "9:16", "1:1", "4:5"})
 
     def __init__(self) -> None:
         super().__init__()
@@ -732,6 +869,15 @@ class ProjectController(QObject):
         self._practiscore_comparison_competitors: list[dict[str, object]] = []
         self._practiscore_session_payload = _default_practiscore_session_payload()
         self._practiscore_sync_payload = _default_practiscore_sync_payload()
+        self.workspace = None
+        self.workspace_path = None
+        self._output_profiles: dict[str, OutputProfile] = {}  # output_id -> OutputProfile
+        self._stage_clips: dict[str, list[dict]] = {}  # stage_id -> list of clip dicts
+        self.editor_scope = "single"
+        self.active_stage_id = None
+        self._return_to_workspace_available = False
+        self._workspace_saved_snapshot = None
+        self._last_returned_stage_id: str | None = None
         self.status_message = "Ready."
         self._saved_snapshot = project_to_dict(self.project)
         self._original_shot_state_by_id: dict[str, _OriginalShotState] = {}
@@ -749,7 +895,1119 @@ class ProjectController(QObject):
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_original_shots()
+        self.editor_scope = "single"
+        self.active_stage_id = None
+        self._return_to_workspace_available = False
+
+    # ── Workspace lifecycle ──────────────────────────────────────────
+
+    def new_workspace(self) -> None:
+        """Create a new empty match workspace with inherited defaults."""
+        self.workspace = MatchWorkspace()
+        self.workspace_path = None
+        self.editor_scope = "multi"
+        self.active_stage_id = None
+        self._return_to_workspace_available = False
+
+        effective = self.effective_settings()
+        for field in _INHERITANCE_ELIGIBLE_FIELDS:
+            if hasattr(effective, field):
+                value = getattr(effective, field)
+                if value is not None:
+                    self.workspace.shared_defaults[field] = value
+
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status("New match workspace created.")
         self.project_changed.emit()
+
+    def save_workspace(self, path: str | None = None) -> None:
+        """Persist workspace to disk."""
+        if self.workspace is None:
+            return
+        save_path = Path(path) if path else self.workspace_path
+        if save_path is None:
+            return
+        self.workspace_path = save_workspace(self.workspace, save_path)
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._sync_workspace_to_library()
+        self._set_status(f"Workspace saved to {self.workspace_path}")
+
+    def open_workspace(self, path: str) -> None:
+        """Open an existing match workspace from disk."""
+        ws_path = Path(path)
+        if not workspace_has_metadata(ws_path):
+            self._set_status(f"No workspace found at {path}")
+            return
+        self.workspace = load_workspace(ws_path)
+        self.workspace_path = ws_path
+        self.editor_scope = "multi"
+        self.active_stage_id = None
+        self._return_to_workspace_available = False
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status(f"Opened workspace: {self.workspace.name}")
+
+    # ── Stage membership ────────────────────────────────────────────
+
+    def workspace_add_stage(
+        self, stage_id: str, display_name: str = "", project_path: str = ""
+    ) -> None:
+        """Add a stage entry to the current workspace."""
+        if self.workspace is None:
+            return
+        entry = StageEntry(
+            stage_id=stage_id,
+            display_name=display_name or f"Stage {len(self.workspace.stage_entries) + 1}",
+            relative_project_path=project_path,
+        )
+        self.workspace.stage_entries[stage_id] = entry
+        if stage_id not in self.workspace.stage_order:
+            self.workspace.stage_order.append(stage_id)
+        self.workspace.updated_at = _utc_now()
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status(f"Added stage {stage_id} to workspace.")
+        self.project_changed.emit()
+
+    def workspace_remove_stage(self, stage_id: str) -> None:
+        """Remove a stage entry from the current workspace (does not delete project files)."""
+        if self.workspace is None:
+            return
+        self.workspace.stage_entries.pop(stage_id, None)
+        if stage_id in self.workspace.stage_order:
+            self.workspace.stage_order.remove(stage_id)
+        self.workspace.updated_at = _utc_now()
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status(f"Removed stage {stage_id} from workspace.")
+        self.project_changed.emit()
+
+    # ── Stage open / return ─────────────────────────────────────────
+
+    def workspace_open_stage(self, stage_id: str) -> dict | None:
+        """Open a stage from the workspace into the focused editor.
+
+        Loads the stage's project.json (if it exists in the workspace tree)
+        and sets editor_scope with return context.
+
+        Returns structured error dict on failure, None on success.
+        """
+        if self.workspace is None:
+            return {"match_id": None, "stage_id": stage_id, "reason": "No workspace is open"}
+        if stage_id not in self.workspace.stage_entries:
+            return {
+                "match_id": self.workspace.match_id,
+                "stage_id": stage_id,
+                "reason": "Stage not found in workspace",
+            }
+        if self.workspace_path is not None:
+            self.save_workspace()
+        if self.workspace_path is not None:
+            stage_project = self.workspace_path / "Stages" / stage_id / "project.json"
+            if stage_project.exists():
+                self.open_project(str(stage_project.parent))
+                self._load_stage_profiles(Path(self.project_path))
+        self.active_stage_id = stage_id
+        self.editor_scope = "multi"
+        self._return_to_workspace_available = True
+        self._set_status(f"Editing stage: {self.workspace.stage_entries[stage_id].display_name}")
+        return None
+
+    def workspace_return_to_workspace(self) -> None:
+        """Return from stage editor back to workspace context."""
+        previous_stage_id = self.active_stage_id
+        self.active_stage_id = None
+        self._return_to_workspace_available = False
+        if self.workspace_path is not None and workspace_has_metadata(self.workspace_path):
+            self.workspace = load_workspace(self.workspace_path)
+        self._last_returned_stage_id = previous_stage_id
+        self._set_status(
+            f"Returned to workspace: {self.workspace.name if self.workspace else 'Unknown'}"
+        )
+
+    # ── Shared defaults and overrides ───────────────────────────────
+
+    def workspace_set_defaults(self, payload: dict) -> None:
+        """Set match-level shared defaults (inheritance-eligible fields only)."""
+        if self.workspace is None:
+            return
+        filtered = {k: v for k, v in payload.items() if k in _INHERITANCE_ELIGIBLE_FIELDS}
+        self.workspace.shared_defaults.update(filtered)
+        self.workspace.updated_at = _utc_now()
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status("Updated workspace shared defaults.")
+        self.project_changed.emit()
+
+    def workspace_set_stage_override(self, stage_id: str, payload: dict) -> None:
+        """Set a stage-local override value (inheritance-eligible fields only)."""
+        if self.workspace is None or stage_id not in self.workspace.stage_entries:
+            return
+        filtered = {k: v for k, v in payload.items() if k in _INHERITANCE_ELIGIBLE_FIELDS}
+        if not filtered:
+            return
+        entry = self.workspace.stage_entries[stage_id]
+        entry.override_values.update(filtered)
+        entry.status = "overridden"
+        self.workspace.updated_at = _utc_now()
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status(f"Set override for stage {stage_id}.")
+        self.project_changed.emit()
+
+    def workspace_reset_stage_override(self, stage_id: str, keys: list[str] | None = None) -> None:
+        """Remove stage-local overrides, reverting to inherited values."""
+        if self.workspace is None or stage_id not in self.workspace.stage_entries:
+            return
+        entry = self.workspace.stage_entries[stage_id]
+        if keys is None:
+            entry.override_values.clear()
+        else:
+            for key in keys:
+                entry.override_values.pop(key, None)
+        if not entry.override_values:
+            entry.status = "complete" if entry.source_media_present else "incomplete"
+        self.workspace.updated_at = _utc_now()
+        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._set_status(f"Reset overrides for stage {stage_id}.")
+        self.project_changed.emit()
+
+    # ── Library sync ────────────────────────────────────────────────
+
+    def _sync_project_to_library(self) -> None:
+        """Create or update a library stage record from the current project."""
+        try:
+            from splitshot.presentation.stage import build_stage_presentation
+
+            presentation = build_stage_presentation(self.project)
+            truth_hash = self._compute_truth_hash()
+
+            record = LibraryStageRecord(
+                stage_id=self.project.id,
+                match_id=self.active_stage_id if self.editor_scope == "multi" else None,
+                display_name=self.project.name,
+                event_date=self.project.created_at,
+                discipline=self.project.scoring.ruleset or "",
+                competitor_name=self.project.scoring.competitor_name or "",
+                metric_summary={
+                    "first_shot_reaction": getattr(
+                        presentation.metrics, "first_shot_reaction_ms", 0
+                    ),
+                    "cumulative_time": getattr(presentation.metrics, "cumulative_time_ms", 0),
+                    "shot_count": len(self.project.analysis.shots),
+                    "split_summary": getattr(presentation.metrics, "split_summary", {}),
+                    "score_total": presentation.metrics.scoring_summary.get("total_points"),
+                    "penalties": getattr(presentation.metrics, "penalties", 0.0),
+                },
+                truth_hash=truth_hash,
+            )
+            save_stage_record(record)
+
+            append_stage_metric(
+                {
+                    "library_record_id": record.library_record_id,
+                    "stage_id": record.stage_id,
+                    "match_id": record.match_id,
+                    "display_name": record.display_name,
+                    "event_date": record.event_date.isoformat() if record.event_date else None,
+                    "discipline": record.discipline,
+                    "competitor_name": record.competitor_name,
+                    "first_shot_reaction_ms": getattr(
+                        presentation.metrics, "first_shot_reaction_ms", 0
+                    ),
+                    "cumulative_time_ms": getattr(presentation.metrics, "cumulative_time_ms", 0),
+                    "score_total": presentation.metrics.scoring_summary.get("total_points"),
+                    "penalties": getattr(presentation.metrics, "penalties", 0.0),
+                    "truth_hash": truth_hash,
+                }
+            )
+        except Exception:
+            pass
+
+    def _sync_workspace_to_library(self) -> None:
+        """Create or update a library match record from the current workspace."""
+        if self.workspace is None:
+            return
+        try:
+            truth_hash = self._compute_workspace_truth_hash()
+
+            record = LibraryMatchRecord(
+                match_id=self.workspace.match_id,
+                display_name=self.workspace.name,
+                event_date=self.workspace.created_at,
+                discipline="",
+                stage_ids=list(self.workspace.stage_entries.keys()),
+                aggregate_metric_summary={
+                    "stage_count": len(self.workspace.stage_entries),
+                    "stages": list(self.workspace.stage_order),
+                },
+                truth_hash=truth_hash,
+            )
+            save_match_record(record)
+
+            append_match_metric(
+                {
+                    "library_record_id": record.library_record_id,
+                    "match_id": record.match_id,
+                    "display_name": record.display_name,
+                    "event_date": record.event_date.isoformat() if record.event_date else None,
+                    "stage_count": len(self.workspace.stage_entries),
+                    "stage_ids": list(self.workspace.stage_order),
+                    "truth_hash": truth_hash,
+                }
+            )
+        except Exception:
+            pass
+
+    def _compute_truth_hash(self) -> str:
+        """Compute a stable hash representing current reviewed truth state."""
+        import hashlib
+        import json
+
+        truth_data = {
+            "stage_id": self.project.id,
+            "name": self.project.name,
+            "shot_count": len(self.project.analysis.shots),
+            "beep_time_ms": self.project.analysis.beep_time_ms_primary,
+            "ruleset": self.project.scoring.ruleset,
+            "hit_factor": self.project.scoring.hit_factor,
+            "penalties": self.project.scoring.penalties,
+        }
+        truth_data["shot_times"] = [round(shot.time_ms) for shot in self.project.analysis.shots]
+
+        canonical = json.dumps(truth_data, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def _compute_workspace_truth_hash(self) -> str:
+        """Compute a stable hash for workspace truth."""
+        import hashlib
+        import json
+
+        if self.workspace is None:
+            return ""
+
+        truth_data = {
+            "match_id": self.workspace.match_id,
+            "name": self.workspace.name,
+            "stage_count": len(self.workspace.stage_entries),
+            "stage_ids": sorted(self.workspace.stage_order),
+            "shared_defaults": dict(self.workspace.shared_defaults),
+        }
+        canonical = json.dumps(truth_data, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    # ── Proxy management ────────────────────────────────────────────
+
+    def proxy_status(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
+        """Check retained proxy status and staleness.
+
+        Returns:
+            dict with keys: exists, stale, truth_hash, proxy_path, last_generated
+        """
+        sid = scope_id or self.project.id
+        try:
+            from splitshot.persistence.library import (
+                load_proxy_record,
+                stage_proxy_path,
+                match_proxy_path,
+            )
+
+            record = load_proxy_record(scope_type, sid)
+            current_hash = (
+                self._compute_truth_hash()
+                if scope_type == "stage"
+                else self._compute_workspace_truth_hash()
+            )
+
+            if record is None:
+                return {
+                    "exists": False,
+                    "stale": True,
+                    "truth_hash": current_hash,
+                    "proxy_path": None,
+                    "last_generated": None,
+                    "scope_type": scope_type,
+                    "scope_id": sid,
+                }
+
+            stale = record.generated_from_truth_hash != current_hash
+            proxy_path = (
+                stage_proxy_path(sid, record.generated_from_truth_hash)
+                if scope_type == "stage"
+                else match_proxy_path(sid, record.generated_from_truth_hash)
+            )
+
+            return {
+                "exists": True,
+                "stale": stale,
+                "truth_hash": current_hash,
+                "proxy_path": str(proxy_path) if proxy_path else None,
+                "last_generated": record.generated_at.isoformat() if record.generated_at else None,
+                "scope_type": scope_type,
+                "scope_id": sid,
+                "width": record.width,
+                "height": record.height,
+                "duration_ms": record.duration_ms,
+                "file_size_bytes": record.file_size_bytes,
+            }
+        except Exception:
+            return {
+                "exists": False,
+                "stale": True,
+                "truth_hash": "",
+                "proxy_path": None,
+                "last_generated": None,
+                "scope_type": scope_type,
+                "scope_id": sid,
+            }
+
+    def proxy_refresh(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
+        """Request proxy regeneration.
+
+        When a video source is available, triggers actual render via export pipeline.
+        """
+        sid = scope_id or self.project.id
+
+        if scope_type == "stage" and not self.project.primary_video.path:
+            return {
+                "status": "no_media",
+                "message": "No primary video available for proxy generation.",
+                "scope_type": scope_type,
+                "scope_id": sid,
+            }
+
+        current_hash = (
+            self._compute_truth_hash()
+            if scope_type == "stage"
+            else self._compute_workspace_truth_hash()
+        )
+
+        try:
+            from splitshot.persistence.library import load_proxy_record
+
+            existing = load_proxy_record(scope_type, sid)
+            if existing and existing.generated_from_truth_hash == current_hash:
+                return {
+                    "status": "skipped_current",
+                    "message": "Proxy is already current for this truth hash.",
+                    "truth_hash": current_hash,
+                    "scope_type": scope_type,
+                    "scope_id": sid,
+                }
+        except Exception:
+            pass
+
+        try:
+            from splitshot.domain.models import RetainedProxyRecord
+            from splitshot.persistence.library import (
+                save_proxy_record,
+                stage_proxy_path,
+                match_proxy_path,
+            )
+            from datetime import datetime, timezone
+            from pathlib import Path
+
+            proxy_path = (
+                stage_proxy_path(sid, current_hash)
+                if scope_type == "stage"
+                else match_proxy_path(sid, current_hash)
+            )
+            if proxy_path:
+                Path(proxy_path).parent.mkdir(parents=True, exist_ok=True)
+
+            record = RetainedProxyRecord(
+                scope_type=scope_type,
+                scope_id=sid,
+                generated_from_truth_hash=current_hash,
+                generated_at=datetime.now(timezone.utc),
+                codec_profile="h264_aac",
+                relative_path=str(proxy_path) if proxy_path else "",
+                width=0,
+                height=0,
+                duration_ms=0,
+                file_size_bytes=0,
+            )
+            save_proxy_record(record)
+
+            video_path = None
+            if scope_type == "stage" and self.project.primary_video.path:
+                video_path = Path(self.project.primary_video.path)
+            elif scope_type == "match" and self.project.primary_video.path:
+                video_path = Path(self.project.primary_video.path)
+
+            if video_path and video_path.exists() and proxy_path:
+                render_plan = self.output_profile_render("")
+                try:
+                    from splitshot.export.pipeline import export_output_profile
+
+                    result = export_output_profile(self.project, proxy_path, render_plan)
+                    if result and result.exists():
+                        record.width = 0
+                        record.height = 0
+                        record.duration_ms = 0
+                        record.file_size_bytes = result.stat().st_size
+                        record.relative_path = str(proxy_path)
+                        save_proxy_record(record)
+                        return {
+                            "status": "rendered",
+                            "message": "Proxy rendered successfully.",
+                            "truth_hash": current_hash,
+                            "proxy_path": str(result),
+                            "scope_type": scope_type,
+                            "scope_id": sid,
+                        }
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        return {
+            "status": "scheduled",
+            "message": "Proxy refresh scheduled. Render will occur via export pipeline when media is available.",
+            "truth_hash": current_hash,
+            "scope_type": scope_type,
+            "scope_id": sid,
+        }
+
+    def proxy_open_target(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
+        """Get the path to open a retained proxy for playback.
+
+        Returns:
+            dict with proxy_path or error
+        """
+        sid = scope_id or self.project.id
+        try:
+            from splitshot.persistence.library import (
+                load_proxy_record,
+                stage_proxy_path,
+                match_proxy_path,
+            )
+            from pathlib import Path
+
+            record = load_proxy_record(scope_type, sid)
+            if record is None:
+                return {
+                    "success": False,
+                    "error": "No proxy record found. Generate a proxy first.",
+                    "scope_type": scope_type,
+                    "scope_id": sid,
+                }
+
+            proxy_path = (
+                stage_proxy_path(sid, record.generated_from_truth_hash)
+                if scope_type == "stage"
+                else match_proxy_path(sid, record.generated_from_truth_hash)
+            )
+
+            proxy_exists = Path(proxy_path).exists() if proxy_path else False
+
+            return {
+                "success": proxy_exists,
+                "proxy_path": str(proxy_path) if proxy_path else None,
+                "error": None
+                if proxy_exists
+                else "Proxy file not found on disk. Try regenerating.",
+                "stale": record.generated_from_truth_hash
+                != (
+                    self._compute_truth_hash()
+                    if scope_type == "stage"
+                    else self._compute_workspace_truth_hash()
+                ),
+                "scope_type": scope_type,
+                "scope_id": sid,
+            }
+        except Exception as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "scope_type": scope_type,
+                "scope_id": sid,
+            }
+
+    # ── Output Profiles ─────────────────────────────────────────────
+
+    def output_profile_create(
+        self,
+        scope_type: str,
+        scope_id: str,
+        profile_name: str = "Default",
+        profile_kind: str = "stage_output",
+        **kwargs,
+    ) -> dict:
+        """Create a new output profile."""
+        from splitshot.domain.models import OutputProfile
+
+        frame_profile = kwargs.pop("frame_profile", "source")
+        if frame_profile not in self.VALID_FRAME_PROFILES:
+            frame_profile = "source"
+
+        profile = OutputProfile(
+            scope_type=scope_type,
+            scope_id=scope_id,
+            profile_name=profile_name,
+            profile_kind=profile_kind,
+            frame_profile=frame_profile,
+        )
+
+        for key, value in kwargs.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+
+        self._output_profiles[profile.output_id] = profile
+
+        if scope_type == "match" and self.workspace is not None:
+            self.workspace.match_output_profiles.append(profile)
+
+        return self._profile_to_dict(profile)
+
+    def output_profile_update(self, output_id: str, **kwargs) -> dict | None:
+        """Update an existing output profile."""
+        profile = self._output_profiles.get(output_id)
+        if profile is None:
+            if self.workspace:
+                for p in self.workspace.match_output_profiles:
+                    if p.output_id == output_id:
+                        profile = p
+                        break
+        if profile is None:
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(profile, key) and key not in ("output_id", "scope_type", "scope_id"):
+                setattr(profile, key, value)
+
+        return self._profile_to_dict(profile)
+
+    def output_profile_delete(self, output_id: str) -> bool:
+        """Delete an output profile."""
+        if output_id in self._output_profiles:
+            del self._output_profiles[output_id]
+            return True
+        if self.workspace:
+            for i, p in enumerate(self.workspace.match_output_profiles):
+                if p.output_id == output_id:
+                    del self.workspace.match_output_profiles[i]
+                    return True
+        return False
+
+    def output_profile_list(
+        self, scope_type: str | None = None, scope_id: str | None = None
+    ) -> list[dict]:
+        """List output profiles, optionally filtered."""
+        profiles = list(self._output_profiles.values())
+        if self.workspace:
+            profiles.extend(self.workspace.match_output_profiles)
+
+        if scope_type:
+            profiles = [p for p in profiles if p.scope_type == scope_type]
+        if scope_id:
+            profiles = [p for p in profiles if p.scope_id == scope_id]
+
+        return [self._profile_to_dict(p) for p in profiles]
+
+    # ── Output Profile Persistence Helpers ──────────────────────────
+
+    def _output_profile_to_dict_safe(self, profile) -> dict:
+        """Simple output profile serialization."""
+        return {
+            "output_id": profile.output_id,
+            "scope_type": profile.scope_type,
+            "scope_id": profile.scope_id,
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": profile.metric_caption_preset,
+            "lead_in_card": profile.lead_in_card,
+            "brand_mark": profile.brand_mark,
+            "subject_track_crop": profile.subject_track_crop,
+            "visibility_recipe": profile.visibility_recipe,
+            "retained_proxy_id": profile.retained_proxy_id,
+            "last_rendered_at": profile.last_rendered_at.isoformat()
+            if profile.last_rendered_at
+            else None,
+        }
+
+    def _save_stage_profiles(self, project_path: Path) -> None:
+        """Persist stage-scoped output profiles alongside project.json."""
+        import json
+
+        stage_profiles = [
+            p
+            for p in self._output_profiles.values()
+            if p.scope_type == "stage" and p.scope_id == self.project.id
+        ]
+        if stage_profiles:
+            profiles_path = project_path / "profiles.json"
+            profiles_data = [self._output_profile_to_dict_safe(p) for p in stage_profiles]
+            profiles_path.write_text(json.dumps(profiles_data, indent=2))
+
+    def _load_stage_profiles(self, project_path: Path) -> None:
+        """Load stage-scoped output profiles from project folder."""
+        import json
+        from splitshot.persistence.workspaces import _output_profile_from_dict
+
+        profiles_path = project_path / "profiles.json"
+        if profiles_path.exists():
+            try:
+                profiles_data = json.loads(profiles_path.read_text())
+                for pdata in profiles_data:
+                    profile = _output_profile_from_dict(pdata)
+                    self._output_profiles[profile.output_id] = profile
+            except Exception:
+                pass
+
+    # OutputProfile takes priority over legacy Project.export.
+    # When an OutputProfile exists for the scope, it controls render settings.
+    # Project.export is preserved for backward compatibility only.
+    def output_profile_render(self, output_id: str) -> dict:
+        """Request render of a specific output profile.
+
+        Returns render plan with Run Window, Metric Captions, Frame Profile,
+        Lead-In Card, Brand Mark settings resolved.
+
+        If profile not found, falls back to legacy Project.export settings.
+        """
+        profile = self._output_profiles.get(output_id)
+        if profile is None and self.workspace:
+            for p in self.workspace.match_output_profiles:
+                if p.output_id == output_id:
+                    profile = p
+                    break
+
+        if profile is None:
+            return self._legacy_export_render_plan()
+
+        render_plan = {
+            "success": True,
+            "output_id": output_id,
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "scope_type": profile.scope_type,
+            "scope_id": profile.scope_id,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": dict(profile.metric_caption_preset),
+            "lead_in_card": dict(profile.lead_in_card),
+            "brand_mark": dict(profile.brand_mark),
+            "subject_track_crop": dict(profile.subject_track_crop),
+            "visibility_recipe": dict(profile.visibility_recipe),
+            "run_window": self._resolve_run_window(profile),
+            "source": "output_profile",
+        }
+
+        if self.project.primary_video.path and Path(self.project.primary_video.path).exists():
+            from splitshot.export.pipeline import export_output_profile
+            from splitshot.persistence.projects import default_project_output_path
+
+            output_path = default_project_output_path(
+                self.project_path or Path.home() / "splitshot",
+                f"{profile.profile_name.lower().replace(' ', '_')}.mp4",
+            )
+            try:
+                result_path = export_output_profile(self.project, output_path, render_plan)
+                render_plan["rendered_path"] = str(result_path)
+            except Exception as exc:
+                render_plan["render_error"] = str(exc)
+
+        return render_plan
+
+    def _legacy_export_render_plan(self) -> dict:
+        """Build a render plan from legacy Project.export settings.
+
+        This is the backward-compatible fallback when no OutputProfile exists.
+        """
+        export = self.project.export
+        beep_ms = self.project.analysis.beep_time_ms_primary or 0
+        shots = self.project.analysis.shots
+        last_shot_ms = shots[-1].time_ms if shots else beep_ms + 5000
+
+        return {
+            "success": True,
+            "output_id": None,
+            "profile_name": "Legacy Export",
+            "profile_kind": "stage_output",
+            "scope_type": "stage",
+            "scope_id": self.project.id,
+            "frame_profile": export.aspect_ratio.value
+            if hasattr(export.aspect_ratio, "value")
+            else str(export.aspect_ratio),
+            "metric_caption_preset": {},
+            "lead_in_card": {},
+            "brand_mark": {},
+            "subject_track_crop": {},
+            "visibility_recipe": {},
+            "run_window": {
+                "start_ms": 0,
+                "end_ms": 0,
+                "duration_ms": 0,
+                "beep_time_ms": beep_ms,
+                "last_shot_ms": last_shot_ms,
+                "lead_in_padding_ms": 1000,
+                "tail_padding_ms": 2000,
+            },
+            "source": "legacy_export_settings",
+        }
+
+    def _profile_to_dict(self, profile) -> dict:
+        """Convert OutputProfile to dict for API."""
+        return {
+            "output_id": profile.output_id,
+            "scope_type": profile.scope_type,
+            "scope_id": profile.scope_id,
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": dict(profile.metric_caption_preset),
+            "lead_in_card": dict(profile.lead_in_card),
+            "brand_mark": dict(profile.brand_mark),
+            "subject_track_crop": dict(profile.subject_track_crop),
+            "visibility_recipe": dict(profile.visibility_recipe),
+            "retained_proxy_id": profile.retained_proxy_id,
+            "last_rendered_at": profile.last_rendered_at.isoformat()
+            if profile.last_rendered_at
+            else None,
+        }
+
+    # ── Run Window ──────────────────────────────────────────────────
+
+    def _resolve_run_window(self, profile) -> dict:
+        """Resolve Run Window from reviewed timing truth.
+
+        Derives effective stage window from beep time and last shot,
+        with configurable lead-in and tail padding from the profile.
+        """
+        mc = profile.metric_caption_preset
+
+        beep_ms = self.project.analysis.beep_time_ms_primary or 0
+        lead_in_pad = mc.get("lead_in_padding_ms", 1000)
+
+        shots = self.project.analysis.shots
+        last_shot_ms = shots[-1].time_ms if shots else beep_ms + 5000
+        tail_pad = mc.get("tail_padding_ms", 2000)
+
+        start_ms = max(0, beep_ms - lead_in_pad)
+        end_ms = last_shot_ms + tail_pad
+
+        return {
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+            "duration_ms": end_ms - start_ms,
+            "beep_time_ms": beep_ms,
+            "last_shot_ms": last_shot_ms,
+            "lead_in_padding_ms": lead_in_pad,
+            "tail_padding_ms": tail_pad,
+        }
+
+    # ── Metric Captions ─────────────────────────────────────────────
+
+    def resolve_metric_captions(self, output_id: str) -> dict:
+        """Resolve metric captions from reviewed truth for a given output profile."""
+        profile = self._output_profiles.get(output_id)
+        if profile is None:
+            return {"error": "Profile not found"}
+
+        from splitshot.presentation.stage import build_stage_presentation
+        from splitshot.timeline.model import compute_split_rows
+
+        presentation = build_stage_presentation(self.project)
+        rows = compute_split_rows(self.project)
+        preset = profile.metric_caption_preset
+
+        captions = {
+            "shot_count": len(self.project.analysis.shots),
+            "cumulative_time_ms": presentation.metrics.stage_time_ms,
+            "first_shot_reaction_ms": presentation.metrics.draw_ms,
+            "hit_factor": self.project.scoring.hit_factor,
+            "penalties": self.project.scoring.penalties,
+            "split_times": [
+                {"shot_number": i + 1, "split_ms": row.split_ms, "cumulative_ms": row.cumulative_ms}
+                for i, row in enumerate(rows)
+            ],
+            "enabled_fields": preset.get("enabled_fields", ["shot_count", "cumulative_time"]),
+            "format": preset.get("format", "overlay"),
+        }
+        return captions
+
+    # ── Match Recap ─────────────────────────────────────────────────
+
+    def match_recap_preview(self, output_id: str) -> dict:
+        """Build a match recap render plan from workspace stages.
+
+        Sources clips from multiple stage_id values in one match_id,
+        preserves stage ordering, supports Result Cards between stages.
+        """
+        if self.workspace is None:
+            return {"success": False, "error": "No workspace open"}
+
+        profile = None
+        for p in self.workspace.match_output_profiles:
+            if p.output_id == output_id:
+                profile = p
+                break
+        if profile is None:
+            return {"success": False, "error": f"Profile {output_id} not found"}
+
+        clips = []
+        for stage_id in self.workspace.stage_order:
+            entry = self.workspace.stage_entries.get(stage_id)
+            if entry is None:
+                continue
+            clips.append(
+                {
+                    "stage_id": stage_id,
+                    "display_name": entry.display_name,
+                    "status": entry.status,
+                    "include": entry.status != "missing_media",
+                    "result_card": {
+                        "enabled": profile.metric_caption_preset.get("result_cards_enabled", True),
+                        "stage_name": entry.display_name,
+                    },
+                }
+            )
+
+        return {
+            "success": True,
+            "output_id": output_id,
+            "profile_kind": "match_recap",
+            "match_id": self.workspace.match_id,
+            "match_name": self.workspace.name,
+            "stage_count": len(clips),
+            "clips": clips,
+            "shared_defaults": dict(self.workspace.shared_defaults),
+            "render_settings": {
+                "frame_profile": profile.frame_profile,
+                "lead_in_card": dict(profile.lead_in_card),
+                "brand_mark": dict(profile.brand_mark),
+            },
+        }
+
+    # ── Stage Composite ─────────────────────────────────────────────
+
+    def stage_composite_preview(self, output_id: str) -> dict:
+        """Build a stage composite render plan for one stage with multiple clips."""
+        profile = self._output_profiles.get(output_id)
+        if profile is None:
+            return {"success": False, "error": f"Profile {output_id} not found"}
+
+        clips = self._get_stage_clips(profile.scope_id)
+
+        return {
+            "success": True,
+            "output_id": output_id,
+            "profile_kind": "stage_composite",
+            "stage_id": profile.scope_id,
+            "clip_count": len(clips),
+            "clips": clips,
+            "render_settings": {
+                "frame_profile": profile.frame_profile,
+                "visibility_recipe": dict(profile.visibility_recipe),
+            },
+        }
+
+    # ── Stage Clips (for Stage Composite) ───────────────────────────
+
+    def _get_stage_clips(self, stage_id: str) -> list[dict]:
+        """Get clips for a stage (for Stage Composite)."""
+        return self._stage_clips.get(stage_id, [])
+
+    def workspace_stage_clip_add(
+        self, stage_id: str, source_path: str = "", angle_role: str = "primary", **kwargs
+    ) -> list[dict]:
+        """Add a clip source to a stage for composite editing."""
+        if stage_id not in self._stage_clips:
+            self._stage_clips[stage_id] = []
+
+        clip_id = _new_uuid()
+        clip = {
+            "clip_id": clip_id,
+            "source_path": source_path,
+            "angle_role": angle_role,
+            "sync_offset_ms": kwargs.get("sync_offset_ms", 0),
+            "audio_gain": kwargs.get("audio_gain", 1.0),
+            "audio_muted": kwargs.get("audio_muted", False),
+            "audio_primary": kwargs.get("audio_primary", angle_role == "primary"),
+            "angle_aligned": False,
+            "cut_override_plan": [],
+        }
+        clip.update({k: v for k, v in kwargs.items() if k in clip})
+        self._stage_clips[stage_id].append(clip)
+        return self._stage_clips[stage_id]
+
+    def workspace_stage_clip_update(self, stage_id: str, clip_id: str, **kwargs) -> dict | None:
+        """Update a clip's properties."""
+        clips = self._stage_clips.get(stage_id, [])
+        for clip in clips:
+            if clip["clip_id"] == clip_id:
+                clip.update({k: v for k, v in kwargs.items() if k in clip})
+                return clip
+        return None
+
+    def workspace_stage_clip_remove(self, stage_id: str, clip_id: str) -> bool:
+        """Remove a clip from a stage."""
+        clips = self._stage_clips.get(stage_id, [])
+        for i, clip in enumerate(clips):
+            if clip["clip_id"] == clip_id:
+                del self._stage_clips[stage_id][i]
+                return True
+        return False
+
+    # ── Angle Align ─────────────────────────────────────────────────
+
+    def angle_align(self, stage_id: str, reference_clip_id: str) -> dict:
+        """Align clips for a stage by beep/sync to reference.
+
+        Computes sync offsets for all clips relative to the reference.
+        """
+        clips = self._stage_clips.get(stage_id, [])
+        if not clips:
+            return {"success": False, "error": "No clips for this stage"}
+
+        reference = None
+        for clip in clips:
+            if clip["clip_id"] == reference_clip_id:
+                reference = clip
+                break
+        if reference is None:
+            return {"success": False, "error": f"Reference clip {reference_clip_id} not found"}
+
+        for clip in clips:
+            clip["angle_aligned"] = True
+
+        return {
+            "success": True,
+            "stage_id": stage_id,
+            "reference_clip_id": reference_clip_id,
+            "aligned_clips": len(clips),
+        }
+
+    # ── Angle Director ──────────────────────────────────────────────
+
+    def angle_director_generate(self, stage_id: str) -> dict:
+        """Generate a suggested auto-cut plan for multi-angle composition.
+
+        Produces a cut plan that switches between angles based on role priority.
+        """
+        clips = self._stage_clips.get(stage_id, [])
+        if len(clips) < 2:
+            return {"success": False, "error": "Need at least 2 clips for angle direction"}
+
+        role_priority = {"primary": 0, "follow": 1, "static": 2, "detail": 3}
+        sorted_clips = sorted(clips, key=lambda c: role_priority.get(c["angle_role"], 99))
+
+        cut_plan = []
+        for i, clip in enumerate(sorted_clips):
+            cut_plan.append(
+                {
+                    "position": i,
+                    "clip_id": clip["clip_id"],
+                    "angle_role": clip["angle_role"],
+                    "start_ms": 0,
+                    "duration_ms": 0,
+                    "suggested": True,
+                }
+            )
+
+        return {
+            "success": True,
+            "stage_id": stage_id,
+            "cut_plan": cut_plan,
+            "clip_count": len(clips),
+        }
+
+    def angle_director_override_cut(
+        self, stage_id: str, clip_id: str, position: int, start_ms: int = 0, duration_ms: int = 0
+    ) -> dict:
+        """Override a suggested cut in the angle director plan."""
+        clips = self._stage_clips.get(stage_id, [])
+        for clip in clips:
+            if clip["clip_id"] == clip_id:
+                if "cut_override_plan" not in clip:
+                    clip["cut_override_plan"] = []
+                clip["cut_override_plan"].append(
+                    {
+                        "position": position,
+                        "start_ms": start_ms,
+                        "duration_ms": duration_ms,
+                    }
+                )
+                return {
+                    "success": True,
+                    "clip_id": clip_id,
+                    "overrides": len(clip["cut_override_plan"]),
+                }
+        return {"success": False, "error": f"Clip {clip_id} not found"}
+
+    # ── Audio Mix Lanes ─────────────────────────────────────────────
+
+    def audio_mix_set(
+        self,
+        stage_id: str,
+        clip_id: str,
+        gain: float | None = None,
+        muted: bool | None = None,
+        primary: bool | None = None,
+    ) -> dict | None:
+        """Set audio mix properties for a clip."""
+        clips = self._stage_clips.get(stage_id, [])
+        for clip in clips:
+            if clip["clip_id"] == clip_id:
+                if gain is not None:
+                    clip["audio_gain"] = max(0.0, min(2.0, gain))
+                if muted is not None:
+                    clip["audio_muted"] = muted
+                if primary is not None:
+                    clip["audio_primary"] = primary
+                    if primary:
+                        for other in clips:
+                            if other["clip_id"] != clip_id:
+                                other["audio_primary"] = False
+                return clip
+        return None
+
+    # ── Result Cards ────────────────────────────────────────────────
+
+    def resolve_result_cards(self, match_output_id: str) -> dict:
+        """Resolve result cards for a match recap from reviewed truth."""
+        if self.workspace is None:
+            return {"success": False, "error": "No workspace open"}
+
+        cards = []
+        for stage_id in self.workspace.stage_order:
+            entry = self.workspace.stage_entries.get(stage_id)
+            if entry is None:
+                continue
+
+            cards.append(
+                {
+                    "stage_id": stage_id,
+                    "stage_name": entry.display_name,
+                    "stage_number": entry.stage_number,
+                    "status": entry.status,
+                    "enabled": True,
+                    "duration_ms": 3000,
+                }
+            )
+
+        return {
+            "success": True,
+            "output_id": match_output_id,
+            "card_count": len(cards),
+            "cards": cards,
+        }
+
+    # ── Inheritance resolution ──────────────────────────────────────
+
+    def resolve_setting(self, stage_id: str | None, key: str, default=None):
+        """Resolve a setting through the full inheritance chain (eligible fields only).
+
+        Order: stage override → match shared → folder → app → domain default.
+        """
+        if key in _INHERITANCE_ELIGIBLE_FIELDS:
+            if stage_id and self.workspace and stage_id in self.workspace.stage_entries:
+                entry = self.workspace.stage_entries[stage_id]
+                if key in entry.override_values:
+                    return entry.override_values[key]
+            if self.workspace and key in self.workspace.shared_defaults:
+                return self.workspace.shared_defaults[key]
+        effective = self.effective_settings()
+        if hasattr(effective, key):
+            return getattr(effective, key)
+        return default
 
     def has_unsaved_changes(self) -> bool:
         return project_to_dict(self.project) != self._saved_snapshot
@@ -796,7 +2054,9 @@ class ProjectController(QObject):
         self.project.analysis.detection_review_suggestions = [
             asdict(suggestion) for suggestion in result.review_suggestions
         ]
-        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.project.analysis.timing_change_proposals = []
         self.project.analysis.last_shotml_run_summary = {
             "video_path": self.project.primary_video.path,
@@ -842,7 +2102,9 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_secondary,
         )
         self.project.analysis.secondary_sync_source = "auto"
-        self.project.analysis.secondary_analysis_status = "ready" if result.beep_time_ms is not None else "no_beep"
+        self.project.analysis.secondary_analysis_status = (
+            "ready" if result.beep_time_ms is not None else "no_beep"
+        )
         self.project.analysis.secondary_analysis_message = (
             "Secondary beep detected."
             if result.beep_time_ms is not None
@@ -851,7 +2113,11 @@ class ProjectController(QObject):
         source.sync_offset_ms = self.project.analysis.sync_offset_ms
         self._set_status(
             "Secondary analysis complete."
-            + ("" if result.beep_time_ms is None else f" Sync offset: {self.project.analysis.sync_offset_ms} ms.")
+            + (
+                ""
+                if result.beep_time_ms is None
+                else f" Sync offset: {self.project.analysis.sync_offset_ms} ms."
+            )
         )
         self.project.touch()
         self.project_changed.emit()
@@ -894,7 +2160,9 @@ class ProjectController(QObject):
         scoring = self.project.scoring
         changed = False
         if match_type is not None:
-            clean_match_type = "" if not str(match_type).strip() else normalize_match_type(str(match_type))
+            clean_match_type = (
+                "" if not str(match_type).strip() else normalize_match_type(str(match_type))
+            )
             if scoring.match_type != clean_match_type:
                 scoring.match_type = clean_match_type
                 changed = True
@@ -913,7 +2181,9 @@ class ProjectController(QObject):
             if scoring.competitor_name != next_competitor_name:
                 scoring.competitor_name = next_competitor_name
                 changed = True
-        if competitor_place is not None or (competitor_place is None and scoring.competitor_place is not None):
+        if competitor_place is not None or (
+            competitor_place is None and scoring.competitor_place is not None
+        ):
             if scoring.competitor_place != competitor_place:
                 scoring.competitor_place = competitor_place
                 changed = True
@@ -941,16 +2211,20 @@ class ProjectController(QObject):
 
     def _practiscore_options_browser_payload(self) -> dict[str, object]:
         options = self._practiscore_options
-        competitors = [] if options is None else [
-            {
-                "name": option.name,
-                "place": option.place,
-                "division": option.division,
-                "classification": option.classification,
-                "power_factor": option.power_factor,
-            }
-            for option in options.competitors
-        ]
+        competitors = (
+            []
+            if options is None
+            else [
+                {
+                    "name": option.name,
+                    "place": option.place,
+                    "division": option.division,
+                    "classification": option.classification,
+                    "power_factor": option.power_factor,
+                }
+                for option in options.competitors
+            ]
+        )
         return {
             "has_source": self._practiscore_source_path is not None,
             "source_name": self._practiscore_source_name,
@@ -982,7 +2256,9 @@ class ProjectController(QObject):
         next_matches = (
             _serialize_practiscore_remote_matches(matches)
             if matches is not None
-            else _serialize_practiscore_remote_matches(self._practiscore_sync_payload.get("matches"))
+            else _serialize_practiscore_remote_matches(
+                self._practiscore_sync_payload.get("matches")
+            )
         )
         next_selected_remote_id = (
             self._practiscore_sync_payload.get("selected_remote_id")
@@ -1003,14 +2279,19 @@ class ProjectController(QObject):
             "practiscore_session": deepcopy(self._practiscore_session_payload),
             "practiscore_sync": deepcopy(self._practiscore_sync_payload),
             "practiscore_options": self._practiscore_options_browser_payload(),
-            "matches": _serialize_practiscore_remote_matches(self._practiscore_sync_payload.get("matches")),
+            "matches": _serialize_practiscore_remote_matches(
+                self._practiscore_sync_payload.get("matches")
+            ),
         }
 
     def list_practiscore_matches(self, practiscore_session: object) -> dict[str, object]:
         session_payload = _practiscore_session_payload_from_manager(practiscore_session)
         self._set_practiscore_session_payload(session_payload)
         if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(self._practiscore_session_payload.get("message") or "PractiScore session is not ready.")
+            message = str(
+                self._practiscore_session_payload.get("message")
+                or "PractiScore session is not ready."
+            )
             self._set_status(message)
             self._set_practiscore_sync_state(
                 "error",
@@ -1039,7 +2320,9 @@ class ProjectController(QObject):
                 error_category=exc.category,
                 details=exc.details,
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except Exception as exc:  # noqa: BLE001
             session_payload = _practiscore_session_payload_from_manager(practiscore_session)
@@ -1062,9 +2345,14 @@ class ProjectController(QObject):
 
         match_payloads = _serialize_practiscore_remote_matches(matches)
         previous_selected_remote_id = self._practiscore_sync_payload.get("selected_remote_id")
-        selected_remote_id = previous_selected_remote_id if any(
-            payload.get("remote_id") == previous_selected_remote_id for payload in match_payloads
-        ) else None
+        selected_remote_id = (
+            previous_selected_remote_id
+            if any(
+                payload.get("remote_id") == previous_selected_remote_id
+                for payload in match_payloads
+            )
+            else None
+        )
         message = (
             "No remote PractiScore matches found."
             if not match_payloads
@@ -1078,10 +2366,14 @@ class ProjectController(QObject):
             selected_remote_id=selected_remote_id,
             details={"match_count": len(match_payloads)},
         )
-        self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+        self._set_practiscore_session_payload(
+            _practiscore_session_payload_from_manager(practiscore_session)
+        )
         return self._practiscore_route_payload()
 
-    def start_practiscore_sync(self, payload: dict[str, object], practiscore_session: object) -> dict[str, object]:
+    def start_practiscore_sync(
+        self, payload: dict[str, object], practiscore_session: object
+    ) -> dict[str, object]:
         remote_id = str(payload.get("remote_id") or "").strip()
         if not remote_id:
             message = "A remote PractiScore match must be selected before import."
@@ -1097,7 +2389,10 @@ class ProjectController(QObject):
         session_payload = _practiscore_session_payload_from_manager(practiscore_session)
         self._set_practiscore_session_payload(session_payload)
         if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(self._practiscore_session_payload.get("message") or "PractiScore session is not ready.")
+            message = str(
+                self._practiscore_session_payload.get("message")
+                or "PractiScore session is not ready."
+            )
             self._set_status(message)
             self._set_practiscore_sync_state(
                 "error",
@@ -1108,7 +2403,9 @@ class ProjectController(QObject):
             )
             return self._practiscore_route_payload()
 
-        existing_matches = _practiscore_remote_match_objects(self._practiscore_sync_payload.get("matches"))
+        existing_matches = _practiscore_remote_match_objects(
+            self._practiscore_sync_payload.get("matches")
+        )
         self._set_status("Importing selected remote PractiScore match...")
         self._set_practiscore_sync_state(
             "importing_selected_match",
@@ -1133,7 +2430,9 @@ class ProjectController(QObject):
                 competitor_name=self.project.scoring.competitor_name or None,
                 competitor_place=self.project.scoring.competitor_place,
             )
-            self.import_practiscore_file(str(artifacts.source_artifact_path), source_name=artifacts.source_name)
+            self.import_practiscore_file(
+                str(artifacts.source_artifact_path), source_name=artifacts.source_name
+            )
         except PractiScoreSyncError as exc:
             self._set_status(str(exc))
             self._set_practiscore_sync_state(
@@ -1144,7 +2443,9 @@ class ProjectController(QObject):
                 error_category=exc.category,
                 details={**exc.details, "remote_id": remote_id},
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except ValueError as exc:
             message = str(exc) or "Unable to normalize the downloaded PractiScore artifact."
@@ -1157,7 +2458,9 @@ class ProjectController(QObject):
                 error_category=NORMALIZATION_IMPORT_FAILURE_ERROR,
                 details={"remote_id": remote_id},
             )
-            self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+            self._set_practiscore_session_payload(
+                _practiscore_session_payload_from_manager(practiscore_session)
+            )
             return self._practiscore_route_payload()
         except Exception as exc:  # noqa: BLE001
             session_payload = _practiscore_session_payload_from_manager(practiscore_session)
@@ -1196,11 +2499,17 @@ class ProjectController(QObject):
                 "source_artifact_path": str(artifacts.source_artifact_path),
                 "html_path": str(artifacts.html_path),
                 "summary_path": str(artifacts.summary_path),
-                "staged_source_path": "" if self._practiscore_source_path is None else str(self._practiscore_source_path),
-                "imported_stage_number": None if imported_stage is None else imported_stage.stage_number,
+                "staged_source_path": ""
+                if self._practiscore_source_path is None
+                else str(self._practiscore_source_path),
+                "imported_stage_number": None
+                if imported_stage is None
+                else imported_stage.stage_number,
             },
         )
-        self._set_practiscore_session_payload(_practiscore_session_payload_from_manager(practiscore_session))
+        self._set_practiscore_session_payload(
+            _practiscore_session_payload_from_manager(practiscore_session)
+        )
         return self._practiscore_route_payload()
 
     def _clear_practiscore_source(self) -> None:
@@ -1259,8 +2568,12 @@ class ProjectController(QObject):
             return deepcopy(template)
         return self.settings.template_snapshot()
 
-    def _apply_settings_template_snapshot(self, template_name: str, snapshot: dict[str, object]) -> None:
-        next_settings = AppSettings.from_dict({**snapshot, "recent_projects": self.settings.recent_projects})
+    def _apply_settings_template_snapshot(
+        self, template_name: str, snapshot: dict[str, object]
+    ) -> None:
+        next_settings = AppSettings.from_dict(
+            {**snapshot, "recent_projects": self.settings.recent_projects}
+        )
         next_settings.active_template_name = template_name
         next_settings.settings_templates = deepcopy(self.settings.settings_templates)
         next_settings.settings_templates[template_name] = deepcopy(snapshot)
@@ -1277,7 +2590,9 @@ class ProjectController(QObject):
         save_settings(self.settings)
         self.settings_changed.emit()
 
-    def _template_snapshot_from_current_project(self, snapshot: dict[str, object], section: str | None = None) -> dict[str, object]:
+    def _template_snapshot_from_current_project(
+        self, snapshot: dict[str, object], section: str | None = None
+    ) -> dict[str, object]:
         project_payload = project_to_dict(self.project)
         current_settings = self.settings.config_dict()
         next_snapshot = deepcopy(snapshot)
@@ -1287,7 +2602,9 @@ class ProjectController(QObject):
             scoring = project_payload.get("scoring", {})
             if not isinstance(scoring, dict):
                 return
-            match_type = str(scoring.get("match_type") or current_settings.get("default_match_type") or "uspsa")
+            match_type = str(
+                scoring.get("match_type") or current_settings.get("default_match_type") or "uspsa"
+            )
             try:
                 default_match_type = normalize_match_type(match_type)
             except ValueError:
@@ -1295,23 +2612,43 @@ class ProjectController(QObject):
             stage_number = scoring.get("stage_number")
             competitor_name = str(scoring.get("competitor_name") or "")
             competitor_place = scoring.get("competitor_place")
-            next_snapshot.update({
-                "default_match_type": default_match_type,
-                "default_stage_number": None if stage_number in {None, ""} else int(stage_number),
-                "default_competitor_name": competitor_name,
-                "default_competitor_place": None if competitor_place in {None, ""} else int(competitor_place),
-            })
+            next_snapshot.update(
+                {
+                    "default_match_type": default_match_type,
+                    "default_stage_number": None
+                    if stage_number in {None, ""}
+                    else int(stage_number),
+                    "default_competitor_name": competitor_name,
+                    "default_competitor_place": None
+                    if competitor_place in {None, ""}
+                    else int(competitor_place),
+                }
+            )
 
         def update_pip_defaults() -> None:
             merge = project_payload.get("merge", {})
             if not isinstance(merge, dict):
                 return
-            next_snapshot.update({
-                "merge_layout": str(merge.get("layout") or current_settings.get("merge_layout") or MergeLayout.SIDE_BY_SIDE.value),
-                "pip_size": str(merge.get("pip_size") or current_settings.get("pip_size") or PipSize.MEDIUM.value),
-                "merge_pip_x": float(merge.get("pip_x", current_settings.get("merge_pip_x", 1.0))),
-                "merge_pip_y": float(merge.get("pip_y", current_settings.get("merge_pip_y", 1.0))),
-            })
+            next_snapshot.update(
+                {
+                    "merge_layout": str(
+                        merge.get("layout")
+                        or current_settings.get("merge_layout")
+                        or MergeLayout.SIDE_BY_SIDE.value
+                    ),
+                    "pip_size": str(
+                        merge.get("pip_size")
+                        or current_settings.get("pip_size")
+                        or PipSize.MEDIUM.value
+                    ),
+                    "merge_pip_x": float(
+                        merge.get("pip_x", current_settings.get("merge_pip_x", 1.0))
+                    ),
+                    "merge_pip_y": float(
+                        merge.get("pip_y", current_settings.get("merge_pip_y", 1.0))
+                    ),
+                }
+            )
 
         def update_marker_defaults() -> None:
             popup_template = project_payload.get("popup_template", {})
@@ -1383,7 +2720,9 @@ class ProjectController(QObject):
         self._set_status(f"Selected settings template {template_name}.")
 
     def save_settings_template(self, template_name: str, *, section: str | None = None) -> None:
-        template_name = str(template_name or "").strip() or self.settings.active_template_name or "Default"
+        template_name = (
+            str(template_name or "").strip() or self.settings.active_template_name or "Default"
+        )
         snapshot = self._settings_template_snapshot(template_name)
         snapshot = self._template_snapshot_from_current_project(snapshot, section=section)
         self._apply_settings_template_snapshot(template_name, snapshot)
@@ -1415,7 +2754,11 @@ class ProjectController(QObject):
             template_name = "Default"
         else:
             templates.pop(template_name, None)
-        next_template_name = self.settings.active_template_name if template_name != self.settings.active_template_name else next(iter(templates.keys()))
+        next_template_name = (
+            self.settings.active_template_name
+            if template_name != self.settings.active_template_name
+            else next(iter(templates.keys()))
+        )
         snapshot = templates.get(next_template_name) or next(iter(templates.values()))
         self._apply_settings_template_snapshot(next_template_name, snapshot)
         self.settings.settings_templates = templates
@@ -1437,10 +2780,12 @@ class ProjectController(QObject):
         ]
         imported_stage = self.project.scoring.imported_stage
         if imported_stage is not None:
-            preferred_names.extend([
-                imported_stage.source_name or "",
-                Path(imported_stage.source_path).name if imported_stage.source_path else "",
-            ])
+            preferred_names.extend(
+                [
+                    imported_stage.source_name or "",
+                    Path(imported_stage.source_path).name if imported_stage.source_path else "",
+                ]
+            )
 
         for preferred_name in preferred_names:
             clean_name = preferred_name.strip()
@@ -1461,9 +2806,11 @@ class ProjectController(QObject):
         recovered_from_folder = False
 
         if resolved_path is None or not resolved_path.exists():
-            recovered_path, recovered_name, recovered_from_folder = self._recover_practiscore_path_from_project_folder(
-                stored_path,
-                stored_name,
+            recovered_path, recovered_name, recovered_from_folder = (
+                self._recover_practiscore_path_from_project_folder(
+                    stored_path,
+                    stored_name,
+                )
             )
             if recovered_path is not None:
                 resolved_path = recovered_path
@@ -1502,7 +2849,9 @@ class ProjectController(QObject):
         self._practiscore_options = options
         if self.project.scoring.imported_stage is None:
             try:
-                self._import_practiscore_source(str(resolved_path), display_name, emit_change=emit_change)
+                self._import_practiscore_source(
+                    str(resolved_path), display_name, emit_change=emit_change
+                )
                 return True
             except ValueError:
                 return changed or recovered_from_folder
@@ -1553,7 +2902,9 @@ class ProjectController(QObject):
         for candidate_path, candidate_asset in candidates:
             if candidate_path in used_paths:
                 continue
-            score = _project_media_recovery_score(stored_path, asset, candidate_path, candidate_asset)
+            score = _project_media_recovery_score(
+                stored_path, asset, candidate_path, candidate_asset
+            )
             if score <= 0:
                 continue
             scored_candidates.append((score, candidate_path, candidate_asset))
@@ -1578,13 +2929,17 @@ class ProjectController(QObject):
         used_paths: set[Path] = set()
         changed = False
 
-        recovered_primary = self._recover_media_asset_from_project_folder(self.project.primary_video, candidates, used_paths)
+        recovered_primary = self._recover_media_asset_from_project_folder(
+            self.project.primary_video, candidates, used_paths
+        )
         if recovered_primary is not None:
             self.project.primary_video = recovered_primary
             changed = True
 
         for source in self.project.merge_sources:
-            recovered_asset = self._recover_media_asset_from_project_folder(source.asset, candidates, used_paths)
+            recovered_asset = self._recover_media_asset_from_project_folder(
+                source.asset, candidates, used_paths
+            )
             if recovered_asset is None:
                 continue
             source.asset = recovered_asset
@@ -1618,7 +2973,8 @@ class ProjectController(QObject):
             return False
         normalized_competitor_name = _normalize_name(competitor_name)
         matching_competitors = [
-            option for option in options.competitors
+            option
+            for option in options.competitors
             if _normalize_name(option.name) == normalized_competitor_name
             or _practiscore_name_matches(competitor_name, option.name)
         ]
@@ -1633,7 +2989,10 @@ class ProjectController(QObject):
         return len(matching_competitors) == 1
 
     def _can_reimport_practiscore_source(self) -> bool:
-        return self._practiscore_source_path is not None and self._current_practiscore_selection_matches_source()
+        return (
+            self._practiscore_source_path is not None
+            and self._current_practiscore_selection_matches_source()
+        )
 
     def _import_practiscore_source(
         self,
@@ -1706,7 +3065,9 @@ class ProjectController(QObject):
             imported_box.enabled = True
         sync_overlay_legacy_custom_box_fields(self.project.overlay)
         self.update_hit_factor()
-        stage_label = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+        stage_label = (
+            imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+        )
         self._set_status(f"Imported PractiScore results for {stage_label}.")
         if emit_change:
             self.project.touch()
@@ -1737,7 +3098,9 @@ class ProjectController(QObject):
     def remove_merge_source(self, source_id: str) -> None:
         before_sources = list(self.project.merge_sources)
         before_count = len(before_sources)
-        self.project.merge_sources = [source for source in self.project.merge_sources if source.id != source_id]
+        self.project.merge_sources = [
+            source for source in self.project.merge_sources if source.id != source_id
+        ]
         if len(self.project.merge_sources) == before_count:
             return
         if not self.project.merge_sources:
@@ -1745,7 +3108,9 @@ class ProjectController(QObject):
         removed_analyzed = self.project.analysis.analyzed_secondary_source_id == source_id
         _sync_secondary_video_from_merge_sources(self.project)
         if removed_analyzed:
-            _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
+            _clear_secondary_analysis_state(
+                self.project, preserve_sync_offset=bool(self.project.merge_sources)
+            )
             if _first_analyzable_merge_source(self.project) is not None:
                 self.analyze_secondary()
                 return
@@ -1821,9 +3186,13 @@ class ProjectController(QObject):
 
     def reset_shotml_settings(self) -> None:
         self.project.analysis.shotml_settings = ShotMLSettings()
-        self.project.analysis.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.project.analysis.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.project.analysis.timing_change_proposals = []
-        self.settings.detection_threshold = self.project.analysis.shotml_settings.detection_threshold
+        self.settings.detection_threshold = (
+            self.project.analysis.shotml_settings.detection_threshold
+        )
         self.settings.shotml_defaults = ShotMLSettings()
         save_settings(self.settings)
         self.settings_changed.emit()
@@ -1852,11 +3221,21 @@ class ProjectController(QObject):
                     severity=str(item.get("severity", "review")),
                     message=str(item.get("message", "")),
                     suggested_action=str(item.get("suggested_action", "")),
-                    shot_number=None if item.get("shot_number") in {None, ""} else int(item["shot_number"]),
-                    shot_time_ms=None if item.get("shot_time_ms") in {None, ""} else int(item["shot_time_ms"]),
-                    confidence=None if item.get("confidence") in {None, ""} else float(item["confidence"]),
-                    support_confidence=None if item.get("support_confidence") in {None, ""} else float(item["support_confidence"]),
-                    interval_ms=None if item.get("interval_ms") in {None, ""} else int(item["interval_ms"]),
+                    shot_number=None
+                    if item.get("shot_number") in {None, ""}
+                    else int(item["shot_number"]),
+                    shot_time_ms=None
+                    if item.get("shot_time_ms") in {None, ""}
+                    else int(item["shot_time_ms"]),
+                    confidence=None
+                    if item.get("confidence") in {None, ""}
+                    else float(item["confidence"]),
+                    support_confidence=None
+                    if item.get("support_confidence") in {None, ""}
+                    else float(item["support_confidence"]),
+                    interval_ms=None
+                    if item.get("interval_ms") in {None, ""}
+                    else int(item["interval_ms"]),
                 )
             )
         return suggestions
@@ -1874,14 +3253,24 @@ class ProjectController(QObject):
         }
         for shot in self.project.analysis.shots:
             original = self._original_shot_state_by_id.get(shot.id)
-            if original is None or original.time_ms == shot.time_ms or shot.id in existing_restore_ids:
+            if (
+                original is None
+                or original.time_ms == shot.time_ms
+                or shot.id in existing_restore_ids
+            ):
                 continue
             proposals.append(
                 TimingChangeProposal(
                     proposal_type="restore_shot",
                     shot_id=shot.id,
                     shot_number=next(
-                        (index + 1 for index, candidate in enumerate(sort_shots(self.project.analysis.shots)) if candidate.id == shot.id),
+                        (
+                            index + 1
+                            for index, candidate in enumerate(
+                                sort_shots(self.project.analysis.shots)
+                            )
+                            if candidate.id == shot.id
+                        ),
                         None,
                     ),
                     source_time_ms=shot.time_ms,
@@ -1891,7 +3280,9 @@ class ProjectController(QObject):
                 )
             )
         self.project.analysis.timing_change_proposals = proposals
-        self._set_status(f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}.")
+        self._set_status(
+            f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}."
+        )
         self.project.touch()
         self.project_changed.emit()
 
@@ -1961,10 +3352,14 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def move_shot(self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False) -> None:
+    def move_shot(
+        self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False
+    ) -> None:
         if preserve_following_splits:
             shots = sort_shots(self.project.analysis.shots)
-            shot_index = next((index for index, shot in enumerate(shots) if shot.id == shot_id), None)
+            shot_index = next(
+                (index for index, shot in enumerate(shots) if shot.id == shot_id), None
+            )
             if shot_index is None:
                 raise ValueError("Shot not found")
             shot = shots[shot_index]
@@ -1972,7 +3367,9 @@ class ProjectController(QObject):
                 shot.shotml_time_ms = shot.time_ms
             if shot.shotml_confidence is None:
                 original = self._original_shot_state_by_id.get(shot.id)
-                shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+                shot.shotml_confidence = (
+                    original.confidence if original is not None else shot.confidence
+                )
             lower_bound_ms = (
                 self.project.analysis.beep_time_ms_primary
                 if shot_index == 0 and self.project.analysis.beep_time_ms_primary is not None
@@ -1997,7 +3394,9 @@ class ProjectController(QObject):
                         shot.shotml_time_ms = shot.time_ms
                     if shot.shotml_confidence is None:
                         original = self._original_shot_state_by_id.get(shot.id)
-                        shot.shotml_confidence = original.confidence if original is not None else shot.confidence
+                        shot.shotml_confidence = (
+                            original.confidence if original is not None else shot.confidence
+                        )
                     shot.time_ms = max(0, time_ms)
                     if shot.source == ShotSource.AUTO:
                         shot.source = ShotSource.MANUAL
@@ -2016,7 +3415,9 @@ class ProjectController(QObject):
             if self.project.ui_state.selected_shot_id == shot_id
             else None
         )
-        self.project.analysis.shots = [shot for shot in self.project.analysis.shots if shot.id != shot_id]
+        self.project.analysis.shots = [
+            shot for shot in self.project.analysis.shots if shot.id != shot_id
+        ]
         self._forget_original_shot(shot_id)
         normalize_project_timing_events(self.project)
         _revalidate_timing_ui_state(self.project, selection_context)
@@ -2031,7 +3432,9 @@ class ProjectController(QObject):
                 return
 
     def select_shot(self, shot_id: str | None) -> None:
-        if shot_id is not None and not any(shot.id == shot_id for shot in self.project.analysis.shots):
+        if shot_id is not None and not any(
+            shot.id == shot_id for shot in self.project.analysis.shots
+        ):
             shot_id = None
         self.project.ui_state.selected_shot_id = shot_id
         self.project_changed.emit()
@@ -2042,7 +3445,11 @@ class ProjectController(QObject):
         valid_shot_ids = {shot.id for shot in self.project.analysis.shots}
 
         if "selected_shot_id" in payload:
-            next_shot_id = None if payload.get("selected_shot_id") in {None, ""} else str(payload["selected_shot_id"])
+            next_shot_id = (
+                None
+                if payload.get("selected_shot_id") in {None, ""}
+                else str(payload["selected_shot_id"])
+            )
             if next_shot_id is not None and next_shot_id not in valid_shot_ids:
                 next_shot_id = None
             if ui_state.selected_shot_id != next_shot_id:
@@ -2177,7 +3584,9 @@ class ProjectController(QObject):
             if ui_state.scoring_shot_expansion != next_expansion:
                 ui_state.scoring_shot_expansion = next_expansion
                 changed = True
-            next_scoring_edit_ids = [shot_id for shot_id, expanded in next_expansion.items() if expanded]
+            next_scoring_edit_ids = [
+                shot_id for shot_id, expanded in next_expansion.items() if expanded
+            ]
             if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
                 ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
                 changed = True
@@ -2187,7 +3596,11 @@ class ProjectController(QObject):
             if isinstance(raw_scoring_edit_ids, list):
                 for value in raw_scoring_edit_ids:
                     clean_value = str(value).strip()
-                    if clean_value and clean_value in valid_shot_ids and clean_value not in next_scoring_edit_ids:
+                    if (
+                        clean_value
+                        and clean_value in valid_shot_ids
+                        and clean_value not in next_scoring_edit_ids
+                    ):
                         next_scoring_edit_ids.append(clean_value)
             if ui_state.scoring_edit_shot_ids != next_scoring_edit_ids:
                 ui_state.scoring_edit_shot_ids = next_scoring_edit_ids
@@ -2326,11 +3739,15 @@ class ProjectController(QObject):
         letter: ScoreLetter | None = None,
         penalty_counts: dict[str, float] | None = None,
     ) -> None:
-        normalized_penalty_counts = None if penalty_counts is None else {
-            str(key): max(0.0, float(value))
-            for key, value in penalty_counts.items()
-            if max(0.0, float(value)) > 0
-        }
+        normalized_penalty_counts = (
+            None
+            if penalty_counts is None
+            else {
+                str(key): max(0.0, float(value))
+                for key, value in penalty_counts.items()
+                if max(0.0, float(value)) > 0
+            }
+        )
         for shot in self.project.analysis.shots:
             if shot.id == shot_id:
                 if shot.score is None:
@@ -2344,7 +3761,9 @@ class ProjectController(QObject):
         self.project.touch()
         self.project_changed.emit()
 
-    def restore_original_shot_timing(self, shot_id: str, *, preserve_following_splits: bool = False) -> None:
+    def restore_original_shot_timing(
+        self, shot_id: str, *, preserve_following_splits: bool = False
+    ) -> None:
         original = self._original_shot_state_by_id.get(shot_id)
         if original is None:
             raise ValueError("Original split not found")
@@ -2352,7 +3771,9 @@ class ProjectController(QObject):
         for shot_index, shot in enumerate(shots):
             if shot.id != shot_id:
                 continue
-            restored_time_ms = max(0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms)
+            restored_time_ms = max(
+                0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms
+            )
             if preserve_following_splits:
                 delta_ms = restored_time_ms - shot.time_ms
                 if delta_ms:
@@ -2362,13 +3783,19 @@ class ProjectController(QObject):
                         if shifted_shot.shotml_confidence is None:
                             original_shifted = self._original_shot_state_by_id.get(shifted_shot.id)
                             shifted_shot.shotml_confidence = (
-                                original_shifted.confidence if original_shifted is not None else shifted_shot.confidence
+                                original_shifted.confidence
+                                if original_shifted is not None
+                                else shifted_shot.confidence
                             )
                         shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
             else:
                 shot.time_ms = restored_time_ms
             shot.source = original.source
-            shot.confidence = shot.shotml_confidence if shot.shotml_confidence is not None else original.confidence
+            shot.confidence = (
+                shot.shotml_confidence
+                if shot.shotml_confidence is not None
+                else original.confidence
+            )
             self.project.sort_shots()
             self.update_hit_factor()
             self._set_status("Restored original split.")
@@ -2421,8 +3848,7 @@ class ProjectController(QObject):
 
     def set_penalty_counts(self, penalty_counts: dict[str, float]) -> None:
         self.project.scoring.penalty_counts = {
-            str(key): max(0.0, float(value))
-            for key, value in penalty_counts.items()
+            str(key): max(0.0, float(value)) for key, value in penalty_counts.items()
         }
         self.update_hit_factor()
         self.project.touch()
@@ -2453,7 +3879,9 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_overlay_badge_layout(self, style_type: str, spacing: int, margin: int) -> None:
-        self.project.overlay.style_type = style_type if style_type in {"square", "bubble", "rounded"} else "square"
+        self.project.overlay.style_type = (
+            style_type if style_type in {"square", "bubble", "rounded"} else "square"
+        )
         self.project.overlay.spacing = max(0, min(40, int(spacing)))
         self.project.overlay.margin = max(0, min(40, int(margin)))
         self.project.touch()
@@ -2532,7 +3960,9 @@ class ProjectController(QObject):
             overlay.custom_box_text = str(payload["custom_box_text"])[:500]
         if "custom_box_quadrant" in payload:
             value = str(payload["custom_box_quadrant"])
-            overlay.custom_box_quadrant = value if value in valid_custom_box_quadrants else "top_right"
+            overlay.custom_box_quadrant = (
+                value if value in valid_custom_box_quadrants else "top_right"
+            )
         if "custom_box_x" in payload:
             value = payload["custom_box_x"]
             overlay.custom_box_x = None if value in {"", None} else max(0.0, min(1.0, float(value)))
@@ -2567,14 +3997,25 @@ class ProjectController(QObject):
                     quadrant=quadrant if quadrant in valid_custom_box_quadrants else "top_right",
                     x=None if item.get("x") in {None, ""} else max(0.0, min(1.0, float(item["x"]))),
                     y=None if item.get("y") in {None, ""} else max(0.0, min(1.0, float(item["y"]))),
-                    background_color=str(item.get("background_color", overlay.custom_box_background_color)),
+                    background_color=str(
+                        item.get("background_color", overlay.custom_box_background_color)
+                    ),
                     text_color=str(item.get("text_color", overlay.custom_box_text_color)),
-                    opacity=max(0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))),
+                    opacity=max(
+                        0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))
+                    ),
                     width=max(0, int(item.get("width", 0))),
                     height=max(0, int(item.get("height", 0))),
-                    style_type=str(item.get("style_type", overlay.style_type) or overlay.style_type),
-                    font_family=str(item.get("font_family", overlay.font_family) or overlay.font_family)[:80],
-                    font_size=max(8, min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size))),
+                    style_type=str(
+                        item.get("style_type", overlay.style_type) or overlay.style_type
+                    ),
+                    font_family=str(
+                        item.get("font_family", overlay.font_family) or overlay.font_family
+                    )[:80],
+                    font_size=max(
+                        8,
+                        min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size)),
+                    ),
                     font_bold=bool(item.get("font_bold", overlay.font_bold)),
                     font_italic=bool(item.get("font_italic", overlay.font_italic)),
                 )
@@ -2917,7 +4358,9 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_primary,
         )
         analyzed_source = _first_analyzable_merge_source(self.project)
-        self.project.analysis.analyzed_secondary_source_id = None if analyzed_source is None else analyzed_source.id
+        self.project.analysis.analyzed_secondary_source_id = (
+            None if analyzed_source is None else analyzed_source.id
+        )
         self.project.analysis.sync_offset_ms *= -1
         if analyzed_source is not None:
             analyzed_source.sync_offset_ms = self.project.analysis.sync_offset_ms
@@ -2935,6 +4378,8 @@ class ProjectController(QObject):
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path(previous_project_path=previous_project_path)
         save_project(self.project, self.project_path)
+        self._save_stage_profiles(self.project_path)
+        self._sync_project_to_library()
         self._restore_practiscore_source_from_project()
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_original_shots()
@@ -2953,7 +4398,11 @@ class ProjectController(QObject):
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
         if recovered_media or recovered_practiscore:
             self.project.touch()
-        self._saved_snapshot = loaded_snapshot if (recovered_media or recovered_practiscore) else project_to_dict(self.project)
+        self._saved_snapshot = (
+            loaded_snapshot
+            if (recovered_media or recovered_practiscore)
+            else project_to_dict(self.project)
+        )
         self._remember_original_shots()
         self._remember_project(self.project_path)
         if recovered_media and recovered_practiscore and self._practiscore_source_name:
@@ -2961,13 +4410,16 @@ class ProjectController(QObject):
                 f"Opened project folder {self.project_path} and restored renamed project media and PractiScore from {self._practiscore_source_name}."
             )
         elif recovered_media:
-            self._set_status(f"Opened project folder {self.project_path} and restored renamed project media.")
+            self._set_status(
+                f"Opened project folder {self.project_path} and restored renamed project media."
+            )
         elif recovered_practiscore and self._practiscore_source_name:
             self._set_status(
                 f"Opened project folder {self.project_path} and restored PractiScore from {self._practiscore_source_name}."
             )
         else:
             self._set_status(f"Opened project folder {self.project_path}.")
+        self._load_stage_profiles(self.project_path)
         self.project_path_changed.emit(str(self.project_path))
         self.project_changed.emit()
 
@@ -3018,14 +4470,21 @@ class ProjectController(QObject):
                     "font_bold": self.project.popup_template.font_bold,
                     "font_italic": self.project.popup_template.font_italic,
                 },
-                "review_text_boxes": _overlay_text_boxes_to_payload(self.project.overlay.text_boxes),
+                "review_text_boxes": _overlay_text_boxes_to_payload(
+                    self.project.overlay.text_boxes
+                ),
             },
         }
 
     def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
         template_action = str(payload.get("template_action") or "").strip().lower()
         if template_action:
-            template_name = str(payload.get("template_name") or self.settings.active_template_name or "Default").strip() or "Default"
+            template_name = (
+                str(
+                    payload.get("template_name") or self.settings.active_template_name or "Default"
+                ).strip()
+                or "Default"
+            )
             if template_action == "select":
                 self.select_settings_template(template_name)
                 return
@@ -3047,7 +4506,11 @@ class ProjectController(QObject):
             if template_action == "delete":
                 self.delete_settings_template(template_name)
                 return
-        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        base = (
+            self.folder_settings
+            if scope == "folder" and self.folder_settings is not None
+            else self.settings
+        )
         target = AppSettings.from_dict(base.to_dict())
         if "default_match_type" in payload:
             default_match_type = str(payload["default_match_type"] or "").strip().lower()
@@ -3063,7 +4526,10 @@ class ProjectController(QObject):
             else:
                 target.default_stage_number = max(1, int(raw_stage_number))
         if "default_competitor_name" in payload:
-            target.default_competitor_name = str(payload.get("default_competitor_name", target.default_competitor_name) or target.default_competitor_name)
+            target.default_competitor_name = str(
+                payload.get("default_competitor_name", target.default_competitor_name)
+                or target.default_competitor_name
+            )
         if "default_competitor_place" in payload:
             raw_competitor_place = payload.get("default_competitor_place")
             if raw_competitor_place in {None, ""}:
@@ -3082,7 +4548,10 @@ class ProjectController(QObject):
             _badge_style_from_payload(target.hit_factor_badge, payload.get("hit_factor_badge"))
         if "overlay_custom_box_background_color" in payload:
             target.overlay_custom_box_background_color = str(
-                payload.get("overlay_custom_box_background_color", target.overlay_custom_box_background_color)
+                payload.get(
+                    "overlay_custom_box_background_color",
+                    target.overlay_custom_box_background_color,
+                )
                 or target.overlay_custom_box_background_color
             )
         if "overlay_custom_box_text_color" in payload:
@@ -3143,11 +4612,17 @@ class ProjectController(QObject):
             if "layout_locked" in payload:
                 target.layout_locked = _optional_payload_bool(payload.get("layout_locked"))
             if "layout_rail_width" in payload:
-                target.layout_rail_width = _optional_layout_dimension(payload.get("layout_rail_width"), 84, 104)
+                target.layout_rail_width = _optional_layout_dimension(
+                    payload.get("layout_rail_width"), 84, 104
+                )
             if "layout_inspector_width" in payload:
-                target.layout_inspector_width = _optional_layout_dimension(payload.get("layout_inspector_width"), 320, 4096)
+                target.layout_inspector_width = _optional_layout_dimension(
+                    payload.get("layout_inspector_width"), 320, 4096
+                )
             if "layout_waveform_height" in payload:
-                target.layout_waveform_height = _optional_layout_dimension(payload.get("layout_waveform_height"), 112, 4096)
+                target.layout_waveform_height = _optional_layout_dimension(
+                    payload.get("layout_waveform_height"), 112, 4096
+                )
         if "detection_threshold" in payload:
             threshold = float(payload["detection_threshold"])
             target.detection_threshold = threshold
@@ -3177,7 +4652,11 @@ class ProjectController(QObject):
             return
 
         section_name = str(section or "").strip().lower()
-        base = self.folder_settings if scope == "folder" and self.folder_settings is not None else self.settings
+        base = (
+            self.folder_settings
+            if scope == "folder" and self.folder_settings is not None
+            else self.settings
+        )
         target = AppSettings.from_dict(base.to_dict())
         fallback = self.settings if scope == "folder" else AppSettings()
 
@@ -3194,9 +4673,25 @@ class ProjectController(QObject):
         fallback_config = fallback.config_dict()
         section_keys = {
             "global-template": ("default_tool", "reopen_last_tool"),
-            "layout": ("layout_locked", "layout_rail_width", "layout_inspector_width", "layout_waveform_height"),
-            "scoring": ("default_match_type", "default_stage_number", "default_competitor_name", "default_competitor_place"),
-            "pip": ("merge_layout", "pip_size", "merge_pip_x", "merge_pip_y", "merge_source_defaults"),
+            "layout": (
+                "layout_locked",
+                "layout_rail_width",
+                "layout_inspector_width",
+                "layout_waveform_height",
+            ),
+            "scoring": (
+                "default_match_type",
+                "default_stage_number",
+                "default_competitor_name",
+                "default_competitor_place",
+            ),
+            "pip": (
+                "merge_layout",
+                "pip_size",
+                "merge_pip_x",
+                "merge_pip_y",
+                "merge_source_defaults",
+            ),
             "overlay": (
                 "overlay_position",
                 "badge_size",
@@ -3245,16 +4740,22 @@ class ProjectController(QObject):
             self._sync_active_settings_template()
             save_settings(self.settings)
         self.settings_changed.emit()
-        self._set_status(f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope.")
+        self._set_status(
+            f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope."
+        )
 
     def restore_defaults(self) -> None:
         self.settings = AppSettings()
-        self.settings.settings_templates = {self.settings.active_template_name: self.settings.template_snapshot()}
+        self.settings.settings_templates = {
+            self.settings.active_template_name: self.settings.template_snapshot()
+        }
         save_settings(self.settings)
         delete_folder_settings(self.project_path)
         self.folder_settings = None
         self.folder_settings_error = None
-        self._apply_effective_settings_to_project(self.project, self.effective_settings(), reset_tool=False)
+        self._apply_effective_settings_to_project(
+            self.project, self.effective_settings(), reset_tool=False
+        )
         self.project.touch()
         self._set_status("Restored SplitShot defaults.")
         self.settings_changed.emit()
@@ -3269,7 +4770,9 @@ class ProjectController(QObject):
             shot.id: _OriginalShotState(
                 time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
                 source=shot.source,
-                confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
+                confidence=shot.shotml_confidence
+                if shot.shotml_confidence is not None
+                else shot.confidence,
                 score=None if shot.score is None else deepcopy(shot.score),
             )
             for shot in self.project.analysis.shots
@@ -3279,7 +4782,9 @@ class ProjectController(QObject):
         self._original_shot_state_by_id[shot.id] = _OriginalShotState(
             time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
             source=shot.source,
-            confidence=shot.shotml_confidence if shot.shotml_confidence is not None else shot.confidence,
+            confidence=shot.shotml_confidence
+            if shot.shotml_confidence is not None
+            else shot.confidence,
             score=None if shot.score is None else deepcopy(shot.score),
         )
 
@@ -3287,7 +4792,10 @@ class ProjectController(QObject):
         self._original_shot_state_by_id.pop(shot_id, None)
 
     def _remember_project(self, path: Path) -> None:
-        entries = [str(path), *[item for item in self.settings.recent_projects if item != str(path)]]
+        entries = [
+            str(path),
+            *[item for item in self.settings.recent_projects if item != str(path)],
+        ]
         next_entries = entries[:10]
         if self.settings.recent_projects == next_entries:
             return
@@ -3304,6 +4812,8 @@ class ProjectController(QObject):
         try:
             self._autosave_in_progress = True
             save_project(self.project, self.project_path)
+            self._save_stage_profiles(self.project_path)
+            self._sync_project_to_library()
             if self.project.scoring.practiscore_source_path:
                 self._restore_practiscore_source_from_project()
             self._saved_snapshot = project_to_dict(self.project)
@@ -3348,7 +4858,9 @@ class ProjectController(QObject):
         self._apply_effective_settings_to_project(project, effective, reset_tool=True)
         return project
 
-    def _apply_effective_settings_to_project(self, project: Project, effective: AppSettings, *, reset_tool: bool) -> None:
+    def _apply_effective_settings_to_project(
+        self, project: Project, effective: AppSettings, *, reset_tool: bool
+    ) -> None:
         project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
         project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
         project.scoring.match_type = ""
@@ -3398,20 +4910,24 @@ class ProjectController(QObject):
         project.export.ffmpeg_preset = effective.export_ffmpeg_preset
         project.popup_template = deepcopy(effective.marker_template)
         project.overlay.text_boxes = [
-            OverlayTextBox(**box)
-            for box in effective.review_text_boxes
-            if isinstance(box, dict)
+            OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
         ]
         if effective.layout_locked is not None:
             project.ui_state.layout_locked = bool(effective.layout_locked)
         if effective.layout_rail_width is not None:
             project.ui_state.rail_width = max(84, min(104, int(effective.layout_rail_width)))
         if effective.layout_inspector_width is not None:
-            project.ui_state.inspector_width = max(320, min(4096, int(effective.layout_inspector_width)))
+            project.ui_state.inspector_width = max(
+                320, min(4096, int(effective.layout_inspector_width))
+            )
         if effective.layout_waveform_height is not None:
-            project.ui_state.waveform_height = max(112, min(4096, int(effective.layout_waveform_height)))
+            project.ui_state.waveform_height = max(
+                112, min(4096, int(effective.layout_waveform_height))
+            )
         if reset_tool:
-            project.ui_state.active_tool = effective.default_tool if effective.reopen_last_tool else "project"
+            project.ui_state.active_tool = (
+                effective.default_tool if effective.reopen_last_tool else "project"
+            )
 
     def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
         self.folder_settings_error = None
@@ -3431,7 +4947,9 @@ class ProjectController(QObject):
             if previous_project_path is not None
             else ""
         )
-        if not current_output_path or (previous_output_path and current_output_path == previous_output_path):
+        if not current_output_path or (
+            previous_output_path and current_output_path == previous_output_path
+        ):
             self.project.export.output_path = project_output_path
 
     def _set_status(self, message: str) -> None:

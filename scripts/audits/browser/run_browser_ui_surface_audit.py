@@ -12,11 +12,11 @@ from playwright.sync_api import Browser, BrowserType, Page, Playwright, sync_pla
 
 from _media_fixtures import ensure_stage_video
 from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
 
 
 def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name: str = "file") -> dict[str, Any]:
     import uuid
-    from urllib.parse import urlencode
     from urllib.request import Request, urlopen
     boundary = uuid.uuid4().hex
     data = file_path.read_bytes()
@@ -32,7 +32,6 @@ def _multipart_upload(base_url: str, endpoint: str, file_path: Path, field_name:
     )
     with urlopen(req, timeout=120) as resp:
         return json.loads(resp.read().decode("utf-8"))
-from splitshot.ui.controller import ProjectController
 
 
 ROOT = Path(__file__).resolve().parents[3]

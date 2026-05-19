@@ -590,6 +590,8 @@ class Project:
     merge: MergeSettings = field(default_factory=MergeSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     ui_state: UIState = field(default_factory=UIState)
+    _lead_in_card: dict | None = None
+    _brand_mark: dict | None = None
     schema_version: int = 1
 
     def sort_shots(self) -> None:
@@ -599,6 +601,110 @@ class Project:
         self.updated_at = datetime.now(UTC)
 
 
+
+@dataclass(slots=True)
+class MatchWorkspace:
+    match_id: str = field(default_factory=lambda: uuid4().hex)
+    name: str = "Untitled Match"
+    description: str = ""
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    stage_order: list[str] = field(default_factory=list)
+    stage_entries: dict[str, "StageEntry"] = field(default_factory=dict)
+    shared_defaults: dict = field(default_factory=dict)
+    match_output_profiles: list["OutputProfile"] = field(default_factory=list)
+    ui_state: dict = field(default_factory=dict)
+    schema_version: int = 1
+
+
+@dataclass(slots=True)
+class StageEntry:
+    stage_id: str = ""
+    relative_project_path: str = ""
+    display_name: str = ""
+    stage_number: int | None = None
+    status: str = "incomplete"
+    override_values: dict = field(default_factory=dict)
+    last_reviewed_at: datetime | None = None
+    source_media_present: bool = False
+
+
+@dataclass(slots=True)
+class OutputProfile:
+    output_id: str = field(default_factory=lambda: uuid4().hex)
+    scope_type: str = "stage"
+    scope_id: str = ""
+    profile_name: str = "Default"
+    profile_kind: str = "stage_output"
+    frame_profile: str = "source"
+    metric_caption_preset: dict = field(default_factory=dict)
+    lead_in_card: dict = field(default_factory=dict)
+    brand_mark: dict = field(default_factory=dict)
+    subject_track_crop: dict = field(default_factory=dict)
+    visibility_recipe: dict = field(default_factory=dict)
+    retained_proxy_id: str | None = None
+    last_rendered_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class LibraryStageRecord:
+    library_record_id: str = field(default_factory=lambda: uuid4().hex)
+    stage_id: str = ""
+    match_id: str | None = None
+    display_name: str = ""
+    event_date: datetime | None = None
+    discipline: str = ""
+    competitor_name: str = ""
+    metric_summary: dict = field(default_factory=dict)
+    output_profile_refs: list[str] = field(default_factory=list)
+    active_retained_proxy: str | None = None
+    editor_target: dict = field(default_factory=dict)
+    truth_hash: str = ""
+
+
+@dataclass(slots=True)
+class LibraryMatchRecord:
+    library_record_id: str = field(default_factory=lambda: uuid4().hex)
+    match_id: str = ""
+    display_name: str = ""
+    event_date: datetime | None = None
+    discipline: str = ""
+    stage_ids: list[str] = field(default_factory=list)
+    aggregate_metric_summary: dict = field(default_factory=dict)
+    output_profile_refs: list[str] = field(default_factory=list)
+    active_retained_proxy: str | None = None
+    editor_target: dict = field(default_factory=dict)
+    truth_hash: str = ""
+
+
+@dataclass(slots=True)
+class RetainedProxyRecord:
+    retained_proxy_id: str = field(default_factory=lambda: uuid4().hex)
+    scope_type: str = ""
+    scope_id: str = ""
+    source_output_id: str | None = None
+    relative_path: str = ""
+    codec_profile: str = "h264_aac"
+    width: int = 0
+    height: int = 0
+    duration_ms: int = 0
+    file_size_bytes: int = 0
+    generated_from_truth_hash: str = ""
+    generated_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class LibraryOutputRecord:
+    library_record_id: str = field(default_factory=lambda: uuid4().hex)
+    output_id: str = ""
+    scope_type: str = ""
+    scope_id: str = ""
+    profile_name: str = ""
+    profile_kind: str = ""
+    frame_profile: str = ""
+    retained_proxy_id: str | None = None
+    last_rendered_at: datetime | None = None
+
 def _serialize(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
@@ -607,7 +713,7 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, Path):
         return str(value)
     if is_dataclass(value):
-        return {item.name: _serialize(getattr(value, item.name)) for item in fields(value)}
+        return {item.name: _serialize(getattr(value, item.name)) for item in fields(value) if not item.name.startswith("_")}
     if isinstance(value, list):
         return [_serialize(item) for item in value]
     if isinstance(value, dict):

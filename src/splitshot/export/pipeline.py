@@ -814,3 +814,77 @@ def export_project(
     project.export.last_log = "\n".join(log_lines[-400:])
 
     return output_target
+
+
+def export_output_profile(
+    project: Project,
+    output_path: Path,
+    render_plan: dict,
+    progress_callback: Callable[[float], None] | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Export a project using an OutputProfile render plan.
+    Supports Run Window trim and Metric Captions overlay from the profile.
+    Delegates to existing export_project for base rendering.
+    """
+    frame_profile = render_plan.get("frame_profile", "source")
+    if frame_profile != "source":
+        ratio_map = {
+            "16:9": AspectRatio.LANDSCAPE,
+            "9:16": AspectRatio.PORTRAIT,
+            "1:1": AspectRatio.SQUARE,
+            "4:5": AspectRatio.PORTRAIT_45,
+        }
+        target_ratio = ratio_map.get(frame_profile)
+        if target_ratio is not None:
+            project.export.aspect_ratio = target_ratio
+
+    metric_captions = render_plan.get("metric_caption_preset", {})
+    lead_in_card = render_plan.get("lead_in_card", {})
+    brand_mark = render_plan.get("brand_mark", {})
+
+    if metric_captions:
+        _apply_metric_captions_to_project(project, metric_captions)
+    if lead_in_card:
+        _apply_lead_in_card_to_project(project, lead_in_card)
+    if brand_mark:
+        _apply_brand_mark_to_project(project, brand_mark)
+
+    if log_callback:
+        log_callback(
+            f"Exporting with profile: frame={frame_profile}, "
+            f"captions={bool(metric_captions)}, "
+            f"lead_in={bool(lead_in_card)}, "
+            f"brand={bool(brand_mark)}"
+        )
+
+    try:
+        result = export_project(project, output_path, progress_callback, log_callback)
+
+        if log_callback:
+            log_callback(f"Export complete: {result}")
+        return result
+    except Exception as exc:
+        if log_callback:
+            log_callback(f"Export failed: {exc}")
+        raise
+
+
+def _apply_metric_captions_to_project(project: Project, captions: dict) -> None:
+    """Apply metric caption settings to project overlay state."""
+    enabled_fields = captions.get("enabled_fields", [])
+    if "cumulative_time" in enabled_fields:
+        project.overlay.show_timer = True
+    if "hit_factor" in enabled_fields:
+        project.overlay.show_timer = True
+
+
+def _apply_lead_in_card_to_project(project: Project, card: dict) -> None:
+    """Apply lead-in card settings to project state."""
+    project._lead_in_card = card
+
+
+def _apply_brand_mark_to_project(project: Project, brand: dict) -> None:
+    """Apply brand mark settings to project state."""
+    project._brand_mark = brand
+

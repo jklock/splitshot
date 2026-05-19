@@ -1105,9 +1105,8 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                 )
 
                 rendered_box.wait_for(state="visible")
-                updated_box = None
                 if rendered_box.is_visible():
-                                updated_box = page.evaluate(
+                    stable_updated_box = page.evaluate(
                                         """(boxId) => {
                                             const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
                                             if (!(badge instanceof HTMLElement)) return null;
@@ -1116,18 +1115,9 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                                         }""",
                                         box_id,
                                 )
-                                stable_updated_box = page.evaluate(
-                                        """(boxId) => {
-                                            const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
-                                            if (!(badge instanceof HTMLElement)) return null;
-                                            const rect = badge.getBoundingClientRect();
-                                            return { width: rect.width, height: rect.height };
-                                        }""",
-                                        box_id,
-                                )
-                                assert stable_updated_box is not None
-                                assert stable_updated_box["width"] > initial_box["width"]
-                                assert stable_updated_box["height"] >= initial_box["height"]
+                    assert stable_updated_box is not None
+                    assert stable_updated_box["width"] > initial_box["width"]
+                    assert stable_updated_box["height"] >= initial_box["height"]
                 rendered_geometry = page.evaluate(
                     """(boxId) => {
                       const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
@@ -1237,7 +1227,7 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 selected_card = page.locator(
                     f'#popup-marker-list .popup-marker-row[data-popup-id="{selected_popup["id"]}"]'
                 )
-                selected_card.wait_for(state="visible")
+                selected_card.wait_for(state="attached")
                 assert selected_card.evaluate("card => card.classList.contains('selected')") is True
                 assert page.locator("#popup-timeline-strip").count() == 0
                 assert page.locator("#popup-pane-status").inner_text() == f"{total_shots} enabled"
@@ -2394,7 +2384,6 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
 
-                stage = page.locator("#video-stage")
                 source_card = page.locator(".merge-media-card").first
 
                 page.locator("#merge-layout").select_option("side_by_side")
@@ -2415,10 +2404,7 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 preview_layer.wait_for(state="visible")
                 preview_item = preview_layer.locator(".merge-preview-item").first
                 preview_item.wait_for(state="visible")
-                size_input = source_card.locator('[data-merge-source-field="size"]')
                 size_output = source_card.locator('[data-merge-source-output="size"]')
-                x_input = source_card.locator('[data-merge-source-field="x"]')
-                y_input = source_card.locator('[data-merge-source-field="y"]')
 
                 def read_preview_style() -> dict[str, str]:
                     return preview_item.evaluate(

@@ -15,7 +15,7 @@ def extract_section(changelog_path: Path, tag: str) -> str:
         if line.startswith("## "):
             if active:
                 break
-            active = line.strip() == header
+            active = line.strip().startswith(header)
             continue
         if active:
             capture.append(line)

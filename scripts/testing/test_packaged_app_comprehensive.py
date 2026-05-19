@@ -51,10 +51,10 @@ def _check(description, condition, detail=""):
 
 
 def _create_synthetic_video(out_dir, name="primary.mp4"):
-    import numpy as np, wave
+    import numpy as np
+    import wave
     path = out_dir / name
     audio_path = out_dir / f"{name}.wav"
-    raw_vid = out_dir / f"{name}.raw.mp4"
 
     sr = 22050
     ns = int(sr * 4)
@@ -71,7 +71,9 @@ def _create_synthetic_video(out_dir, name="primary.mp4"):
 
     c = np.clip(s, -1.0, 1.0)
     with wave.open(str(audio_path), "wb") as w:
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
         w.writeframes((c * 32767).astype(np.int16).tobytes())
 
     subprocess.run(["ffmpeg", "-y", "-v", "error",
@@ -166,7 +168,6 @@ def main():
             state = json.loads(resp.read().decode())
             prj = state.get("project", {})
             shots = len(prj.get("analysis", {}).get("shots", []))
-            popups = len(prj.get("popups", []))
             boxes = len(prj.get("overlay", {}).get("text_boxes", []))
             merged = len(prj.get("merge_sources", []))
             events = len(prj.get("analysis", {}).get("events", []))

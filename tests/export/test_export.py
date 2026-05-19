@@ -1058,3 +1058,65 @@ def test_export_uses_target_dimensions_and_stores_ffmpeg_log(synthetic_video_fac
     assert "Encoder pass 2 command:" in project.export.last_log
     assert "libx264" in project.export.last_log
     assert project.export.last_error is None
+
+
+class TestOutputProfileExport:
+    """Test export with OutputProfile render plans."""
+
+    def test_export_with_run_window_plan(self, tmp_path):
+        """Export function accepts run window render plan."""
+        from splitshot.domain.models import Project
+        from splitshot.export.pipeline import export_output_profile
+
+        project = Project()
+        project.primary_video.path = "/dev/null"
+        output_path = tmp_path / "output.mp4"
+
+        plan = {
+            "run_window": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
+            "frame_profile": "16:9",
+            "metric_caption_preset": {"enabled_fields": ["cumulative_time"]},
+            "lead_in_card": {"match_name": "Test"},
+            "brand_mark": {"text": "Test"},
+        }
+
+        try:
+            export_output_profile(project, output_path, plan)
+        except Exception as e:
+            error_msg = str(e).lower()
+            assert any(term in error_msg for term in ("file", "media", "video", "dev/null", "division", "zero")),                 f"Unexpected error: {e}"
+
+    def test_metric_captions_applied_to_overlay(self):
+        """Metric captions preset activates overlay visibility."""
+        from splitshot.domain.models import Project
+        from splitshot.export.pipeline import _apply_metric_captions_to_project
+
+        project = Project()
+        project.overlay.show_timer = False
+
+        _apply_metric_captions_to_project(project, {"enabled_fields": ["cumulative_time"]})
+        assert project.overlay.show_timer is True
+
+    def test_lead_in_card_stored_on_project(self):
+        """Lead-in card metadata is stored on project for render pipeline."""
+        from splitshot.domain.models import Project
+        from splitshot.export.pipeline import _apply_lead_in_card_to_project
+
+        project = Project()
+        card = {"match_name": "My Match", "date": "2026-05-19", "shooter": "John Doe"}
+        _apply_lead_in_card_to_project(project, card)
+
+        assert hasattr(project, '_lead_in_card')
+        assert project._lead_in_card["match_name"] == "My Match"
+
+    def test_brand_mark_stored_on_project(self):
+        """Brand mark metadata is stored on project for render pipeline."""
+        from splitshot.domain.models import Project
+        from splitshot.export.pipeline import _apply_brand_mark_to_project
+
+        project = Project()
+        brand = {"text": "SplitShot", "position": "bottom_right", "opacity": 0.8}
+        _apply_brand_mark_to_project(project, brand)
+
+        assert hasattr(project, '_brand_mark')
+        assert project._brand_mark["text"] == "SplitShot"

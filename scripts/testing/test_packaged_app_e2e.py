@@ -100,7 +100,6 @@ def main():
             raise TimeoutError("Backend did not respond")
         print("PASS: backend responding", flush=True)
 
-        video_file = ARTIFACTS_DIR / f"e2e-{sys.platform}.mp4"
         ARTIFACTS_DIR.mkdir(exist_ok=True)
 
         # Run Playwright Node.js script
@@ -173,10 +172,10 @@ def main():
         print(f"FAIL: {exc}", file=sys.stderr, flush=True)
         if proc.poll() is not None:
             print(f"FAIL: exit code {proc.returncode}", file=sys.stderr, flush=True)
-        for l in [log_out, log_err]:
-            if l and l.exists():
-                lines = l.read_text(encoding="utf-8", errors="replace").splitlines()
-                print(f"--- {l.name} tail ---", file=sys.stderr, flush=True)
+        for log_path in [log_out, log_err]:
+            if log_path and log_path.exists():
+                lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                print(f"--- {log_path.name} tail ---", file=sys.stderr, flush=True)
                 print("\n".join(lines[-20:]), file=sys.stderr, flush=True)
         return 1
     finally:
