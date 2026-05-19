@@ -32,3 +32,6 @@ electron/node_modules/
 
 # CI artifacts (downloaded for local comparison)
 ci-artifacts*/
+
+# Flutter rewrite lives on its own branch/worktree, never on main
+flutter_app/

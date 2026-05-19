@@ -127,6 +127,16 @@ The macOS packaging job:
 
 The release and macOS packaging workflows now fail when notarization secrets are missing or incomplete. They no longer silently ship a signed-but-not-notarized macOS artifact.
 
+## Hard Rules From The v1.0.4 Failure Chain
+
+These rules exist because the release path broke repeatedly when they were not enforced.
+
+- Treat the exact failed GitHub Actions lane as the source of truth. Download or inspect that specific job log before changing workflows, retagging, or blaming another platform.
+- Packaged validators must be self-contained. Do not rely on gitignored/local-only fixtures, host `PATH` ffmpeg/ffprobe, or nested child-process calls to bare `uv`/`python` executables when the running script can do the work directly.
+- A green package build is not enough. The clean-runner validate job must prove the built artifact actually launches, imports media, analyzes, and exports.
+- App notarization is not the same thing as DMG stapling. Verify the signed/notarized `.app`, then validate the installed DMG/app path in the macOS validate lane. Do not add DMG stapling steps unless the DMG itself is the notarized ticket target.
+- Do not retag until the exact failing lane is understood and the fix is tied to that lane's failure mode.
+
 ## Smoke Builds
 
 Use the platform-specific build workflows and test workflows for packaging smoke checks.

@@ -57,6 +57,7 @@ Format:
 - Target Python 3.12 for development and tests.
 - Assume `ffmpeg` and `ffprobe` are available on `PATH` for runtime/export workflows.
 - For browser workflow regressions, prefer pytest/browser tests and existing audit scripts over ad hoc manual checks.
+- Keep `flutter_app/` isolated to its own branch/worktree. Main must treat it as ignored branch-local work.
 
 ## Documentation
 
@@ -101,6 +102,11 @@ When a release or release-note task is requested:
 9. If a release already exists and its body is stale, update it with:
    `gh release edit vX.Y.Z --title "SplitShot X.Y.Z" --notes-file artifacts/release-notes.md --latest`
 10. Keep release tags semver-only. Do not create or preserve moving release tags like `v1` once a real `v1.0.0` release exists.
+11. Packaged validation scripts must be self-contained:
+   - do not depend on gitignored/local-only fixtures
+   - do not depend on host-installed ffmpeg/ffprobe at runtime
+   - do not shell out to nested `uv`/`python` commands by bare executable name when the current test process can perform the work in-process or via `sys.executable`
+12. When a release workflow fails, inspect the exact failing job log first and fix that lane before retagging or changing other workflows.
 
 ## SplitShot Testing
 
