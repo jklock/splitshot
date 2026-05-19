@@ -86,6 +86,17 @@ Covered surfaces:
 ## Technical Docs
 
 - [analysis/SHOTML.md](analysis/SHOTML.md)
+- [automate/00-product-definition.md](automate/00-product-definition.md)
+- [automate/01-shootingcut-feature-matrix.md](automate/01-shootingcut-feature-matrix.md)
+- [automate/02-editor-workflow-spec.md](automate/02-editor-workflow-spec.md)
+- [automate/03-performance-library-spec.md](automate/03-performance-library-spec.md)
+- [automate/04-data-model-spec.md](automate/04-data-model-spec.md)
+- [automate/05-technical-architecture.md](automate/05-technical-architecture.md)
+- [automate/06-feature-spec-single-video.md](automate/06-feature-spec-single-video.md)
+- [automate/07-feature-spec-multi-video.md](automate/07-feature-spec-multi-video.md)
+- [automate/08-feature-spec-performance-library.md](automate/08-feature-spec-performance-library.md)
+- [automate/09-roadmap-and-task-plan.md](automate/09-roadmap-and-task-plan.md)
+- [automate/10-acceptance-and-proof.md](automate/10-acceptance-and-proof.md)
 - [project/SHOTML_ARCHITECTURE.md](project/SHOTML_ARCHITECTURE.md)
 - [project/browser-pane-ownership.md](project/browser-pane-ownership.md)
 - [project/browser-control-qa-matrix.md](project/browser-control-qa-matrix.md)
