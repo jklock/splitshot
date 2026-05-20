@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from splitshot.domain.models import MergeLayout, MergeSource, Project, VideoAsset
-from splitshot.export.pipeline import _build_merge_plan, export_project
+from splitshot.export.pipeline import _build_merge_plan, _merged_duration_ms, export_project
 from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect
 
 
@@ -105,6 +105,46 @@ def test_multi_pip_merge_plan_uses_per_source_positions_and_offsets() -> None:
     assert plan.width == 640
     assert plan.height == 360
     assert plan.duration_ms == 1200
+
+
+def test_pip_preview_and_export_use_same_positive_offset_semantics() -> None:
+    project = Project(name="Preview Export Positive Offset Parity")
+    project.primary_video = _asset("/tmp/primary.mp4", duration_ms=1000)
+    project.merge.enabled = True
+    project.merge.layout = MergeLayout.PIP
+    source = MergeSource(
+        asset=_asset("/tmp/secondary.mp4", duration_ms=1200),
+        sync_offset_ms=250,
+    )
+    project.merge_sources = [source]
+
+    plan = _build_merge_plan(project)
+    command = _command_text(plan.command)
+
+    assert "-ss 0.250 -i /tmp/secondary.mp4" in command
+    assert "tpad=start_duration" not in command
+    assert _merged_duration_ms(project, project.merge_sources) == 1000
+    assert 1.0 + (source.sync_offset_ms / 1000.0) == pytest.approx(1.25)
+
+
+def test_pip_preview_and_export_use_same_negative_offset_semantics() -> None:
+    project = Project(name="Preview Export Negative Offset Parity")
+    project.primary_video = _asset("/tmp/primary.mp4", duration_ms=1000)
+    project.merge.enabled = True
+    project.merge.layout = MergeLayout.PIP
+    source = MergeSource(
+        asset=_asset("/tmp/secondary.mp4", duration_ms=1200),
+        sync_offset_ms=-300,
+    )
+    project.merge_sources = [source]
+
+    plan = _build_merge_plan(project)
+    command = _command_text(plan.command)
+
+    assert "tpad=start_duration=0.300:color=black" in command
+    assert "-ss 0.300 -i /tmp/secondary.mp4" not in command
+    assert _merged_duration_ms(project, project.merge_sources) == 1500
+    assert 1.0 + (source.sync_offset_ms / 1000.0) == pytest.approx(0.7)
 
 
 def test_pip_merge_plan_applies_still_image_opacity() -> None:

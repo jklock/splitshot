@@ -101,16 +101,30 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
         "if ($env:LOCALAPPDATA) { $paths += (Join-Path $env:LOCALAPPDATA 'Programs') }; "
         "if ($env:ProgramFiles) { $paths += $env:ProgramFiles }; "
         "if (${env:ProgramFiles(x86)}) { $paths += ${env:ProgramFiles(x86)} }; "
-        "$match = Get-ChildItem -Path $paths -Filter SplitShot.exe -File -Recurse -ErrorAction SilentlyContinue | "
+        "$paths = $paths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique; "
+        "$match = Get-ChildItem -Path $paths -File -Recurse -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.Name -ieq 'SplitShot.exe' } | "
         "Select-Object -First 1 -ExpandProperty FullName; "
-        "if ($match) { Write-Output $match }"
+        "if ($match) { Write-Output $match; exit 0 }; "
+        "Write-Output 'LOCATOR_PATHS=' + ($paths -join ';'); "
+        "$near = Get-ChildItem -Path $paths -File -Recurse -ErrorAction SilentlyContinue | "
+        "Where-Object { $_.Name -like '*SplitShot*.exe' -or $_.DirectoryName -like '*SplitShot*' } | "
+        "Select-Object -First 20 -ExpandProperty FullName; "
+        "if ($near) { Write-Output ('LOCATOR_NEAR=' + ($near -join ';')) }; "
+        "exit 0"
     )
     result = _run(["powershell", "-NoProfile", "-Command", locator])
-    executable = Path(result.stdout.strip())
+    lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    executable_line = next((line for line in lines if not line.startswith("LOCATOR_")), "")
+    if not executable_line:
+        diagnostic = "\n".join(lines) or "no locator output"
+        raise FileNotFoundError(f"Installed SplitShot.exe not found after NSIS install\n{diagnostic}")
+    executable = Path(executable_line)
     if not executable.exists():
         raise FileNotFoundError("Installed SplitShot.exe not found after NSIS install")
     ffmpeg_dir = executable.parent / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "windows"
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
+    env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg.exe")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe.exe")
     return InstalledArtifact(executable=executable, env=env)
 
@@ -148,6 +162,7 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")
     ffmpeg_dir = copied_app / "Contents" / "Resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "macos"
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
+    env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
     return InstalledArtifact(executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env)
 
@@ -162,6 +177,7 @@ def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
     ffmpeg_dir = squashfs_root / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "linux"
     env = {"APPIMAGE_EXTRACT_AND_RUN": "1"}
     env["PATH"] = _media_tool_free_path(ffmpeg_dir)
+    env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
     return InstalledArtifact(executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env)
 

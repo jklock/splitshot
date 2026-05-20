@@ -166,6 +166,8 @@ jobs:
           artifact=$(ls electron/build/*.dmg | head -n 1)
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with DMG package
+        env:
+          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
         run: |
           artifact=$(ls electron/build/*.dmg | head -n 1)
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py

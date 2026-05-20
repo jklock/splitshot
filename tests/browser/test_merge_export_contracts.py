@@ -84,6 +84,17 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {" in merge_pane_source
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
+    assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
+    assert "Re-run beep sync" in merge_pane_source
+    assert "Analyze beep sync" in merge_pane_source
+    assert "supports_sync_analysis" in merge_pane_source
+    assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
+    assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in source
+    assert "const target = mergePreviewTargetTime(primary.currentTime, activeSource);" in source
+    assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16" in source
+    assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08" in source
+    assert "popup_template: normalizePopupTemplate(state?.project?.popup_template || {})," in source
+    assert "opacity: currentSourceOpacity(source)," in source
 
     assert "export function createExportPane({" in export_pane_source
     assert "function readExportLayoutPayload() {" in export_pane_source

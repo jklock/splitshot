@@ -170,13 +170,49 @@ def browser_state(
     analysis_payload = project_payload.get("analysis")
     if isinstance(merge_sources_payload, list) and isinstance(analysis_payload, dict):
         analyzed_source_id = analysis_payload.get("analyzed_secondary_source_id")
+        first_analyzable_source_id = next(
+            (
+                item.get("id")
+                for item in merge_sources_payload
+                if isinstance(item, dict)
+                and isinstance(item.get("asset"), dict)
+                and not bool(item["asset"].get("is_still_image"))
+                and str(item["asset"].get("media_kind") or "video") != "animated_gif"
+            ),
+            None,
+        )
         for item in merge_sources_payload:
             if not isinstance(item, dict):
                 continue
             asset_payload = item.get("asset")
             if isinstance(asset_payload, dict):
                 item["media_kind"] = str(asset_payload.get("media_kind") or ("still_image" if asset_payload.get("is_still_image") else "video"))
-            item["is_analyzed_sync_source"] = bool(analyzed_source_id and item.get("id") == analyzed_source_id)
+            source_id = item.get("id")
+            supports_sync_analysis = bool(source_id and source_id == first_analyzable_source_id)
+            is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
+            item["is_analyzed_sync_source"] = is_analyzed_sync_source
+            item["supports_sync_analysis"] = supports_sync_analysis
+            item["can_rerun_sync_analysis"] = supports_sync_analysis
+            item["sync_analysis_status"] = (
+                str(analysis_payload.get("secondary_analysis_status") or "idle")
+                if is_analyzed_sync_source or supports_sync_analysis
+                else "idle"
+            )
+            item["sync_analysis_message"] = (
+                str(analysis_payload.get("secondary_analysis_message") or "")
+                if is_analyzed_sync_source or supports_sync_analysis
+                else ""
+            )
+            item["secondary_beep_time_ms"] = (
+                analysis_payload.get("beep_time_ms_secondary")
+                if is_analyzed_sync_source
+                else None
+            )
+            item["sync_offset_source"] = (
+                str(analysis_payload.get("secondary_sync_source") or "manual")
+                if is_analyzed_sync_source or (supports_sync_analysis and analysis_payload.get("beep_time_ms_secondary") is not None)
+                else "manual"
+            )
     split_rows_payload = []
     for row in rows:
         row_payload = _normalize_scoring_row_payload(asdict(row), ruleset)

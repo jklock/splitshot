@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -45,6 +46,119 @@ def _prepare_test_video(out_dir: Path) -> Path:
     return target
 
 
+def _ocr_text_is_readable(text: str) -> bool:
+    normalized = " ".join(str(text or "").split()).lower()
+    if not normalized:
+        return False
+    return any(token in normalized for token in ("shot", "draw", "timer", "split", "factor", "hit"))
+
+
+def _playwright_export_file(artifacts_dir: Path) -> Path:
+    return artifacts_dir / "e2e-exports" / "e2e-export-test.mp4"
+
+
+def _resolve_tool(command: str, *, windows_fallbacks: tuple[str, ...] = ()) -> str:
+    candidate = str(command or "").strip()
+    if candidate:
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+        explicit = Path(candidate)
+        if explicit.exists():
+            return str(explicit)
+    if sys.platform == "win32":
+        for fallback in windows_fallbacks:
+            expanded = Path(os.path.expandvars(fallback))
+            if expanded.exists():
+                return str(expanded)
+    raise FileNotFoundError(f"Required executable not found: {candidate or '<empty>'}")
+
+
+def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
+    ffmpeg = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFMPEG", "ffmpeg"))
+    ffprobe = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFPROBE", "ffprobe"))
+    tesseract = _resolve_tool(
+        os.environ.get("SPLITSHOT_PACKAGED_TESSERACT", "tesseract"),
+        windows_fallbacks=(
+            r"%ProgramFiles%\\Tesseract-OCR\\tesseract.exe",
+            r"%ProgramFiles(x86)%\\Tesseract-OCR\\tesseract.exe",
+            r"%ChocolateyInstall%\\bin\\tesseract.exe",
+        ),
+    )
+    proof_image = artifact_dir / "export-proof-overlay.png"
+    proof_text = artifact_dir / "export-proof-ocr.txt"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    probe = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-show_streams",
+            "-of",
+            "json",
+            str(export_file),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    metadata = json.loads(probe.stdout)
+    video_stream = next(item for item in metadata["streams"] if item.get("codec_type") == "video")
+    width = int(video_stream["width"])
+    height = int(video_stream["height"])
+    crop_width = width
+    crop_height = max(1, height // 2)
+    crop_x = 0
+    crop_y = max(0, height - crop_height)
+    crop_filter = f"crop={crop_width}:{crop_height}:{crop_x}:{crop_y}"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-v",
+            "error",
+            "-ss",
+            "5.2",
+            "-i",
+            str(export_file),
+            "-vf",
+            crop_filter,
+            "-frames:v",
+            "1",
+            str(proof_image),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    result = subprocess.run(
+        [
+            tesseract,
+            str(proof_image),
+            "stdout",
+            "--psm",
+            "6",
+            "-c",
+            "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789:+-. ",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    proof_text.write_text(result.stdout, encoding="utf-8")
+    if not _ocr_text_is_readable(result.stdout):
+        raise RuntimeError(
+            "Windows OCR proof did not find readable overlay text "
+            f"(got: {re.sub(r'\\s+', ' ', result.stdout).strip() or 'empty'})"
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", type=Path, required=True)
@@ -63,8 +177,7 @@ def main():
     project_path = work_dir / "e2e.ssproj"
 
     video_path = _prepare_test_video(work_dir)
-    export_dir = Path(tempfile.gettempdir()) / "sshot-e2e-export"
-    export_file = export_dir / "e2e-export-test.mp4"
+    export_file = _playwright_export_file(ARTIFACTS_DIR)
     export_file.unlink(missing_ok=True)
 
     print("Creating project bundle...", flush=True)
@@ -165,6 +278,9 @@ def main():
             if result.stderr:
                 print(result.stderr, file=sys.stderr, flush=True)
             raise RuntimeError("Playwright E2E failed")
+
+        if sys.platform == "win32" and os.environ.get("SPLITSHOT_E2E_OCR_PROOF") == "1":
+            _proof_windows_export_text(_playwright_export_file(ARTIFACTS_DIR), ARTIFACTS_DIR)
 
         print("PASS: full E2E test completed", flush=True)
         return 0

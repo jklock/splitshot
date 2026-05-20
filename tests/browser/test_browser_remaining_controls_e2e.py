@@ -718,6 +718,21 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                         arg={'sourceId': first_card.get_attribute('data-source-id'), 'expected': expected},
                     )
 
+                analyze_button = first_card.locator('button:has-text("beep sync")').first
+                analyze_button.wait_for(state='visible')
+                analyze_button.click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        return Boolean(source)
+                            && source.supports_sync_analysis === true
+                            && source.sync_analysis_status === 'ready'
+                            && source.sync_offset_source === 'auto'
+                            && source.secondary_beep_time_ms !== null;
+                    }""",
+                    arg=first_card.get_attribute('data-source-id'),
+                )
+
                 page.wait_for_function(
                     """(sourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);

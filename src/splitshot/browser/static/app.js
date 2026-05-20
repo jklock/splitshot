@@ -315,6 +315,10 @@ const POPUP_MOTION_FRAME_BUDGET_PER_POINT = 4;
 const POPUP_MOTION_TRAVEL_PX_PER_POINT = 48;
 const POPUP_MOTION_TIME_BUDGET_PER_POINT_MS = Math.round(POPUP_MOTION_FRAME_BUDGET_PER_POINT * 1000 / POPUP_MOTION_REFERENCE_FPS);
 const POPUP_MOTION_MAX_AUTO_POINTS = 14;
+const SECONDARY_PREVIEW_PAUSED_SEEK_THRESHOLD_S = 0.01;
+const SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16;
+const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.02;
+const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08;
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -5581,26 +5585,45 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
   return mergePane?.renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
 }
 
+function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
+  if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return;
+  const currentTime = Number(preview.currentTime || 0);
+  const drift = target - currentTime;
+  const absoluteDrift = Math.abs(drift);
+  const seekThreshold = paused ? SECONDARY_PREVIEW_PAUSED_SEEK_THRESHOLD_S : SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S;
+  if (Math.abs((preview.playbackRate || 1) - targetPlaybackRate) > 0.001) {
+    preview.playbackRate = targetPlaybackRate;
+    preview.defaultPlaybackRate = targetPlaybackRate;
+  }
+  if (absoluteDrift > seekThreshold) {
+    try {
+      if (typeof preview.fastSeek === "function") preview.fastSeek(target);
+      else preview.currentTime = target;
+    } catch {
+      // Ignore early metadata seek failures.
+    }
+    return;
+  }
+  if (paused || absoluteDrift <= SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S) return;
+  const nextPlaybackRate = clamp(
+    targetPlaybackRate + clamp(drift * 0.5, -SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA, SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA),
+    0.25,
+    4,
+  );
+  if (Math.abs((preview.playbackRate || 1) - nextPlaybackRate) > 0.001) {
+    preview.playbackRate = nextPlaybackRate;
+    preview.defaultPlaybackRate = nextPlaybackRate;
+  }
+}
+
 function syncMergePreviewElements(primary) {
   const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));
   if (previews.length === 0) return;
-  const seekThreshold = primary.paused ? 0.01 : 0.05;
   const targetPlaybackRate = primary.playbackRate || 1;
   previews.forEach((preview) => {
     const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";
     const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));
-    if (Math.abs((preview.playbackRate || 1) - targetPlaybackRate) > 0.001) {
-      preview.playbackRate = targetPlaybackRate;
-      preview.defaultPlaybackRate = targetPlaybackRate;
-    }
-    if (Number.isFinite(target) && Math.abs((preview.currentTime || 0) - target) > seekThreshold) {
-      try {
-        if (typeof preview.fastSeek === "function") preview.fastSeek(target);
-        else preview.currentTime = target;
-      } catch {
-        // Ignore early metadata seek failures.
-      }
-    }
+    syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);
     if (primary.paused && !preview.paused) {
       preview.pause();
       return;
@@ -5637,20 +5660,8 @@ function syncSecondaryPreview() {
     clearSecondaryPreviewPlayError();
   } else {
     const target = mergePreviewTargetTime(primary.currentTime, activeSource);
-    const seekThreshold = primary.paused ? 0.01 : 0.05;
     const targetPlaybackRate = primary.playbackRate || 1;
-    if (Math.abs((secondary.playbackRate || 1) - targetPlaybackRate) > 0.001) {
-      secondary.playbackRate = targetPlaybackRate;
-      secondary.defaultPlaybackRate = targetPlaybackRate;
-    }
-    if (Number.isFinite(target) && Math.abs((secondary.currentTime || 0) - target) > seekThreshold) {
-      try {
-        if (typeof secondary.fastSeek === "function") secondary.fastSeek(target);
-        else secondary.currentTime = target;
-      } catch {
-        // Some browsers reject seeks before metadata is ready.
-      }
-    }
+    syncPreviewPlaybackToTarget(secondary, target, targetPlaybackRate, primary.paused);
     if (primary.paused && !secondary.paused) {
       secondary.pause();
       clearSecondaryPreviewPlayError();
@@ -7576,13 +7587,56 @@ function overlayBadgeMeasureContext() {
   return overlayBadgeMeasureCanvas.getContext("2d");
 }
 
+function browserPlatformIsWindows() {
+  const platform = String(window.navigator?.platform || "");
+  const userAgent = String(window.navigator?.userAgent || "");
+  return /Win/i.test(platform) || /Windows/i.test(userAgent);
+}
+
+function defaultOverlayFontFamily() {
+  return browserPlatformIsWindows() ? "Segoe UI" : "Helvetica Neue";
+}
+
+function resolvedOverlayFontFamily(fontFamily = "") {
+  const normalized = String(fontFamily || "").trim();
+  if (!normalized) return defaultOverlayFontFamily();
+  if (browserPlatformIsWindows() && normalized === "Helvetica Neue") return "Segoe UI";
+  return normalized;
+}
+
+function overlayFontFamilyStack(fontFamily = "") {
+  const normalized = resolvedOverlayFontFamily(fontFamily);
+  switch (normalized) {
+    case "Segoe UI":
+      return '"Segoe UI", Arial, Verdana, Tahoma, "Trebuchet MS", sans-serif';
+    case "Arial":
+      return 'Arial, "Segoe UI", Verdana, Tahoma, "Trebuchet MS", sans-serif';
+    case "Verdana":
+      return 'Verdana, "Segoe UI", Arial, Tahoma, "Trebuchet MS", sans-serif';
+    case "Tahoma":
+      return 'Tahoma, "Segoe UI", Arial, Verdana, "Trebuchet MS", sans-serif';
+    case "Trebuchet MS":
+      return '"Trebuchet MS", "Segoe UI", Arial, Verdana, Tahoma, sans-serif';
+    case "Courier New":
+      return 'Consolas, "Courier New", "Lucida Console", monospace';
+    case "Georgia":
+      return 'Georgia, Cambria, "Times New Roman", serif';
+    case "Helvetica Neue":
+      return '"Helvetica Neue", Helvetica, Arial, "DejaVu Sans", sans-serif';
+    default:
+      return normalized
+        ? `"${normalized}", "Segoe UI", Arial, Verdana, Tahoma, "Trebuchet MS", sans-serif`
+        : '"Segoe UI", Arial, Verdana, Tahoma, "Trebuchet MS", sans-serif';
+  }
+}
+
 function overlayBadgeFontSpec() {
   const overlay = state?.project?.overlay || {};
   const fontStyle = overlay.font_italic ? "italic" : "normal";
   const fontWeight = overlay.font_bold ? "700" : "400";
   const fontSize = overlayBadgeFontSizePx();
-  const fontFamily = overlay.font_family || "Helvetica Neue";
-  return `${fontStyle} ${fontWeight} ${fontSize}px "${fontFamily}"`;
+  const fontFamily = overlayFontFamilyStack(overlay.font_family || defaultOverlayFontFamily());
+  return `${fontStyle} ${fontWeight} ${fontSize}px ${fontFamily}`;
 }
 
 function measureOverlayBadgeContent(content) {
@@ -7639,7 +7693,7 @@ function overlayAutoBubbleSize() {
   if (!overlay) return { width: 0, height: 0 };
   const texts = overlayAutoSizedBadgeContents().map((content) => overlayBadgeContentText(content)).filter(Boolean);
   const cacheKey = [
-    overlay.font_family || "Helvetica Neue",
+    overlay.font_family || defaultOverlayFontFamily(),
     String(overlayBadgeFontSizePx()),
     overlay.font_bold ? "700" : "400",
     overlay.font_italic ? "italic" : "normal",
@@ -7745,7 +7799,7 @@ function badgeElement(
   const scaledHeight = resolvedHeight > 0 ? scaledOverlayPixelValue(resolvedHeight, scale, 1) : 0;
   if (scaledWidth > 0) badge.style.width = `${scaledWidth}px`;
   if (scaledHeight > 0) badge.style.height = `${scaledHeight}px`;
-  badge.style.fontFamily = state.project.overlay.font_family || "Helvetica Neue";
+  badge.style.fontFamily = overlayFontFamilyStack(state.project.overlay.font_family || defaultOverlayFontFamily());
   badge.style.fontSize = `${scaledOverlayPixelValue(state.project.overlay.font_size || 14, scale, 1)}px`;
   badge.style.fontWeight = state.project.overlay.font_bold ? "700" : "400";
   badge.style.fontStyle = state.project.overlay.font_italic ? "italic" : "normal";
@@ -8535,6 +8589,7 @@ function buildExportPayload(path) {
     },
     overlay: readOverlayPayload(),
     popups: state?.project?.popups || [],
+    popup_template: normalizePopupTemplate(state?.project?.popup_template || {}),
     analysis: {
       shots: state?.project?.analysis?.shots || [],
       events: state?.project?.analysis?.events || [],
@@ -8547,6 +8602,7 @@ function buildExportPayload(path) {
         pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
         pip_x: normalizedCoordinateValue(source.pip_x) ?? 1,
         pip_y: normalizedCoordinateValue(source.pip_y) ?? 1,
+        opacity: currentSourceOpacity(source),
         sync_offset_ms: currentSourceSyncOffsetMs(source),
       })),
     },

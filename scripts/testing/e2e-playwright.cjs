@@ -9,6 +9,8 @@ const videoPath = process.env.E2E_VIDEO_PATH || '';
 const baseUrl = `http://127.0.0.1:${port}`;
 const artifacts = [];
 const failures = [];
+const e2eScope = process.env.SPLITSHOT_E2E_SCOPE || '';
+const stopAfterExport = e2eScope === 'export-proof';
 
 function fail(msg) {
   failures.push(msg);
@@ -54,7 +56,7 @@ async function dumpHtml(page, name) {
 
 async function openTimingWorkbench(page) {
   await page.locator('button[data-tool="timing"]').click({ force: true, timeout: 10000 });
-  await page.waitForFunction(() => activeTool === 'timing', { timeout: 10000 });
+  await page.waitForFunction(() => activeTool === 'timing', null, { timeout: 10000 });
   const expandButton = page.locator('#expand-timing');
   if (await expandButton.count()) {
     const workbench = page.locator('#timing-workbench');
@@ -64,6 +66,55 @@ async function openTimingWorkbench(page) {
     }
   }
   await page.waitForTimeout(300);
+}
+
+async function waitForDetectedShots(page, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastShotCount = 0;
+  while (Date.now() < deadline) {
+    lastShotCount = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
+    if (lastShotCount > 0) return lastShotCount;
+    await page.waitForTimeout(500);
+  }
+  return lastShotCount;
+}
+
+function validateMp4(exportFile) {
+  const { execFileSync } = require('child_process');
+  const ffprobe = process.env.SPLITSHOT_PACKAGED_FFPROBE || 'ffprobe';
+  const probe = execFileSync(
+    ffprobe,
+    ['-v', 'error', '-show_entries', 'format=format_name,duration,size', '-of', 'json', exportFile],
+    { encoding: 'utf8', timeout: 60000 }
+  );
+  return JSON.parse(probe);
+}
+
+async function waitForStableExportFile(page, exportFile, timeoutMs = 120000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastSize = -1;
+  let stableReads = 0;
+  while (Date.now() < deadline) {
+    let stat = null;
+    try {
+      stat = fs.statSync(exportFile);
+    } catch {}
+    if (stat?.isFile() && stat.size > 1024) {
+      if (stat.size === lastSize) {
+        stableReads += 1;
+      } else {
+        lastSize = stat.size;
+        stableReads = 0;
+      }
+      if (stableReads >= 2) {
+        try {
+          return { size: stat.size, probe: validateMp4(exportFile) };
+        } catch {}
+      }
+    }
+    await page.waitForTimeout(1000);
+  }
+  return null;
 }
 
 async function main() {
@@ -107,7 +158,7 @@ async function main() {
   log('page loaded');
 
   log('waiting for app to initialize...');
-  await page.waitForFunction(() => typeof activeTool !== 'undefined', { timeout: 45000 });
+  await page.waitForFunction(() => typeof activeTool !== 'undefined', null, { timeout: 45000 });
   await screenshot(page, '02-app-initialized');
   log('app initialized');
 
@@ -117,7 +168,7 @@ async function main() {
     log('creating new project...');
     const pp = path.join(os.tmpdir(), 'sshot-e2e-project.ssproj');
     await page.evaluate((p) => createNewProject(p), pp);
-    await page.waitForFunction(() => Boolean(state?.project?.path), { timeout: 15000 });
+    await page.waitForFunction(() => Boolean(state?.project?.path), null, { timeout: 15000 });
     await page.waitForTimeout(500);
     await screenshot(page, '03-project-created');
     log('project created');
@@ -167,6 +218,30 @@ async function main() {
       let shotCount = r.body?.project?.analysis?.shots?.length || 0;
       log(`primary analysis: ${shotCount} shots, waveform=${Boolean(r.body?.project?.analysis?.waveform_primary)}`);
       try { await page.evaluate((d) => { if (typeof applyRemoteState === 'function') applyRemoteState(d); }, r.body); } catch {}
+      shotCount = await waitForDetectedShots(page, 5000);
+      log(`primary analysis settled: ${shotCount} shots`);
+      if (shotCount <= 0) {
+        fail('primary analysis produced 0 shots after upload');
+        await screenshot(page, 'fail-zero-shots');
+        await dumpHtml(page, 'fail-zero-shots');
+        const summary = {
+          result: 'failed',
+          totalTools: 0,
+          activatedTools: 0,
+          shots: 0,
+          popups: 0,
+          consoleLogs: consoleLogs.length,
+          pageErrors: pageErrors.length,
+          artifacts: artifacts.length,
+          pageErrorsList: pageErrors,
+          httpErrors,
+          failures,
+        };
+        fs.writeFileSync(path.join(logDir, 'summary.json'), JSON.stringify(summary, null, 2));
+        await context.close();
+        await browser.close();
+        process.exit(1);
+      }
     } else {
       fail(`primary upload failed: ${r.status} ${JSON.stringify(r.body).slice(0, 200)}`);
     }
@@ -237,13 +312,14 @@ async function main() {
   }
 
   // === Export verification ===
-  const exportDir = path.join(os.tmpdir(), 'sshot-e2e-export');
+  const exportDir = process.env.E2E_EXPORT_DIR || path.join(path.dirname(logDir), 'e2e-exports');
   try { fs.mkdirSync(exportDir, { recursive: true }); } catch {}
   const exportFile = path.join(exportDir, 'e2e-export-test.mp4');
+  let exportValidationPassed = false;
 
   log('testing export...');
   await page.locator('button[data-tool="export"]').click({ force: true });
-  await page.waitForFunction(() => activeTool === 'export', { timeout: 10000 });
+  await page.waitForFunction(() => activeTool === 'export', null, { timeout: 10000 });
   await page.waitForTimeout(500);
   await screenshot(page, '06-export-tool');
 
@@ -263,9 +339,8 @@ async function main() {
       try {
         await page.waitForFunction(() => {
           const status = String(state?.status || '');
-          const outputPath = String(state?.project?.export?.output_path || '');
-          return status.includes('Exported video to ') || outputPath.length > 0;
-        }, { timeout: 120000 });
+          return status.includes('Exported video to ');
+        }, null, { timeout: 180000 });
         log('export state reports completion');
       } catch (e) {
         fail(`export completion state not detected: ${e.message}`);
@@ -273,41 +348,21 @@ async function main() {
         await dumpHtml(page, 'fail-export-completion');
       }
 
-      // Wait for file to appear
-      let fileFound = false;
-      for (let i = 0; i < 30; i++) {
-        try { if (fs.statSync(exportFile).isFile() && fs.statSync(exportFile).size > 0) { fileFound = true; break; } } catch {}
-        await page.waitForTimeout(1000);
-      }
-      if (fileFound) {
-        const sz = fs.statSync(exportFile).size;
+      const exportValidation = await waitForStableExportFile(page, exportFile);
+      if (exportValidation) {
+        const sz = exportValidation.size;
         log(`export file exists: ${exportFile} (${(sz / 1024 / 1024).toFixed(2)} MB)`);
         artifacts.push(exportFile);
-
-        // Validate exported file with ffprobe
-        const { execFileSync } = require('child_process');
-        try {
-          const ffprobe = process.env.SPLITSHOT_PACKAGED_FFPROBE || 'ffprobe';
-          const probe = execFileSync(
-            ffprobe,
-            ['-v', 'error', '-show_entries', 'format=format_name,duration,size', '-of', 'json', exportFile],
-            { encoding: 'utf8', timeout: 60000 }
-          );
-          const info = JSON.parse(probe);
-          const fmt = info.format?.format_name || 'unknown';
-          const dur = info.format?.duration || '0';
-          log(`export validation: format=${fmt} duration=${dur}s size=${(sz / 1024 / 1024).toFixed(2)}MB`);
-          if (sz < 1024) { // less than 1KB is probably corrupt
-            fail(`export file suspiciously small (${sz} bytes)`);
-            await screenshot(page, 'fail-export-small');
-          }
-        } catch (e) {
-          fail(`export ffprobe validation failed: ${e.message}`);
-          await screenshot(page, 'fail-export-ffprobe');
-        }
+        const fmt = exportValidation.probe.format?.format_name || 'unknown';
+        const dur = exportValidation.probe.format?.duration || '0';
+        log(`export validation: format=${fmt} duration=${dur}s size=${(sz / 1024 / 1024).toFixed(2)}MB`);
+        exportValidationPassed = true;
       } else {
-        fail('export file not found after waiting');
+        let sizeHint = 'missing';
+        try { sizeHint = String(fs.statSync(exportFile).size); } catch {}
+        fail(`export file did not stabilize as a valid MP4 (size=${sizeHint} bytes)`);
         await screenshot(page, 'fail-export-file');
+        await screenshot(page, 'fail-export-ffprobe');
         await dumpHtml(page, 'fail-export-file');
       }
     } else {
@@ -322,118 +377,127 @@ async function main() {
   }
 
   await screenshot(page, '07-after-export');
+  if (!exportValidationPassed || stopAfterExport) {
+    log(`stopping after export: scope=${e2eScope || 'full'} exportValidationPassed=${exportValidationPassed}`);
+  } else {
+
+    const browserState = await page.evaluate(() => ({
+      shots: (typeof state !== 'undefined' && state?.project?.analysis?.shots?.length) || 0,
+      popups: (typeof state !== 'undefined' && state?.project?.popups?.length) || 0,
+    }));
+    log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
+
+    // === PractiScore import via browser file input ===
+    const practiscorePaths = [
+      path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'IDPA.csv'),
+      path.join(__dirname, '..', '..', 'example_data', 'practiscore.csv'),
+    ];
+    let practiscoreFile = null;
+    for (const p of practiscorePaths) {
+      try { if (fs.statSync(p).isFile()) { practiscoreFile = p; break; } } catch {}
+    }
+    if (practiscoreFile) {
+      log('importing PractiScore data...');
+      const practiscoreInput = page.locator('#practiscore-file-input');
+      await practiscoreInput.setInputFiles(practiscoreFile);
+      await page.waitForFunction(() => Boolean(state?.practiscore_options?.has_source), null, { timeout: 30000 });
+      const psState = await page.evaluate(() => ({
+        hasSource: Boolean(state?.practiscore_options?.has_source),
+        sourceName: String(state?.practiscore_options?.source_name || ''),
+        stageNumbers: Array.isArray(state?.practiscore_options?.stage_numbers) ? state.practiscore_options.stage_numbers.length : 0,
+        importedSource: String(state?.project?.scoring?.imported_stage?.source_name || ''),
+        competitorName: String(state?.project?.scoring?.imported_stage?.competitor_name || ''),
+      }));
+      log(`PractiScore: has_source=${psState.hasSource} source=${psState.sourceName || psState.importedSource} stages=${psState.stageNumbers} competitor=${psState.competitorName || 'n/a'}`);
+      if (!psState.hasSource || (!psState.sourceName && !psState.importedSource)) {
+        fail('PractiScore import did not retain imported source in browser state');
+        await screenshot(page, 'fail-practiscore-upload');
+        await dumpHtml(page, 'fail-practiscore-upload');
+      }
+      await screenshot(page, '08-practiscore');
+    } else {
+      warn('no PractiScore CSV found');
+    }
+
+    // === Merge: import second video via browser file input ===
+    if (videoFile) {
+      log('testing merge with second video...');
+      const mergeCountBefore = await page.evaluate(() => (state?.project?.merge_sources || []).length);
+      await page.locator('#merge-media-input').setInputFiles(videoFile);
+      await page.waitForFunction((before) => (state?.project?.merge_sources || []).length > before, mergeCountBefore, { timeout: 30000 });
+      const sources = await page.evaluate(() => (state?.project?.merge_sources || []).map((source) => ({
+          id: source.id,
+          path: source?.asset?.path || '',
+          mediaKind: source?.media_kind || source?.asset?.media_kind || '',
+        })));
+      log(`merge sources: ${sources.length} (from browser state)`);
+      if (sources.length > 0) {
+        log(`  first source: ${sources[0].path || sources[0].id} (${sources[0].mediaKind || 'unknown'})`);
+      } else {
+        fail('merge import did not add any sources');
+        await screenshot(page, 'fail-merge-state');
+        await dumpHtml(page, 'fail-merge-state');
+      }
+      await screenshot(page, '09-merge');
+    } else {
+      warn('no video for merge test');
+    }
+
+    // === Timing: add a custom event ===
+    log('testing timing events...');
+    await openTimingWorkbench(page);
+    const eventsBefore = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
+    const kindSelect = page.locator('#timing-event-kind');
+    if (await kindSelect.isVisible()) {
+      await kindSelect.selectOption('custom_label');
+      await page.waitForTimeout(100);
+    }
+    const labelInput = page.locator('#timing-event-label');
+    if (await labelInput.isVisible()) {
+      await labelInput.fill('E2E auto timing event');
+      await page.waitForTimeout(100);
+    }
+    const addEventBtn = page.locator('#add-timing-event');
+    if (await addEventBtn.isVisible()) {
+      await addEventBtn.click();
+      await page.waitForFunction((before) => (state?.project?.analysis?.events?.length || 0) > before, eventsBefore, { timeout: 10000 });
+      const eventsAfter = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
+      log(`timing events: ${eventsBefore} -> ${eventsAfter}`);
+      if (eventsAfter <= eventsBefore) {
+        fail(`timing event add did not change event count (${eventsBefore} -> ${eventsAfter})`);
+        await screenshot(page, 'fail-timing-event');
+        await dumpHtml(page, 'fail-timing-event');
+      }
+      await screenshot(page, '10-timing-event');
+    } else {
+      fail('add-timing-event button not found');
+      await screenshot(page, 'fail-timing-event-button');
+      await dumpHtml(page, 'fail-timing-event-button');
+    }
+
+    // Final check: poll for shot detection one more time (analysis may still be running)
+    {
+      const deadline = Date.now() + 180000; // 3 more minutes
+      let finalShots = 0;
+      while (Date.now() < deadline) {
+        finalShots = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
+        if (finalShots > 0) break;
+        await new Promise(r => setTimeout(r, 5000));
+      }
+      log(`final state: shots=${finalShots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
+      if (finalShots <= 0) {
+        fail('primary analysis produced 0 shots');
+        await screenshot(page, 'fail-zero-shots');
+        await dumpHtml(page, 'fail-zero-shots');
+      }
+      browserState.shots = finalShots;
+    }
+  }
 
   const browserState = await page.evaluate(() => ({
     shots: (typeof state !== 'undefined' && state?.project?.analysis?.shots?.length) || 0,
     popups: (typeof state !== 'undefined' && state?.project?.popups?.length) || 0,
   }));
-  log(`final state: shots=${browserState.shots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
-
-  // === PractiScore import via browser file input ===
-  const practiscorePaths = [
-    path.join(__dirname, '..', '..', 'example_data', 'IDPA', 'IDPA.csv'),
-    path.join(__dirname, '..', '..', 'example_data', 'practiscore.csv'),
-  ];
-  let practiscoreFile = null;
-  for (const p of practiscorePaths) {
-    try { if (fs.statSync(p).isFile()) { practiscoreFile = p; break; } } catch {}
-  }
-  if (practiscoreFile) {
-    log('importing PractiScore data...');
-    const practiscoreInput = page.locator('#practiscore-file-input');
-    await practiscoreInput.setInputFiles(practiscoreFile);
-    await page.waitForFunction(() => Boolean(state?.practiscore_options?.has_source), { timeout: 30000 });
-    const psState = await page.evaluate(() => ({
-      hasSource: Boolean(state?.practiscore_options?.has_source),
-      sourceName: String(state?.practiscore_options?.source_name || ''),
-      stageNumbers: Array.isArray(state?.practiscore_options?.stage_numbers) ? state.practiscore_options.stage_numbers.length : 0,
-      importedSource: String(state?.project?.scoring?.imported_stage?.source_name || ''),
-      competitorName: String(state?.project?.scoring?.imported_stage?.competitor_name || ''),
-    }));
-    log(`PractiScore: has_source=${psState.hasSource} source=${psState.sourceName || psState.importedSource} stages=${psState.stageNumbers} competitor=${psState.competitorName || 'n/a'}`);
-    if (!psState.hasSource || (!psState.sourceName && !psState.importedSource)) {
-      fail('PractiScore import did not retain imported source in browser state');
-      await screenshot(page, 'fail-practiscore-upload');
-      await dumpHtml(page, 'fail-practiscore-upload');
-    }
-    await screenshot(page, '08-practiscore');
-  } else {
-    warn('no PractiScore CSV found');
-  }
-
-  // === Merge: import second video via browser file input ===
-  if (videoFile) {
-    log('testing merge with second video...');
-    const mergeCountBefore = await page.evaluate(() => (state?.project?.merge_sources || []).length);
-    await page.locator('#merge-media-input').setInputFiles(videoFile);
-    await page.waitForFunction((before) => (state?.project?.merge_sources || []).length > before, mergeCountBefore, { timeout: 30000 });
-    const sources = await page.evaluate(() => (state?.project?.merge_sources || []).map((source) => ({
-        id: source.id,
-        path: source?.asset?.path || '',
-        mediaKind: source?.media_kind || source?.asset?.media_kind || '',
-      })));
-    log(`merge sources: ${sources.length} (from browser state)`);
-    if (sources.length > 0) {
-      log(`  first source: ${sources[0].path || sources[0].id} (${sources[0].mediaKind || 'unknown'})`);
-    } else {
-      fail('merge import did not add any sources');
-      await screenshot(page, 'fail-merge-state');
-      await dumpHtml(page, 'fail-merge-state');
-    }
-    await screenshot(page, '09-merge');
-  } else {
-    warn('no video for merge test');
-  }
-
-  // === Timing: add a custom event ===
-  log('testing timing events...');
-  await openTimingWorkbench(page);
-  const eventsBefore = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
-  const kindSelect = page.locator('#timing-event-kind');
-  if (await kindSelect.isVisible()) {
-    await kindSelect.selectOption('custom_label');
-    await page.waitForTimeout(100);
-  }
-  const labelInput = page.locator('#timing-event-label');
-  if (await labelInput.isVisible()) {
-    await labelInput.fill('E2E auto timing event');
-    await page.waitForTimeout(100);
-  }
-  const addEventBtn = page.locator('#add-timing-event');
-  if (await addEventBtn.isVisible()) {
-    await addEventBtn.click();
-    await page.waitForFunction((before) => (state?.project?.analysis?.events?.length || 0) > before, eventsBefore, { timeout: 10000 });
-    const eventsAfter = await page.evaluate(() => state?.project?.analysis?.events?.length || 0);
-    log(`timing events: ${eventsBefore} -> ${eventsAfter}`);
-    if (eventsAfter <= eventsBefore) {
-      fail(`timing event add did not change event count (${eventsBefore} -> ${eventsAfter})`);
-      await screenshot(page, 'fail-timing-event');
-      await dumpHtml(page, 'fail-timing-event');
-    }
-    await screenshot(page, '10-timing-event');
-  } else {
-    fail('add-timing-event button not found');
-    await screenshot(page, 'fail-timing-event-button');
-    await dumpHtml(page, 'fail-timing-event-button');
-  }
-
-  // Final check: poll for shot detection one more time (analysis may still be running)
-  {
-    const deadline = Date.now() + 180000; // 3 more minutes
-    let finalShots = 0;
-    while (Date.now() < deadline) {
-      finalShots = await page.evaluate(() => state?.project?.analysis?.shots?.length || 0);
-      if (finalShots > 0) break;
-      await new Promise(r => setTimeout(r, 5000));
-    }
-    log(`final state: shots=${finalShots} popups=${browserState.popups} toolsActivated=${TOOL_COUNT}`);
-    if (finalShots <= 0) {
-      fail('primary analysis produced 0 shots');
-      await screenshot(page, 'fail-zero-shots');
-      await dumpHtml(page, 'fail-zero-shots');
-    }
-    browserState.shots = finalShots;
-  }
 
   // Save summary
   const result = failures.length === 0 && pageErrors.length === 0 ? 'passed' : 'failed';

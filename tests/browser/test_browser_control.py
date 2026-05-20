@@ -596,8 +596,11 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
             assert project.merge_sources[0].pip_size_percent == 44
             assert project.merge_sources[0].pip_x == pytest.approx(0.12)
             assert project.merge_sources[0].pip_y == pytest.approx(0.76)
+            assert project.merge_sources[0].opacity == pytest.approx(0.35)
             assert project.merge_sources[0].sync_offset_ms == -25
             assert project.analysis.sync_offset_ms == -25
+            assert project.popup_template.content_type == "text_image"
+            assert project.popup_template.text_source == "custom"
             export_target = Path(output_target)
             export_target.write_bytes(b"ok")
             return export_target
@@ -640,9 +643,14 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
                             "pip_size_percent": 44,
                             "pip_x": 0.12,
                             "pip_y": 0.76,
+                            "opacity": 0.35,
                             "sync_offset_ms": -25,
                         }
                     ],
+                },
+                "popup_template": {
+                    "content_type": "text_image",
+                    "text_source": "custom",
                 },
             },
         )
@@ -655,8 +663,102 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
         assert state["project"]["overlay"]["custom_box_height"] == 48
         assert state["project"]["merge"]["pip_size_percent"] == 44
         assert state["project"]["merge_sources"][0]["pip_size_percent"] == 44
+        assert state["project"]["merge_sources"][0]["opacity"] == pytest.approx(0.35)
         assert state["project"]["merge_sources"][0]["sync_offset_ms"] == -25
         assert state["project"]["analysis"]["sync_offset_ms"] == -25
+    finally:
+        server.shutdown()
+
+
+def test_browser_merge_source_analysis_state_exposes_sync_controls(
+    synthetic_video_factory,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="merge-sync-primary", beep_ms=400))
+        merge_path = Path(synthetic_video_factory(name="merge-sync-secondary", beep_ms=650))
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
+        state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
+        source = state["project"]["merge_sources"][0]
+        source_id = source["id"]
+
+        assert source["supports_sync_analysis"] is True
+        assert source["can_rerun_sync_analysis"] is True
+        assert source["is_analyzed_sync_source"] is True
+        assert source["sync_analysis_status"] == "ready"
+        assert source["sync_offset_source"] == "auto"
+        assert source["secondary_beep_time_ms"] is not None
+
+        reanalyzed = _post_json(f"{server.url}api/merge/source/analyze", {"source_id": source_id})
+        updated_source = reanalyzed["project"]["merge_sources"][0]
+        assert updated_source["sync_analysis_status"] == "ready"
+        assert updated_source["sync_offset_source"] == "auto"
+        assert updated_source["secondary_beep_time_ms"] is not None
+    finally:
+        server.shutdown()
+
+
+def test_browser_manual_merge_sync_after_auto_analysis_remains_authoritative_for_preview_and_export(
+    synthetic_video_factory,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        primary_path = Path(synthetic_video_factory(name="merge-authoritative-primary", beep_ms=400))
+        merge_path = Path(synthetic_video_factory(name="merge-authoritative-secondary", beep_ms=650))
+
+        _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
+        state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
+        source_id = state["project"]["merge_sources"][0]["id"]
+        auto_offset = state["project"]["merge_sources"][0]["sync_offset_ms"]
+
+        state = _post_json(
+            f"{server.url}api/merge/source",
+            {"source_id": source_id, "sync_offset_ms": auto_offset + 33},
+        )
+        first_source = state["project"]["merge_sources"][0]
+        assert first_source["sync_offset_ms"] == auto_offset + 33
+        assert first_source["sync_offset_source"] == "manual"
+        assert first_source["secondary_beep_time_ms"] is not None
+        assert state["project"]["analysis"]["sync_offset_ms"] == auto_offset + 33
+        assert state["project"]["analysis"]["secondary_sync_source"] == "manual"
+
+        def fake_export_project(project, output_target, progress_callback=None, log_callback=None):
+            assert project.merge_sources[0].sync_offset_ms == auto_offset + 33
+            assert project.analysis.sync_offset_ms == auto_offset + 33
+            output = Path(output_target)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"ok")
+            return output
+
+        monkeypatch.setattr(browser_server_module, "export_project", fake_export_project)
+
+        output_path = tmp_path / "manual-authoritative-export.mp4"
+        exported = _post_json(
+            f"{server.url}api/export",
+            {
+                "path": str(output_path),
+                "preset": "source",
+                "merge": {
+                    "enabled": True,
+                    "layout": "pip",
+                    "sources": [
+                        {
+                            "source_id": source_id,
+                            "sync_offset_ms": auto_offset + 33,
+                        }
+                    ],
+                },
+            },
+        )
+        assert exported["project"]["merge_sources"][0]["sync_offset_ms"] == auto_offset + 33
+        assert exported["project"]["analysis"]["sync_offset_ms"] == auto_offset + 33
     finally:
         server.shutdown()
 

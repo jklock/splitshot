@@ -1343,7 +1343,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert 'min-width: 92px;' not in css
     assert "input[type=\"range\"]::-webkit-slider-thumb" in css
     assert "input[type=\"checkbox\"]" in css
-    assert "font-family: -apple-system" in css
+    assert "font-family: \"Segoe UI\", -apple-system" in css
     assert "font-size: 13px;" in css
     assert ".color-control-pair" in css
     assert ".color-hex-input.invalid" in css
@@ -1496,6 +1496,12 @@ def test_browser_overlay_badges_scale_with_video_display_size() -> None:
     js = (STATIC_ROOT / "app.js").read_text()
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
 
+    assert 'function overlayFontFamilyStack(fontFamily = "") {' in js
+    assert 'function defaultOverlayFontFamily() {' in js
+    assert 'if (browserPlatformIsWindows() && normalized === "Helvetica Neue") return "Segoe UI";' in js
+    assert 'return \'Consolas, "Courier New", "Lucida Console", monospace\';' in js
+    assert 'return \'"Segoe UI", Arial, Verdana, Tahoma, "Trebuchet MS", sans-serif\';' in js
+    assert '? `"${normalized}", "Segoe UI", Arial, Verdana, Tahoma, "Trebuchet MS", sans-serif`' in js
     assert 'const scaledMargin = scaledOverlayPixelValue(overlayMargin, scale, 0);' in js
     assert 'const scaledGap = scaledOverlayPixelValue(overlaySpacing, scale, 0);' in js
     assert 'const OVERLAY_BADGE_PADDING_X_PX = 10;' in js

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import platform
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -14,9 +17,26 @@ from splitshot.domain.models import AspectRatio, ExportFrameRate, ImportedStageS
 from splitshot.export.pipeline import _is_expected_decoder_pipe_shutdown, _merged_duration_ms, _prune_expected_decoder_pipe_shutdown_lines, export_project
 from splitshot.export.presets import apply_export_preset, export_presets_for_api
 from splitshot.media.probe import probe_video
-from splitshot.overlay.render import OverlayRenderer, _auto_badge_size, _combined_rect, _standard_badge_texts
+from splitshot.overlay.render import (
+    OverlayRenderer,
+    _auto_badge_size,
+    _combined_rect,
+    _overlay_qfont,
+    _standard_badge_texts,
+)
+from splitshot.overlay.font_policy import (
+    WINDOWS_MONO_FONT_FAMILIES,
+    WINDOWS_SANS_FONT_FAMILIES,
+    WINDOWS_SERIF_FONT_FAMILIES,
+    default_overlay_font_family,
+    resolve_overlay_font_family,
+)
 from splitshot.scoring.logic import apply_scoring_preset
 from splitshot.timeline.model import draw_time_ms
+
+
+ROOT = Path(__file__).resolve().parents[2]
+CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
 
 
 def _ffprobe_json(path: Path) -> dict:
@@ -64,6 +84,14 @@ def _frame_rgb(path: Path, timestamp: float) -> np.ndarray:
         check=True,
     )
     return np.frombuffer(result.stdout, dtype=np.uint8).reshape(height, width, 3)
+
+
+def _ci_artifact_export_target(tmp_path: Path, name: str) -> Path:
+    if os.environ.get("CI"):
+        target = ROOT / "artifacts" / f"{name}-{platform.system().lower()}.mp4"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return target
+    return tmp_path / f"{name}.mp4"
 
 
 def test_export_writes_mp4_with_requested_crop(synthetic_video_factory, tmp_path: Path) -> None:
@@ -114,6 +142,83 @@ def test_export_project_initializes_qt_gui_application_for_headless_runs(
 
     assert called is True
     assert output_path.exists()
+
+
+def test_overlay_qfont_uses_known_fallback_stacks() -> None:
+    courier_font = _overlay_qfont("Courier New", 18, bold=True, italic=False)
+    helvetica_font = _overlay_qfont("Helvetica Neue", 14, bold=False, italic=True)
+    custom_font = _overlay_qfont("Missing Family", 16, bold=False, italic=False)
+
+    assert courier_font.pixelSize() == 18
+    assert courier_font.bold() is True
+    assert courier_font.italic() is False
+    assert courier_font.families()
+    assert courier_font.families()[0] in {
+        *WINDOWS_MONO_FONT_FAMILIES,
+        "Menlo",
+        "Monaco",
+        "DejaVu Sans Mono",
+        "Liberation Mono",
+        "Noto Sans Mono",
+    }
+    assert "Monospace" not in courier_font.families()
+
+    assert helvetica_font.pixelSize() == 14
+    assert helvetica_font.italic() is True
+    assert helvetica_font.families()
+    resolved_families = set(helvetica_font.families())
+    primary_family = helvetica_font.families()[0]
+    if sys.platform.startswith("win"):
+        assert helvetica_font.families()[: len(WINDOWS_SANS_FONT_FAMILIES)] == list(WINDOWS_SANS_FONT_FAMILIES)
+        assert "Helvetica Neue" not in resolved_families
+    elif sys.platform == "darwin":
+        assert primary_family in {"Helvetica Neue", "Helvetica", "Arial"}
+    else:
+        assert primary_family in {"DejaVu Sans", "Liberation Sans", "Arial", "Noto Sans"}
+
+    assert custom_font.families()
+    assert "Sans Serif" not in custom_font.families()
+
+
+def test_overlay_font_policy_uses_windows_ui_defaults() -> None:
+    assert default_overlay_font_family("win32") == "Segoe UI"
+    assert resolve_overlay_font_family("Helvetica Neue", "win32") == "Segoe UI"
+    assert default_overlay_font_family("darwin") == "Helvetica Neue"
+    assert WINDOWS_SANS_FONT_FAMILIES[0] == "Segoe UI"
+    assert WINDOWS_MONO_FONT_FAMILIES[0] == "Consolas"
+    assert WINDOWS_SERIF_FONT_FAMILIES[0] == "Georgia"
+
+
+def test_overlay_renderer_score_marks_use_overlay_qfont(monkeypatch, synthetic_video_factory) -> None:
+    video_path = synthetic_video_factory(resolution=(320, 180))
+    project = Project(name="Score Mark Font")
+    project.primary_video = probe_video(video_path)
+
+    captured: list[tuple[str, int, bool, bool]] = []
+
+    def fake_overlay_qfont(font_family: str, font_size: int, bold: bool, italic: bool):
+        captured.append((font_family, font_size, bold, italic))
+        return _overlay_qfont(font_family, font_size, bold, italic)
+
+    monkeypatch.setattr("splitshot.overlay.render._overlay_qfont", fake_overlay_qfont)
+
+    renderer = OverlayRenderer()
+    image = QImage(320, 180, QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    try:
+        renderer._paint_scores(painter, project, [("A", 0.5, 0.5, 1.0)], 320, 180)
+    finally:
+        painter.end()
+
+    assert captured == [(default_overlay_font_family(), 28, True, False)]
+
+
+def test_clip1_fixture_contains_detectable_shots() -> None:
+    analysis = analyze_video_audio(CLIP1_VIDEO, threshold=0.35)
+
+    assert analysis.beep_time_ms is not None
+    assert len(analysis.shots) > 0
 
 
 @pytest.mark.parametrize("suffix", [".mov", ".m4v", ".mkv"])
@@ -175,6 +280,52 @@ def test_export_burns_overlay_badges_into_output_video(synthetic_video_factory, 
         & (frame[:, :, 0] > frame[:, :, 2] + 40)
     )
     assert int(red_dominant_pixels.sum()) > 20
+
+
+def test_export_generates_clip1_ci_proof_mp4(tmp_path: Path) -> None:
+    assert CLIP1_VIDEO.exists(), f"Missing Clip1 test fixture at {CLIP1_VIDEO}"
+
+    project = Project(name="Clip1 CI Export Proof")
+    project.primary_video = probe_video(CLIP1_VIDEO)
+    project.primary_video.duration_ms = min(int(project.primary_video.duration_ms or 4000), 4000)
+    project.overlay.position = OverlayPosition.TOP
+    project.overlay.show_timer = False
+    project.overlay.show_draw = False
+    project.overlay.show_shots = False
+    project.overlay.show_score = False
+    project.overlay.custom_box_enabled = True
+    project.overlay.custom_box_text = "CI export proof"
+    project.overlay.custom_box_width = 220
+    project.overlay.custom_box_height = 56
+    project.merge.enabled = True
+    project.merge.layout = MergeLayout.PIP
+    secondary = probe_video(CLIP1_VIDEO)
+    secondary.duration_ms = project.primary_video.duration_ms
+    project.merge_sources = [
+        MergeSource(
+            asset=secondary,
+            pip_size_percent=28,
+            pip_x=1.0,
+            pip_y=1.0,
+            opacity=0.8,
+            sync_offset_ms=0,
+        )
+    ]
+    project.secondary_video = secondary
+    project.export.target_width = 640
+    project.export.target_height = 360
+    project.export.video_bitrate_mbps = 3
+    project.export.ffmpeg_preset = "ultrafast"
+
+    output_path = _ci_artifact_export_target(tmp_path, "clip1-export-proof")
+    export_project(project, output_path)
+
+    assert output_path.exists()
+    metadata = _ffprobe_json(output_path)
+    video_stream = next(item for item in metadata["streams"] if item["codec_type"] == "video")
+    assert int(video_stream["width"]) == 640
+    assert int(video_stream["height"]) == 360
+    assert output_path.stat().st_size > 0
 
 
 def test_overlay_renderer_embeds_score_inside_shot_badge(synthetic_video_factory) -> None:

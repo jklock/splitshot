@@ -4,11 +4,12 @@ import math
 import os
 import shlex
 import subprocess
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 from PySide6.QtCore import Qt
@@ -57,7 +58,8 @@ def _ensure_qt_gui_application() -> QGuiApplication:
     if threading.current_thread() is not threading.main_thread():
         raise RuntimeError(_EXPORT_QT_MAIN_THREAD_ERROR)
 
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    if sys.platform != "win32":
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     _QT_GUI_APP = QApplication(["splitshot-export"])
     return _QT_GUI_APP
 
@@ -596,6 +598,17 @@ def _encoder_command(
     return command
 
 
+def _read_exact(pipe: Any, n: int) -> bytes:  # noqa: ANN401
+    chunks: list[bytes] = []
+    while n > 0:
+        chunk = pipe.read(n)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        n -= len(chunk)
+    return b"".join(chunks)
+
+
 def _render_pass(
     project: Project,
     plan: BaseRenderPlan,
@@ -627,7 +640,7 @@ def _render_pass(
     total_frames = max(1, int(math.ceil((plan.duration_ms / 1000.0) * plan.fps)))
     try:
         for frame_index in range(total_frames):
-            raw = decoder.stdout.read(bytes_per_frame)
+            raw = _read_exact(decoder.stdout, bytes_per_frame)
             if len(raw) < bytes_per_frame:
                 break
 
