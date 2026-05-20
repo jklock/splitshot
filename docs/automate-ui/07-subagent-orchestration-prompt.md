@@ -8,6 +8,8 @@ You are implementing the full UI completion package for SplitShot automation wor
 
 You must treat `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/` as the execution command center and `/Volumes/Storage/GitHub/splitshot/docs/automate/` as the backend contract that already defines the product/data/API foundation.
 
+Use `/Volumes/Storage/GitHub/splitshot/docs/automate/14-truth-audit-matrix.md` as the current audited backend status before trusting any older proof snapshot.
+
 Your job is to finish the browser-shell and packaged-Electron UI so the shipped product truthfully exposes the automation backend that now exists.
 
 Treat `main` at `v1.0.5` as the released regression floor while you do that work.
@@ -19,20 +21,21 @@ Do not rewrite the plan. Execute it.
 Read these files first, in this order:
 
 1. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/spec.md`
-2. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/execution-order.md`
-3. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/todo.md`
-4. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/outcomes.md`
-5. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/agent-rules.md`
-6. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/01-pip-performance-and-merge-editor.md`
-7. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/02-shell-navigation-and-surface-model.md`
-8. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/03-single-video-ui.md`
-9. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/04-multi-video-ui.md`
-10. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/05-performance-library-ui.md`
-11. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/06-proof-regression-release.md`
-12. `/Volumes/Storage/GitHub/splitshot/docs/automate/00a-splitshot-naming-contract.md`
-13. `/Volumes/Storage/GitHub/splitshot/docs/automate/00b-implementation-quality-contract.md`
-14. `/Volumes/Storage/GitHub/splitshot/docs/automate/10-acceptance-and-proof.md`
-15. `/Volumes/Storage/GitHub/splitshot/docs/automate/11-release-readiness.md`
+2. `/Volumes/Storage/GitHub/splitshot/docs/automate/14-truth-audit-matrix.md`
+3. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/execution-order.md`
+4. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/todo.md`
+5. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/outcomes.md`
+6. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/agent-rules.md`
+7. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/01-pip-performance-and-merge-editor.md`
+8. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/02-shell-navigation-and-surface-model.md`
+9. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/03-single-video-ui.md`
+10. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/04-multi-video-ui.md`
+11. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/05-performance-library-ui.md`
+12. `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/tracks/06-proof-regression-release.md`
+13. `/Volumes/Storage/GitHub/splitshot/docs/automate/00a-splitshot-naming-contract.md`
+14. `/Volumes/Storage/GitHub/splitshot/docs/automate/00b-implementation-quality-contract.md`
+15. `/Volumes/Storage/GitHub/splitshot/docs/automate/10-acceptance-and-proof.md`
+16. `/Volumes/Storage/GitHub/splitshot/docs/automate/11-release-readiness.md`
 
 After reading the docs, inspect the current code reality before changing anything:
 
@@ -73,10 +76,11 @@ Execute in this order unless a documented blocker forces a narrower prerequisite
 1. PiP performance and merge editor stabilization
 2. Shell navigation and surface model
 3. Single Video UI completion
-4. Multi Video UI completion
-5. Performance Library UI completion
-6. UI-enabling backend support pass
-7. Proof, regression, and release closure
+4. Multi Video UI completion except `Stage Composite`
+5. UI-enabling backend support pass for stage clips and angle-director reads
+6. Performance Library UI completion
+7. `Stage Composite` completion
+8. Proof, regression, and release closure
 
 ## Scope Boundaries
 
@@ -90,6 +94,12 @@ Allowed backend support work is limited to what the UI package already calls out
 - keep existing route/state contracts coherent for the new UI
 
 If more backend work appears necessary, verify it against the existing docs first and keep it tightly scoped to unblocking the UI.
+
+The current audit already marks these as missing, not optional:
+
+- stage clip persistence
+- stage clip read route
+- angle-director plan read route
 
 ## Phase Requirements
 
@@ -153,6 +163,8 @@ Required outcome:
 - stage-override editor
 - separate `Match Recap` and `Stage Composite` surfaces
 
+`Stage Composite` must not be called complete in this phase if the audited backend support gap is still open.
+
 `Stage Composite` must include:
 
 - clip list
@@ -170,7 +182,17 @@ Required outcome:
 - result-card controls
 - match-scope output-profile render action
 
-### Phase 5: Performance Library UI
+### Phase 5: UI Support Pass
+
+Only after the shell and workspace structure are clear, add the narrow support deltas required by the audit.
+
+Required outcome:
+
+- stage clip persistence is no longer only in-memory
+- stage clip read route exists and is wired
+- angle-director plan read route exists and is wired
+
+### Phase 6: Performance Library UI
 
 Required outcome:
 
@@ -181,17 +203,19 @@ Required outcome:
 - retained proxy status and actions
 - open proxy / refresh proxy / open stage / open workspace actions
 
-### Phase 6: UI Support Pass
-
-Only after the UI structure is clear, add the narrow support deltas required by the package if they are still missing.
+### Phase 7: Stage Composite Completion
 
 Required outcome:
 
-- stage clip persistence is no longer only in-memory
-- stage clip read route exists and is wired
-- angle-director plan read route exists and is wired
+- clip list
+- clip add/update/remove
+- angle role editing
+- `Angle Align` controls
+- audio mix lane controls
+- cut override plan UI
+- composite render action
 
-### Phase 7: Proof, Regression, And Release
+### Phase 8: Proof, Regression, And Release
 
 You must not stop after the UI appears to work.
 

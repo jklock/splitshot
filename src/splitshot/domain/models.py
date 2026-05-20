@@ -620,6 +620,18 @@ class MatchWorkspace:
 
 
 @dataclass(slots=True)
+class StageClipSource:
+    clip_id: str = field(default_factory=lambda: uuid4().hex)
+    source_path: str = ""
+    angle_role: str = "primary"
+    sync_offset_ms: int = 0
+    audio_gain: float = 1.0
+    audio_muted: bool = False
+    audio_primary: bool = False
+    angle_aligned: bool = False
+
+
+@dataclass(slots=True)
 class StageEntry:
     stage_id: str = ""
     relative_project_path: str = ""
@@ -629,6 +641,17 @@ class StageEntry:
     override_values: dict = field(default_factory=dict)
     last_reviewed_at: datetime | None = None
     source_media_present: bool = False
+    clip_sources: list["StageClipSource"] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class AngleDirectorCutDecision:
+    position: int = 0
+    clip_id: str = ""
+    angle_role: str = ""
+    start_ms: int = 0
+    duration_ms: int = 0
+    suggested: bool = False
 
 
 @dataclass(slots=True)
@@ -644,6 +667,7 @@ class OutputProfile:
     brand_mark: dict = field(default_factory=dict)
     subject_track_crop: dict = field(default_factory=dict)
     visibility_recipe: dict = field(default_factory=dict)
+    angle_director_plan: list["AngleDirectorCutDecision"] = field(default_factory=list)
     retained_proxy_id: str | None = None
     last_rendered_at: datetime | None = None
 

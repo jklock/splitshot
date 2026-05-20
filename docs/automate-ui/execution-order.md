@@ -58,16 +58,29 @@ Closeout:
 
 Reason:
 
-- Workspace and stage-composite UI depend on the shell model and PiP/merge stabilization.
+- Workspace UI depends on the shell model and PiP/merge stabilization.
+- `Stage Composite` remains blocked until the clip persistence/read support pass closes the audited backend gap.
 
 Closeout:
 
 - workspace grid
 - shared defaults and overrides
 - Match Recap UI
-- Stage Composite UI
+- Stage Composite UI deferred until step 7
 
-## 5. Performance Library UI
+## 5. UI Support Pass
+
+Reason:
+
+- The audit confirmed a small but real backend gap for truthful composite and angle-director UI.
+
+Closeout:
+
+- clip persistence
+- stage clip read route
+- angle-director plan read route
+
+## 6. Performance Library UI
 
 Reason:
 
@@ -79,19 +92,21 @@ Closeout:
 - filter/search/sort UI
 - detail and reopen UI
 
-## 6. UI Support Pass
+## 7. Stage Composite Completion
 
 Reason:
 
-- The UI needs a few read/persistence deltas to avoid fake or incomplete surfaces.
+- `Stage Composite` should only be called complete after the audited backend gap is closed.
 
 Closeout:
 
-- clip persistence
-- stage clip read route
-- angle-director plan read route
+- composite clip list
+- clip add/update/remove UI
+- angle role and audio mix UI
+- cut override UI
+- composite render action
 
-## 7. Proof, Regression, And Release
+## 8. Proof, Regression, And Release
 
 Reason:
 

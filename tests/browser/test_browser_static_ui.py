@@ -1203,7 +1203,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
     assert "min-height: var(--topbar-height);" in css
     assert "height: var(--topbar-height);" in css
-    assert "top: var(--topbar-height);" not in css
+    assert "top: var(--topbar-height);" in css
     assert ".processing-bar[hidden] {\n  display: none !important;" in css
     assert "grid-auto-rows: 56px;" in css
     assert "align-content: start;" in css
@@ -1637,15 +1637,28 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "toggle-layout-lock-video",
             "toggle-rail",
             "resize-rail",
-        "resize-sidebar",
-        "resize-waveform",
-    }
+            "resize-sidebar",
+            "resize-waveform",
+            "surface-single-video",
+            "surface-multi-video",
+            "surface-performance-library",
+            "surface-return-workspace",
+            "output-profile-refresh",
+            "output-profile-create",
+            "workspace-new",
+            "workspace-save",
+            "workspace-stage-add",
+            "stage-clip-add",
+            "library-refresh",
+        }
     behavior_attributes = (
         "data-tool=",
         "data-waveform-mode=",
         "data-sync=",
-        "data-open-merge-media",
-        "data-layout-lock-toggle",
+            "data-open-merge-media",
+            "data-surface=",
+            "data-output-hook=",
+            "data-layout-lock-toggle",
         "data-motion-mode-value=",
         "data-popup-action=",
     )

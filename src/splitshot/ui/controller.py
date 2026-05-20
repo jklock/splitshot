@@ -26,6 +26,8 @@ from splitshot.config import (
     save_settings,
 )
 from splitshot.domain.models import (
+    AngleDirectorCutDecision,
+    StageClipSource,
     LibraryStageRecord,
     LibraryMatchRecord,
     BadgeSize,
@@ -83,6 +85,7 @@ from splitshot.persistence.workspaces import (
     load_workspace,
     save_workspace,
     workspace_has_metadata,
+    workspace_stage_path,
 )
 from splitshot.persistence.library import (
     save_stage_record,
@@ -817,9 +820,10 @@ def _autosave_workspace_if_needed(controller) -> None:
     if controller.workspace_path is None or controller.workspace is None:
         return
     try:
-        current_snapshot = _workspace_to_dict_safe(controller.workspace)
+        current_snapshot = controller._workspace_persistence_snapshot()
         if current_snapshot == controller._workspace_saved_snapshot:
             return
+        controller._persist_workspace_stage_profiles()
         save_workspace(controller.workspace, controller.workspace_path)
         controller._workspace_saved_snapshot = current_snapshot
     except Exception:
@@ -872,7 +876,6 @@ class ProjectController(QObject):
         self.workspace = None
         self.workspace_path = None
         self._output_profiles: dict[str, OutputProfile] = {}  # output_id -> OutputProfile
-        self._stage_clips: dict[str, list[dict]] = {}  # stage_id -> list of clip dicts
         self.editor_scope = "single"
         self.active_stage_id = None
         self._return_to_workspace_available = False
@@ -884,6 +887,104 @@ class ProjectController(QObject):
         self._autosave_in_progress = False
         self._remember_original_shots()
         self.project_changed.connect(self._autosave_project_if_needed)
+        self.project_changed.connect(lambda: _autosave_workspace_if_needed(self))
+
+    def _workspace_stage_entry(self, stage_id: str) -> StageEntry | None:
+        if self.workspace is None:
+            return None
+        return self.workspace.stage_entries.get(stage_id)
+
+    def _workspace_stage_clip_models(self, stage_id: str) -> list[StageClipSource]:
+        entry = self._workspace_stage_entry(stage_id)
+        if entry is None:
+            return []
+        return entry.clip_sources
+
+    def _workspace_stage_clip_to_dict(self, clip: StageClipSource) -> dict:
+        return {
+            "clip_id": clip.clip_id,
+            "source_path": clip.source_path,
+            "angle_role": clip.angle_role,
+            "sync_offset_ms": clip.sync_offset_ms,
+            "audio_gain": clip.audio_gain,
+            "audio_muted": clip.audio_muted,
+            "audio_primary": clip.audio_primary,
+            "angle_aligned": clip.angle_aligned,
+        }
+
+    def _workspace_stage_clips_to_dicts(self, stage_id: str) -> list[dict]:
+        return [
+            self._workspace_stage_clip_to_dict(clip)
+            for clip in self._workspace_stage_clip_models(stage_id)
+        ]
+
+    def _angle_director_cut_to_dict(self, cut: AngleDirectorCutDecision) -> dict:
+        return {
+            "position": cut.position,
+            "clip_id": cut.clip_id,
+            "angle_role": cut.angle_role,
+            "start_ms": cut.start_ms,
+            "duration_ms": cut.duration_ms,
+            "suggested": cut.suggested,
+        }
+
+    def _find_output_profile(self, output_id: str) -> OutputProfile | None:
+        profile = self._output_profiles.get(output_id)
+        if profile is not None:
+            return profile
+        if self.workspace:
+            for candidate in self.workspace.match_output_profiles:
+                if candidate.output_id == output_id:
+                    return candidate
+        return None
+
+    def _workspace_stage_bundle_path(self, stage_id: str) -> Path | None:
+        if self.workspace_path is None:
+            return None
+        return workspace_stage_path(self.workspace_path, stage_id)
+
+    def _workspace_persistence_snapshot(self) -> dict | None:
+        if self.workspace is None:
+            return None
+        workspace_snapshot = _workspace_to_dict_safe(self.workspace)
+        if workspace_snapshot is None:
+            return None
+        stage_profiles = {}
+        for output_id, profile in self._output_profiles.items():
+            if (
+                profile.scope_type == "stage"
+                and profile.scope_id in self.workspace.stage_entries
+            ):
+                stage_profiles[output_id] = self._output_profile_to_dict_safe(profile)
+        return {
+            "workspace": workspace_snapshot,
+            "stage_profiles": stage_profiles,
+        }
+
+    def _persist_workspace_stage_profiles(self) -> None:
+        if self.workspace is None:
+            return
+        for stage_id in self.workspace.stage_entries:
+            bundle_path = self._workspace_stage_bundle_path(stage_id)
+            if bundle_path is None:
+                continue
+            self._save_stage_profiles(bundle_path, stage_id=stage_id)
+
+    def _load_workspace_stage_profiles(self) -> None:
+        if self.workspace is None:
+            return
+        self._output_profiles = {
+            output_id: profile
+            for output_id, profile in self._output_profiles.items()
+            if not (
+                profile.scope_type == "stage"
+                and profile.scope_id in self.workspace.stage_entries
+            )
+        }
+        for stage_id in self.workspace.stage_entries:
+            bundle_path = self._workspace_stage_bundle_path(stage_id)
+            if bundle_path is not None:
+                self._load_stage_profiles(bundle_path)
 
     def new_project(self) -> None:
         self.folder_settings = None
@@ -916,7 +1017,7 @@ class ProjectController(QObject):
                 if value is not None:
                     self.workspace.shared_defaults[field] = value
 
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
         self._set_status("New match workspace created.")
         self.project_changed.emit()
 
@@ -928,7 +1029,8 @@ class ProjectController(QObject):
         if save_path is None:
             return
         self.workspace_path = save_workspace(self.workspace, save_path)
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._persist_workspace_stage_profiles()
+        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
         self._sync_workspace_to_library()
         self._set_status(f"Workspace saved to {self.workspace_path}")
 
@@ -943,7 +1045,8 @@ class ProjectController(QObject):
         self.editor_scope = "multi"
         self.active_stage_id = None
         self._return_to_workspace_available = False
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
+        self._load_workspace_stage_profiles()
+        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
         self._set_status(f"Opened workspace: {self.workspace.name}")
 
     # ── Stage membership ────────────────────────────────────────────
@@ -963,7 +1066,6 @@ class ProjectController(QObject):
         if stage_id not in self.workspace.stage_order:
             self.workspace.stage_order.append(stage_id)
         self.workspace.updated_at = _utc_now()
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
         self._set_status(f"Added stage {stage_id} to workspace.")
         self.project_changed.emit()
 
@@ -975,7 +1077,6 @@ class ProjectController(QObject):
         if stage_id in self.workspace.stage_order:
             self.workspace.stage_order.remove(stage_id)
         self.workspace.updated_at = _utc_now()
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
         self._set_status(f"Removed stage {stage_id} from workspace.")
         self.project_changed.emit()
 
@@ -1031,7 +1132,6 @@ class ProjectController(QObject):
         filtered = {k: v for k, v in payload.items() if k in _INHERITANCE_ELIGIBLE_FIELDS}
         self.workspace.shared_defaults.update(filtered)
         self.workspace.updated_at = _utc_now()
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
         self._set_status("Updated workspace shared defaults.")
         self.project_changed.emit()
 
@@ -1046,7 +1146,6 @@ class ProjectController(QObject):
         entry.override_values.update(filtered)
         entry.status = "overridden"
         self.workspace.updated_at = _utc_now()
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
         self._set_status(f"Set override for stage {stage_id}.")
         self.project_changed.emit()
 
@@ -1063,7 +1162,6 @@ class ProjectController(QObject):
         if not entry.override_values:
             entry.status = "complete" if entry.source_media_present else "incomplete"
         self.workspace.updated_at = _utc_now()
-        self._workspace_saved_snapshot = _workspace_to_dict_safe(self.workspace)
         self._set_status(f"Reset overrides for stage {stage_id}.")
         self.project_changed.emit()
 
@@ -1453,18 +1551,18 @@ class ProjectController(QObject):
 
         if scope_type == "match" and self.workspace is not None:
             self.workspace.match_output_profiles.append(profile)
+        elif scope_type == "stage" and self.workspace is not None:
+            self.workspace.updated_at = _utc_now()
+            if self.workspace_path is not None:
+                self._persist_workspace_stage_profiles()
+        if self.workspace is not None:
+            self.project_changed.emit()
 
         return self._profile_to_dict(profile)
 
     def output_profile_update(self, output_id: str, **kwargs) -> dict | None:
         """Update an existing output profile."""
-        profile = self._output_profiles.get(output_id)
-        if profile is None:
-            if self.workspace:
-                for p in self.workspace.match_output_profiles:
-                    if p.output_id == output_id:
-                        profile = p
-                        break
+        profile = self._find_output_profile(output_id)
         if profile is None:
             return None
 
@@ -1472,17 +1570,32 @@ class ProjectController(QObject):
             if hasattr(profile, key) and key not in ("output_id", "scope_type", "scope_id"):
                 setattr(profile, key, value)
 
+        if self.workspace is not None and profile.scope_type == "stage":
+            self.workspace.updated_at = _utc_now()
+            if self.workspace_path is not None:
+                self._persist_workspace_stage_profiles()
+        if self.workspace is not None:
+            self.project_changed.emit()
+
         return self._profile_to_dict(profile)
 
     def output_profile_delete(self, output_id: str) -> bool:
         """Delete an output profile."""
         if output_id in self._output_profiles:
+            profile = self._output_profiles[output_id]
             del self._output_profiles[output_id]
+            if self.workspace is not None and profile.scope_type == "stage":
+                self.workspace.updated_at = _utc_now()
+                if self.workspace_path is not None:
+                    self._persist_workspace_stage_profiles()
+            if self.workspace is not None:
+                self.project_changed.emit()
             return True
         if self.workspace:
             for i, p in enumerate(self.workspace.match_output_profiles):
                 if p.output_id == output_id:
                     del self.workspace.match_output_profiles[i]
+                    self.project_changed.emit()
                     return True
         return False
 
@@ -1517,25 +1630,33 @@ class ProjectController(QObject):
             "brand_mark": profile.brand_mark,
             "subject_track_crop": profile.subject_track_crop,
             "visibility_recipe": profile.visibility_recipe,
+            "angle_director_plan": [
+                self._angle_director_cut_to_dict(cut)
+                for cut in profile.angle_director_plan
+            ],
             "retained_proxy_id": profile.retained_proxy_id,
             "last_rendered_at": profile.last_rendered_at.isoformat()
             if profile.last_rendered_at
             else None,
         }
 
-    def _save_stage_profiles(self, project_path: Path) -> None:
+    def _save_stage_profiles(self, project_path: Path, *, stage_id: str | None = None) -> None:
         """Persist stage-scoped output profiles alongside project.json."""
         import json
 
+        target_stage_id = stage_id or self.project.id
         stage_profiles = [
             p
             for p in self._output_profiles.values()
-            if p.scope_type == "stage" and p.scope_id == self.project.id
+            if p.scope_type == "stage" and p.scope_id == target_stage_id
         ]
+        profiles_path = project_path / "profiles.json"
         if stage_profiles:
-            profiles_path = project_path / "profiles.json"
+            project_path.mkdir(parents=True, exist_ok=True)
             profiles_data = [self._output_profile_to_dict_safe(p) for p in stage_profiles]
             profiles_path.write_text(json.dumps(profiles_data, indent=2))
+        elif profiles_path.exists():
+            profiles_path.unlink()
 
     def _load_stage_profiles(self, project_path: Path) -> None:
         """Load stage-scoped output profiles from project folder."""
@@ -1563,12 +1684,7 @@ class ProjectController(QObject):
 
         If profile not found, falls back to legacy Project.export settings.
         """
-        profile = self._output_profiles.get(output_id)
-        if profile is None and self.workspace:
-            for p in self.workspace.match_output_profiles:
-                if p.output_id == output_id:
-                    profile = p
-                    break
+        profile = self._find_output_profile(output_id)
 
         if profile is None:
             return self._legacy_export_render_plan()
@@ -1657,6 +1773,10 @@ class ProjectController(QObject):
             "brand_mark": dict(profile.brand_mark),
             "subject_track_crop": dict(profile.subject_track_crop),
             "visibility_recipe": dict(profile.visibility_recipe),
+            "angle_director_plan": [
+                self._angle_director_cut_to_dict(cut)
+                for cut in profile.angle_director_plan
+            ],
             "retained_proxy_id": profile.retained_proxy_id,
             "last_rendered_at": profile.last_rendered_at.isoformat()
             if profile.last_rendered_at
@@ -1780,7 +1900,7 @@ class ProjectController(QObject):
 
     def stage_composite_preview(self, output_id: str) -> dict:
         """Build a stage composite render plan for one stage with multiple clips."""
-        profile = self._output_profiles.get(output_id)
+        profile = self._find_output_profile(output_id)
         if profile is None:
             return {"success": False, "error": f"Profile {output_id} not found"}
 
@@ -1793,6 +1913,10 @@ class ProjectController(QObject):
             "stage_id": profile.scope_id,
             "clip_count": len(clips),
             "clips": clips,
+            "angle_director_plan": [
+                self._angle_director_cut_to_dict(cut)
+                for cut in profile.angle_director_plan
+            ],
             "render_settings": {
                 "frame_profile": profile.frame_profile,
                 "visibility_recipe": dict(profile.visibility_recipe),
@@ -1803,46 +1927,58 @@ class ProjectController(QObject):
 
     def _get_stage_clips(self, stage_id: str) -> list[dict]:
         """Get clips for a stage (for Stage Composite)."""
-        return self._stage_clips.get(stage_id, [])
+        return self._workspace_stage_clips_to_dicts(stage_id)
 
     def workspace_stage_clip_add(
         self, stage_id: str, source_path: str = "", angle_role: str = "primary", **kwargs
     ) -> list[dict]:
         """Add a clip source to a stage for composite editing."""
-        if stage_id not in self._stage_clips:
-            self._stage_clips[stage_id] = []
+        entry = self._workspace_stage_entry(stage_id)
+        if entry is None and self.workspace is not None:
+            self.workspace_add_stage(stage_id, f"Stage {len(self.workspace.stage_entries) + 1}")
+            entry = self._workspace_stage_entry(stage_id)
+        if entry is None:
+            return []
 
-        clip_id = _new_uuid()
-        clip = {
-            "clip_id": clip_id,
-            "source_path": source_path,
-            "angle_role": angle_role,
-            "sync_offset_ms": kwargs.get("sync_offset_ms", 0),
-            "audio_gain": kwargs.get("audio_gain", 1.0),
-            "audio_muted": kwargs.get("audio_muted", False),
-            "audio_primary": kwargs.get("audio_primary", angle_role == "primary"),
-            "angle_aligned": False,
-            "cut_override_plan": [],
-        }
-        clip.update({k: v for k, v in kwargs.items() if k in clip})
-        self._stage_clips[stage_id].append(clip)
-        return self._stage_clips[stage_id]
+        clip = StageClipSource(
+            clip_id=_new_uuid(),
+            source_path=source_path,
+            angle_role=angle_role,
+            sync_offset_ms=int(kwargs.get("sync_offset_ms", 0)),
+            audio_gain=float(kwargs.get("audio_gain", 1.0)),
+            audio_muted=bool(kwargs.get("audio_muted", False)),
+            audio_primary=bool(kwargs.get("audio_primary", angle_role == "primary")),
+            angle_aligned=bool(kwargs.get("angle_aligned", False)),
+        )
+        entry.clip_sources.append(clip)
+        if self.workspace is not None:
+            self.workspace.updated_at = _utc_now()
+            self.project_changed.emit()
+        return self._get_stage_clips(stage_id)
 
     def workspace_stage_clip_update(self, stage_id: str, clip_id: str, **kwargs) -> dict | None:
         """Update a clip's properties."""
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
         for clip in clips:
-            if clip["clip_id"] == clip_id:
-                clip.update({k: v for k, v in kwargs.items() if k in clip})
-                return clip
+            if clip.clip_id == clip_id:
+                for key, value in kwargs.items():
+                    if hasattr(clip, key):
+                        setattr(clip, key, value)
+                if self.workspace is not None:
+                    self.workspace.updated_at = _utc_now()
+                    self.project_changed.emit()
+                return self._workspace_stage_clip_to_dict(clip)
         return None
 
     def workspace_stage_clip_remove(self, stage_id: str, clip_id: str) -> bool:
         """Remove a clip from a stage."""
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
         for i, clip in enumerate(clips):
-            if clip["clip_id"] == clip_id:
-                del self._stage_clips[stage_id][i]
+            if clip.clip_id == clip_id:
+                del clips[i]
+                if self.workspace is not None:
+                    self.workspace.updated_at = _utc_now()
+                    self.project_changed.emit()
                 return True
         return False
 
@@ -1853,20 +1989,23 @@ class ProjectController(QObject):
 
         Computes sync offsets for all clips relative to the reference.
         """
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
         if not clips:
             return {"success": False, "error": "No clips for this stage"}
 
         reference = None
         for clip in clips:
-            if clip["clip_id"] == reference_clip_id:
+            if clip.clip_id == reference_clip_id:
                 reference = clip
                 break
         if reference is None:
             return {"success": False, "error": f"Reference clip {reference_clip_id} not found"}
 
         for clip in clips:
-            clip["angle_aligned"] = True
+            clip.angle_aligned = True
+        if self.workspace is not None:
+            self.workspace.updated_at = _utc_now()
+            self.project_changed.emit()
 
         return {
             "success": True,
@@ -1882,20 +2021,20 @@ class ProjectController(QObject):
 
         Produces a cut plan that switches between angles based on role priority.
         """
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
         if len(clips) < 2:
             return {"success": False, "error": "Need at least 2 clips for angle direction"}
 
         role_priority = {"primary": 0, "follow": 1, "static": 2, "detail": 3}
-        sorted_clips = sorted(clips, key=lambda c: role_priority.get(c["angle_role"], 99))
+        sorted_clips = sorted(clips, key=lambda c: role_priority.get(c.angle_role, 99))
 
         cut_plan = []
         for i, clip in enumerate(sorted_clips):
             cut_plan.append(
                 {
                     "position": i,
-                    "clip_id": clip["clip_id"],
-                    "angle_role": clip["angle_role"],
+                    "clip_id": clip.clip_id,
+                    "angle_role": clip.angle_role,
                     "start_ms": 0,
                     "duration_ms": 0,
                     "suggested": True,
@@ -1909,26 +2048,95 @@ class ProjectController(QObject):
             "clip_count": len(clips),
         }
 
+    def angle_director_plan(self, stage_id: str, output_id: str) -> dict:
+        """Return the current angle-director plan merged with persisted overrides."""
+        entry = self._workspace_stage_entry(stage_id)
+        if self.workspace is None or entry is None:
+            return {"success": False, "error": "Stage not found in workspace"}
+
+        profile = self._find_output_profile(output_id)
+        if profile is None:
+            return {"success": False, "error": f"Profile {output_id} not found"}
+        if profile.scope_type != "stage" or profile.scope_id != stage_id:
+            return {"success": False, "error": "Output profile does not belong to this stage"}
+
+        clips = self._get_stage_clips(stage_id)
+        generated = self.angle_director_generate(stage_id)
+        if not generated.get("success"):
+            return generated
+
+        persisted_plan = [self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan]
+        cut_plan = persisted_plan or generated["cut_plan"]
+        return {
+            "success": True,
+            "stage_id": stage_id,
+            "output_id": output_id,
+            "clips": clips,
+            "cut_plan": cut_plan,
+            "has_overrides": bool(profile.angle_director_plan),
+        }
+
     def angle_director_override_cut(
-        self, stage_id: str, clip_id: str, position: int, start_ms: int = 0, duration_ms: int = 0
+        self,
+        stage_id: str,
+        clip_id: str,
+        position: int,
+        start_ms: int = 0,
+        duration_ms: int = 0,
+        output_id: str | None = None,
     ) -> dict:
         """Override a suggested cut in the angle director plan."""
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
+        profile = None
+        if output_id:
+            profile = self._find_output_profile(output_id)
+        elif self.workspace is not None:
+            for candidate in self._output_profiles.values():
+                if (
+                    candidate.scope_type == "stage"
+                    and candidate.scope_id == stage_id
+                    and candidate.profile_kind == "stage_composite"
+                ):
+                    profile = candidate
+                    break
+        if profile is None:
+            return {"success": False, "error": "Stage composite output profile not found"}
+        if profile.scope_type != "stage" or profile.scope_id != stage_id:
+            return {"success": False, "error": "Output profile does not belong to this stage"}
+
         for clip in clips:
-            if clip["clip_id"] == clip_id:
-                if "cut_override_plan" not in clip:
-                    clip["cut_override_plan"] = []
-                clip["cut_override_plan"].append(
-                    {
-                        "position": position,
-                        "start_ms": start_ms,
-                        "duration_ms": duration_ms,
-                    }
-                )
+            if clip.clip_id == clip_id:
+                angle_role = clip.angle_role
+                updated = False
+                for decision in profile.angle_director_plan:
+                    if decision.position == position:
+                        decision.clip_id = clip_id
+                        decision.angle_role = angle_role
+                        decision.start_ms = start_ms
+                        decision.duration_ms = duration_ms
+                        decision.suggested = False
+                        updated = True
+                        break
+                if not updated:
+                    profile.angle_director_plan.append(
+                        AngleDirectorCutDecision(
+                            position=position,
+                            clip_id=clip_id,
+                            angle_role=angle_role,
+                            start_ms=start_ms,
+                            duration_ms=duration_ms,
+                            suggested=False,
+                        )
+                    )
+                profile.angle_director_plan.sort(key=lambda item: item.position)
+                if self.workspace is not None:
+                    self.workspace.updated_at = _utc_now()
+                    self.project_changed.emit()
                 return {
                     "success": True,
                     "clip_id": clip_id,
-                    "overrides": len(clip["cut_override_plan"]),
+                    "output_id": profile.output_id,
+                    "overrides": len(profile.angle_director_plan),
                 }
         return {"success": False, "error": f"Clip {clip_id} not found"}
 
@@ -1943,20 +2151,23 @@ class ProjectController(QObject):
         primary: bool | None = None,
     ) -> dict | None:
         """Set audio mix properties for a clip."""
-        clips = self._stage_clips.get(stage_id, [])
+        clips = self._workspace_stage_clip_models(stage_id)
         for clip in clips:
-            if clip["clip_id"] == clip_id:
+            if clip.clip_id == clip_id:
                 if gain is not None:
-                    clip["audio_gain"] = max(0.0, min(2.0, gain))
+                    clip.audio_gain = max(0.0, min(2.0, gain))
                 if muted is not None:
-                    clip["audio_muted"] = muted
+                    clip.audio_muted = muted
                 if primary is not None:
-                    clip["audio_primary"] = primary
+                    clip.audio_primary = primary
                     if primary:
                         for other in clips:
-                            if other["clip_id"] != clip_id:
-                                other["audio_primary"] = False
-                return clip
+                            if other.clip_id != clip_id:
+                                other.audio_primary = False
+                if self.workspace is not None:
+                    self.workspace.updated_at = _utc_now()
+                    self.project_changed.emit()
+                return self._workspace_stage_clip_to_dict(clip)
         return None
 
     # ── Result Cards ────────────────────────────────────────────────

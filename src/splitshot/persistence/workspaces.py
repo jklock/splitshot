@@ -4,7 +4,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from splitshot.domain.models import MatchWorkspace, OutputProfile, StageEntry, _serialize
+from splitshot.domain.models import (
+    AngleDirectorCutDecision,
+    MatchWorkspace,
+    OutputProfile,
+    StageClipSource,
+    StageEntry,
+    _serialize,
+)
 
 WORKSPACE_FILENAME = "workspace.json"
 STAGES_DIRNAME = "Stages"
@@ -81,6 +88,9 @@ def _output_profile_to_dict(profile: OutputProfile) -> dict:
         "brand_mark": profile.brand_mark,
         "subject_track_crop": profile.subject_track_crop,
         "visibility_recipe": profile.visibility_recipe,
+        "angle_director_plan": [
+            _serialize(item) for item in profile.angle_director_plan
+        ],
         "retained_proxy_id": profile.retained_proxy_id,
         "last_rendered_at": profile.last_rendered_at.isoformat() if profile.last_rendered_at else None,
     }
@@ -89,6 +99,23 @@ def _output_profile_to_dict(profile: OutputProfile) -> dict:
 def _stage_entry_from_dict(data: dict) -> StageEntry:
     last_reviewed_at = data.get("last_reviewed_at")
     stage_number = data.get("stage_number")
+    raw_clip_sources = data.get("clip_sources")
+    clip_sources: list[StageClipSource] = []
+    if isinstance(raw_clip_sources, list):
+        for item in raw_clip_sources:
+            if isinstance(item, dict):
+                clip_sources.append(
+                    StageClipSource(
+                        clip_id=str(item.get("clip_id", "")),
+                        source_path=str(item.get("source_path", "")),
+                        angle_role=str(item.get("angle_role", "primary")),
+                        sync_offset_ms=int(item.get("sync_offset_ms", 0)),
+                        audio_gain=float(item.get("audio_gain", 1.0)),
+                        audio_muted=bool(item.get("audio_muted", False)),
+                        audio_primary=bool(item.get("audio_primary", False)),
+                        angle_aligned=bool(item.get("angle_aligned", False)),
+                    )
+                )
     return StageEntry(
         stage_id=str(data.get("stage_id", "")),
         relative_project_path=str(data.get("relative_project_path", "")),
@@ -106,12 +133,28 @@ def _stage_entry_from_dict(data: dict) -> StageEntry:
             else datetime.fromisoformat(str(last_reviewed_at))
         ),
         source_media_present=bool(data.get("source_media_present", False)),
+        clip_sources=clip_sources,
     )
 
 
 def _output_profile_from_dict(data: dict) -> OutputProfile:
     last_rendered_at = data.get("last_rendered_at")
     retained_proxy_id = data.get("retained_proxy_id")
+    raw_angle_director_plan = data.get("angle_director_plan")
+    angle_director_plan: list[AngleDirectorCutDecision] = []
+    if isinstance(raw_angle_director_plan, list):
+        for item in raw_angle_director_plan:
+            if isinstance(item, dict):
+                angle_director_plan.append(
+                    AngleDirectorCutDecision(
+                        position=int(item.get("position", 0)),
+                        clip_id=str(item.get("clip_id", "")),
+                        angle_role=str(item.get("angle_role", "")),
+                        start_ms=int(item.get("start_ms", 0)),
+                        duration_ms=int(item.get("duration_ms", 0)),
+                        suggested=bool(item.get("suggested", False)),
+                    )
+                )
     return OutputProfile(
         output_id=str(data.get("output_id", "")),
         scope_type=str(data.get("scope_type", "stage")),
@@ -144,6 +187,7 @@ def _output_profile_from_dict(data: dict) -> OutputProfile:
             if isinstance(data.get("visibility_recipe"), dict)
             else {}
         ),
+        angle_director_plan=angle_director_plan,
         retained_proxy_id=(
             None if retained_proxy_id in {None, ""} else str(retained_proxy_id)
         ),

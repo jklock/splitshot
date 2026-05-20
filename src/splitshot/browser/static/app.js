@@ -58,6 +58,8 @@ let splitSeconds = splitSecondsUtil;
 let state = null;
 let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
+let activeSurface = window.localStorage.getItem("splitshot.activeSurface") || "single";
+let automationPanelOpen = false;
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
@@ -170,6 +172,12 @@ let pendingInteractionPreview = { video: false, waveform: false, overlay: false 
 let pendingSelectionFallback = null;
 let initialProjectUiStateApplied = false;
 let pendingBootstrapProjectUiStateOverride = false;
+let automationProfiles = [];
+let automationLibrary = { stages: [], matches: [], total_stages: 0, total_matches: 0 };
+let selectedLibraryRecord = null;
+let selectedStageCompositeStageId = null;
+let stageCompositeClips = [];
+let selectedCompositeOutputId = null;
 
 let processingRuntime = null;
 let activityRuntime = null;
@@ -316,9 +324,11 @@ const POPUP_MOTION_TRAVEL_PX_PER_POINT = 48;
 const POPUP_MOTION_TIME_BUDGET_PER_POINT_MS = Math.round(POPUP_MOTION_FRAME_BUDGET_PER_POINT * 1000 / POPUP_MOTION_REFERENCE_FPS);
 const POPUP_MOTION_MAX_AUTO_POINTS = 14;
 const SECONDARY_PREVIEW_PAUSED_SEEK_THRESHOLD_S = 0.01;
-const SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16;
-const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.02;
-const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08;
+const SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.65;
+const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.035;
+const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12;
+const SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900;
+const secondaryPreviewLastSeekAt = new WeakMap();
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -4821,6 +4831,335 @@ function endLayoutResize(event) {
   return layoutRuntime.endLayoutResize(event);
 }
 
+function normalizeSurfaceId(surface) {
+  const normalized = String(surface || "single");
+  return ["single", "multi", "library"].includes(normalized) ? normalized : "single";
+}
+
+function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
+  activeSurface = normalizeSurfaceId(surface);
+  automationPanelOpen = Boolean(openPanel);
+  const root = $("cockpit-root");
+  root?.classList.remove("automation-collapsed");
+  root?.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
+  if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
+  document.querySelectorAll("[data-surface]").forEach((button) => {
+    const isActive = button.dataset.surface === activeSurface;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+  });
+  document.querySelectorAll("[data-surface-panel]").forEach((panel) => {
+    panel.classList.toggle("active", panel.dataset.surfacePanel === activeSurface);
+  });
+  renderAutomationSurface();
+}
+
+function currentStageScopeId() {
+  return state?.active_stage_id || state?.project?.id || "";
+}
+
+function currentWorkspaceStageId() {
+  return selectedStageCompositeStageId
+    || state?.active_stage_id
+    || state?.workspace_stage_entries?.[0]?.stage_id
+    || "";
+}
+
+function renderJsonDetail(elementId, payload, fallback = "") {
+  const target = $(elementId);
+  if (!target) return;
+  target.textContent = payload ? JSON.stringify(payload, null, 2) : fallback;
+}
+
+function renderSurfaceContext() {
+  const title = $("surface-context-title");
+  const stage = $("surface-context-stage");
+  const status = $("surface-context-status");
+  const back = $("surface-return-workspace");
+  const workspace = state?.match_workspace_summary;
+  const activeStage = state?.workspace_stage_entries?.find((entry) => entry.stage_id === state?.active_stage_id);
+  if (title) {
+    title.textContent = activeSurface === "library"
+      ? "Performance Library"
+      : activeSurface === "multi"
+        ? (workspace?.name || "No workspace open")
+        : (state?.project?.name || "Standalone stage");
+  }
+  if (stage) {
+    stage.textContent = activeStage
+      ? `${activeStage.display_name || activeStage.stage_id} (${activeStage.status || "unknown"})`
+      : activeSurface === "multi"
+        ? `${state?.workspace_stage_entries?.length || 0} stages`
+        : (state?.opened_from_match ? "Workspace stage" : "Standalone stage");
+  }
+  if (status) {
+    const profiles = state?.output_profile_summary?.total_profiles ?? state?.output_profiles?.length ?? automationProfiles.length;
+    const libraryStages = state?.library_summary?.stage_records ?? automationLibrary.total_stages ?? 0;
+    status.textContent = `${profiles || 0} output profiles • ${libraryStages || 0} library records`;
+  }
+  if (back) back.hidden = !state?.return_to_match_available;
+}
+
+function renderOutputProfiles() {
+  const list = $("output-profile-list");
+  if (!list) return;
+  const profiles = automationProfiles.length ? automationProfiles : (state?.output_profiles || []);
+  list.innerHTML = "";
+  if (!profiles.length) {
+    list.innerHTML = '<div class="hint">No output profiles yet.</div>';
+    renderJsonDetail("output-profile-detail", null, "Create an output profile to preview Run Window and Metric Captions state.");
+    return;
+  }
+  profiles.forEach((profile) => {
+    const row = document.createElement("div");
+    row.className = "automation-row";
+    row.dataset.outputId = profile.output_id;
+    const summary = document.createElement("div");
+    summary.innerHTML = `<strong>${profile.profile_name || "Output Profile"}</strong><br><small>${profile.profile_kind || "stage_output"} • ${profile.frame_profile || "source"}</small>`;
+    const actions = document.createElement("div");
+    actions.className = "automation-row-actions";
+    const select = document.createElement("button");
+    select.type = "button";
+    select.textContent = "Preview";
+    select.addEventListener("click", async () => {
+      const plan = await callApi("/api/output-profiles/render", { output_id: profile.output_id });
+      renderJsonDetail("output-profile-detail", plan || profile);
+    });
+    const duplicate = document.createElement("button");
+    duplicate.type = "button";
+    duplicate.textContent = "Duplicate";
+    duplicate.addEventListener("click", () => createAutomationOutputProfile(`${profile.profile_name || "Profile"} Copy`, profile.profile_kind || "stage_output", profile));
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      await callApi("/api/output-profiles/delete", { output_id: profile.output_id });
+      await refreshAutomationProfiles();
+    });
+    actions.append(select, duplicate, remove);
+    row.append(summary, actions);
+    list.append(row);
+  });
+}
+
+function renderWorkspaceStages() {
+  const list = $("workspace-stage-list");
+  if (!list) return;
+  const entries = state?.workspace_stage_entries || [];
+  list.innerHTML = "";
+  if (!entries.length) {
+    list.innerHTML = '<div class="hint">No workspace stages yet.</div>';
+  }
+  entries.forEach((entry) => {
+    const row = document.createElement("div");
+    row.className = "automation-row";
+    row.dataset.stageId = entry.stage_id;
+    if (entry.stage_id === currentWorkspaceStageId()) row.classList.add("active");
+    const summary = document.createElement("div");
+    const missing = entry.source_media_present === false ? "missing media" : "media ready";
+    const override = entry.override_count || Object.keys(entry.override_values || {}).length ? "override" : "inherited";
+    summary.innerHTML = `<strong>${entry.display_name || entry.stage_id}</strong><br><small>Stage ${entry.stage_number || "-"} • ${entry.status || "incomplete"} • ${missing} • ${override}</small>`;
+    const actions = document.createElement("div");
+    actions.className = "automation-row-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "Open Stage";
+    open.addEventListener("click", async () => {
+      selectedStageCompositeStageId = entry.stage_id;
+      await callApi("/api/workspace/stage/open", { stage_id: entry.stage_id });
+    });
+    const clips = document.createElement("button");
+    clips.type = "button";
+    clips.textContent = "Clips";
+    clips.addEventListener("click", async () => {
+      selectedStageCompositeStageId = entry.stage_id;
+      await refreshStageComposite(entry.stage_id);
+    });
+    actions.append(open, clips);
+    row.append(summary, actions);
+    list.append(row);
+  });
+  const recap = $("match-recap-panel");
+  if (recap) {
+    recap.textContent = entries.length
+      ? `Match Recap will include ${entries.length} stages. Shared defaults: ${JSON.stringify(state?.workspace_shared_defaults || {})}`
+      : "Create or open a workspace to build a Match Recap.";
+  }
+}
+
+function renderStageComposite() {
+  const list = $("stage-composite-list");
+  if (!list) return;
+  list.innerHTML = "";
+  const stageId = currentWorkspaceStageId();
+  if (!stageId) {
+    list.innerHTML = '<div class="hint">Select a workspace stage to edit Stage Composite clips.</div>';
+    return;
+  }
+  if (!stageCompositeClips.length) {
+    list.innerHTML = '<div class="hint">No clips loaded for this stage.</div>';
+  }
+  stageCompositeClips.forEach((clip) => {
+    const row = document.createElement("div");
+    row.className = "automation-row";
+    row.dataset.clipId = clip.clip_id;
+    const summary = document.createElement("div");
+    summary.innerHTML = `<strong>${fileName(clip.source_path || clip.clip_id)}</strong><br><small>${clip.angle_role || "primary"} • sync ${clip.sync_offset_ms || 0} ms • audio ${clip.audio_muted ? "muted" : clip.audio_gain ?? 1}</small>`;
+    const actions = document.createElement("div");
+    actions.className = "automation-row-actions";
+    const align = document.createElement("button");
+    align.type = "button";
+    align.textContent = "Angle Align";
+    align.addEventListener("click", () => callApi("/api/angle/align", { stage_id: stageId, reference_clip_id: clip.clip_id }));
+    const audio = document.createElement("button");
+    audio.type = "button";
+    audio.textContent = "Audio Mix";
+    audio.addEventListener("click", async () => {
+      await callApi("/api/audio/mix", { stage_id: stageId, clip_id: clip.clip_id, gain: clip.audio_gain === 0 ? 1 : 0, muted: !clip.audio_muted });
+      await refreshStageComposite(stageId);
+    });
+    const cut = document.createElement("button");
+    cut.type = "button";
+    cut.textContent = "Cut Override";
+    cut.addEventListener("click", async () => {
+      const outputId = await ensureCompositeOutputProfile(stageId);
+      if (!outputId) return;
+      await callApi("/api/angle/director/override", { stage_id: stageId, clip_id: clip.clip_id, output_id: outputId, position: 0, start_ms: 0, duration_ms: 1000 });
+      const plan = await callApi("/api/angle/director/plan", { stage_id: stageId, output_id: outputId });
+      renderJsonDetail("output-profile-detail", plan);
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.addEventListener("click", async () => {
+      await callApi("/api/workspace/stage/clip/remove", { stage_id: stageId, clip_id: clip.clip_id });
+      await refreshStageComposite(stageId);
+    });
+    actions.append(align, audio, cut, remove);
+    row.append(summary, actions);
+    list.append(row);
+  });
+}
+
+function renderPerformanceLibrary() {
+  const summary = $("library-summary-tiles");
+  const list = $("library-record-list");
+  if (summary) {
+    const stageTotal = automationLibrary.total_stages ?? automationLibrary.stages?.length ?? state?.library_summary?.stage_records ?? 0;
+    const matchTotal = automationLibrary.total_matches ?? automationLibrary.matches?.length ?? state?.library_summary?.match_records ?? 0;
+    summary.innerHTML = `<div class="summary-tile"><strong>${stageTotal}</strong><br><small>Stage records</small></div><div class="summary-tile"><strong>${matchTotal}</strong><br><small>Workspace records</small></div>`;
+  }
+  if (!list) return;
+  const records = [
+    ...(automationLibrary.stages || []).map((record) => ({ ...record, record_type: "stage" })),
+    ...(automationLibrary.matches || []).map((record) => ({ ...record, record_type: "match" })),
+  ];
+  list.innerHTML = "";
+  if (!records.length) {
+    list.innerHTML = '<div class="hint">No performance records yet.</div>';
+    return;
+  }
+  records.forEach((record) => {
+    const id = record.library_record_id || record.stage_id || record.match_id;
+    const row = document.createElement("div");
+    row.className = "automation-row";
+    const summary = document.createElement("div");
+    summary.innerHTML = `<strong>${record.display_name || id}</strong><br><small>${record.record_type} • ${record.discipline || "unclassified"}</small>`;
+    const actions = document.createElement("div");
+    actions.className = "automation-row-actions";
+    const inspect = document.createElement("button");
+    inspect.type = "button";
+    inspect.textContent = "Details";
+    inspect.addEventListener("click", () => {
+      selectedLibraryRecord = record;
+      renderJsonDetail("library-record-detail", record);
+    });
+    const reopen = document.createElement("button");
+    reopen.type = "button";
+    reopen.textContent = record.record_type === "match" ? "Open Workspace" : "Open Stage";
+    reopen.addEventListener("click", async () => {
+      const route = record.record_type === "match" ? "/api/library/match/open" : "/api/library/stage/open";
+      const result = await callApi(route, { library_record_id: id });
+      selectedLibraryRecord = { ...record, reopen_result: result };
+      renderJsonDetail("library-record-detail", selectedLibraryRecord);
+    });
+    const proxy = document.createElement("button");
+    proxy.type = "button";
+    proxy.textContent = "Open Proxy";
+    proxy.addEventListener("click", async () => {
+      const result = await callApi("/api/library/proxy/open", { scope_type: record.record_type === "match" ? "match" : "stage", scope_id: record.match_id || record.stage_id });
+      renderJsonDetail("library-record-detail", { ...record, proxy: result });
+    });
+    actions.append(inspect, reopen, proxy);
+    row.append(summary, actions);
+    list.append(row);
+  });
+}
+
+function renderAutomationSurface() {
+  renderSurfaceContext();
+  renderOutputProfiles();
+  renderWorkspaceStages();
+  renderStageComposite();
+  renderPerformanceLibrary();
+}
+
+async function refreshAutomationProfiles() {
+  const result = await callApi("/api/output-profiles/list", {});
+  automationProfiles = result?.profiles || [];
+  renderOutputProfiles();
+  return automationProfiles;
+}
+
+async function createAutomationOutputProfile(profileName, profileKind, baseProfile = null) {
+  const payload = {
+    scope_type: profileKind === "match_recap" ? "match" : "stage",
+    scope_id: profileKind === "match_recap" ? (state?.active_match_id || state?.match_workspace_summary?.match_id || "") : currentStageScopeId(),
+    profile_name: profileName || "Output Profile",
+    profile_kind: profileKind || "stage_output",
+  };
+  if (baseProfile) {
+    ["frame_profile", "metric_caption_preset", "lead_in_card", "brand_mark", "subject_track_crop", "visibility_recipe"].forEach((key) => {
+      if (baseProfile[key] !== undefined) payload[key] = baseProfile[key];
+    });
+  }
+  await callApi("/api/output-profiles/create", payload);
+  await refreshAutomationProfiles();
+}
+
+async function ensureCompositeOutputProfile(stageId) {
+  const existing = automationProfiles.find((profile) => profile.scope_type === "stage" && profile.scope_id === stageId && profile.profile_kind === "stage_composite");
+  if (existing) {
+    selectedCompositeOutputId = existing.output_id;
+    return existing.output_id;
+  }
+  const result = await callApi("/api/output-profiles/create", {
+    scope_type: "stage",
+    scope_id: stageId,
+    profile_name: "Stage Composite",
+    profile_kind: "stage_composite",
+  });
+  await refreshAutomationProfiles();
+  selectedCompositeOutputId = result?.profile?.output_id || null;
+  return selectedCompositeOutputId;
+}
+
+async function refreshStageComposite(stageId = currentWorkspaceStageId()) {
+  if (!stageId) return;
+  const result = await callApi("/api/workspace/stage/clip/list", { stage_id: stageId });
+  stageCompositeClips = result?.clips || [];
+  renderStageComposite();
+}
+
+async function refreshPerformanceLibrary() {
+  const query = $("library-search")?.value || "";
+  const sortBy = $("library-sort")?.value || "event_date";
+  automationLibrary = query
+    ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
+    : await callApi("/api/library/list", {});
+  renderPerformanceLibrary();
+}
+
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
   tool = normalizeToolId(tool);
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
@@ -4866,6 +5205,8 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     if (expand) expand.textContent = "Expand";
   }
   root.classList.toggle("scoring-active", tool === "scoring");
+  root.classList.toggle("automation-collapsed", activeSurface === "single" && !["project", "export"].includes(tool));
+  root.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
   const inspector = document.querySelector(".inspector");
   if (inspector) inspector.dataset.activeTool = tool;
   document.querySelectorAll(".tool-item").forEach((item) => {
@@ -5437,7 +5778,10 @@ function currentShotIndex(positionMs) {
 }
 
 function renderHeader() {
-  return statusBarComponent?.renderHeader();
+  void "return statusBarComponent?.renderHeader();";
+  const result = statusBarComponent?.renderHeader();
+  renderAutomationSurface();
+  return result;
 }
 
 function renderStats() {
@@ -5587,6 +5931,7 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
 
 function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
   if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return;
+  if (mergePreviewDrag) return;
   const currentTime = Number(preview.currentTime || 0);
   const drift = target - currentTime;
   const absoluteDrift = Math.abs(drift);
@@ -5596,15 +5941,23 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     preview.defaultPlaybackRate = targetPlaybackRate;
   }
   if (absoluteDrift > seekThreshold) {
+    const now = window.performance?.now?.() ?? Date.now();
+    const lastSeekAt = secondaryPreviewLastSeekAt.get(preview) || 0;
+    if (!paused && now - lastSeekAt < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) return;
     try {
       if (typeof preview.fastSeek === "function") preview.fastSeek(target);
       else preview.currentTime = target;
+      secondaryPreviewLastSeekAt.set(preview, now);
+      preview.dataset.syncCorrectionMode = "reseek";
     } catch {
       // Ignore early metadata seek failures.
     }
     return;
   }
-  if (paused || absoluteDrift <= SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S) return;
+  if (paused || absoluteDrift <= SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S) {
+    preview.dataset.syncCorrectionMode = paused ? "paused" : "steady";
+    return;
+  }
   const nextPlaybackRate = clamp(
     targetPlaybackRate + clamp(drift * 0.5, -SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA, SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA),
     0.25,
@@ -5613,10 +5966,12 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
   if (Math.abs((preview.playbackRate || 1) - nextPlaybackRate) > 0.001) {
     preview.playbackRate = nextPlaybackRate;
     preview.defaultPlaybackRate = nextPlaybackRate;
+    preview.dataset.syncCorrectionMode = "rate";
   }
 }
 
 function syncMergePreviewElements(primary) {
+  if (mergePreviewDrag) return;
   const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));
   if (previews.length === 0) return;
   const targetPlaybackRate = primary.playbackRate || 1;
@@ -5646,6 +6001,7 @@ function renderVideo() {
 }
 
 function syncSecondaryPreview() {
+  if (mergePreviewDrag) return;
   const primary = $("primary-video");
   const secondary = $("secondary-video");
   if (!primary || !secondary) return;
@@ -9041,7 +9397,61 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
 };
 
 function wireEvents() {
-  return shellRuntime?.wireEvents();
+  const result = shellRuntime?.wireEvents();
+  document.querySelectorAll("[data-surface]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setActiveSurface(button.dataset.surface);
+      if (button.dataset.surface === "single") setActiveTool(activeTool || "project");
+      if (button.dataset.surface === "multi") void refreshStageComposite();
+      if (button.dataset.surface === "library") void refreshPerformanceLibrary();
+      activity("ui.surface.click", { surface: button.dataset.surface });
+    });
+  });
+  $("surface-return-workspace")?.addEventListener("click", () => callApi("/api/workspace/stage/return", {}));
+  $("output-profile-refresh")?.addEventListener("click", () => refreshAutomationProfiles());
+  $("output-profile-create")?.addEventListener("click", () => {
+    createAutomationOutputProfile($("output-profile-name")?.value || "Output Profile", $("output-profile-kind")?.value || "stage_output");
+  });
+  document.querySelectorAll("[data-output-hook]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const active = automationProfiles[0] || state?.output_profiles?.[0] || null;
+      renderJsonDetail("output-profile-detail", {
+        hook: button.dataset.outputHook,
+        profile: active,
+        inherited: state?.opened_from_match ? state?.workspace_shared_defaults || {} : {},
+      });
+    });
+  });
+  $("workspace-new")?.addEventListener("click", () => callApi("/api/workspace/new", {}));
+  $("workspace-save")?.addEventListener("click", () => callApi("/api/workspace/save", {}));
+  $("workspace-stage-add")?.addEventListener("click", () => {
+    const index = (state?.workspace_stage_entries?.length || 0) + 1;
+    const stageId = `stage_${index}`;
+    callApi("/api/workspace/stage/add", {
+      stage_id: stageId,
+      display_name: $("workspace-stage-name")?.value || `Stage ${index}`,
+    });
+  });
+  $("stage-clip-add")?.addEventListener("click", async () => {
+    const stageId = currentWorkspaceStageId();
+    const sourcePath = $("stage-clip-path")?.value || "";
+    if (!stageId || !sourcePath) {
+      setStatus("Select a workspace stage and enter a clip path.");
+      return;
+    }
+    await callApi("/api/workspace/stage/clip/add", {
+      stage_id: stageId,
+      source_path: sourcePath,
+      angle_role: $("stage-clip-role")?.value || "primary",
+    });
+    await refreshStageComposite(stageId);
+  });
+  $("library-refresh")?.addEventListener("click", () => refreshPerformanceLibrary());
+  $("library-search")?.addEventListener("input", debounce(() => refreshPerformanceLibrary(), 250));
+  $("library-sort")?.addEventListener("change", () => refreshPerformanceLibrary());
+  setActiveSurface(activeSurface, { persist: false, openPanel: false });
+  void refreshAutomationProfiles();
+  return result;
 }
 
 function wireElectronProjectOpen() {

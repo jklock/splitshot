@@ -170,8 +170,8 @@ Date: 2026-05-19
 - `/api/angle/director/generate` → `server.py:882`
 - `/api/angle/director/override` → `server.py:883`
 - `angle_director_generate` at `controller.py:1728` — produces suggested cut plan based on role priority
-- `angle_director_override_cut` at `controller.py:1758` — allows manual cut overrides, stored in `cut_override_plan`
-- Cut decisions persist in `cut_override_plan` on clip (output profile scope), not in stage truth
+- `angle_director_override_cut` at `controller.py:1758` — allows manual cut overrides, persisted in `OutputProfile.angle_director_plan`
+- Cut decisions persist on the target output profile, not in stage truth
 - Code refs: `controller.py:1728-1772`, `server.py:882-883`
 
 ## Angle Roles

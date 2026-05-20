@@ -25,6 +25,12 @@ The automation backend is largely present:
 
 The browser shell does not yet expose that system as a coherent product.
 
+Current proof boundary:
+
+- backend/source contracts are substantially present for workspaces, output profiles, library routes, and proxy routes
+- current automation scenario proof is controller-level, not browser-shell proof
+- browser-shell completion and packaged automation proof are still unproven
+
 The UI completion work must overhaul the browser shell so the user can actually use:
 
 - `Single Video`
@@ -51,7 +57,13 @@ The highest-priority blocker is PiP preview smoothness. Today, added third-perso
   - `workspace_shared_defaults`
   - `workspace_override_summary`
   - `output_profiles`
+  - `output_profile_summary`
+  - `opened_from_match`
+  - `stage_workspace_status`
   - `library_summary`
+  - `library_filters`
+  - `library_selection`
+  - `library_reopen_targets`
 
 ### Still missing for a truthful UI
 
@@ -63,6 +75,24 @@ The highest-priority blocker is PiP preview smoothness. Today, added third-perso
 - first-class UI for workspaces
 - first-class UI for Performance Library
 - PiP playback smoothness fit for visual sync work
+
+### Validated classification
+
+- `done` backend floor:
+  - workspace model and inheritance
+  - output-profile CRUD and render-plan resolution
+  - library browse/open/proxy routes and summary state
+- `partial` backend floor:
+  - stage clip support is mutation-only and controller-local
+  - PiP interaction exists but is not yet acceptable as product behavior
+- `missing` for UI readiness:
+  - stage-clip persistence
+  - dedicated stage-clip read route
+  - dedicated angle-director plan read route
+  - three-surface browser shell
+  - browser-shell proof for automation surfaces
+- `deferred`:
+  - packaged automation proof
 
 ## UI Surface Model
 

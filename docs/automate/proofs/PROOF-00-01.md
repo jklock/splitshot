@@ -71,7 +71,7 @@
 | Lead-In Card | PASS | `lead_in_card` field in `OutputProfile` (models.py:641). `_lead_in_card` on `Project` (models.py:593). `_apply_lead_in_card_to_project` at `export/pipeline.py:882`. |
 | Brand Mark | PASS | `brand_mark` field in `OutputProfile` (models.py:642). `_brand_mark` on `Project` (models.py:594). `_apply_brand_mark_to_project` at `export/pipeline.py:887`. |
 | Angle Roles | PASS | `angle_role` used in clip dicts at `controller.py:1667,1672`. Valid roles include "primary", "follow", "static", "detail" per `angle_director_generate` at `:1737`. |
-| Cut Override Plan | PASS | `cut_override_plan` field per clip at `controller.py:1673`. `angle_director_override_cut` at `:1758` appends manual cut overrides. Route `/api/angle/director/override` at `server.py:883`. |
+| Cut Override Plan | PASS | `OutputProfile.angle_director_plan` persists accepted manual cut decisions per output profile in `src/splitshot/domain/models.py` and `src/splitshot/persistence/workspaces.py`. `angle_director_override_cut` in `src/splitshot/ui/controller.py` updates that persisted plan, and `/api/angle/director/override` in `src/splitshot/browser/server.py` exposes the mutation route. |
 | Audio Mix Lanes | PASS | `audio_gain`, `audio_muted`, `audio_primary` fields in clip dict at `controller.py:1669-1671`. `audio_mix_set` at `:1776` sets gain/mute/primary. Route `/api/audio/mix` at `server.py:884`. |
 | Result Cards | PASS | `resolve_result_cards` at `controller.py:1797` builds stage transition cards from workspace entries. `result_card` key in match recap preview at `:1606`. Route `/api/result-cards/resolve` at `server.py:885`. |
 

@@ -2,6 +2,10 @@
 
 This document defines the release-facing work required when the `docs/automate` feature set ships.
 
+It does not mean the package is currently release-ready.
+
+For current audited status, use [14-truth-audit-matrix.md](14-truth-audit-matrix.md).
+
 ## Current Stable Baseline
 
 `main` is now the shipped `v1.0.5` baseline.

@@ -2,6 +2,8 @@
 
 This document is the post-merge execution reset for the automation branch after importing `main` at `v1.0.5`.
 
+Current audited status is tracked in [14-truth-audit-matrix.md](14-truth-audit-matrix.md).
+
 It exists to answer one question precisely:
 
 What work remains on `automate`, and what released `main` behavior must stay untouched while that work lands?
@@ -28,6 +30,12 @@ The merged branch already contains the backend/product foundation for:
 - Stage Composite, Match Recap, Angle Align, Angle Director, Audio Mix, Result Card data paths
 
 The remaining work is primarily about truthful UI exposure, final integration, and proof.
+
+The audit on 2026-05-20 also confirmed that some older proof snapshots are stale:
+
+- several `/api/state` fields previously called missing now exist
+- the controller scenario script was previously mislabeled as E2E proof
+- browser-shell and packaged completion must not be inferred from source-only proof
 
 ## Remaining Work That Still Matters
 
@@ -61,16 +69,18 @@ Primary planning source:
 
 - `docs/automate-ui/tracks/01-pip-performance-and-merge-editor.md`
 
-### 3. Narrow Backend Support That The UI Still Needs
+### 3. Narrow Backend Support That The UI Needed
 
-The UI package should assume the backend is mostly present, but not fully done.
+This backend seam is now complete and should be treated as inherited floor, not open UI-prep work.
 
-Still verify and finish only if missing after code inspection:
+Validated complete after code and targeted proof:
 
-- persistence for stage clip state used by `Stage Composite`
-- dedicated read route for stage clips
-- dedicated read route for current angle-director plan
-- keep `/api/state` summary-oriented instead of moving heavy UI payloads into the poll path
+- `StageEntry.clip_sources` persists stage clip metadata in `workspace.json`
+- `OutputProfile.angle_director_plan` persists accepted Angle Director cut decisions per output profile
+- `POST /api/workspace/stage/clip/list` provides narrow stage-clip reads
+- `POST /api/angle/director/plan` provides generated plan plus persisted overrides
+- workspace save/open and autosave preserve clip sync, audio, role, and override state
+- `/api/state` remains summary-oriented instead of carrying clip lists or cut plans
 
 ### 4. Baseline-Preservation Proof
 
@@ -107,8 +117,7 @@ Do not reopen these as speculative plan items unless a regression is proven:
 4. Expose Single Video output-profile UI.
 5. Expose Multi Video workspace/recap/composite UI.
 6. Expose Performance Library UI.
-7. Add only the narrow backend support still required by that UI.
-8. Run targeted proof, relevant suites, browser audits when applicable, then packaged automation proof.
+7. Run targeted proof, relevant suites, browser audits when applicable, then packaged automation proof.
 
 ## Validation Checklist
 
@@ -128,7 +137,8 @@ Use the narrowest useful check first:
 The automate branch is ready for the next implementation cycle only when:
 
 - the remaining work list above reflects actual merged code reality
-- the UI package and backend package agree on what is still missing
+- the UI package and backend package agree that the remaining blockers are shell, interaction, and proof work rather than missing clip/angle-director backend contracts
 - `v1.0.5` released behavior is treated as a regression floor, not as future work
 - new capabilities are backed by the targeted proof their owning package requires
 - broader suite or packaged-proof expectations are called out explicitly before claiming closure
+- controller-only scenario proof is not described as browser or packaged completion

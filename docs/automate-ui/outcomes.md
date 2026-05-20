@@ -24,6 +24,10 @@ The UI overhaul is complete only when all of the following are true.
 - PiP drag remains usable during playback
 - sync nudges still land accurately
 
+Current implementation note:
+
+- browser preview sync now throttles large-drift reseeks, uses bounded rate correction for smaller drift, and skips heavy preview sync while PiP drag is active.
+
 ## Single Video
 
 - output profiles are first-class UI
@@ -52,3 +56,14 @@ The UI overhaul is complete only when all of the following are true.
 - browser E2E flows pass
 - packaged UI proof passes for the shipped flows
 - release wording remains SplitShot-native if shipping
+
+Current proof note:
+
+- targeted static shell and PiP contract proof exists; browser E2E and packaged UI proof are still separate required gates before shipping claims.
+
+## Current Readiness State
+
+- stage-clip persistence and read routes are part of the audited backend floor
+- no task treats controller-only proof as browser-shell proof
+- every task is classified as `UI-only`, `Narrow backend support required`, or `Blocked by backend gap`
+- Stage Composite UI may use the validated clip and angle-director read routes, but still needs browser E2E and packaged proof before shipping claims

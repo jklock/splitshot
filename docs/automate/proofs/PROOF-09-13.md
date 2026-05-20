@@ -1,7 +1,17 @@
-# PROOF-09-13: Automation Implementation Validation
+# PROOF-09-13: Automation Source-Level Validation Snapshot
 
 **Date**: 2026-05-19
 **Validator**: Automated codebase search + targeted test execution
+
+This file is scoped to source-level validation only.
+
+It does not prove:
+
+- browser-shell completion
+- packaged automation completion
+- release readiness
+
+Current audited truth lives in [../14-truth-audit-matrix.md](../14-truth-audit-matrix.md).
 
 ---
 
@@ -43,8 +53,8 @@
 | Browse/filter/open routes | `/api/library/list`, `/api/library/filter` — `browser/server.py:866-867` |
 | Normalized metric index | JSONL format via `stage_metrics_path()` / `match_metrics_path()` — `persistence/library.py:62-67` |
 | Record creation tests | `test_workspace_persistence.py:236-318` |
-| Query tests | `read_stage_metrics()` / `read_match_metrics()` functions verified by E2E scenario |
-| History queried without reopening | Confirmed by Performance Library E2E scenario in `test_automation_e2e.py` |
+| Query tests | `read_stage_metrics()` / `read_match_metrics()` functions verified by controller scenario |
+| History queried without reopening | Confirmed by Performance Library controller scenario in `test_automation_controller_scenarios.py` |
 
 **Gate verdict: PASS**
 
@@ -90,25 +100,29 @@
 | Angle Roles | `angle_role` field on stage clips — `controller.py:1658` |
 | Audio Mix Lanes | `audio_mix_set()` — `controller.py:1776` |
 | Result Cards | `resolve_result_cards()` — `controller.py:1797` |
+| Stage clip persistence | `StageEntry.clip_sources` serialized in `persistence/workspaces.py`; workspace save/reopen and autosave covered in `tests/browser/test_workspace_flows.py` |
+| Stage clip read route | `POST /api/workspace/stage/clip/list` in `browser/server.py`, covered in `tests/browser/test_browser_control.py` |
+| Angle Director plan read route | `POST /api/angle/director/plan` in `browser/server.py`, merged with `OutputProfile.angle_director_plan` persisted overrides |
 | Match Recap / Stage Composite separate | Different controller methods, different profile kinds ("match_recap" vs "stage_composite") |
-| Recap render test | E2E scenario verifies Match Recap preview returns correct stage_count |
-| Composite render test | E2E scenario verifies Stage Composite preview returns correct clip_count |
+| Recap render test | Controller scenario verifies Match Recap preview returns correct stage_count |
+| Composite render test | Controller scenario verifies Stage Composite preview returns correct clip_count |
 
 **Gate verdict: PASS**
 
-### Phase 7: Final integration and packaged proof — PASS (source-level) / DEFERRED (packaged)
+### Phase 7: Final integration and packaged proof — PARTIAL
 
 | Criterion | Evidence |
 |---|---|
-| E2E test script | `scripts/testing/test_automation_e2e.py` — 4 scenarios covering Single Video, Multi Video, Stage Composite + Angle Align, Performance Library |
-| All E2E scenarios pass | ALL 4 E2E SCENARIOS PASSED |
+| Controller scenario script | `scripts/testing/test_automation_controller_scenarios.py` — 4 controller-level scenarios covering Single Video, Multi Video, Stage Composite + Angle Align, Performance Library |
+| All controller scenarios pass | ALL 4 CONTROLLER SCENARIOS PASSED |
 | Persistence tests | 36 passed |
 | Workspace flow tests | 35 passed |
 | Export tests | 38 passed |
 | Ruff lint | All checks passed |
-| Packaged proof | DEFERRED — packaged-app flow requires Electron build infrastructure not in scope for source validation |
+| Browser-shell proof | MISSING — this snapshot does not exercise the browser shell for automation surfaces |
+| Packaged proof | DEFERRED — packaged-app flow requires Electron build infrastructure and is not proven here |
 
-**Gate verdict: PASS (source-level). Packaged proof deferred.**
+**Gate verdict: PARTIAL. Source contracts are substantially present, but browser-shell and packaged completion are not proven here.**
 
 ---
 
@@ -133,13 +147,13 @@
 
 ### E2E Scenarios
 
-- `Command:` `uv run python scripts/testing/test_automation_e2e.py`
-- `Result:` **ALL 4 E2E SCENARIOS PASSED**
+- `Command:` `uv run python scripts/testing/test_automation_controller_scenarios.py`
+- `Result:` **ALL 4 CONTROLLER SCENARIOS PASSED**
 - Scenario details:
-  1. **Single Video reviewed-output flow** — PASS (2 profiles, Run Window render, Metric Captions render, proxy status)
-  2. **Multi Video Match Recap flow** — PASS (3 stages, shared defaults, override, inheritance, recap preview)
-  3. **Stage Composite and Angle Align flow** — PASS (3 clips, angle roles, align, audio mix, composite preview)
-  4. **Performance Library browse and reopen** — PASS (library records, metrics query, proxy status, editor target)
+  1. **Single Video reviewed-output flow** — PASS at controller level
+  2. **Multi Video Match Recap flow** — PASS at controller level
+  3. **Stage Composite and Angle Align flow** — PASS at controller level
+  4. **Performance Library browse and reopen** — PASS at controller level
 
 ### Command Matrix — Key Commands Verified
 
@@ -148,7 +162,7 @@
 | `uv run pytest tests/persistence/` | 36 passed | All persistence roundtrips |
 | `uv run pytest tests/browser/test_workspace_flows.py` | 35 passed | All workspace/inheritance/clip flows |
 | `uv run pytest tests/export/test_export.py` | 38 passed | All export tests including OutputProfile export |
-| `uv run python scripts/testing/test_automation_e2e.py` | ALL PASSED | All 4 E2E scenarios |
+| `uv run python scripts/testing/test_automation_controller_scenarios.py` | ALL PASSED | All 4 controller scenarios |
 | `uvx ruff check .` | All checks passed | Zero lint errors |
 
 ---
@@ -234,7 +248,7 @@ uv run python scripts/release/extract_release_notes.py v1.1.0 --output artifacts
 | 1 | OutputProfile persistence (HIGH) | ✅ | `_output_profile_to_dict`/`_output_profile_from_dict` in `workspaces.py:70-139`; `match_output_profiles` serialized in workspace.json |
 | 2 | Export pipeline OutputProfile wiring (HIGH) | ✅ | `export_output_profile()` in `pipeline.py:819-870` with Run Window, Metric Captions, Lead-In Card, Brand Mark |
 | 3 | Proxy video render (HIGH) | ✅ PARTIAL | Metadata management complete; `proxy_refresh()` wires to `export_output_profile()` (actual render needs media). Stale detection: truth hash comparison in `controller.py:1112`. |
-| 4 | E2E automation proof (HIGH) | ✅ | `scripts/testing/test_automation_e2e.py` — all 4 scenarios pass against controller API |
+| 4 | Controller scenario proof normalization (HIGH) | ✅ | `scripts/testing/test_automation_controller_scenarios.py` — all 4 scenarios pass against controller API; browser E2E still separate |
 | 5 | Workspace media serving (MEDIUM) | ✅ | `test_stage_project_path_resolves_in_workspace` in `test_workspace_flows.py:319` |
 | 6 | OutputProfile/ExportSettings coexistence (MEDIUM) | ✅ | Legacy fallback documented; `output_profile_render` priority rule; `test_legacy_export_fallback_when_no_profile` in `test_workspace_flows.py:342` |
 | 7 | Inheritance eligibility (MEDIUM) | ✅ | `_INHERITANCE_ELIGIBLE_FIELDS` frozenset in `controller.py:752-765`; tests `test_ineligible_field_blocked_from_defaults`, `test_ineligible_field_blocked_from_overrides`, `test_resolve_blocks_ineligible_field` in `test_workspace_flows.py:280-307` |
@@ -251,8 +265,8 @@ uv run python scripts/release/extract_release_notes.py v1.1.0 --output artifacts
 | Document | Verdict |
 |---|---|
 | 09-roadmap-and-task-plan.md | **PASS** — All 7 phases complete at source level |
-| 10-acceptance-and-proof.md | **PASS** — All 12 capability matrix rows verified; 4/4 E2E scenarios pass |
-| 11-release-readiness.md | **PASS** — All version sources at 1.1.0; CHANGELOG uses SplitShot-native names; release notes need regeneration for 1.1.0; packaged proof deferred |
+| 10-acceptance-and-proof.md | **PARTIAL** — proof requirements are defined, but browser and packaged automation proof are not satisfied by this snapshot |
+| 11-release-readiness.md | **PARTIAL** — release requirements are defined, but packaged automation proof remains deferred |
 | 12-subagent-orchestration-prompt.md | **PASS** — All non-negotiable rules followed; all required implementation outcomes delivered |
 | 13-remediation-and-completion-plan.md | **PASS** — 11 of 12 gaps verified resolved (Gap 10 pre-existing failures unverified due to suite timeout) |
 

@@ -876,10 +876,12 @@ class BrowserControlServer:
                     "/api/output-profiles/update": ("_handle_output_profile_update", []),
                     "/api/output-profiles/delete": ("_handle_output_profile_delete", []),
                     "/api/output-profiles/render": ("_handle_output_profile_render", []),
+                    "/api/workspace/stage/clip/list": ("_handle_workspace_stage_clip_list", []),
                     "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", []),
                     "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", []),
                     "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", []),
                     "/api/angle/align": ("_handle_angle_align", []),
+                    "/api/angle/director/plan": ("_handle_angle_director_plan", []),
                     "/api/angle/director/generate": ("_handle_angle_director_generate", []),
                     "/api/angle/director/override": ("_handle_angle_director_override", []),
                     "/api/audio/mix": ("_handle_audio_mix", []),
@@ -2163,6 +2165,21 @@ class BrowserControlServer:
                     return {"success": False, "error": "output_id required"}
                 return self.controller.output_profile_render(output_id)
 
+            def _handle_workspace_stage_clip_list(self, body: dict) -> dict:
+                """Return persisted clips for a workspace stage."""
+                stage_id = str(body.get("stage_id") or "")
+                if not stage_id:
+                    return {"success": False, "error": "stage_id required"}
+                if controller.workspace is None:
+                    return {"success": False, "error": "No workspace is open"}
+                if stage_id not in controller.workspace.stage_entries:
+                    return {"success": False, "error": f"Stage {stage_id} not found"}
+                return {
+                    "success": True,
+                    "stage_id": stage_id,
+                    "clips": controller._get_stage_clips(stage_id),
+                }
+
             def _handle_workspace_stage_clip_add(self, body: dict) -> dict:
                 """Add a clip to a stage for composite editing."""
                 stage_id = str(body.get("stage_id") or "")
@@ -2208,15 +2225,31 @@ class BrowserControlServer:
                 stage_id = str(body.get("stage_id") or "")
                 return self.controller.angle_director_generate(stage_id)
 
+            def _handle_angle_director_plan(self, body: dict) -> dict:
+                """Read current angle-director plan for a stage/output profile."""
+                stage_id = str(body.get("stage_id") or "")
+                output_id = str(body.get("output_id") or "")
+                if not stage_id:
+                    return {"success": False, "error": "stage_id required"}
+                if not output_id:
+                    return {"success": False, "error": "output_id required"}
+                return controller.angle_director_plan(stage_id, output_id)
+
             def _handle_angle_director_override(self, body: dict) -> dict:
                 """Override a cut in the angle director plan."""
                 stage_id = str(body.get("stage_id") or "")
                 clip_id = str(body.get("clip_id") or "")
+                output_id = body.get("output_id")
                 position = int(body.get("position", 0))
                 start_ms = int(body.get("start_ms", 0))
                 duration_ms = int(body.get("duration_ms", 0))
                 return self.controller.angle_director_override_cut(
-                    stage_id, clip_id, position, start_ms, duration_ms
+                    stage_id,
+                    clip_id,
+                    position,
+                    start_ms,
+                    duration_ms,
+                    None if output_id in {None, ""} else str(output_id),
                 )
 
             def _handle_audio_mix(self, body: dict) -> dict:

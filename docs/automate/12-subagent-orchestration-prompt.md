@@ -242,7 +242,7 @@ The work is complete only when all of the following are true:
 - every implemented capability matches the docs package contract
 - all implementation-facing names are SplitShot-native
 - every delivered capability is fully wired through all required layers
-- the E2E scenarios in `10-acceptance-and-proof.md` are satisfied
+- the acceptance scenarios in `10-acceptance-and-proof.md` are satisfied
 - packaged proof exists for the shipped visible flows
 - release-readiness rules are satisfied if the work is being shipped
 - parity claims are backed by outcome proof, not naming similarity

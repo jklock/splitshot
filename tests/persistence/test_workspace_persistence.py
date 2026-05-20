@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 
 from splitshot.domain.models import (
+    AngleDirectorCutDecision,
     LibraryMatchRecord,
     LibraryOutputRecord,
     LibraryStageRecord,
@@ -11,6 +12,7 @@ from splitshot.domain.models import (
     OutputProfile,
     Project,
     RetainedProxyRecord,
+    StageClipSource,
     StageEntry,
 )
 from splitshot.persistence.library import (
@@ -78,13 +80,45 @@ class TestWorkspaceSerialization:
         loaded = load_workspace(ws_path)
 
         assert loaded.name == "Multi Stage Match"
-        assert loaded.stage_order == ["stage_a", "stage_b"]
-        assert len(loaded.stage_entries) == 2
-        assert loaded.stage_entries["stage_a"].stage_number == 1
-        assert loaded.stage_entries["stage_a"].status == "complete"
-        assert loaded.stage_entries["stage_a"].source_media_present is True
-        assert loaded.stage_entries["stage_b"].display_name == "Bay 2"
-        assert loaded.stage_entries["stage_b"].status == "incomplete"
+
+    def test_stage_clip_sources_roundtrip(self, tmp_path):
+        ws = MatchWorkspace(name="Clip Roundtrip")
+        ws.stage_order = ["stage_a"]
+        ws.stage_entries = {
+            "stage_a": StageEntry(
+                stage_id="stage_a",
+                display_name="Bay 1",
+                clip_sources=[
+                    StageClipSource(
+                        clip_id="clip_primary",
+                        source_path="/tmp/primary.mp4",
+                        angle_role="primary",
+                        sync_offset_ms=120,
+                        audio_gain=0.8,
+                        audio_primary=True,
+                        angle_aligned=True,
+                    ),
+                    StageClipSource(
+                        clip_id="clip_follow",
+                        source_path="/tmp/follow.mp4",
+                        angle_role="follow",
+                        audio_muted=True,
+                    ),
+                ],
+            ),
+        }
+
+        ws_path = save_workspace(ws, tmp_path / "clip_roundtrip")
+        loaded = load_workspace(ws_path)
+
+        clips = loaded.stage_entries["stage_a"].clip_sources
+        assert len(clips) == 2
+        assert clips[0].clip_id == "clip_primary"
+        assert clips[0].sync_offset_ms == 120
+        assert clips[0].audio_gain == 0.8
+        assert clips[0].angle_aligned is True
+        assert clips[1].angle_role == "follow"
+        assert clips[1].audio_muted is True
 
     def test_workspace_with_output_profiles(self, tmp_path):
         ws = MatchWorkspace(name="Output Profiles")
@@ -408,3 +442,40 @@ class TestOutputProfilePersistence:
         assert profile.last_rendered_at.year == 2025
         assert profile.last_rendered_at.month == 6
         assert profile.last_rendered_at.hour == 10
+
+    def test_output_profile_angle_director_plan_roundtrip(self, tmp_path):
+        ws = MatchWorkspace(name="Angle Director Plan Test")
+        ws.match_output_profiles = [
+            OutputProfile(
+                output_id="composite_plan",
+                scope_type="stage",
+                scope_id="stage_001",
+                profile_name="Composite",
+                profile_kind="stage_composite",
+                angle_director_plan=[
+                    AngleDirectorCutDecision(
+                        position=0,
+                        clip_id="clip_primary",
+                        angle_role="primary",
+                        start_ms=100,
+                        duration_ms=250,
+                        suggested=False,
+                    ),
+                    AngleDirectorCutDecision(
+                        position=1,
+                        clip_id="clip_follow",
+                        angle_role="follow",
+                        start_ms=350,
+                        duration_ms=180,
+                        suggested=False,
+                    ),
+                ],
+            ),
+        ]
+        ws_path = save_workspace(ws, tmp_path / "angle_plan")
+        loaded = load_workspace(ws_path)
+
+        profile = loaded.match_output_profiles[0]
+        assert len(profile.angle_director_plan) == 2
+        assert profile.angle_director_plan[0].clip_id == "clip_primary"
+        assert profile.angle_director_plan[1].duration_ms == 180

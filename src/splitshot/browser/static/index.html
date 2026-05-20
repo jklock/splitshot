@@ -48,6 +48,117 @@
             <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
           </div>
         </section>
+        <section class="surface-header" aria-label="SplitShot workspace context">
+          <div class="surface-switcher" role="tablist" aria-label="SplitShot surfaces">
+            <button id="surface-single-video" class="surface-button active" data-surface="single" type="button" role="tab" aria-selected="true">Single Video</button>
+            <button id="surface-multi-video" class="surface-button" data-surface="multi" type="button" role="tab" aria-selected="false">Multi Video</button>
+            <button id="surface-performance-library" class="surface-button" data-surface="library" type="button" role="tab" aria-selected="false">Performance Library</button>
+          </div>
+          <div class="surface-context" aria-label="Active editing context">
+            <strong id="surface-context-title">Standalone stage</strong>
+            <span id="surface-context-stage">No stage loaded</span>
+            <span id="surface-context-status">Output and proxy status pending</span>
+            <button id="surface-return-workspace" type="button" hidden>Return to Workspace</button>
+          </div>
+        </section>
+        <section id="automation-surface-panel" class="automation-surface-panel" aria-label="Automation surface controls">
+          <section class="automation-panel active" data-surface-panel="single" aria-label="Single Video output profiles">
+            <div class="section-header">
+              <h2>Single Video</h2>
+              <button id="output-profile-refresh" type="button">Update Profiles</button>
+            </div>
+            <div class="automation-grid">
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Output Profiles</h3>
+                </div>
+                <div class="profile-toolbar">
+                  <input id="output-profile-name" type="text" placeholder="Profile name" aria-label="Output profile name" />
+                  <select id="output-profile-kind" aria-label="Output profile kind">
+                    <option value="stage_output">Stage Output</option>
+                    <option value="stage_composite">Stage Composite</option>
+                  </select>
+                  <button id="output-profile-create" type="button">Create</button>
+                </div>
+                <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Output Hooks</h3>
+                </div>
+                <div class="hook-grid">
+                  <button data-output-hook="run-window" type="button">Run Window</button>
+                  <button data-output-hook="metric-captions" type="button">Metric Captions</button>
+                  <button data-output-hook="frame-profiles" type="button">Frame Profiles</button>
+                  <button data-output-hook="lead-in-card" type="button">Lead-In Card</button>
+                  <button data-output-hook="brand-mark" type="button">Brand Mark</button>
+                  <button data-output-hook="subject-track-crop" type="button">Subject Track Crop</button>
+                </div>
+                <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
+              </section>
+            </div>
+          </section>
+          <section class="automation-panel" data-surface-panel="multi" aria-label="Multi Video workspace">
+            <div class="section-header">
+              <h2>Multi Video</h2>
+              <div class="section-header-actions">
+                <button id="workspace-new" type="button">New Workspace</button>
+                <button id="workspace-save" type="button">Save Workspace</button>
+              </div>
+            </div>
+            <div class="automation-grid">
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Stages</h3></div>
+                <div class="profile-toolbar">
+                  <input id="workspace-stage-name" type="text" placeholder="Stage name" aria-label="Workspace stage name" />
+                  <button id="workspace-stage-add" type="button">Add Stage</button>
+                </div>
+                <div id="workspace-stage-list" class="automation-list" aria-label="Workspace stage list"></div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Match Recap</h3></div>
+                <div id="match-recap-panel" class="automation-detail">Create or open a workspace to build a Match Recap.</div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Stage Composite</h3></div>
+                <div class="profile-toolbar">
+                  <input id="stage-clip-path" type="text" placeholder="Clip path" aria-label="Stage clip path" />
+                  <select id="stage-clip-role" aria-label="Angle role">
+                    <option value="primary">Primary</option>
+                    <option value="follow">Follow</option>
+                    <option value="static">Static</option>
+                  </select>
+                  <button id="stage-clip-add" type="button">Add Clip</button>
+                </div>
+                <div id="stage-composite-list" class="automation-list" aria-label="Stage composite clip list"></div>
+              </section>
+            </div>
+          </section>
+          <section class="automation-panel" data-surface-panel="library" aria-label="Performance Library">
+            <div class="section-header">
+              <h2>Performance Library</h2>
+              <button id="library-refresh" type="button">Update Library</button>
+            </div>
+            <div class="automation-grid">
+              <section class="automation-card">
+                <div id="library-summary-tiles" class="library-summary-tiles" aria-label="Library summary"></div>
+                <div class="profile-toolbar">
+                  <input id="library-search" type="search" placeholder="Search competitor" aria-label="Search library" />
+                  <select id="library-sort" aria-label="Library sort">
+                    <option value="event_date">Event date</option>
+                    <option value="display_name">Name</option>
+                    <option value="discipline">Discipline</option>
+                  </select>
+                </div>
+                <div id="library-record-list" class="automation-list" aria-label="Library records"></div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Selected Record</h3></div>
+                <pre id="library-record-detail" class="automation-detail">Select a library record.</pre>
+              </section>
+            </div>
+          </section>
+        </section>
         <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
           <div class="processing-copy">
             <strong id="processing-message">Ready.</strong>

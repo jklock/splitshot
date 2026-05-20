@@ -3,6 +3,9 @@
 Generated: 2026-05-19
 Validation of `src/splitshot/` against spec requirements.
 
+Current audited truth lives in [../14-truth-audit-matrix.md](../14-truth-audit-matrix.md).
+This file is a point-in-time snapshot and should not override newer code-backed audit results.
+
 ---
 
 ## 02-editor-workflow-spec.md
@@ -33,9 +36,9 @@ Validation of `src/splitshot/` against spec requirements.
 | 22 | `Stages/<stage_id>/project.json` in workspace tree | PASS | `src/splitshot/persistence/workspaces.py:52-53` — `workspace_stage_project_path` builds `STAGES_DIRNAME / stage_id / "project.json"`. `controller.py:907` — opens stage project from this path. |
 | 23 | Inheritance resolution (`resolve_setting`) | PASS | `src/splitshot/ui/controller.py:1827` — `resolve_setting` walks: stage override → match shared → folder → app → domain default. |
 | 24 | Legacy `project.json` still opens unchanged | PASS | `src/splitshot/ui/controller.py:4038-4039` — `open_project` calls `load_project(path)`. `src/splitshot/persistence/projects.py:232-239` — reads `project.json` with no migration step. Route: `server.py:818`. |
-| 25 | `opened_from_match` in state | FAIL | No matches for `opened_from_match` in codebase. Spec requires this field in `/api/state`. |
-| 26 | `stage_workspace_status` in state | FAIL | No matches for `stage_workspace_status` in codebase. Spec requires this field in `/api/state`. |
-| 27 | `output_profile_summary` in state | FAIL | No matches for `output_profile_summary` in codebase. `state.py` exports `output_profiles` (list) via workspace context but does not expose a summary key with this name. |
+| 25 | `opened_from_match` in state | PASS | `src/splitshot/browser/state.py:31,49` — present in both default and live workspace context payloads. |
+| 26 | `stage_workspace_status` in state | PASS | `src/splitshot/browser/state.py:32,58,106` — workspace status summary is emitted per stage. |
+| 27 | `output_profile_summary` in state | PASS | `src/splitshot/browser/state.py:33,59,99-120` — summary list emitted beside `output_profiles`. |
 | 28 | UI shows inherited vs overridden setting status | PARTIAL | `src/splitshot/browser/state.py:46` — `inherited_setting_status` key exists but is always initialized to `{}` and never populated with per-field resolution data. `state.py:71-78` — `has_overrides` and `workspace_override_summary` are populated per stage. Frontend can distinguish overridden from inherited but cannot see resolved values per field. |
 | 29 | Every workspace route autosaves after successful mutation | PARTIAL | Mutation routes (`_workspace_set_defaults`, `_workspace_set_stage_override`, `_workspace_reset_stage_override`, `_workspace_add_stage`, `_workspace_remove_stage`) emit `project_changed.emit()` but do not trigger workspace-persist autosave. `_workspace_open_stage` (`controller.py:905`) does call `self.save_workspace()`. No `_autosave_workspace_if_needed` analog to `_autosave_project_if_needed` (`controller.py:4391`). |
 | 30 | Stage-open failures return structured error with `match_id`, `stage_id`, `reason` | PARTIAL | `controller.py:901-903` — returns early with status message when stage not found, but does not return a structured error dict with `match_id`/`stage_id`/`reason`. Route handler returns `None`. |
@@ -74,9 +77,9 @@ Validation of `src/splitshot/` against spec requirements.
 | 25 | Stale proxy never presented as current | PASS | `src/splitshot/ui/controller.py:1112` — `proxy_status` returns `stale: True` when `generated_from_truth_hash` != `current_hash`. |
 | 26 | `library_summary` in `/api/state` | PASS | `src/splitshot/browser/state.py:100-131,396` — `_build_library_summary` provides `stage_count`, `match_count`, `last_updated` with 5-second cache TTL. |
 | 27 | `proxy_summary` (equivalent to `library_proxy_status`) in `/api/state` | PASS | `src/splitshot/browser/state.py:134-162,397` — `_build_proxy_summary` provides `active_proxy_id`, `proxy_stale`, `proxy_available`, `proxy_path`, `last_generated`. (Spec calls this `library_proxy_status`; implementation uses `proxy_summary`.) |
-| 28 | `library_filters` in `/api/state` | FAIL | `src/splitshot/browser/state.py` has no `library_filters` key. Filter capability exists only via `/api/library/filter` route, not as part of the `/api/state` payload. |
-| 29 | `library_selection` in `/api/state` | FAIL | No `library_selection` key in `state.py`. Library selection state is not surfaced in the polled state payload. |
-| 30 | `library_reopen_targets` in `/api/state` | FAIL | No `library_reopen_targets` key in `state.py`. Reopen targets are only returned by the individual `/api/library/stage/open` and `/api/library/match/open` route responses. |
+| 28 | `library_filters` in `/api/state` | PASS | `src/splitshot/browser/state.py:488-495` — library filter options are emitted in the top-level state payload. |
+| 29 | `library_selection` in `/api/state` | PASS | `src/splitshot/browser/state.py:496` — `library_selection` key exists in the top-level state payload. |
+| 30 | `library_reopen_targets` in `/api/state` | PASS | `src/splitshot/browser/state.py:497` — `library_reopen_targets` key exists in the top-level state payload. |
 
 ---
 

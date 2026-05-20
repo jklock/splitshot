@@ -187,3 +187,7 @@ SplitShot is licensed under the MIT License. See [LICENSE](LICENSE).
 <a href="https://buymeacoffee.com/glockenkemper" target="_blank" rel="noopener noreferrer">
   <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20some%20time&emoji=%E2%8F%B0%EF%B8%8F&slug=glockenkemper&button_colour=FFDD00&font_colour=000000&font_family=Inter&outline_colour=000000&coffee_colour=ffffff" alt="Buy me some time on Buy Me a Coffee" />
 </a>
+
+## Special Thanks
+
+Will Price - Thanks for beta testing the Windows version :)

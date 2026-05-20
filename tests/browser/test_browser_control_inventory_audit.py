@@ -143,6 +143,9 @@ id:ffmpeg-preset
 id:frame-rate
 id:generate-shotml-proposals
 id:import-practiscore
+id:library-refresh
+id:library-search
+id:library-sort
 id:open-practiscore-dashboard
 id:match-competitor-name
 id:match-competitor-place
@@ -157,6 +160,10 @@ id:merge-media-input
 id:metrics-export-csv
 id:metrics-export-text
 id:new-project
+id:output-profile-create
+id:output-profile-kind
+id:output-profile-name
+id:output-profile-refresh
 id:overlay-custom-x
 id:overlay-custom-y
 id:overlay-font-bold
@@ -272,6 +279,13 @@ id:show-pip
 id:show-score
 id:show-shots
 id:show-timer
+id:stage-clip-add
+id:stage-clip-path
+id:stage-clip-role
+id:surface-multi-video
+id:surface-performance-library
+id:surface-return-workspace
+id:surface-single-video
 id:target-height
 id:target-width
 id:threshold
@@ -286,6 +300,10 @@ id:toggle-rail
 id:two-pass
 id:video-bitrate
 id:video-codec
+id:workspace-new
+id:workspace-save
+id:workspace-stage-add
+id:workspace-stage-name
 id:zoom-waveform-in
 id:zoom-waveform-out
 """.splitlines()

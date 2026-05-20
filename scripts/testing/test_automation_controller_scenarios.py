@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Automation E2E scenario tests for SplitShot.
+"""Automation controller scenario tests for SplitShot.
 
-Exercises the 4 E2E scenarios from docs/automate/10-acceptance-and-proof.md
+Exercises the 4 automation scenarios from docs/automate/10-acceptance-and-proof.md
 against the controller API, validating structured payload correctness.
 """
 import os
@@ -220,7 +220,7 @@ def main():
     ]
 
     print("=" * 60)
-    print("E2E SCENARIO RESULTS")
+    print("CONTROLLER SCENARIO RESULTS")
     print("=" * 60)
 
     fails = []
@@ -236,10 +236,10 @@ def main():
             print()
 
     if fails:
-        print(f"\n{len(fails)} E2E SCENARIO(S) FAILED: {', '.join(fails)}")
+        print(f"\n{len(fails)} CONTROLLER SCENARIO(S) FAILED: {', '.join(fails)}")
         return 1
     else:
-        print("\nALL E2E SCENARIOS PASSED")
+        print("\nALL 4 CONTROLLER SCENARIOS PASSED")
         return 0
 
 

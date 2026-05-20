@@ -9,6 +9,7 @@ Start here:
 3. [execution-order.md](execution-order.md)
 4. [outcomes.md](outcomes.md)
 5. [tracks/01-pip-performance-and-merge-editor.md](tracks/01-pip-performance-and-merge-editor.md)
+6. [artifacts/readiness-gate.md](artifacts/readiness-gate.md)
 
 ## Purpose
 
@@ -18,6 +19,8 @@ Start here:
 
 This package now assumes `main` at `v1.0.5` is the shipped baseline. UI work here must preserve the released Windows export-font/OCR proof path and the packaged `docs/Clip1.MP4` fixture workflow while exposing the automation backend.
 
+Current backend truth comes from [../automate/14-truth-audit-matrix.md](../automate/14-truth-audit-matrix.md), not from older proof snapshots.
+
 ## Package Rules
 
 - `spec.md` is the authoritative UI build spec.
@@ -25,6 +28,7 @@ This package now assumes `main` at `v1.0.5` is the shipped baseline. UI work her
 - `outcomes.md` defines what completion means.
 - `progress.md` is the live execution ledger.
 - `execution-order.md` is the dependency-respecting work order for today.
+- `artifacts/readiness-gate.md` is the task-classification gate for starting the next implementation cycle.
 
 ## Scope
 

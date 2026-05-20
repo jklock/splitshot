@@ -196,10 +196,12 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/output-profiles/update",
     "/api/output-profiles/delete",
     "/api/output-profiles/render",
+    "/api/workspace/stage/clip/list",
     "/api/workspace/stage/clip/add",
     "/api/workspace/stage/clip/update",
     "/api/workspace/stage/clip/remove",
     "/api/angle/align",
+    "/api/angle/director/plan",
     "/api/angle/director/generate",
     "/api/angle/director/override",
     "/api/audio/mix",
@@ -509,6 +511,68 @@ def test_browser_file_upload_rejects_requests_larger_than_limit(monkeypatch) -> 
         payload = json.loads(exc_info.value.read().decode("utf-8"))
         assert "Browser upload exceeds the" in payload["error"]
         assert controller.project.primary_video.path == ""
+    finally:
+        server.shutdown()
+
+
+def test_browser_workspace_stage_clip_list_reads_persisted_clip_metadata(tmp_path) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace_add_stage("stage_1", "Bay 1")
+    clips = controller.workspace_stage_clip_add("stage_1", "/tmp/primary.mp4", "primary")
+    clip_id = clips[0]["clip_id"]
+    controller.workspace_stage_clip_update("stage_1", clip_id, sync_offset_ms=140, audio_gain=0.65)
+    controller.save_workspace(str(tmp_path / "workspace"))
+    controller.open_workspace(str(tmp_path / "workspace"))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(f"{server.url}api/workspace/stage/clip/list", {"stage_id": "stage_1"})
+
+        assert payload["success"] is True
+        assert payload["stage_id"] == "stage_1"
+        assert len(payload["clips"]) == 1
+        assert payload["clips"][0]["clip_id"] == clip_id
+        assert payload["clips"][0]["sync_offset_ms"] == 140
+        assert payload["clips"][0]["audio_gain"] == 0.65
+    finally:
+        server.shutdown()
+
+
+def test_browser_angle_director_plan_reads_persisted_output_profile_overrides(tmp_path) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace_add_stage("stage_1", "Bay 1")
+    clips = controller.workspace_stage_clip_add("stage_1", "/tmp/primary.mp4", "primary")
+    controller.workspace_stage_clip_add("stage_1", "/tmp/follow.mp4", "follow")
+    profile = controller.output_profile_create("stage", "stage_1", "Composite", "stage_composite")
+    override = controller.angle_director_override_cut(
+        "stage_1",
+        clips[0]["clip_id"],
+        0,
+        start_ms=125,
+        duration_ms=300,
+        output_id=profile["output_id"],
+    )
+    assert override["success"] is True
+    controller.save_workspace(str(tmp_path / "workspace"))
+    controller.open_workspace(str(tmp_path / "workspace"))
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(
+            f"{server.url}api/angle/director/plan",
+            {"stage_id": "stage_1", "output_id": profile["output_id"]},
+        )
+
+        assert payload["success"] is True
+        assert payload["has_overrides"] is True
+        assert payload["clips"][0]["clip_id"] == clips[0]["clip_id"]
+        assert payload["cut_plan"][0]["clip_id"] == clips[0]["clip_id"]
+        assert payload["cut_plan"][0]["start_ms"] == 125
+        assert payload["cut_plan"][0]["duration_ms"] == 300
     finally:
         server.shutdown()
 

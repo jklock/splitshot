@@ -91,8 +91,11 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
     assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in source
     assert "const target = mergePreviewTargetTime(primary.currentTime, activeSource);" in source
-    assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16" in source
-    assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08" in source
+    assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.65" in source
+    assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12" in source
+    assert "SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900" in source
+    assert "if (mergePreviewDrag) return;" in _function_body(source, "syncPreviewPlaybackToTarget")
+    assert "secondaryPreviewLastSeekAt.set(preview, now);" in source
     assert "popup_template: normalizePopupTemplate(state?.project?.popup_template || {})," in source
     assert "opacity: currentSourceOpacity(source)," in source
 

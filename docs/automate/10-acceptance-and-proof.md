@@ -2,6 +2,10 @@
 
 This document defines the proof standard for the automation plan set.
 
+It is a requirements document, not the current completion ledger.
+
+For current audited status, use [14-truth-audit-matrix.md](14-truth-audit-matrix.md).
+
 ## Proof Rule
 
 Do not claim completion from design docs, source-only success, or partial browser smoke.

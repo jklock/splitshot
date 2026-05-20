@@ -438,3 +438,104 @@ class TestStageClips:
         
         assert len(controller._get_stage_clips("s1")) == 1
         assert len(controller._get_stage_clips("s2")) == 1
+
+    def test_stage_clips_persist_across_workspace_save_reopen(self, controller, tmp_path):
+        """Stage clip metadata survives workspace save/reopen."""
+        controller.new_workspace()
+        controller.workspace_add_stage("s1", "Stage 1")
+        clips = controller.workspace_stage_clip_add("s1", "/tmp/s1.mp4", "primary")
+        clip_id = clips[0]["clip_id"]
+        controller.workspace_stage_clip_update("s1", clip_id, sync_offset_ms=135, audio_gain=0.6)
+
+        ws_path = tmp_path / "clip_persist"
+        controller.save_workspace(str(ws_path))
+        controller.open_workspace(str(ws_path))
+
+        reloaded = controller._get_stage_clips("s1")
+        assert len(reloaded) == 1
+        assert reloaded[0]["clip_id"] == clip_id
+        assert reloaded[0]["sync_offset_ms"] == 135
+        assert reloaded[0]["audio_gain"] == 0.6
+
+    def test_stage_clips_autosave_when_workspace_has_path(self, controller_with_workspace):
+        """Clip mutations participate in workspace autosave."""
+        controller_with_workspace.workspace_stage_clip_add("stage_1", "/tmp/auto.mp4", "primary")
+        controller_with_workspace.open_workspace(str(controller_with_workspace.workspace_path))
+
+        reloaded = controller_with_workspace._get_stage_clips("stage_1")
+        assert len(reloaded) == 1
+        assert reloaded[0]["source_path"] == "/tmp/auto.mp4"
+
+    def test_stage_composite_preview_uses_persisted_clips_after_reopen(self, controller, tmp_path):
+        """Stage composite preview reads persisted stage clips after reopen."""
+        controller.new_workspace()
+        controller.workspace_add_stage("s1", "Stage 1")
+        controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")
+        controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")
+        profile = controller.output_profile_create("stage", "s1", "Composite", "stage_composite")
+
+        ws_path = tmp_path / "composite_persist"
+        controller.save_workspace(str(ws_path))
+        controller.open_workspace(str(ws_path))
+
+        preview = controller.stage_composite_preview(profile["output_id"])
+        assert preview["success"] is True
+        assert preview["clip_count"] == 2
+        assert [clip["angle_role"] for clip in preview["clips"]] == ["primary", "follow"]
+
+
+class TestAngleDirectorPersistence:
+    """Test angle-director durability on output profiles."""
+
+    def test_angle_director_override_persists_across_workspace_save_reopen(self, controller, tmp_path):
+        """Accepted cut decisions persist on the target output profile."""
+        controller.new_workspace()
+        controller.workspace_add_stage("s1", "Stage 1")
+        clips = controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")
+        controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")
+        profile = controller.output_profile_create("stage", "s1", "Composite", "stage_composite")
+
+        result = controller.angle_director_override_cut(
+            "s1",
+            clips[0]["clip_id"],
+            0,
+            start_ms=150,
+            duration_ms=275,
+            output_id=profile["output_id"],
+        )
+        assert result["success"] is True
+
+        ws_path = tmp_path / "angle_plan_persist"
+        controller.save_workspace(str(ws_path))
+        controller.open_workspace(str(ws_path))
+
+        plan = controller.angle_director_plan("s1", profile["output_id"])
+        assert plan["success"] is True
+        assert plan["has_overrides"] is True
+        assert plan["cut_plan"][0]["clip_id"] == clips[0]["clip_id"]
+        assert plan["cut_plan"][0]["start_ms"] == 150
+        assert plan["cut_plan"][0]["duration_ms"] == 275
+
+    def test_angle_director_override_autosaves_when_workspace_has_path(self, controller_with_workspace):
+        """Angle-director overrides participate in workspace autosave."""
+        clips = controller_with_workspace.workspace_stage_clip_add("stage_1", "/tmp/1.mp4", "primary")
+        controller_with_workspace.workspace_stage_clip_add("stage_1", "/tmp/2.mp4", "follow")
+        profile = controller_with_workspace.output_profile_create(
+            "stage", "stage_1", "Composite", "stage_composite"
+        )
+
+        result = controller_with_workspace.angle_director_override_cut(
+            "stage_1",
+            clips[0]["clip_id"],
+            0,
+            start_ms=90,
+            duration_ms=200,
+            output_id=profile["output_id"],
+        )
+        assert result["success"] is True
+
+        controller_with_workspace.open_workspace(str(controller_with_workspace.workspace_path))
+        plan = controller_with_workspace.angle_director_plan("stage_1", profile["output_id"])
+        assert plan["success"] is True
+        assert plan["has_overrides"] is True
+        assert plan["cut_plan"][0]["start_ms"] == 90
