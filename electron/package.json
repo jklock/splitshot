@@ -1,6 +1,6 @@
 {
   "name": "splitshot",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Competition shooting video analysis, scoring, and export",
   "main": "main.js",
   "scripts": {
