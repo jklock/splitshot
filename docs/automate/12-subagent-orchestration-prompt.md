@@ -31,6 +31,7 @@ Before changing code, read these documents in this order:
 
 Do not begin implementation until you understand:
 
+- `main` on `v1.0.5` is the regression floor for all continuing work
 - `Project` remains the stage-truth model
 - `Match Recap` and `Stage Composite` are separate first-delivery flows
 - parity is outcome-based only
@@ -41,6 +42,7 @@ Do not begin implementation until you understand:
 
 You must:
 
+- preserve the shipped `v1.0.5` Windows export-font, OCR-proof, and packaged-fixture baseline
 - preserve the current SplitShot architecture and extend existing seams
 - keep `Project` as the authoritative stage-truth model
 - add additive workspace/library/proxy systems instead of replacing legacy single-stage behavior
@@ -189,6 +191,8 @@ When packaged flows are in scope, use the packaged backend with the supported au
 
 Before and after each phase, identify the regression blast radius and protect:
 
+- the shipped `v1.0.5` Windows export-font and OCR proof path
+- packaged `docs/Clip1.MP4` fixture validation
 - legacy single-stage `project.json` behavior
 - existing `/api/project/*` semantics
 - existing export behavior for stage-only flows

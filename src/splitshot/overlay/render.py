@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 from splitshot.domain.models import BadgeSize, BadgeStyle, OverlayPosition, Project, overlay_text_boxes_for_render
+from splitshot.overlay.font_policy import (
+    WINDOWS_MONO_FONT_FAMILIES,
+    WINDOWS_SANS_FONT_FAMILIES,
+    WINDOWS_SERIF_FONT_FAMILIES,
+    WINDOWS_UI_FONT_FAMILY,
+    default_overlay_font_family,
+    is_windows_platform,
+    resolve_overlay_font_family,
+)
 from splitshot.presentation.popups import (
     popup_bubble_content_type,
     popup_bubble_display_text,
@@ -64,6 +74,75 @@ _PENALTY_LABELS = {
 }
 
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
+
+def _ordered_unique_families(*families: str) -> list[str]:
+    ordered: list[str] = []
+    for family in families:
+        normalized = str(family or "").strip()
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return ordered
+
+
+def _overlay_font_catalog() -> tuple[dict[str, list[str]], QFont.StyleHint]:
+    if is_windows_platform():
+        return (
+            {
+                WINDOWS_UI_FONT_FAMILY: list(WINDOWS_SANS_FONT_FAMILIES),
+                "Helvetica Neue": list(WINDOWS_SANS_FONT_FAMILIES),
+                "Arial": _ordered_unique_families("Arial", *WINDOWS_SANS_FONT_FAMILIES),
+                "Verdana": _ordered_unique_families("Verdana", *WINDOWS_SANS_FONT_FAMILIES),
+                "Tahoma": _ordered_unique_families("Tahoma", *WINDOWS_SANS_FONT_FAMILIES),
+                "Trebuchet MS": _ordered_unique_families("Trebuchet MS", *WINDOWS_SANS_FONT_FAMILIES),
+                "Courier New": list(WINDOWS_MONO_FONT_FAMILIES),
+                "Consolas": list(WINDOWS_MONO_FONT_FAMILIES),
+                "Georgia": list(WINDOWS_SERIF_FONT_FAMILIES),
+                "Cambria": list(WINDOWS_SERIF_FONT_FAMILIES),
+            },
+            QFont.StyleHint.AnyStyle,
+        )
+    if sys.platform == "darwin":
+        return (
+            {
+                "Helvetica Neue": ["Helvetica Neue", "Helvetica", "Arial"],
+                "Arial": ["Arial", "Helvetica Neue", "Helvetica"],
+                "Verdana": ["Verdana", "Arial", "Helvetica Neue"],
+                "Courier New": ["Menlo", "Courier New", "Monaco"],
+                "Georgia": ["Georgia", "Times New Roman", "Times"],
+            },
+            QFont.StyleHint.AnyStyle,
+        )
+    return (
+        {
+            "Helvetica Neue": ["DejaVu Sans", "Liberation Sans", "Arial", "Noto Sans"],
+            "Arial": ["Arial", "DejaVu Sans", "Liberation Sans", "Noto Sans"],
+            "Verdana": ["Verdana", "DejaVu Sans", "Liberation Sans", "Arial"],
+            "Courier New": ["DejaVu Sans Mono", "Liberation Mono", "Courier New", "Noto Sans Mono"],
+            "Georgia": ["DejaVu Serif", "Liberation Serif", "Georgia", "Times New Roman", "Noto Serif"],
+        },
+        QFont.StyleHint.AnyStyle,
+    )
+
+
+def _overlay_qfont(font_family: str, font_size: int, bold: bool, italic: bool) -> QFont:
+    primary_family = resolve_overlay_font_family(font_family, sys.platform)
+    catalog, default_style_hint = _overlay_font_catalog()
+    families = catalog.get(primary_family, [primary_family])
+    if primary_family not in catalog:
+        families = [primary_family, *families]
+    font = QFont(families[0])
+    if hasattr(font, "setFamilies"):
+        font.setFamilies(families)
+    if primary_family in {"Courier New", "Consolas"}:
+        font.setStyleHint(QFont.StyleHint.Monospace)
+    elif primary_family in {"Georgia", "Cambria"}:
+        font.setStyleHint(QFont.StyleHint.Serif)
+    else:
+        font.setStyleHint(QFont.StyleHint.SansSerif if is_windows_platform() else (default_style_hint or QFont.StyleHint.SansSerif))
+    font.setPixelSize(max(1, int(font_size)))
+    font.setBold(bold)
+    font.setItalic(italic)
+    return font
 
 def _combined_rect(rects: list[QRectF]) -> QRectF | None:
     if not rects:
@@ -361,10 +440,12 @@ class OverlayRenderer:
         painter.setRenderHint(QPainter.TextAntialiasing, True)
 
         font_size = project.overlay.font_size or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
-        font = QFont(project.overlay.font_family or "Helvetica Neue")
-        font.setPixelSize(max(1, int(font_size)))
-        font.setBold(project.overlay.font_bold)
-        font.setItalic(project.overlay.font_italic)
+        font = _overlay_qfont(
+            project.overlay.font_family or default_overlay_font_family(),
+            font_size,
+            project.overlay.font_bold,
+            project.overlay.font_italic,
+        )
         painter.setFont(font)
         metrics = painter.fontMetrics()
         line_height = _badge_line_height(font, metrics)
@@ -535,10 +616,12 @@ class OverlayRenderer:
             return []
 
         font_size = project.overlay.font_size or _FONT_SIZE.get(project.overlay.badge_size, _FONT_SIZE[BadgeSize.M])
-        font = QFont(project.overlay.font_family or "Helvetica Neue")
-        font.setPixelSize(max(1, int(font_size)))
-        font.setBold(project.overlay.font_bold)
-        font.setItalic(project.overlay.font_italic)
+        font = _overlay_qfont(
+            project.overlay.font_family or default_overlay_font_family(),
+            font_size,
+            project.overlay.font_bold,
+            project.overlay.font_italic,
+        )
         painter.setFont(font)
         metrics = painter.fontMetrics()
         line_height = _badge_line_height(font, metrics)
@@ -763,9 +846,7 @@ class OverlayRenderer:
             color = QColor(project.overlay.scoring_colors.get(letter, "#FFFFFF"))
             color.setAlphaF(alpha)
             painter.setPen(color)
-            font = QFont("Helvetica Neue")
-            font.setPixelSize(28)
-            font.setBold(True)
+            font = _overlay_qfont(default_overlay_font_family(), 28, bold=True, italic=False)
             painter.setFont(font)
             point = QPointF(x_norm * width, y_norm * height)
             painter.drawText(point, letter)

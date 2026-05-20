@@ -2048,7 +2048,7 @@
 }
 
 .color-hex-input {
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
   min-height: 24px;
   min-width: 86px;
   padding: 0.18rem 0.35rem;
@@ -2319,7 +2319,7 @@
   background: #050607;
   border: 1px solid var(--line);
   color: #cbd5e1;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: "Consolas", "SF Mono", "Menlo", monospace;
   font-size: 0.68rem;
   line-height: 1.35;
   margin: 0;

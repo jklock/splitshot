@@ -10,6 +10,8 @@ You must treat `/Volumes/Storage/GitHub/splitshot/docs/automate-ui/` as the exec
 
 Your job is to finish the browser-shell and packaged-Electron UI so the shipped product truthfully exposes the automation backend that now exists.
 
+Treat `main` at `v1.0.5` as the released regression floor while you do that work.
+
 Do not rewrite the plan. Execute it.
 
 ## Read Order
@@ -50,8 +52,9 @@ After reading the docs, inspect the current code reality before changing anythin
 4. Do not treat PiP as a cosmetic issue. Fix preview playback smoothness first.
 5. Do not leave partial UI surfaces. A surface is not complete if it only has layout without route/state wiring.
 6. Do not bloat `/api/state` with heavy clip or library payloads. Use dedicated fetches.
-7. Do not claim completion without targeted proof, relevant suite proof, and updated docs/progress.
-8. Do not regress existing visible stage-edit behavior while adding the new shell.
+7. Do not regress the shipped Windows export-font, OCR-proof, or `docs/Clip1.MP4` packaged-workflow baseline.
+8. Do not claim completion without targeted proof, relevant suite proof, and updated docs/progress.
+9. Do not regress existing visible stage-edit behavior while adding the new shell.
 
 ## Primary Outcome
 
@@ -82,8 +85,8 @@ This is UI completion work. Do not turn it into a new backend architecture proje
 Allowed backend support work is limited to what the UI package already calls out:
 
 - persist stage clips and clip-local angle/audio/cut state
-- add `POST /api/workspace/stage/clips/list`
-- add `POST /api/angle/director/plan`
+- add a dedicated stage-clip read route
+- add a dedicated angle-director plan read route
 - keep existing route/state contracts coherent for the new UI
 
 If more backend work appears necessary, verify it against the existing docs first and keep it tightly scoped to unblocking the UI.
@@ -195,6 +198,7 @@ You must not stop after the UI appears to work.
 Required outcome:
 
 - targeted tests for changed behavior
+- targeted baseline-preservation proof for the `v1.0.5` release floor
 - relevant browser/export suites
 - browser audit if UI/routes/controller behavior changed in ways the audit covers
 - packaged proof for critical flows

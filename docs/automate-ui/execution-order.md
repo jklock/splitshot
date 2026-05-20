@@ -2,6 +2,18 @@
 
 This is the same-day dependency order for completing the UI overhaul.
 
+## 0. Preserve The `v1.0.5` Baseline
+
+Reason:
+
+- `main` is now the shipped floor.
+- UI work must not regress the released Windows export-font path, OCR proof path, or packaged fixture workflow.
+
+Closeout:
+
+- targeted export/static UI proof for font-stack and export-baseline behavior
+- no workflow regression around `docs/Clip1.MP4`
+
 ## 1. PiP Performance And Merge Editor
 
 Reason:

@@ -2,6 +2,19 @@
 
 This document defines the release-facing work required when the `docs/automate` feature set ships.
 
+## Current Stable Baseline
+
+`main` is now the shipped `v1.0.5` baseline.
+
+That release already claims:
+
+- repaired Windows overlay font rendering
+- Windows OCR proof for exported overlays
+- `docs/Clip1.MP4` fixture-backed packaged validation
+- hardened packaged workflow/release proof wiring
+
+Any future automation release must preserve those claims before adding new ones.
+
 ## Purpose
 
 This package does not replace the repo-wide semver release process.
@@ -12,6 +25,7 @@ It adds an automation-specific ship-readiness checklist for the features defined
 
 When the feature set introduced here is shipped, release work must cover:
 
+- preservation of the `v1.0.5` release guarantees
 - version-source updates governed by the repo release process
 - changelog entries using SplitShot-native feature names
 - release notes mapped to user outcomes rather than internal implementation jargon
@@ -41,6 +55,7 @@ The release notes must describe shipped capabilities using SplitShot-native name
 
 Before these capabilities are released, packaged proof must cover:
 
+- the existing `v1.0.5` Windows export-font/OCR proof path
 - stage output profile creation and render
 - `Run Window` render behavior
 - `Metric Captions` render behavior
@@ -77,10 +92,11 @@ Release notes must not:
 The release pass for this package must answer:
 
 1. Which `docs/automate` capabilities are shipping in this version?
-2. Which of those capabilities passed packaged proof?
-3. Which capabilities remain partial, deferred, or rejected by design?
-4. Does `CHANGELOG.md` use SplitShot-native names?
-5. Does the GitHub release body match the packaged-proof reality?
+2. Which existing `v1.0.5` guarantees were re-proven unchanged?
+3. Which of the new automation capabilities passed packaged proof?
+4. Which capabilities remain partial, deferred, or rejected by design?
+5. Does `CHANGELOG.md` use SplitShot-native names?
+6. Does the GitHub release body match the packaged-proof reality?
 
 ## Acceptance Rule
 

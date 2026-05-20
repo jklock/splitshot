@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from splitshot.overlay.font_policy import default_overlay_font_family
+
 
 class StrEnum(str, Enum):
     def __str__(self) -> str:
@@ -361,7 +363,7 @@ class OverlaySettings:
     score_y: float | None = None
     bubble_width: int = 0
     bubble_height: int = 0
-    font_family: str = "Helvetica Neue"
+    font_family: str = field(default_factory=default_overlay_font_family)
     font_size: int = 14
     font_bold: bool = True
     font_italic: bool = False
@@ -451,7 +453,7 @@ class OverlayTextBox:
     width: int = 0
     height: int = 0
     style_type: str = "square"
-    font_family: str = "Helvetica Neue"
+    font_family: str = field(default_factory=default_overlay_font_family)
     font_size: int = 14
     font_bold: bool = True
     font_italic: bool = False
@@ -487,7 +489,7 @@ class PopupBubble:
     width: int = 0
     height: int = 0
     style_type: str = "square"
-    font_family: str = "Helvetica Neue"
+    font_family: str = field(default_factory=default_overlay_font_family)
     font_size: int = 14
     font_bold: bool = True
     font_italic: bool = False
@@ -512,7 +514,7 @@ class PopupTemplate:
     text_color: str = "#ffffff"
     opacity: float = 0.9
     style_type: str = "square"
-    font_family: str = "Helvetica Neue"
+    font_family: str = field(default_factory=default_overlay_font_family)
     font_size: int = 14
     font_bold: bool = True
     font_italic: bool = False
@@ -947,7 +949,7 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
         width=int(data.get("width", 0)),
         height=int(data.get("height", 0)),
         style_type=str(data.get("style_type", "square") or "square"),
-        font_family=str(data.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_family=str(data.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
         font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
         font_bold=bool(data.get("font_bold", True)),
         font_italic=bool(data.get("font_italic", False)),
@@ -988,7 +990,7 @@ def _popup_bubble_from_dict(data: dict[str, Any]) -> PopupBubble:
         width=max(0, int(data.get("width", 0) or 0)),
         height=max(0, int(data.get("height", 0) or 0)),
         style_type=str(data.get("style_type", "square") or "square"),
-        font_family=str(data.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_family=str(data.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
         font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),
         font_bold=bool(data.get("font_bold", True)),
         font_italic=bool(data.get("font_italic", False)),
@@ -1016,7 +1018,7 @@ def _popup_template_from_dict(data: dict[str, Any] | None) -> PopupTemplate:
         text_color=str(payload.get("text_color", "#ffffff") or "#ffffff"),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", 0.9)))),
         style_type=str(payload.get("style_type", "square") or "square"),
-        font_family=str(payload.get("font_family", "Helvetica Neue") or "Helvetica Neue")[:80],
+        font_family=str(payload.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
         font_size=max(8, min(72, int(payload.get("font_size", 14) or 14))),
         font_bold=bool(payload.get("font_bold", True)),
         font_italic=bool(payload.get("font_italic", False)),
@@ -1438,7 +1440,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             ),
             bubble_width=int(overlay_data.get("bubble_width", 0)),
             bubble_height=int(overlay_data.get("bubble_height", 0)),
-            font_family=str(overlay_data.get("font_family", "Helvetica Neue")),
+            font_family=str(overlay_data.get("font_family", default_overlay_font_family())),
             font_size=int(overlay_data.get("font_size", 14)),
             font_bold=bool(overlay_data.get("font_bold", True)),
             font_italic=bool(overlay_data.get("font_italic", False)),

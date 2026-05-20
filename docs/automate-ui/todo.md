@@ -1,20 +1,22 @@
 # Automate UI Todo
 
-## P0 Today
+## P0 Baseline Guardrails
 
-- [ ] Write the PiP sync/performance track and keep it first in execution order
-- [ ] Document the shell overhaul from flat rail to three product surfaces
-- [ ] Document the Single Video output-profile UI
-- [ ] Document the Multi Video workspace, Match Recap, and Stage Composite UI
-- [ ] Document the Performance Library UI
-- [ ] Document the UI-enabling backend support pass
-- [ ] Document proof, regression, and release closure
+- [ ] Re-prove the `v1.0.5` Windows export-font path stays intact
+- [ ] Re-prove packaged/test flows still validate `docs/Clip1.MP4`
+- [ ] Keep browser preview font stacks aligned to the released Windows-safe families
+
+## P0 UI Blockers
+
+- [ ] Fix PiP playback smoothness first
+- [ ] Replace the flat shell rail with the three-surface model
+- [ ] Keep legacy stage-edit behavior stable while the shell changes
 
 ## P1 UI-Enabling Support Work
 
 - [ ] Persist stage clips and clip-local angle/audio/cut state
-- [ ] Add `POST /api/workspace/stage/clips/list`
-- [ ] Add `POST /api/angle/director/plan`
+- [ ] Add dedicated stage-clip read route
+- [ ] Add dedicated angle-director plan read route
 - [ ] Keep `/api/state` summary-oriented and move heavy reads to dedicated calls
 
 ## P1 Shell And Navigation
@@ -52,8 +54,8 @@
 
 ## P1 Proof
 
-- [ ] Define targeted UI suites
-- [ ] Define PiP performance truth gate
-- [ ] Define browser E2E flows
-- [ ] Define packaged proof flows
-- [ ] Define release-note/changelog checks
+- [ ] Run targeted UI suites
+- [ ] Prove PiP performance truth gate
+- [ ] Prove browser E2E flows
+- [ ] Prove packaged automation flows
+- [ ] Re-check release-note/changelog wording only if shipping

@@ -9,11 +9,11 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "It is not a claim that every button or field has its own direct behavior test." in matrix
     assert "If a control is missing from this matrix, it does not have an explicit owner yet." in matrix
     assert "| Project / import | project details, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, gated primary import, metadata-only delete |" in matrix
-    assert "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |" in matrix
+    assert "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |" in matrix
     assert "| Splits / waveform | split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |" in matrix
     assert "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |" in matrix
     assert "| Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, PiP defaults, overlay defaults, marker defaults, export defaults, ShotML defaults, section collapse, template fields |" in matrix
-    assert "| Export | output path, preset, quality, show export log modal open/close/backdrop and download |" in matrix
+    assert "| Export | output path, preset, quality, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |" in matrix
     assert "| ShotML | average auto-confidence summary, threshold apply/reset, rerun, proposal generation, reset defaults |" in matrix
     assert "tests/browser/test_browser_interactions.py" in matrix
     assert "tests/browser/test_metrics_e2e.py" in matrix
@@ -56,6 +56,8 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "timing-event metrics ordering" in matrix
     assert "section collapse state within a live session" in matrix
     assert "layout capture/release defaults" in matrix
+    assert "visible analyze or re-run beep-sync action" in matrix
+    assert "CI artifact export proof from `docs/Clip1.MP4`" in matrix
 
     for test_path in [
         "tests/browser/test_browser_static_ui.py",

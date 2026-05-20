@@ -1906,8 +1906,14 @@ class BrowserControlServer:
                 if isinstance(overlay_payload, dict):
                     self._set_overlay(overlay_payload)
                 popups_payload = payload.get("popups")
-                if isinstance(popups_payload, list):
-                    self._set_popups({"popups": popups_payload})
+                popup_template_payload = payload.get("popup_template")
+                if isinstance(popups_payload, list) or isinstance(popup_template_payload, dict):
+                    next_popups_payload: dict[str, Any] = {}
+                    if isinstance(popups_payload, list):
+                        next_popups_payload["popups"] = popups_payload
+                    if isinstance(popup_template_payload, dict):
+                        next_popups_payload["popup_template"] = popup_template_payload
+                    self._set_popups(next_popups_payload)
                 merge_payload = payload.get("merge")
                 if isinstance(merge_payload, dict):
                     self._set_merge(merge_payload)

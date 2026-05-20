@@ -16,6 +16,7 @@ Use the rest of the package as execution support:
 - Backend contract: [../automate/spec equivalents](../automate/00-product-definition.md)
 - UI build spec: [spec.md](spec.md)
 - PiP blocker track: [tracks/01-pip-performance-and-merge-editor.md](tracks/01-pip-performance-and-merge-editor.md)
+- Released baseline floor: `main` at `v1.0.5` after the 2026-05-20 merge
 
 ## Standing Rule
 

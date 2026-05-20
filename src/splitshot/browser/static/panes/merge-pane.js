@@ -113,6 +113,21 @@ export function createMergePane({
       return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
     }
 
+    function sourceSyncStatusLabel(source = null) {
+      if (!source?.supports_sync_analysis) return "";
+      const status = String(source.sync_analysis_status || "idle");
+      if (status === "running") return "Analyzing beep sync...";
+      if (status === "ready") {
+        const beepMs = Number(source.secondary_beep_time_ms);
+        const sourceLabel = String(source.sync_offset_source || "manual");
+        return Number.isFinite(beepMs)
+          ? `Beep ${Math.round(beepMs)} ms • ${sourceLabel === "auto" ? "ShotML sync applied" : "manual sync active"}`
+          : "Beep detected.";
+      }
+      if (status === "no_beep") return "No beep detected. Manual sync is still available.";
+      return String(source.sync_analysis_message || "");
+    }
+
     function mergePreviewTargetTime(primaryTime, source = null) {
       return Math.max(0, primaryTime + (currentSourceSyncOffsetMs(source) / 1000));
     }
@@ -552,6 +567,10 @@ export function createMergePane({
         syncLabel.dataset.sourceId = sourceId;
         syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
 
+        const syncStatus = documentObject.createElement("small");
+        syncStatus.className = "merge-source-sync-hint";
+        syncStatus.textContent = sourceSyncStatusLabel(source);
+
         const syncButtons = documentObject.createElement("div");
         syncButtons.className = "button-grid compact merge-source-sync-buttons";
         [-10, -1, 1, 10].forEach((deltaMs) => {
@@ -568,6 +587,18 @@ export function createMergePane({
           syncButtons.appendChild(button);
         });
 
+        if (source.supports_sync_analysis) {
+          const analyzeButton = documentObject.createElement("button");
+          analyzeButton.type = "button";
+          analyzeButton.textContent = source.sync_analysis_status === "ready" ? "Re-run beep sync" : "Analyze beep sync";
+          analyzeButton.disabled = source.sync_analysis_status === "running";
+          analyzeButton.title = "Use ShotML to find this PiP video's start beep and set sync automatically.";
+          analyzeButton.addEventListener("click", () => {
+            callApi("/api/merge/source/analyze", { source_id: sourceId });
+          });
+          syncButtons.appendChild(analyzeButton);
+        }
+
         controls.append(
           sizeField,
           buildSourceOpacityInput(),
@@ -580,7 +611,7 @@ export function createMergePane({
         syncHint.textContent = currentState().project.merge.layout === "pip"
           ? "Use these nudges or drag the preview to match the primary video exactly."
           : "These values are saved per item and take effect in PiP layout and export timing.";
-        syncRow.append(syncLabel, syncButtons, syncHint);
+        syncRow.append(syncLabel, syncButtons, syncStatus, syncHint);
 
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";

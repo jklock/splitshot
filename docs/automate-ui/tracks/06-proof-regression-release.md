@@ -6,6 +6,7 @@ Define the proof and closure path for the UI overhaul.
 
 ## Required Proof Layers
 
+- `v1.0.5` baseline-preservation proof
 - targeted UI suites
 - PiP performance contract
 - browser E2E
@@ -28,6 +29,8 @@ Define the proof and closure path for the UI overhaul.
 
 ## Regression Rules
 
+- protect the released Windows export-font and OCR-proof path
+- protect packaged/test workflow use of `docs/Clip1.MP4`
 - protect legacy single-stage behavior
 - protect existing `/api/project/*` semantics
 - protect existing export behavior

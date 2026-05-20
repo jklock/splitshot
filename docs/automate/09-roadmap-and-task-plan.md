@@ -2,6 +2,40 @@
 
 This document sequences the implementation work required by the automation plan set.
 
+## Stable Baseline Imported From `main`
+
+As of the `main` merge on 2026-05-20, all continuing automation work inherits the shipped `v1.0.5` baseline.
+
+That baseline already includes:
+
+- Windows-safe overlay font resolution in `src/splitshot/overlay/font_policy.py`
+- browser font-stack alignment in `src/splitshot/browser/static/app.js` and `styles/theme.css`
+- packaged export OCR proof on Windows
+- `docs/Clip1.MP4` fixture validation in CI and packaged proof flows
+- updated packaged-app workflow and release-proof contracts
+
+Every remaining automation phase must preserve those released guarantees.
+
+## Phase 0: Baseline Preservation
+
+### Tasks
+
+- keep the `v1.0.5` export-font and OCR-proof path intact
+- keep packaged artifact proof and `docs/Clip1.MP4` fixture expectations intact
+- keep legacy single-stage open/save and export behavior intact while layering automation work on top
+- treat `main` as the regression floor before extending UI or export flows further
+
+### Owning subsystems
+
+- overlay render/font policy
+- browser preview font stacks
+- packaged test and workflow scripts
+- release-facing docs and proof contracts
+
+### Acceptance gate
+
+- no automation phase weakens the released `v1.0.5` proof story
+
 ## Phase 1: Product and data-model foundation
 
 ### Tasks

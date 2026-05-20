@@ -20,6 +20,28 @@ SplitShot 1.1.0 introduces automation features for multi-stage match assembly, m
 - **Result Cards**: Stage-transition summary cards sourced from reviewed scoring truth.
 - **Angle Roles**: Angle purpose tagging (primary, follow, static, detail) for guided multi-angle composition.
 
+## v1.0.5
+
+SplitShot 1.0.5 fixes a critical Windows regression where exported video overlays rendered unreadable tofu boxes instead of text.
+
+### What Changed
+
+- **Fixed exported overlay text rendering as tofu on Windows.** The root cause was that the Qt offscreen platform plugin skips DirectWrite font enumeration on Windows, leaving every font request with zero glyph data regardless of the family name requested. The fix lets Qt use its native `windows` platform plugin for export rendering, which properly initializes the DirectWrite font database.
+- **Added explicit Windows font family constants** (`font_policy.py`) and routed all overlay Qt text through a shared font resolver that uses Windows-safe families (`Segoe UI`, `Arial`, `Verdana`, `Tahoma`, `Trebuchet MS` for sans-serif; `Consolas`, `Courier New`, `Lucida Console` for monospace; `Georgia`, `Cambria`, `Times New Roman` for serif).
+- **Aligned browser preview font stacks** in `app.js` with the same Windows-safe families so the live preview matches the exported output.
+- **Prepended `Segoe UI` and `Consolas` to the CSS body and monospace font stacks** so the entire application UI renders with real Windows fonts instead of falling through unrecognized Apple-specific keywords.
+- **Added a Windows OCR proof gate** that runs Tesseract against the bottom half of the exported Clip1 video frame to verify overlay text is human-readable, preventing future font regressions on Windows CI.
+
+### Why This Release Exists
+
+Windows exports could produce a valid MP4 file whose overlay text was unreadable tofu (□ boxes) because Qt had no font glyph data to render. Multiple approaches were attempted — explicit font families, system-font fallback, Helvetica aliasing — but none worked because they all assumed the font database was populated. The offscreen platform plugin was the systemic blocker, and no amount of font-name tuning could compensate for a completely empty font database.
+
+Version 1.0.5 fixes this at the platform level and adds a CI proof gate so the exported overlay text is verified readable on every Windows build going forward.
+
+### Release Proof
+
+This release is backed by five successful Windows CI runs on the packaged NSIS installer artifact, each performing a full E2E export with OCR proof against the exported Clip1 video frame. The OCR proof reads the overlay text and confirms it is human-readable — no tofu, no missing glyphs.
+
 ## v1.0.1
 
 SplitShot 1.0.1 is a packaging and release-proof patch focused on one thing: making the shipped desktop packages actually match the proof claimed by CI.

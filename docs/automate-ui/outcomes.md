@@ -4,6 +4,12 @@
 
 The UI overhaul is complete only when all of the following are true.
 
+## Released Baseline Preservation
+
+- the shipped `v1.0.5` Windows export-font path still holds
+- packaged OCR proof for overlay readability still holds
+- packaged/test workflows still consume `docs/Clip1.MP4`
+
 ## Product Surfaces
 
 - `Single Video` is the deep stage editor
@@ -41,6 +47,7 @@ The UI overhaul is complete only when all of the following are true.
 ## Proof
 
 - targeted UI suites pass
+- targeted baseline-preservation suites pass
 - PiP performance contract passes
 - browser E2E flows pass
 - packaged UI proof passes for the shipped flows

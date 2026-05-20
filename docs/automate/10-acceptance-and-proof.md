@@ -8,6 +8,7 @@ Do not claim completion from design docs, source-only success, or partial browse
 
 The final implementation must prove:
 
+- shipped `v1.0.5` baseline preservation
 - source truth correctness
 - editor-scope correctness
 - persistence correctness
@@ -73,12 +74,23 @@ Need explicit tests for:
 
 Packaged proof must cover:
 
+- preservation of the `v1.0.5` Windows export-font and OCR proof path
 - built-artifact execution on supported desktop platforms
 - library record creation and playback
 - retained proxy generation
 - stage and match export flows
 - no dependency on host-installed tools for packaged behavior
 - no dependency on local-only fixtures
+
+## Main Baseline Regression Shield
+
+Before calling any automation work complete, re-prove that the merged `main` baseline still holds:
+
+- overlay exports on Windows still use the `font_policy.py` family rules
+- browser preview font stacks still align to the Windows-safe release defaults
+- packaged CI and release workflows still validate `docs/Clip1.MP4`
+- packaged Windows proof still includes OCR readability checks
+- previously shipped single-stage browser/export flows still pass their owning targeted tests
 
 ## Final Parity Audit
 

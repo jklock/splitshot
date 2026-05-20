@@ -16,6 +16,8 @@ Start here:
 
 `docs/automate-ui/` defines the browser-shell and packaged-app completion work required to make that backend usable, coherent, and shippable.
 
+This package now assumes `main` at `v1.0.5` is the shipped baseline. UI work here must preserve the released Windows export-font/OCR proof path and the packaged `docs/Clip1.MP4` fixture workflow while exposing the automation backend.
+
 ## Package Rules
 
 - `spec.md` is the authoritative UI build spec.

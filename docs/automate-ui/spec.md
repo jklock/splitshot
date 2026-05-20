@@ -1,6 +1,17 @@
 # Automate UI Spec
 
-Audited against the current browser shell and automation backend on 2026-05-19.
+Audited against the merged `automate` branch on 2026-05-20 after importing `main` at `v1.0.5`.
+
+## Stable Baseline Imported From `main`
+
+This UI plan no longer starts from a pre-release browser shell. It inherits a shipped baseline that already includes:
+
+- Windows-safe overlay font policy for exports
+- browser preview font-stack alignment to released Windows-safe families
+- packaged Windows OCR proof for exported overlay readability
+- `docs/Clip1.MP4` fixture validation in workflow and packaged-test lanes
+
+Nothing in this package may weaken those guarantees.
 
 ## Summary
 
@@ -45,8 +56,8 @@ The highest-priority blocker is PiP preview smoothness. Today, added third-perso
 ### Still missing for a truthful UI
 
 - stage clip persistence, not just in-memory controller state
-- a read route for stage clips
-- a read route for the current angle-director plan
+- a dedicated read route for stage clips
+- a dedicated read route for the current angle-director plan
 - a shell navigation model built around the three product surfaces
 - first-class UI for output profiles
 - first-class UI for workspaces
@@ -173,8 +184,8 @@ This package assumes the backend is mostly complete, but the UI work requires a 
 Required additions:
 
 - persist stage clips and clip-local angle/audio/cut state
-- add `POST /api/workspace/stage/clips/list`
-- add `POST /api/angle/director/plan`
+- add a dedicated stage-clip read route
+- add a dedicated angle-director plan read route
 
 Design rule:
 

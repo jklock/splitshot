@@ -22,6 +22,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y
+      - name: Install Tesseract
+        run: choco install tesseract -y
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -35,6 +39,8 @@ jobs:
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
         timeout-minutes: 15
+      - name: Verify Clip1 proof fixture
+        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
@@ -74,10 +80,16 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y
+      - name: Install Tesseract
+        run: choco install tesseract -y
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Sync Python dependencies
         run: uv sync --frozen --extra dev --python 3.12
+      - name: Verify Clip1 proof fixture
+        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
       - name: Install Node dependencies
         run: cd electron && npm install
       - name: Install Playwright browsers
@@ -90,11 +102,18 @@ jobs:
           path: electron/build
       - name: Validate installed package
         run: |
-          artifact=$(ls electron/build/*.exe | head -n 1)
+          artifact=$(find electron/build -type f -name '*.exe' | head -n 1)
+          [ -n "$artifact" ] || { echo "No Windows installer found after artifact download"; exit 1; }
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with installed package
+        env:
+          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
+          SPLITSHOT_E2E_SCOPE: export-proof
+          SPLITSHOT_E2E_OCR_PROOF: "1"
+          SPLITSHOT_PACKAGED_TESSERACT: tesseract
         run: |
-          artifact=$(ls electron/build/*.exe | head -n 1)
+          artifact=$(find electron/build -type f -name '*.exe' | head -n 1)
+          [ -n "$artifact" ] || { echo "No Windows installer found after artifact download"; exit 1; }
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
       - name: Upload E2E artifacts
         if: always()
