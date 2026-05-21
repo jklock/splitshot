@@ -55,6 +55,118 @@ let savedNumber = utilsSavedNumber;
 let seconds = utilsSeconds;
 let splitSeconds = splitSecondsUtil;
 
+// === AUTOMATE3 VIEW STATE MACHINE ===
+const VALID_VIEWS = new Set(["landing", "stage", "match", "library"]);
+let currentView = window.localStorage.getItem("splitshot.activeView") || "stage";
+let previousView = null;
+
+function setActiveView(viewName) {
+  if (!VALID_VIEWS.has(viewName)) {
+    console.error("[ViewState] Invalid view:", viewName);
+    return;
+  }
+
+  previousView = currentView;
+
+  // Pause video when leaving Stage
+  if (currentView === "stage" && viewName !== "stage") {
+    const primary = document.getElementById("primary-video");
+    const secondary = document.getElementById("secondary-video");
+    if (primary) primary.pause();
+    if (secondary) secondary.pause();
+  }
+
+  currentView = viewName;
+
+  // Update view visibility
+  document.querySelectorAll(".app-view").forEach((el) => el.classList.remove("active"));
+  const viewEl = document.getElementById("view-" + viewName);
+  if (viewEl) viewEl.classList.add("active");
+
+  // Update shell attribute
+  const shell = document.getElementById("app-shell");
+  if (shell) shell.setAttribute("data-active-view", viewName);
+
+  // Update shell nav buttons
+  document.querySelectorAll(".shell-nav-button").forEach((btn) => {
+    btn.setAttribute("aria-selected", btn.getAttribute("data-view") === viewName);
+  });
+
+  // Show/hide landing page
+  const landingPage = document.getElementById("landing-page");
+  if (landingPage) {
+    landingPage.hidden = viewName !== "landing";
+  }
+
+  // Persist
+  window.localStorage.setItem("splitshot.activeView", viewName);
+
+  // Update shell context
+  updateShellContext();
+}
+
+function getActiveView() {
+  return currentView;
+}
+
+function getPreviousView() {
+  return previousView;
+}
+
+function updateShellContext() {
+  const projectNameEl = document.getElementById("shell-project-name");
+  const matchNameEl = document.getElementById("shell-match-name");
+  const stageNameEl = document.getElementById("shell-stage-name");
+  const returnBtn = document.getElementById("shell-return-match");
+
+  if (projectNameEl) {
+    projectNameEl.textContent = state?.project?.name || "Untitled Project";
+  }
+
+  const hasMatch = state?.workspace?.id || state?.project?.workspace_id;
+  if (matchNameEl) {
+    matchNameEl.hidden = !hasMatch;
+    if (hasMatch) matchNameEl.textContent = state?.workspace?.name || "Untitled Match";
+  }
+
+  const hasStage = state?.project?.stage_number || state?.project?.name;
+  if (stageNameEl) {
+    stageNameEl.hidden = !hasStage || currentView !== "stage";
+    if (hasStage) stageNameEl.textContent = state?.project?.stage_number ? `Stage ${state.project.stage_number}` : "";
+  }
+
+  if (returnBtn) {
+    returnBtn.hidden = !(currentView === "stage" && hasMatch);
+  }
+}
+
+function wireShellHeaderEvents() {
+  document.getElementById("shell-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
+  document.getElementById("nav-stage")?.addEventListener("click", () => setActiveSurface("single"));
+  document.getElementById("nav-match")?.addEventListener("click", () => {
+    setActiveSurface("multi");
+    void refreshStageComposite();
+  });
+  document.getElementById("nav-library")?.addEventListener("click", () => {
+    setActiveSurface("library");
+    void refreshPerformanceLibrary();
+  });
+  document.getElementById("shell-return-match")?.addEventListener("click", () => setActiveSurface("multi"));
+}
+
+function wireLandingNavigation() {
+  // New-project / new-match buttons on the landing page (not handled by wireEvents)
+  document.getElementById("landing-new-stage")?.addEventListener("click", () => {
+    apiRuntime?.post("/api/project/new", {});
+    setActiveSurface("single");
+  });
+
+  document.getElementById("landing-new-match")?.addEventListener("click", () => {
+    apiRuntime?.post("/api/workspace/new", {});
+    setActiveSurface("multi");
+  });
+}
+
 let state = null;
 let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
@@ -4848,45 +4960,49 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   activeSurface = normalizeSurfaceId(surface);
   const landingPage = $("landing-page");
   const cockpitShell = document.querySelector(".cockpit-shell");
-  if (activeSurface === "landing") {
-    landingPageVisible = true;
-    if (landingPage) landingPage.removeAttribute("hidden");
-    if (cockpitShell) cockpitShell.style.display = "none";
-    if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
-    renderRecentActivity();
-    return;
+  const isLanding = activeSurface === "landing";
+  landingPageVisible = isLanding;
+  if (landingPage) {
+    if (isLanding) landingPage.removeAttribute("hidden");
+    else landingPage.setAttribute("hidden", "");
   }
-  landingPageVisible = false;
-  if (landingPage) landingPage.setAttribute("hidden", "");
-  if (cockpitShell) cockpitShell.style.display = "";
-  automationPanelOpen = Boolean(openPanel);
-  const root = $("cockpit-root");
-  root?.classList.remove("automation-collapsed");
-  root?.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
+  if (cockpitShell) cockpitShell.style.display = isLanding ? "none" : "";
   if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
-  document.querySelectorAll("[data-surface]").forEach((button) => {
-    const isActive = button.dataset.surface === activeSurface;
-    button.classList.toggle("active", isActive);
-    button.setAttribute("aria-selected", String(isActive));
-  });
-  document.querySelectorAll("[data-surface-panel]").forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.surfacePanel === activeSurface);
-  });
-  const toolsForSurface = {
-    single: null,
-    multi: ["project", "merge"],
-    library: [],
-  };
-  const visibleTools = toolsForSurface[activeSurface];
-  document.querySelectorAll(".tool-item").forEach((item) => {
-    const toolId = item.dataset.tool;
-    if (toolId === "settings" || visibleTools === null) return;
-    item.hidden = !visibleTools.includes(toolId);
-  });
-  if (visibleTools !== null && !visibleTools.includes(activeTool)) {
-    setActiveTool(visibleTools[0] || "project");
+  if (isLanding) {
+    renderRecentActivity();
+  } else {
+    automationPanelOpen = Boolean(openPanel);
+    const root = $("cockpit-root");
+    root?.classList.remove("automation-collapsed");
+    root?.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
+    document.querySelectorAll("[data-surface]").forEach((button) => {
+      const isActive = button.dataset.surface === activeSurface;
+      button.classList.toggle("active", isActive);
+      button.setAttribute("aria-selected", String(isActive));
+    });
+    document.querySelectorAll("[data-surface-panel]").forEach((panel) => {
+      panel.classList.toggle("active", panel.dataset.surfacePanel === activeSurface);
+    });
+    const toolsForSurface = {
+      single: null,
+      multi: ["project", "merge"],
+      library: [],
+    };
+    const visibleTools = toolsForSurface[activeSurface];
+    document.querySelectorAll(".tool-item").forEach((item) => {
+      const toolId = item.dataset.tool;
+      if (toolId === "settings" || visibleTools === null) return;
+      item.hidden = !visibleTools.includes(toolId);
+    });
+    if (visibleTools !== null && !visibleTools.includes(activeTool)) {
+      setActiveTool(visibleTools[0] || "project");
+    }
+    renderAutomationSurface();
   }
-  renderAutomationSurface();
+
+  // Sync new shell view state
+  const surfaceToView = { landing: "landing", single: "stage", multi: "match", library: "library" };
+  setActiveView(surfaceToView[activeSurface] || "stage");
 }
 
 function renderRecentActivity() {
@@ -11501,5 +11617,7 @@ setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false
 wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();
+wireShellHeaderEvents();
+wireLandingNavigation();
 startActivityPolling();
 refresh();

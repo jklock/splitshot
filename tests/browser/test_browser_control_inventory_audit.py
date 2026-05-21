@@ -178,7 +178,10 @@ id:merge-layout
 id:merge-media-input
 id:metrics-export-csv
 id:metrics-export-text
-id:new-project
+    id:nav-library
+    id:nav-match
+    id:nav-stage
+    id:new-project
 id:output-profile-create
 id:output-profile-kind
 id:output-profile-name
@@ -340,7 +343,9 @@ id:shared-defaults-reset
 id:shared-frame-profile
 id:shared-lead-in
 id:shared-metric-captions
-id:zoom-waveform-in
+    id:shell-go-home
+    id:shell-return-match
+    id:zoom-waveform-in
 id:zoom-waveform-out
 """.splitlines()
     if line.strip()

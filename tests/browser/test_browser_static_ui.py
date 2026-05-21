@@ -69,7 +69,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     markers_pane = (STATIC_ROOT / "panes" / "markers-pane.js").read_text()
     css = _read_split_css()
 
-    assert 'class="app-shell cockpit-shell"' in html
+    assert 'class="app-shell"' in html
+    assert 'class="cockpit-shell"' in html
     assert 'href="/static/styles.css?v=20260501f"' in html
     assert 'src="/static/app.js?v=20260501f"' in html
     assert '<script type="module" src="/static/app.js?v=20260501f"></script>' in html
@@ -2000,6 +2001,11 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "surface-performance-library",
         "surface-return-workspace",
         "surface-go-home",
+        "shell-go-home",
+        "shell-return-match",
+        "nav-stage",
+        "nav-match",
+        "nav-library",
         "output-profile-refresh",
         "output-profile-create",
         "workspace-new",
