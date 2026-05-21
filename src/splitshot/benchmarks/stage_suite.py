@@ -42,10 +42,7 @@ def _stage_name(path: Path) -> str:
 
 
 def _split_times(shots: list[ShotEvent]) -> list[int]:
-    return [
-        shots[index].time_ms - shots[index - 1].time_ms
-        for index in range(1, len(shots))
-    ]
+    return [shots[index].time_ms - shots[index - 1].time_ms for index in range(1, len(shots))]
 
 
 def analyze_stage(path: str | Path, threshold: float = 0.5) -> StageBenchmark:

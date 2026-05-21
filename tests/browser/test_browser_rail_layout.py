@@ -155,7 +155,9 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
                 assert page.locator('.tool-item.active[data-tool="settings"]').count() == 1
                 assert page.locator("#toggle-rail").text_content() == "▶"
-                assert page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
+                assert (
+                    page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
+                )
                 assert page.evaluate("localStorage.getItem('splitshot.activeTool')") == "settings"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
             finally:
@@ -213,13 +215,17 @@ def test_scoring_edit_button_opens_and_closes_workbench() -> None:
                 page.locator('button[data-tool="scoring"]').click()
                 page.locator('[data-tool-pane="scoring"]').wait_for(state="visible")
 
-                page.locator('#expand-scoring').click()
-                workbench = page.locator('#scoring-workbench')
+                page.locator("#expand-scoring").click()
+                workbench = page.locator("#scoring-workbench")
                 workbench.wait_for(state="visible")
-                assert page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is False
+                assert (
+                    page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is False
+                )
 
-                page.locator('#collapse-scoring').click()
-                page.wait_for_function("document.querySelector('#scoring-workbench')?.hidden === true")
+                page.locator("#collapse-scoring").click()
+                page.wait_for_function(
+                    "document.querySelector('#scoring-workbench')?.hidden === true"
+                )
                 assert page.evaluate("document.querySelector('#scoring-workbench')?.hidden") is True
             finally:
                 browser.close()
@@ -244,13 +250,18 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
                 assert toggle_button.text_content() == "🔓"
                 assert toggle_button.get_attribute("aria-label") == "Lock video layout"
-                assert shell.evaluate("element => element.classList.contains('layout-unlocked')") is True
+                assert (
+                    shell.evaluate("element => element.classList.contains('layout-unlocked')")
+                    is True
+                )
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'true'")
                 assert toggle_button.text_content() == "🔒"
                 assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
-                assert shell.evaluate("element => element.classList.contains('layout-locked')") is True
+                assert (
+                    shell.evaluate("element => element.classList.contains('layout-locked')") is True
+                )
             finally:
                 browser.close()
     finally:
@@ -276,10 +287,19 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                 assert video_box is not None
 
                 assert status_box["x"] <= toggle_box["x"]
-                assert toggle_box["x"] + toggle_box["width"] <= status_box["x"] + status_box["width"] + 1
+                assert (
+                    toggle_box["x"] + toggle_box["width"]
+                    <= status_box["x"] + status_box["width"] + 1
+                )
                 assert status_box["y"] <= toggle_box["y"]
-                assert toggle_box["y"] + toggle_box["height"] <= status_box["y"] + status_box["height"] + 1
-                assert toggle_box["x"] >= status_box["x"] + status_box["width"] - toggle_box["width"] - 28
+                assert (
+                    toggle_box["y"] + toggle_box["height"]
+                    <= status_box["y"] + status_box["height"] + 1
+                )
+                assert (
+                    toggle_box["x"]
+                    >= status_box["x"] + status_box["width"] - toggle_box["width"] - 28
+                )
                 assert toggle_box["y"] + toggle_box["height"] <= video_box["y"] + 1
 
                 page.evaluate(
@@ -287,7 +307,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                         window.__finishTopbarProcessing = beginProcessing('Importing video', 'Working locally', '/api/import/primary');
                     }"""
                 )
-                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('processing-bar')?.hidden === false"
+                )
 
                 processing_box = page.locator("#processing-bar").bounding_box()
                 assert processing_box is not None
@@ -299,7 +321,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                 page.evaluate("""() => {
                     forceHideProcessingBar('Ready.');
                 }""")
-                page.wait_for_function("() => document.getElementById('processing-bar')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('processing-bar')?.hidden === true"
+                )
             finally:
                 browser.close()
     finally:
@@ -310,8 +334,22 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
     ("handle_id", "panel_selector", "storage_key", "css_var", "delta_x", "delta_y"),
     [
         ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
-        ("resize-waveform", ".waveform-panel", "splitshot.layout.waveformHeight", "--waveform-height", 0, -120),
-        ("resize-sidebar", ".inspector", "splitshot.layout.inspectorWidth", "--inspector-width", 120, 0),
+        (
+            "resize-waveform",
+            ".waveform-panel",
+            "splitshot.layout.waveformHeight",
+            "--waveform-height",
+            0,
+            -120,
+        ),
+        (
+            "resize-sidebar",
+            ".inspector",
+            "splitshot.layout.inspectorWidth",
+            "--inspector-width",
+            120,
+            0,
+        ),
     ],
 )
 def test_layout_resize_handles_persist_layout_sizes(
@@ -333,7 +371,9 @@ def test_layout_resize_handles_persist_layout_sizes(
                 panel = page.locator(panel_selector)
                 handle = page.locator(f"#{handle_id}")
                 initial_panel_box = panel.bounding_box()
-                initial_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                initial_size = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
                 initial_css = page.evaluate(
                     "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
                     css_var,
@@ -356,7 +396,9 @@ def test_layout_resize_handles_persist_layout_sizes(
                 )
 
                 updated_panel_box = panel.bounding_box()
-                updated_size = page.evaluate("(key) => Number(localStorage.getItem(key))", storage_key)
+                updated_size = page.evaluate(
+                    "(key) => Number(localStorage.getItem(key))", storage_key
+                )
                 updated_css = page.evaluate(
                     "(variable) => getComputedStyle(document.documentElement).getPropertyValue(variable).trim()",
                     css_var,
@@ -370,7 +412,9 @@ def test_layout_resize_handles_persist_layout_sizes(
         server.shutdown()
 
 
-def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(synthetic_video_factory) -> None:
+def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_height(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-workbench-layout-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -423,16 +467,26 @@ def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_heigh
                 assert video_after is not None
                 assert workbench_after["height"] > workbench_before["height"] + 20
                 assert video_after["height"] < video_before["height"] - 20
-                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
+                assert (
+                    page.evaluate("state?.project?.ui_state?.waveform_height")
+                    == initial_waveform_height
+                )
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
                 waveform_panel.wait_for(state="visible")
 
                 restored_waveform_box = waveform_panel.bounding_box()
                 assert restored_waveform_box is not None
-                assert restored_waveform_box["height"] == pytest.approx(initial_waveform_box["height"], abs=4)
-                assert page.evaluate("state?.project?.ui_state?.waveform_height") == initial_waveform_height
+                assert restored_waveform_box["height"] == pytest.approx(
+                    initial_waveform_box["height"], abs=4
+                )
+                assert (
+                    page.evaluate("state?.project?.ui_state?.waveform_height")
+                    == initial_waveform_height
+                )
             finally:
                 browser.close()
     finally:

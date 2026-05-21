@@ -4,6 +4,7 @@
 Exercises the 4 automation scenarios from docs/automate/10-acceptance-and-proof.md
 against the controller API, validating structured payload correctness.
 """
+
 import os
 import sys
 import tempfile
@@ -33,12 +34,18 @@ def test_single_video_reviewed_output_flow():
     print("  [3] Analysis structure present")
 
     p1 = c.output_profile_create(
-        "stage", c.project.id, "Technical Review", "stage_output",
+        "stage",
+        c.project.id,
+        "Technical Review",
+        "stage_output",
         frame_profile="16:9",
         metric_caption_preset={"enabled_fields": ["cumulative_time", "hit_factor"]},
     )
     p2 = c.output_profile_create(
-        "stage", c.project.id, "Social Clip", "stage_output",
+        "stage",
+        c.project.id,
+        "Social Clip",
+        "stage_output",
         frame_profile="9:16",
         metric_caption_preset={"enabled_fields": ["shot_count"]},
         lead_in_card={"match_name": "E2E Match", "shooter": "Test Shooter"},
@@ -101,7 +108,10 @@ def test_multi_video_shared_default_and_match_recap_flow():
     print("  [5] Sibling stages inherited correctly")
 
     recap_profile = c.output_profile_create(
-        "match", c.workspace.match_id, "Match Recap", "match_recap",
+        "match",
+        c.workspace.match_id,
+        "Match Recap",
+        "match_recap",
         frame_profile="16:9",
     )
     recap = c.match_recap_preview(recap_profile["output_id"])
@@ -147,7 +157,10 @@ def test_stage_composite_and_angle_align_flow():
     print(f"  [4] Audio mix adjusted (gain={audio['audio_gain']})")
 
     profile = c.output_profile_create(
-        "stage", stage_id, "Composite Output", "stage_composite",
+        "stage",
+        stage_id,
+        "Composite Output",
+        "stage_composite",
         frame_profile="16:9",
     )
     composite = c.stage_composite_preview(profile["output_id"])
@@ -208,6 +221,7 @@ def test_performance_library_browse_and_reopen_flow():
     finally:
         os.environ.pop("SPLITSHOT_LIBRARY_ROOT", None)
         import shutil
+
         shutil.rmtree(test_lib, ignore_errors=True)
 
 
@@ -216,7 +230,10 @@ def main():
         ("Single Video reviewed-output flow", test_single_video_reviewed_output_flow),
         ("Multi Video Match Recap flow", test_multi_video_shared_default_and_match_recap_flow),
         ("Stage Composite and Angle Align flow", test_stage_composite_and_angle_align_flow),
-        ("Performance Library browse and reopen flow", test_performance_library_browse_and_reopen_flow),
+        (
+            "Performance Library browse and reopen flow",
+            test_performance_library_browse_and_reopen_flow,
+        ),
     ]
 
     print("=" * 60)
@@ -232,6 +249,7 @@ def main():
             print(f"        {type(exc).__name__}: {exc}")
             fails.append(name)
             import traceback
+
             traceback.print_exc()
             print()
 

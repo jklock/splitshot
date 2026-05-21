@@ -11,6 +11,7 @@ from pathlib import Path
 class MediaError(RuntimeError):
     pass
 
+
 def _binary_name(tool: str) -> str:
     if sys.platform.startswith("win") and not tool.endswith(".exe"):
         return f"{tool}.exe"

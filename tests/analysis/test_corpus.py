@@ -22,7 +22,10 @@ from splitshot.domain.models import ShotEvent, ShotSource
 def _detection_result(beep_time_ms: int | None, shot_times_ms: list[int]) -> DetectionResult:
     return DetectionResult(
         beep_time_ms=beep_time_ms,
-        shots=[ShotEvent(time_ms=time_ms, source=ShotSource.AUTO, confidence=0.9) for time_ms in shot_times_ms],
+        shots=[
+            ShotEvent(time_ms=time_ms, source=ShotSource.AUTO, confidence=0.9)
+            for time_ms in shot_times_ms
+        ],
         waveform=[],
         sample_rate=22050,
     )
@@ -125,8 +128,24 @@ def test_duplicate_group_key_normalizes_repeat_suffixes() -> None:
 def test_build_duplicate_group_summaries_flags_inconsistent_stage_counts() -> None:
     first = type("Analysis", (), {})()
     second = type("Analysis", (), {})()
-    first.summary = type("Summary", (), {"path": "/tmp/Stage1.MP4", "reference_shot_count": 18, "fingerprint": type("Fingerprint", (), {"beep_family": "timer_low"})()})()
-    second.summary = type("Summary", (), {"path": "/tmp/Stage1 2.MP4", "reference_shot_count": 17, "fingerprint": type("Fingerprint", (), {"beep_family": "timer_low"})()})()
+    first.summary = type(
+        "Summary",
+        (),
+        {
+            "path": "/tmp/Stage1.MP4",
+            "reference_shot_count": 18,
+            "fingerprint": type("Fingerprint", (), {"beep_family": "timer_low"})(),
+        },
+    )()
+    second.summary = type(
+        "Summary",
+        (),
+        {
+            "path": "/tmp/Stage1 2.MP4",
+            "reference_shot_count": 17,
+            "fingerprint": type("Fingerprint", (), {"beep_family": "timer_low"})(),
+        },
+    )()
 
     groups = build_duplicate_group_summaries([first, second])
 

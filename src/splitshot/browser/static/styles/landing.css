@@ -1,0 +1,259 @@
+/* Landing Page */
+#landing-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 60px 24px;
+  background: var(--bg);
+  color: var(--text);
+  overflow-y: auto;
+}
+
+#landing-page[hidden] { display: none; }
+
+.landing-hero {
+  text-align: center;
+  margin-bottom: 48px;
+}
+
+.landing-logo {
+  width: 80px;
+  height: 80px;
+  margin-bottom: 16px;
+}
+
+.landing-hero h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin: 0 0 8px;
+  letter-spacing: -0.5px;
+}
+
+.landing-tagline {
+  font-size: 1.125rem;
+  color: var(--muted);
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.landing-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 960px;
+  margin-bottom: 48px;
+}
+
+.landing-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 32px 24px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+}
+
+.landing-card:hover {
+  border-color: var(--accent);
+  transform: scale(1.02);
+  box-shadow: 0 4px 24px rgba(255, 123, 34, 0.15);
+}
+
+.landing-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.landing-card-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.landing-card h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.landing-card p {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.landing-recent {
+  width: 100%;
+  max-width: 960px;
+  margin-bottom: 48px;
+}
+
+.landing-recent h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.landing-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.landing-empty-hint {
+  color: var(--quiet);
+  font-size: 0.875rem;
+  padding: 16px 0;
+  margin: 0;
+}
+
+.landing-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 150ms ease;
+}
+
+.landing-recent-item:hover {
+  border-color: var(--accent);
+}
+
+.landing-recent-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--quiet);
+  font-size: 1.25rem;
+}
+
+.landing-recent-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.landing-recent-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.landing-recent-meta {
+  font-size: 0.75rem;
+  color: var(--quiet);
+}
+
+.landing-quick-start {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 48px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.landing-quick-button {
+  padding: 10px 24px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 150ms ease, transform 100ms ease;
+}
+
+.landing-quick-button:hover {
+  background: #e86d1a;
+  transform: translateY(-1px);
+}
+
+.landing-quick-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.landing-footer {
+  margin-top: auto;
+  padding-top: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: var(--quiet);
+  font-size: 0.75rem;
+}
+
+.landing-footer-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.landing-shortcut-hint {
+  font-size: 0.6875rem;
+  color: var(--quiet);
+  text-align: center;
+  margin: 0;
+}
+
+.landing-footer-link {
+  color: var(--quiet);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+
+.landing-footer-link:hover {
+  color: var(--muted);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .landing-cards {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+  }
+
+  #landing-page {
+    padding: 40px 16px;
+  }
+
+  .landing-hero h1 {
+    font-size: 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  #landing-page {
+    padding: 32px 12px;
+  }
+
+  .landing-hero h1 {
+    font-size: 1.75rem;
+  }
+
+  .landing-card {
+    padding: 24px 16px;
+  }
+}

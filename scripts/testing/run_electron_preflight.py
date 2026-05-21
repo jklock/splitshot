@@ -26,8 +26,23 @@ def main() -> int:
         packaged_smoke_command = ["uv", "run", "python", "scripts/testing/test_electron_app.py"]
     else:
         build_command = ["npm", "--prefix", "electron", "run", "build:smoke:linux"]
-        source_smoke_command = ["xvfb-run", "-a", "npm", "--prefix", "electron", "run", "test:electron-smoke"]
-        packaged_smoke_command = ["xvfb-run", "-a", "uv", "run", "python", "scripts/testing/test_electron_app.py"]
+        source_smoke_command = [
+            "xvfb-run",
+            "-a",
+            "npm",
+            "--prefix",
+            "electron",
+            "run",
+            "test:electron-smoke",
+        ]
+        packaged_smoke_command = [
+            "xvfb-run",
+            "-a",
+            "uv",
+            "run",
+            "python",
+            "scripts/testing/test_electron_app.py",
+        ]
 
     commands = [
         ["uv", "run", "splitshot", "--check"],

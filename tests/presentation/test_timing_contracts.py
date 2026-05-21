@@ -40,7 +40,10 @@ def test_timing_event_keeps_valid_after_anchor_when_before_shot_is_deleted() -> 
     assert project.analysis.events[0].after_shot_id == first.id
     assert project.analysis.events[0].before_shot_id is None
     assert [row.interval_label for row in rows] == ["Draw", "Reload"]
-    assert [segment.interval_label for segment in presentation.timing_segments] == ["Draw", "Reload"]
+    assert [segment.interval_label for segment in presentation.timing_segments] == [
+        "Draw",
+        "Reload",
+    ]
 
 
 def test_timing_event_keeps_valid_before_anchor_when_shot_movement_breaks_pair() -> None:

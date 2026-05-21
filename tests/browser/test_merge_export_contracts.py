@@ -13,7 +13,9 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 APP_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "app.js"
-SHELL_RUNTIME_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "shell-runtime.js"
+SHELL_RUNTIME_JS = (
+    REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "shell-runtime.js"
+)
 EXPORT_PANE_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "panes" / "export-pane.js"
 MERGE_PANE_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "panes" / "merge-pane.js"
 
@@ -41,7 +43,7 @@ def _function_body(source: str, function_name: str) -> str:
             depth -= 1
         index += 1
     assert depth == 0, f"{function_name} body was not balanced"
-    return source[match.end(): index - 1]
+    return source[match.end() : index - 1]
 
 
 def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
@@ -52,7 +54,9 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
-    export_click = shell_runtime_source[shell_runtime_source.index('$("export-video").addEventListener("click"') :]
+    export_click = shell_runtime_source[
+        shell_runtime_source.index('$("export-video").addEventListener("click"') :
+    ]
     export_click = export_click[: export_click.index('$("show-export-log")')]
 
     assert 'import { createMergePane } from "./panes/merge-pane.js";' in source
@@ -62,34 +66,55 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in source
     assert '$("export-video").addEventListener("click", async () => {' not in source
     assert "function previewFrameClientRect(video, container) {" in source
-    assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in begin_drag_body
-    assert 'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();' in move_drag_body
-    assert "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
+    assert (
+        'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
+        in begin_drag_body
+    )
+    assert (
+        'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
+        in move_drag_body
+    )
+    assert (
+        "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
+    )
     assert 'callApi("/api/merge/source"' not in drag_body
     assert 'const path = requireValue("export-path", "Output video path");' in export_click
-    assert 'setExportPathDraft(path);' in export_click
-    assert 'const payload = buildExportPayload(path);' in export_click
-    assert 'applyExportDraft(payload);' in export_click
-    assert 'cancelPendingExportDrafts();' in export_click
+    assert "setExportPathDraft(path);" in export_click
+    assert "const payload = buildExportPayload(path);" in export_click
+    assert "applyExportDraft(payload);" in export_click
+    assert "cancelPendingExportDrafts();" in export_click
     assert "await flushPendingMergeSourceCommits();" in export_click
     assert 'await callApi("/api/export", payload);' in export_click
     assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
-    assert 'state.project.export.last_error = null;' in _function_body(source, "clearCurrentExportLogState")
+    assert "state.project.export.last_error = null;" in _function_body(
+        source, "clearCurrentExportLogState"
+    )
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
-    assert 'media.style.opacity = String(currentSourceOpacity(source));' in source
+    assert "media.style.opacity = String(currentSourceOpacity(source));" in source
     assert 'input.dataset.mergeSourceField = "opacity";' in source
-    assert "These values are saved per item and take effect in PiP layout and export timing." in source
+    assert (
+        "These values are saved per item and take effect in PiP layout and export timing." in source
+    )
 
     assert "export function createMergePane({" in merge_pane_source
-    assert "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {" in merge_pane_source
+    assert (
+        "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {"
+        in merge_pane_source
+    )
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
     assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
     assert "Re-run beep sync" in merge_pane_source
     assert "Analyze beep sync" in merge_pane_source
     assert "supports_sync_analysis" in merge_pane_source
-    assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
-    assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in source
+    assert (
+        "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {"
+        in source
+    )
+    assert (
+        "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));"
+        in source
+    )
     assert "const target = mergePreviewTargetTime(primary.currentTime, activeSource);" in source
     assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.65" in source
     assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12" in source
@@ -111,9 +136,15 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    primary_path = Path(synthetic_video_factory(name="merge-contract-primary", resolution=(320, 180)))
-    secondary_path = Path(synthetic_video_factory(name="merge-contract-secondary", resolution=(320, 180)))
-    tertiary_path = Path(synthetic_video_factory(name="merge-contract-tertiary", resolution=(320, 180)))
+    primary_path = Path(
+        synthetic_video_factory(name="merge-contract-primary", resolution=(320, 180))
+    )
+    secondary_path = Path(
+        synthetic_video_factory(name="merge-contract-secondary", resolution=(320, 180))
+    )
+    tertiary_path = Path(
+        synthetic_video_factory(name="merge-contract-tertiary", resolution=(320, 180))
+    )
     controller = ProjectController()
     controller.project.primary_video = probe_video(primary_path)
     controller.project.merge.enabled = True
@@ -128,17 +159,19 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
     captured: list[list[tuple[str, int | None, float, float, float, int]]] = []
 
     def fake_export_project(project, output_path, progress_callback=None, log_callback=None):
-        captured.append([
-            (
-                source.id,
-                source.pip_size_percent,
-                source.pip_x,
-                source.pip_y,
-                source.opacity,
-                source.sync_offset_ms,
-            )
-            for source in project.merge_sources
-        ])
+        captured.append(
+            [
+                (
+                    source.id,
+                    source.pip_size_percent,
+                    source.pip_x,
+                    source.pip_y,
+                    source.opacity,
+                    source.sync_offset_ms,
+                )
+                for source in project.merge_sources
+            ]
+        )
         output = Path(output_path)
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"fake mp4")
@@ -161,7 +194,9 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                 "sync_offset_ms": 125,
             },
         )
-        first = next(source for source in state["project"]["merge_sources"] if source["id"] == first_id)
+        first = next(
+            source for source in state["project"]["merge_sources"] if source["id"] == first_id
+        )
         assert first["pip_size_percent"] == 1
         assert first["pip_x"] == 0.25
         assert first["pip_y"] == 0.75
@@ -224,7 +259,9 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         )
 
         assert state["project"]["export"]["output_path"] == str(output_path)
-        assert captured == [[(first_id, 46, 0.3, 0.7, 0.4, 140), (second_id, 58, 0.12, 0.22, 0.85, -90)]]
+        assert captured == [
+            [(first_id, 46, 0.3, 0.7, 0.4, 140), (second_id, 58, 0.12, 0.22, 0.85, -90)]
+        ]
     finally:
         server.shutdown()
 
@@ -261,7 +298,9 @@ def test_export_path_preset_and_custom_mode_contract_persists(tmp_path: Path) ->
         server.shutdown()
 
 
-def test_project_open_defaults_blank_export_output_path_to_project_output_folder(tmp_path: Path) -> None:
+def test_project_open_defaults_blank_export_output_path_to_project_output_folder(
+    tmp_path: Path,
+) -> None:
     controller = ProjectController()
     project_path = tmp_path / "project-output-default.ssproj"
     controller.save_project(str(project_path))
@@ -274,6 +313,8 @@ def test_project_open_defaults_blank_export_output_path_to_project_output_folder
     server.start_background(open_browser=False)
     try:
         opened = _post_json(f"{server.url}api/project/open", {"path": str(project_path)})
-        assert opened["project"]["export"]["output_path"] == str(project_path / "Output" / "output.mp4")
+        assert opened["project"]["export"]["output_path"] == str(
+            project_path / "Output" / "output.mp4"
+        )
     finally:
         server.shutdown()

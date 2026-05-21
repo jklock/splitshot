@@ -79,7 +79,9 @@ def default_ruleset_for_match_type(match_type: str | None) -> str:
     return f"{normalized}_minor"
 
 
-def describe_practiscore_file(path: str | Path, source_name: str | None = None) -> PractiScoreOptions:
+def describe_practiscore_file(
+    path: str | Path, source_name: str | None = None
+) -> PractiScoreOptions:
     results_path = Path(path)
     normalized_match_type = _infer_match_type(results_path)
     display_name = source_name or results_path.name
@@ -127,7 +129,9 @@ def infer_practiscore_context(
     competitor_place: int | None = None,
 ) -> PractiScoreContext:
     results_path = Path(path)
-    normalized_match_type = normalize_match_type(match_type) if match_type else _infer_match_type(results_path)
+    normalized_match_type = (
+        normalize_match_type(match_type) if match_type else _infer_match_type(results_path)
+    )
     clean_name = (competitor_name or "").strip()
     resolved_stage_number = None if stage_number is None else max(1, int(stage_number))
 
@@ -296,7 +300,9 @@ def _default_competitor_row(
 def _prefer_non_reentry(rows: list[dict[str, str]], reentry_key: str | None) -> dict[str, str]:
     if reentry_key is None:
         return rows[0]
-    non_reentries = [row for row in rows if str(row.get(reentry_key, "No")).strip().lower() != "yes"]
+    non_reentries = [
+        row for row in rows if str(row.get(reentry_key, "No")).strip().lower() != "yes"
+    ]
     return non_reentries[0] if non_reentries else rows[0]
 
 
@@ -304,11 +310,7 @@ def _idpa_stage_numbers(rows: list[dict[str, str]]) -> list[int]:
     if not rows:
         raise ValueError("No competitor results were found in the PractiScore export.")
     stage_numbers = sorted(
-        {
-            int(match.group(1))
-            for key in rows[0].keys()
-            if (match := re.match(r"Stage (\d+) ", key))
-        }
+        {int(match.group(1)) for key in rows[0].keys() if (match := re.match(r"Stage (\d+) ", key))}
     )
     if not stage_numbers:
         raise ValueError("No stage columns were found in the PractiScore export.")
@@ -342,11 +344,7 @@ def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dic
         if stage_numbers:
             return stage_numbers[0]
     stage_numbers = sorted(
-        {
-            int(stage)
-            for stage in report.stage_rows.keys()
-            if _int_or_none(stage) is not None
-        }
+        {int(stage) for stage in report.stage_rows.keys() if _int_or_none(stage) is not None}
     )
     if stage_numbers:
         return stage_numbers[0]
@@ -365,9 +363,7 @@ def _infer_hit_factor_stage_number(report: _HitFactorReport, competitor_row: dic
 
 def _hit_factor_stage_numbers(report: _HitFactorReport) -> list[int]:
     stage_numbers = {
-        int(stage)
-        for stage in report.stage_rows.keys()
-        if _int_or_none(stage) is not None
+        int(stage) for stage in report.stage_rows.keys() if _int_or_none(stage) is not None
     }
     stage_numbers.update(
         int(stage)
@@ -443,8 +439,7 @@ def _import_idpa(
         if value
     }
     other_penalties = sum(
-        IDPA_PENALTY_SECONDS[key] * value
-        for key, value in penalty_counts.items()
+        IDPA_PENALTY_SECONDS[key] * value for key, value in penalty_counts.items()
     )
     final_time = stage_time + points_down + other_penalties
     score_counts = {}
@@ -490,14 +485,18 @@ def _import_idpa(
             for k, v in {"non_threats": other_nt, "procedural_errors": other_pe}.items()
             if v
         )
-        comparison_competitors.append(PractiScoreCompetitorOption(
-            name=other_name,
-            place=_int_or_none(other_row.get("Place")),
-            division=str(other_row.get("Division", "")).strip(),
-            classification=str(other_row.get("Class", "")).strip(),
-            raw_seconds=other_time,
-            final_time=other_time + other_pd + other_penalty_sum if other_time is not None else None,
-        ))
+        comparison_competitors.append(
+            PractiScoreCompetitorOption(
+                name=other_name,
+                place=_int_or_none(other_row.get("Place")),
+                division=str(other_row.get("Division", "")).strip(),
+                classification=str(other_row.get("Class", "")).strip(),
+                raw_seconds=other_time,
+                final_time=other_time + other_pd + other_penalty_sum
+                if other_time is not None
+                else None,
+            )
+        )
     return PractiScoreStageImport(
         ruleset="idpa_time_plus",
         manual_penalties=0.0,
@@ -553,7 +552,9 @@ def _import_hit_factor_report(
     miss_penalty = misses * 10.0
     no_shoot_penalty = no_shoots * 10.0
     procedural_penalty = procedural_errors * 10.0
-    manual_penalties = max(0.0, total_penalty - miss_penalty - no_shoot_penalty - procedural_penalty)
+    manual_penalties = max(
+        0.0, total_penalty - miss_penalty - no_shoot_penalty - procedural_penalty
+    )
     score_counts = {
         label: value
         for label, value in {
@@ -600,19 +601,23 @@ def _import_hit_factor_report(
         sr_name = competitor_id_to_name.get(sr_comp_id)
         if not sr_name or sr_name == imported_stage.competitor_name:
             continue
-        sr_row = next((r for r in competitor_rows if str(r.get("Comp", "")).strip() == sr_comp_id), None)
-        comparison_competitors.append(PractiScoreCompetitorOption(
-            name=sr_name,
-            place=_int_or_none(sr_row.get("Place Overall")) if sr_row else None,
-            division=str(sr_row.get("Division", "")).strip() if sr_row else "",
-            classification=str(sr_row.get("Class", "")).strip() if sr_row else "",
-            power_factor=str(sr_row.get("Power Factor", "")).strip() if sr_row else "",
-            raw_seconds=_float_or_none(sr.get("Time")),
-            hit_factor=_float_or_none(sr.get("Hit Factor")),
-            stage_points=_float_or_none(sr.get("Stage Points")),
-            stage_place=_int_or_none(sr.get("Stage Place")),
-            total_points=_float_or_none(sr.get("Total Points")),
-        ))
+        sr_row = next(
+            (r for r in competitor_rows if str(r.get("Comp", "")).strip() == sr_comp_id), None
+        )
+        comparison_competitors.append(
+            PractiScoreCompetitorOption(
+                name=sr_name,
+                place=_int_or_none(sr_row.get("Place Overall")) if sr_row else None,
+                division=str(sr_row.get("Division", "")).strip() if sr_row else "",
+                classification=str(sr_row.get("Class", "")).strip() if sr_row else "",
+                power_factor=str(sr_row.get("Power Factor", "")).strip() if sr_row else "",
+                raw_seconds=_float_or_none(sr.get("Time")),
+                hit_factor=_float_or_none(sr.get("Hit Factor")),
+                stage_points=_float_or_none(sr.get("Stage Points")),
+                stage_place=_int_or_none(sr.get("Stage Place")),
+                total_points=_float_or_none(sr.get("Total Points")),
+            )
+        )
     return PractiScoreStageImport(
         ruleset=ruleset,
         manual_penalties=manual_penalties,
@@ -647,7 +652,8 @@ def _find_competitor_row(
                 non_reentries = [
                     row
                     for row in candidates
-                    if reentry_key is None or str(row.get(reentry_key, "No")).strip().lower() != "yes"
+                    if reentry_key is None
+                    or str(row.get(reentry_key, "No")).strip().lower() != "yes"
                 ]
                 if len(non_reentries) == 1:
                     return non_reentries[0]

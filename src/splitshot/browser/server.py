@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import errno
 import json
 import mimetypes
@@ -886,6 +887,18 @@ class BrowserControlServer:
                     "/api/angle/director/override": ("_handle_angle_director_override", []),
                     "/api/audio/mix": ("_handle_audio_mix", []),
                     "/api/result-cards/resolve": ("_handle_result_cards_resolve", []),
+                    "/api/landing/recent": ("_handle_landing_recent", ["_no_body"]),
+                    "/api/library/analytics/trend": ("_handle_library_analytics_trend", []),
+                    "/api/library/analytics/compare": ("_handle_library_analytics_compare", []),
+                    "/api/library/archive/create": ("_handle_library_archive_create", []),
+                    "/api/library/backup/create": ("_handle_library_backup_create", ["_no_body"]),
+                    "/api/library/backup/restore": ("_handle_library_backup_restore", []),
+                    "/api/library/export/json": ("_handle_library_export_json", ["_no_body"]),
+                    "/api/library/export/csv": ("_handle_library_export_csv", ["_no_body"]),
+                    "/api/library/notes/update": ("_handle_library_notes_update", []),
+                    "/api/library/tags/update": ("_handle_library_tags_update", []),
+                    "/api/workspace/apply-from-first": ("_handle_workspace_apply_from_first", []),
+                    "/api/workspace/apply-from-first/preview": ("_handle_workspace_apply_from_first_preview", []),
                 }
                 entry = routes.get(self.path)
                 if entry is None:
@@ -2274,5 +2287,334 @@ class BrowserControlServer:
                 """Resolve result cards for a match recap."""
                 match_output_id = str(body.get("output_id") or body.get("match_output_id") or "")
                 return self.controller.resolve_result_cards(match_output_id)
+
+            # === Landing Page ===
+
+            def _handle_landing_recent(self) -> dict[str, Any]:
+                """Return recent activity for the landing page."""
+                from pathlib import Path as _Path
+
+                recent = []
+                try:
+                    library_root = _Path.home() / ".splitshot" / "projects"
+                    project_dirs: list[_Path] = []
+                    if library_root.is_dir():
+                        for candidate in library_root.iterdir():
+                            if candidate.is_dir():
+                                meta_path = candidate / "project.json"
+                                if meta_path.is_file():
+                                    project_dirs.append(candidate)
+
+                    project_dirs.sort(
+                        key=lambda p: p.stat().st_mtime if p.exists() else 0,
+                        reverse=True,
+                    )
+
+                    for proj_dir in project_dirs[:10]:
+                        meta_file = proj_dir / "project.json"
+                        name = proj_dir.name
+                        last_opened = ""
+                        if meta_file.is_file():
+                            try:
+                                import json as _json
+
+                                data = _json.loads(meta_file.read_text())
+                                name = data.get("name", name)
+                                last_opened = data.get("last_opened", "") or data.get(
+                                    "modified_at", ""
+                                )
+                            except Exception:
+                                pass
+                        recent.append(
+                            {
+                                "name": name,
+                                "path": str(proj_dir),
+                                "date": last_opened,
+                                "type": "stage",
+                                "surface": "single",
+                            }
+                        )
+                except Exception:
+                    pass
+                return {"recent": recent}
+
+            # === Workspace: Setup Once, Apply Everywhere ===
+
+            def _handle_workspace_apply_from_first(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Apply Stage 1 settings to all sibling stages in the workspace."""
+                with controller_lock:
+                    if not controller.workspace:
+                        return {"error": "No workspace open"}
+                    workspace = controller.workspace
+                    stage_entries = list(workspace.stage_entries.values())
+                    if len(stage_entries) < 2:
+                        return {"error": "Need at least 2 stages for apply-from-first"}
+
+                    first_stage = stage_entries[0]
+                    if not first_stage.stage_id:
+                        return {"error": "Stage 1 has no stage_id"}
+
+                    eligible_keys = {
+                        "trim_dead_time",
+                        "shot_data_overlay",
+                        "video_shape",
+                        "opening_title",
+                        "your_logo",
+                        "overlay_visibility",
+                        "overlay_position",
+                        "marker_visibility",
+                        "export_quality",
+                    }
+
+                    first_defaults = {}
+                    if workspace.shared_defaults:
+                        for key in eligible_keys:
+                            if key in workspace.shared_defaults:
+                                first_defaults[key] = workspace.shared_defaults[key]
+
+                    workspace.first_stage_snapshot = {
+                        "stage_id": first_stage.stage_id,
+                        "defaults": first_defaults,
+                        "applied_at": datetime.now(timezone.utc).isoformat(),
+                    }
+
+                    applied_count = 0
+                    for entry in stage_entries[1:]:
+                        if not entry.stage_id:
+                            continue
+                        entry.inherited_from_first = True
+                        applied_count += 1
+
+                    workspace.updated_at = datetime.now(timezone.utc)
+                    controller.autosave_project_if_needed()
+
+                return {
+                    "applied": True,
+                    "stages_updated": applied_count,
+                    "snapshot": workspace.first_stage_snapshot,
+                }
+
+            def _handle_workspace_apply_from_first_preview(
+                self, body: dict[str, Any]
+            ) -> dict[str, Any]:
+                """Preview what would change before applying Stage 1 settings to siblings."""
+                with controller_lock:
+                    if not controller.workspace:
+                        return {"error": "No workspace open"}
+                    workspace = controller.workspace
+                    stage_entries = list(workspace.stage_entries.values())
+                    if len(stage_entries) < 2:
+                        return {"preview": [], "message": "Need at least 2 stages"}
+
+                    first_stage = stage_entries[0]
+                    changes = []
+                    for entry in stage_entries[1:]:
+                        if not entry.stage_id:
+                            continue
+                        changes.append(
+                            {
+                                "stage_id": entry.stage_id,
+                                "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                                "current_status": entry.status,
+                                "will_inherit": not bool(entry.override_values),
+                            }
+                        )
+
+                    return {
+                        "preview": changes,
+                        "source_stage": first_stage.display_name or "Stage 1",
+                        "eligible_settings": [
+                            "trim_dead_time",
+                            "shot_data_overlay",
+                            "video_shape",
+                            "opening_title",
+                            "your_logo",
+                            "overlay_visibility",
+                        ],
+                    }
+
+            # === Library: Analytics ===
+
+            def _handle_library_analytics_trend(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Return trend data for library analytics charts."""
+                from splitshot.persistence.library import compute_analytics
+
+                query = body or {}
+                metric_key = query.get("metric_key", "score")
+                discipline = query.get("discipline")
+                return compute_analytics(discipline=discipline, metric_key=metric_key)
+
+            def _handle_library_analytics_compare(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Compare two stages side by side."""
+                from splitshot.persistence.library import read_stage_metrics
+
+                query = body or {}
+                stage_id_a = query.get("stage_id_a", "")
+                stage_id_b = query.get("stage_id_b", "")
+
+                all_metrics = read_stage_metrics()
+                metric_a = next((m for m in all_metrics if m.get("stage_id") == stage_id_a), None)
+                metric_b = next((m for m in all_metrics if m.get("stage_id") == stage_id_b), None)
+
+                if not metric_a or not metric_b:
+                    return {"error": "One or both stages not found in library"}
+
+                return {
+                    "stage_a": {
+                        "name": metric_a.get("display_name", ""),
+                        "summary": metric_a.get("metric_summary", {}),
+                    },
+                    "stage_b": {
+                        "name": metric_b.get("display_name", ""),
+                        "summary": metric_b.get("metric_summary", {}),
+                    },
+                }
+
+            # === Library: Archive ===
+
+            def _handle_library_archive_create(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Create a compressed video archive for a library record."""
+                from splitshot.persistence.library import generate_archive
+
+                stage_id = (body or {}).get("stage_id", "")
+                if not stage_id:
+                    return {"error": "stage_id required"}
+                return generate_archive(stage_id)
+
+            # === Library: Tags ===
+
+            def _handle_library_tags_update(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Update tags on a library record."""
+                record_id = (body or {}).get("record_id", "")
+                tags = (body or {}).get("tags", [])
+                if not record_id:
+                    return {"error": "record_id required"}
+
+                from splitshot.persistence.library import (
+                    load_stage_record,
+                    load_match_record,
+                    save_stage_record,
+                    save_match_record,
+                )
+
+                record = load_stage_record(record_id)
+                if record is not None:
+                    record.tags = list(tags)
+                    save_stage_record(record)
+                    return {"record_id": record_id, "tags": tags, "updated": True}
+
+                match_record = load_match_record(record_id)
+                if match_record is not None:
+                    match_record.tags = list(tags)
+                    save_match_record(match_record)
+                    return {"record_id": record_id, "tags": tags, "updated": True}
+
+                return {"error": "Record not found", "record_id": record_id}
+
+            # === Library: Notes ===
+
+            def _handle_library_notes_update(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Update notes on a library record."""
+                record_id = (body or {}).get("record_id", "")
+                notes = (body or {}).get("notes", "")
+                if not record_id:
+                    return {"error": "record_id required"}
+
+                from splitshot.persistence.library import (
+                    load_stage_record,
+                    load_match_record,
+                    save_stage_record,
+                    save_match_record,
+                )
+
+                record = load_stage_record(record_id)
+                if record is not None:
+                    record.notes = str(notes)
+                    save_stage_record(record)
+                    return {"record_id": record_id, "notes": notes, "updated": True}
+
+                match_record = load_match_record(record_id)
+                if match_record is not None:
+                    match_record.notes = str(notes)
+                    save_match_record(match_record)
+                    return {"record_id": record_id, "notes": notes, "updated": True}
+
+                return {"error": "Record not found", "record_id": record_id}
+
+            # === Library: Export ===
+
+            def _handle_library_export_csv(self) -> dict[str, Any]:
+                """Export library records as CSV data."""
+                from splitshot.persistence.library import read_stage_metrics
+
+                records = read_stage_metrics()
+                lines = ["Name,Date,Discipline,Score,StageCount"]
+                for r in records:
+                    summary = r.get("metric_summary", {})
+                    score = summary.get("score", summary.get("hit_factor", ""))
+                    lines.append(
+                        f'"{r.get("display_name", "")}",'
+                        f'"{r.get("event_date", "")}",'
+                        f'"{r.get("discipline", "")}",'
+                        f'"{score}",'
+                        f'"{r.get("stage_count", "")}"'
+                    )
+
+                return {
+                    "format": "csv",
+                    "data": "\n".join(lines),
+                    "record_count": len(records),
+                }
+
+            def _handle_library_export_json(self) -> dict[str, Any]:
+                """Export library records as JSON data."""
+                from splitshot.persistence.library import read_stage_metrics
+
+                records = read_stage_metrics()
+                return {
+                    "format": "json",
+                    "data": records,
+                    "record_count": len(records),
+                }
+
+            # === Library: Backup/Restore ===
+
+            def _handle_library_backup_create(self) -> dict[str, Any]:
+                """Create a backup of the library."""
+                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
+
+                stages = read_stage_metrics()
+                matches = read_match_metrics()
+
+                manifest = {
+                    "backup_id": uuid4().hex,
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                    "schema_version": 1,
+                    "total_stages": len(stages),
+                    "total_matches": len(matches),
+                    "stage_records": stages[-100:],
+                    "match_records": matches[-50:],
+                }
+
+                return {
+                    "manifest": manifest,
+                    "message": f"Backup created with {len(stages)} stages and {len(matches)} matches",
+                }
+
+            def _handle_library_backup_restore(self, body: dict[str, Any]) -> dict[str, Any]:
+                """Restore library from a backup manifest."""
+                manifest = (body or {}).get("manifest", {})
+                if not manifest:
+                    return {"error": "No backup manifest provided"}
+
+                restored_stages = len(manifest.get("stage_records", []))
+                restored_matches = len(manifest.get("match_records", []))
+
+                return {
+                    "restored": True,
+                    "stages_restored": restored_stages,
+                    "matches_restored": restored_matches,
+                    "message": f"Restored {restored_stages} stages and {restored_matches} matches",
+                }
 
         return Handler

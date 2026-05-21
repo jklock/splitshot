@@ -6,7 +6,11 @@ import argparse
 import json
 from pathlib import Path
 
-from splitshot.analysis.corpus import DEFAULT_THRESHOLD_GRID, build_label_manifest, list_corpus_videos
+from splitshot.analysis.corpus import (
+    DEFAULT_THRESHOLD_GRID,
+    build_label_manifest,
+    list_corpus_videos,
+)
 
 
 def format_beep_compare(beep_multipass: dict[str, object]) -> str:
@@ -97,7 +101,9 @@ def render_table(input_path: Path, output_path: Path, payload: dict[str, object]
         beep_multipass = video["beep_multipass"]
         beep_compare = format_beep_compare(beep_multipass)
         shot_multipass = video["shot_multipass"]
-        shot_unmatched_total = int(shot_multipass["unmatched_final_count"]) + int(shot_multipass["unmatched_onset_count"])
+        shot_unmatched_total = int(shot_multipass["unmatched_final_count"]) + int(
+            shot_multipass["unmatched_onset_count"]
+        )
         shot_echo_like = int(shot_multipass.get("echo_like_onset_count", 0))
         if shot_unmatched_total == 0 and shot_multipass["max_match_gap_ms"] is None:
             shot_compare = "--"
@@ -112,7 +118,11 @@ def render_table(input_path: Path, output_path: Path, payload: dict[str, object]
                 [
                     str(video["relative_path"]),
                     str(video["detector_shot_count"]).rjust(5),
-                    ("--" if video["detector_beep_time_ms"] is None else f"{video['detector_beep_time_ms']}ms").rjust(4),
+                    (
+                        "--"
+                        if video["detector_beep_time_ms"] is None
+                        else f"{video['detector_beep_time_ms']}ms"
+                    ).rjust(4),
                     beep_compare.rjust(8),
                     shot_compare.rjust(8),
                     str(video["beep_family"]).rjust(6),
@@ -169,7 +179,11 @@ def main() -> int:
     if not list_corpus_videos(input_path):
         raise SystemExit(f"No supported video files found in {input_path}")
 
-    output_path = args.output.expanduser().resolve() if args.output is not None else default_output_path(input_path)
+    output_path = (
+        args.output.expanduser().resolve()
+        if args.output is not None
+        else default_output_path(input_path)
+    )
     existing_manifest = load_existing_manifest(output_path)
     payload = build_label_manifest(
         input_path,

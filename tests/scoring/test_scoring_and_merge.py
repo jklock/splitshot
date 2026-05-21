@@ -51,7 +51,9 @@ def test_current_shot_tracks_playback_position() -> None:
 
 def test_current_shot_waits_for_first_source_frame_after_shot_time() -> None:
     project = Project()
-    project.primary_video = VideoAsset(path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/frame-safe.mp4", duration_ms=1000, width=640, height=360, fps=10.0
+    )
     project.analysis.shots = [
         ShotEvent(time_ms=150),
         ShotEvent(time_ms=350),
@@ -299,7 +301,14 @@ def test_browser_api_hides_gpa_preset() -> None:
     preset_ids = {preset["id"] for preset in scoring_presets_for_api()}
 
     assert "gpa_time_plus" not in preset_ids
-    assert {"uspsa_minor", "uspsa_major", "ipsc_minor", "ipsc_major", "idpa_time_plus", "steel_challenge"}.issubset(preset_ids)
+    assert {
+        "uspsa_minor",
+        "uspsa_major",
+        "ipsc_minor",
+        "ipsc_major",
+        "idpa_time_plus",
+        "steel_challenge",
+    }.issubset(preset_ids)
 
 
 def test_merge_canvas_covers_layouts() -> None:

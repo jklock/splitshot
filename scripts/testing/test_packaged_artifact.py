@@ -18,7 +18,12 @@ DEFAULT_VALIDATION_SCRIPT = REPO / "scripts" / "testing" / "test_electron_app.py
 
 
 class InstalledArtifact:
-    def __init__(self, executable: Path, cleanup_paths: list[Path] | None = None, env: dict[str, str] | None = None):
+    def __init__(
+        self,
+        executable: Path,
+        cleanup_paths: list[Path] | None = None,
+        env: dict[str, str] | None = None,
+    ):
         self.executable = executable
         self.cleanup_paths = cleanup_paths or []
         self.env = env or {}
@@ -37,7 +42,11 @@ class InstalledArtifact:
 def _prepend_path(env: dict[str, str], *entries: str) -> dict[str, str]:
     merged = dict(env)
     current = merged.get("PATH", "")
-    merged["PATH"] = os.pathsep.join([*(entry for entry in entries if entry), current] if current else [*(entry for entry in entries if entry)])
+    merged["PATH"] = os.pathsep.join(
+        [*(entry for entry in entries if entry), current]
+        if current
+        else [*(entry for entry in entries if entry)]
+    )
     return merged
 
 
@@ -61,7 +70,9 @@ def _media_tool_free_path(preferred_dir: Path) -> str:
     return os.pathsep.join([str(preferred_dir), *filtered])
 
 
-def _run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
         cwd=cwd or REPO,
@@ -118,11 +129,22 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     executable_line = next((line for line in lines if not line.startswith("LOCATOR_")), "")
     if not executable_line:
         diagnostic = "\n".join(lines) or "no locator output"
-        raise FileNotFoundError(f"Installed SplitShot.exe not found after NSIS install\n{diagnostic}")
+        raise FileNotFoundError(
+            f"Installed SplitShot.exe not found after NSIS install\n{diagnostic}"
+        )
     executable = Path(executable_line)
     if not executable.exists():
         raise FileNotFoundError("Installed SplitShot.exe not found after NSIS install")
-    ffmpeg_dir = executable.parent / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "windows"
+    ffmpeg_dir = (
+        executable.parent
+        / "resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "windows"
+    )
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg.exe")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe.exe")
@@ -160,11 +182,23 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     executable = copied_app / "Contents" / "MacOS" / "SplitShot"
     if not executable.exists():
         raise FileNotFoundError(f"Mounted DMG app executable not found at {executable}")
-    ffmpeg_dir = copied_app / "Contents" / "Resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "macos"
+    ffmpeg_dir = (
+        copied_app
+        / "Contents"
+        / "Resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "macos"
+    )
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
-    return InstalledArtifact(executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env)
+    return InstalledArtifact(
+        executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env
+    )
 
 
 def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
@@ -174,12 +208,23 @@ def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
     extracted_root = Path(tempfile.mkdtemp(prefix="splitshot-appimage-extract-"))
     _run([str(copied_artifact), "--appimage-extract"], cwd=extracted_root)
     squashfs_root = extracted_root / "squashfs-root"
-    ffmpeg_dir = squashfs_root / "resources" / "bundle" / "src" / "splitshot" / "resources" / "ffmpeg" / "linux"
+    ffmpeg_dir = (
+        squashfs_root
+        / "resources"
+        / "bundle"
+        / "src"
+        / "splitshot"
+        / "resources"
+        / "ffmpeg"
+        / "linux"
+    )
     env = {"APPIMAGE_EXTRACT_AND_RUN": "1"}
     env["PATH"] = _media_tool_free_path(ffmpeg_dir)
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
-    return InstalledArtifact(executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env)
+    return InstalledArtifact(
+        executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env
+    )
 
 
 def _install_artifact(artifact: Path) -> InstalledArtifact:

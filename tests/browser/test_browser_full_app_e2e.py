@@ -7,7 +7,19 @@ from playwright.sync_api import sync_playwright
 from splitshot.browser.server import BrowserControlServer
 
 
-TOOL_IDS = ["project", "merge", "scoring", "timing", "markers", "overlay", "review", "export", "metrics", "shotml", "settings"]
+TOOL_IDS = [
+    "project",
+    "merge",
+    "scoring",
+    "timing",
+    "markers",
+    "overlay",
+    "review",
+    "export",
+    "metrics",
+    "shotml",
+    "settings",
+]
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -124,13 +136,18 @@ def _exercise_waveform_and_timing(page) -> None:
     )
     assert timing_positions
     page.locator("#timing-event-position").select_option(timing_positions[0])
-    baseline_event_count = int(page.evaluate("() => (state?.project?.analysis?.events || []).length"))
+    baseline_event_count = int(
+        page.evaluate("() => (state?.project?.analysis?.events || []).length")
+    )
     page.locator("#add-timing-event").click()
     page.wait_for_function(
         "(expectedCount) => (state?.project?.analysis?.events || []).length === expectedCount",
         arg=baseline_event_count + 1,
     )
-    page.locator("#timing-workbench-table").get_by_text("Master timing note").first.wait_for(state="visible")
+    page.locator("#timing-workbench-table").get_by_text("Master timing note").first.wait_for(
+        state="visible"
+    )
+
 
 def _exercise_markers_review_overlay(page) -> None:
     _open_tool(page, "timing")
@@ -146,7 +163,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
     page.wait_for_function("() => (state?.project?.popups || []).length > 1")
     page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
-    page.wait_for_function("() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null")
+    page.wait_for_function(
+        "() => document.querySelector('#markers-workbench-editor .popup-bubble-card') !== null"
+    )
 
     page.locator("#popup-edit-selected").click()
     page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
@@ -164,7 +183,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.wait_for_function(
         "() => (state?.project?.overlay?.text_boxes || []).some((box) => box.text === 'Master review note')"
     )
-    _set_color_picker_value(page, review_card.locator('button[data-text-box-field="background_color"]'), "#ff0000")
+    _set_color_picker_value(
+        page, review_card.locator('button[data-text-box-field="background_color"]'), "#ff0000"
+    )
     review_box_id = page.evaluate(
         """() => {
           const boxes = state?.project?.overlay?.text_boxes || [];
@@ -177,7 +198,9 @@ def _exercise_markers_review_overlay(page) -> None:
     page.locator("#show-overlay").check()
     page.locator("#badge-size").select_option(_alternate_select_value(page.locator("#badge-size")))
     page.locator("#overlay-style").select_option("bubble")
-    page.locator("#overlay-font-family").select_option(_alternate_select_value(page.locator("#overlay-font-family")))
+    page.locator("#overlay-font-family").select_option(
+        _alternate_select_value(page.locator("#overlay-font-family"))
+    )
     _set_input_value(page.locator("#overlay-font-size"), "16")
     page.locator("#overlay-font-bold").check()
     page.locator("#overlay-font-italic").check()
@@ -238,10 +261,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         source_id,
     )
     page.wait_for_selector(".merge-media-card-body:not([hidden])")
-    first_card.locator('.merge-source-sync-buttons button:nth-child(3)').click()
-    first_card.locator('.pip-size-control input').first.evaluate(
-        "input => Number(input.value)"
-    )
+    first_card.locator(".merge-source-sync-buttons button:nth-child(3)").click()
+    first_card.locator(".pip-size-control input").first.evaluate("input => Number(input.value)")
     first_card.get_by_role("button", name="+1", exact=True).click()
 
     second_card = page.locator(".merge-media-card").nth(1)
@@ -253,28 +274,40 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
             input.dispatchEvent(new Event('change', { bubbles: true }));
         }"""
     )
-    second_card.locator('[data-merge-source-remove]').click()
+    second_card.locator("[data-merge-source-remove]").click()
     page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
 
     _open_tool(page, "export")
     page.locator("#quality").select_option(_alternate_select_value(page.locator("#quality")))
-    page.locator("#aspect-ratio").select_option(_alternate_select_value(page.locator("#aspect-ratio")))
+    page.locator("#aspect-ratio").select_option(
+        _alternate_select_value(page.locator("#aspect-ratio"))
+    )
     _set_input_value(page.locator("#target-width"), "1280")
     _set_input_value(page.locator("#target-height"), "720")
     page.locator("#frame-rate").select_option(_alternate_select_value(page.locator("#frame-rate")))
-    page.locator("#video-codec").select_option(_alternate_select_value(page.locator("#video-codec")))
+    page.locator("#video-codec").select_option(
+        _alternate_select_value(page.locator("#video-codec"))
+    )
     _set_input_value(page.locator("#video-bitrate"), "12")
-    page.locator("#audio-codec").select_option(_alternate_select_value(page.locator("#audio-codec")))
+    page.locator("#audio-codec").select_option(
+        _alternate_select_value(page.locator("#audio-codec"))
+    )
     _set_input_value(page.locator("#audio-sample-rate"), "48000")
     _set_input_value(page.locator("#audio-bitrate"), "256")
-    page.locator("#color-space").select_option(_alternate_select_value(page.locator("#color-space")))
-    page.locator("#ffmpeg-preset").select_option(_alternate_select_value(page.locator("#ffmpeg-preset")))
+    page.locator("#color-space").select_option(
+        _alternate_select_value(page.locator("#color-space"))
+    )
+    page.locator("#ffmpeg-preset").select_option(
+        _alternate_select_value(page.locator("#ffmpeg-preset"))
+    )
     page.locator("#two-pass").check()
 
     output_path = tmp_path / "master-full-app-export.mp4"
     page.locator("#export-path").fill(str(output_path))
     page.locator("#export-video").click()
-    page.wait_for_function("(path) => state?.project?.export?.output_path === path", arg=str(output_path))
+    page.wait_for_function(
+        "(path) => state?.project?.export?.output_path === path", arg=str(output_path)
+    )
     page.locator("#show-export-log").click()
     page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
     page.locator("#close-export-log").click()
@@ -289,7 +322,7 @@ def _exercise_settings_and_shotml(page) -> None:
     for section_id in ["global-template", "pip", "overlay", "export"]:
         section = page.locator(f'[data-settings-section="{section_id}"]')
         if section.evaluate("element => element.classList.contains('collapsed')"):
-            section.locator('button[data-section-toggle]').click()
+            section.locator("button[data-section-toggle]").click()
             page.wait_for_function(
                 "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                 arg=f'[data-settings-section="{section_id}"]',
@@ -297,6 +330,7 @@ def _exercise_settings_and_shotml(page) -> None:
 
     def _set_select(selector: str) -> None:
         page.locator(selector).select_option(_alternate_select_value(page.locator(selector)))
+
     _set_select("#settings-scope")
     _set_select("#settings-default-tool")
     page.locator("#settings-reopen-last-tool").uncheck()
@@ -320,7 +354,7 @@ def _exercise_settings_and_shotml(page) -> None:
     _open_tool(page, "shotml")
     threshold_section = page.locator('[data-shotml-section="threshold"]')
     if threshold_section.evaluate("element => element.classList.contains('collapsed')"):
-        threshold_section.locator('button[data-section-toggle]').click()
+        threshold_section.locator("button[data-section-toggle]").click()
         page.wait_for_function(
             "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
             arg='[data-shotml-section="threshold"]',
@@ -337,7 +371,9 @@ def _exercise_settings_and_shotml(page) -> None:
     )
 
 
-def test_browser_full_app_e2e_calls_surface_workflows(synthetic_video_factory, tmp_path: Path, monkeypatch) -> None:
+def test_browser_full_app_e2e_calls_surface_workflows(
+    synthetic_video_factory, tmp_path: Path, monkeypatch
+) -> None:
     primary_path = Path(synthetic_video_factory(name="full-app-primary"))
     secondary_path = Path(synthetic_video_factory(name="full-app-secondary"))
     secondary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -378,7 +414,9 @@ def test_browser_full_app_practiscore_timing_scoring_save_reload_persistence_tru
             try:
                 _set_project_path(page, project_path)
                 page.evaluate("(path) => createNewProject(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 _load_primary_video(page, primary_path)
 
                 page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
@@ -390,7 +428,9 @@ def test_browser_full_app_practiscore_timing_scoring_save_reload_persistence_tru
                 page.wait_for_function("() => scoringWorkbenchExpanded === true")
 
                 page.evaluate("(path) => useProjectFolder(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
             finally:
@@ -416,7 +456,9 @@ def test_browser_full_app_markers_review_overlay_export_preview_parity_truth_gat
                 _load_primary_video(page, primary_path)
                 _exercise_markers_review_overlay(page)
                 _exercise_merge_and_export(page, secondary_path, tmp_path, monkeypatch)
-                page.wait_for_function("() => (state?.project?.overlay?.text_boxes || []).length > 0")
+                page.wait_for_function(
+                    "() => (state?.project?.overlay?.text_boxes || []).length > 0"
+                )
                 page.wait_for_function("() => (state?.project?.popups || []).length > 0")
             finally:
                 browser.close()
@@ -424,7 +466,9 @@ def test_browser_full_app_markers_review_overlay_export_preview_parity_truth_gat
         server.shutdown()
 
 
-def test_browser_full_app_merge_export_sync_truth_gate(synthetic_video_factory, tmp_path: Path, monkeypatch) -> None:
+def test_browser_full_app_merge_export_sync_truth_gate(
+    synthetic_video_factory, tmp_path: Path, monkeypatch
+) -> None:
     primary_path = Path(synthetic_video_factory(name="truth-gate-merge-primary"))
     secondary_path = Path(synthetic_video_factory(name="truth-gate-merge-secondary"))
 
@@ -460,9 +504,13 @@ def test_browser_full_app_settings_defaults_seed_fresh_project_truth_gate(
                 _exercise_settings_and_shotml(page)
                 _set_project_path(page, project_path)
                 page.evaluate("(path) => createNewProject(path)", str(project_path))
-                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                page.wait_for_function(
+                    "(path) => state?.project?.path === path", arg=str(project_path)
+                )
                 page.reload(wait_until="domcontentloaded")
-                page.wait_for_function("() => state?.project?.analysis?.shotml_settings?.detection_threshold !== undefined")
+                page.wait_for_function(
+                    "() => state?.project?.analysis?.shotml_settings?.detection_threshold !== undefined"
+                )
             finally:
                 browser.close()
     finally:
@@ -483,14 +531,16 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                 _open_tool(page, "shotml")
                 threshold_section = page.locator('[data-shotml-section="threshold"]')
                 if threshold_section.evaluate("element => element.classList.contains('collapsed')"):
-                    threshold_section.locator('button[data-section-toggle]').click()
+                    threshold_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="threshold"]',
                     )
                 page.locator("#threshold").fill("0.5")
                 page.locator("#apply-threshold").click()
-                page.wait_for_function("() => state?.project?.analysis?.shotml_settings?.detection_threshold === 0.5")
+                page.wait_for_function(
+                    "() => state?.project?.analysis?.shotml_settings?.detection_threshold === 0.5"
+                )
 
                 _open_tool(page, "timing")
                 target_shot_id = _select_first_waveform_shot(page)
@@ -514,8 +564,10 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
 
                 timing_changer_section = page.locator('[data-shotml-section="timing_changer"]')
                 _open_tool(page, "shotml")
-                if timing_changer_section.evaluate("element => element.classList.contains('collapsed')"):
-                    timing_changer_section.locator('button[data-section-toggle]').click()
+                if timing_changer_section.evaluate(
+                    "element => element.classList.contains('collapsed')"
+                ):
+                    timing_changer_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="timing_changer"]',
@@ -531,8 +583,8 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     target_shot_id,
                 )
                 assert restore_index >= 0
-                proposal_rows = page.locator('.shotml-proposal-row')
-                proposal_rows.nth(restore_index).get_by_role('button', name='Apply').click()
+                proposal_rows = page.locator(".shotml-proposal-row")
+                proposal_rows.nth(restore_index).get_by_role("button", name="Apply").click()
                 page.wait_for_function(
                     """(payload) => (state?.project?.analysis?.shots || []).find((item) => item.id === payload.shotId)?.time_ms === payload.timeMs""",
                     arg={"shotId": target_shot_id, "timeMs": original_time_ms},
@@ -553,8 +605,10 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                 )
 
                 _open_tool(page, "shotml")
-                if timing_changer_section.evaluate("element => element.classList.contains('collapsed')"):
-                    timing_changer_section.locator('button[data-section-toggle]').click()
+                if timing_changer_section.evaluate(
+                    "element => element.classList.contains('collapsed')"
+                ):
+                    timing_changer_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(selector) => !document.querySelector(selector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="timing_changer"]',
@@ -569,8 +623,8 @@ def test_browser_full_app_shotml_rerun_apply_or_discard_truth_gate(synthetic_vid
                     target_shot_id,
                 )
                 assert restore_index >= 0
-                proposal_rows = page.locator('.shotml-proposal-row')
-                proposal_rows.nth(restore_index).get_by_role('button', name='Discard').click()
+                proposal_rows = page.locator(".shotml-proposal-row")
+                proposal_rows.nth(restore_index).get_by_role("button", name="Discard").click()
                 page.wait_for_function(
                     """(payload) => {
                         const proposal = (state?.project?.analysis?.timing_change_proposals || []).find((item) => item.shot_id === payload.shotId && item.proposal_type === 'restore_shot' && item.status === 'discarded');

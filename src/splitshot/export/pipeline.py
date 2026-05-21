@@ -223,10 +223,12 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
     rows = math.ceil(len(sources) / columns)
 
     input_args = [
-        *ffmpeg_command([
-            "-v",
-            "info",
-        ]),
+        *ffmpeg_command(
+            [
+                "-v",
+                "info",
+            ]
+        ),
         "-i",
         project.primary_video.path,
     ]
@@ -283,14 +285,18 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
     )
 
 
-def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
+def _build_multi_pip_merge_plan(
+    project: Project, merge_sources: list[MergeSource]
+) -> BaseRenderPlan:
     fps = _output_fps(project)
 
     input_args = [
-        *ffmpeg_command([
-            "-v",
-            "info",
-        ]),
+        *ffmpeg_command(
+            [
+                "-v",
+                "info",
+            ]
+        ),
         "-i",
         project.primary_video.path,
     ]
@@ -308,7 +314,9 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
         rect = calculate_pip_rect(
             project.primary_video,
             asset,
-            source.pip_size_percent if source.pip_size_percent is not None else project.merge.pip_size_percent,
+            source.pip_size_percent
+            if source.pip_size_percent is not None
+            else project.merge.pip_size_percent,
             source.pip_x,
             source.pip_y,
         )
@@ -317,9 +325,7 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
             asset_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
         if _source_opacity(source) < 1.0:
             asset_chain += f",format=rgba,colorchannelmixer=aa={_source_opacity(source):.3f}"
-        filter_parts.append(
-            f"{asset_chain},scale={rect.width}:{rect.height}[pip{index}]"
-        )
+        filter_parts.append(f"{asset_chain},scale={rect.width}:{rect.height}[pip{index}]")
         filter_parts.append(
             f"[{previous_label}][pip{index}]overlay=x={rect.x}:y={rect.y}:"
             f"eof_action=pass:shortest=0:repeatlast=0[base{index}]"
@@ -352,20 +358,22 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
 
 def _build_single_video_plan(project: Project) -> BaseRenderPlan:
     fps = _output_fps(project)
-    command = ffmpeg_command([
-        "-v",
-        "info",
-        "-i",
-        project.primary_video.path,
-        "-an",
-        "-vf",
-        f"fps={fps:.3f},format=rgba",
-        "-pix_fmt",
-        "rgba",
-        "-f",
-        "rawvideo",
-        "pipe:1",
-    ])
+    command = ffmpeg_command(
+        [
+            "-v",
+            "info",
+            "-i",
+            project.primary_video.path,
+            "-an",
+            "-vf",
+            f"fps={fps:.3f},format=rgba",
+            "-pix_fmt",
+            "rgba",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ]
+    )
     return BaseRenderPlan(
         command=command,
         width=project.primary_video.width,
@@ -390,7 +398,9 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         project.primary_video,
         secondary,
         project.merge.layout,
-        secondary_source.pip_size_percent if secondary_source.pip_size_percent is not None else project.merge.pip_size_percent,
+        secondary_source.pip_size_percent
+        if secondary_source.pip_size_percent is not None
+        else project.merge.pip_size_percent,
         secondary_source.pip_x,
         secondary_source.pip_y,
     )
@@ -398,10 +408,12 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
     offset_ms = _source_sync_offset_ms(secondary_source)
 
     input_args = [
-        *ffmpeg_command([
-            "-v",
-            "info",
-        ]),
+        *ffmpeg_command(
+            [
+                "-v",
+                "info",
+            ]
+        ),
         "-i",
         project.primary_video.path,
     ]
@@ -412,7 +424,9 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
     if offset_ms < 0:
         secondary_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
     if project.merge.layout == MergeLayout.PIP and _source_opacity(secondary_source) < 1.0:
-        secondary_chain += f",format=rgba,colorchannelmixer=aa={_source_opacity(secondary_source):.3f}"
+        secondary_chain += (
+            f",format=rgba,colorchannelmixer=aa={_source_opacity(secondary_source):.3f}"
+        )
 
     if project.merge.layout == MergeLayout.SIDE_BY_SIDE:
         filter_complex = (
@@ -514,7 +528,9 @@ def _prune_expected_decoder_pipe_shutdown_lines(log_lines: list[str]) -> bool:
     cleaned_lines: list[str] = []
     suppressed = False
     for line in log_lines:
-        if line.startswith("decoder:") and any(fragment in line for fragment in _EXPECTED_DECODER_PIPE_SHUTDOWN_FRAGMENTS):
+        if line.startswith("decoder:") and any(
+            fragment in line for fragment in _EXPECTED_DECODER_PIPE_SHUTDOWN_FRAGMENTS
+        ):
             suppressed = True
             continue
         cleaned_lines.append(line)
@@ -552,14 +568,18 @@ def _encoder_command(
         "-i",
         "pipe:0",
     ]
-    audio_args = [] if first_pass else [
-        "-i",
-        project.primary_video.path,
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0?",
-    ]
+    audio_args = (
+        []
+        if first_pass
+        else [
+            "-i",
+            project.primary_video.path,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0?",
+        ]
+    )
     encode_args = [
         "-c:v",
         _codec_name(project.export.video_codec),
@@ -581,20 +601,34 @@ def _encoder_command(
         encode_args[bitrate_index:bitrate_index] = ["-crf", _quality_crf(project.export.quality)]
     if pass_number is not None and passlogfile is not None:
         encode_args.extend(["-pass", str(pass_number), "-passlogfile", str(passlogfile)])
-    audio_encode_args = ["-an"] if first_pass else [
-        "-c:a",
-        project.export.audio_codec.value,
-        "-ar",
-        str(project.export.audio_sample_rate),
-        "-b:a",
-        audio_bitrate,
-    ]
-    output_args = ["-f", "null", os.devnull] if first_pass else [
-        *(["-movflags", "+faststart"] if output_target.suffix.lower() in _FASTSTART_EXPORT_EXTENSIONS else []),
-        "-shortest",
-        str(output_target),
-    ]
-    command = ffmpeg_command([*input_args, *audio_args, *encode_args, *audio_encode_args, *output_args])
+    audio_encode_args = (
+        ["-an"]
+        if first_pass
+        else [
+            "-c:a",
+            project.export.audio_codec.value,
+            "-ar",
+            str(project.export.audio_sample_rate),
+            "-b:a",
+            audio_bitrate,
+        ]
+    )
+    output_args = (
+        ["-f", "null", os.devnull]
+        if first_pass
+        else [
+            *(
+                ["-movflags", "+faststart"]
+                if output_target.suffix.lower() in _FASTSTART_EXPORT_EXTENSIONS
+                else []
+            ),
+            "-shortest",
+            str(output_target),
+        ]
+    )
+    command = ffmpeg_command(
+        [*input_args, *audio_args, *encode_args, *audio_encode_args, *output_args]
+    )
     return command
 
 
@@ -645,7 +679,9 @@ def _render_pass(
                 break
 
             frame = np.frombuffer(raw, dtype=np.uint8).reshape(plan.height, plan.width, 4).copy()
-            cropped = frame[crop_top : crop_top + crop_height, crop_left : crop_left + crop_width].copy()
+            cropped = frame[
+                crop_top : crop_top + crop_height, crop_left : crop_left + crop_width
+            ].copy()
             image = QImage(
                 cropped.data,
                 cropped.shape[1],
@@ -688,8 +724,14 @@ def _render_pass(
     decoder_log_thread.join(timeout=2)
     encoder_log_thread.join(timeout=2)
 
-    expected_decoder_shutdown = _is_expected_decoder_pipe_shutdown(decoder_return, encoder_return, log_lines)
-    if expected_decoder_shutdown and _prune_expected_decoder_pipe_shutdown_lines(log_lines) and log_callback is not None:
+    expected_decoder_shutdown = _is_expected_decoder_pipe_shutdown(
+        decoder_return, encoder_return, log_lines
+    )
+    if (
+        expected_decoder_shutdown
+        and _prune_expected_decoder_pipe_shutdown_lines(log_lines)
+        and log_callback is not None
+    ):
         log_callback(log_lines[-1])
 
     if decoder_return != 0 and not expected_decoder_shutdown:
@@ -698,7 +740,9 @@ def _render_pass(
         raise RuntimeError("MP4 encode failed")
 
 
-def _is_expected_decoder_pipe_shutdown(decoder_return: int, encoder_return: int, log_lines: list[str]) -> bool:
+def _is_expected_decoder_pipe_shutdown(
+    decoder_return: int, encoder_return: int, log_lines: list[str]
+) -> bool:
     if decoder_return == 0 or encoder_return != 0:
         return False
     decoder_log = "\n".join(line for line in log_lines if line.startswith("decoder:"))
@@ -803,7 +847,9 @@ def export_project(
                     0.5,
                 )
         else:
-            encoder_command = _encoder_command(project, output_width, output_height, plan.fps, output_target)
+            encoder_command = _encoder_command(
+                project, output_width, output_height, plan.fps, output_target
+            )
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
             project.export.last_log = "\n".join(log_lines[-400:])
             _render_pass(
@@ -837,7 +883,7 @@ def export_output_profile(
     log_callback: Callable[[str], None] | None = None,
 ) -> Path:
     """Export a project using an OutputProfile render plan.
-    Supports Run Window trim and Metric Captions overlay from the profile.
+    Supports Trim Dead Time and Shot Data on Screen overlay from the profile.
     Delegates to existing export_project for base rendering.
     """
     frame_profile = render_plan.get("frame_profile", "source")
@@ -900,4 +946,3 @@ def _apply_lead_in_card_to_project(project: Project, card: dict) -> None:
 def _apply_brand_mark_to_project(project: Project, brand: dict) -> None:
     """Apply brand mark settings to project state."""
     project._brand_mark = brand
-

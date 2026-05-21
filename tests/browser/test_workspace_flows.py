@@ -274,16 +274,19 @@ class TestSingleProjectCompatibility:
         loaded = load_project(proj_path)
         assert loaded.name == "Test Project"
 
+
 class TestInheritanceEligibility:
     """Test that inheritance is scoped to eligible fields."""
 
     def test_ineligible_field_blocked_from_defaults(self, controller):
         """Non-inheritable fields are NOT stored as shared defaults."""
         controller.new_workspace()
-        controller.workspace_set_defaults({
-            "frame_profile": "16:9",       # eligible
-            "detection_threshold": 0.5,    # NOT eligible
-        })
+        controller.workspace_set_defaults(
+            {
+                "frame_profile": "16:9",  # eligible
+                "detection_threshold": 0.5,  # NOT eligible
+            }
+        )
         assert "frame_profile" in controller.workspace.shared_defaults
         assert "detection_threshold" not in controller.workspace.shared_defaults
 
@@ -291,10 +294,13 @@ class TestInheritanceEligibility:
         """Non-inheritable fields are NOT stored as stage overrides."""
         controller.new_workspace()
         controller.workspace_add_stage("s1", "Stage 1")
-        controller.workspace_set_stage_override("s1", {
-            "frame_profile": "9:16",       # eligible
-            "detection_threshold": 0.6,    # NOT eligible
-        })
+        controller.workspace_set_stage_override(
+            "s1",
+            {
+                "frame_profile": "9:16",  # eligible
+                "detection_threshold": 0.6,  # NOT eligible
+            },
+        )
         assert "frame_profile" in controller.workspace.stage_entries["s1"].override_values
         assert "detection_threshold" not in controller.workspace.stage_entries["s1"].override_values
 
@@ -310,7 +316,9 @@ class TestInheritanceEligibility:
         """New workspace gets default values for eligible fields."""
         controller.new_workspace()
         assert len(controller.workspace.shared_defaults) > 0, "Shared defaults should not be empty"
-        assert "frame_profile" not in controller.workspace.shared_defaults or isinstance(controller.workspace.shared_defaults.get("frame_profile"), str)
+        assert "frame_profile" not in controller.workspace.shared_defaults or isinstance(
+            controller.workspace.shared_defaults.get("frame_profile"), str
+        )
 
 
 class TestWorkspaceMediaPathResolution:
@@ -323,7 +331,9 @@ class TestWorkspaceMediaPathResolution:
         c.workspace_open_stage("stage_1")
 
         if c.project_path is not None:
-            assert "Stages" in str(c.project_path) or "stage_1" in str(c.project_path),                 f"Project path {c.project_path} should be inside workspace's Stages directory"
+            assert "Stages" in str(c.project_path) or "stage_1" in str(c.project_path), (
+                f"Project path {c.project_path} should be inside workspace's Stages directory"
+            )
 
     def test_workspace_open_stage_preserves_workspace(self, controller_with_workspace):
         """After opening stage, workspace context is preserved."""
@@ -352,7 +362,9 @@ class TestExportCoexistence:
     def test_output_profile_takes_priority(self, controller):
         """When an output profile exists, it takes priority over legacy export."""
         controller.new_project()
-        p = controller.output_profile_create("stage", controller.project.id, "My Profile", "stage_output")
+        p = controller.output_profile_create(
+            "stage", controller.project.id, "My Profile", "stage_output"
+        )
         plan = controller.output_profile_render(p["output_id"])
 
         assert plan["success"] is True
@@ -362,20 +374,20 @@ class TestExportCoexistence:
 
 class TestStageClips:
     """Test clip CRUD for Stage Composite workflow."""
-    
+
     def test_add_clip_to_stage(self, controller):
         """Adding a clip creates it with correct defaults."""
         controller.new_workspace()
         stage_id = "s1"
         clips = controller.workspace_stage_clip_add(stage_id, "/tmp/test.mp4", "primary")
-        
+
         assert len(clips) == 1
         assert clips[0]["angle_role"] == "primary"
         assert clips[0]["source_path"] == "/tmp/test.mp4"
         assert clips[0]["audio_gain"] == 1.0
         assert clips[0]["audio_muted"] is False
         assert clips[0]["audio_primary"] is True
-    
+
     def test_add_multiple_clips_to_stage(self, controller):
         """Multiple clips maintain correct order."""
         controller.new_workspace()
@@ -383,26 +395,26 @@ class TestStageClips:
         controller.workspace_stage_clip_add(stage_id, "/tmp/1.mp4", "primary")
         controller.workspace_stage_clip_add(stage_id, "/tmp/2.mp4", "follow")
         controller.workspace_stage_clip_add(stage_id, "/tmp/3.mp4", "static")
-        
+
         clips = controller._get_stage_clips(stage_id)
         assert len(clips) == 3
         roles = [c["angle_role"] for c in clips]
         assert roles == ["primary", "follow", "static"]
-    
+
     def test_update_clip_properties(self, controller):
         """Updating a clip changes specified properties."""
         controller.new_workspace()
         stage_id = "s1"
         clips = controller.workspace_stage_clip_add(stage_id, "/tmp/test.mp4", "primary")
         clip_id = clips[0]["clip_id"]
-        
+
         updated = controller.workspace_stage_clip_update(
             stage_id, clip_id, angle_role="follow", audio_gain=0.5
         )
         assert updated is not None
         assert updated["angle_role"] == "follow"
         assert updated["audio_gain"] == 0.5
-    
+
     def test_remove_clip_from_stage(self, controller):
         """Removing a clip shrinks the clip list."""
         controller.new_workspace()
@@ -410,32 +422,32 @@ class TestStageClips:
         clips = controller.workspace_stage_clip_add(stage_id, "/tmp/a.mp4", "primary")
         controller.workspace_stage_clip_add(stage_id, "/tmp/b.mp4", "follow")
         clip_id = clips[0]["clip_id"]
-        
+
         removed = controller.workspace_stage_clip_remove(stage_id, clip_id)
         assert removed is True
-        
+
         remaining = controller._get_stage_clips(stage_id)
         assert len(remaining) == 1
         assert remaining[0]["source_path"] == "/tmp/b.mp4"
-    
+
     def test_update_nonexistent_clip_returns_none(self, controller):
         """Updating a clip that doesn't exist returns None."""
         controller.new_workspace()
         result = controller.workspace_stage_clip_update("s1", "nonexistent", angle_role="static")
         assert result is None
-    
+
     def test_remove_nonexistent_clip_returns_false(self, controller):
         """Removing a clip that doesn't exist returns False."""
         controller.new_workspace()
         result = controller.workspace_stage_clip_remove("s1", "nonexistent")
         assert result is False
-    
+
     def test_clips_isolated_per_stage(self, controller):
         """Clips for one stage don't leak to another."""
         controller.new_workspace()
         controller.workspace_stage_clip_add("s1", "/tmp/s1.mp4", "primary")
         controller.workspace_stage_clip_add("s2", "/tmp/s2.mp4", "follow")
-        
+
         assert len(controller._get_stage_clips("s1")) == 1
         assert len(controller._get_stage_clips("s2")) == 1
 
@@ -487,7 +499,9 @@ class TestStageClips:
 class TestAngleDirectorPersistence:
     """Test angle-director durability on output profiles."""
 
-    def test_angle_director_override_persists_across_workspace_save_reopen(self, controller, tmp_path):
+    def test_angle_director_override_persists_across_workspace_save_reopen(
+        self, controller, tmp_path
+    ):
         """Accepted cut decisions persist on the target output profile."""
         controller.new_workspace()
         controller.workspace_add_stage("s1", "Stage 1")
@@ -516,9 +530,13 @@ class TestAngleDirectorPersistence:
         assert plan["cut_plan"][0]["start_ms"] == 150
         assert plan["cut_plan"][0]["duration_ms"] == 275
 
-    def test_angle_director_override_autosaves_when_workspace_has_path(self, controller_with_workspace):
+    def test_angle_director_override_autosaves_when_workspace_has_path(
+        self, controller_with_workspace
+    ):
         """Angle-director overrides participate in workspace autosave."""
-        clips = controller_with_workspace.workspace_stage_clip_add("stage_1", "/tmp/1.mp4", "primary")
+        clips = controller_with_workspace.workspace_stage_clip_add(
+            "stage_1", "/tmp/1.mp4", "primary"
+        )
         controller_with_workspace.workspace_stage_clip_add("stage_1", "/tmp/2.mp4", "follow")
         profile = controller_with_workspace.output_profile_create(
             "stage", "stage_1", "Composite", "stage_composite"

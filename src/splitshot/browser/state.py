@@ -413,13 +413,15 @@ def browser_state(
                 else ""
             )
             item["secondary_beep_time_ms"] = (
-                analysis_payload.get("beep_time_ms_secondary")
-                if is_analyzed_sync_source
-                else None
+                analysis_payload.get("beep_time_ms_secondary") if is_analyzed_sync_source else None
             )
             item["sync_offset_source"] = (
                 str(analysis_payload.get("secondary_sync_source") or "manual")
-                if is_analyzed_sync_source or (supports_sync_analysis and analysis_payload.get("beep_time_ms_secondary") is not None)
+                if is_analyzed_sync_source
+                or (
+                    supports_sync_analysis
+                    and analysis_payload.get("beep_time_ms_secondary") is not None
+                )
                 else "manual"
             )
     split_rows_payload = []

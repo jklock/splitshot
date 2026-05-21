@@ -43,9 +43,7 @@ def project_has_metadata(path: str | Path) -> bool:
 def missing_required_project_dirs(path: str | Path) -> list[str]:
     project_path = resolve_project_path(path)
     return [
-        dirname
-        for dirname in REQUIRED_PROJECT_DIRNAMES
-        if not (project_path / dirname).is_dir()
+        dirname for dirname in REQUIRED_PROJECT_DIRNAMES if not (project_path / dirname).is_dir()
     ]
 
 
@@ -170,7 +168,9 @@ def _resolve_saved_paths(project: Project, project_path: Path) -> None:
         source.asset.path = resolve(source.asset.path)
     project.scoring.practiscore_source_path = resolve(project.scoring.practiscore_source_path)
     if project.scoring.imported_stage is not None:
-        project.scoring.imported_stage.source_path = resolve(project.scoring.imported_stage.source_path)
+        project.scoring.imported_stage.source_path = resolve(
+            project.scoring.imported_stage.source_path
+        )
     if project.export.output_path:
         project.export.output_path = resolve(project.export.output_path)
     for popup in project.popups:
@@ -179,17 +179,23 @@ def _resolve_saved_paths(project: Project, project_path: Path) -> None:
 
 
 def _normalize_project_assets(project: Project, project_path: Path) -> None:
-    project.primary_video.path = copy_path_to_project_subdir(project_path, project.primary_video.path, INPUT_DIRNAME)
+    project.primary_video.path = copy_path_to_project_subdir(
+        project_path, project.primary_video.path, INPUT_DIRNAME
+    )
 
     bundled_sources: list[MergeSource] = []
     for source in project.merge_sources:
         if source.asset.path:
-            source.asset.path = copy_path_to_project_subdir(project_path, source.asset.path, INPUT_DIRNAME)
+            source.asset.path = copy_path_to_project_subdir(
+                project_path, source.asset.path, INPUT_DIRNAME
+            )
         bundled_sources.append(source)
     project.merge_sources = bundled_sources
 
     if project.secondary_video is not None and project.secondary_video.path:
-        project.secondary_video.path = copy_path_to_project_subdir(project_path, project.secondary_video.path, INPUT_DIRNAME)
+        project.secondary_video.path = copy_path_to_project_subdir(
+            project_path, project.secondary_video.path, INPUT_DIRNAME
+        )
     if project.merge_sources:
         project.secondary_video = project.merge_sources[0].asset
 
@@ -237,6 +243,34 @@ def load_project(bundle_path: str | Path) -> Project:
     project = project_from_dict(json.loads(metadata_path.read_text()))
     _resolve_saved_paths(project, project_path)
     return project
+
+
+def list_recent_projects(limit: int = 10) -> list[dict]:
+    """List recently opened projects from the splitshot datadir."""
+    datadir = Path.home() / ".splitshot" / "projects"
+    if not datadir.exists():
+        return []
+
+    projects = []
+    for entry in sorted(datadir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if entry.is_dir():
+            project_file = entry / "project.json"
+            if project_file.exists():
+                try:
+                    data = json.loads(project_file.read_text())
+                    projects.append(
+                        {
+                            "name": data.get("name", entry.name),
+                            "path": str(entry),
+                            "last_opened": data.get("updated_at", ""),
+                        }
+                    )
+                except Exception:
+                    pass
+        if len(projects) >= limit:
+            break
+
+    return projects
 
 
 def delete_project(bundle_path: str | Path) -> None:

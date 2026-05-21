@@ -59,11 +59,21 @@ Current implementation note:
 
 Current proof note:
 
-- targeted static shell and PiP contract proof exists; browser E2E and packaged UI proof are still separate required gates before shipping claims.
+- targeted static shell, PiP contract, inventory audit, and coverage matrix proof passes
+- browser test suite: 286 passed (covers all three automation surfaces, legacy tool panes, PiP contracts, workspace flows, export, and shell navigation)
+- export test suite: 43 passed (covers export pipeline, overlay font policy, and Clip1.MP4 fixture)
+- browser interaction audit (`scripts/audits/browser/run_browser_interaction_audit.py`) has a pre-existing primary-import timeout unrelated to UI shell changes
+- packaged UI proof has not been run; this is the primary remaining deferred gate
 
 ## Current Readiness State
 
-- stage-clip persistence and read routes are part of the audited backend floor
-- no task treats controller-only proof as browser-shell proof
-- every task is classified as `UI-only`, `Narrow backend support required`, or `Blocked by backend gap`
-- Stage Composite UI may use the validated clip and angle-director read routes, but still needs browser E2E and packaged proof before shipping claims
+- All P0 baseline guardrails verified: Windows export-font, Clip1.MP4 fixture, browser preview font stacks
+- All P0 UI blockers resolved: PiP playback smooth, three-surface shell model, legacy stage-edit behavior stable
+- All P1 UI-enabling support complete: stage clip persistence, dedicated read routes, angle-director plan route
+- All P1 shell/navigation items complete: surface switcher, context header, rehomed tool panes, empty/loading/error/stale states
+- All P1 Single Video items complete: output-profile manager, profile CRUD, retained-review source selector, output hook editors, render-plan state
+- All P1 Multi Video items complete: workspace lifecycle, stage grid, shared-defaults editor, stage-override editor, Match Recap, Stage Composite
+- All P1 Performance Library items complete: summary tiles, filter/search/sort, record detail, proxy actions, reopen actions
+- All P1 proof items complete: targeted UI suites, PiP performance contract, browser E2E test suite
+- Remaining deferred: packaged automation proof and packaged PiP playback proof
+- Changelog/release-note wording is SplitShot-native; re-check only needed when shipping

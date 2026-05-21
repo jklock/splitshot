@@ -143,14 +143,19 @@ class _QtPageController:
         if not finished["value"]:
             raise RuntimeError(f"Timed out loading {url}.")
 
-    def evaluate(self, script: str, argument: object | None = None, *, timeout_ms: int = _TASK_TIMEOUT_MS) -> Any:
+    def evaluate(
+        self, script: str, argument: object | None = None, *, timeout_ms: int = _TASK_TIMEOUT_MS
+    ) -> Any:
         self._ensure_open()
         loop = QEventLoop()
         timer = QTimer()
         timer.setSingleShot(True)
         result: dict[str, Any] = {}
-        base_expression = f"({script})({json.dumps(argument)})" if argument is not None else f"({script})()"
-        expression = """
+        base_expression = (
+            f"({script})({json.dumps(argument)})" if argument is not None else f"({script})()"
+        )
+        expression = (
+            """
 (() => {
     const value = %s;
     if (value === undefined) return '__splitshot_undefined__';
@@ -163,7 +168,9 @@ class _QtPageController:
         return JSON.stringify(String(value));
     }
 })()
-""" % base_expression
+"""
+            % base_expression
+        )
 
         def _done(value: Any) -> None:
             result["value"] = value
@@ -242,7 +249,9 @@ class _QtRuntimeOwner:
         set_cache_path = getattr(self._profile, "setCachePath", None)
         if callable(set_cache_path):
             set_cache_path(str(cache_path))
-        self._profile.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+        self._profile.setPersistentCookiesPolicy(
+            QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+        )
         self._cookie_store = self._profile.cookieStore()
         self._cookies: dict[tuple[str, str, bytes], dict[str, object]] = {}
         self._cookie_store.cookieAdded.connect(self._cookie_added)
@@ -292,7 +301,9 @@ class _QtRuntimeOwner:
             origin_host = domain.lstrip(".") or "practiscore.com"
             origin_path = path if path.startswith("/") else f"/{path}"
             origin_scheme = "https" if cookie.isSecure() else "http"
-            self._cookie_store.setCookie(cookie, QUrl(f"{origin_scheme}://{origin_host}{origin_path}"))
+            self._cookie_store.setCookie(
+                cookie, QUrl(f"{origin_scheme}://{origin_host}{origin_path}")
+            )
         self._refresh_cookies()
 
     def stop(self) -> None:
@@ -340,12 +351,18 @@ class QtPractiScorePage:
         self._invoker = invoker
         self._controller = controller
 
-    def goto(self, url: str, wait_until: str = "domcontentloaded", timeout: int = _TASK_TIMEOUT_MS) -> None:
+    def goto(
+        self, url: str, wait_until: str = "domcontentloaded", timeout: int = _TASK_TIMEOUT_MS
+    ) -> None:
         del wait_until
-        self._invoker.call(lambda: self._controller.goto(url, timeout_ms=timeout), timeout_ms=timeout)
+        self._invoker.call(
+            lambda: self._controller.goto(url, timeout_ms=timeout), timeout_ms=timeout
+        )
 
     def evaluate(self, script: str, argument: object | None = None) -> Any:
-        return self._invoker.call(lambda: self._controller.evaluate(script, argument), timeout_ms=_TASK_TIMEOUT_MS)
+        return self._invoker.call(
+            lambda: self._controller.evaluate(script, argument), timeout_ms=_TASK_TIMEOUT_MS
+        )
 
     def content(self) -> str:
         return self._invoker.call(self._controller.content, timeout_ms=_TASK_TIMEOUT_MS)

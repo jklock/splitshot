@@ -117,7 +117,9 @@ def import_primary_video(page: Page) -> None:
         """,
         str(PRIMARY_VIDEO),
     )
-    page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    page.wait_for_function(
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
+    )
     page.wait_for_function(
         """
         () => {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime, timezone
 from inspect import Parameter, signature
 from pathlib import Path
 import re
@@ -951,10 +952,7 @@ class ProjectController(QObject):
             return None
         stage_profiles = {}
         for output_id, profile in self._output_profiles.items():
-            if (
-                profile.scope_type == "stage"
-                and profile.scope_id in self.workspace.stage_entries
-            ):
+            if profile.scope_type == "stage" and profile.scope_id in self.workspace.stage_entries:
                 stage_profiles[output_id] = self._output_profile_to_dict_safe(profile)
         return {
             "workspace": workspace_snapshot,
@@ -977,8 +975,7 @@ class ProjectController(QObject):
             output_id: profile
             for output_id, profile in self._output_profiles.items()
             if not (
-                profile.scope_type == "stage"
-                and profile.scope_id in self.workspace.stage_entries
+                profile.scope_type == "stage" and profile.scope_id in self.workspace.stage_entries
             )
         }
         for stage_id in self.workspace.stage_entries:
@@ -1164,6 +1161,61 @@ class ProjectController(QObject):
         self.workspace.updated_at = _utc_now()
         self._set_status(f"Reset overrides for stage {stage_id}.")
         self.project_changed.emit()
+
+    def workspace_apply_from_first(self, settings: dict | None = None) -> dict:
+        """Apply Stage 1 settings to all sibling stages."""
+        if not self.workspace:
+            return {"error": "No workspace open"}
+        workspace = self.workspace
+        entries = list(workspace.stage_entries.values())
+        if len(entries) < 2:
+            return {"error": "Need at least 2 stages"}
+
+        first_stage = entries[0]
+        workspace.first_stage_snapshot = {
+            "stage_id": first_stage.stage_id,
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        applied = 0
+        for entry in entries[1:]:
+            if not entry.stage_id:
+                continue
+            entry.inherited_from_first = True
+            applied += 1
+
+        self._touch_workspace()
+        return {"applied": True, "stages_updated": applied}
+
+    def workspace_apply_from_first_preview(self) -> dict:
+        """Preview what would change before applying."""
+        if not self.workspace:
+            return {"error": "No workspace open"}
+        entries = list(self.workspace.stage_entries.values())
+        if len(entries) < 2:
+            return {"preview": []}
+
+        changes = []
+        for entry in entries[1:]:
+            if not entry.stage_id:
+                continue
+            changes.append(
+                {
+                    "stage_id": entry.stage_id,
+                    "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                    "current_status": entry.status,
+                }
+            )
+
+        return {
+            "preview": changes,
+            "source_stage": entries[0].display_name or "Stage 1",
+        }
+
+    def _touch_workspace(self) -> None:
+        """Update workspace timestamp."""
+        if self.workspace:
+            self.workspace.updated_at = datetime.now(timezone.utc)
 
     # ── Library sync ────────────────────────────────────────────────
 
@@ -1631,8 +1683,7 @@ class ProjectController(QObject):
             "subject_track_crop": profile.subject_track_crop,
             "visibility_recipe": profile.visibility_recipe,
             "angle_director_plan": [
-                self._angle_director_cut_to_dict(cut)
-                for cut in profile.angle_director_plan
+                self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
             ],
             "retained_proxy_id": profile.retained_proxy_id,
             "last_rendered_at": profile.last_rendered_at.isoformat()
@@ -1679,8 +1730,8 @@ class ProjectController(QObject):
     def output_profile_render(self, output_id: str) -> dict:
         """Request render of a specific output profile.
 
-        Returns render plan with Run Window, Metric Captions, Frame Profile,
-        Lead-In Card, Brand Mark settings resolved.
+        Returns render plan with Trim Dead Time, Shot Data on Screen, Video Shape,
+        Opening Title, Your Logo settings resolved.
 
         If profile not found, falls back to legacy Project.export settings.
         """
@@ -1774,8 +1825,7 @@ class ProjectController(QObject):
             "subject_track_crop": dict(profile.subject_track_crop),
             "visibility_recipe": dict(profile.visibility_recipe),
             "angle_director_plan": [
-                self._angle_director_cut_to_dict(cut)
-                for cut in profile.angle_director_plan
+                self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
             ],
             "retained_proxy_id": profile.retained_proxy_id,
             "last_rendered_at": profile.last_rendered_at.isoformat()
@@ -1783,10 +1833,10 @@ class ProjectController(QObject):
             else None,
         }
 
-    # ── Run Window ──────────────────────────────────────────────────
+    # ── Trim Dead Time ───────────────────────────────────────────────
 
     def _resolve_run_window(self, profile) -> dict:
-        """Resolve Run Window from reviewed timing truth.
+        """Resolve Trim Dead Time from reviewed timing truth.
 
         Derives effective stage window from beep time and last shot,
         with configurable lead-in and tail padding from the profile.
@@ -1813,7 +1863,7 @@ class ProjectController(QObject):
             "tail_padding_ms": tail_pad,
         }
 
-    # ── Metric Captions ─────────────────────────────────────────────
+    # ── Shot Data on Screen ────────────────────────────────────────
 
     def resolve_metric_captions(self, output_id: str) -> dict:
         """Resolve metric captions from reviewed truth for a given output profile."""
@@ -1914,8 +1964,7 @@ class ProjectController(QObject):
             "clip_count": len(clips),
             "clips": clips,
             "angle_director_plan": [
-                self._angle_director_cut_to_dict(cut)
-                for cut in profile.angle_director_plan
+                self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
             ],
             "render_settings": {
                 "frame_profile": profile.frame_profile,
@@ -2065,7 +2114,9 @@ class ProjectController(QObject):
         if not generated.get("success"):
             return generated
 
-        persisted_plan = [self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan]
+        persisted_plan = [
+            self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
+        ]
         cut_plan = persisted_plan or generated["cut_plan"]
         return {
             "success": True,

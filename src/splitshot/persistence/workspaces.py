@@ -66,7 +66,9 @@ def workspace_stage_path(workspace_path: str | Path, stage_id: str) -> Path:
 
 def _workspace_to_dict(workspace: MatchWorkspace) -> dict:
     data = _serialize(workspace)
-    data["match_output_profiles"] = [_output_profile_to_dict(p) for p in workspace.match_output_profiles]
+    data["match_output_profiles"] = [
+        _output_profile_to_dict(p) for p in workspace.match_output_profiles
+    ]
     return data
 
 
@@ -88,11 +90,11 @@ def _output_profile_to_dict(profile: OutputProfile) -> dict:
         "brand_mark": profile.brand_mark,
         "subject_track_crop": profile.subject_track_crop,
         "visibility_recipe": profile.visibility_recipe,
-        "angle_director_plan": [
-            _serialize(item) for item in profile.angle_director_plan
-        ],
+        "angle_director_plan": [_serialize(item) for item in profile.angle_director_plan],
         "retained_proxy_id": profile.retained_proxy_id,
-        "last_rendered_at": profile.last_rendered_at.isoformat() if profile.last_rendered_at else None,
+        "last_rendered_at": profile.last_rendered_at.isoformat()
+        if profile.last_rendered_at
+        else None,
     }
 
 
@@ -123,9 +125,7 @@ def _stage_entry_from_dict(data: dict) -> StageEntry:
         stage_number=None if stage_number in {None, ""} else int(stage_number),
         status=str(data.get("status", "incomplete")),
         override_values=(
-            data.get("override_values", {})
-            if isinstance(data.get("override_values"), dict)
-            else {}
+            data.get("override_values", {}) if isinstance(data.get("override_values"), dict) else {}
         ),
         last_reviewed_at=(
             None
@@ -168,15 +168,9 @@ def _output_profile_from_dict(data: dict) -> OutputProfile:
             else {}
         ),
         lead_in_card=(
-            data.get("lead_in_card", {})
-            if isinstance(data.get("lead_in_card"), dict)
-            else {}
+            data.get("lead_in_card", {}) if isinstance(data.get("lead_in_card"), dict) else {}
         ),
-        brand_mark=(
-            data.get("brand_mark", {})
-            if isinstance(data.get("brand_mark"), dict)
-            else {}
-        ),
+        brand_mark=(data.get("brand_mark", {}) if isinstance(data.get("brand_mark"), dict) else {}),
         subject_track_crop=(
             data.get("subject_track_crop", {})
             if isinstance(data.get("subject_track_crop"), dict)
@@ -188,9 +182,7 @@ def _output_profile_from_dict(data: dict) -> OutputProfile:
             else {}
         ),
         angle_director_plan=angle_director_plan,
-        retained_proxy_id=(
-            None if retained_proxy_id in {None, ""} else str(retained_proxy_id)
-        ),
+        retained_proxy_id=(None if retained_proxy_id in {None, ""} else str(retained_proxy_id)),
         last_rendered_at=(
             None
             if last_rendered_at in {None, ""}
@@ -213,20 +205,11 @@ def _workspace_from_dict(data: dict) -> MatchWorkspace:
         updated_at=datetime.now(UTC)
         if updated_at_str in {None, ""}
         else datetime.fromisoformat(str(updated_at_str)),
-        stage_order=[
-            str(item)
-            for item in (data.get("stage_order") or [])
-        ],
+        stage_order=[str(item) for item in (data.get("stage_order") or [])],
         shared_defaults=(
-            data.get("shared_defaults", {})
-            if isinstance(data.get("shared_defaults"), dict)
-            else {}
+            data.get("shared_defaults", {}) if isinstance(data.get("shared_defaults"), dict) else {}
         ),
-        ui_state=(
-            data.get("ui_state", {})
-            if isinstance(data.get("ui_state"), dict)
-            else {}
-        ),
+        ui_state=(data.get("ui_state", {}) if isinstance(data.get("ui_state"), dict) else {}),
         schema_version=int(data.get("schema_version", 1)),
     )
 
@@ -242,9 +225,7 @@ def _workspace_from_dict(data: dict) -> MatchWorkspace:
     if isinstance(raw_profiles, list):
         for item in raw_profiles:
             if isinstance(item, dict):
-                workspace.match_output_profiles.append(
-                    _output_profile_from_dict(item)
-                )
+                workspace.match_output_profiles.append(_output_profile_from_dict(item))
 
     return workspace
 

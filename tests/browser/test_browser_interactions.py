@@ -9,7 +9,10 @@ from playwright.sync_api import sync_playwright
 
 import splitshot.browser.server as browser_server_module
 from splitshot.browser.server import BrowserControlServer
-from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch, SelectedRemoteMatchArtifacts
+from splitshot.scoring.practiscore_web_extract import (
+    RemotePractiScoreMatch,
+    SelectedRemoteMatchArtifacts,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -55,7 +58,11 @@ def _select_waveform_shot(page, index: int = 0) -> dict[str, int | str] | None:
 
 
 def _shot_linked_popup_count(page) -> int:
-    return int(page.evaluate("(state?.project?.popups || []).filter((item) => item.anchor_mode === 'shot' && item.shot_id).length"))
+    return int(
+        page.evaluate(
+            "(state?.project?.popups || []).filter((item) => item.anchor_mode === 'shot' && item.shot_id).length"
+        )
+    )
 
 
 def _import_shot_linked_markers(page) -> None:
@@ -114,8 +121,8 @@ def _drag_popup_badge(page, popup_id: str, delta_x: float, delta_y: float) -> No
 
 
 def _drag_overlay_badge(page, kind: str, delta_x: float, delta_y: float) -> None:
-        page.evaluate(
-                """({ kind, deltaX, deltaY }) => {
+    page.evaluate(
+        """({ kind, deltaX, deltaY }) => {
                     const badge = document.querySelector(`#video-stage [data-overlay-drag="${kind}"]`);
                     if (!(badge instanceof HTMLElement)) return false;
                     const rect = badge.getBoundingClientRect();
@@ -150,8 +157,8 @@ def _drag_overlay_badge(page, kind: str, delta_x: float, delta_y: float) -> None
                     }));
                     return true;
                 }""",
-                {"kind": kind, "deltaX": delta_x, "deltaY": delta_y},
-        )
+        {"kind": kind, "deltaX": delta_x, "deltaY": delta_y},
+    )
 
 
 def _ensure_overlay_visible(page) -> None:
@@ -284,7 +291,9 @@ def _build_remote_match_artifacts(tmp_path: Path, remote_id: str) -> SelectedRem
 
 def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypatch) -> None:
     opened_urls: list[str] = []
-    monkeypatch.setattr(browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True)
+    monkeypatch.setattr(
+        browser_server_module.webbrowser, "open", lambda url, new=0: opened_urls.append(url) or True
+    )
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
     try:
@@ -300,7 +309,9 @@ def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypa
         server.shutdown()
 
 
-def test_project_pane_practiscore_and_primary_controls_enable_after_project_create(tmp_path: Path) -> None:
+def test_project_pane_practiscore_and_primary_controls_enable_after_project_create(
+    tmp_path: Path,
+) -> None:
     notices: list[str] = []
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
@@ -312,12 +323,17 @@ def test_project_pane_practiscore_and_primary_controls_enable_after_project_crea
             try:
                 _open_tool(page, "project")
                 assert page.locator("#project-path").input_value() == ""
-                assert page.locator("#project-path").get_attribute("placeholder") == "Please create / select project"
+                assert (
+                    page.locator("#project-path").get_attribute("placeholder")
+                    == "Please create / select project"
+                )
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
                 assert page.locator("#browse-primary-path").is_disabled() is True
 
-                page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'created-project.ssproj'))})")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'created-project.ssproj'))})"
+                )
                 page.wait_for_function("() => Boolean(state?.project?.path)")
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is False
                 assert page.locator("#import-practiscore").is_disabled() is False
@@ -331,7 +347,9 @@ def test_project_pane_practiscore_and_primary_controls_enable_after_project_crea
         server.shutdown()
 
 
-def test_project_pane_manual_practiscore_file_import_remains_functional_with_active_project(tmp_path: Path) -> None:
+def test_project_pane_manual_practiscore_file_import_remains_functional_with_active_project(
+    tmp_path: Path,
+) -> None:
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
     try:
@@ -339,14 +357,23 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
             browser, page = _open_test_page(playwright, server)
             try:
                 _open_tool(page, "project")
-                page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'manual-import.ssproj'))})")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'manual-import.ssproj'))})"
+                )
                 page.wait_for_function("() => Boolean(state?.project?.path)")
-                page.locator("#practiscore-file-input").set_input_files(str(EXAMPLES_DIR / "IDPA" / "IDPA.csv"))
+                page.locator("#practiscore-file-input").set_input_files(
+                    str(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
+                )
                 page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
                 page.wait_for_function("() => state?.practiscore_options?.has_source === true")
 
                 assert page.locator("#import-practiscore").is_enabled() is True
-                assert page.locator("#practiscore-status").text_content().strip().startswith("IDPA Stage")
+                assert (
+                    page.locator("#practiscore-status")
+                    .text_content()
+                    .strip()
+                    .startswith("IDPA Stage")
+                )
                 assert page.locator("#match-competitor-name option").count() > 1
             finally:
                 browser.close()
@@ -354,7 +381,9 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
         server.shutdown()
 
 
-def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing(tmp_path: Path) -> None:
+def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing(
+    tmp_path: Path,
+) -> None:
     project_path = tmp_path / "partial.ssproj"
     project_path.mkdir(parents=True, exist_ok=True)
     (project_path / "Input").mkdir()
@@ -381,7 +410,9 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
         server.shutdown()
 
 
-def test_waveform_controls_expand_zoom_and_amplitude_update_project_state(synthetic_video_factory) -> None:
+def test_waveform_controls_expand_zoom_and_amplitude_update_project_state(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="waveform-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -396,23 +427,42 @@ def test_waveform_controls_expand_zoom_and_amplitude_update_project_state(synthe
                 expand_button.click()
                 page.wait_for_timeout(150)
                 assert expand_button.text_content().strip() == "Collapse"
-                assert page.locator("#cockpit-root").evaluate("element => element.classList.contains('waveform-expanded')") is True
+                assert (
+                    page.locator("#cockpit-root").evaluate(
+                        "element => element.classList.contains('waveform-expanded')"
+                    )
+                    is True
+                )
 
-                zoom_before = float(page.evaluate("Number(localStorage.getItem('splitshot.waveform.zoomX'))"))
+                zoom_before = float(
+                    page.evaluate("Number(localStorage.getItem('splitshot.waveform.zoomX'))")
+                )
                 page.locator("#zoom-waveform-in").click()
                 page.wait_for_timeout(150)
-                zoom_after = float(page.evaluate("Number(localStorage.getItem('splitshot.waveform.zoomX'))"))
+                zoom_after = float(
+                    page.evaluate("Number(localStorage.getItem('splitshot.waveform.zoomX'))")
+                )
                 assert zoom_after > zoom_before
 
                 page.locator('button[data-waveform-mode="add"]').click()
                 page.wait_for_timeout(100)
                 assert page.evaluate("waveformMode") == "add"
-                assert page.locator('button[data-waveform-mode="add"]').evaluate("button => button.classList.contains('active')") is True
+                assert (
+                    page.locator('button[data-waveform-mode="add"]').evaluate(
+                        "button => button.classList.contains('active')"
+                    )
+                    is True
+                )
 
                 page.locator('button[data-waveform-mode="select"]').click()
                 page.wait_for_timeout(100)
                 assert page.evaluate("waveformMode") == "select"
-                assert page.locator('button[data-waveform-mode="select"]').evaluate("button => button.classList.contains('active')") is True
+                assert (
+                    page.locator('button[data-waveform-mode="select"]').evaluate(
+                        "button => button.classList.contains('active')"
+                    )
+                    is True
+                )
 
                 first_card = page.locator(".waveform-shot-card").first
                 first_card.click(force=True)
@@ -420,44 +470,63 @@ def test_waveform_controls_expand_zoom_and_amplitude_update_project_state(synthe
                 selected_shot_id = page.evaluate("selectedShotId")
                 assert selected_shot_id is not None
 
-                amplitude_before = float(page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1"))
+                amplitude_before = float(
+                    page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1")
+                )
                 page.locator("#amp-waveform-in").click()
                 page.wait_for_timeout(250)
-                amplitude_after = float(page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1"))
+                amplitude_after = float(
+                    page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1")
+                )
                 assert amplitude_after > amplitude_before
 
                 page.locator("#reset-waveform-view").click()
                 page.wait_for_timeout(150)
                 assert float(page.evaluate("waveformZoomX")) == 1.0
                 assert float(page.evaluate("waveformOffsetMs")) == 0.0
-                assert float(page.evaluate("Number(localStorage.getItem('splitshot.waveform.zoomX') ?? 1)")) == 1.0
-                assert float(page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs') ?? 0)")) == 0.0
+                assert (
+                    float(
+                        page.evaluate(
+                            "Number(localStorage.getItem('splitshot.waveform.zoomX') ?? 1)"
+                        )
+                    )
+                    == 1.0
+                )
+                assert (
+                    float(
+                        page.evaluate(
+                            "Number(localStorage.getItem('splitshot.waveform.offsetMs') ?? 0)"
+                        )
+                    )
+                    == 0.0
+                )
                 assert float(page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1")) == 1.0
             finally:
-                                browser.close()
+                browser.close()
     finally:
         server.shutdown()
 
 
 def test_waveform_pan_drag_updates_zoomed_viewport_offset(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="waveform-pan-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                page.locator("#expand-waveform").click()
-                                page.wait_for_timeout(150)
-                                page.locator("#zoom-waveform-in").click()
-                                page.wait_for_timeout(150)
+    primary_path = Path(synthetic_video_factory(name="waveform-pan-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                page.locator("#expand-waveform").click()
+                page.wait_for_timeout(150)
+                page.locator("#zoom-waveform-in").click()
+                page.wait_for_timeout(150)
 
-                                waveform_box = page.locator("#waveform").bounding_box()
-                                assert waveform_box is not None
-                                start_offset = float(page.evaluate("waveformOffsetMs"))
-                                empty_x = float(page.evaluate(
-                                        """
+                waveform_box = page.locator("#waveform").bounding_box()
+                assert waveform_box is not None
+                start_offset = float(page.evaluate("waveformOffsetMs"))
+                empty_x = float(
+                    page.evaluate(
+                        """
                                         () => {
                                             const canvas = document.getElementById('waveform');
                                             const rect = canvas.getBoundingClientRect();
@@ -478,40 +547,41 @@ def test_waveform_pan_drag_updates_zoomed_viewport_offset(synthetic_video_factor
                                             return rect.width - 24;
                                         }
                                         """
-                                ))
-                                drag_delta = -160 if empty_x > waveform_box["width"] / 2 else 160
-                                start_x = waveform_box["x"] + empty_x
-                                start_y = waveform_box["y"] + waveform_box["height"] / 2
+                    )
+                )
+                drag_delta = -160 if empty_x > waveform_box["width"] / 2 else 160
+                start_x = waveform_box["x"] + empty_x
+                start_y = waveform_box["y"] + waveform_box["height"] / 2
 
-                                page.mouse.move(start_x, start_y)
-                                page.mouse.down()
-                                page.mouse.move(start_x + drag_delta, start_y, steps=12)
-                                page.mouse.up()
-                                page.wait_for_function(
-                                        "(before) => waveformOffsetMs !== before",
-                                        arg=start_offset,
-                                )
-                                assert float(page.evaluate("waveformOffsetMs")) != start_offset
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                page.mouse.move(start_x, start_y)
+                page.mouse.down()
+                page.mouse.move(start_x + drag_delta, start_y, steps=12)
+                page.mouse.up()
+                page.wait_for_function(
+                    "(before) => waveformOffsetMs !== before",
+                    arg=start_offset,
+                )
+                assert float(page.evaluate("waveformOffsetMs")) != start_offset
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_waveform_shot_drag_moves_selected_shot_time(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="waveform-drag-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                page.locator("#expand-waveform").click()
-                                page.wait_for_timeout(150)
+    primary_path = Path(synthetic_video_factory(name="waveform-drag-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                page.locator("#expand-waveform").click()
+                page.wait_for_timeout(150)
 
-                                shot_info = page.evaluate(
-                                        """
+                shot_info = page.evaluate(
+                    """
                                         () => {
                                             const canvas = document.getElementById('waveform');
                                             const rect = canvas.getBoundingClientRect();
@@ -527,42 +597,44 @@ def test_waveform_shot_drag_moves_selected_shot_time(synthetic_video_factory) ->
                                             };
                                         }
                                         """
-                                )
-                                assert shot_info is not None
-                                waveform_box = page.locator("#waveform").bounding_box()
-                                assert waveform_box is not None
+                )
+                assert shot_info is not None
+                waveform_box = page.locator("#waveform").bounding_box()
+                assert waveform_box is not None
 
-                                start_x = waveform_box["x"] + float(shot_info["x"])
-                                start_y = waveform_box["y"] + waveform_box["height"] / 2
-                                move_delta = 120 if shot_info["x"] < waveform_box["width"] - 160 else -120
+                start_x = waveform_box["x"] + float(shot_info["x"])
+                start_y = waveform_box["y"] + waveform_box["height"] / 2
+                move_delta = 120 if shot_info["x"] < waveform_box["width"] - 160 else -120
 
-                                page.mouse.move(start_x, start_y)
-                                page.mouse.down()
-                                page.mouse.move(start_x + move_delta, start_y, steps=12)
-                                page.mouse.up()
-                                page.wait_for_function(
-                                        """({ shotId, originalTime }) => {
+                page.mouse.move(start_x, start_y)
+                page.mouse.down()
+                page.mouse.move(start_x + move_delta, start_y, steps=12)
+                page.mouse.up()
+                page.wait_for_function(
+                    """({ shotId, originalTime }) => {
                                             const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
                                             return Boolean(shot) && shot.time_ms !== originalTime;
                                         }""",
-                                        arg={"shotId": shot_info["id"], "originalTime": shot_info["timeMs"]},
-                                )
-                                updated_time = page.evaluate(
-                                        """(shotId) => {
+                    arg={"shotId": shot_info["id"], "originalTime": shot_info["timeMs"]},
+                )
+                updated_time = page.evaluate(
+                    """(shotId) => {
                                             const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
                                             return shot ? shot.time_ms : null;
                                         }""",
-                                        shot_info["id"],
-                                )
-                                assert updated_time is not None
-                                assert updated_time != shot_info["timeMs"]
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                    shot_info["id"],
+                )
+                assert updated_time is not None
+                assert updated_time != shot_info["timeMs"]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
-def test_overlay_visibility_and_badge_toggles_round_trip_through_browser_ui(synthetic_video_factory) -> None:
+def test_overlay_visibility_and_badge_toggles_round_trip_through_browser_ui(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="overlay-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -682,8 +754,13 @@ def test_review_add_custom_text_box_creates_editor_card(synthetic_video_factory)
                 page.evaluate("document.getElementById('review-add-text-box').click()")
                 page.wait_for_timeout(500)
 
-                assert int(page.evaluate("state.project.overlay.text_boxes.length")) == before_boxes + 1
-                assert page.locator("#review-text-box-list .text-box-card").count() == before_cards + 1
+                assert (
+                    int(page.evaluate("state.project.overlay.text_boxes.length"))
+                    == before_boxes + 1
+                )
+                assert (
+                    page.locator("#review-text-box-list .text-box-card").count() == before_cards + 1
+                )
             finally:
                 browser.close()
     finally:
@@ -724,7 +801,7 @@ def test_review_text_box_drag_updates_overlay_coordinates(synthetic_video_factor
                     "(count) => document.querySelectorAll('#review-text-box-list .text-box-card').length > count",
                     arg=before_cards,
                 )
-                new_card = page.locator('#review-text-box-list .text-box-card').nth(before_cards)
+                new_card = page.locator("#review-text-box-list .text-box-card").nth(before_cards)
                 new_card.locator('[data-text-box-action="toggle"]').click()
                 new_card.locator('textarea[data-text-box-field="text"]').fill("Review note")
                 page.wait_for_timeout(250)
@@ -776,7 +853,11 @@ def test_review_text_box_drag_updates_overlay_coordinates(synthetic_video_factor
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
                       return Boolean(box) && (box.x !== originalX || box.y !== originalY);
                     }""",
-                    arg={"boxId": before_box["id"], "originalX": before_box["x"], "originalY": before_box["y"]},
+                    arg={
+                        "boxId": before_box["id"],
+                        "originalX": before_box["x"],
+                        "originalY": before_box["y"],
+                    },
                 )
                 after_box = page.evaluate(
                     """(boxId) => {
@@ -793,7 +874,9 @@ def test_review_text_box_drag_updates_overlay_coordinates(synthetic_video_factor
         server.shutdown()
 
 
-def test_review_text_box_color_swatches_and_opacity_update_live_preview(synthetic_video_factory) -> None:
+def test_review_text_box_color_swatches_and_opacity_update_live_preview(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="review-style-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -826,7 +909,9 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(syntheti
                     }""",
                     box_id,
                 )
-                new_card = page.locator(f'#review-text-box-list .text-box-card[data-box-id="{box_id}"]')
+                new_card = page.locator(
+                    f'#review-text-box-list .text-box-card[data-box-id="{box_id}"]'
+                )
                 new_card.locator('textarea[data-text-box-field="text"]').wait_for(state="visible")
                 new_card.locator('textarea[data-text-box-field="text"]').fill("Style note")
                 page.wait_for_function(
@@ -842,7 +927,9 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(syntheti
 
                 def set_hex(field: str, hex_value: str) -> None:
                     new_card.locator(f'[data-text-box-field="{field}"]').click(force=True)
-                    page.wait_for_function("() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null")
+                    page.wait_for_function(
+                        "() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null"
+                    )
                     page.evaluate(
                         """({ value }) => {
                             const input = document.getElementById('color-picker-hex');
@@ -852,7 +939,9 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(syntheti
                         {"value": hex_value},
                     )
                     page.locator("#close-color-picker").click()
-                    page.wait_for_function("() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null")
+                    page.wait_for_function(
+                        "() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null"
+                    )
                     page.wait_for_function(
                         """({ boxId, field, value }) => {
                           const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -864,9 +953,13 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(syntheti
                 set_hex("background_color", "#ff0000")
 
                 new_card.locator('[data-text-box-field="text_color"]').click(force=True)
-                page.wait_for_function("() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null")
+                page.wait_for_function(
+                    "() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null"
+                )
                 page.locator("#close-color-picker").click()
-                page.wait_for_function("() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null")
+                page.wait_for_function(
+                    "() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null"
+                )
                 new_card.locator('input[aria-label="Text box text hex value"]').evaluate(
                     """(input, nextValue) => {
                         input.value = nextValue;
@@ -934,7 +1027,9 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(syntheti
         server.shutdown()
 
 
-def test_review_text_box_source_switches_to_imported_summary_and_renders_after_final_shot(synthetic_video_factory) -> None:
+def test_review_text_box_source_switches_to_imported_summary_and_renders_after_final_shot(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="review-imported-source-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -958,7 +1053,9 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 assert box_id
 
                 new_card.locator('[data-text-box-action="toggle"]').click()
-                new_card.locator('select[data-text-box-field="source"]').select_option("imported_summary")
+                new_card.locator('select[data-text-box-field="source"]').select_option(
+                    "imported_summary"
+                )
                 page.wait_for_function(
                     """(boxId) => {
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -979,10 +1076,16 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                     arg={"boxId": box_id, "text": override_text},
                 )
 
-                hint_text = (new_card.locator('[data-text-box-hint="true"]').text_content() or "").strip().lower()
+                hint_text = (
+                    (new_card.locator('[data-text-box-hint="true"]').text_content() or "")
+                    .strip()
+                    .lower()
+                )
                 assert "imported summary" in hint_text or "final score badge" in hint_text
 
-                final_shot_ms = int(page.evaluate("(state?.project?.analysis?.shots || []).at(-1)?.time_ms ?? 0"))
+                final_shot_ms = int(
+                    page.evaluate("(state?.project?.analysis?.shots || []).at(-1)?.time_ms ?? 0")
+                )
                 page.evaluate(
                     """(targetMs) => {
                       const video = document.getElementById('primary-video');
@@ -1003,7 +1106,9 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
         server.shutdown()
 
 
-def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_stage(synthetic_video_factory) -> None:
+def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_stage(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="review-position-lock-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1032,38 +1137,40 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                     }""",
                     box_id,
                 )
-                new_card = page.locator(f'#review-text-box-list .text-box-card[data-box-id="{box_id}"]')
+                new_card = page.locator(
+                    f'#review-text-box-list .text-box-card[data-box-id="{box_id}"]'
+                )
                 new_card.locator('textarea[data-text-box-field="text"]').wait_for(state="visible")
                 rendered_box = page.locator(f'#custom-overlay [data-text-box-id="{box_id}"]')
 
                 if new_card.locator('textarea[data-text-box-field="text"]').count() == 1:
-                                new_card.locator('textarea[data-text-box-field="text"]').evaluate(
-                                        """(input, nextValue) => {
+                    new_card.locator('textarea[data-text-box-field="text"]').evaluate(
+                        """(input, nextValue) => {
                                             input.value = nextValue;
                                             input.dispatchEvent(new Event('input', { bubbles: true }));
                                             input.dispatchEvent(new Event('change', { bubbles: true }));
                                         }""",
-                                        "Review note",
-                                )
-                                page.wait_for_function(
-                                        """(boxId) => {
+                        "Review note",
+                    )
+                    page.wait_for_function(
+                        """(boxId) => {
                                             const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
                                             return Boolean(box) && box.text === 'Review note';
                                         }""",
-                                        arg=box_id,
-                                )
+                        arg=box_id,
+                    )
                 rendered_box.wait_for(state="visible")
                 initial_box = None
                 if rendered_box.is_visible():
-                                initial_box = page.evaluate(
-                                        """(boxId) => {
+                    initial_box = page.evaluate(
+                        """(boxId) => {
                                             const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
                                             if (!(badge instanceof HTMLElement)) return null;
                                             const rect = badge.getBoundingClientRect();
                                             return { width: rect.width, height: rect.height };
                                         }""",
-                                        box_id,
-                                )
+                        box_id,
+                    )
                 assert initial_box is not None
 
                 new_card.locator('select[data-text-box-field="quadrant"]').select_option("custom")
@@ -1107,14 +1214,14 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                 rendered_box.wait_for(state="visible")
                 if rendered_box.is_visible():
                     stable_updated_box = page.evaluate(
-                                        """(boxId) => {
+                        """(boxId) => {
                                             const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
                                             if (!(badge instanceof HTMLElement)) return null;
                                             const rect = badge.getBoundingClientRect();
                                             return { width: rect.width, height: rect.height };
                                         }""",
-                                        box_id,
-                                )
+                        box_id,
+                    )
                     assert stable_updated_box is not None
                     assert stable_updated_box["width"] > initial_box["width"]
                     assert stable_updated_box["height"] >= initial_box["height"]
@@ -1138,13 +1245,13 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
 
                 lock_checkbox = new_card.locator('input[data-text-box-field="lock_to_stack"]')
                 if lock_checkbox.count() == 1:
-                                lock_checkbox.evaluate(
-                                        """(checkbox) => {
+                    lock_checkbox.evaluate(
+                        """(checkbox) => {
                                             checkbox.checked = true;
                                             checkbox.dispatchEvent(new Event('input', { bubbles: true }));
                                             checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                                         }"""
-                                )
+                    )
                 page.wait_for_function(
                     """(boxId) => {
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -1152,20 +1259,27 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
                     }""",
                     arg=box_id,
                 )
-                assert new_card.locator('select[data-text-box-field="quadrant"]').is_disabled() is True
+                assert (
+                    new_card.locator('select[data-text-box-field="quadrant"]').is_disabled() is True
+                )
                 assert new_card.locator('input[data-text-box-field="x"]').is_disabled() is True
                 assert new_card.locator('input[data-text-box-field="y"]').is_disabled() is True
-                hint_text = (new_card.locator('[data-text-box-hint="true"]').text_content() or "").strip()
-                assert hint_text == "Locked to the shot stack. Disable this to edit placement directly."
+                hint_text = (
+                    new_card.locator('[data-text-box-hint="true"]').text_content() or ""
+                ).strip()
+                assert (
+                    hint_text
+                    == "Locked to the shot stack. Disable this to edit placement directly."
+                )
 
                 if lock_checkbox.is_checked():
-                                lock_checkbox.evaluate(
-                                        """(checkbox) => {
+                    lock_checkbox.evaluate(
+                        """(checkbox) => {
                                             checkbox.checked = false;
                                             checkbox.dispatchEvent(new Event('input', { bubbles: true }));
                                             checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                                         }"""
-                                )
+                    )
                 page.wait_for_function(
                     """(boxId) => {
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -1179,7 +1293,9 @@ def test_review_text_box_custom_position_size_and_stack_lock_update_state_and_st
         server.shutdown()
 
 
-def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_video_factory) -> None:
+def test_markers_import_shots_select_selected_marker_and_seek_video(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-import-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1197,14 +1313,17 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 _open_tool(page, "markers")
                 _import_shot_linked_markers(page)
                 assert _shot_linked_popup_count(page) == total_shots
-                assert page.evaluate(
-                    """() => (state?.project?.popups || [])
+                assert (
+                    page.evaluate(
+                        """() => (state?.project?.popups || [])
                         .filter((item) => item.anchor_mode === 'shot' && item.shot_id)
                         .every((bubble) => {
                             const limitMs = popupDurationLimitMsForBubble(bubble);
                             return limitMs === null || bubble.duration_ms <= limitMs;
                         })"""
-                ) is True
+                    )
+                    is True
+                )
 
                 page.wait_for_function(
                     """(shotId) => {
@@ -1231,7 +1350,11 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 assert selected_card.evaluate("card => card.classList.contains('selected')") is True
                 assert page.locator("#popup-timeline-strip").count() == 0
                 assert page.locator("#popup-pane-status").inner_text() == f"{total_shots} enabled"
-                assert page.locator("#popup-list-status").inner_text().startswith(f"{total_shots} shown")
+                assert (
+                    page.locator("#popup-list-status")
+                    .inner_text()
+                    .startswith(f"{total_shots} shown")
+                )
 
                 page.wait_for_function(
                     """(targetMs) => {
@@ -1246,7 +1369,9 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
         server.shutdown()
 
 
-def test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync(synthetic_video_factory) -> None:
+def test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-nav-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1275,7 +1400,9 @@ def test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync(synt
                 assert next_popup_id != initial_popup_id
 
                 page.locator("#popup-prev-workbench").click()
-                page.wait_for_function("(expectedId) => selectedPopupBubbleId === expectedId", arg=initial_popup_id)
+                page.wait_for_function(
+                    "(expectedId) => selectedPopupBubbleId === expectedId", arg=initial_popup_id
+                )
 
                 list_target_id = page.evaluate(
                     """(currentId) => {
@@ -1291,7 +1418,9 @@ def test_marker_collapsed_navigation_and_marker_list_selection_stay_in_sync(synt
                 page.locator(
                     f'#markers-workbench-list .popup-marker-row[data-popup-id="{list_target_id}"] .popup-marker-meta'
                 ).click()
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=list_target_id)
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=list_target_id
+                )
 
                 selected_card = page.locator(
                     f'#markers-workbench-list .popup-marker-row[data-popup-id="{list_target_id}"]'
@@ -1314,7 +1443,9 @@ def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_facto
                 _load_primary_video(page, primary_path)
                 _open_tool(page, "markers")
                 _import_shot_linked_markers(page)
-                page.wait_for_function("() => (state?.project?.popups || []).filter((item) => item.anchor_mode === 'shot').length >= 2")
+                page.wait_for_function(
+                    "() => (state?.project?.popups || []).filter((item) => item.anchor_mode === 'shot').length >= 2"
+                )
 
                 shot_linked_ids_before = page.evaluate(
                     """() => (state?.project?.popups || [])
@@ -1344,7 +1475,10 @@ def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_facto
                 assert stepped_popup_id is not None
 
                 page.locator("#popup-prev-workbench").click()
-                page.wait_for_function("(expectedId) => selectedPopupBubbleId === expectedId", arg=selected_before["id"])
+                page.wait_for_function(
+                    "(expectedId) => selectedPopupBubbleId === expectedId",
+                    arg=selected_before["id"],
+                )
 
                 page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
                 page.wait_for_function(
@@ -1356,7 +1490,11 @@ def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_facto
                       .filter((item) => item.anchor_mode === 'shot' && item.shot_id)
                       .map((item) => item.id)"""
                 )
-                duplicated_ids = [popup_id for popup_id in shot_linked_ids_after if popup_id not in shot_linked_ids_before]
+                duplicated_ids = [
+                    popup_id
+                    for popup_id in shot_linked_ids_after
+                    if popup_id not in shot_linked_ids_before
+                ]
                 assert len(duplicated_ids) == 1
                 duplicated_popup = page.evaluate(
                     """(popupId) => {
@@ -1376,7 +1514,9 @@ def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_facto
                     }""",
                     duplicated_popup["id"],
                 )
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=duplicated_popup["id"])
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=duplicated_popup["id"]
+                )
 
                 page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
                 page.wait_for_function(
@@ -1389,8 +1529,12 @@ def test_marker_workbench_steps_duplicate_delete_and_close(synthetic_video_facto
                 assert page.locator("#markers-workbench-editor .popup-bubble-card").count() == 1
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
-                page.wait_for_function("() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Edit'")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Edit'"
+                )
 
                 assert page.evaluate("selectedPopupBubbleId") is not None
             finally:
@@ -1414,7 +1558,9 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
                 assert popup_id is not None
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
                 page.wait_for_function(
                     """(popupId) => !document.querySelector(`#popup-overlay [data-popup-drag="true"][data-popup-id="${popupId}"]`)""",
                     arg=popup_id,
@@ -1422,7 +1568,9 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
 
                 _open_markers_workbench(page)
 
-                badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
+                badge = page.locator(
+                    f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]'
+                )
                 badge.wait_for(state="visible")
                 before = page.evaluate(
                     """(popupId) => {
@@ -1475,7 +1623,9 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
         server.shutdown()
 
 
-def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synthetic_video_factory) -> None:
+def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="markers-base-vs-keyframe-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -1490,7 +1640,9 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                 assert popup_id is not None
 
                 _open_markers_workbench(page)
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-field="follow_motion"]').check()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-field="follow_motion"]'
+                ).check()
                 page.wait_for_function(
                     "(popupId) => (state?.project?.popups || []).find((item) => item.id === popupId)?.follow_motion === true",
                     arg=popup_id,
@@ -1502,7 +1654,9 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                       video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                     }"""
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="add_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="add_motion_step"]'
+                ).click()
                 motion_before_handle = page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -1514,7 +1668,9 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
                 motion_before = motion_before_handle.json_value()
                 assert motion_before != "[]"
 
-                badge = page.locator(f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]')
+                badge = page.locator(
+                    f'#popup-overlay [data-popup-drag="true"][data-popup-id="{popup_id}"]'
+                )
                 badge.wait_for(state="visible")
                 before_rect = page.evaluate(
                     """(popupId) => {
@@ -1552,32 +1708,34 @@ def test_marker_badge_drag_keeps_motion_path_intact_when_editing_base_point(synt
         server.shutdown()
 
 
-def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningful_travel(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-small-motion-auto-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "markers")
+def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningful_travel(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-small-motion-auto-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
 
-                                page.evaluate(
-                                        """() => {
+                page.evaluate(
+                    """() => {
                                             const video = document.getElementById('primary-video');
                                             video.currentTime = 1.0;
                                             video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                                         }"""
-                                )
-                                page.locator("#popup-add-bubble").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
-                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
-                                assert popup_id is not None
+                )
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                assert popup_id is not None
 
-                                _open_markers_workbench(page)
-                                page.evaluate(
-                                        """(popupId) => {
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """(popupId) => {
                                             const video = document.getElementById('primary-video');
                                             const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 1920) || 1920);
                                             const deltaX = 8.5 / sourceWidth;
@@ -1603,27 +1761,27 @@ def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningf
                                             });
                                             setPopupBubbles(nextBubbles, { commit: true, rerender: true });
                                         }""",
-                                        popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
+                    popup_id,
+                )
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             return Boolean(bubble)
                                                 && bubble.follow_motion === true
                                                 && bubble.duration_ms === 150
                                                 && (bubble.motion_path || []).length === 1;
                                         }""",
-                                        arg=popup_id,
-                                )
-                                page.evaluate("""() => {
+                    arg=popup_id,
+                )
+                page.evaluate("""() => {
                                     autoTracePopupBubbleMotion = async () => false;
                                 }""")
 
-                                page.locator(
-                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
-                                ).click()
-                                page.wait_for_function(
-                                        """(popupId) => {
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                ).click()
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const points = bubble?.motion_path || [];
                                             return points.length >= 2
@@ -1632,18 +1790,18 @@ def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningf
                                                 && points[0].offset_ms < points[1].offset_ms
                                                 && points[points.length - 1].offset_ms === 150;
                                         }""",
-                                        arg=popup_id,
-                                )
+                    arg=popup_id,
+                )
 
-                                page.evaluate("""() => {
+                page.evaluate("""() => {
                                     autoTracePopupBubbleMotion = async () => false;
                                 }""")
 
-                                page.locator(
-                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
-                                ).click()
-                                page.wait_for_function(
-                                        """(popupId) => {
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                ).click()
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const points = bubble?.motion_path || [];
                                             return points.length >= 2
@@ -1652,57 +1810,59 @@ def test_generate_motion_path_falls_back_to_single_in_between_for_small_meaningf
                                                 && points[0].offset_ms < points[1].offset_ms
                                                 && points[points.length - 1].offset_ms === 150;
                                         }""",
-                                        arg=popup_id,
-                                )
+                    arg=popup_id,
+                )
 
-                                motion_snapshot = page.evaluate(
-                                        """(popupId) => {
+                motion_snapshot = page.evaluate(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             return {
                                                 followMotion: Boolean(bubble?.follow_motion),
                                                 offsets: (bubble?.motion_path || []).map((point) => point.offset_ms),
                                             };
                                         }""",
-                                        popup_id,
-                                )
-                                assert motion_snapshot["followMotion"] is True
-                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
-                                assert len(motion_snapshot["offsets"]) >= 2
-                                assert 0 < motion_snapshot["offsets"][0] < 150
-                                assert motion_snapshot["offsets"][-1] == 150
-                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                    popup_id,
+                )
+                assert motion_snapshot["followMotion"] is True
+                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
+                assert len(motion_snapshot["offsets"]) >= 2
+                assert 0 < motion_snapshot["offsets"][0] < 150
+                assert motion_snapshot["offsets"][-1] == 150
+                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
-def test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_travel(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-dense-motion-auto-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "markers")
+def test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_travel(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-dense-motion-auto-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
 
-                                page.evaluate(
-                                        """() => {
+                page.evaluate(
+                    """() => {
                                             const video = document.getElementById('primary-video');
                                             video.currentTime = 1.0;
                                             video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                                         }"""
-                                )
-                                page.locator("#popup-add-bubble").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
-                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
-                                assert popup_id is not None
+                )
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                assert popup_id is not None
 
-                                _open_markers_workbench(page)
-                                page.evaluate(
-                                        """(popupId) => {
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """(popupId) => {
                                             const video = document.getElementById('primary-video');
                                             const sourceWidth = Math.max(1, Number(video?.videoWidth || state?.project?.primary_video?.width || 1920) || 1920);
                                             const deltaX = 160 / sourceWidth;
@@ -1728,36 +1888,36 @@ def test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_trav
                                             });
                                             setPopupBubbles(nextBubbles, { commit: true, rerender: true });
                                         }""",
-                                        popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
+                    popup_id,
+                )
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             return Boolean(bubble)
                                                 && bubble.follow_motion === true
                                                 && bubble.duration_ms === 600
                                                 && (bubble.motion_path || []).length === 1;
                                         }""",
-                                        arg=popup_id,
-                                )
-                                page.evaluate("""() => {
+                    arg=popup_id,
+                )
+                page.evaluate("""() => {
                                     autoTracePopupBubbleMotion = async () => false;
                                 }""")
 
-                                page.locator(
-                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
-                                ).click()
-                                page.wait_for_function(
-                                        """(popupId) => {
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                ).click()
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const points = bubble?.motion_path || [];
                                             return points.length >= 6 && points[points.length - 1]?.offset_ms === 600;
                                         }""",
-                                        arg=popup_id,
-                                )
+                    arg=popup_id,
+                )
 
-                                motion_snapshot = page.evaluate(
-                                        """(popupId) => {
+                motion_snapshot = page.evaluate(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const offsets = (bubble?.motion_path || []).map((point) => point.offset_ms);
                                             const gaps = offsets.slice(1).map((offsetMs, index) => offsetMs - offsets[index]);
@@ -1766,45 +1926,45 @@ def test_generate_motion_path_falls_back_to_evenly_spaced_points_for_longer_trav
                                                 gapRange: gaps.length === 0 ? 0 : Math.max(...gaps) - Math.min(...gaps),
                                             };
                                         }""",
-                                        popup_id,
-                                )
-                                assert len(motion_snapshot["offsets"]) >= 6
-                                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
-                                assert 0 < motion_snapshot["offsets"][0] < 600
-                                assert motion_snapshot["offsets"][-1] == 600
-                                assert motion_snapshot["gapRange"] <= 1
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                    popup_id,
+                )
+                assert len(motion_snapshot["offsets"]) >= 6
+                assert motion_snapshot["offsets"] == sorted(motion_snapshot["offsets"])
+                assert 0 < motion_snapshot["offsets"][0] < 600
+                assert motion_snapshot["offsets"][-1] == 600
+                assert motion_snapshot["gapRange"] <= 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_generate_motion_path_prefers_traced_motion_when_available(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-traced-motion-auto-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "markers")
+    primary_path = Path(synthetic_video_factory(name="markers-traced-motion-auto-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
 
-                                page.evaluate(
-                                        """() => {
+                page.evaluate(
+                    """() => {
                                             const video = document.getElementById('primary-video');
                                             video.currentTime = 1.0;
                                             video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                                         }"""
-                                )
-                                page.locator("#popup-add-bubble").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
-                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
-                                assert popup_id is not None
+                )
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id")
+                assert popup_id is not None
 
-                                _open_markers_workbench(page)
-                                page.evaluate(
-                                        """(popupId) => {
+                _open_markers_workbench(page)
+                page.evaluate(
+                    """(popupId) => {
                                             const nextBubbles = (state?.project?.popups || []).map((bubble) => {
                                                 if (bubble.id !== popupId) return bubble;
                                                 return normalizePopupBubble({
@@ -1860,14 +2020,14 @@ def test_generate_motion_path_prefers_traced_motion_when_available(synthetic_vid
                                                 return true;
                                             };
                                         }""",
-                                        popup_id,
-                                )
+                    popup_id,
+                )
 
-                                page.locator(
-                                        f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
-                                ).click()
-                                page.wait_for_function(
-                                        """(popupId) => {
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{popup_id}"] [data-popup-action="generate_motion_path"]'
+                ).click()
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const points = bubble?.motion_path || [];
                                             return points.length === 3
@@ -1876,11 +2036,11 @@ def test_generate_motion_path_prefers_traced_motion_when_available(synthetic_vid
                                                 && points[2]?.offset_ms === 200
                                                 && Math.abs((points[1]?.y || 0) - 0.54) < 0.0001;
                                         }""",
-                                        arg=popup_id,
-                                )
+                    arg=popup_id,
+                )
 
-                                motion_snapshot = page.evaluate(
-                                        """(popupId) => {
+                motion_snapshot = page.evaluate(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             const status = document.querySelector(`#markers-workbench-editor .popup-bubble-card[data-popup-id="${popupId}"] .popup-motion-guide-hint`)?.textContent || '';
                                             return {
@@ -1889,15 +2049,18 @@ def test_generate_motion_path_prefers_traced_motion_when_available(synthetic_vid
                                                 status,
                                             };
                                         }""",
-                                        popup_id,
-                                )
-                                assert motion_snapshot["offsets"] == [50, 100, 200]
-                                assert motion_snapshot["yValues"] == [0.52, 0.54, 0.56]
-                                assert "Generate traced 2 in-between points from the video" in motion_snapshot["status"]
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                    popup_id,
+                )
+                assert motion_snapshot["offsets"] == [50, 100, 200]
+                assert motion_snapshot["yValues"] == [0.52, 0.54, 0.56]
+                assert (
+                    "Generate traced 2 in-between points from the video"
+                    in motion_snapshot["status"]
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video_factory) -> None:
@@ -1951,8 +2114,12 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     selected_shot["id"],
                 )
                 assert score_popup["text"] == expected_score_text
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=score_popup["id"])
-                score_popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{score_popup["id"]}"]')
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=score_popup["id"]
+                )
+                score_popup_badge = page.locator(
+                    f'#popup-overlay .popup-overlay-badge[data-popup-id="{score_popup["id"]}"]'
+                )
                 score_popup_badge.wait_for(state="visible")
                 default_score_badge_style = score_popup_badge.evaluate(
                     """badge => {
@@ -1980,7 +2147,10 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     }"""
                 )
                 assert default_score_badge_style["hasSelectorClass"] is True
-                assert abs(default_score_badge_style["width"] - default_score_badge_style["height"]) <= 2
+                assert (
+                    abs(default_score_badge_style["width"] - default_score_badge_style["height"])
+                    <= 2
+                )
                 assert default_score_badge_style["borderRadius"].endswith("px")
                 assert "255, 123, 34" in default_score_badge_style["background"]
                 assert default_score_badge_style["justifyContent"] == "center"
@@ -2026,13 +2196,15 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                         && Math.abs((template.opacity || 0) - 0.65) < 0.001;
                     }"""
                 )
-                expected_shot_duration_ms = int(page.evaluate(
-                    """(shotId) => {
+                expected_shot_duration_ms = int(
+                    page.evaluate(
+                        """(shotId) => {
                         const shot = shotById(shotId);
                         return popupDefaultDurationMsForShot(shot, currentPopupTemplate());
                     }""",
-                    selected_shot["id"],
-                ))
+                        selected_shot["id"],
+                    )
+                )
 
                 _open_tool(page, "markers")
                 _open_markers_workbench(page)
@@ -2084,7 +2256,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     }""",
                     labeled_popup["id"],
                 )
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=labeled_popup["id"])
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=labeled_popup["id"]
+                )
                 _open_markers_workbench(page)
                 page.evaluate(
                     """(timeMs) => {
@@ -2094,7 +2268,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     }""",
                     selected_shot["timeMs"] + 240,
                 )
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{labeled_popup["id"]}"] [data-popup-action="add_motion_step"]').click()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{labeled_popup["id"]}"] [data-popup-action="add_motion_step"]'
+                ).click()
                 page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -2105,7 +2281,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     }""",
                     arg=labeled_popup["id"],
                 )
-                popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{labeled_popup["id"]}"]')
+                popup_badge = page.locator(
+                    f'#popup-overlay .popup-overlay-badge[data-popup-id="{labeled_popup["id"]}"]'
+                )
                 popup_badge.wait_for(state="attached")
                 page.wait_for_timeout(50)
                 popup_badge_style = popup_badge.evaluate(
@@ -2124,7 +2302,10 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 assert popup_badge_style["width"] >= 12
                 assert popup_badge_style["height"] >= 12
                 assert popup_badge_style["text"] == ""
-                assert "255, 123, 34" in popup_badge_style["background"] or "ff7b22" in popup_badge_style["background"]
+                assert (
+                    "255, 123, 34" in popup_badge_style["background"]
+                    or "ff7b22" in popup_badge_style["background"]
+                )
 
                 page.evaluate(
                     """() => {
@@ -2138,7 +2319,9 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                       render();
                     }"""
                 )
-                page.wait_for_function("() => state?.project?.popup_template?.text_source === 'custom'")
+                page.wait_for_function(
+                    "() => state?.project?.popup_template?.text_source === 'custom'"
+                )
                 _open_tool(page, "markers")
                 _open_markers_workbench(page)
                 page.locator("#popup-add-bubble-workbench").click()
@@ -2174,7 +2357,9 @@ def test_marker_motion_toggle_keeps_current_marker_selected(synthetic_video_fact
                 selected_popup_id = page.evaluate("selectedPopupBubbleId")
                 assert selected_popup_id is not None
 
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]').check()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]'
+                ).check()
                 page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -2183,7 +2368,9 @@ def test_marker_motion_toggle_keeps_current_marker_selected(synthetic_video_fact
                     arg=selected_popup_id,
                 )
 
-                page.locator(f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]').uncheck()
+                page.locator(
+                    f'#markers-workbench-editor .popup-bubble-card[data-popup-id="{selected_popup_id}"] [data-popup-field="follow_motion"]'
+                ).uncheck()
                 page.wait_for_function(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -2200,7 +2387,9 @@ def test_marker_motion_toggle_keeps_current_marker_selected(synthetic_video_fact
         server.shutdown()
 
 
-def test_shotml_threshold_apply_and_reset_defaults_update_project_analysis(synthetic_video_factory) -> None:
+def test_shotml_threshold_apply_and_reset_defaults_update_project_analysis(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="shotml-threshold-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -2214,7 +2403,7 @@ def test_shotml_threshold_apply_and_reset_defaults_update_project_analysis(synth
 
                 threshold_section = page.locator('[data-shotml-section="threshold"]')
                 if threshold_section.evaluate("el => el.classList.contains('collapsed')"):
-                    threshold_section.locator('button[data-section-toggle]').click()
+                    threshold_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="threshold"]',
@@ -2251,7 +2440,9 @@ def test_shotml_threshold_apply_and_reset_defaults_update_project_analysis(synth
         server.shutdown()
 
 
-def test_shotml_settings_controls_commit_and_reset_defaults_update_project_analysis(synthetic_video_factory) -> None:
+def test_shotml_settings_controls_commit_and_reset_defaults_update_project_analysis(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="shotml-settings-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -2265,7 +2456,7 @@ def test_shotml_settings_controls_commit_and_reset_defaults_update_project_analy
 
                 threshold_section = page.locator('[data-shotml-section="threshold"]')
                 if threshold_section.evaluate("el => el.classList.contains('collapsed')"):
-                    threshold_section.locator('button[data-section-toggle]').click()
+                    threshold_section.locator("button[data-section-toggle]").click()
                     page.wait_for_function(
                         "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
                         arg='[data-shotml-section="threshold"]',
@@ -2388,17 +2579,23 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
 
                 page.locator("#merge-layout").select_option("side_by_side")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'side_by_side'")
-                page.wait_for_function("() => document.getElementById('video-stage')?.classList.contains('merge-side-by-side')")
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-side-by-side')"
+                )
                 assert page.locator("#merge-preview-layer").is_hidden() is True
 
                 page.locator("#merge-layout").select_option("above_below")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'above_below'")
-                page.wait_for_function("() => document.getElementById('video-stage')?.classList.contains('merge-above-below')")
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-above-below')"
+                )
                 assert page.locator("#merge-preview-layer").is_hidden() is True
 
                 page.locator("#merge-layout").select_option("pip")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
-                page.wait_for_function("() => document.getElementById('video-stage')?.classList.contains('merge-pip')")
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-pip')"
+                )
 
                 preview_layer = page.locator("#merge-preview-layer")
                 preview_layer.wait_for(state="visible")
@@ -2428,19 +2625,30 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                     }""",
                     '[data-merge-source-field="size"]',
                 )
-                page.wait_for_function("""() => document.querySelector('[data-merge-source-output="size"]')?.textContent === '50%'""")
-                page.wait_for_function("() => state?.project?.merge_sources?.[0]?.pip_size_percent === 50")
+                page.wait_for_function(
+                    """() => document.querySelector('[data-merge-source-output="size"]')?.textContent === '50%'"""
+                )
+                page.wait_for_function(
+                    "() => state?.project?.merge_sources?.[0]?.pip_size_percent === 50"
+                )
                 page.wait_for_function(
                     """({ previousWidth, previousHeight }) => {
                         const item = document.querySelector('#merge-preview-layer .merge-preview-item');
                         return Boolean(item) && (item.style.width !== previousWidth || item.style.height !== previousHeight);
                     }""",
-                    arg={"previousWidth": before_style["width"], "previousHeight": before_style["height"]},
+                    arg={
+                        "previousWidth": before_style["width"],
+                        "previousHeight": before_style["height"],
+                    },
                 )
                 after_size_style = read_preview_style()
                 assert size_output.text_content().strip() == "50%"
-                assert float(after_size_style["width"].removesuffix("px")) > float(before_style["width"].removesuffix("px"))
-                assert float(after_size_style["height"].removesuffix("px")) > float(before_style["height"].removesuffix("px"))
+                assert float(after_size_style["width"].removesuffix("px")) > float(
+                    before_style["width"].removesuffix("px")
+                )
+                assert float(after_size_style["height"].removesuffix("px")) > float(
+                    before_style["height"].removesuffix("px")
+                )
 
                 page.evaluate(
                     """(selector) => {
@@ -2472,11 +2680,16 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 )
 
                 after_position_style = read_preview_style()
-                assert after_position_style["left"] != before_style["left"] or after_position_style["top"] != before_style["top"]
+                assert (
+                    after_position_style["left"] != before_style["left"]
+                    or after_position_style["top"] != before_style["top"]
+                )
 
                 page.locator("#merge-enabled").uncheck()
                 page.wait_for_function("() => state?.project?.merge?.enabled === false")
-                page.wait_for_function("() => document.getElementById('merge-preview-layer')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('merge-preview-layer')?.hidden === true"
+                )
                 assert preview_layer.is_hidden() is True
             finally:
                 browser.close()
@@ -2585,7 +2798,7 @@ def test_time_marker_list_cards_select_marker_and_seek_video(synthetic_video_fac
                       video.currentTime = timeMs / 1000;
                       video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                     }""",
-                                        1600,
+                    1600,
                 )
                 page.locator("#popup-add-bubble").click()
                 page.wait_for_function("() => (state?.project?.popups || []).length === 2")
@@ -2618,7 +2831,9 @@ def test_time_marker_list_cards_select_marker_and_seek_video(synthetic_video_fac
                 )
                 first_popup_button.wait_for(state="visible")
                 first_popup_button.click()
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=first_popup_id)
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=first_popup_id
+                )
                 page.wait_for_function(
                     """(targetMs) => {
                       const currentMs = (document.getElementById('primary-video')?.currentTime || 0) * 1000;
@@ -2685,38 +2900,42 @@ def test_markers_clicking_video_stage_does_not_create_marker(synthetic_video_fac
         server.shutdown()
 
 
-def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="markers-enabled-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "markers")
-                                _ensure_overlay_visible(page)
+def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-enabled-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+                _ensure_overlay_visible(page)
 
-                                page.evaluate(
-                                        """(timeMs) => {
+                page.evaluate(
+                    """(timeMs) => {
                                             selectedShotId = null;
                                             const video = document.getElementById('primary-video');
                                             video.currentTime = timeMs / 1000;
                                             video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                                         }""",
-                                        900,
-                                )
-                                page.locator("#popup-add-bubble").click()
-                                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
+                    900,
+                )
+                page.locator("#popup-add-bubble").click()
+                page.wait_for_function("() => (state?.project?.popups || []).length === 1")
 
-                                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")
-                                assert popup_id is not None
+                popup_id = page.evaluate("(state?.project?.popups || [])[0]?.id || null")
+                assert popup_id is not None
 
-                                popup_badge = page.locator(f'#popup-overlay .popup-overlay-badge[data-popup-id="{popup_id}"]')
-                                popup_badge.wait_for(state="visible")
+                popup_badge = page.locator(
+                    f'#popup-overlay .popup-overlay-badge[data-popup-id="{popup_id}"]'
+                )
+                popup_badge.wait_for(state="visible")
 
-                                page.evaluate(
-                                        """(popupId) => {
+                page.evaluate(
+                    """(popupId) => {
                                             const checkbox = document.querySelector(
                                                 `#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
                                             );
@@ -2724,24 +2943,24 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_v
                                             checkbox.checked = false;
                                             checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                                         }""",
-                                        popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
+                    popup_id,
+                )
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             return Boolean(bubble) && bubble.enabled === false;
                                         }""",
-                                        arg=popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => !document.querySelector(
+                    arg=popup_id,
+                )
+                page.wait_for_function(
+                    """(popupId) => !document.querySelector(
                                             `#popup-overlay .popup-overlay-badge[data-popup-id="${popupId}"]`
                                         )""",
-                                        arg=popup_id,
-                                )
+                    arg=popup_id,
+                )
 
-                                page.evaluate(
-                                        """(popupId) => {
+                page.evaluate(
+                    """(popupId) => {
                                             const checkbox = document.querySelector(
                                                 `#popup-marker-list .popup-marker-row[data-popup-id="${popupId}"] input[data-popup-field="enabled"]`
                                             );
@@ -2749,20 +2968,20 @@ def test_popup_bubble_enabled_checkbox_hides_and_restores_live_badge(synthetic_v
                                             checkbox.checked = true;
                                             checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                                         }""",
-                                        popup_id,
-                                )
-                                page.wait_for_function(
-                                        """(popupId) => {
+                    popup_id,
+                )
+                page.wait_for_function(
+                    """(popupId) => {
                                             const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
                                             return Boolean(bubble) && bubble.enabled === true;
                                         }""",
-                                        arg=popup_id,
-                                )
-                                popup_badge.wait_for(state="visible")
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                    arg=popup_id,
+                )
+                popup_badge.wait_for(state="visible")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_popup_selected_marker_editor_duplicate_and_remove_markers(synthetic_video_factory) -> None:
@@ -2800,22 +3019,30 @@ def test_popup_selected_marker_editor_duplicate_and_remove_markers(synthetic_vid
                 page.locator(
                     f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"] .popup-marker-select'
                 ).click()
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=original_popup_id)
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=original_popup_id
+                )
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === false"
+                )
                 page.wait_for_function(
                     "() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Collapse'"
                 )
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
                 page.wait_for_function(
                     "() => document.getElementById('popup-edit-selected')?.textContent?.trim() === 'Edit'"
                 )
 
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === false"
+                )
                 page.wait_for_function(
                     "() => document.getElementById('popup-selected-editor-panel')?.hidden === false"
                 )
@@ -2837,20 +3064,43 @@ def test_popup_selected_marker_editor_duplicate_and_remove_markers(synthetic_vid
 
                 page.locator('#markers-workbench-editor [data-popup-action="duplicate"]').click()
                 page.wait_for_function("() => (state?.project?.popups || []).length === 2")
-                popup_ids_after_duplicate = page.evaluate("(state?.project?.popups || []).map((bubble) => bubble.id)")
-                duplicate_ids = [popup_id for popup_id in popup_ids_after_duplicate if popup_id != original_popup_id]
+                popup_ids_after_duplicate = page.evaluate(
+                    "(state?.project?.popups || []).map((bubble) => bubble.id)"
+                )
+                duplicate_ids = [
+                    popup_id
+                    for popup_id in popup_ids_after_duplicate
+                    if popup_id != original_popup_id
+                ]
                 assert len(duplicate_ids) == 1
                 duplicate_popup_id = duplicate_ids[0]
-                page.wait_for_function("(popupId) => selectedPopupBubbleId === popupId", arg=duplicate_popup_id)
-                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]').count() == 1
+                page.wait_for_function(
+                    "(popupId) => selectedPopupBubbleId === popupId", arg=duplicate_popup_id
+                )
+                assert (
+                    page.locator(
+                        f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]'
+                    ).count()
+                    == 1
+                )
 
                 page.locator('#markers-workbench-editor [data-popup-action="remove"]').click()
                 page.wait_for_function(
                     """(popupId) => !(state?.project?.popups || []).some((bubble) => bubble.id === popupId)""",
                     arg=duplicate_popup_id,
                 )
-                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]').count() == 0
-                assert page.locator(f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"]').count() == 1
+                assert (
+                    page.locator(
+                        f'#popup-marker-list .popup-marker-row[data-popup-id="{duplicate_popup_id}"]'
+                    ).count()
+                    == 0
+                )
+                assert (
+                    page.locator(
+                        f'#popup-marker-list .popup-marker-row[data-popup-id="{original_popup_id}"]'
+                    ).count()
+                    == 1
+                )
             finally:
                 browser.close()
     finally:
@@ -2868,76 +3118,90 @@ def test_markers_workbench_hides_when_switching_to_another_tool(synthetic_video_
                 _load_primary_video(page, primary_path)
                 _open_tool(page, "markers")
                 page.locator("#popup-edit-selected").click()
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === false")
-                page.wait_for_function("() => document.getElementById('cockpit-root')?.classList.contains('markers-expanded')")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('cockpit-root')?.classList.contains('markers-expanded')"
+                )
 
                 _open_tool(page, "project")
-                page.wait_for_function("() => document.getElementById('markers-workbench')?.hidden === true")
-                page.wait_for_function("() => !document.getElementById('cockpit-root')?.classList.contains('markers-expanded')")
+                page.wait_for_function(
+                    "() => document.getElementById('markers-workbench')?.hidden === true"
+                )
+                page.wait_for_function(
+                    "() => !document.getElementById('cockpit-root')?.classList.contains('markers-expanded')"
+                )
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selected_hex(synthetic_video_factory) -> None:
-        primary_path = Path(synthetic_video_factory(name="overlay-color-picker-ui"))
-        server = BrowserControlServer(port=0)
-        server.start_background(open_browser=False)
-        try:
-                with sync_playwright() as playwright:
-                        browser, page = _open_test_page(playwright, server)
-                        try:
-                                _load_primary_video(page, primary_path)
-                                _open_tool(page, "overlay")
-                                _ensure_overlay_visible(page)
+def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selected_hex(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="overlay-color-picker-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "overlay")
+                _ensure_overlay_visible(page)
 
-                                if not page.locator("#show-timer").is_checked():
-                                        page.evaluate(
-                                                """() => {
+                if not page.locator("#show-timer").is_checked():
+                    page.evaluate(
+                        """() => {
                                                     const checkbox = document.getElementById('show-timer');
                                                     checkbox.checked = true;
                                                     checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                                                 }"""
-                                        )
-                                page.evaluate(
-                                        """() => {
+                    )
+                page.evaluate(
+                    """() => {
                                             const video = document.getElementById('primary-video');
                                             video.currentTime = 1.2;
                                             video.dispatchEvent(new Event('timeupdate', { bubbles: true }));
                                             renderLiveOverlay();
                                         }"""
-                                )
+                )
 
-                                page.wait_for_function("() => state?.project?.overlay?.show_timer === true")
-                                timer_badge = page.locator('[data-overlay-drag="timer"]')
-                                timer_badge.wait_for(state="visible")
+                page.wait_for_function("() => state?.project?.overlay?.show_timer === true")
+                timer_badge = page.locator('[data-overlay-drag="timer"]')
+                timer_badge.wait_for(state="visible")
 
-                                color_button = page.locator('#badge-style-grid .style-card[data-badge="timer_badge"] .color-swatch-button[data-field="background_color"]')
-                                initial_snapshot = page.evaluate(
-                                        """() => ({
+                color_button = page.locator(
+                    '#badge-style-grid .style-card[data-badge="timer_badge"] .color-swatch-button[data-field="background_color"]'
+                )
+                initial_snapshot = page.evaluate(
+                    """() => ({
                                             buttonColor: document.querySelector('#badge-style-grid .style-card[data-badge="timer_badge"] .color-swatch-button[data-field="background_color"]')?.dataset.colorValue || null,
                                             overlayColor: state?.project?.overlay?.timer_badge?.background_color || null,
                                         })"""
-                                )
-                                assert initial_snapshot["buttonColor"] == initial_snapshot["overlayColor"]
+                )
+                assert initial_snapshot["buttonColor"] == initial_snapshot["overlayColor"]
 
-                                color_button.click()
-                                page.wait_for_function("() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null")
+                color_button.click()
+                page.wait_for_function(
+                    "() => !document.getElementById('color-picker-modal').hidden && activeColorPickerControl !== null"
+                )
 
-                                modal_snapshot = page.evaluate(
-                                        """() => ({
+                modal_snapshot = page.evaluate(
+                    """() => ({
                                             target: document.getElementById('color-picker-target')?.textContent?.trim() || '',
                                             hex: document.getElementById('color-picker-hex')?.value || '',
                                             current: document.getElementById('color-picker-current')?.textContent?.trim() || '',
                                         })"""
-                                )
-                                assert modal_snapshot["target"] == "Bg"
-                                assert modal_snapshot["hex"] == initial_snapshot["buttonColor"].upper()
-                                assert modal_snapshot["current"] == initial_snapshot["buttonColor"].upper()
+                )
+                assert modal_snapshot["target"] == "Bg"
+                assert modal_snapshot["hex"] == initial_snapshot["buttonColor"].upper()
+                assert modal_snapshot["current"] == initial_snapshot["buttonColor"].upper()
 
-                                page.evaluate(
-                                        """() => {
+                page.evaluate(
+                    """() => {
                                             [
                                                 ['color-picker-hue', '120'],
                                                 ['color-picker-saturation', '100'],
@@ -2948,9 +3212,9 @@ def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selec
                                                 slider.dispatchEvent(new Event('input', { bubbles: true }));
                                             });
                                         }"""
-                                )
-                                page.wait_for_function(
-                                        """() => {
+                )
+                page.wait_for_function(
+                    """() => {
                                             const preview = document.getElementById('color-picker-preview');
                                               const badge = document.querySelector('[data-overlay-drag="timer"]');
                                             const current = document.getElementById('color-picker-current');
@@ -2961,17 +3225,17 @@ def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selec
                                                 && badge instanceof HTMLElement
                                                 && badge.style.background.includes('0, 255, 0');
                                         }"""
-                                )
+                )
 
-                                page.evaluate(
-                                        """() => {
+                page.evaluate(
+                    """() => {
                                             const input = document.getElementById('color-picker-hex');
                                             input.value = '#ff0000';
                                             input.dispatchEvent(new Event('input', { bubbles: true }));
                                         }"""
-                                )
-                                page.wait_for_function(
-                                        """() => {
+                )
+                page.wait_for_function(
+                    """() => {
                                             const preview = document.getElementById('color-picker-preview');
                                             const current = document.getElementById('color-picker-current');
                                             const hue = document.getElementById('color-picker-hue');
@@ -2986,26 +3250,30 @@ def test_overlay_color_picker_updates_timer_badge_preview_and_reopens_with_selec
                                                 && badge instanceof HTMLElement
                                                 && badge.style.background.includes('255, 0, 0');
                                         }"""
-                                )
+                )
 
-                                page.locator("#close-color-picker").click()
-                                page.wait_for_function("() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null")
-                                page.wait_for_function("() => state?.project?.overlay?.timer_badge?.background_color === '#ff0000'")
+                page.locator("#close-color-picker").click()
+                page.wait_for_function(
+                    "() => document.getElementById('color-picker-modal').hidden && activeColorPickerControl === null"
+                )
+                page.wait_for_function(
+                    "() => state?.project?.overlay?.timer_badge?.background_color === '#ff0000'"
+                )
 
-                                persisted_snapshot = page.evaluate(
-                                        """() => ({
+                persisted_snapshot = page.evaluate(
+                    """() => ({
                                             buttonColor: document.querySelector('#badge-style-grid .style-card[data-badge="timer_badge"] .color-swatch-button[data-field="background_color"]')?.dataset.colorValue || null,
                                             overlayColor: state?.project?.overlay?.timer_badge?.background_color || null,
                                         })"""
-                                )
-                                assert persisted_snapshot == {
-                                        "buttonColor": "#ff0000",
-                                        "overlayColor": "#ff0000",
-                                }
-                        finally:
-                                browser.close()
-        finally:
-                server.shutdown()
+                )
+                assert persisted_snapshot == {
+                    "buttonColor": "#ff0000",
+                    "overlayColor": "#ff0000",
+                }
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_overlay_badge_position_controls_update_state_and_persist(synthetic_video_factory) -> None:
@@ -3065,7 +3333,10 @@ def test_overlay_badge_position_controls_update_state_and_persist(synthetic_vide
                     assert y_control.get_attribute("placeholder") == "Stack locked"
 
                     set_checkbox(lock_id, False)
-                    page.wait_for_function("(controlId) => document.getElementById(controlId)?.checked === false", arg=lock_id)
+                    page.wait_for_function(
+                        "(controlId) => document.getElementById(controlId)?.checked === false",
+                        arg=lock_id,
+                    )
                     page.wait_for_function(
                         """({ xId, yId }) => {
                           const xControl = document.getElementById(xId);
@@ -3114,7 +3385,9 @@ def test_overlay_badge_position_controls_update_state_and_persist(synthetic_vide
         server.shutdown()
 
 
-def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(synthetic_video_factory) -> None:
+def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
+    synthetic_video_factory,
+) -> None:
     primary_path = Path(synthetic_video_factory(name="overlay-font-controls-ui"))
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -3178,7 +3451,9 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(syn
                 )
 
                 page.locator("#overlay-font-family").select_option("Courier New")
-                page.wait_for_function("() => state?.project?.overlay?.font_family === 'Courier New'")
+                page.wait_for_function(
+                    "() => state?.project?.overlay?.font_family === 'Courier New'"
+                )
                 timer_badge.wait_for(state="visible")
                 page.wait_for_function(
                     """() => {
@@ -3214,7 +3489,9 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(syn
                         };
                     }"""
                 )
-                assert float(after_style["size"].removesuffix("px")) > float(before_style["size"].removesuffix("px"))
+                assert float(after_style["size"].removesuffix("px")) > float(
+                    before_style["size"].removesuffix("px")
+                )
                 assert after_style["weight"] in {"700", "bold"}
                 assert after_style["style"] == "italic"
                 assert after_style["width"] != ""
@@ -3250,22 +3527,33 @@ def test_export_log_modal_opens_closes_backdrop_and_downloads_last_log(tmp_path:
                 assert download.suggested_filename.endswith("-export-log.txt")
                 download_target = tmp_path / download.suggested_filename
                 download.save_as(str(download_target))
-                assert download_target.read_text(encoding="utf-8") == "Encoder command:\nffmpeg -i input\n"
+                assert (
+                    download_target.read_text(encoding="utf-8")
+                    == "Encoder command:\nffmpeg -i input\n"
+                )
 
                 page.locator("#close-export-log").click()
-                page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-modal')?.hidden === true"
+                )
 
                 page.locator("#show-export-log").click(force=True)
-                page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-modal')?.hidden === false"
+                )
                 page.evaluate("document.querySelector('[data-close-export-log=\"true\"]')?.click()")
-                page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
+                page.wait_for_function(
+                    "() => document.getElementById('export-log-modal')?.hidden === true"
+                )
             finally:
                 browser.close()
     finally:
         server.shutdown()
 
 
-def test_export_controls_update_preset_and_settings_state(synthetic_video_factory, tmp_path: Path) -> None:
+def test_export_controls_update_preset_and_settings_state(
+    synthetic_video_factory, tmp_path: Path
+) -> None:
     primary_path = Path(synthetic_video_factory(name="export-controls-ui"))
     export_path = tmp_path / "exports" / "custom-output.mp4"
     server = BrowserControlServer(port=0)
@@ -3279,7 +3567,9 @@ def test_export_controls_update_preset_and_settings_state(synthetic_video_factor
                 page.locator('[data-tool-pane="export"]').wait_for(state="visible")
 
                 page.locator("#export-preset").select_option("youtube_long_1080p")
-                page.wait_for_function("() => state?.project?.export?.preset === 'youtube_long_1080p'")
+                page.wait_for_function(
+                    "() => state?.project?.export?.preset === 'youtube_long_1080p'"
+                )
                 assert page.locator("#export-preset").input_value() == "youtube_long_1080p"
                 assert "1920x1080" in page.locator("#export-preset-description").text_content()
 
@@ -3418,7 +3708,9 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                     arg=second_shot_time_ms,
                 )
 
-                score_select = page.locator('#scoring-workbench-table select[data-score-field="letter"]').first
+                score_select = page.locator(
+                    '#scoring-workbench-table select[data-score-field="letter"]'
+                ).first
                 lock_button = page.locator("#scoring-workbench-table .lock-button").first
                 lock_button.click()
                 score_select.wait_for(state="visible")
@@ -3426,7 +3718,9 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 score_values = score_select.evaluate(
                     "select => [...select.options].map((option) => option.value)"
                 )
-                next_letter = next((value for value in score_values if value != original_letter), original_letter)
+                next_letter = next(
+                    (value for value in score_values if value != original_letter), original_letter
+                )
                 penalty_select = page.locator("#scoring-workbench-table .shot-penalty-select").first
                 penalty_options = penalty_select.evaluate(
                     "select => [...select.options].map((option) => option.value).filter(Boolean)"
@@ -3445,9 +3739,16 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                         && segment.score_letter === letter
                         && Number(segment.penalty_counts?.[penaltyField] || 0) === 1;
                     }""",
-                    arg={"shotId": first_shot_id, "letter": next_letter, "penaltyField": penalty_options[0]},
+                    arg={
+                        "shotId": first_shot_id,
+                        "letter": next_letter,
+                        "penaltyField": penalty_options[0],
+                    },
                 )
-                updated_letter = page.evaluate("(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.score_letter ?? null", first_shot_id)
+                updated_letter = page.evaluate(
+                    "(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.score_letter ?? null",
+                    first_shot_id,
+                )
                 assert updated_letter == next_letter
                 updated_penalties = page.evaluate(
                     "(shotId) => (state?.timing_segments || []).find((item) => item.shot_id === shotId)?.penalty_counts ?? {}",
@@ -3455,7 +3756,9 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 )
                 assert updated_penalties[penalty_options[0]] == 1
 
-                page.locator("#scoring-workbench-table button.restore-button:not(.danger-button)").first.click()
+                page.locator(
+                    "#scoring-workbench-table button.restore-button:not(.danger-button)"
+                ).first.click()
                 page.wait_for_function(
                     """({ shotId, originalLetter }) => {
                       const segment = (state?.timing_segments || []).find((item) => item.shot_id === shotId);
@@ -3472,15 +3775,20 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                 )
                 assert restored_letter == original_letter
 
-                page.locator("#scoring-workbench-table button.danger-button").nth(1).dispatch_event("click")
+                page.locator("#scoring-workbench-table button.danger-button").nth(1).dispatch_event(
+                    "click"
+                )
                 page.wait_for_function(
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     arg=second_shot_id,
                 )
-                assert page.evaluate(
-                    """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
-                    second_shot_id,
-                ) is True
+                assert (
+                    page.evaluate(
+                        """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
+                        second_shot_id,
+                    )
+                    is True
+                )
 
                 page.locator("#collapse-scoring").click()
                 page.wait_for_function(
@@ -3540,7 +3848,10 @@ def test_scoring_workbench_uses_fixed_full_width_columns(synthetic_video_factory
                 assert "minmax(" in layout["template"]
                 assert len(layout["headers"]) == 9
                 assert all(header["width"] >= 80 for header in layout["headers"])
-                assert sum(header["width"] for header in layout["headers"]) >= layout["tableWidth"] - 180
+                assert (
+                    sum(header["width"] for header in layout["headers"])
+                    >= layout["tableWidth"] - 180
+                )
             finally:
                 browser.close()
     finally:
@@ -3572,7 +3883,9 @@ def test_waveform_viewport_window_drag_persists_after_reload(synthetic_video_fac
                 assert track_box is not None
                 assert handle_box is not None
 
-                initial_offset = int(page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))"))
+                initial_offset = int(
+                    page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))")
+                )
                 start_x = handle_box["x"] + handle_box["width"] / 2
                 start_y = handle_box["y"] + handle_box["height"] / 2
                 target_ratio = 0.75 if start_x < track_box["x"] + track_box["width"] / 2 else 0.25
@@ -3588,17 +3901,26 @@ def test_waveform_viewport_window_drag_persists_after_reload(synthetic_video_fac
                     arg=initial_offset,
                 )
 
-                stored_offset = int(page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))"))
+                stored_offset = int(
+                    page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))")
+                )
                 assert stored_offset != initial_offset
                 page.wait_for_timeout(500)
 
                 page.reload(wait_until="domcontentloaded")
-                page.wait_for_function("(expected) => waveformOffsetMs === expected", arg=stored_offset)
+                page.wait_for_function(
+                    "(expected) => waveformOffsetMs === expected", arg=stored_offset
+                )
                 if not page.locator("#waveform-window").is_visible():
                     page.locator("#expand-waveform").click()
                     page.wait_for_timeout(150)
                 assert page.evaluate("waveformOffsetMs") == stored_offset
-                assert int(page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))")) == stored_offset
+                assert (
+                    int(
+                        page.evaluate("Number(localStorage.getItem('splitshot.waveform.offsetMs'))")
+                    )
+                    == stored_offset
+                )
             finally:
                 browser.close()
     finally:

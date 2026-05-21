@@ -48,13 +48,24 @@ def _build_specs() -> tuple[BackendSpec, BackendSpec]:
         cwd=REPO,
         env={**os.environ},
     )
-    python_bin = BUNDLE / ".venv" / ("Scripts" if sys.platform == "win32" else "bin") / (
-        "python.exe" if sys.platform == "win32" else "python"
+    python_bin = (
+        BUNDLE
+        / ".venv"
+        / ("Scripts" if sys.platform == "win32" else "bin")
+        / ("python.exe" if sys.platform == "win32" else "python")
     )
     bundled = BackendSpec(
         name="bundled",
         port=bundled_port,
-        command=[str(python_bin), "-m", "splitshot", "--headless", "--no-open", "--port", str(bundled_port)],
+        command=[
+            str(python_bin),
+            "-m",
+            "splitshot",
+            "--headless",
+            "--no-open",
+            "--port",
+            str(bundled_port),
+        ],
         cwd=BUNDLE,
         env={**os.environ, "PYTHONPATH": str(BUNDLE / "src")},
     )
@@ -119,7 +130,11 @@ def _wait_for_server(
             return json.loads(response.read().decode())
         except (urllib.error.URLError, ConnectionResetError, json.JSONDecodeError):
             time.sleep(0.5)
-    detail = _read_process_tail(proc) if proc.poll() is not None else "process still running without responding"
+    detail = (
+        _read_process_tail(proc)
+        if proc.poll() is not None
+        else "process still running without responding"
+    )
     raise BackendStartupError(
         f"{spec.name} backend at {spec.base_url} did not start within {timeout}s\n{detail}"
     )
@@ -149,7 +164,7 @@ def _http_get(base_url: str, route: str) -> Any:
     content_type = response.headers.get("content-type", "")
     body = response.read()
     if "application/json" in content_type:
-      return json.loads(body.decode())
+        return json.loads(body.decode())
     return body
 
 

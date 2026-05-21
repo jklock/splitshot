@@ -186,9 +186,13 @@ def main():
     log_out = log_dir / "stdout.log"
     log_err = log_dir / "stderr.log"
 
-    env = {**os.environ, "CI": "1", "SPLITSHOT_ELECTRON_TEST": "1",
-           "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
-           "SPLITSHOT_TEST_PORT": str(port)}
+    env = {
+        **os.environ,
+        "CI": "1",
+        "SPLITSHOT_ELECTRON_TEST": "1",
+        "SPLITSHOT_ELECTRON_READY_FILE": str(ready_file),
+        "SPLITSHOT_TEST_PORT": str(port),
+    }
     cmd = [str(executable)]
     if sys.platform.startswith("linux"):
         env["ELECTRON_DISABLE_SANDBOX"] = "1"
@@ -221,17 +225,25 @@ def main():
         pw_log_dir = ARTIFACTS_DIR / "e2e-logs"
         shutil.rmtree(pw_log_dir, ignore_errors=True)
         pw_log_dir.mkdir(parents=True, exist_ok=True)
-        pw_env = {**os.environ, "E2E_PORT": str(port),
-                   "E2E_LOG_DIR": str(pw_log_dir),
-                   "E2E_VIDEO_PATH": str(video_path),
-                   "NODE_PATH": str(electron_dir / "node_modules")}
+        pw_env = {
+            **os.environ,
+            "E2E_PORT": str(port),
+            "E2E_LOG_DIR": str(pw_log_dir),
+            "E2E_VIDEO_PATH": str(video_path),
+            "NODE_PATH": str(electron_dir / "node_modules"),
+        }
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
             pw_env.pop(bad, None)
 
         result = subprocess.run(
             ["node", str(pw_script)],
-            capture_output=True, encoding="utf-8", errors="replace", timeout=300,
-            cwd=REPO, env=pw_env)
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+            cwd=REPO,
+            env=pw_env,
+        )
 
         if result.stdout:
             print(result.stdout, flush=True)
@@ -242,9 +254,12 @@ def main():
         if summary_file.exists():
             try:
                 summary = json.loads(summary_file.read_text())
-                print(f"E2E SUMMARY: result={summary.get('result')} "
-                      f"errors={summary.get('pageErrors', 0)} "
-                      f"artifacts={summary.get('artifacts', 0)}", flush=True)
+                print(
+                    f"E2E SUMMARY: result={summary.get('result')} "
+                    f"errors={summary.get('pageErrors', 0)} "
+                    f"artifacts={summary.get('artifacts', 0)}",
+                    flush=True,
+                )
                 failures = summary.get("failures") or []
                 if failures:
                     print("E2E FAILURES:", flush=True)
@@ -258,7 +273,9 @@ def main():
             print(f"E2E ARTIFACTS ({len(captured)} files):", flush=True)
             for f in sorted(captured):
                 sz = f.stat().st_size
-                print(f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True)
+                print(
+                    f"  {f.name} ({sz / 1024:.1f} KB)" if sz else f"  {f.name} (empty)", flush=True
+                )
 
         summary = None
         if summary_file.exists():
@@ -270,7 +287,9 @@ def main():
             raise RuntimeError("Playwright did not produce summary.json")
 
         if summary.get("result") != "passed":
-            raise RuntimeError(f"Playwright summary reported failure: {summary.get('failures') or summary.get('error') or 'unknown'}")
+            raise RuntimeError(
+                f"Playwright summary reported failure: {summary.get('failures') or summary.get('error') or 'unknown'}"
+            )
 
         if result.returncode != 0:
             print(f"FAIL: Playwright exited code {result.returncode}", file=sys.stderr, flush=True)

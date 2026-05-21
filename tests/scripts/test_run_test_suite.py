@@ -32,20 +32,26 @@ def test_runner_lists_available_suites_as_json() -> None:
 
 
 def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
-    result = run_runner("--suite", "browser", "--mode", "one-by-one", "--format", "json", "--dry-run")
+    result = run_runner(
+        "--suite", "browser", "--mode", "one-by-one", "--format", "json", "--dry-run"
+    )
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 19
-    assert payload["summary"]["total_runs"] == 19
+    assert payload["summary"]["planned"] == 23
+    assert payload["summary"]["total_runs"] == 23
     assert {run["status"] for run in payload["runs"]} == {"planned"}
     assert {tuple(run["targets"]) for run in payload["runs"]} == {
+        ("tests/browser/test_automation_ui_shell_contracts.py",),
         ("tests/browser/test_browser_control.py",),
         ("tests/browser/test_browser_control_coverage_matrix.py",),
         ("tests/browser/test_browser_control_inventory_audit.py",),
         ("tests/browser/test_browser_full_app_e2e.py",),
         ("tests/browser/test_browser_interactions.py",),
+        ("tests/browser/test_landing_backend_routes.py",),
+        ("tests/browser/test_landing_page.py",),
+        ("tests/browser/test_library_backend_contracts.py",),
         ("tests/browser/test_browser_rail_layout.py",),
         ("tests/browser/test_browser_remaining_controls_e2e.py",),
         ("tests/browser/test_browser_static_ui.py",),

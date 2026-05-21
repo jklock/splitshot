@@ -136,7 +136,15 @@ def _browser_session(
         browser_name=browser_name,
         cookies=list(
             cookies
-            or [{"name": "laravel_session", "value": "token", "domain": ".practiscore.com", "path": "/", "secure": True}]
+            or [
+                {
+                    "name": "laravel_session",
+                    "value": "token",
+                    "domain": ".practiscore.com",
+                    "path": "/",
+                    "secure": True,
+                }
+            ]
         ),
     )
 
@@ -164,7 +172,9 @@ def test_practiscore_session_start_route_returns_status_payload(monkeypatch) -> 
         return _FakeRuntime(url="https://practiscore.com/login")
 
     monkeypatch.setattr(practiscore_session_module, "launch_practiscore_browser", fake_launch)
-    monkeypatch.setattr(practiscore_session_module, "load_practiscore_system_browser_session", lambda: None)
+    monkeypatch.setattr(
+        practiscore_session_module, "load_practiscore_system_browser_session", lambda: None
+    )
     monkeypatch.setattr(
         practiscore_session_module,
         "open_practiscore_in_system_browser",
@@ -180,19 +190,30 @@ def test_practiscore_session_start_route_returns_status_payload(monkeypatch) -> 
         server.shutdown()
 
     assert payload["state"] == "authenticating"
-    assert payload["message"] == "Complete PractiScore login in your browser. SplitShot will continue in the background."
+    assert (
+        payload["message"]
+        == "Complete PractiScore login in your browser. SplitShot will continue in the background."
+    )
     assert payload["details"]["profile_path"].endswith("practiscore/browser-profile")
     assert open_calls == [practiscore_session_module.PRACTISCORE_ENTRY_URL]
 
 
 def test_practiscore_session_clear_route_resets_state(monkeypatch) -> None:
-    monkeypatch.setattr(practiscore_session_module, "open_practiscore_in_system_browser", lambda url: pytest.fail(f"unexpected browser open for {url}"))
+    monkeypatch.setattr(
+        practiscore_session_module,
+        "open_practiscore_in_system_browser",
+        lambda url: pytest.fail(f"unexpected browser open for {url}"),
+    )
 
     def fake_launch(profile_dir: Path, entry_url: str) -> _FakeRuntime:
         return _FakeRuntime(
             url="https://practiscore.com/search/matches",
             cookies=[{"domain": ".practiscore.com", "value": "session-token"}],
-            auth_markers={"hasLoginLink": False, "hasLogoutControl": True, "hasPasswordField": False},
+            auth_markers={
+                "hasLoginLink": False,
+                "hasLogoutControl": True,
+                "hasPasswordField": False,
+            },
         )
 
     monkeypatch.setattr(practiscore_session_module, "launch_practiscore_browser", fake_launch)
@@ -214,18 +235,26 @@ def test_practiscore_session_clear_route_resets_state(monkeypatch) -> None:
     assert profile_path.exists() is False
 
 
-def test_practiscore_session_start_route_stays_authenticating_when_login_controls_are_visible(monkeypatch) -> None:
+def test_practiscore_session_start_route_stays_authenticating_when_login_controls_are_visible(
+    monkeypatch,
+) -> None:
     open_calls: list[str] = []
 
     def fake_launch(profile_dir: Path, entry_url: str) -> _FakeRuntime:
         return _FakeRuntime(
             url="https://practiscore.com/search/matches",
             cookies=[{"domain": ".practiscore.com", "value": "session-token"}],
-            auth_markers={"hasLoginLink": True, "hasLogoutControl": False, "hasPasswordField": False},
+            auth_markers={
+                "hasLoginLink": True,
+                "hasLogoutControl": False,
+                "hasPasswordField": False,
+            },
         )
 
     monkeypatch.setattr(practiscore_session_module, "launch_practiscore_browser", fake_launch)
-    monkeypatch.setattr(practiscore_session_module, "load_practiscore_system_browser_session", lambda: None)
+    monkeypatch.setattr(
+        practiscore_session_module, "load_practiscore_system_browser_session", lambda: None
+    )
     monkeypatch.setattr(
         practiscore_session_module,
         "open_practiscore_in_system_browser",
@@ -241,7 +270,10 @@ def test_practiscore_session_start_route_stays_authenticating_when_login_control
         server.shutdown()
 
     assert payload["state"] == "authenticating"
-    assert payload["message"] == "Complete PractiScore login in your browser. SplitShot will continue in the background."
+    assert (
+        payload["message"]
+        == "Complete PractiScore login in your browser. SplitShot will continue in the background."
+    )
     assert open_calls == [practiscore_session_module.PRACTISCORE_ENTRY_URL]
 
 
@@ -253,13 +285,19 @@ def test_practiscore_session_start_route_reuses_existing_authenticated_runtime(m
         runtime = _FakeRuntime(
             url="https://practiscore.com/dashboard/home",
             cookies=[{"domain": ".practiscore.com", "value": "session-token"}],
-            auth_markers={"hasLoginLink": False, "hasLogoutControl": True, "hasPasswordField": False},
+            auth_markers={
+                "hasLoginLink": False,
+                "hasLogoutControl": True,
+                "hasPasswordField": False,
+            },
         )
         launches.append(runtime)
         return runtime
 
     monkeypatch.setattr(practiscore_session_module, "launch_practiscore_browser", fake_launch)
-    monkeypatch.setattr(practiscore_session_module, "load_practiscore_system_browser_session", lambda: None)
+    monkeypatch.setattr(
+        practiscore_session_module, "load_practiscore_system_browser_session", lambda: None
+    )
     monkeypatch.setattr(
         practiscore_session_module,
         "open_practiscore_in_system_browser",
@@ -281,7 +319,9 @@ def test_practiscore_session_start_route_reuses_existing_authenticated_runtime(m
     assert open_calls == []
 
 
-def test_practiscore_session_start_route_imports_existing_system_browser_session_without_opening_browser(monkeypatch) -> None:
+def test_practiscore_session_start_route_imports_existing_system_browser_session_without_opening_browser(
+    monkeypatch,
+) -> None:
     launches: list[_FakeRuntime] = []
     open_calls: list[str] = []
 
@@ -289,7 +329,11 @@ def test_practiscore_session_start_route_imports_existing_system_browser_session
         runtime = _FakeRuntime(
             url="https://practiscore.com/login",
             imported_url="https://practiscore.com/dashboard/home",
-            imported_auth_markers={"hasLoginLink": False, "hasLogoutControl": True, "hasPasswordField": False},
+            imported_auth_markers={
+                "hasLoginLink": False,
+                "hasLogoutControl": True,
+                "hasPasswordField": False,
+            },
         )
         launches.append(runtime)
         return runtime
@@ -323,7 +367,9 @@ def test_practiscore_session_start_route_imports_existing_system_browser_session
     assert open_calls == []
 
 
-def test_practiscore_session_start_route_does_not_open_system_browser_twice_while_authenticating(monkeypatch) -> None:
+def test_practiscore_session_start_route_does_not_open_system_browser_twice_while_authenticating(
+    monkeypatch,
+) -> None:
     launches: list[_FakeRuntime] = []
     open_calls: list[str] = []
 
@@ -333,7 +379,9 @@ def test_practiscore_session_start_route_does_not_open_system_browser_twice_whil
         return runtime
 
     monkeypatch.setattr(practiscore_session_module, "launch_practiscore_browser", fake_launch)
-    monkeypatch.setattr(practiscore_session_module, "load_practiscore_system_browser_session", lambda: None)
+    monkeypatch.setattr(
+        practiscore_session_module, "load_practiscore_system_browser_session", lambda: None
+    )
     monkeypatch.setattr(
         practiscore_session_module,
         "open_practiscore_in_system_browser",
@@ -355,7 +403,9 @@ def test_practiscore_session_start_route_does_not_open_system_browser_twice_whil
     assert open_calls == [practiscore_session_module.PRACTISCORE_ENTRY_URL]
 
 
-def test_practiscore_matches_route_returns_structured_unavailable_error_without_task_b_hook() -> None:
+def test_practiscore_matches_route_returns_structured_unavailable_error_without_task_b_hook() -> (
+    None
+):
     server = BrowserControlServer(controller=_controller_without_task_b_hooks(), port=0)
     server.start_background(open_browser=False)
 
@@ -410,7 +460,9 @@ def test_practiscore_session_routes_return_structured_error_payload(monkeypatch)
     assert payload["error"]["details"]["route"] == "/api/practiscore/session/start"
 
 
-def test_launch_practiscore_browser_reports_missing_desktop_runtime(monkeypatch, tmp_path: Path) -> None:
+def test_launch_practiscore_browser_reports_missing_desktop_runtime(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr(
         practiscore_session_module,
         "_launch_qt_practiscore_browser",

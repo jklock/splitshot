@@ -76,7 +76,9 @@ class DatasetSummary:
                 for label_source, class_counts in self.class_counts_by_label_source.items()
             },
             "label_source_counts": dict(self.label_source_counts),
-            "included_video_counts_by_label_source": dict(self.included_video_counts_by_label_source),
+            "included_video_counts_by_label_source": dict(
+                self.included_video_counts_by_label_source
+            ),
             "skipped_video_reasons": dict(self.skipped_video_reasons),
             "feature_count": self.feature_count,
             "clean_sample_count": self.clean_sample_count,
@@ -170,7 +172,10 @@ def _detector_draft_blockers(video: dict[str, object], policy: str) -> list[str]
         for flag in video.get("review_flags", [])
         if str(flag) in BLOCKING_REVIEW_FLAGS_FOR_DETECTOR_DRAFTS
     ]
-    if bool(video.get("duplicate_group_review_required")) and "duplicate_stage_inconsistency" not in blockers:
+    if (
+        bool(video.get("duplicate_group_review_required"))
+        and "duplicate_stage_inconsistency" not in blockers
+    ):
         blockers.append("duplicate_stage_inconsistency")
     return sorted(set(blockers))
 
@@ -234,7 +239,10 @@ def _background_centers(
             if center_ms in seen:
                 continue
             seen.add(center_ms)
-            if any(abs(center_ms - event_time_ms) <= config.exclusion_radius_ms for event_time_ms in occupied_times_ms):
+            if any(
+                abs(center_ms - event_time_ms) <= config.exclusion_radius_ms
+                for event_time_ms in occupied_times_ms
+            ):
                 continue
             centers.append(center_ms)
             if len(centers) >= limit:
@@ -265,11 +273,12 @@ def extract_training_dataset(
     rng = np.random.default_rng(config.seed)
     class_counts = {name: 0 for name in CLASS_NAMES}
     class_counts_by_label_source = {
-        label_source: {name: 0 for name in CLASS_NAMES}
-        for label_source in MANIFEST_LABEL_SOURCES
+        label_source: {name: 0 for name in CLASS_NAMES} for label_source in MANIFEST_LABEL_SOURCES
     }
     label_source_counts = {label_source: 0 for label_source in MANIFEST_LABEL_SOURCES}
-    included_video_counts_by_label_source = {label_source: 0 for label_source in MANIFEST_LABEL_SOURCES}
+    included_video_counts_by_label_source = {
+        label_source: 0 for label_source in MANIFEST_LABEL_SOURCES
+    }
     skipped_video_reasons: dict[str, int] = {}
     included_video_count = 0
     skipped_video_count = 0
@@ -277,9 +286,13 @@ def extract_training_dataset(
     for video in videos:
         if not isinstance(video, dict):
             skipped_video_count += 1
-            skipped_video_reasons["invalid_video_entry"] = skipped_video_reasons.get("invalid_video_entry", 0) + 1
+            skipped_video_reasons["invalid_video_entry"] = (
+                skipped_video_reasons.get("invalid_video_entry", 0) + 1
+            )
             continue
-        beep_time_ms, shot_times_ms, label_source, skip_reason = _event_times_for_entry(video, config)
+        beep_time_ms, shot_times_ms, label_source, skip_reason = _event_times_for_entry(
+            video, config
+        )
         if label_source is None:
             skipped_video_count += 1
             skipped_video_reasons[skip_reason] = skipped_video_reasons.get(skip_reason, 0) + 1
@@ -301,7 +314,11 @@ def extract_training_dataset(
             class_counts_by_label_source[label_source]["beep"] += 1
             label_source_counts[label_source] += 1
             for _ in range(max(0, config.augment_replicas_per_event)):
-                features.append(extract_window_features(_augment_window(beep_window, sample_rate, "beep", rng), sample_rate))
+                features.append(
+                    extract_window_features(
+                        _augment_window(beep_window, sample_rate, "beep", rng), sample_rate
+                    )
+                )
                 labels.append(CLASS_TO_INDEX["beep"])
                 source_paths.append(str(video_path))
                 label_sources.append(label_source)
@@ -321,7 +338,11 @@ def extract_training_dataset(
             class_counts_by_label_source[label_source]["shot"] += 1
             label_source_counts[label_source] += 1
             for _ in range(max(0, config.augment_replicas_per_event)):
-                features.append(extract_window_features(_augment_window(shot_window, sample_rate, "shot", rng), sample_rate))
+                features.append(
+                    extract_window_features(
+                        _augment_window(shot_window, sample_rate, "shot", rng), sample_rate
+                    )
+                )
                 labels.append(CLASS_TO_INDEX["shot"])
                 source_paths.append(str(video_path))
                 label_sources.append(label_source)
@@ -334,7 +355,11 @@ def extract_training_dataset(
         if beep_time_ms is not None:
             occupied.append(beep_time_ms)
         for background_center_ms in _background_centers(duration_ms, occupied, config):
-            features.append(extract_window_features(_extract_window(samples, sample_rate, background_center_ms), sample_rate))
+            features.append(
+                extract_window_features(
+                    _extract_window(samples, sample_rate, background_center_ms), sample_rate
+                )
+            )
             labels.append(CLASS_TO_INDEX["background"])
             source_paths.append(str(video_path))
             label_sources.append(label_source)
@@ -343,7 +368,10 @@ def extract_training_dataset(
             class_counts_by_label_source[label_source]["background"] += 1
             label_source_counts[label_source] += 1
 
-    feature_matrix = np.zeros((0, len(extract_window_features(np.zeros(WINDOW_SIZE, dtype=np.float32), 22050))), dtype=np.float32)
+    feature_matrix = np.zeros(
+        (0, len(extract_window_features(np.zeros(WINDOW_SIZE, dtype=np.float32), 22050))),
+        dtype=np.float32,
+    )
     if features:
         feature_matrix = np.stack(features, axis=0).astype(np.float32)
     label_vector = np.asarray(labels, dtype=np.int64)
@@ -367,4 +395,11 @@ def extract_training_dataset(
         augment_replicas_per_event=config.augment_replicas_per_event,
         detector_draft_policy=config.detector_draft_policy,
     )
-    return feature_matrix, label_vector, source_vector, label_source_vector, augmented_vector, summary
+    return (
+        feature_matrix,
+        label_vector,
+        source_vector,
+        label_source_vector,
+        augmented_vector,
+        summary,
+    )

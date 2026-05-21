@@ -134,7 +134,9 @@ def _manifest_payload(video_path: Path) -> dict[str, object]:
     }
 
 
-def test_autolabel_training_manifest_promotes_only_stable_entries(tmp_path: Path, synthetic_video_factory) -> None:
+def test_autolabel_training_manifest_promotes_only_stable_entries(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     video_path = synthetic_video_factory(name="autolabel-source")
     manifest_path = tmp_path / "shotml-label-manifest.json"
     summary_path = tmp_path / "training-autolabel-summary.json"

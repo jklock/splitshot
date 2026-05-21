@@ -7,6 +7,56 @@
     <link rel="stylesheet" href="/static/styles.css?v=20260501f" />
   </head>
   <body>
+    <section id="landing-page" aria-label="SplitShot home" hidden>
+      <div class="landing-hero">
+        <img class="landing-logo" src="/static/logo.png" alt="SplitShot" />
+        <h1>SplitShot</h1>
+        <p class="landing-tagline">Competition shooting video analysis, scoring, and performance tracking</p>
+      </div>
+
+      <div class="landing-cards">
+        <button class="landing-card" data-surface="single" type="button" aria-label="Open Stage Video Edit">
+          <span class="landing-card-icon">🎬</span>
+          <h2>Stage Video Edit</h2>
+          <p>Review and polish one stage at a time</p>
+        </button>
+
+        <button class="landing-card" data-surface="multi" type="button" aria-label="Open Match Video Edit">
+          <span class="landing-card-icon">🏆</span>
+          <h2>Match Video Edit</h2>
+          <p>Edit a whole match quickly</p>
+        </button>
+
+        <button class="landing-card" data-surface="library" type="button" aria-label="Open Performance Library">
+          <span class="landing-card-icon">📊</span>
+          <h2>Performance Library</h2>
+          <p>See your progress over time</p>
+        </button>
+      </div>
+
+      <section class="landing-recent" aria-label="Recent activity">
+        <h3>Recent Activity</h3>
+        <div id="landing-recent-list" class="landing-recent-list">
+          <p class="landing-empty-hint">No recent activity. Start by editing a stage!</p>
+        </div>
+      </section>
+
+      <section class="landing-quick-start" aria-label="Quick start shortcuts">
+        <button id="landing-new-stage" class="landing-quick-button" type="button" aria-label="Create new stage">New Stage</button>
+        <button id="landing-new-match" class="landing-quick-button" type="button" aria-label="Create new match">New Match</button>
+        <button id="landing-open-file" class="landing-quick-button" type="button" aria-label="Open existing file">Open File</button>
+      </section>
+
+      <footer class="landing-footer">
+        <div class="landing-footer-row">
+          <span id="landing-version">SplitShot v1.0.5</span>
+          <a href="#" class="landing-footer-link">User Guide</a>
+          <a href="#" class="landing-footer-link">Settings</a>
+        </div>
+        <p class="landing-shortcut-hint">Tip: Use keyboard shortcuts for faster editing. See the User Guide for details.</p>
+      </footer>
+    </section>
+
     <div class="app-shell cockpit-shell">
       <aside class="tool-rail" aria-label="SplitShot tools">
         <div class="rail-brand">
@@ -50,23 +100,26 @@
         </section>
         <section class="surface-header" aria-label="SplitShot workspace context">
           <div class="surface-switcher" role="tablist" aria-label="SplitShot surfaces">
-            <button id="surface-single-video" class="surface-button active" data-surface="single" type="button" role="tab" aria-selected="true">Single Video</button>
-            <button id="surface-multi-video" class="surface-button" data-surface="multi" type="button" role="tab" aria-selected="false">Multi Video</button>
+            <button id="surface-stage-video" class="surface-button" data-surface="single" type="button" role="tab" aria-selected="false">Stage Video Edit</button>
+            <button id="surface-match-video" class="surface-button" data-surface="multi" type="button" role="tab" aria-selected="false">Match Video Edit</button>
             <button id="surface-performance-library" class="surface-button" data-surface="library" type="button" role="tab" aria-selected="false">Performance Library</button>
           </div>
           <div class="surface-context" aria-label="Active editing context">
             <strong id="surface-context-title">Standalone stage</strong>
             <span id="surface-context-stage">No stage loaded</span>
             <span id="surface-context-status">Output and proxy status pending</span>
+            <button id="surface-go-home" type="button" aria-label="Return to home">Home</button>
             <button id="surface-return-workspace" type="button" hidden>Return to Workspace</button>
           </div>
         </section>
         <section id="automation-surface-panel" class="automation-surface-panel" aria-label="Automation surface controls">
           <section class="automation-panel active" data-surface-panel="single" aria-label="Single Video output profiles">
             <div class="section-header">
-              <h2>Single Video</h2>
+              <h2>Stage Video Edit</h2>
               <button id="output-profile-refresh" type="button">Update Profiles</button>
             </div>
+            <div id="single-video-loading" class="automation-loading" hidden>Loading profile data...</div>
+            <div id="single-video-error" class="automation-error" hidden>Failed to load profiles.</div>
             <div class="automation-grid">
               <section class="automation-card">
                 <div class="section-header sub-section-header">
@@ -84,29 +137,163 @@
               </section>
               <section class="automation-card">
                 <div class="section-header sub-section-header">
+                  <h3>Review Source</h3>
+                </div>
+                <div class="profile-toolbar">
+                  <select id="retained-review-source" aria-label="Retained review source profile">
+                    <option value="">Auto (current stage)</option>
+                  </select>
+                  <button id="retained-review-apply" type="button">Set Source</button>
+                </div>
+                <div id="retained-review-status" class="hint">Using live stage data.</div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
                   <h3>Output Hooks</h3>
                 </div>
                 <div class="hook-grid">
-                  <button data-output-hook="run-window" type="button">Run Window</button>
-                  <button data-output-hook="metric-captions" type="button">Metric Captions</button>
-                  <button data-output-hook="frame-profiles" type="button">Frame Profiles</button>
-                  <button data-output-hook="lead-in-card" type="button">Lead-In Card</button>
-                  <button data-output-hook="brand-mark" type="button">Brand Mark</button>
-                  <button data-output-hook="subject-track-crop" type="button">Subject Track Crop</button>
+                  <button data-output-hook="run-window" type="button">Trim Dead Time</button>
+                  <button data-output-hook="metric-captions" type="button">Shot Data on Screen</button>
+                  <button data-output-hook="frame-profiles" type="button">Video Shape</button>
+                  <button data-output-hook="lead-in-card" type="button">Opening Title</button>
+                  <button data-output-hook="brand-mark" type="button">Your Logo</button>
+                  <button data-output-hook="subject-track-crop" type="button">Keep Shooter in Frame</button>
+                </div>
+                <div id="output-hook-editor" class="output-hook-editor" hidden>
+                  <div class="section-header sub-section-header">
+                    <h4 id="output-hook-title">Hook Editor</h4>
+                    <button id="output-hook-close" type="button">Close</button>
+                  </div>
+                  <div id="output-hook-fields" class="output-hook-fields"></div>
                 </div>
                 <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Multi-Angle Features</h3>
+                </div>
+                <div class="feature-grid">
+                  <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
+                    <span class="feature-icon">🔄</span>
+                    <span>Smart Angle Switching</span>
+                    <small class="hint">Auto switch between camera angles</small>
+                  </button>
+                  <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
+                    <span class="feature-icon">📐</span>
+                    <span>Line Up Angles</span>
+                    <small class="hint">Synchronize angle timing</small>
+                  </button>
+                  <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
+                    <span class="feature-icon">🎥</span>
+                    <span>Camera Jobs</span>
+                    <small class="hint">Assign roles to each angle</small>
+                  </button>
+                  <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
+                    <span class="feature-icon">🔊</span>
+                    <span>Audio Balance</span>
+                    <small class="hint">Mute, gain, and primary selector</small>
+                  </button>
+                  <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
+                    <span class="feature-icon">✂️</span>
+                    <span>Override Smart Cuts</span>
+                    <small class="hint">Manual cut point adjustments</small>
+                  </button>
+                  <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
+                    <span class="feature-icon">🎯</span>
+                    <span>Keep Shooter in Frame</span>
+                    <small class="hint">Auto-crop tracking</small>
+                  </button>
+                </div>
+                <div id="feature-editor" class="output-hook-editor" hidden>
+                  <div class="section-header sub-section-header">
+                    <h4 id="feature-title">Feature Editor</h4>
+                    <button id="feature-close" type="button">Close</button>
+                  </div>
+                  <div id="feature-fields" class="output-hook-fields"></div>
+                </div>
               </section>
             </div>
           </section>
           <section class="automation-panel" data-surface-panel="multi" aria-label="Multi Video workspace">
             <div class="section-header">
-              <h2>Multi Video</h2>
+              <h2>Match Video Edit</h2>
               <div class="section-header-actions">
                 <button id="workspace-new" type="button">New Workspace</button>
                 <button id="workspace-save" type="button">Save Workspace</button>
               </div>
             </div>
+            <div id="multi-video-loading" class="automation-loading" hidden>Loading workspace data...</div>
+            <div id="multi-video-error" class="automation-error" hidden>Failed to load workspace.</div>
             <div class="automation-grid">
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Shared Defaults</h3>
+                </div>
+                <div id="shared-defaults-editor" class="automation-detail">
+                  <p class="hint">Set shared output defaults that apply to all workspace stages.</p>
+                  <div class="control-grid">
+                    <label>Video Shape
+                      <select id="shared-frame-profile" aria-label="Shared Video Shape">
+                        <option value="source">Source</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                        <option value="1:1">1:1</option>
+                      </select>
+                    </label>
+                    <label>Shot Data on Screen
+                      <select id="shared-metric-captions" aria-label="Shared Shot Data on Screen">
+                        <option value="none">None</option>
+                        <option value="splits">Splits</option>
+                        <option value="score">Score</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="control-grid">
+                    <label>Opening Title
+                      <select id="shared-lead-in" aria-label="Shared Opening Title">
+                        <option value="none">None</option>
+                        <option value="stage_info">Stage Info</option>
+                        <option value="competitor">Competitor</option>
+                      </select>
+                    </label>
+                    <label>Your Logo
+                      <select id="shared-brand-mark" aria-label="Shared Your Logo">
+                        <option value="none">None</option>
+                        <option value="splitshot">SplitShot</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="button-grid two-up">
+                    <button id="shared-defaults-apply" type="button">Apply Defaults</button>
+                    <button id="shared-defaults-reset" type="button">Reset</button>
+                  </div>
+                </div>
+              </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Stage Overrides</h3></div>
+                <div id="stage-override-editor" class="automation-detail">
+                  <p class="hint">Select a workspace stage to edit its overrides.</p>
+                  <div class="control-grid" hidden>
+                    <label>Override Video Shape
+                      <select id="override-frame-profile" aria-label="Override Video Shape">
+                        <option value="">Inherit</option>
+                        <option value="source">Source</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                      </select>
+                    </label>
+                    <label>Override Shot Data on Screen
+                      <select id="override-metric-captions" aria-label="Override Shot Data on Screen">
+                        <option value="">Inherit</option>
+                        <option value="none">None</option>
+                        <option value="splits">Splits</option>
+                        <option value="score">Score</option>
+                      </select>
+                    </label>
+                  </div>
+                  <button id="override-apply" type="button" hidden>Apply Override</button>
+                </div>
+              </section>
               <section class="automation-card">
                 <div class="section-header sub-section-header"><h3>Stages</h3></div>
                 <div class="profile-toolbar">
@@ -114,6 +301,17 @@
                   <button id="workspace-stage-add" type="button">Add Stage</button>
                 </div>
                 <div id="workspace-stage-list" class="automation-list" aria-label="Workspace stage list"></div>
+                <div id="setup-once-banner" class="setup-once-banner" hidden>
+                  <div class="setup-once-content">
+                    <span class="setup-once-icon">&#x2728;</span>
+                    <div>
+                      <strong>Stage 1 is configured!</strong>
+                      <p class="hint">Apply Stage 1's settings to all other stages in one click.</p>
+                    </div>
+                    <button id="setup-once-apply" type="button">Apply to All</button>
+                    <button id="setup-once-dismiss" type="button" class="button-ghost">Dismiss</button>
+                  </div>
+                </div>
               </section>
               <section class="automation-card">
                 <div class="section-header sub-section-header"><h3>Match Recap</h3></div>
@@ -132,29 +330,142 @@
                 </div>
                 <div id="stage-composite-list" class="automation-list" aria-label="Stage composite clip list"></div>
               </section>
+              <section class="automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Batch Export</h3>
+                </div>
+                <div id="batch-export-panel" class="batch-export-panel">
+                  <div class="batch-export-controls">
+                    <button id="batch-select-all" type="button" class="button-ghost">Select All</button>
+                    <button id="batch-select-none" type="button" class="button-ghost">Select None</button>
+                    <select id="batch-recipe" aria-label="Output recipe">
+                      <option value="stage_output">Stage Output</option>
+                      <option value="stage_composite">Stage Composite</option>
+                    </select>
+                    <button id="batch-export-start" type="button">Export Selected</button>
+                  </div>
+                  <div id="batch-export-queue" class="batch-export-queue">
+                    <p class="hint">Add stages to the workspace to batch export.</p>
+                  </div>
+                  <div id="batch-export-progress" class="batch-export-progress" hidden>
+                    <div class="progress-bar">
+                      <div class="progress-fill" style="width:0%"></div>
+                    </div>
+                    <span id="batch-export-status">Ready</span>
+                  </div>
+                </div>
+              </section>
             </div>
           </section>
-          <section class="automation-panel" data-surface-panel="library" aria-label="Performance Library">
+                    <section class="automation-panel" data-surface-panel="library" aria-label="Performance Library">
             <div class="section-header">
               <h2>Performance Library</h2>
-              <button id="library-refresh" type="button">Update Library</button>
+              <div class="section-header-actions">
+                <button id="library-export-csv" type="button" class="button-ghost">Export CSV</button>
+                <button id="library-export-json" type="button" class="button-ghost">Export JSON</button>
+                <button id="library-refresh" type="button">Update Library</button>
+              </div>
             </div>
+            <div id="library-loading" class="automation-loading" hidden>Loading library data...</div>
+            <div id="library-error" class="automation-error" hidden>Failed to load library records.</div>
+            <div id="library-stale" class="automation-stale" hidden>Library data may be out of date.</div>
             <div class="automation-grid">
+              <!-- Summary Tiles -->
               <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Overview</h3></div>
                 <div id="library-summary-tiles" class="library-summary-tiles" aria-label="Library summary"></div>
+              </section>
+              <!-- Search and Filter -->
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Records</h3></div>
                 <div class="profile-toolbar">
-                  <input id="library-search" type="search" placeholder="Search competitor" aria-label="Search library" />
+                  <input id="library-search" type="search" placeholder="Search by name, date, discipline..." aria-label="Search library" />
                   <select id="library-sort" aria-label="Library sort">
-                    <option value="event_date">Event date</option>
+                    <option value="event_date">Date (newest)</option>
                     <option value="display_name">Name</option>
                     <option value="discipline">Discipline</option>
+                    <option value="score">Best Score</option>
+                  </select>
+                  <select id="library-filter-discipline" aria-label="Filter by discipline">
+                    <option value="">All Disciplines</option>
+                    <option value="uspsa">USPSA</option>
+                    <option value="idpa">IDPA</option>
+                    <option value="ipsc">IPSC</option>
+                    <option value="steel_challenge">Steel Challenge</option>
                   </select>
                 </div>
                 <div id="library-record-list" class="automation-list" aria-label="Library records"></div>
+                <div id="library-personal-bests" class="library-personal-bests" aria-label="Personal bests">
+                  <div class="section-header sub-section-header"><h4>Personal Bests</h4></div>
+                  <div id="personal-bests-list" class="automation-list"></div>
+                </div>
               </section>
+              <!-- Selected Record Detail -->
               <section class="automation-card">
                 <div class="section-header sub-section-header"><h3>Selected Record</h3></div>
                 <pre id="library-record-detail" class="automation-detail">Select a library record.</pre>
+                <div id="library-record-actions" class="button-grid two-up" hidden>
+                  <button id="library-open-stage" type="button">Open Stage</button>
+                  <button id="library-open-workspace" type="button">Open Workspace</button>
+                </div>
+                <div id="library-tags-editor" hidden>
+                  <div class="section-header sub-section-header"><h4>Tags</h4></div>
+                  <div class="profile-toolbar">
+                    <input id="library-tag-input" type="text" placeholder="Add tag..." aria-label="Tag name" />
+                    <button id="library-tag-add" type="button">Add</button>
+                  </div>
+                  <div id="library-tag-list" class="library-tag-list"></div>
+                </div>
+                <div id="library-notes-editor" hidden>
+                  <div class="section-header sub-section-header"><h4>Notes</h4></div>
+                  <textarea id="library-notes-text" placeholder="Record notes..." aria-label="Record notes" rows="4"></textarea>
+                  <button id="library-notes-save" type="button" style="margin-top:4px">Save Notes</button>
+                </div>
+              </section>
+              <!-- Analytics Dashboard -->
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Analytics</h3></div>
+                <div id="library-analytics" class="library-analytics">
+                  <div class="analytics-chart-section">
+                    <h4>Score Trend</h4>
+                    <div id="analytics-score-trend" class="analytics-chart-placeholder chart-bar">
+                      <div class="chart-bar-container">
+                        <div class="chart-bar" style="height:60%"><span>85%</span></div>
+                        <div class="chart-bar" style="height:75%"><span>92%</span></div>
+                        <div class="chart-bar" style="height:70%"><span>88%</span></div>
+                        <div class="chart-bar accent" style="height:95%"><span>98%</span></div>
+                        <div class="chart-bar" style="height:80%"><span>91%</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="analytics-chart-section">
+                    <h4>Discipline Breakdown</h4>
+                    <div id="analytics-discipline-chart" class="analytics-chart-placeholder">
+                      <div class="discipline-bars">
+                        <div class="discipline-bar"><span class="bar-label">USPSA</span><span class="bar-fill" style="width:65%">12</span></div>
+                        <div class="discipline-bar"><span class="bar-label">IDPA</span><span class="bar-fill" style="width:35%">6</span></div>
+                        <div class="discipline-bar"><span class="bar-label">SC</span><span class="bar-fill" style="width:20%">3</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="analytics-chart-section">
+                    <h4>Outliers</h4>
+                    <div id="analytics-outliers" class="automation-list">
+                      <p class="hint">Outlier detection will highlight unusually high or low scores after enough records are added.</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+              <!-- Backup & Restore -->
+              <section class="automation-card">
+                <div class="section-header sub-section-header"><h3>Backup &amp; Restore</h3></div>
+                <div id="library-backup-panel">
+                  <div class="button-grid two-up">
+                    <button id="library-backup-create" type="button">Create Backup</button>
+                    <button id="library-backup-restore" type="button">Restore Backup</button>
+                  </div>
+                  <div id="library-backup-status" class="hint" style="margin-top:8px">Backup your library records for safekeeping.</div>
+                </div>
               </section>
             </div>
           </section>
@@ -200,6 +511,20 @@
                 </div>
               </div>
               <div class="waveform-actions waveform-footer">
+                <div class="waveform-tracks-controls" id="waveform-tracks-controls" hidden>
+                  <span class="waveform-tracks-label">Tracks:</span>
+                  <div id="waveform-track-list" class="waveform-track-list"></div>
+                </div>
+                <div class="waveform-mode-toggle">
+                  <button id="waveform-mode-single" class="waveform-mode-button active" type="button">Single</button>
+                  <button id="waveform-mode-multi" class="waveform-mode-button" type="button">Multi-Track</button>
+                </div>
+                <div class="waveform-segment-legend" id="waveform-segment-legend" hidden>
+                  <span><span class="waveform-segment-dot" style="background:#39d06f"></span>Moving</span>
+                  <span><span class="waveform-segment-dot" style="background:#ffc107"></span>Static</span>
+                  <span><span class="waveform-segment-dot" style="background:#f05252"></span>Long Move</span>
+                  <span><span class="waveform-segment-dot" style="background:var(--accent)"></span>Auto-Cut</span>
+                </div>
                 <button id="zoom-waveform-out" type="button">Zoom -</button>
                 <button id="zoom-waveform-in" type="button">Zoom +</button>
                 <button id="amp-waveform-out" type="button">Amp -</button>

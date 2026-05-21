@@ -57,7 +57,9 @@ def test_threshold_reanalysis_restores_selection_by_nearest_time(monkeypatch) ->
     reanalyzed_shots = _shots(260, 515, 880)
     detections = [
         DetectionResult(beep_time_ms=100, shots=initial_shots, waveform=[0.1], sample_rate=22050),
-        DetectionResult(beep_time_ms=100, shots=reanalyzed_shots, waveform=[0.2], sample_rate=22050),
+        DetectionResult(
+            beep_time_ms=100, shots=reanalyzed_shots, waveform=[0.2], sample_rate=22050
+        ),
     ]
 
     def fake_analyze_video_audio(path: str, threshold: float) -> DetectionResult:
@@ -72,20 +74,26 @@ def test_threshold_reanalysis_restores_selection_by_nearest_time(monkeypatch) ->
     controller.set_detection_threshold(0.75)
 
     selected_shot_id = controller.project.ui_state.selected_shot_id
-    selected_shot = next(shot for shot in controller.project.analysis.shots if shot.id == selected_shot_id)
+    selected_shot = next(
+        shot for shot in controller.project.analysis.shots if shot.id == selected_shot_id
+    )
     assert selected_shot.id == reanalyzed_shots[1].id
     assert selected_shot.time_ms == 515
     assert selected_shot.id != previous_selected_shot.id
 
 
-def test_threshold_reanalysis_resets_adjusted_shotml_splits_but_keeps_user_added_shots(monkeypatch) -> None:
+def test_threshold_reanalysis_resets_adjusted_shotml_splits_but_keeps_user_added_shots(
+    monkeypatch,
+) -> None:
     controller = ProjectController()
     controller.project.primary_video = VideoAsset(path="primary.mp4")
     initial_shots = _shots(250, 500, 900)
     reanalyzed_shots = _shots(260, 515, 880)
     detections = [
         DetectionResult(beep_time_ms=100, shots=initial_shots, waveform=[0.1], sample_rate=22050),
-        DetectionResult(beep_time_ms=100, shots=reanalyzed_shots, waveform=[0.2], sample_rate=22050),
+        DetectionResult(
+            beep_time_ms=100, shots=reanalyzed_shots, waveform=[0.2], sample_rate=22050
+        ),
     ]
 
     def fake_analyze_video_audio(path: str, threshold: float) -> DetectionResult:
@@ -100,8 +108,12 @@ def test_threshold_reanalysis_resets_adjusted_shotml_splits_but_keeps_user_added
 
     controller.set_detection_threshold(0.75)
 
-    detected_times = [shot.time_ms for shot in controller.project.analysis.shots if not shot.user_added]
-    user_added_times = [shot.time_ms for shot in controller.project.analysis.shots if shot.user_added]
+    detected_times = [
+        shot.time_ms for shot in controller.project.analysis.shots if not shot.user_added
+    ]
+    user_added_times = [
+        shot.time_ms for shot in controller.project.analysis.shots if shot.user_added
+    ]
     assert detected_times == [260, 515, 880]
     assert user_added_times == [1300]
 
@@ -164,7 +176,9 @@ def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
     assert "function resolveSelectedShotId" in app_js
     assert "function syncSelectedShotId" in app_js
     assert "syncSelectedShotId();" in app_js
-    assert "pendingSelectionFallback = shotSelectionContext(selectedShotId, state, \"time\");" in app_js
+    assert (
+        'pendingSelectionFallback = shotSelectionContext(selectedShotId, state, "time");' in app_js
+    )
     assert 'import { createWaveformComponent } from "./components/waveform.js";' in app_js
     assert 'import { createWaveformState } from "./lib/waveform-state.js";' in app_js
     assert "waveformStateRuntime = createWaveformState({" in app_js
@@ -173,7 +187,10 @@ def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
     assert "totalCell.textContent = splitSeconds(splitRowCumulativeMs(row));" in app_js
     assert "export function createWaveformComponent({" in waveform_js
     assert "function renderWaveform() {" in waveform_js
-    assert 'const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null' in waveform_js
+    assert (
+        "const timeMs = draggedShotIndex >= 0 && index === draggedShotIndex && pendingDragTimeMs !== null"
+        in waveform_js
+    )
     assert "function handleWaveformPointerDown(event) {" in waveform_js
     assert "export function createWaveformState({" in waveform_state_js
     assert "function waveformWindow() {" in waveform_state_js
@@ -194,13 +211,18 @@ def test_timing_pane_modularization_wrappers_are_source_visible() -> None:
     assert "function buildSplitRowActionCell(row, expandedTable) {" in app_js
     assert "return timingPane?.buildSplitRowActionCell(row, expandedTable);" in app_js
     assert "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in app_js
-    assert 'return timingPane?.setTimingExpanded(expanded, { persistUiState }) ?? Boolean(expanded);' in app_js
+    assert (
+        "return timingPane?.setTimingExpanded(expanded, { persistUiState }) ?? Boolean(expanded);"
+        in app_js
+    )
 
     assert "export function createTimingPane({" in timing_pane_js
     assert "function applyTimingTableColumns(table) {" in timing_pane_js
     assert "function deleteTimingEvent(eventId) {" in timing_pane_js
     assert "function buildSplitRowActionCell(row, expandedTable) {" in timing_pane_js
-    assert "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in timing_pane_js
+    assert (
+        "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in timing_pane_js
+    )
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -260,7 +282,9 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
 
                 lock_button = page.locator("#timing-workbench-table .lock-button").first
                 lock_button.click()
-                adjustment_input = page.locator("#timing-workbench-table .timing-adjustment-input").first
+                adjustment_input = page.locator(
+                    "#timing-workbench-table .timing-adjustment-input"
+                ).first
                 adjustment_input.wait_for(state="visible")
                 adjustment_input.fill("0.25")
                 lock_button.click()
@@ -283,7 +307,9 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                 )
                 assert updated_adjustment_ms != original_adjustment_ms
 
-                page.locator("#timing-workbench-table button.restore-button:not(.danger-button)").first.click()
+                page.locator(
+                    "#timing-workbench-table button.restore-button:not(.danger-button)"
+                ).first.click()
                 page.wait_for_function(
                     """({ shotId, originalTime }) => {
                       const shot = (state?.project?.analysis?.shots || []).find((item) => item.id === shotId);
@@ -305,10 +331,13 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     arg=second_shot_id,
                 )
-                assert page.evaluate(
-                    """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
-                    second_shot_id,
-                ) is True
+                assert (
+                    page.evaluate(
+                        """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
+                        second_shot_id,
+                    )
+                    is True
+                )
             finally:
                 browser.close()
     finally:
@@ -343,19 +372,34 @@ def test_timing_event_controls_add_and_remove_rows(synthetic_video_factory) -> N
                 page.locator("#timing-event-position").select_option(option_values[0])
 
                 page.locator("#add-timing-event").click()
-                page.wait_for_function("() => (state?.project?.analysis?.events || []).length === 1")
+                page.wait_for_function(
+                    "() => (state?.project?.analysis?.events || []).length === 1"
+                )
                 page.locator("#timing-workbench-table").get_by_text("Manual note").wait_for()
 
                 assert page.locator("#timing-event-list").get_by_text("Manual note").count() == 1
-                assert page.locator("#timing-workbench-table").get_by_text("Manual note").count() >= 1
+                assert (
+                    page.locator("#timing-workbench-table").get_by_text("Manual note").count() >= 1
+                )
 
-                manual_note_cell = page.locator("#timing-workbench-table").get_by_text("Manual note").first
-                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(force=True)
-                page.wait_for_function("() => (state?.project?.analysis?.events || []).length === 0")
+                manual_note_cell = (
+                    page.locator("#timing-workbench-table").get_by_text("Manual note").first
+                )
+                page.locator('button[aria-label="Remove timing event Manual note"]').first.click(
+                    force=True
+                )
+                page.wait_for_function(
+                    "() => (state?.project?.analysis?.events || []).length === 0"
+                )
                 manual_note_cell.wait_for(state="detached")
 
-                assert page.locator("#timing-event-list").get_by_text("No timing events yet.").count() == 1
-                assert page.locator("#timing-workbench-table").get_by_text("Manual note").count() == 0
+                assert (
+                    page.locator("#timing-event-list").get_by_text("No timing events yet.").count()
+                    == 1
+                )
+                assert (
+                    page.locator("#timing-workbench-table").get_by_text("Manual note").count() == 0
+                )
             finally:
                 browser.close()
     finally:

@@ -206,6 +206,18 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/angle/director/override",
     "/api/audio/mix",
     "/api/result-cards/resolve",
+    "/api/landing/recent",
+    "/api/library/analytics/trend",
+    "/api/library/analytics/compare",
+    "/api/library/archive/create",
+    "/api/library/backup/create",
+    "/api/library/backup/restore",
+    "/api/library/export/json",
+    "/api/library/export/csv",
+    "/api/library/notes/update",
+    "/api/library/tags/update",
+    "/api/workspace/apply-from-first",
+    "/api/workspace/apply-from-first/preview",
 }
 
 
@@ -912,8 +924,12 @@ def test_browser_manual_merge_sync_after_auto_analysis_remains_authoritative_for
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
-        primary_path = Path(synthetic_video_factory(name="merge-authoritative-primary", beep_ms=400))
-        merge_path = Path(synthetic_video_factory(name="merge-authoritative-secondary", beep_ms=650))
+        primary_path = Path(
+            synthetic_video_factory(name="merge-authoritative-primary", beep_ms=400)
+        )
+        merge_path = Path(
+            synthetic_video_factory(name="merge-authoritative-secondary", beep_ms=650)
+        )
 
         _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
         state = _post_json(f"{server.url}api/import/merge", {"path": str(merge_path)})
@@ -2283,9 +2299,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
 
         _post_json(f"{server.url}api/merge/source/analyze", {"source_id": first_source_id})
         saved = _read_project_json(project_path)
-        assert any(
-            source["id"] == first_source_id for source in saved["merge_sources"]
-        )
+        assert any(source["id"] == first_source_id for source in saved["merge_sources"])
 
         _post_json(f"{server.url}api/sync", {"offset_ms": 35})
         saved = _read_project_json(project_path)

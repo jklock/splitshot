@@ -36,7 +36,9 @@ EXAMPLES_DIR = REPO_ROOT / "example_data"
 def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project = Project(name="Round Trip")
     project.description = "Project details and merge media should persist."
-    project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
     project.merge_sources = [
         MergeSource(
             asset=VideoAsset(
@@ -69,7 +71,12 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
             time_ms=800,
             source=ShotSource.MANUAL,
             confidence=None,
-            score=ScoreMark(letter=ScoreLetter.C, x_norm=0.2, y_norm=0.8, penalty_counts={"procedural_errors": 1}),
+            score=ScoreMark(
+                letter=ScoreLetter.C,
+                x_norm=0.2,
+                y_norm=0.8,
+                penalty_counts={"procedural_errors": 1},
+            ),
         )
     ]
     project.analysis.timing_change_proposals = [
@@ -199,7 +206,10 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     project.ui_state.timing_column_widths = {"segment": 128, "split": 224, "action": 244}
     project.ui_state.popup_bubble_expansion = {popup.id: False}
     project.ui_state.popup_authoring_collapsed = True
-    project.ui_state.merge_source_expansion = {project.merge_sources[0].id: False, "pip-defaults": False}
+    project.ui_state.merge_source_expansion = {
+        project.merge_sources[0].id: False,
+        "pip-defaults": False,
+    }
     project.ui_state.shotml_section_expansion = {"threshold": False, "advanced_runtime": False}
     project.popup_template.motion_mode = "guided"
     project.popup_template.follow_motion = True
@@ -236,7 +246,9 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert len(loaded.analysis.timing_change_proposals) == 1
     assert loaded.analysis.timing_change_proposals[0].proposal_type == "move_shot"
     assert loaded.analysis.timing_change_proposals[0].target_time_ms == 812
-    assert loaded.analysis.timing_change_proposals[0].evidence == {"review_kind": "weak_onset_support"}
+    assert loaded.analysis.timing_change_proposals[0].evidence == {
+        "review_kind": "weak_onset_support"
+    }
     assert loaded.scoring.enabled is True
     assert loaded.scoring.match_type == "idpa"
     assert loaded.scoring.stage_number == 2
@@ -334,8 +346,14 @@ def test_project_round_trip_preserves_feature_state(tmp_path: Path) -> None:
     assert Path(loaded.popups[0].image_path).is_file()
     assert loaded.ui_state.popup_bubble_expansion == {popup.id: False}
     assert loaded.ui_state.popup_authoring_collapsed is True
-    assert loaded.ui_state.merge_source_expansion == {project.merge_sources[0].id: False, "pip-defaults": False}
-    assert loaded.ui_state.shotml_section_expansion == {"threshold": False, "advanced_runtime": False}
+    assert loaded.ui_state.merge_source_expansion == {
+        project.merge_sources[0].id: False,
+        "pip-defaults": False,
+    }
+    assert loaded.ui_state.shotml_section_expansion == {
+        "threshold": False,
+        "advanced_runtime": False,
+    }
 
 
 def test_project_from_dict_backfills_legacy_popup_motion_mode() -> None:
@@ -386,7 +404,9 @@ def test_project_from_dict_defaults_browser_ui_state_contract_fields() -> None:
 
 def test_project_from_dict_infers_still_image_merge_sources() -> None:
     project = Project(name="Legacy Merge")
-    project.primary_video = VideoAsset(path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0)
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
 
     legacy = project_to_dict(project)
     legacy["secondary_video"] = {
@@ -461,8 +481,12 @@ def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_
     merge_path.write_bytes(b"merge-video")
 
     project = Project(name="Bundled Browser Media")
-    project.primary_video = VideoAsset(path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0)
-    merge_asset = VideoAsset(path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0)
+    project.primary_video = VideoAsset(
+        path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    merge_asset = VideoAsset(
+        path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0
+    )
     project.merge_sources = [MergeSource(asset=merge_asset)]
     project.secondary_video = merge_asset
 

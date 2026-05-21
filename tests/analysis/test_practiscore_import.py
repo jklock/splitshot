@@ -54,7 +54,9 @@ def test_describe_practiscore_file_lists_idpa_stage_and_competitor_options() -> 
     assert result.stage_numbers == [1, 2, 3, 4]
     assert result.competitors[0].name == "Jeff Graff"
     assert result.competitors[0].place == 1
-    assert any(option.name == "John Klockenkemper" and option.place == 4 for option in result.competitors)
+    assert any(
+        option.name == "John Klockenkemper" and option.place == 4 for option in result.competitors
+    )
 
 
 def test_describe_practiscore_file_lists_hit_factor_stage_and_competitor_options() -> None:
@@ -65,7 +67,9 @@ def test_describe_practiscore_file_lists_hit_factor_stage_and_competitor_options
     assert result.stage_numbers == [1, 2, 3, 4, 5, 6]
     assert result.competitors[0].name == "Ben Rice"
     assert result.competitors[0].place == 1
-    assert any(option.name == "Stephen Lutman" and option.place == 1 for option in result.competitors)
+    assert any(
+        option.name == "Stephen Lutman" and option.place == 1 for option in result.competitors
+    )
 
 
 def test_import_idpa_stage_results_from_csv() -> None:
@@ -143,12 +147,16 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
 
 
 def test_describe_practiscore_file_handles_idpa_dnf_place_rows(tmp_path: Path) -> None:
-    result = describe_practiscore_file(_changed_place_idpa_results(tmp_path), source_name="thursday-night.csv")
+    result = describe_practiscore_file(
+        _changed_place_idpa_results(tmp_path), source_name="thursday-night.csv"
+    )
 
     assert result.source_name == "thursday-night.csv"
     assert result.match_type == "idpa"
     assert result.stage_numbers == [1, 2, 3, 4]
-    assert any(option.name == "John Klockenkemper" and option.place == 6 for option in result.competitors)
+    assert any(
+        option.name == "John Klockenkemper" and option.place == 6 for option in result.competitors
+    )
     assert any(option.name == "Ben Brown" and option.place is None for option in result.competitors)
 
 

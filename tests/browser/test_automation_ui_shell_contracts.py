@@ -15,17 +15,21 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert 'data-surface="single"' in html
     assert 'data-surface="multi"' in html
     assert 'data-surface="library"' in html
-    assert "Single Video" in html
-    assert "Multi Video" in html
+    assert "Stage Video Edit" in html
+    assert "Match Video Edit" in html
     assert "Performance Library" in html
     assert "Match Recap" in html
     assert "Stage Composite" in html
-    assert "Run Window" in html
-    assert "Metric Captions" in html
+    assert "Trim Dead Time" in html
+    assert "Shot Data on Screen" in html
 
     assert 'window.localStorage.getItem("splitshot.activeSurface")' in source
     assert 'callApi("/api/output-profiles/list", {})' in source
     assert 'callApi("/api/workspace/stage/clip/list", { stage_id: stageId })' in source
     assert 'callApi("/api/angle/director/plan"' in source
     assert 'callApi("/api/library/list", {})' in source
-
+    assert "Review Source" in html
+    assert "Shared Defaults" in html
+    assert "Stage Overrides" in html
+    assert 'callApi("/api/workspace/defaults"' in source
+    assert 'callApi("/api/workspace/stage/override"' in source

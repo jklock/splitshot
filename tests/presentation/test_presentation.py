@@ -53,7 +53,19 @@ def test_stage_presentation_keeps_following_shot_split_after_timing_event() -> N
 
     presentation = build_stage_presentation(project)
 
-    assert [segment.label for segment in presentation.timing_segments] == ["Shot 1", "Shot 2", "Shot 3"]
-    assert [segment.interval_label for segment in presentation.timing_segments] == ["Draw", "Reload", "Split"]
+    assert [segment.label for segment in presentation.timing_segments] == [
+        "Shot 1",
+        "Shot 2",
+        "Shot 3",
+    ]
+    assert [segment.interval_label for segment in presentation.timing_segments] == [
+        "Draw",
+        "Reload",
+        "Split",
+    ]
     assert [segment.segment_ms for segment in presentation.timing_segments] == [150, 230, 240]
-    assert [segment.sequence_total_ms for segment in presentation.timing_segments] == [150, 230, 470]
+    assert [segment.sequence_total_ms for segment in presentation.timing_segments] == [
+        150,
+        230,
+        470,
+    ]

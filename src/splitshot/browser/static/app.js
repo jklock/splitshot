@@ -60,9 +60,11 @@ let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
 let activeSurface = window.localStorage.getItem("splitshot.activeSurface") || "single";
 let automationPanelOpen = false;
+let landingPageVisible = false;
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
+let waveformTrackMode = "single";
 let draggingShotId = null;
 let draggingShotPointerId = null;
 let pendingDragTimeMs = null;
@@ -178,6 +180,10 @@ let selectedLibraryRecord = null;
 let selectedStageCompositeStageId = null;
 let stageCompositeClips = [];
 let selectedCompositeOutputId = null;
+let automationLoading = { profiles: false, workspace: false, clips: false, library: false };
+let automationError = { profiles: null, workspace: null, clips: null, library: null };
+let retainedReviewSourceProfileId = null;
+let activeOutputHookEditor = null;
 
 let processingRuntime = null;
 let activityRuntime = null;
@@ -329,6 +335,8 @@ const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.035;
 const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12;
 const SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900;
 const secondaryPreviewLastSeekAt = new WeakMap();
+let previewSeekBoundary = false;
+let previewSyncedSinceBoundary = false;
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -4832,12 +4840,25 @@ function endLayoutResize(event) {
 }
 
 function normalizeSurfaceId(surface) {
-  const normalized = String(surface || "single");
-  return ["single", "multi", "library"].includes(normalized) ? normalized : "single";
+  const normalized = String(surface || "landing");
+  return ["landing", "single", "multi", "library"].includes(normalized) ? normalized : "landing";
 }
 
 function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   activeSurface = normalizeSurfaceId(surface);
+  const landingPage = $("landing-page");
+  const cockpitShell = document.querySelector(".cockpit-shell");
+  if (activeSurface === "landing") {
+    landingPageVisible = true;
+    if (landingPage) landingPage.removeAttribute("hidden");
+    if (cockpitShell) cockpitShell.style.display = "none";
+    if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
+    renderRecentActivity();
+    return;
+  }
+  landingPageVisible = false;
+  if (landingPage) landingPage.setAttribute("hidden", "");
+  if (cockpitShell) cockpitShell.style.display = "";
   automationPanelOpen = Boolean(openPanel);
   const root = $("cockpit-root");
   root?.classList.remove("automation-collapsed");
@@ -4851,7 +4872,55 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   document.querySelectorAll("[data-surface-panel]").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.surfacePanel === activeSurface);
   });
+  const toolsForSurface = {
+    single: null,
+    multi: ["project", "merge"],
+    library: [],
+  };
+  const visibleTools = toolsForSurface[activeSurface];
+  document.querySelectorAll(".tool-item").forEach((item) => {
+    const toolId = item.dataset.tool;
+    if (toolId === "settings" || visibleTools === null) return;
+    item.hidden = !visibleTools.includes(toolId);
+  });
+  if (visibleTools !== null && !visibleTools.includes(activeTool)) {
+    setActiveTool(visibleTools[0] || "project");
+  }
   renderAutomationSurface();
+}
+
+function renderRecentActivity() {
+  const list = $("landing-recent-list");
+  if (!list) return;
+  const recentItems = JSON.parse(window.localStorage.getItem("splitshot.recentActivity") || "[]");
+  if (recentItems.length === 0) {
+    list.innerHTML = '<p class="landing-empty-hint">No recent activity. Start by editing a stage!</p>';
+    return;
+  }
+  list.innerHTML = recentItems.slice(0, 10).map(item => `
+    <div class="landing-recent-item" data-recent-surface="${item.surface || ''}" data-recent-path="${item.path || ''}">
+      <div class="landing-recent-thumb">${item.surface === 'single' ? '🎬' : item.surface === 'multi' ? '🏆' : '📊'}</div>
+      <div class="landing-recent-info">
+        <div class="landing-recent-name">${escapeHtml(item.name || 'Untitled')}</div>
+        <div class="landing-recent-meta">${escapeHtml(item.date || '')} · ${escapeHtml(item.type || '')}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function recordRecentActivity(name, surface, type, path) {
+  const key = "splitshot.recentActivity";
+  const items = JSON.parse(window.localStorage.getItem(key) || "[]");
+  const date = new Date().toLocaleDateString();
+  const filtered = items.filter(i => !(i.name === name && i.surface === surface));
+  filtered.unshift({ name, surface, type, path, date });
+  window.localStorage.setItem(key, JSON.stringify(filtered.slice(0, 15)));
 }
 
 function currentStageScopeId() {
@@ -4905,9 +4974,28 @@ function renderOutputProfiles() {
   if (!list) return;
   const profiles = automationProfiles.length ? automationProfiles : (state?.output_profiles || []);
   list.innerHTML = "";
+  const reviewSelect = $("retained-review-source");
+  if (reviewSelect) {
+    reviewSelect.innerHTML = '<option value="">Auto (current stage)</option>';
+    profiles.forEach((profile) => {
+      if (profile.profile_kind === "stage_output") {
+        const option = document.createElement("option");
+        option.value = profile.output_id;
+        option.textContent = profile.profile_name || profile.output_id;
+        if (retainedReviewSourceProfileId === profile.output_id) option.selected = true;
+        reviewSelect.appendChild(option);
+      }
+    });
+  }
+  const reviewStatus = $("retained-review-status");
+  if (reviewStatus) {
+    reviewStatus.textContent = retainedReviewSourceProfileId
+      ? `Review source set to profile ${retainedReviewSourceProfileId}.`
+      : "Using live stage data.";
+  }
   if (!profiles.length) {
     list.innerHTML = '<div class="hint">No output profiles yet.</div>';
-    renderJsonDetail("output-profile-detail", null, "Create an output profile to preview Run Window and Metric Captions state.");
+    renderJsonDetail("output-profile-detail", null, "Create an output profile to preview Trim Dead Time and Shot Data on Screen state.");
     return;
   }
   profiles.forEach((profile) => {
@@ -4918,6 +5006,14 @@ function renderOutputProfiles() {
     summary.innerHTML = `<strong>${profile.profile_name || "Output Profile"}</strong><br><small>${profile.profile_kind || "stage_output"} • ${profile.frame_profile || "source"}</small>`;
     const actions = document.createElement("div");
     actions.className = "automation-row-actions";
+    const review = document.createElement("button");
+    review.type = "button";
+    review.textContent = "Set Review Source";
+    review.title = "Use this profile as the retained-review source";
+    review.addEventListener("click", () => {
+      retainedReviewSourceProfileId = profile.output_id;
+      renderOutputProfiles();
+    });
     const select = document.createElement("button");
     select.type = "button";
     select.textContent = "Preview";
@@ -4936,10 +5032,12 @@ function renderOutputProfiles() {
       await callApi("/api/output-profiles/delete", { output_id: profile.output_id });
       await refreshAutomationProfiles();
     });
-    actions.append(select, duplicate, remove);
+    actions.append(review, select, duplicate, remove);
     row.append(summary, actions);
     list.append(row);
   });
+  const hookEditor = $("output-hook-editor");
+  if (hookEditor) hookEditor.hidden = !activeOutputHookEditor;
 }
 
 function renderWorkspaceStages() {
@@ -4959,6 +5057,33 @@ function renderWorkspaceStages() {
     const missing = entry.source_media_present === false ? "missing media" : "media ready";
     const override = entry.override_count || Object.keys(entry.override_values || {}).length ? "override" : "inherited";
     summary.innerHTML = `<strong>${entry.display_name || entry.stage_id}</strong><br><small>Stage ${entry.stage_number || "-"} • ${entry.status || "incomplete"} • ${missing} • ${override}</small>`;
+    const badges = document.createElement("div");
+    badges.className = "stage-status-badges";
+    if (entry.status === "complete") {
+      const b = document.createElement("span");
+      b.className = "stage-badge complete";
+      b.textContent = "\u2713 Complete";
+      badges.append(b);
+    }
+    if (entry.source_media_present === false) {
+      const b = document.createElement("span");
+      b.className = "stage-badge missing-media";
+      b.textContent = "\u26A0 Missing Media";
+      badges.append(b);
+    }
+    if (entry.override_count || Object.keys(entry.override_values || {}).length) {
+      const b = document.createElement("span");
+      b.className = "stage-badge overrides";
+      b.textContent = "\uD83D\uDCDD Overrides";
+      badges.append(b);
+    }
+    if (entry.reviewed) {
+      const b = document.createElement("span");
+      b.className = "stage-badge reviewed";
+      b.textContent = "\uD83D\uDC41 Reviewed";
+      badges.append(b);
+    }
+    summary.append(badges);
     const actions = document.createElement("div");
     actions.className = "automation-row-actions";
     const open = document.createElement("button");
@@ -4979,11 +5104,42 @@ function renderWorkspaceStages() {
     row.append(summary, actions);
     list.append(row);
   });
+  checkSetupOnceBanner();
   const recap = $("match-recap-panel");
   if (recap) {
     recap.textContent = entries.length
       ? `Match Recap will include ${entries.length} stages. Shared defaults: ${JSON.stringify(state?.workspace_shared_defaults || {})}`
       : "Create or open a workspace to build a Match Recap.";
+  }
+  const sharedDefaults = state?.workspace_shared_defaults || {};
+  syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
+  syncControlValue($("shared-metric-captions"), sharedDefaults.metric_captions || "none");
+  syncControlValue($("shared-lead-in"), sharedDefaults.lead_in_card || "none");
+  syncControlValue($("shared-brand-mark"), sharedDefaults.brand_mark || "none");
+  const overrideEditor = $("stage-override-editor");
+  const overrideGrids = overrideEditor?.querySelectorAll(".control-grid");
+  const overrideButton = $("override-apply");
+  if (overrideEditor && entries.length && currentWorkspaceStageId()) {
+    const activeEntry = entries.find((e) => e.stage_id === currentWorkspaceStageId());
+    const overrides = activeEntry?.override_values || {};
+    overrideEditor.querySelector("p")?.setAttribute("hidden", "");
+    overrideGrids?.forEach((grid) => grid.removeAttribute("hidden"));
+    if (overrideButton) overrideButton.removeAttribute("hidden");
+    syncControlValue($("override-frame-profile"), overrides.frame_profile || "");
+    syncControlValue($("override-metric-captions"), overrides.metric_captions || "");
+  } else if (overrideEditor) {
+    const hint = overrideEditor.querySelector("p");
+    if (hint) hint.removeAttribute("hidden");
+    overrideGrids?.forEach((grid) => grid.setAttribute("hidden", ""));
+    if (overrideButton) overrideButton.setAttribute("hidden", "");
+  }
+}
+function checkSetupOnceBanner() {
+  const banner = domById("setup-once-banner");
+  if (!banner) return;
+  const stages = state?.workspace_stage_entries || [];
+  if (stages.length > 1 && stages[0]?.name && stages[0]?.media_loaded) {
+    banner.hidden = false;
   }
 }
 
@@ -5042,29 +5198,38 @@ function renderStageComposite() {
 }
 
 function renderPerformanceLibrary() {
-  const summary = $("library-summary-tiles");
+  renderLibrarySummaryTiles();
   const list = $("library-record-list");
-  if (summary) {
-    const stageTotal = automationLibrary.total_stages ?? automationLibrary.stages?.length ?? state?.library_summary?.stage_records ?? 0;
-    const matchTotal = automationLibrary.total_matches ?? automationLibrary.matches?.length ?? state?.library_summary?.match_records ?? 0;
-    summary.innerHTML = `<div class="summary-tile"><strong>${stageTotal}</strong><br><small>Stage records</small></div><div class="summary-tile"><strong>${matchTotal}</strong><br><small>Workspace records</small></div>`;
-  }
   if (!list) return;
   const records = [
     ...(automationLibrary.stages || []).map((record) => ({ ...record, record_type: "stage" })),
     ...(automationLibrary.matches || []).map((record) => ({ ...record, record_type: "match" })),
   ];
+  const filterDiscipline = $("library-filter-discipline")?.value || "";
+  const sortBy = $("library-sort")?.value || "event_date";
+  let filtered = records;
+  if (filterDiscipline) {
+    filtered = records.filter(r => (r.discipline || "").toLowerCase().replace(/[ _]/g, "_") === filterDiscipline);
+  }
+  if (sortBy === "score") {
+    filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
+  } else if (sortBy === "display_name") {
+    filtered.sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
+  } else if (sortBy === "discipline") {
+    filtered.sort((a, b) => (a.discipline || "").localeCompare(b.discipline || ""));
+  }
   list.innerHTML = "";
-  if (!records.length) {
+  if (!filtered.length) {
     list.innerHTML = '<div class="hint">No performance records yet.</div>';
+    renderPersonalBests();
     return;
   }
-  records.forEach((record) => {
+  filtered.forEach((record) => {
     const id = record.library_record_id || record.stage_id || record.match_id;
     const row = document.createElement("div");
     row.className = "automation-row";
-    const summary = document.createElement("div");
-    summary.innerHTML = `<strong>${record.display_name || id}</strong><br><small>${record.record_type} • ${record.discipline || "unclassified"}</small>`;
+    const summaryEl = document.createElement("div");
+    summaryEl.innerHTML = `<strong>${escapeHtml(record.display_name || id)}</strong><br><small>${escapeHtml(record.record_type)} • ${escapeHtml(record.discipline || "unclassified")}${record.score != null ? " • " + record.score : ""}</small>`;
     const actions = document.createElement("div");
     actions.className = "automation-row-actions";
     const inspect = document.createElement("button");
@@ -5073,6 +5238,13 @@ function renderPerformanceLibrary() {
     inspect.addEventListener("click", () => {
       selectedLibraryRecord = record;
       renderJsonDetail("library-record-detail", record);
+      $("library-tags-editor").hidden = false;
+      $("library-notes-editor").hidden = false;
+      $("library-record-actions").hidden = false;
+      renderLibraryTags();
+      if (record.notes) {
+        $("library-notes-text").value = record.notes;
+      }
     });
     const reopen = document.createElement("button");
     reopen.type = "button";
@@ -5091,9 +5263,252 @@ function renderPerformanceLibrary() {
       renderJsonDetail("library-record-detail", { ...record, proxy: result });
     });
     actions.append(inspect, reopen, proxy);
-    row.append(summary, actions);
+    row.append(summaryEl, actions);
     list.append(row);
   });
+  renderPersonalBests();
+  fetchLibraryAnalytics().then(renderAnalyticsCharts);
+}
+
+function renderLibrarySummaryTiles() {
+  const container = $("library-summary-tiles");
+  if (!container) return;
+  const records = [
+    ...(automationLibrary.stages || []),
+    ...(automationLibrary.matches || []),
+  ];
+  const totalStages = records.length;
+  const totalMatches = new Set(records.filter(r => r.workspace_id).map(r => r.workspace_id)).size;
+  const bestScore = records.length > 0 ? Math.max(...records.filter(r => r.score != null).map(r => r.score)) : 0;
+  const recentCount = records.filter(r => {
+    if (!r.event_date) return false;
+    const d = new Date(r.event_date);
+    const monthAgo = new Date();
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    return d >= monthAgo;
+  }).length;
+  container.innerHTML = `
+    <div class="library-summary-tile">
+      <div class="tile-value">${totalStages}</div>
+      <div class="tile-label">Total Stages</div>
+    </div>
+    <div class="library-summary-tile">
+      <div class="tile-value">${totalMatches}</div>
+      <div class="tile-label">Total Matches</div>
+    </div>
+    <div class="library-summary-tile">
+      <div class="tile-value">${bestScore || '—'}</div>
+      <div class="tile-label">Best Score</div>
+    </div>
+    <div class="library-summary-tile">
+      <div class="tile-value">${recentCount}</div>
+      <div class="tile-label">Recent (30d)</div>
+    </div>
+  `;
+}
+
+function renderLibraryTags() {
+  const container = $("library-tag-list");
+  if (!container) return;
+  const tags = window.selectedLibraryRecord?.tags || [];
+  container.innerHTML = tags.map(tag => `
+    <span class="library-tag">
+      ${escapeHtml(tag)}
+      <span class="tag-remove" data-tag="${escapeHtml(tag)}" title="Remove tag">×</span>
+    </span>
+  `).join("") || '<span class="hint" style="font-size:0.6875rem">No tags</span>';
+}
+
+function renderPersonalBests() {
+  const container = $("personal-bests-list");
+  if (!container) return;
+  const records = [
+    ...(automationLibrary.stages || []),
+    ...(automationLibrary.matches || []),
+  ];
+  if (records.length === 0) {
+    container.innerHTML = '<p class="hint">Add records to see personal bests.</p>';
+    return;
+  }
+  const sorted = [...records].filter(r => r.score != null).sort((a, b) => b.score - a.score).slice(0, 5);
+  container.innerHTML = sorted.map((r, i) => `
+    <div class="library-record-row">
+      <span class="record-rank">#${i+1}</span>
+      <span class="record-name">${escapeHtml(r.display_name || r.competitor_name || 'Unknown')}</span>
+      <span class="record-score">${r.score}</span>
+      <span class="record-discipline">${escapeHtml(r.discipline || '')}</span>
+    </div>
+  `).join("");
+}
+
+async function fetchLibraryAnalytics(discipline) {
+  try {
+    const response = await callApi("/api/library/analytics/trend", {
+      metric_key: "score",
+      discipline: discipline || "",
+    });
+    return response;
+  } catch (e) {
+    return null;
+  }
+}
+
+function renderAnalyticsCharts(data) {
+  if (!data) return;
+
+  const trendContainer = document.querySelector("#analytics-score-trend .chart-bar-container");
+  if (trendContainer && data.statistics) {
+    const stats = data.statistics;
+    const vals = [stats.min, stats.median, stats.mean, stats.max].filter(v => v != null);
+    const maxVal = Math.max(...vals, 1);
+    const labels = ["Min", "Median", "Mean", "Max"];
+    const values = [stats.min, stats.median, stats.mean, stats.max];
+    trendContainer.innerHTML = values.map((v, i) => {
+      const height = v != null ? ((v / maxVal * 100).toFixed(0)) : 0;
+      const isMax = i === 3 && v === stats.max;
+      return `<div class="chart-bar${isMax ? ' accent' : ''}" style="height:${height}%">
+        <span>${v != null ? v : '—'}</span>
+        <small style="font-size:0.5625rem;display:block;color:var(--quiet)">${labels[i]}</small>
+      </div>`;
+    }).join("");
+  }
+
+  if (data.statistics) {
+    const trendEl = document.getElementById("analytics-score-trend");
+    if (trendEl) {
+      const existing = trendEl.querySelector(".chart-stats");
+      if (existing) existing.remove();
+      const statsDiv = document.createElement("div");
+      statsDiv.className = "chart-stats";
+      statsDiv.style.cssText = "display:flex;gap:12px;margin-top:8px;font-size:0.6875rem;color:var(--quiet)";
+      statsDiv.innerHTML = `
+        <span>Mean: ${data.statistics.mean ?? '—'}</span>
+        <span>Median: ${data.statistics.median ?? '—'}</span>
+        <span>Best: ${data.statistics.max ?? '—'}</span>
+        <span>Records: ${data.total_records || 0}</span>
+        <span>Trend: ${data.trend_direction || '—'}</span>
+      `;
+      trendEl.appendChild(statsDiv);
+    }
+  }
+
+  const outliersContainer = document.getElementById("analytics-outliers");
+  if (outliersContainer && data.outliers) {
+    if (data.outliers.length > 0) {
+      outliersContainer.innerHTML = data.outliers.map(o => `
+        <div class="landing-recent-item" style="padding:8px 12px">
+          <div class="landing-recent-info">
+            <div class="landing-recent-name">${escapeHtml(o.name || 'Unknown')} — ${o.score}</div>
+            <div class="landing-recent-meta">${escapeHtml(o.date || '')} · ${o.direction === 'high' ? '⬆ Above average' : '⬇ Below average'}</div>
+          </div>
+        </div>
+      `).join("");
+    } else {
+      outliersContainer.innerHTML = '<p class="hint">No significant outliers detected.</p>';
+    }
+  }
+
+  const pbContainer = document.getElementById("personal-bests-list");
+  if (pbContainer && data.personal_bests) {
+    if (data.personal_bests.length > 0) {
+      pbContainer.innerHTML = data.personal_bests.map((pb, i) => `
+        <div class="library-record-row">
+          <span class="record-rank">#${i+1}</span>
+          <span class="record-name">${escapeHtml(pb.name || 'Unknown')}</span>
+          <span class="record-score">${pb.score}</span>
+          <span class="record-discipline">${escapeHtml(pb.discipline || '')}</span>
+        </div>
+      `).join("");
+    } else {
+      pbContainer.innerHTML = '<p class="hint">No personal bests yet. Add more records to track progress.</p>';
+    }
+  }
+
+  if (data.statistics) {
+    const disciplineEl = document.querySelector("#analytics-discipline-chart .discipline-bars");
+    if (disciplineEl && data.total_records > 0) {
+      const existing = disciplineEl.querySelector(".discipline-total");
+      if (existing) existing.remove();
+      const totalSpan = document.createElement("span");
+      totalSpan.className = "discipline-total";
+      totalSpan.style.cssText = "font-size:0.625rem;color:var(--quiet);margin-top:4px;display:block";
+      totalSpan.textContent = `${data.total_records} total records analyzed`;
+      disciplineEl.appendChild(totalSpan);
+    }
+  }
+}
+
+function exportLibraryData(format) {
+  const records = [
+    ...(automationLibrary.stages || []),
+    ...(automationLibrary.matches || []),
+  ];
+  if (records.length === 0) return;
+  if (format === "csv") {
+    const headers = ["Name", "Date", "Discipline", "Score", "Stage Count"];
+    const rows = records.map(r => [
+      r.display_name || "",
+      r.event_date || "",
+      r.discipline || "",
+      r.score || "",
+      r.stage_count || ""
+    ].join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    downloadFile("library-export.csv", csv, "text/csv");
+  } else if (format === "json") {
+    const json = JSON.stringify(records, null, 2);
+    downloadFile("library-export.json", json, "application/json");
+  }
+}
+
+function downloadFile(filename, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showExportCompleteNotification(count, outputPath) {
+  const toast = document.createElement("div");
+  toast.className = "export-toast";
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "polite");
+  toast.innerHTML = `
+    <span>&#10004;&#65039; Export complete &#8212; ${count} file${count !== 1 ? 's' : ''} saved</span>
+    <button class="export-toast-open" type="button">Open Folder</button>
+    <button class="export-toast-dismiss" type="button">&#215;</button>
+  `;
+  toast.querySelector(".export-toast-open")?.addEventListener("click", () => {
+    activity("ui.export.open-folder");
+    toast.remove();
+  });
+  toast.querySelector(".export-toast-dismiss")?.addEventListener("click", () => toast.remove());
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 8000);
+}
+
+function addLibraryTag(tag) {
+  if (!window.selectedLibraryRecord) return;
+  window.selectedLibraryRecord.tags = window.selectedLibraryRecord.tags || [];
+  if (!window.selectedLibraryRecord.tags.includes(tag)) {
+    window.selectedLibraryRecord.tags.push(tag);
+    renderLibraryTags();
+  }
+}
+
+function removeLibraryTag(tag) {
+  if (!window.selectedLibraryRecord?.tags) return;
+  window.selectedLibraryRecord.tags = window.selectedLibraryRecord.tags.filter(t => t !== tag);
+  renderLibraryTags();
+}
+
+function saveLibraryNotes(notes) {
+  if (!window.selectedLibraryRecord) return;
+  window.selectedLibraryRecord.notes = notes;
+  activity("ui.library.notes.save");
 }
 
 function renderAutomationSurface() {
@@ -5102,12 +5517,48 @@ function renderAutomationSurface() {
   renderWorkspaceStages();
   renderStageComposite();
   renderPerformanceLibrary();
+  const loadingEl = {
+    single: $("single-video-loading"),
+    multi: $("multi-video-loading"),
+    library: $("library-loading"),
+  };
+  const errorEl = {
+    single: $("single-video-error"),
+    multi: $("multi-video-error"),
+    library: $("library-error"),
+  };
+  const staleEl = $("library-stale");
+  if (loadingEl.single) loadingEl.single.hidden = !automationLoading.profiles;
+  if (loadingEl.multi) loadingEl.multi.hidden = !(automationLoading.workspace || automationLoading.clips);
+  if (loadingEl.library) loadingEl.library.hidden = !automationLoading.library;
+  if (errorEl.single) {
+    errorEl.single.hidden = !automationError.profiles;
+    if (automationError.profiles) errorEl.single.textContent = automationError.profiles;
+  }
+  if (errorEl.multi) {
+    errorEl.multi.hidden = !(automationError.workspace || automationError.clips);
+    if (automationError.clips) errorEl.multi.textContent = automationError.clips;
+  }
+  if (errorEl.library) {
+    errorEl.library.hidden = !automationError.library;
+    if (automationError.library) errorEl.library.textContent = automationError.library;
+  }
+  if (staleEl) staleEl.hidden = !(automationLoading.library === false && !automationError.library && !automationLibrary.stages?.length && !automationLibrary.matches?.length);
 }
 
 async function refreshAutomationProfiles() {
-  const result = await callApi("/api/output-profiles/list", {});
-  automationProfiles = result?.profiles || [];
-  renderOutputProfiles();
+  automationLoading.profiles = true;
+  automationError.profiles = null;
+  renderAutomationSurface();
+  try {
+    const result = await callApi("/api/output-profiles/list", {});
+    automationProfiles = result?.profiles || [];
+  } catch (error) {
+    automationError.profiles = error?.message || "Failed to load output profiles.";
+    automationProfiles = [];
+  }
+  automationLoading.profiles = false;
+  renderAutomationSurface();
   return automationProfiles;
 }
 
@@ -5146,18 +5597,37 @@ async function ensureCompositeOutputProfile(stageId) {
 
 async function refreshStageComposite(stageId = currentWorkspaceStageId()) {
   if (!stageId) return;
-  const result = await callApi("/api/workspace/stage/clip/list", { stage_id: stageId });
-  stageCompositeClips = result?.clips || [];
-  renderStageComposite();
+  automationLoading.clips = true;
+  automationError.clips = null;
+  renderAutomationSurface();
+  try {
+    const result = await callApi("/api/workspace/stage/clip/list", { stage_id: stageId });
+    stageCompositeClips = result?.clips || [];
+  } catch (error) {
+    automationError.clips = error?.message || "Failed to load stage clips.";
+    stageCompositeClips = [];
+  }
+  automationLoading.clips = false;
+  renderAutomationSurface();
 }
 
 async function refreshPerformanceLibrary() {
   const query = $("library-search")?.value || "";
   const sortBy = $("library-sort")?.value || "event_date";
-  automationLibrary = query
-    ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
-    : await callApi("/api/library/list", {});
-  renderPerformanceLibrary();
+  automationLoading.library = true;
+  automationError.library = null;
+  renderAutomationSurface();
+  try {
+    automationLibrary = query
+      ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
+      : await callApi("/api/library/list", {});
+  } catch (error) {
+    automationError.library = error?.message || "Failed to load library records.";
+    automationLibrary = { stages: [], matches: [], total_stages: 0, total_matches: 0 };
+  }
+  automationLoading.library = false;
+  renderAutomationSurface();
+  fetchLibraryAnalytics().then(renderAnalyticsCharts);
 }
 
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
@@ -5381,6 +5851,10 @@ async function refresh() {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
+    previewSeekBoundary = true;
+    if (data?.project?.name && activeSurface !== "landing") {
+      recordRecentActivity(data.project.name, activeSurface, activeSurface === 'single' ? 'Stage' : activeSurface === 'multi' ? 'Match' : 'Library', '');
+    }
     requestRender();
   } catch (error) {
     setStatus(error.message);
@@ -5941,17 +6415,27 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     preview.defaultPlaybackRate = targetPlaybackRate;
   }
   if (absoluteDrift > seekThreshold) {
-    const now = window.performance?.now?.() ?? Date.now();
-    const lastSeekAt = secondaryPreviewLastSeekAt.get(preview) || 0;
-    if (!paused && now - lastSeekAt < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) return;
-    try {
-      if (typeof preview.fastSeek === "function") preview.fastSeek(target);
-      else preview.currentTime = target;
-      secondaryPreviewLastSeekAt.set(preview, now);
-      preview.dataset.syncCorrectionMode = "reseek";
-    } catch {
-      // Ignore early metadata seek failures.
+    if (previewSeekBoundary) {
+      const now = window.performance?.now?.() ?? Date.now();
+      const lastSeekAt = secondaryPreviewLastSeekAt.get(preview) || 0;
+      if (!paused && now - lastSeekAt < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) return;
+      try {
+        if (typeof preview.fastSeek === "function") preview.fastSeek(target);
+        else preview.currentTime = target;
+        secondaryPreviewLastSeekAt.set(preview, now);
+        preview.dataset.syncCorrectionMode = "reseek";
+        previewSeekBoundary = false;
+        previewSyncedSinceBoundary = true;
+      } catch {
+        // Ignore early metadata seek failures.
+      }
+      return;
     }
+    const catchUpRate = targetPlaybackRate + (drift > 0 ? SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA : -SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA);
+    const clampedCatchUp = clamp(catchUpRate, 0.25, 4.0);
+    preview.playbackRate = clampedCatchUp;
+    preview.defaultPlaybackRate = clampedCatchUp;
+    preview.dataset.syncCorrectionMode = "rate-catchup";
     return;
   }
   if (paused || absoluteDrift <= SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S) {
@@ -6067,6 +6551,7 @@ function reportSecondaryPreviewPlayError(error) {
 
 function scheduleSecondaryPreviewSync() {
   if (secondaryPreviewSyncFrame !== null) return;
+  previewSeekBoundary = true;
   secondaryPreviewSyncFrame = window.requestAnimationFrame(() => {
     secondaryPreviewSyncFrame = null;
     syncSecondaryPreview();
@@ -8772,6 +9257,35 @@ function setWaveformExpanded(expanded, { persistUiState = true } = {}) {
   scheduleReviewStageRestore();
 }
 
+function setWaveformTrackMode(mode) {
+  waveformTrackMode = mode;
+  window.localStorage.setItem("splitshot.waveformTrackMode", mode);
+  const legend = domById("waveform-segment-legend");
+  if (legend) legend.hidden = mode !== "multi";
+}
+
+function renderWaveformTracks() {
+  const clips = stageCompositeClips || [];
+  const list = domById("waveform-track-list");
+  if (!list) return;
+
+  if (clips.length === 0) {
+    list.innerHTML = '<span class="hint" style="font-size:0.6875rem">No tracks loaded. Add clips in Match Video Edit.</span>';
+    return;
+  }
+
+  const colors = { primary: "#4a9eff", follow: "#39d06f", static: "#ffc107", detail: "#c084fc" };
+  list.innerHTML = clips.map((clip, i) => {
+    const color = colors[clip.angle_role] || "#717982";
+    return `<div class="waveform-track-chip" data-clip-index="${i}">
+      <span class="track-color" style="background:${color}"></span>
+      <span>${clip.filename || 'Track ' + (i+1)}</span>
+      <span class="track-mute" title="Mute">&#x1F507;</span>
+      <span class="track-solo" title="Solo">&#x1F3B5;</span>
+    </div>`;
+  }).join("");
+}
+
 function setWaveformZoom(delta) {
   const oldWindow = waveformWindow();
   const center = oldWindow.start + (oldWindow.duration / 2);
@@ -9407,6 +9921,55 @@ function wireEvents() {
       activity("ui.surface.click", { surface: button.dataset.surface });
     });
   });
+
+  // Landing page card clicks - navigate to surface
+  document.querySelectorAll(".landing-card").forEach((card) => {
+    card.addEventListener("click", () => {
+      const surface = card.dataset.surface;
+      if (surface) setActiveSurface(surface);
+      activity("ui.landing.card.click", { surface });
+    });
+  });
+
+  // Landing page recent activity clicks
+  $("landing-recent-list")?.addEventListener("click", (e) => {
+    const item = e.target.closest(".landing-recent-item");
+    if (!item) return;
+    const surface = item.dataset.recentSurface;
+    if (surface) setActiveSurface(surface);
+  });
+
+  // Quick-start buttons
+  $("landing-new-stage")?.addEventListener("click", () => {
+    setActiveSurface("single");
+    activity("ui.landing.newstage.click");
+  });
+
+  $("landing-new-match")?.addEventListener("click", () => {
+    setActiveSurface("multi");
+    activity("ui.landing.newmatch.click");
+  });
+
+  $("landing-open-file")?.addEventListener("click", () => {
+    const fileInput = $("primary-file-input");
+    if (fileInput) fileInput.click();
+    activity("ui.landing.openfile.click");
+  });
+
+  // Home button in surface header
+  $("surface-go-home")?.addEventListener("click", () => {
+    setActiveSurface("landing");
+  });
+
+  // Logo click returns to landing
+  const logoElement = document.querySelector(".rail-logo");
+  if (logoElement) {
+    logoElement.style.cursor = "pointer";
+    logoElement.addEventListener("click", () => {
+      setActiveSurface("landing");
+      activity("ui.logo.click");
+    });
+  }
   $("surface-return-workspace")?.addEventListener("click", () => callApi("/api/workspace/stage/return", {}));
   $("output-profile-refresh")?.addEventListener("click", () => refreshAutomationProfiles());
   $("output-profile-create")?.addEventListener("click", () => {
@@ -9414,13 +9977,246 @@ function wireEvents() {
   });
   document.querySelectorAll("[data-output-hook]").forEach((button) => {
     button.addEventListener("click", () => {
+      const hook = button.dataset.outputHook;
+      activeOutputHookEditor = hook;
       const active = automationProfiles[0] || state?.output_profiles?.[0] || null;
-      renderJsonDetail("output-profile-detail", {
-        hook: button.dataset.outputHook,
-        profile: active,
-        inherited: state?.opened_from_match ? state?.workspace_shared_defaults || {} : {},
-      });
+      renderOutputHookEditor(hook, active);
+      renderOutputProfiles();
     });
+  });
+  $("output-hook-close")?.addEventListener("click", () => {
+    activeOutputHookEditor = null;
+    renderOutputProfiles();
+  });
+
+  // Multi-angle feature button handlers
+  document.querySelectorAll("[data-feature]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const feature = button.dataset.feature;
+      openFeatureEditor(feature);
+      activity("ui.feature.click", { feature });
+    });
+  });
+
+  // Feature editor close button
+  $("feature-close")?.addEventListener("click", () => {
+    const editor = $("feature-editor");
+    if (editor) editor.hidden = true;
+  });
+  function openFeatureEditor(feature) {
+    const editor = $("feature-editor");
+    const title = $("feature-title");
+    const fields = $("feature-fields");
+    if (!editor || !title || !fields) return;
+
+    const featureLabels = {
+      "smart-angle-switching": "Smart Angle Switching",
+      "line-up-angles": "Line Up Angles",
+      "camera-jobs": "Camera Jobs",
+      "audio-balance": "Audio Balance",
+      "override-smart-cuts": "Override Smart Cuts",
+      "keep-shooter-in-frame": "Keep Shooter in Frame",
+    };
+
+    title.textContent = featureLabels[feature] || "Feature Editor";
+    editor.hidden = false;
+
+    if (feature === "smart-angle-switching") {
+      fields.innerHTML = `
+        <div class="control-grid">
+          <label>Auto-switch mode
+            <select id="feature-angle-switch-mode">
+              <option value="auto">Automatic</option>
+              <option value="manual">Manual</option>
+              <option value="disabled">Disabled</option>
+            </select>
+          </label>
+          <label>Switch threshold (s)
+            <input id="feature-angle-switch-threshold" type="number" min="0.1" step="0.1" value="0.5" />
+          </label>
+        </div>
+        <p class="hint">Automatically switch between available camera angles based on motion detection.</p>
+      `;
+    } else if (feature === "line-up-angles") {
+      fields.innerHTML = `
+        <div class="control-grid">
+          <label>Sync method
+            <select id="feature-line-up-method">
+              <option value="audio">Audio waveform</option>
+              <option value="visual">Visual marker</option>
+              <option value="timecode">Timecode</option>
+            </select>
+          </label>
+          <label>Sync offset (ms)
+            <input id="feature-line-up-offset" type="number" step="1" value="0" />
+          </label>
+        </div>
+        <p class="hint">Align multiple camera angles to a common timeline reference point.</p>
+      `;
+    } else if (feature === "camera-jobs") {
+      fields.innerHTML = `
+        <div id="camera-jobs-list" class="automation-list">
+          <p class="hint">Camera job assignment will be available when multiple angles are loaded.</p>
+        </div>
+      `;
+    } else if (feature === "audio-balance") {
+      fields.innerHTML = `
+        <div id="audio-balance-list" class="automation-list">
+          <p class="hint">Audio balance controls will be available when multiple audio sources are loaded.</p>
+        </div>
+      `;
+    } else if (feature === "override-smart-cuts") {
+      fields.innerHTML = `
+        <div class="control-grid">
+          <label>Cut mode
+            <select id="feature-cut-mode">
+              <option value="auto">Auto (shot detection)</option>
+              <option value="manual">Manual override</option>
+            </select>
+          </label>
+        </div>
+        <div id="override-cuts-list" class="automation-list">
+          <p class="hint">Override smart cut points by adding manual cut positions.</p>
+        </div>
+      `;
+    } else if (feature === "keep-shooter-in-frame") {
+      fields.innerHTML = `
+        <div class="control-grid">
+          <label>Tracking mode
+            <select id="feature-tracking-mode">
+              <option value="auto">Automatic</option>
+              <option value="center">Center weighted</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label>Crop margin (%)
+            <input id="feature-crop-margin" type="number" min="0" max="50" step="5" value="10" />
+          </label>
+        </div>
+        <p class="hint">Automatically crop and track the shooter to keep them centered in frame.</p>
+      `;
+    }
+  }
+
+  function renderOutputHookEditor(hook, activeProfile) {
+    const editor = $("output-hook-editor");
+    const title = $("output-hook-title");
+    const fields = $("output-hook-fields");
+    if (!editor || !title || !fields) return;
+    editor.hidden = false;
+    const hookLabels = {
+      "run-window": "Trim Dead Time",
+      "metric-captions": "Shot Data on Screen",
+      "frame-profiles": "Video Shape",
+      "lead-in-card": "Opening Title",
+      "brand-mark": "Your Logo",
+      "subject-track-crop": "Keep Shooter in Frame",
+    };
+    title.textContent = hookLabels[hook] || hook;
+    const profile = activeProfile || {};
+    const inherited = state?.opened_from_match ? state?.workspace_shared_defaults || {} : {};
+    fields.innerHTML = "";
+    if (hook === "run-window") {
+      fields.innerHTML = `<div class="control-grid">
+        <label>Start at (s) <input id="hook-run-window-start" type="number" min="0" step="0.001" value="${profile.run_window_start_s || 0}" /></label>
+        <label>Duration (s) <input id="hook-run-window-duration" type="number" min="0.001" step="0.001" value="${profile.run_window_duration_s || ''}" placeholder="full run" /></label>
+        <label>Trim start (s) <input id="hook-run-window-trim-start" type="number" min="0" step="0.001" value="${profile.run_window_trim_start_s || 0}" /></label>
+        <label>Trim end (s) <input id="hook-run-window-trim-end" type="number" min="0" step="0.001" value="${profile.run_window_trim_end_s || 0}" /></label>
+      </div>
+      <p class="hint">${inherited.frame_profile ? 'Inherited: ' + JSON.stringify(inherited) : 'Values apply to selected output profile.'}</p>`;
+    } else if (hook === "metric-captions") {
+      fields.innerHTML = `<div class="control-grid">
+        <label>Preset
+          <select id="hook-metric-captions-preset">
+            <option value="none" ${profile.metric_caption_preset === 'none' ? 'selected' : ''}>None</option>
+            <option value="splits" ${profile.metric_caption_preset === 'splits' ? 'selected' : ''}>Splits</option>
+            <option value="score" ${profile.metric_caption_preset === 'score' ? 'selected' : ''}>Score</option>
+            <option value="full" ${profile.metric_caption_preset === 'full' ? 'selected' : ''}>Full</option>
+          </select>
+        </label>
+        <label>Position
+          <select id="hook-metric-captions-position">
+            <option value="bottom_right" ${profile.metric_position === 'bottom_right' ? 'selected' : ''}>Bottom Right</option>
+            <option value="bottom_left" ${profile.metric_position === 'bottom_left' ? 'selected' : ''}>Bottom Left</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint">${inherited.metric_captions ? 'Inherited: ' + JSON.stringify(inherited) : 'Select a metric caption preset for the output.'}</p>`;
+    } else if (hook === "frame-profiles") {
+      fields.innerHTML = `<div class="control-grid">
+        <label>Profile
+          <select id="hook-frame-profile">
+            <option value="source" ${profile.frame_profile === 'source' ? 'selected' : ''}>Source</option>
+            <option value="16:9" ${profile.frame_profile === '16:9' ? 'selected' : ''}>16:9</option>
+            <option value="9:16" ${profile.frame_profile === '9:16' ? 'selected' : ''}>9:16</option>
+            <option value="1:1" ${profile.frame_profile === '1:1' ? 'selected' : ''}>1:1</option>
+          </select>
+        </label>
+        <label>Width <input id="hook-frame-width" type="number" min="2" step="2" value="${profile.target_width || ''}" placeholder="source" /></label>
+        <label>Height <input id="hook-frame-height" type="number" min="2" step="2" value="${profile.target_height || ''}" placeholder="source" /></label>
+      </div>`;
+    } else if (hook === "lead-in-card") {
+      fields.innerHTML = `<div class="control-grid">
+        <label>Style
+          <select id="hook-lead-in-style">
+            <option value="none" ${profile.lead_in_card === 'none' ? 'selected' : ''}>None</option>
+            <option value="stage_info" ${profile.lead_in_card === 'stage_info' ? 'selected' : ''}>Stage Info</option>
+            <option value="competitor" ${profile.lead_in_card === 'competitor' ? 'selected' : ''}>Competitor</option>
+          </select>
+        </label>
+        <label>Duration (s) <input id="hook-lead-in-duration" type="number" min="0" step="0.1" value="${profile.lead_in_duration_s || 2}" /></label>
+      </div>`;
+    } else if (hook === "brand-mark") {
+      fields.innerHTML = `<div class="control-grid">
+        <label>Mark
+          <select id="hook-brand-mark-select">
+            <option value="none" ${profile.brand_mark === 'none' ? 'selected' : ''}>None</option>
+            <option value="splitshot" ${profile.brand_mark === 'splitshot' ? 'selected' : ''}>SplitShot</option>
+          </select>
+        </label>
+        <label>Duration (s) <input id="hook-brand-mark-duration" type="number" min="0" step="0.1" value="${profile.brand_mark_duration_s || 1}" /></label>
+      </div>`;
+    } else if (hook === "subject-track-crop") {
+      fields.innerHTML = `<div class="control-grid">
+        <label class="check-row"><input id="hook-crop-enabled" type="checkbox" ${profile.subject_track_crop ? 'checked' : ''} /> Enable subject track crop</label>
+        <label>Margin % <input id="hook-crop-margin" type="number" min="0" max="50" step="1" value="${profile.crop_margin_percent || 10}" /></label>
+      </div>
+      <p class="hint">Subject track crop follows detected subject motion to keep the competitor framed.</p>`;
+    }
+  }
+  $("retained-review-apply")?.addEventListener("click", () => {
+    const profileId = $("retained-review-source")?.value;
+    if (profileId) {
+      retainedReviewSourceProfileId = profileId;
+    } else {
+      retainedReviewSourceProfileId = null;
+    }
+    renderOutputProfiles();
+    callApi("/api/output-profiles/render", { output_id: profileId || (state?.output_profiles?.[0]?.output_id) });
+  });
+  $("shared-defaults-apply")?.addEventListener("click", () => {
+    const payload = {
+      frame_profile: $("shared-frame-profile")?.value || "source",
+      metric_captions: $("shared-metric-captions")?.value || "none",
+      lead_in_card: $("shared-lead-in")?.value || "none",
+      brand_mark: $("shared-brand-mark")?.value || "none",
+    };
+    callApi("/api/workspace/defaults", payload);
+  });
+  $("shared-defaults-reset")?.addEventListener("click", () => {
+    callApi("/api/workspace/defaults/reset", {});
+  });
+  $("override-apply")?.addEventListener("click", () => {
+    const stageId = currentWorkspaceStageId();
+    if (!stageId) return;
+    const overrides = {};
+    const frameProfile = $("override-frame-profile")?.value;
+    const metricCaptions = $("override-metric-captions")?.value;
+    if (frameProfile) overrides.frame_profile = frameProfile;
+    if (metricCaptions) overrides.metric_captions = metricCaptions;
+    if (Object.keys(overrides).length) {
+      callApi("/api/workspace/stage/override", { stage_id: stageId, overrides });
+    }
   });
   $("workspace-new")?.addEventListener("click", () => callApi("/api/workspace/new", {}));
   $("workspace-save")?.addEventListener("click", () => callApi("/api/workspace/save", {}));
@@ -9449,6 +10245,138 @@ function wireEvents() {
   $("library-refresh")?.addEventListener("click", () => refreshPerformanceLibrary());
   $("library-search")?.addEventListener("input", debounce(() => refreshPerformanceLibrary(), 250));
   $("library-sort")?.addEventListener("change", () => refreshPerformanceLibrary());
+
+  // Library export buttons
+  $("library-export-csv")?.addEventListener("click", () => {
+    activity("ui.library.export.csv");
+    exportLibraryData("csv");
+    showExportCompleteNotification(1, "");
+  });
+
+  $("library-export-json")?.addEventListener("click", () => {
+    activity("ui.library.export.json");
+    exportLibraryData("json");
+    showExportCompleteNotification(1, "");
+  });
+
+  // Library discipline filter
+  $("library-filter-discipline")?.addEventListener("change", () => { renderPerformanceLibrary(); const discipline = $("library-filter-discipline")?.value || ""; fetchLibraryAnalytics(discipline).then(renderAnalyticsCharts); });
+
+  // Library tag handling
+  $("library-tag-add")?.addEventListener("click", () => {
+    const input = $("library-tag-input");
+    if (!input?.value.trim()) return;
+    addLibraryTag(input.value.trim());
+    input.value = "";
+  });
+
+  $("library-tag-list")?.addEventListener("click", (e) => {
+    const removeBtn = e.target.closest(".tag-remove");
+    if (!removeBtn) return;
+    removeLibraryTag(removeBtn.dataset.tag);
+  });
+
+  // Library notes
+  $("library-notes-save")?.addEventListener("click", () => {
+    const text = $("library-notes-text")?.value || "";
+    saveLibraryNotes(text);
+  });
+  $("setup-once-apply")?.addEventListener("click", async () => {
+
+  // Backup
+  $("library-backup-create")?.addEventListener("click", async () => {
+    activity("ui.library.backup.create");
+    const status = $("library-backup-status");
+    if (status) {
+      status.textContent = "Creating backup...";
+      status.className = "hint";
+    }
+    try {
+      const result = await callApi("/api/library/backup/create", {});
+      if (status) {
+        const manifest = result.manifest || result;
+        const stageCount = manifest.total_stages || 0;
+        const matchCount = manifest.total_matches || 0;
+        status.textContent = `Backup created: ${stageCount} stages, ${matchCount} matches`;
+        status.className = "backup-status-success";
+      }
+    } catch (e) {
+      if (status) {
+        status.textContent = "Backup failed: " + (e.message || "Unknown error");
+        status.className = "backup-status-error";
+      }
+    }
+  });
+
+  // Restore
+  $("library-backup-restore")?.addEventListener("click", () => {
+    activity("ui.library.backup.restore");
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const status = $("library-backup-status");
+      try {
+        const text = await file.text();
+        const manifest = JSON.parse(text);
+        if (status) {
+          status.textContent = "Restoring backup...";
+          status.className = "hint";
+        }
+        const result = await callApi("/api/library/backup/restore", { manifest });
+        if (status) {
+          status.textContent = `Restored: ${result.stages_restored || 0} stages, ${result.matches_restored || 0} matches`;
+          status.className = "backup-status-success";
+        }
+        await refreshPerformanceLibrary();
+      } catch (e) {
+        if (status) {
+          status.textContent = "Restore failed: " + (e.message || "Invalid backup file");
+          status.className = "backup-status-error";
+        }
+      }
+    };
+    input.click();
+  });
+    activity("ui.setup-once.apply");
+    if (!confirm("Applying Stage 1 settings to all stages. This will copy:\n- Output profiles\n- Trim dead time\n- Shot data on screen\n- Video shape\n- Opening title\n- Your logo\n\nProceed?")) return;
+    callApi("/api/workspace/setup-once/apply", { workspace_id: state?.project?.id });
+  });
+  $("setup-once-dismiss")?.addEventListener("click", () => {
+    const banner = domById("setup-once-banner");
+    if (banner) banner.hidden = true;
+  });
+  $("batch-select-all")?.addEventListener("click", () => {
+    const items = document.querySelectorAll(".batch-export-item input[type=checkbox]");
+    items.forEach((cb) => { cb.checked = true; });
+  });
+  $("batch-select-none")?.addEventListener("click", () => {
+    const items = document.querySelectorAll(".batch-export-item input[type=checkbox]");
+    items.forEach((cb) => { cb.checked = false; });
+  });
+  $("batch-export-start")?.addEventListener("click", async () => {
+    const recipe = domById("batch-recipe")?.value || "stage_output";
+    const checked = document.querySelectorAll(".batch-export-item input[type=checkbox]:checked");
+    if (!checked.length) {
+      setStatus("Select at least one stage to export.");
+      return;
+    }
+    const stageIds = Array.from(checked).map((cb) => cb.closest(".batch-export-item")?.dataset?.stageId).filter(Boolean);
+    const progress = domById("batch-export-progress");
+    const status = domById("batch-export-status");
+    if (progress) progress.hidden = false;
+    for (let i = 0; i < stageIds.length; i++) {
+      if (status) status.textContent = `Rendering ${i + 1} of ${stageIds.length}...`;
+      const fill = progress?.querySelector(".progress-fill");
+      if (fill) fill.style.width = `${Math.round(((i + 1) / stageIds.length) * 100)}%`;
+      await callApi("/api/workspace/export", { stage_id: stageIds[i], recipe });
+    }
+    if (status) status.textContent = "Done";
+    if (progress) progress.hidden = true;
+    showExportCompleteNotification(stageIds.length, "");
+  });
   setActiveSurface(activeSurface, { persist: false, openPanel: false });
   void refreshAutomationProfiles();
   return result;
@@ -10557,6 +11485,18 @@ installLegacyGlobalCompat({
 });
 
 applyLayoutState();
+
+// Show landing page on first visit only (skip in test/automation environments)
+const isAutomated = window.navigator.webdriver || false;
+if (!isAutomated) {
+  if (!window.localStorage.getItem("splitshot.hasVisited")) {
+    window.localStorage.setItem("splitshot.hasVisited", "true");
+    activeSurface = "landing";
+    setActiveSurface("landing", { persist: true, openPanel: false });
+  } else if (activeSurface === "landing") {
+    setActiveSurface("landing", { persist: false, openPanel: false });
+  }
+}
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
 wireElectronProjectOpen();
 wireGlobalActivityLogging();

@@ -74,7 +74,9 @@ def _settings(settings: ShotMLSettings | None = None) -> ShotMLSettings:
     return ShotMLSettings() if settings is None else settings
 
 
-def _predict_audio_events(samples: np.ndarray, sample_rate: int, settings: ShotMLSettings | None = None) -> ModelPredictions:
+def _predict_audio_events(
+    samples: np.ndarray, sample_rate: int, settings: ShotMLSettings | None = None
+) -> ModelPredictions:
     active_settings = _settings(settings)
     return _classifier().predict_audio(
         samples,
@@ -103,7 +105,9 @@ def _nearest_probability(predictions: ModelPredictions, target_ms: int, label: s
     return float(label_scores[index])
 
 
-def _window_from_center(samples: np.ndarray, sample_rate: int, center_ms: int, window_size: int | None = None) -> np.ndarray:
+def _window_from_center(
+    samples: np.ndarray, sample_rate: int, center_ms: int, window_size: int | None = None
+) -> np.ndarray:
     classifier = _classifier()
     window_size = classifier.window_size if window_size is None else window_size
     center_sample = _ms_to_sample(center_ms, sample_rate)
@@ -157,7 +161,9 @@ def _shot_sound_profile_metrics(
         return [], []
 
     classifier = _classifier()
-    shot_scores = classifier.shot_confidence_scores(predictions, active_settings.shot_confidence_source)
+    shot_scores = classifier.shot_confidence_scores(
+        predictions, active_settings.shot_confidence_source
+    )
 
     feature_vectors: list[np.ndarray | None] = []
     shot_probabilities: list[float | None] = []
@@ -187,7 +193,10 @@ def _sound_profile_distances(feature_vectors: list[np.ndarray | None]) -> list[f
         return [None for _ in feature_vectors]
 
     profile = np.median(np.stack(valid_feature_vectors), axis=0)
-    return [None if vector is None else float(np.linalg.norm(vector - profile)) for vector in feature_vectors]
+    return [
+        None if vector is None else float(np.linalg.norm(vector - profile))
+        for vector in feature_vectors
+    ]
 
 
 def _sound_profile_outlier_mask(
@@ -199,7 +208,9 @@ def _sound_profile_outlier_mask(
     shot_probability_limit: float | None = None,
 ) -> list[bool]:
     active_settings = _settings(settings)
-    distance_limit = active_settings.sound_profile_distance_limit if distance_limit is None else distance_limit
+    distance_limit = (
+        active_settings.sound_profile_distance_limit if distance_limit is None else distance_limit
+    )
     shot_probability_limit = (
         active_settings.sound_profile_high_confidence_limit
         if shot_probability_limit is None
@@ -224,7 +235,9 @@ def _sound_profile_review_suggestions(
     active_settings = _settings(settings)
     distances = _sound_profile_distances(feature_vectors)
     suggestions: list[TimingReviewSuggestion] = []
-    for index, (shot, distance, shot_probability) in enumerate(zip(shots, distances, shot_probabilities, strict=True)):
+    for index, (shot, distance, shot_probability) in enumerate(
+        zip(shots, distances, shot_probabilities, strict=True)
+    ):
         if distance is None or shot_probability is None:
             continue
         if (
@@ -246,7 +259,10 @@ def _sound_profile_review_suggestions(
                 confidence=float(np.clip(shot_probability, 0.0, 1.0)),
                 support_confidence=float(
                     np.clip(
-                        max(0.0, 1.0 - min(distance / active_settings.sound_profile_distance_limit, 1.0)),
+                        max(
+                            0.0,
+                            1.0 - min(distance / active_settings.sound_profile_distance_limit, 1.0),
+                        ),
                         0.0,
                         1.0,
                     )
@@ -304,10 +320,14 @@ def _fallback_beep_from_heuristic(
         spectrum = np.abs(np.fft.rfft(windowed))
         freqs = np.fft.rfftfreq(window, 1.0 / sample_rate)
         total_energy = float(np.sum(spectrum)) + 1e-6
-        band_energy = float(np.sum(spectrum[
-            (freqs >= active_settings.beep_heuristic_band_min_hz)
-            & (freqs <= active_settings.beep_heuristic_band_max_hz)
-        ]))
+        band_energy = float(
+            np.sum(
+                spectrum[
+                    (freqs >= active_settings.beep_heuristic_band_min_hz)
+                    & (freqs <= active_settings.beep_heuristic_band_max_hz)
+                ]
+            )
+        )
         energy = float(np.mean(np.abs(segment)))
         onset = max(0.0, energy - previous_energy)
         heuristic_scores.append((band_energy / total_energy) * (energy + onset))
@@ -458,7 +478,10 @@ def _refine_beep_time(
     if first_shot_ms is not None:
         end_ms = min(
             end_ms,
-            max(start_ms + 120, first_shot_ms - active_settings.beep_refine_min_gap_before_first_shot_ms),
+            max(
+                start_ms + 120,
+                first_shot_ms - active_settings.beep_refine_min_gap_before_first_shot_ms,
+            ),
         )
 
     centers, scores = _tonal_score_series(
@@ -505,12 +528,14 @@ def _refine_shot_times(
         if index > 0:
             start_ms = max(
                 start_ms,
-                int((rough_times[index - 1] + rough_time) / 2) - active_settings.shot_refine_midpoint_clamp_padding_ms,
+                int((rough_times[index - 1] + rough_time) / 2)
+                - active_settings.shot_refine_midpoint_clamp_padding_ms,
             )
         if index < len(rough_times) - 1:
             end_ms = min(
                 end_ms,
-                int((rough_time + rough_times[index + 1]) / 2) + active_settings.shot_refine_midpoint_clamp_padding_ms,
+                int((rough_time + rough_times[index + 1]) / 2)
+                + active_settings.shot_refine_midpoint_clamp_padding_ms,
             )
         end_ms = max(start_ms + active_settings.shot_refine_min_search_window_ms, end_ms)
 
@@ -538,7 +563,9 @@ def _refine_shot_times(
                 id=shot.id,
                 time_ms=refined_time,
                 source=shot.source,
-                confidence=None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0)),
+                confidence=None
+                if shot.confidence is None
+                else float(np.clip(shot.confidence, 0.0, 1.0)),
                 score=shot.score,
             )
         )
@@ -555,9 +582,8 @@ def _shot_selection_score(
     active_settings = _settings(settings)
     confidence = 0.5 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
     support = 0.0 if support_confidence is None else float(np.clip(support_confidence, 0.0, 1.0))
-    combined = (
-        (confidence * active_settings.shot_selection_confidence_weight)
-        + (support * active_settings.shot_selection_support_weight)
+    combined = (confidence * active_settings.shot_selection_confidence_weight) + (
+        support * active_settings.shot_selection_support_weight
     )
     if support_confidence is not None and support < active_settings.weak_onset_support_threshold:
         combined -= active_settings.weak_support_penalty
@@ -574,7 +600,11 @@ def _filter_false_positive_shots(
     settings: ShotMLSettings | None = None,
 ) -> list[ShotEvent]:
     active_settings = _settings(settings)
-    min_interval_ms = active_settings.min_shot_interval_ms if min_interval_ms == MIN_SHOT_INTERVAL_MS else min_interval_ms
+    min_interval_ms = (
+        active_settings.min_shot_interval_ms
+        if min_interval_ms == MIN_SHOT_INTERVAL_MS
+        else min_interval_ms
+    )
     if not shots:
         return []
 
@@ -588,7 +618,9 @@ def _filter_false_positive_shots(
 
     support_confidences: list[float | None] | None = None
     if samples is not None and sample_rate is not None and samples.size > 0:
-        support_confidences = _shot_support_confidences(samples, sample_rate, eligible, active_settings)
+        support_confidences = _shot_support_confidences(
+            samples, sample_rate, eligible, active_settings
+        )
 
     filtered: list[ShotEvent] = []
     cluster: list[tuple[ShotEvent, float | None]] = [
@@ -599,9 +631,15 @@ def _filter_false_positive_shots(
         if shot.time_ms - cluster[-1][0].time_ms < min_interval_ms:
             cluster.append((shot, support_confidence))
             continue
-        filtered.append(max(cluster, key=lambda item: _shot_selection_score(item[0], item[1], active_settings))[0])
+        filtered.append(
+            max(cluster, key=lambda item: _shot_selection_score(item[0], item[1], active_settings))[
+                0
+            ]
+        )
         cluster = [(shot, support_confidence)]
-    filtered.append(max(cluster, key=lambda item: _shot_selection_score(item[0], item[1], active_settings))[0])
+    filtered.append(
+        max(cluster, key=lambda item: _shot_selection_score(item[0], item[1], active_settings))[0]
+    )
 
     if (
         not active_settings.suppress_close_pair_duplicates
@@ -614,17 +652,29 @@ def _filter_false_positive_shots(
         return filtered
 
     corrected: list[ShotEvent] = []
-    filtered_support_confidences = _shot_support_confidences(samples, sample_rate, filtered, active_settings)
+    filtered_support_confidences = _shot_support_confidences(
+        samples, sample_rate, filtered, active_settings
+    )
     for index, shot in enumerate(filtered):
         support_confidence = filtered_support_confidences[index]
         previous_support = filtered_support_confidences[index - 1] if index > 0 else None
-        next_support = filtered_support_confidences[index + 1] if index < len(filtered) - 1 else None
+        next_support = (
+            filtered_support_confidences[index + 1] if index < len(filtered) - 1 else None
+        )
         previous_gap_ms = shot.time_ms - filtered[index - 1].time_ms if index > 0 else None
-        next_gap_ms = filtered[index + 1].time_ms - shot.time_ms if index < len(filtered) - 1 else None
+        next_gap_ms = (
+            filtered[index + 1].time_ms - shot.time_ms if index < len(filtered) - 1 else None
+        )
 
         should_suppress = False
-        if support_confidence is not None and support_confidence < active_settings.weak_onset_support_threshold:
-            if previous_gap_ms is not None and previous_gap_ms < active_settings.near_cutoff_interval_ms:
+        if (
+            support_confidence is not None
+            and support_confidence < active_settings.weak_onset_support_threshold
+        ):
+            if (
+                previous_gap_ms is not None
+                and previous_gap_ms < active_settings.near_cutoff_interval_ms
+            ):
                 should_suppress = previous_support is None or previous_support >= support_confidence
             elif next_gap_ms is not None and next_gap_ms < active_settings.near_cutoff_interval_ms:
                 should_suppress = next_support is not None and next_support > support_confidence
@@ -644,10 +694,16 @@ def _filter_false_positive_shots(
         corrected,
         active_settings,
     )
-    sound_outlier_mask = _sound_profile_outlier_mask(sound_feature_vectors, sound_probabilities, settings=active_settings)
+    sound_outlier_mask = _sound_profile_outlier_mask(
+        sound_feature_vectors, sound_probabilities, settings=active_settings
+    )
     if not any(sound_outlier_mask):
         return corrected
-    return [shot for shot, is_outlier in zip(corrected, sound_outlier_mask, strict=True) if not is_outlier]
+    return [
+        shot
+        for shot, is_outlier in zip(corrected, sound_outlier_mask, strict=True)
+        if not is_outlier
+    ]
 
 
 def _shot_onset_support(
@@ -677,7 +733,11 @@ def _shot_onset_support(
     baseline = float(np.percentile(envelope, 20))
     contrast = max(0.0, peak - baseline) / (peak + 1e-6)
     alignment_penalty = (
-        min(abs(int(centers[peak_index]) - shot_time_ms) / active_settings.onset_support_alignment_penalty_divisor_ms, 1.0)
+        min(
+            abs(int(centers[peak_index]) - shot_time_ms)
+            / active_settings.onset_support_alignment_penalty_divisor_ms,
+            1.0,
+        )
         * active_settings.onset_support_alignment_penalty_multiplier
     )
     return float(np.clip(contrast * (1.0 - alignment_penalty), 0.0, 1.0))
@@ -693,19 +753,24 @@ def _apply_refinement_confidence(
     if samples.size == 0 or not shots:
         return shots
 
-    supports = [_shot_onset_support(samples, sample_rate, shot.time_ms, active_settings) for shot in shots]
+    supports = [
+        _shot_onset_support(samples, sample_rate, shot.time_ms, active_settings) for shot in shots
+    ]
     max_support = max((support for support in supports if support is not None), default=0.0)
     if max_support <= 0.0:
         return shots
 
     refined: list[ShotEvent] = []
     for shot, support in zip(shots, supports, strict=True):
-        base_confidence = 0.5 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
-        support_confidence = base_confidence if support is None else float(np.clip(support / max_support, 0.0, 1.0))
-        supported_confidence = (
-            (base_confidence * (1.0 - active_settings.refinement_confidence_weight))
-            + (support_confidence * active_settings.refinement_confidence_weight)
+        base_confidence = (
+            0.5 if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
         )
+        support_confidence = (
+            base_confidence if support is None else float(np.clip(support / max_support, 0.0, 1.0))
+        )
+        supported_confidence = (
+            base_confidence * (1.0 - active_settings.refinement_confidence_weight)
+        ) + (support_confidence * active_settings.refinement_confidence_weight)
         confidence = max(base_confidence, supported_confidence)
         refined.append(
             ShotEvent(
@@ -726,11 +791,16 @@ def _shot_support_confidences(
     settings: ShotMLSettings | None = None,
 ) -> list[float | None]:
     active_settings = _settings(settings)
-    supports = [_shot_onset_support(samples, sample_rate, shot.time_ms, active_settings) for shot in shots]
+    supports = [
+        _shot_onset_support(samples, sample_rate, shot.time_ms, active_settings) for shot in shots
+    ]
     max_support = max((support for support in supports if support is not None), default=0.0)
     if max_support <= 0.0:
         return [None for _ in shots]
-    return [None if support is None else float(np.clip(support / max_support, 0.0, 1.0)) for support in supports]
+    return [
+        None if support is None else float(np.clip(support / max_support, 0.0, 1.0))
+        for support in supports
+    ]
 
 
 def _suggest_timing_review_actions(
@@ -745,10 +815,15 @@ def _suggest_timing_review_actions(
 
     support_confidences = _shot_support_confidences(samples, sample_rate, shots, active_settings)
     suggestions: list[TimingReviewSuggestion] = []
-    for index, (shot, support_confidence) in enumerate(zip(shots, support_confidences, strict=True)):
+    for index, (shot, support_confidence) in enumerate(
+        zip(shots, support_confidences, strict=True)
+    ):
         shot_number = index + 1
         confidence = None if shot.confidence is None else float(np.clip(shot.confidence, 0.0, 1.0))
-        if support_confidence is not None and support_confidence < active_settings.weak_onset_support_threshold:
+        if (
+            support_confidence is not None
+            and support_confidence < active_settings.weak_onset_support_threshold
+        ):
             suggestions.append(
                 TimingReviewSuggestion(
                     kind="weak_onset_support",
@@ -768,16 +843,28 @@ def _suggest_timing_review_actions(
             continue
         previous = shots[index - 1]
         interval_ms = shot.time_ms - previous.time_ms
-        if active_settings.min_shot_interval_ms <= interval_ms < active_settings.near_cutoff_interval_ms:
+        if (
+            active_settings.min_shot_interval_ms
+            <= interval_ms
+            < active_settings.near_cutoff_interval_ms
+        ):
             previous_support = support_confidences[index - 1]
             suggested_shot_number = shot_number
             suggested_time_ms = shot.time_ms
             suggested_confidence = confidence
             suggested_support = support_confidence
-            if previous_support is not None and support_confidence is not None and previous_support < support_confidence:
+            if (
+                previous_support is not None
+                and support_confidence is not None
+                and previous_support < support_confidence
+            ):
                 suggested_shot_number = shot_number - 1
                 suggested_time_ms = previous.time_ms
-                suggested_confidence = None if previous.confidence is None else float(np.clip(previous.confidence, 0.0, 1.0))
+                suggested_confidence = (
+                    None
+                    if previous.confidence is None
+                    else float(np.clip(previous.confidence, 0.0, 1.0))
+                )
                 suggested_support = previous_support
             suggestions.append(
                 TimingReviewSuggestion(
@@ -790,7 +877,9 @@ def _suggest_timing_review_actions(
                     shot_number=suggested_shot_number,
                     shot_time_ms=suggested_time_ms,
                     confidence=suggested_confidence,
-                    support_confidence=None if suggested_support is None else round(float(suggested_support), 4),
+                    support_confidence=None
+                    if suggested_support is None
+                    else round(float(suggested_support), 4),
                     interval_ms=interval_ms,
                 )
             )
@@ -846,7 +935,9 @@ def _detect_beep_from_predictions(
         flatness = float(np.exp(np.mean(np.log(band + eps))) / ((np.mean(band)) + eps))
         tonal_score = band_ratio * peak_ratio * max(0.05, 1.0 - flatness)
         center_ms = int(round(((start + (window / 2)) / sample_rate) * 1000.0))
-        ml_boost = active_settings.beep_model_boost_floor + _nearest_probability(predictions, center_ms, "beep")
+        ml_boost = active_settings.beep_model_boost_floor + _nearest_probability(
+            predictions, center_ms, "beep"
+        )
         scores.append(tonal_score * ml_boost)
         centers.append(center_ms)
 
@@ -912,9 +1003,15 @@ def _detect_shots_from_predictions(
         return []
 
     classifier = _classifier()
-    shot_scores = classifier.shot_confidence_scores(predictions, active_settings.shot_confidence_source)
+    shot_scores = classifier.shot_confidence_scores(
+        predictions, active_settings.shot_confidence_source
+    )
     cutoff = _shot_detection_cutoff(threshold, active_settings)
-    earliest_ms = None if beep_time_ms is None else max(0, beep_time_ms + active_settings.min_shot_interval_ms)
+    earliest_ms = (
+        None
+        if beep_time_ms is None
+        else max(0, beep_time_ms + active_settings.min_shot_interval_ms)
+    )
     peaks = pick_event_peaks(
         shot_scores,
         centers_ms,
@@ -946,9 +1043,13 @@ def detect_beep(
 ) -> int | None:
     active_settings = _settings(settings)
     predictions = _predict_audio_events(samples, sample_rate, active_settings)
-    provisional_shots = _detect_shots_from_predictions(predictions, threshold, None, active_settings)
+    provisional_shots = _detect_shots_from_predictions(
+        predictions, threshold, None, active_settings
+    )
     first_shot_ms = None if not provisional_shots else provisional_shots[0].time_ms
-    return _detect_beep_from_predictions(samples, predictions, threshold, sample_rate, first_shot_ms, active_settings)
+    return _detect_beep_from_predictions(
+        samples, predictions, threshold, sample_rate, first_shot_ms, active_settings
+    )
 
 
 def detect_shots(
@@ -982,7 +1083,9 @@ def _analyze_predictions(
     settings: ShotMLSettings | None = None,
 ) -> DetectionResult:
     active_settings = _settings(settings)
-    provisional_shots = _detect_shots_from_predictions(predictions, threshold, None, active_settings)
+    provisional_shots = _detect_shots_from_predictions(
+        predictions, threshold, None, active_settings
+    )
     first_shot_ms = None if not provisional_shots else provisional_shots[0].time_ms
     beep_time_ms = _detect_beep_from_predictions(
         samples,
@@ -1008,7 +1111,9 @@ def _analyze_predictions(
         settings=active_settings,
     )
     shots = _apply_refinement_confidence(samples, sample_rate, shots, active_settings)
-    review_suggestions = sound_review_suggestions + _suggest_timing_review_actions(samples, sample_rate, shots, active_settings)
+    review_suggestions = sound_review_suggestions + _suggest_timing_review_actions(
+        samples, sample_rate, shots, active_settings
+    )
     return DetectionResult(
         beep_time_ms=beep_time_ms,
         shots=shots,
@@ -1041,13 +1146,17 @@ def analyze_video_audio_thresholds(
         samples, sample_rate = read_wav_mono(wav_path)
 
     audio_start_ms, media_duration_ms = _media_timeline_metadata(video_path)
-    samples = _align_samples_to_media_timeline(samples, sample_rate, audio_start_ms, media_duration_ms)
+    samples = _align_samples_to_media_timeline(
+        samples, sample_rate, audio_start_ms, media_duration_ms
+    )
     predictions = _predict_audio_events(samples, sample_rate, active_settings)
     waveform = waveform_envelope(samples)
     return [
         ThresholdDetectionResult(
             threshold=threshold,
-            detection=_analyze_predictions(samples, sample_rate, threshold, predictions, waveform, active_settings),
+            detection=_analyze_predictions(
+                samples, sample_rate, threshold, predictions, waveform, active_settings
+            ),
         )
         for threshold in ordered_thresholds
     ]
@@ -1081,7 +1190,11 @@ def timing_change_proposals_from_review_suggestions(
         shot = shot_for_number(suggestion.shot_number)
         if shot is None:
             continue
-        confidence = None if suggestion.confidence is None else float(np.clip(suggestion.confidence, 0.0, 1.0))
+        confidence = (
+            None
+            if suggestion.confidence is None
+            else float(np.clip(suggestion.confidence, 0.0, 1.0))
+        )
         support_confidence = (
             None
             if suggestion.support_confidence is None
@@ -1104,7 +1217,9 @@ def timing_change_proposals_from_review_suggestions(
                     shot_for_number(suggestion.shot_number - 1),
                     shot_for_number(suggestion.shot_number + 1),
                 ]
-                survivor = next((candidate for candidate in neighbors if candidate is not None), None)
+                survivor = next(
+                    (candidate for candidate in neighbors if candidate is not None), None
+                )
             key = ("choose_close_pair_survivor", shot.id, suggestion.interval_ms)
             if key in seen_keys:
                 continue

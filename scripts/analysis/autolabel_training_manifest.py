@@ -73,7 +73,11 @@ def render_table(summary: dict[str, object], output_path: Path, limit: int = 12)
         "------+----------+---------+-------+--------+-----",
     ]
     for entry in entries:
-        score = "--" if entry["auto_label_score"] is None else f"{float(entry['auto_label_score']):0.3f}"
+        score = (
+            "--"
+            if entry["auto_label_score"] is None
+            else f"{float(entry['auto_label_score']):0.3f}"
+        )
         skip_reason = entry["skip_reason"] or "--"
         method = entry["auto_label_method"] or "--"
         lines.append(

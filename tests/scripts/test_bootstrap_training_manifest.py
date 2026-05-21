@@ -31,7 +31,9 @@ def _build_corpus_dir(tmp_path: Path, synthetic_video_factory) -> Path:
     return corpus_dir
 
 
-def test_bootstrap_training_manifest_writes_default_output_and_table(tmp_path: Path, synthetic_video_factory) -> None:
+def test_bootstrap_training_manifest_writes_default_output_and_table(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     corpus_dir = _build_corpus_dir(tmp_path, synthetic_video_factory)
     output_path = corpus_dir / "shotml-label-manifest.json"
 
@@ -47,7 +49,9 @@ def test_bootstrap_training_manifest_writes_default_output_and_table(tmp_path: P
     assert "shot_multipass" in payload["videos"][0]
 
 
-def test_bootstrap_training_manifest_emits_json_to_stdout(tmp_path: Path, synthetic_video_factory) -> None:
+def test_bootstrap_training_manifest_emits_json_to_stdout(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     corpus_dir = _build_corpus_dir(tmp_path, synthetic_video_factory)
     output_path = tmp_path / "custom-manifest.json"
 
@@ -69,7 +73,9 @@ def test_bootstrap_training_manifest_emits_json_to_stdout(tmp_path: Path, synthe
     assert "beep_multipass" in payload["videos"][0]
 
 
-def test_bootstrap_training_manifest_preserves_existing_labels(tmp_path: Path, synthetic_video_factory) -> None:
+def test_bootstrap_training_manifest_preserves_existing_labels(
+    tmp_path: Path, synthetic_video_factory
+) -> None:
     corpus_dir = _build_corpus_dir(tmp_path, synthetic_video_factory)
     output_path = corpus_dir / "shotml-label-manifest.json"
 

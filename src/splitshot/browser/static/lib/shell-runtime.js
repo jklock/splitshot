@@ -552,6 +552,7 @@ export function createShellRuntime({
     documentObject.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {
       $("primary-video").addEventListener(eventName, () => {
+        previewSeekBoundary = true;
         logPrimaryVideoState(eventName);
         scheduleSecondaryPreviewSync();
         renderLiveOverlay();
@@ -571,14 +572,17 @@ export function createShellRuntime({
       logPrimaryVideoState("error");
     });
     $("primary-video").addEventListener("play", () => {
+      previewSeekBoundary = true;
       logPrimaryVideoState("play");
     });
     $("primary-video").addEventListener("pause", () => {
+      previewSeekBoundary = true;
       logPrimaryVideoState("pause");
     });
     $("primary-video").addEventListener("play", startOverlayLoop);
     $("primary-video").addEventListener("pause", stopOverlayLoop);
     $("primary-video").addEventListener("seeked", () => {
+      previewSeekBoundary = true;
       activity("video.seeked", { current_time_s: $("primary-video").currentTime });
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();
@@ -603,6 +607,19 @@ export function createShellRuntime({
     $("amp-waveform-out").addEventListener("click", () => setWaveformAmplitude(0.5));
     $("amp-waveform-in").addEventListener("click", () => setWaveformAmplitude(2));
     $("reset-waveform-view").addEventListener("click", resetWaveformView);
+    $("waveform-mode-single")?.addEventListener("click", () => {
+      $("waveform-mode-single").classList.add("active");
+      $("waveform-mode-multi").classList.remove("active");
+      $("waveform-tracks-controls").hidden = true;
+      setWaveformTrackMode("single");
+    });
+    $("waveform-mode-multi")?.addEventListener("click", () => {
+      $("waveform-mode-multi").classList.add("active");
+      $("waveform-mode-single").classList.remove("active");
+      $("waveform-tracks-controls").hidden = false;
+      setWaveformTrackMode("multi");
+      renderWaveformTracks();
+    });
     $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
     $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
     $("expand-markers")?.addEventListener("click", () => {

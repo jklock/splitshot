@@ -362,7 +362,9 @@ def _write_markdown(
             dimensions = f"{result['width']}x{result['height']}"
         codec = result.get("codec_name") or "--"
         fps = f"{result['fps']:.2f}" if isinstance(result.get("fps"), float) else "--"
-        duration = f"{result['duration']:.3f}" if isinstance(result.get("duration"), float) else "--"
+        duration = (
+            f"{result['duration']:.3f}" if isinstance(result.get("duration"), float) else "--"
+        )
         size = str(result.get("size") or "--")
         status = "pass" if result["success"] else f"fail: {result.get('error', 'unknown')}"
         lines.append(
@@ -494,7 +496,9 @@ def main() -> int:
     )
 
     failures = [result for result in case_results if not result["success"]]
-    print(f"[matrix] successes: {len(case_results) - len(failures)} / {len(case_results)}", flush=True)
+    print(
+        f"[matrix] successes: {len(case_results) - len(failures)} / {len(case_results)}", flush=True
+    )
     if failures:
         print("[matrix] failed cases:", flush=True)
         for failure in failures:

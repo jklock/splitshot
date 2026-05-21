@@ -8,7 +8,11 @@ from pathlib import Path
 
 import numpy as np
 
-from splitshot.analysis.training_dataset import CLASS_NAMES, DatasetExtractionConfig, extract_training_dataset
+from splitshot.analysis.training_dataset import (
+    CLASS_NAMES,
+    DatasetExtractionConfig,
+    extract_training_dataset,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -90,7 +94,9 @@ def render_table(summary: dict[str, object], output_path: Path) -> str:
     skipped_reasons = summary["skipped_video_reasons"]
     skipped_text = "--"
     if skipped_reasons:
-        skipped_text = ", ".join(f"{reason}={count}" for reason, count in sorted(skipped_reasons.items()))
+        skipped_text = ", ".join(
+            f"{reason}={count}" for reason, count in sorted(skipped_reasons.items())
+        )
     return "\n".join(
         [
             f"Training Dataset: {output_path}",
@@ -123,7 +129,9 @@ def main() -> int:
         seed=args.seed,
         detector_draft_policy=args.detector_draft_policy,
     )
-    features, labels, source_paths, label_sources, is_augmented, summary = extract_training_dataset(args.manifest, config)
+    features, labels, source_paths, label_sources, is_augmented, summary = extract_training_dataset(
+        args.manifest, config
+    )
     payload = summary.to_dict()
 
     output_path = args.output.expanduser().resolve()

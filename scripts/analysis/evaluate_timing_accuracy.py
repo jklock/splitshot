@@ -18,6 +18,7 @@ from splitshot.analysis.training_dataset import (
     LABEL_STATUS_VERIFIED,
     load_manifest,
 )
+
 DEFAULT_THRESHOLD_GRID = (0.25, 0.35, 0.45, 0.55, 0.65)
 
 
@@ -122,7 +123,9 @@ def _int_list(value: object) -> list[int]:
     return [int(item) for item in value]
 
 
-def expected_timing_for_entry(video: dict[str, object], use_detector_drafts: bool) -> ExpectedTiming | str:
+def expected_timing_for_entry(
+    video: dict[str, object], use_detector_drafts: bool
+) -> ExpectedTiming | str:
     labels = video.get("labels", {})
     if not isinstance(labels, dict):
         labels = {}
@@ -164,7 +167,9 @@ def expected_timing_for_entry(video: dict[str, object], use_detector_drafts: boo
     return "status_not_accepted"
 
 
-def resolve_video_path(video: dict[str, object], manifest_path: Path, manifest: dict[str, object]) -> Path | None:
+def resolve_video_path(
+    video: dict[str, object], manifest_path: Path, manifest: dict[str, object]
+) -> Path | None:
     path_value = video.get("path")
     if isinstance(path_value, str) and path_value:
         candidate = Path(path_value).expanduser()
@@ -230,7 +235,9 @@ def _split_times(beep_time_ms: int | None, shots: list[int]) -> list[int]:
     return splits
 
 
-def _matched_shots(expected_shots: list[int], detected_shots: list[int], max_match_ms: int) -> list[dict[str, int]]:
+def _matched_shots(
+    expected_shots: list[int], detected_shots: list[int], max_match_ms: int
+) -> list[dict[str, int]]:
     matches: list[dict[str, int]] = []
     next_detected_index = 0
     for expected_index, expected_ms in enumerate(expected_shots):
@@ -331,16 +338,17 @@ def summarize_video_rows(rows: list[dict[str, object]]) -> dict[str, object]:
         if error is not None
     ]
     split_errors = [
-        int(error)
-        for row in rows
-        for error in row.get("split_errors_ms", [])
-        if error is not None
+        int(error) for row in rows for error in row.get("split_errors_ms", []) if error is not None
     ]
     first_split_errors = [
         int(row["first_split_error_ms"]) for row in rows if row["first_split_error_ms"] is not None
     ]
-    last_shot_errors = [int(row["last_shot_error_ms"]) for row in rows if row["last_shot_error_ms"] is not None]
-    stage_time_errors = [int(row["stage_time_error_ms"]) for row in rows if row["stage_time_error_ms"] is not None]
+    last_shot_errors = [
+        int(row["last_shot_error_ms"]) for row in rows if row["last_shot_error_ms"] is not None
+    ]
+    stage_time_errors = [
+        int(row["stage_time_error_ms"]) for row in rows if row["stage_time_error_ms"] is not None
+    ]
     label_sources = Counter(str(row["label_source"]) for row in rows)
     return {
         "evaluated_video_count": len(rows),
@@ -445,7 +453,9 @@ def render_table(payload: dict[str, object]) -> str:
         "Label sources: "
         + ", ".join(
             f"{source}={count}"
-            for source, count in sorted(dict(selected_summary.get("label_source_counts", {})).items())
+            for source, count in sorted(
+                dict(selected_summary.get("label_source_counts", {})).items()
+            )
         ),
         "",
         "Metric            | count |  mean ms | median ms |   p95 ms |   max ms | signed ms",
@@ -547,7 +557,9 @@ def evaluate_manifest(
     if not isinstance(videos, list):
         raise ValueError(f"Manifest videos must be a list: {manifest_path}")
 
-    rows_by_threshold: dict[float, list[dict[str, object]]] = {threshold: [] for threshold in thresholds}
+    rows_by_threshold: dict[float, list[dict[str, object]]] = {
+        threshold: [] for threshold in thresholds
+    }
     skipped: Counter[str] = Counter()
     skipped_videos: list[dict[str, object]] = []
 
@@ -560,7 +572,9 @@ def evaluate_manifest(
             skipped[expected] += 1
             skipped_videos.append(
                 {
-                    "relative_path": str(video.get("relative_path") or Path(str(video.get("path", ""))).name),
+                    "relative_path": str(
+                        video.get("relative_path") or Path(str(video.get("path", ""))).name
+                    ),
                     "reason": expected,
                 }
             )
@@ -571,7 +585,9 @@ def evaluate_manifest(
             skipped["video_not_found"] += 1
             skipped_videos.append(
                 {
-                    "relative_path": str(video.get("relative_path") or Path(str(video.get("path", ""))).name),
+                    "relative_path": str(
+                        video.get("relative_path") or Path(str(video.get("path", ""))).name
+                    ),
                     "reason": "video_not_found",
                 }
             )
