@@ -516,6 +516,44 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
             return
         super().handle_error(request, client_address)
 
+_WORKSPACE_ELIGIBLE_KEYS = frozenset(
+    {
+        "trim_dead_time",
+        "shot_data_overlay",
+        "video_shape",
+        "opening_title",
+        "your_logo",
+        "overlay_visibility",
+        "overlay_position",
+        "marker_visibility",
+        "export_quality",
+        "frame_profile",
+        "metric_caption_preset",
+        "lead_in_card",
+        "brand_mark",
+        "subject_track_crop",
+        "visibility_recipe",
+        "aspect_ratio",
+        "export_preset",
+        "frame_rate",
+        "video_codec",
+        "audio_codec",
+    }
+)
+
+
+def _stage_effective_settings(entry, shared_defaults, eligible_keys):
+    """Compute effective settings for a stage (shared + overrides)."""
+    effective = {}
+    for key in eligible_keys:
+        if key in entry.override_values:
+            effective[key] = entry.override_values[key]
+        elif key in shared_defaults:
+            effective[key] = shared_defaults[key]
+    return effective
+
+
+
 
 class BrowserControlServer:
     def __init__(
@@ -2294,7 +2332,7 @@ class BrowserControlServer:
                 """Return recent activity for the landing page."""
                 from pathlib import Path as _Path
 
-                recent = []
+                recent: list[dict[str, Any]] = []
                 try:
                     library_root = _Path.home() / ".splitshot" / "projects"
                     project_dirs: list[_Path] = []
@@ -2336,6 +2374,25 @@ class BrowserControlServer:
                         )
                 except Exception:
                     pass
+
+                try:
+                    from splitshot.persistence.library import read_match_metrics
+
+                    match_metrics = read_match_metrics()
+                    for match in match_metrics[-5:]:
+                        recent.append({
+                            "name": match.get("display_name") or match.get("match_id", "Untitled Match"),
+                            "type": "match",
+                            "surface": "multi",
+                            "date": match.get("last_modified") or match.get("event_date", ""),
+                            "path": match.get("match_id", ""),
+                            "match_id": match.get("match_id", ""),
+                            "stage_count": match.get("stage_count", 0),
+                        })
+                except Exception:
+                    pass
+
+                recent.sort(key=lambda r: r.get("date", ""), reverse=True)
                 return {"recent": recent}
 
             # === Workspace: Setup Once, Apply Everywhere ===
@@ -2354,36 +2411,40 @@ class BrowserControlServer:
                     if not first_stage.stage_id:
                         return {"error": "Stage 1 has no stage_id"}
 
-                    eligible_keys = {
-                        "trim_dead_time",
-                        "shot_data_overlay",
-                        "video_shape",
-                        "opening_title",
-                        "your_logo",
-                        "overlay_visibility",
-                        "overlay_position",
-                        "marker_visibility",
-                        "export_quality",
-                    }
+                    first_effective = _stage_effective_settings(
+                        first_stage,
+                        workspace.shared_defaults,
+                        _WORKSPACE_ELIGIBLE_KEYS,
+                    )
 
-                    first_defaults = {}
-                    if workspace.shared_defaults:
-                        for key in eligible_keys:
-                            if key in workspace.shared_defaults:
-                                first_defaults[key] = workspace.shared_defaults[key]
+                    for key, value in first_effective.items():
+                        workspace.shared_defaults[key] = value
 
-                    workspace.first_stage_snapshot = {
-                        "stage_id": first_stage.stage_id,
-                        "defaults": first_defaults,
-                        "applied_at": datetime.now(timezone.utc).isoformat(),
-                    }
+                    first_stage.override_values.clear()
 
+                    stage_changes = []
                     applied_count = 0
                     for entry in stage_entries[1:]:
                         if not entry.stage_id:
                             continue
+                        before = dict(entry.override_values)
+                        entry.override_values.clear()
                         entry.inherited_from_first = True
                         applied_count += 1
+                        stage_changes.append(
+                            {
+                                "stage_id": entry.stage_id,
+                                "display_name": entry.display_name,
+                                "cleared_overrides": before,
+                            }
+                        )
+
+                    workspace.first_stage_snapshot = {
+                        "stage_id": first_stage.stage_id,
+                        "applied_settings": dict(first_effective),
+                        "stage_changes": stage_changes,
+                        "applied_at": datetime.now(timezone.utc).isoformat(),
+                    }
 
                     workspace.updated_at = datetime.now(timezone.utc)
                     controller.autosave_project_if_needed()
@@ -2407,30 +2468,52 @@ class BrowserControlServer:
                         return {"preview": [], "message": "Need at least 2 stages"}
 
                     first_stage = stage_entries[0]
+                    first_effective = _stage_effective_settings(
+                        first_stage,
+                        workspace.shared_defaults,
+                        _WORKSPACE_ELIGIBLE_KEYS,
+                    )
+
                     changes = []
                     for entry in stage_entries[1:]:
                         if not entry.stage_id:
                             continue
+                        sibling_effective = _stage_effective_settings(
+                            entry,
+                            workspace.shared_defaults,
+                            _WORKSPACE_ELIGIBLE_KEYS,
+                        )
+
+                        affected = {}
+                        conflicts = {}
+                        no_change = {}
+                        for key, new_val in first_effective.items():
+                            old_val = sibling_effective.get(key)
+                            if old_val is None and key not in sibling_effective:
+                                no_change[key] = {"new": new_val}
+                            elif old_val != new_val:
+                                if key in entry.override_values:
+                                    conflicts[key] = {"old": old_val, "new": new_val}
+                                else:
+                                    affected[key] = {"old": old_val, "new": new_val}
+
                         changes.append(
                             {
                                 "stage_id": entry.stage_id,
                                 "display_name": entry.display_name or f"Stage {entry.stage_number}",
                                 "current_status": entry.status,
                                 "will_inherit": not bool(entry.override_values),
+                                "affected_settings": affected,
+                                "conflicts": conflicts,
+                                "inherited": no_change,
                             }
                         )
 
                     return {
                         "preview": changes,
                         "source_stage": first_stage.display_name or "Stage 1",
-                        "eligible_settings": [
-                            "trim_dead_time",
-                            "shot_data_overlay",
-                            "video_shape",
-                            "opening_title",
-                            "your_logo",
-                            "overlay_visibility",
-                        ],
+                        "applied_settings": dict(first_effective),
+                        "eligible_settings": sorted(_WORKSPACE_ELIGIBLE_KEYS),
                     }
 
             # === Library: Analytics ===
@@ -2607,14 +2690,30 @@ class BrowserControlServer:
                 if not manifest:
                     return {"error": "No backup manifest provided"}
 
-                restored_stages = len(manifest.get("stage_records", []))
-                restored_matches = len(manifest.get("match_records", []))
+                from splitshot.persistence.library import append_stage_metric, append_match_metric
+
+                stages_restored = 0
+                matches_restored = 0
+                errors: list[str] = []
+
+                for stage in (manifest.get("stage_records") or []):
+                    try:
+                        append_stage_metric(stage)
+                        stages_restored += 1
+                    except Exception as e:
+                        errors.append(f"Stage {stage.get('display_name', '?')}: {e}")
+
+                for match in (manifest.get("match_records") or []):
+                    try:
+                        append_match_metric(match)
+                        matches_restored += 1
+                    except Exception as e:
+                        errors.append(f"Match {match.get('display_name', '?')}: {e}")
 
                 return {
-                    "restored": True,
-                    "stages_restored": restored_stages,
-                    "matches_restored": restored_matches,
-                    "message": f"Restored {restored_stages} stages and {restored_matches} matches",
+                    "stages_restored": stages_restored,
+                    "matches_restored": matches_restored,
+                    "errors": errors,
                 }
 
         return Handler

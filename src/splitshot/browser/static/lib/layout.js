@@ -196,7 +196,7 @@ export function createLayoutRuntime({
     document.querySelectorAll("[data-layout-lock-toggle]").forEach((toggle) => {
       const target = toggle.id.replace("toggle-layout-lock-", "");
       const scope = target ? `${target} layout` : "layout";
-      toggle.textContent = runtime.layoutLocked ? "🔒" : "🔓";
+      toggle.textContent = runtime.layoutLocked ? "Lock" : "Unlock";
       toggle.setAttribute("aria-label", `${runtime.layoutLocked ? "Unlock" : "Lock"} ${scope}`);
     });
     syncLayoutBackbone();

@@ -27,6 +27,8 @@ The shell must not own a permanent automation strip. View-specific controls live
 
 For exact DOM structure, see `artifacts/dom-restructure-plan.md`. For visual tokens, see `artifacts/visual-design-contract.md`.
 
+Visible emoji are allowed only on the Landing Page. Stage, Match, Library, shell navigation, tool rails, status controls, setup prompts, and workflow buttons must use text labels, existing icon assets, or styled badges instead of emoji.
+
 ## Landing Page
 
 Required:
@@ -72,6 +74,8 @@ Required:
 - Stage Composite builder
 - batch export queue and progress
 - clean open Stage / return behavior.
+- full-viewport workspace layout with no centered max-width cap
+- no oversized view title bar; keep New/Save/Export controls in a compact action bar or in the relevant panel.
 
 ## Performance Library
 
@@ -91,6 +95,8 @@ Required:
 - CSV/JSON export
 - reopen Stage/Match actions
 - automatic history updates from Stage/Match completion without navigation.
+- full-viewport workspace layout with no centered max-width cap
+- no oversized view title bar; keep refresh/export controls in a compact action bar or in the relevant panel.
 
 ## PiP, Waveform, Multi-Angle
 

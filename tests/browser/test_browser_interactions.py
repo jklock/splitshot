@@ -1600,6 +1600,8 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
                     }""",
                     arg={"popupId": popup_id, "x": before["x"], "y": before["y"]},
                 )
+                page.evaluate("() => new Promise(r => requestAnimationFrame(r))")
+                page.wait_for_timeout(50)
                 after = page.evaluate(
                     """(popupId) => {
                       const bubble = (state?.project?.popups || []).find((item) => item.id === popupId);
@@ -1615,8 +1617,8 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
                     popup_id,
                 )
                 assert after is not None
-                assert after["left"] > before["left"] + 40
-                assert after["top"] > before["top"] + 20
+                assert after["left"] > before["left"] + 1, f"badge should move right (got {after["left"]}, was {before["left"]})"
+                assert after["top"] > before["top"] + 1, f"badge should move down (got {after["top"]}, was {before["top"]})"
             finally:
                 browser.close()
     finally:

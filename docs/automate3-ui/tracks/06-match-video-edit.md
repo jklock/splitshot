@@ -6,7 +6,7 @@ Build Match as a first-class workspace frontend.
 
 ## Required UI
 
-- match header
+- compact match action bar; no oversized title/header strip
 - editable match metadata
 - stage grid with thumbnails, status, scoring, settings badges
 - drag reorder
@@ -17,6 +17,9 @@ Build Match as a first-class workspace frontend.
 - Match Recap
 - Stage Composite
 - batch export queue.
+- full-width workspace body that uses the available viewport instead of a centered narrow column.
+
+Visible emoji are forbidden in this view. Use text, styled badges, or the existing icon system.
 
 ## Required Behaviors
 

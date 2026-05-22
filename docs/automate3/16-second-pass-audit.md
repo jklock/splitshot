@@ -1,6 +1,6 @@
 # Second-Pass Pre-Implementation Review
 
-> **Status:** This document audits the updated Automate3 planning package after the first review's feedback was incorporated.
+> **Status:** All 12 gaps identified in this audit were resolved in the planning package by 2026-05-21. Core UI implementation is now ~80% complete. This document is retained as an audit trail.
 >
 > **Written:** 2026-05-21
 > **Scope:** `docs/automate3/` and `docs/automate3-ui/`
@@ -219,21 +219,21 @@ The existing app already has an orange accent used everywhere (active tool items
 | Quality bar | ✅ Good | ✅ Good | No change needed |
 | Current state audit | ⚠️ False | ✅ Fixed | Screenshots now correctly noted as missing |
 | API contract | ⚠️ Too thin | ✅ Fixed | Backend gaps explicitly documented |
-| Truth audit matrix | ⚠️ Too vague | ✅ Fixed | Specific repo evidence recorded |
-| Technical architecture | ⚠️ Too thin | ⚠️ Minor gap | Still missing file-change-map reference |
-| DOM restructure plan | N/A | ✅ Good | New artifact, well structured |
-| File change map | N/A | ⚠️ Minor gap | Missing a few CSS files |
-| Visual design contract | N/A | ⚠️ **Major gap** | Proposes colors that conflict with existing theme |
+| Truth audit matrix | ⚠️ Too vague | ✅ Fixed | Specific repo evidence recorded; updated for implementation state 2026-05-22 |
+| Technical architecture | ⚠️ Too thin | ✅ Fixed | Now references file-change-map.md |
+| DOM restructure plan | N/A | ✅ Good | New artifact, includes shell header contents |
+| File change map | N/A | ✅ Fixed | Now includes landing.css, layout.css, components.css |
+| Visual design contract | N/A | ✅ Fixed | Reconciled with existing theme.css; preserves --accent: #ff7b22 |
 | State integration | ⚠️ Missing | ✅ Fixed | Appendix added to state contract |
 | Migration strategy | ⚠️ Missing | ✅ Fixed | Phased strategy in execution-order |
-| Test preservation | ⚠️ Missing | ⚠️ Minor gap | Missing ~14 test files |
+| Test preservation | ⚠️ Missing | ✅ Fixed | Now acknowledges all existing test files |
 | Error state UX | ⚠️ Missing | ✅ Fixed | Exact table added |
 | Apply-from-first gap | ⚠️ Missing | ✅ Fixed | Backend gap documented |
 | Render plan contract | ⚠️ Missing | ✅ Fixed | Payload fields specified |
-| Landing recent limit | ⚠️ Missing | ✅ Fixed | Noted in workflow spec and UI spec |
+| Landing recent limit | ⚠️ Missing | ✅ Fixed | Noted in workflow spec and UI spec; "Recent Stages" title clarified |
 | flutter_app isolation | ⚠️ Missing | ✅ Fixed | Added to both MASTER files |
-| Orchestration prompt cross-ref | ⚠️ Missing | ⚠️ Partial | automate3-ui prompt fixed; automate3 prompt still missing new artifacts |
-| Implementation roadmap | N/A | ⚠️ Minor gap | Doesn't reference phased migration |
-| Pre-implementation review stale | N/A | ⚠️ Minor gap | Blocking language now incorrect |
+| Orchestration prompt cross-ref | ⚠️ Missing | ✅ Fixed | Both automate3 and automate3-ui prompts now reference new artifacts |
+| Implementation roadmap | N/A | ✅ Fixed | Now references phased migration |
+| Pre-implementation review stale | N/A | ✅ Fixed | "Feedback incorporated" banner added to both copies |
 
-**Bottom line:** The package is now **substantially improved** and could be used for implementation after Priority 1 fixes are applied. The most critical remaining issue is the **visual design contract's color conflict** with existing `theme.css`, which would cause an agent to inadvertently rebrand the app. The second most critical is the **automate3 subagent orchestration prompt** not referencing the new artifacts.
+**Bottom line:** All 12 gaps (A-K + New Issue 1) were resolved in the planning package on 2026-05-21. The package was used for implementation and core UI work is now ~80% complete. See `progress.md` for current status.

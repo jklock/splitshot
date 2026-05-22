@@ -57,7 +57,7 @@ let splitSeconds = splitSecondsUtil;
 
 // === AUTOMATE3 VIEW STATE MACHINE ===
 const VALID_VIEWS = new Set(["landing", "stage", "match", "library"]);
-let currentView = window.localStorage.getItem("splitshot.activeView") || "stage";
+let currentView = window.localStorage.getItem("splitshot.activeView") || "landing";
 let previousView = null;
 
 function setActiveView(viewName) {
@@ -94,8 +94,27 @@ function setActiveView(viewName) {
 
   // Show/hide landing page
   const landingPage = document.getElementById("landing-page");
+  // Restore view-local state
+  if (viewName === "match") {
+    const savedScroll = window.localStorage.getItem("splitshot.match.scrollTop");
+    if (savedScroll) {
+      requestAnimationFrame(() => {
+        const grid = document.getElementById("workspace-stage-list");
+        if (grid?.parentElement) grid.parentElement.scrollTop = Number(savedScroll);
+      });
+    }
+  }
+
   if (landingPage) {
     landingPage.hidden = viewName !== "landing";
+  }
+
+  // Preserve view-local state before switching
+  if (previousView === "match") {
+    const grid = document.getElementById("workspace-stage-list");
+    if (grid) {
+      window.localStorage.setItem("splitshot.match.scrollTop", String(grid.parentElement?.scrollTop || 0));
+    }
   }
 
   // Persist
@@ -140,6 +159,58 @@ function updateShellContext() {
   }
 }
 
+// Stage empty state management
+function updateStageEmptyState() {
+  const emptyEl = document.getElementById("stage-empty-state");
+  if (!emptyEl) return;
+  const hasMedia = !!(state?.media?.primary_available || state?.project?.primary_path);
+  emptyEl.style.display = hasMedia ? "none" : "flex";
+}
+
+// Wire empty state buttons
+document.getElementById("stage-empty-import")?.addEventListener("click", () => {
+  document.getElementById("primary-file-input")?.click();
+});
+document.getElementById("stage-empty-open")?.addEventListener("click", () => {
+  document.getElementById("browse-project-path")?.click();
+});
+
+
+// === GLOBAL ERROR BANNER ===
+function showGlobalError(message, { duration = 8000, action = null, actionLabel = "Retry" } = {}) {
+  let banner = document.getElementById("global-error-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "global-error-banner";
+    banner.className = "error-banner";
+    banner.style.cssText = "position:fixed;top:44px;left:0;right:0;z-index:100;display:none;";
+    document.getElementById("app-shell")?.prepend(banner);
+  }
+  banner.innerHTML = `
+    <span>${message}</span>
+    <div style="display:flex;gap:8px;">
+      ${action ? `<button type="button" id="global-error-action">${actionLabel}</button>` : ""}
+      <button type="button" id="global-error-dismiss">Dismiss</button>
+    </div>
+  `;
+  banner.style.display = "flex";
+  document.getElementById("global-error-dismiss")?.addEventListener("click", () => {
+    banner.style.display = "none";
+  });
+  document.getElementById("global-error-action")?.addEventListener("click", () => {
+    banner.style.display = "none";
+    if (action) action();
+  });
+  if (duration > 0) {
+    setTimeout(() => { banner.style.display = "none"; }, duration);
+  }
+}
+
+function dismissGlobalError() {
+  const banner = document.getElementById("global-error-banner");
+  if (banner) banner.style.display = "none";
+}
+
 function wireShellHeaderEvents() {
   document.getElementById("shell-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
   document.getElementById("nav-stage")?.addEventListener("click", () => setActiveSurface("single"));
@@ -153,6 +224,15 @@ function wireShellHeaderEvents() {
   });
   document.getElementById("shell-return-match")?.addEventListener("click", () => setActiveSurface("multi"));
 }
+
+// Keyboard shortcuts for view switching (Ctrl/Cmd + 1/2/3)
+document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.target.closest("input, textarea, select, [contenteditable]")) {
+    if (e.key === "1") { e.preventDefault(); setActiveSurface("single"); }
+    else if (e.key === "2") { e.preventDefault(); setActiveSurface("multi"); }
+    else if (e.key === "3") { e.preventDefault(); setActiveSurface("library"); }
+  }
+});
 
 function wireLandingNavigation() {
   // New-project / new-match buttons on the landing page (not handled by wireEvents)
@@ -170,7 +250,7 @@ function wireLandingNavigation() {
 let state = null;
 let selectedShotId = null;
 let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project";
-let activeSurface = window.localStorage.getItem("splitshot.activeSurface") || "single";
+let activeSurface = window.localStorage.getItem("splitshot.activeSurface") || "landing";
 let automationPanelOpen = false;
 let landingPageVisible = false;
 let overlayFrame = null;
@@ -5161,71 +5241,171 @@ function renderWorkspaceStages() {
   if (!list) return;
   const entries = state?.workspace_stage_entries || [];
   list.innerHTML = "";
-  if (!entries.length) {
-    list.innerHTML = '<div class="hint">No workspace stages yet.</div>';
-  }
   entries.forEach((entry) => {
-    const row = document.createElement("div");
-    row.className = "automation-row";
-    row.dataset.stageId = entry.stage_id;
-    if (entry.stage_id === currentWorkspaceStageId()) row.classList.add("active");
-    const summary = document.createElement("div");
-    const missing = entry.source_media_present === false ? "missing media" : "media ready";
-    const override = entry.override_count || Object.keys(entry.override_values || {}).length ? "override" : "inherited";
-    summary.innerHTML = `<strong>${entry.display_name || entry.stage_id}</strong><br><small>Stage ${entry.stage_number || "-"} • ${entry.status || "incomplete"} • ${missing} • ${override}</small>`;
-    const badges = document.createElement("div");
-    badges.className = "stage-status-badges";
-    if (entry.status === "complete") {
-      const b = document.createElement("span");
-      b.className = "stage-badge complete";
-      b.textContent = "\u2713 Complete";
-      badges.append(b);
-    }
-    if (entry.source_media_present === false) {
-      const b = document.createElement("span");
-      b.className = "stage-badge missing-media";
-      b.textContent = "\u26A0 Missing Media";
-      badges.append(b);
-    }
+    const card = document.createElement("div");
+    card.className = "match-stage-card";
+    card.dataset.stageId = entry.stage_id;
+    if (entry.stage_id === currentWorkspaceStageId()) card.classList.add("selected");
+
+    const thumb = document.createElement("div");
+    thumb.className = "match-stage-thumb";
+    thumb.style.cssText = "width:48px;height:32px;background:var(--surface-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-size:18px;";
+    thumb.textContent = entry.source_media_present !== false ? "🎬" : "❌";
+
+    const number = document.createElement("div");
+    number.className = "match-stage-number";
+    number.textContent = entry.stage_number || entries.indexOf(entry) + 1;
+
+    const info = document.createElement("div");
+    info.className = "match-stage-info";
+    const name = document.createElement("p");
+    name.className = "match-stage-name";
+    name.textContent = entry.display_name || entry.stage_id || "Untitled Stage";
+
+    const meta = document.createElement("div");
+    meta.className = "match-stage-meta";
+    const mediaStatus = entry.source_media_present === false ? "No media" : "Media ready";
+    const statusSpan = document.createElement("span");
+    statusSpan.textContent = mediaStatus;
+    meta.appendChild(statusSpan);
+
     if (entry.override_count || Object.keys(entry.override_values || {}).length) {
-      const b = document.createElement("span");
-      b.className = "stage-badge overrides";
-      b.textContent = "\uD83D\uDCDD Overrides";
-      badges.append(b);
+      const badge = document.createElement("span");
+      badge.className = "badge badge-custom";
+      badge.textContent = "Custom";
+      meta.appendChild(badge);
     }
-    if (entry.reviewed) {
-      const b = document.createElement("span");
-      b.className = "stage-badge reviewed";
-      b.textContent = "\uD83D\uDC41 Reviewed";
-      badges.append(b);
+    if (entry.inherited_from_first) {
+      const badge = document.createElement("span");
+      badge.className = "badge badge-shared";
+      badge.textContent = "Shared";
+      meta.appendChild(badge);
     }
-    summary.append(badges);
+    if (entry.status === "complete") {
+      const badge = document.createElement("span");
+      badge.className = "badge badge-shared";
+      badge.style.cssText = "background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3);";
+      badge.textContent = "Complete";
+      meta.appendChild(badge);
+    }
+    if (entry.metric_summary?.score != null) {
+      const scoreSpan = document.createElement("span");
+      scoreSpan.textContent = `Score: ${entry.metric_summary.score}`;
+      scoreSpan.style.color = "var(--accent)";
+      meta.appendChild(scoreSpan);
+    }
+
+    info.appendChild(name);
+    info.appendChild(meta);
+
     const actions = document.createElement("div");
-    actions.className = "automation-row-actions";
-    const open = document.createElement("button");
-    open.type = "button";
-    open.textContent = "Open Stage";
-    open.addEventListener("click", async () => {
+    actions.className = "match-stage-actions";
+
+    const openBtn = document.createElement("button");
+    openBtn.className = "match-stage-action";
+    openBtn.type = "button";
+    openBtn.textContent = "Open";
+    openBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
       selectedStageCompositeStageId = entry.stage_id;
       await callApi("/api/workspace/stage/open", { stage_id: entry.stage_id });
+      setActiveSurface("single");
     });
-    const clips = document.createElement("button");
-    clips.type = "button";
-    clips.textContent = "Clips";
-    clips.addEventListener("click", async () => {
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "match-stage-action";
+    removeBtn.type = "button";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Remove this stage from the match?")) return;
+      await callApi("/api/workspace/stage/remove", { stage_id: entry.stage_id });
+      await refresh();
+    });
+
+    const resetBtn = document.createElement("button");
+    resetBtn.className = "match-stage-action";
+    resetBtn.type = "button";
+    resetBtn.textContent = "Reset";
+    resetBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await callApi("/api/workspace/stage/override/reset", { stage_id: entry.stage_id });
+      await refresh();
+    });
+
+    actions.appendChild(openBtn);
+    actions.appendChild(removeBtn);
+    actions.appendChild(resetBtn);
+
+    card.appendChild(thumb);
+    card.appendChild(number);
+    card.appendChild(info);
+    card.appendChild(actions);
+
+    card.addEventListener("click", () => {
+      document.querySelectorAll(".match-stage-card").forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
       selectedStageCompositeStageId = entry.stage_id;
-      await refreshStageComposite(entry.stage_id);
     });
-    actions.append(open, clips);
-    row.append(summary, actions);
-    list.append(row);
+
+    list.append(card);
   });
   checkSetupOnceBanner();
-  const recap = $("match-recap-panel");
-  if (recap) {
-    recap.textContent = entries.length
-      ? `Match Recap will include ${entries.length} stages. Shared defaults: ${JSON.stringify(state?.workspace_shared_defaults || {})}`
-      : "Create or open a workspace to build a Match Recap.";
+  const recap = document.getElementById("match-recap-panel");
+  if (recap && entries.length) {
+    recap.innerHTML = `
+      <div style="margin-bottom:8px"><strong>Match Recap</strong> — ${entries.length} stages</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+        ${entries.map((entry, i) => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">
+            <input type="checkbox" class="recap-stage-check" data-stage-id="${entry.stage_id}" checked 
+              style="width:auto;min-height:auto;margin:0" />
+            ${i + 1}. ${entry.display_name || entry.stage_id}
+          </label>
+        `).join("")}
+      </div>
+      <div class="control-grid" style="margin-bottom:8px">
+        <label style="font-size:11px">Transition
+          <select id="recap-transition" style="font-size:11px;min-height:24px">
+            <option value="cut">Cut</option>
+            <option value="fade">Fade</option>
+            <option value="dissolve">Dissolve</option>
+          </select>
+        </label>
+        <label style="font-size:11px">Result Card
+          <select id="recap-result-card" style="font-size:11px;min-height:24px">
+            <option value="none">None</option>
+            <option value="end">At End</option>
+            <option value="each">Per Stage</option>
+          </select>
+        </label>
+      </div>
+      <button id="recap-render" class="match-action-button" type="button" style="width:100%">Render Recap</button>
+      <div id="recap-progress" hidden style="margin-top:8px">
+        <div class="progress-bar" style="background:var(--surface-2);height:4px">
+          <div class="progress-fill" style="width:0%;height:100%;background:var(--accent)"></div>
+        </div>
+        <span style="font-size:11px;color:var(--muted)">Ready</span>
+      </div>
+    `;
+    
+    document.getElementById("recap-render")?.addEventListener("click", async () => {
+      const selected = [...document.querySelectorAll(".recap-stage-check:checked")]
+        .map(cb => cb.dataset.stageId);
+      const progress = document.getElementById("recap-progress");
+      if (progress) progress.hidden = false;
+      try {
+        await callApi("/api/workspace/recap/render", {
+          stage_ids: selected,
+          transition: document.getElementById("recap-transition")?.value || "cut",
+          result_card: document.getElementById("recap-result-card")?.value || "none",
+        });
+      } catch (e) {
+        console.error("Recap render failed:", e);
+      }
+    });
+  } else if (recap) {
+    recap.innerHTML = '<p class="hint">Create or open a workspace to build a Match Recap.</p>';
   }
   const sharedDefaults = state?.workspace_shared_defaults || {};
   syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
@@ -5248,6 +5428,23 @@ function renderWorkspaceStages() {
     if (hint) hint.removeAttribute("hidden");
     overrideGrids?.forEach((grid) => grid.setAttribute("hidden", ""));
     if (overrideButton) overrideButton.setAttribute("hidden", "");
+  }
+  // Toggle empty state vs content
+  const emptyState = document.querySelector(".match-empty-state");
+  const sectionHeader = document.querySelector("#view-match .workspace-action-bar");
+  const automationGrid = document.querySelector("#view-match .automation-grid");
+  const matchSidebar = document.querySelector("#view-match .match-sidebar");
+  const hasWorkspace = !!(state?.workspace || state?.workspace_stage_entries?.length);
+  const hasStages = entries.length > 0;
+  if (emptyState) emptyState.hidden = hasWorkspace;
+  if (sectionHeader) sectionHeader.hidden = !hasWorkspace;
+  if (automationGrid) automationGrid.hidden = !hasWorkspace;
+  if (matchSidebar) matchSidebar.hidden = !hasWorkspace;
+  if (!hasStages && hasWorkspace) {
+    const grid = document.getElementById("workspace-stage-list");
+    if (grid && grid.children.length === 0) {
+      grid.innerHTML = '<p class="hint" style="padding:12px">No stages yet. Add your first stage.</p>';
+    }
   }
 }
 function checkSetupOnceBanner() {
@@ -5343,47 +5540,59 @@ function renderPerformanceLibrary() {
   filtered.forEach((record) => {
     const id = record.library_record_id || record.stage_id || record.match_id;
     const row = document.createElement("div");
-    row.className = "automation-row";
-    const summaryEl = document.createElement("div");
-    summaryEl.innerHTML = `<strong>${escapeHtml(record.display_name || id)}</strong><br><small>${escapeHtml(record.record_type)} • ${escapeHtml(record.discipline || "unclassified")}${record.score != null ? " • " + record.score : ""}</small>`;
-    const actions = document.createElement("div");
-    actions.className = "automation-row-actions";
-    const inspect = document.createElement("button");
-    inspect.type = "button";
-    inspect.textContent = "Details";
-    inspect.addEventListener("click", () => {
+    row.className = "library-record-row";
+    row.dataset.recordId = id;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "library-record-name";
+    nameSpan.textContent = record.display_name || id || "Untitled";
+
+    const dateSpan = document.createElement("span");
+    dateSpan.className = "library-record-date";
+    dateSpan.textContent = record.event_date || "--";
+
+    const disciplineSpan = document.createElement("span");
+    disciplineSpan.className = "library-record-discipline";
+    disciplineSpan.textContent = record.discipline || "--";
+
+    const scoreSpan = document.createElement("span");
+    scoreSpan.className = "library-record-score";
+    scoreSpan.textContent = record.score != null ? record.score : "--";
+
+    row.appendChild(nameSpan);
+    row.appendChild(dateSpan);
+    row.appendChild(disciplineSpan);
+    row.appendChild(scoreSpan);
+
+    row.addEventListener("click", () => {
+      document.querySelectorAll(".library-record-row").forEach(r => r.classList.remove("selected"));
+      row.classList.add("selected");
       selectedLibraryRecord = record;
       renderJsonDetail("library-record-detail", record);
-      $("library-tags-editor").hidden = false;
-      $("library-notes-editor").hidden = false;
-      $("library-record-actions").hidden = false;
+      const tagsEditor = document.getElementById("library-tags-editor");
+      const notesEditor = document.getElementById("library-notes-editor");
+      const recordActions = document.getElementById("library-record-actions");
+      if (tagsEditor) tagsEditor.hidden = false;
+      if (notesEditor) notesEditor.hidden = false;
+      if (recordActions) recordActions.hidden = false;
       renderLibraryTags();
-      if (record.notes) {
-        $("library-notes-text").value = record.notes;
-      }
+      const notesText = document.getElementById("library-notes-text");
+      if (notesText && record.notes) notesText.value = record.notes;
     });
-    const reopen = document.createElement("button");
-    reopen.type = "button";
-    reopen.textContent = record.record_type === "match" ? "Open Workspace" : "Open Stage";
-    reopen.addEventListener("click", async () => {
-      const route = record.record_type === "match" ? "/api/library/match/open" : "/api/library/stage/open";
-      const result = await callApi(route, { library_record_id: id });
-      selectedLibraryRecord = { ...record, reopen_result: result };
-      renderJsonDetail("library-record-detail", selectedLibraryRecord);
-    });
-    const proxy = document.createElement("button");
-    proxy.type = "button";
-    proxy.textContent = "Open Proxy";
-    proxy.addEventListener("click", async () => {
-      const result = await callApi("/api/library/proxy/open", { scope_type: record.record_type === "match" ? "match" : "stage", scope_id: record.match_id || record.stage_id });
-      renderJsonDetail("library-record-detail", { ...record, proxy: result });
-    });
-    actions.append(inspect, reopen, proxy);
-    row.append(summaryEl, actions);
-    list.append(row);
+
+    list.appendChild(row);
   });
   renderPersonalBests();
   fetchLibraryAnalytics().then(renderAnalyticsCharts);
+
+  const emptyState = document.querySelector(".library-empty-state");
+  const sectionHeader = document.querySelector("#view-library .workspace-action-bar");
+  const automationGrid = document.querySelector("#view-library .automation-grid");
+  const hasRecords = records.length > 0;
+
+  if (emptyState) emptyState.hidden = hasRecords;
+  if (sectionHeader) sectionHeader.hidden = !hasRecords;
+  if (automationGrid) automationGrid.hidden = !hasRecords;
 }
 
 function renderLibrarySummaryTiles() {
@@ -5395,7 +5604,8 @@ function renderLibrarySummaryTiles() {
   ];
   const totalStages = records.length;
   const totalMatches = new Set(records.filter(r => r.workspace_id).map(r => r.workspace_id)).size;
-  const bestScore = records.length > 0 ? Math.max(...records.filter(r => r.score != null).map(r => r.score)) : 0;
+  const personalBest = records.filter(r => r.score != null).sort((a, b) => (b.score || 0) - (a.score || 0))[0];
+  const personalBestVal = personalBest ? `${personalBest.score} (${personalBest.display_name || "--"})` : "--";
   const recentCount = records.filter(r => {
     if (!r.event_date) return false;
     const d = new Date(r.event_date);
@@ -5404,21 +5614,21 @@ function renderLibrarySummaryTiles() {
     return d >= monthAgo;
   }).length;
   container.innerHTML = `
-    <div class="library-summary-tile">
-      <div class="tile-value">${totalStages}</div>
-      <div class="tile-label">Total Stages</div>
+    <div class="library-tile">
+      <span class="library-tile-value">${totalStages}</span>
+      <span class="library-tile-label">Total Stages</span>
     </div>
-    <div class="library-summary-tile">
-      <div class="tile-value">${totalMatches}</div>
-      <div class="tile-label">Total Matches</div>
+    <div class="library-tile">
+      <span class="library-tile-value">${totalMatches}</span>
+      <span class="library-tile-label">Total Matches</span>
     </div>
-    <div class="library-summary-tile">
-      <div class="tile-value">${bestScore || '—'}</div>
-      <div class="tile-label">Best Score</div>
+    <div class="library-tile">
+      <span class="library-tile-value">${personalBestVal}</span>
+      <span class="library-tile-label">Personal Best</span>
     </div>
-    <div class="library-summary-tile">
-      <div class="tile-value">${recentCount}</div>
-      <div class="tile-label">Recent (30d)</div>
+    <div class="library-tile">
+      <span class="library-tile-value">${recentCount}</span>
+      <span class="library-tile-label">Recent (30d)</span>
     </div>
   `;
 }
@@ -5472,84 +5682,76 @@ async function fetchLibraryAnalytics(discipline) {
 function renderAnalyticsCharts(data) {
   if (!data) return;
 
-  const trendContainer = document.querySelector("#analytics-score-trend .chart-bar-container");
-  if (trendContainer && data.statistics) {
-    const stats = data.statistics;
-    const vals = [stats.min, stats.median, stats.mean, stats.max].filter(v => v != null);
-    const maxVal = Math.max(...vals, 1);
-    const labels = ["Min", "Median", "Mean", "Max"];
-    const values = [stats.min, stats.median, stats.mean, stats.max];
-    trendContainer.innerHTML = values.map((v, i) => {
-      const height = v != null ? ((v / maxVal * 100).toFixed(0)) : 0;
-      const isMax = i === 3 && v === stats.max;
-      return `<div class="chart-bar${isMax ? ' accent' : ''}" style="height:${height}%">
-        <span>${v != null ? v : '—'}</span>
-        <small style="font-size:0.5625rem;display:block;color:var(--quiet)">${labels[i]}</small>
-      </div>`;
-    }).join("");
-  }
+  const records = (automationLibrary.stages || []).filter(r => r.score != null);
 
-  if (data.statistics) {
-    const trendEl = document.getElementById("analytics-score-trend");
-    if (trendEl) {
-      const existing = trendEl.querySelector(".chart-stats");
-      if (existing) existing.remove();
+  const scoreTrend = records
+    .filter(r => r.event_date)
+    .sort((a, b) => (a.event_date || "").localeCompare(b.event_date || ""))
+    .map(r => ({ date: r.event_date, score: r.score }));
+
+  const disciplineMap = {};
+  (automationLibrary.stages || []).forEach(r => {
+    const d = (r.discipline || "other").toLowerCase();
+    disciplineMap[d] = (disciplineMap[d] || 0) + 1;
+  });
+  const disciplineBreakdown = Object.entries(disciplineMap)
+    .map(([discipline, count]) => ({ discipline, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const trendEl = document.getElementById("analytics-score-trend");
+  if (trendEl && scoreTrend.length > 0) {
+    const maxScore = Math.max(...scoreTrend.map(d => d.score || 0), 1);
+    trendEl.innerHTML = `
+      <div class="chart-bar-container" style="display:flex;align-items:flex-end;gap:2px;height:120px;padding:4px">
+        ${scoreTrend.map(d => {
+          const h = Math.round(((d.score || 0) / maxScore) * 100);
+          return `<div class="chart-bar" style="height:${h}%;flex:1;background:var(--surface-2);min-width:8px;position:relative" title="${escapeHtml(d.date || "")}: ${d.score || 0}">
+            <span style="position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--muted)">${d.score || ""}</span>
+          </div>`;
+        }).join("")}
+      </div>`;
+    if (data.statistics) {
       const statsDiv = document.createElement("div");
       statsDiv.className = "chart-stats";
       statsDiv.style.cssText = "display:flex;gap:12px;margin-top:8px;font-size:0.6875rem;color:var(--quiet)";
       statsDiv.innerHTML = `
-        <span>Mean: ${data.statistics.mean ?? '—'}</span>
-        <span>Median: ${data.statistics.median ?? '—'}</span>
-        <span>Best: ${data.statistics.max ?? '—'}</span>
+        <span>Mean: ${data.statistics.mean ?? "—"}</span>
+        <span>Median: ${data.statistics.median ?? "—"}</span>
+        <span>Best: ${data.statistics.max ?? "—"}</span>
         <span>Records: ${data.total_records || 0}</span>
-        <span>Trend: ${data.trend_direction || '—'}</span>
+        <span>Trend: ${data.trend_direction || "—"}</span>
       `;
       trendEl.appendChild(statsDiv);
     }
   }
 
-  const outliersContainer = document.getElementById("analytics-outliers");
-  if (outliersContainer && data.outliers) {
+  const discEl = document.getElementById("analytics-discipline-chart");
+  if (discEl && disciplineBreakdown.length > 0) {
+    const total = disciplineBreakdown.reduce((s, d) => s + (d.count || 0), 0) || 1;
+    discEl.innerHTML = `
+      <div class="discipline-bars">
+        ${disciplineBreakdown.map(d => {
+          const pct = Math.round(((d.count || 0) / total) * 100);
+          return `<div class="discipline-bar" style="margin-bottom:4px">
+            <span class="bar-label" style="font-size:11px;color:var(--muted);min-width:60px;display:inline-block">${(d.discipline || "?").toUpperCase()}</span>
+            <span class="bar-fill" style="display:inline-block;height:16px;background:var(--accent);width:${pct}%;min-width:2px"></span>
+            <span style="font-size:11px;color:var(--text);margin-left:4px">${d.count}</span>
+          </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  const outEl = document.getElementById("analytics-outliers");
+  if (outEl && data.outliers) {
     if (data.outliers.length > 0) {
-      outliersContainer.innerHTML = data.outliers.map(o => `
-        <div class="landing-recent-item" style="padding:8px 12px">
-          <div class="landing-recent-info">
-            <div class="landing-recent-name">${escapeHtml(o.name || 'Unknown')} — ${o.score}</div>
-            <div class="landing-recent-meta">${escapeHtml(o.date || '')} · ${o.direction === 'high' ? '⬆ Above average' : '⬇ Below average'}</div>
-          </div>
+      outEl.innerHTML = data.outliers.map(o => `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line);font-size:12px">
+          <span style="color:var(--text)">${escapeHtml(o.name || "Unknown")}</span>
+          <span style="color:${o.direction === "high" ? "var(--green)" : "var(--red)"}">${o.score || "--"} ${o.direction === "high" ? "\u2B06" : "\u2B07"}</span>
         </div>
       `).join("");
     } else {
-      outliersContainer.innerHTML = '<p class="hint">No significant outliers detected.</p>';
-    }
-  }
-
-  const pbContainer = document.getElementById("personal-bests-list");
-  if (pbContainer && data.personal_bests) {
-    if (data.personal_bests.length > 0) {
-      pbContainer.innerHTML = data.personal_bests.map((pb, i) => `
-        <div class="library-record-row">
-          <span class="record-rank">#${i+1}</span>
-          <span class="record-name">${escapeHtml(pb.name || 'Unknown')}</span>
-          <span class="record-score">${pb.score}</span>
-          <span class="record-discipline">${escapeHtml(pb.discipline || '')}</span>
-        </div>
-      `).join("");
-    } else {
-      pbContainer.innerHTML = '<p class="hint">No personal bests yet. Add more records to track progress.</p>';
-    }
-  }
-
-  if (data.statistics) {
-    const disciplineEl = document.querySelector("#analytics-discipline-chart .discipline-bars");
-    if (disciplineEl && data.total_records > 0) {
-      const existing = disciplineEl.querySelector(".discipline-total");
-      if (existing) existing.remove();
-      const totalSpan = document.createElement("span");
-      totalSpan.className = "discipline-total";
-      totalSpan.style.cssText = "font-size:0.625rem;color:var(--quiet);margin-top:4px;display:block";
-      totalSpan.textContent = `${data.total_records} total records analyzed`;
-      disciplineEl.appendChild(totalSpan);
+      outEl.innerHTML = '<p class="hint">No significant outliers detected.</p>';
     }
   }
 }
@@ -9315,6 +9517,7 @@ function stopOverlayLoop() {
 }
 
 function render() {
+  updateStageEmptyState();
   return shellRuntime?.render();
 }
 
@@ -10334,8 +10537,20 @@ function wireEvents() {
       callApi("/api/workspace/stage/override", { stage_id: stageId, overrides });
     }
   });
-  $("workspace-new")?.addEventListener("click", () => callApi("/api/workspace/new", {}));
+  $("workspace-new")?.addEventListener("click", async () => {
+    await callApi("/api/workspace/new", {});
+    setActiveSurface("multi");
+    await refresh();
+  });
+  $("workspace-new-empty")?.addEventListener("click", async () => {
+    await callApi("/api/workspace/new", {});
+    setActiveSurface("multi");
+    await refresh();
+  });
   $("workspace-save")?.addEventListener("click", () => callApi("/api/workspace/save", {}));
+  $("match-name-input")?.addEventListener("change", (e) => {
+    callApi("/api/workspace/save", { name: e.target.value });
+  });
   $("workspace-stage-add")?.addEventListener("click", () => {
     const index = (state?.workspace_stage_entries?.length || 0) + 1;
     const stageId = `stage_${index}`;
@@ -10493,6 +10708,32 @@ function wireEvents() {
     if (progress) progress.hidden = true;
     showExportCompleteNotification(stageIds.length, "");
   });
+
+  // Keyboard view switching: Ctrl/Cmd + 1/2/3
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.target.closest("input, textarea, select, [contenteditable]")) {
+      if (e.key === "1") { e.preventDefault(); setActiveSurface("single"); }
+      if (e.key === "2") { e.preventDefault(); setActiveSurface("multi"); }
+      if (e.key === "3") { e.preventDefault(); setActiveSurface("library"); }
+    }
+  });
+
+  // Match export button
+  document.getElementById("match-export")?.addEventListener("click", async () => {
+    await callApi("/api/workspace/export", {});
+    showGlobalError("Export started. Check the processing bar for progress.", { duration: 4000 });
+  });
+
+  // Batch export select all (class-based)
+  document.getElementById("batch-select-all")?.addEventListener("click", () => {
+    document.querySelectorAll("#workspace-stage-list .match-stage-card").forEach(c => c.classList.add("selected"));
+  });
+
+  // Batch export select none (class-based)
+  document.getElementById("batch-select-none")?.addEventListener("click", () => {
+    document.querySelectorAll("#workspace-stage-list .match-stage-card").forEach(c => c.classList.remove("selected"));
+  });
+
   setActiveSurface(activeSurface, { persist: false, openPanel: false });
   void refreshAutomationProfiles();
   return result;

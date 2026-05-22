@@ -119,7 +119,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "<b>ShotML</b>" in html
     assert "<b>Score</b>" in html
     assert "<b>Markers</b>" in html
-    assert "⚙" in html
+    assert ">Set</button>" in html
+    assert "⚙" in html  # shell-settings button
     for short in ["Pro", "PiP", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
         assert f'data-short="{short}"' in html
     assert "🍎" not in html
@@ -367,7 +368,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
         "shotml",
     ]:
         assert f'data-settings-section="{section_id}"' in html
-    assert "Open Project" not in html
     assert "Open PiP" not in html
     assert "Open Score" not in html
     assert "Open Splits" not in html
@@ -2003,15 +2003,19 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "surface-go-home",
         "shell-go-home",
         "shell-return-match",
+        "shell-settings",
         "nav-stage",
         "nav-match",
         "nav-library",
         "output-profile-refresh",
         "output-profile-create",
         "workspace-new",
+        "workspace-new-empty",
         "workspace-save",
         "workspace-stage-add",
         "stage-clip-add",
+        "stage-empty-import",
+        "stage-empty-open",
         "library-backup-create",
         "library-backup-restore",
         "library-export-csv",

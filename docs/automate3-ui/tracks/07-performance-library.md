@@ -21,6 +21,10 @@ Build Performance Library as the canonical historical analytics frontend.
 - notes
 - export actions
 - reopen actions.
+- compact refresh/export action bar; no oversized title/header strip
+- full-width workspace body that uses the available viewport instead of a centered narrow column.
+
+Visible emoji are forbidden in this view. Use text, styled badges, or the existing icon system.
 
 ## Required Behaviors
 

@@ -17,6 +17,10 @@ Performance Library must have:
 - proxy/archive actions
 - export actions
 - professional empty library state.
+- compact refresh/export action bar; no oversized title/header strip
+- full-viewport workspace body with no centered max-width cap.
+
+Visible emoji are forbidden in Performance Library. Use SplitShot-native text, styled badges, or existing icon assets.
 
 ## Required Data
 

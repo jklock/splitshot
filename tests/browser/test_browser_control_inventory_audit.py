@@ -306,6 +306,8 @@ id:show-timer
 id:stage-clip-add
 id:stage-clip-path
 id:stage-clip-role
+id:stage-empty-import
+id:stage-empty-open
 id:surface-go-home
 id:surface-match-video
 id:surface-performance-library
@@ -326,6 +328,7 @@ id:two-pass
 id:video-bitrate
 id:video-codec
 id:workspace-new
+id:workspace-new-empty
 id:workspace-save
 id:workspace-stage-add
 id:workspace-stage-name
@@ -345,6 +348,7 @@ id:shared-lead-in
 id:shared-metric-captions
     id:shell-go-home
     id:shell-return-match
+    id:shell-settings
     id:zoom-waveform-in
 id:zoom-waveform-out
 """.splitlines()

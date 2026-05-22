@@ -1184,7 +1184,12 @@ button:disabled {
 }
 
 .feature-icon {
-  font-size: 1.25rem;
+  min-width: 42px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--accent);
 }
 
 .feature-button .hint {
@@ -1334,7 +1339,14 @@ button:disabled {
 }
 
 .setup-once-icon {
-  font-size: 1.5rem;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 0.75rem;
+  font-weight: 700;
 }
 
 .setup-once-content strong {

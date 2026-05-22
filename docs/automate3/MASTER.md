@@ -22,6 +22,8 @@ SplitShot is a professional, local-first, analysis-first competition shooting vi
 7. No surface is complete without empty-state and loaded-state screenshots.
 8. No user-facing claim is complete without tests and visual proof.
 9. Do not modify `flutter_app/`. It is isolated to its own branch/worktree and must be treated as ignored branch-local work on `main`.
+10. Outside the Landing Page, visible UI chrome must not use emoji. Stage, Match, Library, and the shell use SplitShot-native text, badges, or existing icon assets.
+11. Match Video Edit and Performance Library must use the full available application viewport and must not include oversized top title bars.
 
 ## Done Means
 

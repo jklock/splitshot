@@ -12,6 +12,8 @@
   --accent: #ff7b22;
   --green: #39d06f;
   --red: #f05252;
+  --warning: #f59e0b;
+  --info: #3b82f6;
   --blue-video: #101a2a;
   --rail-width: 84px;
   --rail-brand-height: 84px;
@@ -244,5 +246,9 @@ h3 {
   font-size: 0.84rem;
   line-height: 1;
   text-transform: none;
+}
+
+[hidden] {
+  display: none !important;
 }
 

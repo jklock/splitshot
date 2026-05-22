@@ -6,7 +6,7 @@ Match Video Edit is the workspace-level frontend. It must not be a configuration
 
 Match Video Edit must have:
 
-- match header with editable name/date and save/export actions
+- compact match action bar with editable name/date and save/export actions; no oversized title/header strip
 - match status summary
 - stage grid or table
 - shared defaults panel
@@ -17,6 +17,9 @@ Match Video Edit must have:
 - batch export queue
 - PractiScore import/status area
 - professional empty state for no match/no stages.
+- full-viewport workspace body with no centered max-width cap.
+
+Visible emoji are forbidden in Match Video Edit. Use SplitShot-native text, styled badges, or existing icon assets.
 
 ## Stage Grid
 

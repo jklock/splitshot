@@ -25,11 +25,12 @@
           <span id="shell-stage-name" class="shell-context-item" hidden></span>
         </div>
         <div class="shell-actions">
+          <button id="shell-settings" class="shell-action-button" type="button" aria-label="Settings">⚙</button>
           <button id="shell-return-match" class="shell-action-button" type="button" hidden aria-label="Return to match">← Match</button>
         </div>
       </header>
       <div id="view-root">
-        <div id="view-landing" class="app-view view-landing active">
+        <div id="view-landing" class="app-view view-landing">
           <section id="landing-page" aria-label="SplitShot home" hidden>
       <div class="landing-hero">
         <img class="landing-logo" src="/static/logo.png" alt="SplitShot" />
@@ -58,9 +59,9 @@
       </div>
 
       <section class="landing-recent" aria-label="Recent activity">
-        <h3>Recent Activity</h3>
+        <h3>Recent Stages</h3>
         <div id="landing-recent-list" class="landing-recent-list">
-          <p class="landing-empty-hint">No recent activity. Start by editing a stage!</p>
+          <p class="landing-empty-hint">No recent stages. Create a new stage or open an existing project.</p>
         </div>
       </section>
 
@@ -100,7 +101,7 @@
           <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
         </nav>
         <div class="tool-rail-footer" aria-label="Rail controls">
-          <button id="settings-rail-button" class="tool-item" data-tool="settings" data-short="Set" type="button" aria-label="Show settings tool">⚙</button>
+          <button id="settings-rail-button" class="tool-item" data-tool="settings" data-short="Set" type="button" aria-label="Show settings tool">Set</button>
           <button id="toggle-rail" class="tool-item rail-toggle-button" data-short="◀" type="button" aria-label="Minimize left rail">◀</button>
         </div>
       </aside>
@@ -119,10 +120,10 @@
             <span id="status-copy">Ready.</span>
           </div>
           <div class="status-bar-actions">
-            <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
+            <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">Lock</button>
           </div>
         </section>
-        <section class="surface-header" aria-label="SplitShot workspace context">
+        <section class="surface-header" hidden aria-label="SplitShot workspace context">
           <div class="surface-switcher" role="tablist" aria-label="SplitShot surfaces">
             <button id="surface-stage-video" class="surface-button" data-surface="single" type="button" role="tab" aria-selected="false">Stage Video Edit</button>
             <button id="surface-match-video" class="surface-button" data-surface="multi" type="button" role="tab" aria-selected="false">Match Video Edit</button>
@@ -198,32 +199,32 @@
                 </div>
                 <div class="feature-grid">
                   <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
-                    <span class="feature-icon">🔄</span>
+                    <span class="feature-icon">Sync</span>
                     <span>Smart Angle Switching</span>
                     <small class="hint">Auto switch between camera angles</small>
                   </button>
                   <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
-                    <span class="feature-icon">📐</span>
+                    <span class="feature-icon">Frame</span>
                     <span>Line Up Angles</span>
                     <small class="hint">Synchronize angle timing</small>
                   </button>
                   <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
-                    <span class="feature-icon">🎥</span>
+                    <span class="feature-icon">Angle</span>
                     <span>Camera Jobs</span>
                     <small class="hint">Assign roles to each angle</small>
                   </button>
                   <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
-                    <span class="feature-icon">🔊</span>
+                    <span class="feature-icon">Audio</span>
                     <span>Audio Balance</span>
                     <small class="hint">Mute, gain, and primary selector</small>
                   </button>
                   <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
-                    <span class="feature-icon">✂️</span>
+                    <span class="feature-icon">Cut</span>
                     <span>Override Smart Cuts</span>
                     <small class="hint">Manual cut point adjustments</small>
                   </button>
                   <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
-                    <span class="feature-icon">🎯</span>
+                    <span class="feature-icon">Aim</span>
                     <span>Keep Shooter in Frame</span>
                     <small class="hint">Auto-crop tracking</small>
                   </button>
@@ -253,6 +254,14 @@
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-stage" id="video-stage">
+              <div class="stage-empty-state" id="stage-empty-state">
+                <h2>No Media Loaded</h2>
+                <p>Import a video to begin editing this stage.</p>
+                <div class="stage-empty-actions">
+                  <button id="stage-empty-import" class="match-action-button btn-primary" type="button" data-spy-id="stage-empty-import">Import Video</button>
+                  <button id="stage-empty-open" class="match-action-button" type="button" data-spy-id="stage-empty-open">Open Project</button>
+                </div>
+              </div>
               <video id="primary-video" controls playsinline></video>
               <video id="secondary-video" playsinline></video>
               <img id="secondary-image" alt="Secondary frame" hidden />
@@ -1369,11 +1378,17 @@
         </div>
       </main>
           </div>
-        </div>
   <div id="view-match" class="app-view view-match">
-    <div class="section-header">
-    <h2>Match Video Edit</h2>
-    <div class="section-header-actions">
+    <div class="match-workspace">
+    <div class="match-empty-state" hidden>
+      <h2>No Match Open</h2>
+      <p>Create a new match or open a recent one to get started.</p>
+      <div class="match-empty-actions">
+        <button id="workspace-new-empty" class="match-action-button btn-primary" type="button">New Match</button>
+      </div>
+    </div>
+    <div class="workspace-action-bar" aria-label="Match workspace actions">
+    <div class="workspace-action-group">
     <button id="workspace-new" type="button">New Workspace</button>
     <button id="workspace-save" type="button">Save Workspace</button>
     </div>
@@ -1459,7 +1474,7 @@
     <div id="workspace-stage-list" class="automation-list" aria-label="Workspace stage list"></div>
     <div id="setup-once-banner" class="setup-once-banner" hidden>
     <div class="setup-once-content">
-    <span class="setup-once-icon">&#x2728;</span>
+	    <span class="setup-once-icon">1</span>
     <div>
     <strong>Stage 1 is configured!</strong>
     <p class="hint">Apply Stage 1's settings to all other stages in one click.</p>
@@ -1512,11 +1527,16 @@
     </div>
     </section>
     </div>
+    </div>
   </div>
   <div id="view-library" class="app-view view-library">
-    <div class="section-header">
-    <h2>Performance Library</h2>
-    <div class="section-header-actions">
+    <div class="library-workspace">
+    <div class="library-empty-state" hidden>
+      <h2>No Performance History</h2>
+      <p>Complete a stage or match to see records here.</p>
+    </div>
+    <div class="workspace-action-bar" aria-label="Performance library actions">
+    <div class="workspace-action-group">
     <button id="library-export-csv" type="button" class="button-ghost">Export CSV</button>
     <button id="library-export-json" type="button" class="button-ghost">Export JSON</button>
     <button id="library-refresh" type="button">Update Library</button>
@@ -1623,6 +1643,7 @@
     <div id="library-backup-status" class="hint" style="margin-top:8px">Backup your library records for safekeeping.</div>
     </div>
     </section>
+    </div>
     </div>
   </div>
       </div>

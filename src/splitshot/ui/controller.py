@@ -1172,20 +1172,47 @@ class ProjectController(QObject):
             return {"error": "Need at least 2 stages"}
 
         first_stage = entries[0]
-        workspace.first_stage_snapshot = {
-            "stage_id": first_stage.stage_id,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
-        }
+        eligible = _INHERITANCE_ELIGIBLE_FIELDS
 
+        first_effective = {}
+        for key in eligible:
+            if key in first_stage.override_values:
+                first_effective[key] = first_stage.override_values[key]
+            elif key in workspace.shared_defaults:
+                first_effective[key] = workspace.shared_defaults[key]
+
+        for key, value in first_effective.items():
+            workspace.shared_defaults[key] = value
+
+        first_stage.override_values.clear()
+
+        stage_changes = []
         applied = 0
         for entry in entries[1:]:
             if not entry.stage_id:
                 continue
+            before = dict(entry.override_values)
+            entry.override_values.clear()
             entry.inherited_from_first = True
             applied += 1
+            stage_changes.append(
+                {
+                    "stage_id": entry.stage_id,
+                    "display_name": entry.display_name,
+                    "cleared_overrides": before,
+                }
+            )
+
+        workspace.first_stage_snapshot = {
+            "stage_id": first_stage.stage_id,
+            "applied_settings": dict(first_effective),
+            "stage_changes": stage_changes,
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+        }
 
         self._touch_workspace()
-        return {"applied": True, "stages_updated": applied}
+        self.project_changed.emit()
+        return {"applied": True, "stages_updated": applied, "changes": stage_changes}
 
     def workspace_apply_from_first_preview(self) -> dict:
         """Preview what would change before applying."""
@@ -1195,21 +1222,57 @@ class ProjectController(QObject):
         if len(entries) < 2:
             return {"preview": []}
 
+        first_stage = entries[0]
+        eligible = _INHERITANCE_ELIGIBLE_FIELDS
+
+        first_effective = {}
+        for key in eligible:
+            if key in first_stage.override_values:
+                first_effective[key] = first_stage.override_values[key]
+            elif key in self.workspace.shared_defaults:
+                first_effective[key] = self.workspace.shared_defaults[key]
+
         changes = []
         for entry in entries[1:]:
             if not entry.stage_id:
                 continue
+            sibling_effective = {}
+            for key in eligible:
+                if key in entry.override_values:
+                    sibling_effective[key] = entry.override_values[key]
+                elif key in self.workspace.shared_defaults:
+                    sibling_effective[key] = self.workspace.shared_defaults[key]
+
+            affected = {}
+            conflicts = {}
+            inherited = {}
+            for key, new_val in first_effective.items():
+                old_val = sibling_effective.get(key)
+                if old_val is None and key not in sibling_effective:
+                    inherited[key] = {"new": new_val}
+                elif old_val != new_val:
+                    if key in entry.override_values:
+                        conflicts[key] = {"old": old_val, "new": new_val}
+                    else:
+                        affected[key] = {"old": old_val, "new": new_val}
+
             changes.append(
                 {
                     "stage_id": entry.stage_id,
                     "display_name": entry.display_name or f"Stage {entry.stage_number}",
                     "current_status": entry.status,
+                    "will_inherit": not bool(entry.override_values),
+                    "affected_settings": affected,
+                    "conflicts": conflicts,
+                    "inherited": inherited,
                 }
             )
 
         return {
             "preview": changes,
-            "source_stage": entries[0].display_name or "Stage 1",
+            "source_stage": first_stage.display_name or "Stage 1",
+            "applied_settings": dict(first_effective),
+            "eligible_settings": sorted(eligible),
         }
 
     def _touch_workspace(self) -> None:

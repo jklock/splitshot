@@ -244,11 +244,11 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 shell = page.locator(".cockpit-shell")
 
                 assert page.evaluate("localStorage.getItem('splitshot.layoutLocked')") != "false"
-                assert toggle_button.text_content() == "🔒"
+                assert toggle_button.text_content() == "Lock"
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
-                assert toggle_button.text_content() == "🔓"
+                assert toggle_button.text_content() == "Unlock"
                 assert toggle_button.get_attribute("aria-label") == "Lock video layout"
                 assert (
                     shell.evaluate("element => element.classList.contains('layout-unlocked')")
@@ -257,7 +257,7 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'true'")
-                assert toggle_button.text_content() == "🔒"
+                assert toggle_button.text_content() == "Lock"
                 assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
                 assert (
                     shell.evaluate("element => element.classList.contains('layout-locked')") is True
