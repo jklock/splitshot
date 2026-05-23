@@ -14,19 +14,8 @@
             <img class="shell-logo" src="/static/logo.png" alt="SplitShot" />
           </button>
         </div>
-        <nav class="shell-view-switcher" aria-label="App views">
-          <button id="nav-stage" class="shell-nav-button" type="button" data-view="stage" aria-selected="true">Stage</button>
-          <button id="nav-match" class="shell-nav-button" type="button" data-view="match">Match</button>
-          <button id="nav-library" class="shell-nav-button" type="button" data-view="library">Library</button>
-        </nav>
         <div class="shell-context">
           <span id="shell-project-name" class="shell-context-item">Untitled Project</span>
-          <span id="shell-match-name" class="shell-context-item" hidden>Untitled Match</span>
-          <span id="shell-stage-name" class="shell-context-item" hidden></span>
-        </div>
-        <div class="shell-actions">
-          <button id="shell-settings" class="shell-action-button" type="button" aria-label="Settings">⚙</button>
-          <button id="shell-return-match" class="shell-action-button" type="button" hidden aria-label="Return to match">← Match</button>
         </div>
         <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
           <div class="processing-copy">
@@ -111,8 +100,8 @@
           <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
         </nav>
         <div class="tool-rail-footer" aria-label="Rail controls">
-          <button id="settings-rail-button" class="tool-item" data-tool="settings" data-short="Set" type="button" aria-label="Show settings tool">Set</button>
-          <button id="toggle-rail" class="tool-item rail-toggle-button" data-short="◀" type="button" aria-label="Minimize left rail">◀</button>
+          <button id="stage-go-home" class="tool-item rail-footer-button" data-short="Hom" type="button" aria-label="Return to home">Home</button>
+          <button id="settings-rail-button" class="tool-item rail-footer-button" data-tool="settings" data-short="Set" type="button" aria-label="Show stage settings">⚙</button>
         </div>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
@@ -130,125 +119,9 @@
             <span id="status-copy">Ready.</span>
           </div>
           <div class="status-bar-actions">
+            <button id="shell-return-match" class="panel-lock-button panel-lock-button-status" type="button" hidden aria-label="Return to match">Return to Match</button>
             <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">Lock</button>
           </div>
-        </section>
-        <section class="surface-header" hidden aria-label="SplitShot workspace context">
-          <div class="surface-switcher" role="tablist" aria-label="SplitShot surfaces">
-            <button id="surface-stage-video" class="surface-button" data-surface="single" type="button" role="tab" aria-selected="false">Stage Video Edit</button>
-            <button id="surface-match-video" class="surface-button" data-surface="multi" type="button" role="tab" aria-selected="false">Match Video Edit</button>
-            <button id="surface-performance-library" class="surface-button" data-surface="library" type="button" role="tab" aria-selected="false">Performance Library</button>
-          </div>
-          <div class="surface-context" aria-label="Active editing context">
-            <strong id="surface-context-title">Standalone stage</strong>
-            <span id="surface-context-stage">No stage loaded</span>
-            <span id="surface-context-status">Output and proxy status pending</span>
-            <button id="surface-go-home" type="button" aria-label="Return to home">Home</button>
-            <button id="surface-return-workspace" type="button" hidden>Return to Workspace</button>
-          </div>
-        </section>
-        <section id="automation-surface-panel" class="automation-surface-panel" aria-label="Automation surface controls">
-          <section class="automation-panel active" data-surface-panel="single" aria-label="Single Video output profiles">
-            <div class="section-header">
-              <h2>Stage Video Edit</h2>
-              <button id="output-profile-refresh" type="button">Update Profiles</button>
-            </div>
-            <div id="single-video-loading" class="automation-loading" hidden>Loading profile data...</div>
-            <div id="single-video-error" class="automation-error" hidden>Failed to load profiles.</div>
-            <div class="automation-grid">
-              <section class="automation-card">
-                <div class="section-header sub-section-header">
-                  <h3>Output Profiles</h3>
-                </div>
-                <div class="profile-toolbar">
-                  <input id="output-profile-name" type="text" placeholder="Profile name" aria-label="Output profile name" />
-                  <select id="output-profile-kind" aria-label="Output profile kind">
-                    <option value="stage_output">Stage Output</option>
-                    <option value="stage_composite">Stage Composite</option>
-                  </select>
-                  <button id="output-profile-create" type="button">Create</button>
-                </div>
-                <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
-              </section>
-              <section class="automation-card">
-                <div class="section-header sub-section-header">
-                  <h3>Review Source</h3>
-                </div>
-                <div class="profile-toolbar">
-                  <select id="retained-review-source" aria-label="Retained review source profile">
-                    <option value="">Auto (current stage)</option>
-                  </select>
-                  <button id="retained-review-apply" type="button">Set Source</button>
-                </div>
-                <div id="retained-review-status" class="hint">Using live stage data.</div>
-              </section>
-              <section class="automation-card">
-                <div class="section-header sub-section-header">
-                  <h3>Output Hooks</h3>
-                </div>
-                <div class="hook-grid">
-                  <button data-output-hook="run-window" type="button">Trim Dead Time</button>
-                  <button data-output-hook="metric-captions" type="button">Shot Data on Screen</button>
-                  <button data-output-hook="frame-profiles" type="button">Video Shape</button>
-                  <button data-output-hook="lead-in-card" type="button">Opening Title</button>
-                  <button data-output-hook="brand-mark" type="button">Your Logo</button>
-                  <button data-output-hook="subject-track-crop" type="button">Keep Shooter in Frame</button>
-                </div>
-                <div id="output-hook-editor" class="output-hook-editor" hidden>
-                  <div class="section-header sub-section-header">
-                    <h4 id="output-hook-title">Hook Editor</h4>
-                    <button id="output-hook-close" type="button">Close</button>
-                  </div>
-                  <div id="output-hook-fields" class="output-hook-fields"></div>
-                </div>
-                <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
-              </section>
-              <section class="automation-card">
-                <div class="section-header sub-section-header">
-                  <h3>Multi-Angle Features</h3>
-                </div>
-                <div class="feature-grid">
-                  <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
-                    <span class="feature-icon">Sync</span>
-                    <span>Smart Angle Switching</span>
-                    <small class="hint">Auto switch between camera angles</small>
-                  </button>
-                  <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
-                    <span class="feature-icon">Frame</span>
-                    <span>Line Up Angles</span>
-                    <small class="hint">Synchronize angle timing</small>
-                  </button>
-                  <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
-                    <span class="feature-icon">Angle</span>
-                    <span>Camera Jobs</span>
-                    <small class="hint">Assign roles to each angle</small>
-                  </button>
-                  <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
-                    <span class="feature-icon">Audio</span>
-                    <span>Audio Balance</span>
-                    <small class="hint">Mute, gain, and primary selector</small>
-                  </button>
-                  <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
-                    <span class="feature-icon">Cut</span>
-                    <span>Override Smart Cuts</span>
-                    <small class="hint">Manual cut point adjustments</small>
-                  </button>
-                  <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
-                    <span class="feature-icon">Aim</span>
-                    <span>Keep Shooter in Frame</span>
-                    <small class="hint">Auto-crop tracking</small>
-                  </button>
-                </div>
-                <div id="feature-editor" class="output-hook-editor" hidden>
-                  <div class="section-header sub-section-header">
-                    <h4 id="feature-title">Feature Editor</h4>
-                    <button id="feature-close" type="button">Close</button>
-                  </div>
-                  <div id="feature-fields" class="output-hook-fields"></div>
-                </div>
-              </section>
-            </div>
-          </section>
         </section>
 
         <div class="review-grid">
@@ -1380,271 +1253,380 @@
           </div>
           </div>
   <div id="view-match" class="app-view view-match">
-    <div class="match-workspace">
-    <div class="match-empty-state" hidden>
-      <h2>No Match Open</h2>
-      <p>Create a new match or open a recent one to get started.</p>
-      <div class="match-empty-actions">
-        <button id="workspace-new-empty" class="match-action-button btn-primary" type="button">New Match</button>
-      </div>
-    </div>
-    <div class="workspace-action-bar" aria-label="Match workspace actions">
-    <div class="workspace-action-group">
-    <button id="workspace-new" type="button">New Workspace</button>
-    <button id="workspace-save" type="button">Save Workspace</button>
-    </div>
-    </div>
-    <div id="multi-video-loading" class="automation-loading" hidden>Loading workspace data...</div>
-    <div id="multi-video-error" class="automation-error" hidden>Failed to load workspace.</div>
-    <div class="automation-grid">
-    <section class="automation-card">
-    <div class="section-header sub-section-header">
-    <h3>Shared Defaults</h3>
-    </div>
-    <div id="shared-defaults-editor" class="automation-detail">
-    <p class="hint">Set shared output defaults that apply to all workspace stages.</p>
-    <div class="control-grid">
-    <label>Video Shape
-    <select id="shared-frame-profile" aria-label="Shared Video Shape">
-    <option value="source">Source</option>
-    <option value="16:9">16:9</option>
-    <option value="9:16">9:16</option>
-    <option value="1:1">1:1</option>
-    </select>
-    </label>
-    <label>Shot Data on Screen
-    <select id="shared-metric-captions" aria-label="Shared Shot Data on Screen">
-    <option value="none">None</option>
-    <option value="splits">Splits</option>
-    <option value="score">Score</option>
-    </select>
-    </label>
-    </div>
-    <div class="control-grid">
-    <label>Opening Title
-    <select id="shared-lead-in" aria-label="Shared Opening Title">
-    <option value="none">None</option>
-    <option value="stage_info">Stage Info</option>
-    <option value="competitor">Competitor</option>
-    </select>
-    </label>
-    <label>Your Logo
-    <select id="shared-brand-mark" aria-label="Shared Your Logo">
-    <option value="none">None</option>
-    <option value="splitshot">SplitShot</option>
-    </select>
-    </label>
-    </div>
-    <div class="button-grid two-up">
-    <button id="shared-defaults-apply" type="button">Apply Defaults</button>
-    <button id="shared-defaults-reset" type="button">Reset</button>
-    </div>
-    </div>
-    </section>
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Stage Overrides</h3></div>
-    <div id="stage-override-editor" class="automation-detail">
-    <p class="hint">Select a workspace stage to edit its overrides.</p>
-    <div class="control-grid" hidden>
-    <label>Override Video Shape
-    <select id="override-frame-profile" aria-label="Override Video Shape">
-    <option value="">Inherit</option>
-    <option value="source">Source</option>
-    <option value="16:9">16:9</option>
-    <option value="9:16">9:16</option>
-    </select>
-    </label>
-    <label>Override Shot Data on Screen
-    <select id="override-metric-captions" aria-label="Override Shot Data on Screen">
-    <option value="">Inherit</option>
-    <option value="none">None</option>
-    <option value="splits">Splits</option>
-    <option value="score">Score</option>
-    </select>
-    </label>
-    </div>
-    <button id="override-apply" type="button" hidden>Apply Override</button>
-    </div>
-    </section>
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Stages</h3></div>
-    <div class="profile-toolbar">
-    <input id="workspace-stage-name" type="text" placeholder="Stage name" aria-label="Workspace stage name" />
-    <button id="workspace-stage-add" type="button">Add Stage</button>
-    </div>
-    <div id="workspace-stage-list" class="automation-list" aria-label="Workspace stage list"></div>
-    <div id="setup-once-banner" class="setup-once-banner" hidden>
-    <div class="setup-once-content">
-	    <span class="setup-once-icon">1</span>
-    <div>
-    <strong>Stage 1 is configured!</strong>
-    <p class="hint">Apply Stage 1's settings to all other stages in one click.</p>
-    </div>
-    <button id="setup-once-apply" type="button">Apply to All</button>
-    <button id="setup-once-dismiss" type="button" class="button-ghost">Dismiss</button>
-    </div>
-    </div>
-    </section>
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Match Recap</h3></div>
-    <div id="match-recap-panel" class="automation-detail">Create or open a workspace to build a Match Recap.</div>
-    </section>
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Stage Composite</h3></div>
-    <div class="profile-toolbar">
-    <input id="stage-clip-path" type="text" placeholder="Clip path" aria-label="Stage clip path" />
-    <select id="stage-clip-role" aria-label="Angle role">
-    <option value="primary">Primary</option>
-    <option value="follow">Follow</option>
-    <option value="static">Static</option>
-    </select>
-    <button id="stage-clip-add" type="button">Add Clip</button>
-    </div>
-    <div id="stage-composite-list" class="automation-list" aria-label="Stage composite clip list"></div>
-    </section>
-    <section class="automation-card">
-    <div class="section-header sub-section-header">
-    <h3>Batch Export</h3>
-    </div>
-    <div id="batch-export-panel" class="batch-export-panel">
-    <div class="batch-export-controls">
-    <button id="batch-select-all" type="button" class="button-ghost">Select All</button>
-    <button id="batch-select-none" type="button" class="button-ghost">Select None</button>
-    <select id="batch-recipe" aria-label="Output recipe">
-    <option value="stage_output">Stage Output</option>
-    <option value="stage_composite">Stage Composite</option>
-    </select>
-    <button id="batch-export-start" type="button">Export Selected</button>
-    </div>
-    <div id="batch-export-queue" class="batch-export-queue">
-    <p class="hint">Add stages to the workspace to batch export.</p>
-    </div>
-    <div id="batch-export-progress" class="batch-export-progress" hidden>
-    <div class="progress-bar">
-    <div class="progress-fill" style="width:0%"></div>
-    </div>
-    <span id="batch-export-status">Ready</span>
-    </div>
-    </div>
-    </section>
-    </div>
+    <div class="workspace-shell match-workspace-shell">
+      <aside class="workspace-sidebar" aria-label="Match view navigation">
+        <div class="workspace-sidebar-header">
+          <p class="workspace-sidebar-kicker">Workspace</p>
+          <h2>Match Video Edit</h2>
+          <p class="workspace-sidebar-copy">Manage stage order, shared defaults, recap, composite, and export from one stable shell.</p>
+        </div>
+        <nav class="workspace-sidebar-nav">
+          <button class="workspace-sidebar-button active" type="button" data-workspace-view="match" data-workspace-target="match-section-stages">Stages</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-defaults">Defaults</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-overrides">Overrides</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-recap">Recap</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-composite">Composite</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-export">Export</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-settings">Settings</button>
+        </nav>
+        <div class="workspace-sidebar-footer">
+          <button id="match-go-home" class="workspace-sidebar-button workspace-sidebar-footer-button" type="button">Home</button>
+          <button id="match-open-settings" class="workspace-sidebar-button workspace-sidebar-footer-button workspace-sidebar-settings-button" type="button" data-workspace-view="match" data-workspace-target="match-section-settings">⚙</button>
+        </div>
+      </aside>
+      <main class="workspace-main match-workspace">
+        <div class="match-empty-state" hidden>
+          <h2>No Match Open</h2>
+          <p>Create a new match or open a recent one to get started.</p>
+          <div class="match-empty-actions">
+            <button id="workspace-new-empty" class="match-action-button btn-primary" type="button">New Match</button>
+          </div>
+        </div>
+        <div class="workspace-action-bar" aria-label="Match workspace actions">
+          <div class="workspace-action-group">
+            <button id="workspace-new" type="button">New Workspace</button>
+            <button id="workspace-save" type="button">Save Workspace</button>
+          </div>
+        </div>
+        <div id="multi-video-loading" class="automation-loading" hidden>Loading workspace data...</div>
+        <div id="multi-video-error" class="automation-error" hidden>Failed to load workspace.</div>
+        <div class="workspace-sections">
+          <section id="match-section-stages" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Stages</h3>
+            </div>
+            <div class="automation-card">
+              <div class="profile-toolbar">
+                <input id="workspace-stage-name" type="text" placeholder="Stage name" aria-label="Workspace stage name" />
+                <button id="workspace-stage-add" type="button">Add Stage</button>
+              </div>
+              <div id="workspace-stage-list" class="automation-list" aria-label="Workspace stage list"></div>
+              <div id="setup-once-banner" class="setup-once-banner" hidden>
+                <div class="setup-once-content">
+                  <span class="setup-once-icon">1</span>
+                  <div>
+                    <strong>Stage 1 is configured.</strong>
+                    <p class="hint">Apply Stage 1 settings to the rest of the match when you are ready.</p>
+                  </div>
+                  <button id="setup-once-apply" type="button">Apply to All</button>
+                  <button id="setup-once-dismiss" type="button" class="button-ghost">Dismiss</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="match-section-defaults" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Shared Defaults</h3>
+            </div>
+            <div class="automation-card">
+              <div id="shared-defaults-editor" class="automation-detail">
+                <p class="hint">Set the default output behavior applied across every stage in the match.</p>
+                <div class="control-grid">
+                  <label>Video Shape
+                    <select id="shared-frame-profile" aria-label="Shared Video Shape">
+                      <option value="source">Source</option>
+                      <option value="16:9">16:9</option>
+                      <option value="9:16">9:16</option>
+                      <option value="1:1">1:1</option>
+                    </select>
+                  </label>
+                  <label>Shot Data on Screen
+                    <select id="shared-metric-captions" aria-label="Shared Shot Data on Screen">
+                      <option value="none">None</option>
+                      <option value="splits">Splits</option>
+                      <option value="score">Score</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="control-grid">
+                  <label>Opening Title
+                    <select id="shared-lead-in" aria-label="Shared Opening Title">
+                      <option value="none">None</option>
+                      <option value="stage_info">Stage Info</option>
+                      <option value="competitor">Competitor</option>
+                    </select>
+                  </label>
+                  <label>Your Logo
+                    <select id="shared-brand-mark" aria-label="Shared Your Logo">
+                      <option value="none">None</option>
+                      <option value="splitshot">SplitShot</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="button-grid two-up">
+                  <button id="shared-defaults-apply" type="button">Apply Defaults</button>
+                  <button id="shared-defaults-reset" type="button">Reset</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="match-section-overrides" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Stage Overrides</h3>
+            </div>
+            <div class="automation-card">
+              <div id="stage-override-editor" class="automation-detail">
+                <p class="hint">Select a workspace stage to edit its overrides.</p>
+                <div class="control-grid" hidden>
+                  <label>Override Video Shape
+                    <select id="override-frame-profile" aria-label="Override Video Shape">
+                      <option value="">Inherit</option>
+                      <option value="source">Source</option>
+                      <option value="16:9">16:9</option>
+                      <option value="9:16">9:16</option>
+                    </select>
+                  </label>
+                  <label>Override Shot Data on Screen
+                    <select id="override-metric-captions" aria-label="Override Shot Data on Screen">
+                      <option value="">Inherit</option>
+                      <option value="none">None</option>
+                      <option value="splits">Splits</option>
+                      <option value="score">Score</option>
+                    </select>
+                  </label>
+                </div>
+                <button id="override-apply" type="button" hidden>Apply Override</button>
+              </div>
+            </div>
+          </section>
+          <section id="match-section-recap" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Match Recap</h3>
+            </div>
+            <div class="automation-card">
+              <div id="match-recap-panel" class="automation-detail">Create or open a workspace to build a Match Recap.</div>
+            </div>
+          </section>
+          <section id="match-section-composite" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Stage Composite</h3>
+            </div>
+            <div class="automation-card">
+              <div class="profile-toolbar">
+                <input id="stage-clip-path" type="text" placeholder="Clip path" aria-label="Stage clip path" />
+                <select id="stage-clip-role" aria-label="Angle role">
+                  <option value="primary">Primary</option>
+                  <option value="follow">Follow</option>
+                  <option value="static">Static</option>
+                </select>
+                <button id="stage-clip-add" type="button">Add Clip</button>
+              </div>
+              <div id="stage-composite-list" class="automation-list" aria-label="Stage composite clip list"></div>
+            </div>
+          </section>
+          <section id="match-section-export" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Batch Export</h3>
+            </div>
+            <div class="automation-card">
+              <div id="batch-export-panel" class="batch-export-panel">
+                <div class="batch-export-controls">
+                  <button id="batch-select-all" type="button" class="button-ghost">Select All</button>
+                  <button id="batch-select-none" type="button" class="button-ghost">Select None</button>
+                  <select id="batch-recipe" aria-label="Output recipe">
+                    <option value="stage_output">Stage Output</option>
+                    <option value="stage_composite">Stage Composite</option>
+                  </select>
+                  <button id="batch-export-start" type="button">Export Selected</button>
+                </div>
+                <div id="batch-export-queue" class="batch-export-queue">
+                  <p class="hint">Add stages to the workspace to batch export.</p>
+                </div>
+                <div id="batch-export-progress" class="batch-export-progress" hidden>
+                  <div class="progress-bar">
+                    <div class="progress-fill" style="width:0%"></div>
+                  </div>
+                  <span id="batch-export-status">Ready</span>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="match-section-settings" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Match Settings</h3>
+            </div>
+            <div class="automation-card workspace-settings-card">
+              <div class="control-grid">
+                <label class="check-row"><input id="match-setting-show-score" type="checkbox" checked /> Show score badges in the stage list</label>
+                <label class="check-row"><input id="match-setting-remember-stage" type="checkbox" checked /> Remember the selected stage while moving through the match</label>
+              </div>
+              <p class="hint">These settings affect Match Video Edit only and do not change the Stage Editor shell.</p>
+            </div>
+          </section>
+        </div>
+      </main>
     </div>
   </div>
   <div id="view-library" class="app-view view-library">
-    <div class="library-workspace">
-    <div class="library-empty-state" hidden>
-      <h2>No Performance History</h2>
-      <p>Complete a stage or match to see records here.</p>
-    </div>
-    <div class="workspace-action-bar" aria-label="Performance library actions">
-    <div class="workspace-action-group">
-    <button id="library-export-csv" type="button" class="button-ghost">Export CSV</button>
-    <button id="library-export-json" type="button" class="button-ghost">Export JSON</button>
-    <button id="library-refresh" type="button">Update Library</button>
-    </div>
-    </div>
-    <div id="library-loading" class="automation-loading" hidden>Loading library data...</div>
-    <div id="library-error" class="automation-error" hidden>Failed to load library records.</div>
-    <div id="library-stale" class="automation-stale" hidden>Library data may be out of date.</div>
-    <div class="automation-grid">
-    <!-- Summary Tiles -->
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Overview</h3></div>
-    <div id="library-summary-tiles" class="library-summary-tiles" aria-label="Library summary"></div>
-    </section>
-    <!-- Search and Filter -->
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Records</h3></div>
-    <div class="profile-toolbar">
-    <input id="library-search" type="search" placeholder="Search by name, date, discipline..." aria-label="Search library" />
-    <select id="library-sort" aria-label="Library sort">
-    <option value="event_date">Date (newest)</option>
-    <option value="display_name">Name</option>
-    <option value="discipline">Discipline</option>
-    <option value="score">Best Score</option>
-    </select>
-    <select id="library-filter-discipline" aria-label="Filter by discipline">
-    <option value="">All Disciplines</option>
-    <option value="uspsa">USPSA</option>
-    <option value="idpa">IDPA</option>
-    <option value="ipsc">IPSC</option>
-    <option value="steel_challenge">Steel Challenge</option>
-    </select>
-    </div>
-    <div id="library-record-list" class="automation-list" aria-label="Library records"></div>
-    <div id="library-personal-bests" class="library-personal-bests" aria-label="Personal bests">
-    <div class="section-header sub-section-header"><h4>Personal Bests</h4></div>
-    <div id="personal-bests-list" class="automation-list"></div>
-    </div>
-    </section>
-    <!-- Selected Record Detail -->
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Selected Record</h3></div>
-    <pre id="library-record-detail" class="automation-detail">Select a library record.</pre>
-    <div id="library-record-actions" class="button-grid two-up" hidden>
-    <button id="library-open-stage" type="button">Open Stage</button>
-    <button id="library-open-workspace" type="button">Open Workspace</button>
-    </div>
-    <div id="library-tags-editor" hidden>
-    <div class="section-header sub-section-header"><h4>Tags</h4></div>
-    <div class="profile-toolbar">
-    <input id="library-tag-input" type="text" placeholder="Add tag..." aria-label="Tag name" />
-    <button id="library-tag-add" type="button">Add</button>
-    </div>
-    <div id="library-tag-list" class="library-tag-list"></div>
-    </div>
-    <div id="library-notes-editor" hidden>
-    <div class="section-header sub-section-header"><h4>Notes</h4></div>
-    <textarea id="library-notes-text" placeholder="Record notes..." aria-label="Record notes" rows="4"></textarea>
-    <button id="library-notes-save" type="button" style="margin-top:4px">Save Notes</button>
-    </div>
-    </section>
-    <!-- Analytics Dashboard -->
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Analytics</h3></div>
-    <div id="library-analytics" class="library-analytics">
-    <div class="analytics-chart-section">
-    <h4>Score Trend</h4>
-    <div id="analytics-score-trend" class="analytics-chart-placeholder chart-bar">
-    <div class="chart-bar-container">
-    <div class="chart-bar" style="height:60%"><span>85%</span></div>
-    <div class="chart-bar" style="height:75%"><span>92%</span></div>
-    <div class="chart-bar" style="height:70%"><span>88%</span></div>
-    <div class="chart-bar accent" style="height:95%"><span>98%</span></div>
-    <div class="chart-bar" style="height:80%"><span>91%</span></div>
-    </div>
-    </div>
-    </div>
-    <div class="analytics-chart-section">
-    <h4>Discipline Breakdown</h4>
-    <div id="analytics-discipline-chart" class="analytics-chart-placeholder">
-    <div class="discipline-bars">
-    <div class="discipline-bar"><span class="bar-label">USPSA</span><span class="bar-fill" style="width:65%">12</span></div>
-    <div class="discipline-bar"><span class="bar-label">IDPA</span><span class="bar-fill" style="width:35%">6</span></div>
-    <div class="discipline-bar"><span class="bar-label">SC</span><span class="bar-fill" style="width:20%">3</span></div>
-    </div>
-    </div>
-    </div>
-    <div class="analytics-chart-section">
-    <h4>Outliers</h4>
-    <div id="analytics-outliers" class="automation-list">
-    <p class="hint">Outlier detection will highlight unusually high or low scores after enough records are added.</p>
-    </div>
-    </div>
-    </div>
-    </section>
-    <!-- Backup & Restore -->
-    <section class="automation-card">
-    <div class="section-header sub-section-header"><h3>Backup &amp; Restore</h3></div>
-    <div id="library-backup-panel">
-    <div class="button-grid two-up">
-    <button id="library-backup-create" type="button">Create Backup</button>
-    <button id="library-backup-restore" type="button">Restore Backup</button>
-    </div>
-    <div id="library-backup-status" class="hint" style="margin-top:8px">Backup your library records for safekeeping.</div>
-    </div>
-    </section>
-    </div>
+    <div class="workspace-shell library-workspace-shell">
+      <aside class="workspace-sidebar" aria-label="Library view navigation">
+        <div class="workspace-sidebar-header">
+          <p class="workspace-sidebar-kicker">History</p>
+          <h2>Performance Library</h2>
+          <p class="workspace-sidebar-copy">Search history, inspect records, review trends, and reopen work from one persistent library view.</p>
+        </div>
+        <nav class="workspace-sidebar-nav">
+          <button class="workspace-sidebar-button active" type="button" data-workspace-view="library" data-workspace-target="library-section-overview">Overview</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-records">Records</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-detail">Detail</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-analytics">Analytics</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-backup">Backup</button>
+          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-settings">Settings</button>
+        </nav>
+        <div class="workspace-sidebar-footer">
+          <button id="library-go-home" class="workspace-sidebar-button workspace-sidebar-footer-button" type="button">Home</button>
+          <button id="library-open-settings" class="workspace-sidebar-button workspace-sidebar-footer-button workspace-sidebar-settings-button" type="button" data-workspace-view="library" data-workspace-target="library-section-settings">⚙</button>
+        </div>
+      </aside>
+      <main class="workspace-main library-workspace">
+        <div class="library-empty-state" hidden>
+          <h2>No Performance History</h2>
+          <p>Complete a stage or match to see records here.</p>
+        </div>
+        <div class="workspace-action-bar" aria-label="Performance library actions">
+          <div class="workspace-action-group">
+            <button id="library-export-csv" type="button" class="button-ghost">Export CSV</button>
+            <button id="library-export-json" type="button" class="button-ghost">Export JSON</button>
+            <button id="library-refresh" type="button">Update Library</button>
+          </div>
+        </div>
+        <div id="library-loading" class="automation-loading" hidden>Loading library data...</div>
+        <div id="library-error" class="automation-error" hidden>Failed to load library records.</div>
+        <div id="library-stale" class="automation-stale" hidden>Library data may be out of date.</div>
+        <div class="workspace-sections">
+          <section id="library-section-overview" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Overview</h3>
+            </div>
+            <div class="automation-card">
+              <div id="library-summary-tiles" class="library-summary-tiles" aria-label="Library summary"></div>
+            </div>
+          </section>
+          <section id="library-section-records" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Records</h3>
+            </div>
+            <div class="automation-card">
+              <div class="profile-toolbar">
+                <input id="library-search" type="search" placeholder="Search by name, date, discipline..." aria-label="Search library" />
+                <select id="library-sort" aria-label="Library sort">
+                  <option value="event_date">Date (newest)</option>
+                  <option value="display_name">Name</option>
+                  <option value="discipline">Discipline</option>
+                  <option value="score">Best Score</option>
+                </select>
+                <select id="library-filter-discipline" aria-label="Filter by discipline">
+                  <option value="">All Disciplines</option>
+                  <option value="uspsa">USPSA</option>
+                  <option value="idpa">IDPA</option>
+                  <option value="ipsc">IPSC</option>
+                  <option value="steel_challenge">Steel Challenge</option>
+                </select>
+              </div>
+              <div id="library-record-list" class="automation-list" aria-label="Library records"></div>
+              <div id="library-personal-bests" class="library-personal-bests" aria-label="Personal bests">
+                <div class="section-header sub-section-header"><h4>Personal Bests</h4></div>
+                <div id="personal-bests-list" class="automation-list"></div>
+              </div>
+            </div>
+          </section>
+          <section id="library-section-detail" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Selected Record</h3>
+            </div>
+            <div class="automation-card">
+              <pre id="library-record-detail" class="automation-detail">Select a library record.</pre>
+              <div id="library-record-actions" class="button-grid two-up" hidden>
+                <button id="library-open-stage" type="button">Open Stage</button>
+                <button id="library-open-workspace" type="button">Open Workspace</button>
+              </div>
+              <div id="library-tags-editor" hidden>
+                <div class="section-header sub-section-header"><h4>Tags</h4></div>
+                <div class="profile-toolbar">
+                  <input id="library-tag-input" type="text" placeholder="Add tag..." aria-label="Tag name" />
+                  <button id="library-tag-add" type="button">Add</button>
+                </div>
+                <div id="library-tag-list" class="library-tag-list"></div>
+              </div>
+              <div id="library-notes-editor" hidden>
+                <div class="section-header sub-section-header"><h4>Notes</h4></div>
+                <textarea id="library-notes-text" placeholder="Record notes..." aria-label="Record notes" rows="4"></textarea>
+                <button id="library-notes-save" type="button" style="margin-top:4px">Save Notes</button>
+              </div>
+            </div>
+          </section>
+          <section id="library-section-analytics" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Analytics</h3>
+            </div>
+            <div class="automation-card">
+              <div id="library-analytics" class="library-analytics">
+                <div class="analytics-chart-section">
+                  <h4>Score Trend</h4>
+                  <div id="analytics-score-trend" class="analytics-chart-placeholder chart-bar">
+                    <div class="chart-bar-container">
+                      <div class="chart-bar" style="height:60%"><span>85%</span></div>
+                      <div class="chart-bar" style="height:75%"><span>92%</span></div>
+                      <div class="chart-bar" style="height:70%"><span>88%</span></div>
+                      <div class="chart-bar accent" style="height:95%"><span>98%</span></div>
+                      <div class="chart-bar" style="height:80%"><span>91%</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="analytics-chart-section">
+                  <h4>Discipline Breakdown</h4>
+                  <div id="analytics-discipline-chart" class="analytics-chart-placeholder">
+                    <div class="discipline-bars">
+                      <div class="discipline-bar"><span class="bar-label">USPSA</span><span class="bar-fill" style="width:65%">12</span></div>
+                      <div class="discipline-bar"><span class="bar-label">IDPA</span><span class="bar-fill" style="width:35%">6</span></div>
+                      <div class="discipline-bar"><span class="bar-label">SC</span><span class="bar-fill" style="width:20%">3</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="analytics-chart-section">
+                  <h4>Outliers</h4>
+                  <div id="analytics-outliers" class="automation-list">
+                    <p class="hint">Outlier detection will highlight unusually high or low scores after enough records are added.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="library-section-backup" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Backup &amp; Restore</h3>
+            </div>
+            <div class="automation-card">
+              <div id="library-backup-panel">
+                <div class="button-grid two-up">
+                  <button id="library-backup-create" type="button">Create Backup</button>
+                  <button id="library-backup-restore" type="button">Restore Backup</button>
+                </div>
+                <div id="library-backup-status" class="hint" style="margin-top:8px">Backup your library records for safekeeping.</div>
+              </div>
+            </div>
+          </section>
+          <section id="library-section-settings" class="workspace-section">
+            <div class="section-header sub-section-header">
+              <h3>Library Settings</h3>
+            </div>
+            <div class="automation-card workspace-settings-card">
+              <div class="control-grid">
+                <label>Default Sort
+                  <select id="library-setting-default-sort">
+                    <option value="event_date">Date (newest)</option>
+                    <option value="display_name">Name</option>
+                    <option value="discipline">Discipline</option>
+                    <option value="score">Best Score</option>
+                  </select>
+                </label>
+                <label class="check-row"><input id="library-setting-auto-refresh" type="checkbox" checked /> Refresh records when the library opens</label>
+              </div>
+              <p class="hint">These settings affect Performance Library only.</p>
+            </div>
+          </section>
+        </div>
+      </main>
     </div>
   </div>
       </div>

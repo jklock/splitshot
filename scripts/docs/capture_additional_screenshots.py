@@ -52,7 +52,15 @@ async def switch_view(page, view_name):
     if view_name == "landing":
         await page.click("#shell-go-home")
     else:
-        await page.click(f"#nav-{view_name}")
+        await page.evaluate(
+            """
+            (viewName) => {
+              const mapping = {stage: "single", match: "multi", library: "library"};
+              window.setActiveSurface?.(mapping[viewName] || "landing");
+            }
+            """,
+            view_name,
+        )
     await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
     await page.wait_for_function(
         "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",

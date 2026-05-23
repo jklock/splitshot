@@ -39,6 +39,8 @@ import { createMutableBindings, installLegacyGlobalCompat } from "./lib/global-c
 import { createProcessingRuntime } from "./lib/processing.js";
 import { createStore } from "./lib/store.js";
 import { createWaveformState } from "./lib/waveform-state.js";
+import { createMatchView } from "./views/match-view.js";
+import { createLibraryView } from "./views/library-view.js";
 
 let $ = domById;
 let clamp = utilsClamp;
@@ -87,11 +89,6 @@ function setActiveView(viewName) {
   const shell = document.getElementById("app-shell");
   if (shell) shell.setAttribute("data-active-view", viewName);
 
-  // Update shell nav buttons
-  document.querySelectorAll(".shell-nav-button").forEach((btn) => {
-    btn.setAttribute("aria-selected", btn.getAttribute("data-view") === viewName);
-  });
-
   // Show/hide landing page
   const landingPage = document.getElementById("landing-page");
   // Restore view-local state
@@ -134,27 +131,14 @@ function getPreviousView() {
 
 function updateShellContext() {
   const projectNameEl = document.getElementById("shell-project-name");
-  const matchNameEl = document.getElementById("shell-match-name");
-  const stageNameEl = document.getElementById("shell-stage-name");
   const returnBtn = document.getElementById("shell-return-match");
 
   if (projectNameEl) {
     projectNameEl.textContent = state?.project?.name || "Untitled Project";
   }
 
-  const hasMatch = state?.workspace?.id || state?.project?.workspace_id;
-  if (matchNameEl) {
-    matchNameEl.hidden = !hasMatch;
-    if (hasMatch) matchNameEl.textContent = state?.workspace?.name || "Untitled Match";
-  }
-
-  const hasStage = state?.project?.stage_number || state?.project?.name;
-  if (stageNameEl) {
-    stageNameEl.hidden = !hasStage || currentView !== "stage";
-    if (hasStage) stageNameEl.textContent = state?.project?.stage_number ? `Stage ${state.project.stage_number}` : "";
-  }
-
   if (returnBtn) {
+    const hasMatch = state?.workspace?.id || state?.project?.workspace_id;
     returnBtn.hidden = !(currentView === "stage" && hasMatch);
   }
 }
@@ -213,15 +197,6 @@ function dismissGlobalError() {
 
 function wireShellHeaderEvents() {
   document.getElementById("shell-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
-  document.getElementById("nav-stage")?.addEventListener("click", () => setActiveSurface("single"));
-  document.getElementById("nav-match")?.addEventListener("click", () => {
-    setActiveSurface("multi");
-    void refreshStageComposite();
-  });
-  document.getElementById("nav-library")?.addEventListener("click", () => {
-    setActiveSurface("library");
-    void refreshPerformanceLibrary();
-  });
   document.getElementById("shell-return-match")?.addEventListener("click", () => setActiveSurface("multi"));
 }
 
@@ -384,6 +359,8 @@ let keyRuntime = null;
 let apiRuntime = null;
 let waveformStateRuntime = null;
 let shellRuntime = null;
+let matchView = null;
+let libraryView = null;
 
 let statusBarComponent = null;
 let videoPlayerComponent = null;
@@ -5039,50 +5016,25 @@ function normalizeSurfaceId(surface) {
 function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   activeSurface = normalizeSurfaceId(surface);
   const landingPage = $("landing-page");
-  const cockpitShell = document.querySelector(".cockpit-shell");
   const isLanding = activeSurface === "landing";
   landingPageVisible = isLanding;
   if (landingPage) {
     if (isLanding) landingPage.removeAttribute("hidden");
     else landingPage.setAttribute("hidden", "");
   }
-  if (cockpitShell) cockpitShell.style.display = isLanding ? "none" : "";
   if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
-  if (isLanding) {
-    renderRecentActivity();
-  } else {
-    automationPanelOpen = Boolean(openPanel);
-    const root = $("cockpit-root");
-    root?.classList.remove("automation-collapsed");
-    root?.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
-    document.querySelectorAll("[data-surface]").forEach((button) => {
-      const isActive = button.dataset.surface === activeSurface;
-      button.classList.toggle("active", isActive);
-      button.setAttribute("aria-selected", String(isActive));
-    });
-    document.querySelectorAll("[data-surface-panel]").forEach((panel) => {
-      panel.classList.toggle("active", panel.dataset.surfacePanel === activeSurface);
-    });
-    const toolsForSurface = {
-      single: null,
-      multi: ["project", "merge"],
-      library: [],
-    };
-    const visibleTools = toolsForSurface[activeSurface];
-    document.querySelectorAll(".tool-item").forEach((item) => {
-      const toolId = item.dataset.tool;
-      if (toolId === "settings" || visibleTools === null) return;
-      item.hidden = !visibleTools.includes(toolId);
-    });
-    if (visibleTools !== null && !visibleTools.includes(activeTool)) {
-      setActiveTool(visibleTools[0] || "project");
-    }
-    renderAutomationSurface();
-  }
-
-  // Sync new shell view state
+  if (isLanding) renderRecentActivity();
+  automationPanelOpen = Boolean(openPanel);
   const surfaceToView = { landing: "landing", single: "stage", multi: "match", library: "library" };
   setActiveView(surfaceToView[activeSurface] || "stage");
+  if (activeSurface === "single") {
+    setActiveTool(activeTool || "project");
+    updateStageEmptyState();
+  } else if (activeSurface === "multi") {
+    void refreshStageComposite();
+  } else if (activeSurface === "library") {
+    if (libraryView?.libraryAutoRefreshEnabled?.() ?? true) void refreshPerformanceLibrary();
+  }
 }
 
 function renderRecentActivity() {
@@ -5136,33 +5088,43 @@ function renderJsonDetail(elementId, payload, fallback = "") {
   target.textContent = payload ? JSON.stringify(payload, null, 2) : fallback;
 }
 
+matchView = createMatchView({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  getCurrentWorkspaceStageId: () => currentWorkspaceStageId(),
+  getStageCompositeClips: () => stageCompositeClips,
+  setSelectedStageCompositeStageId: (value) => {
+    selectedStageCompositeStageId = value;
+  },
+  syncControlValue,
+  callApi,
+  refresh,
+  refreshStageComposite,
+  ensureCompositeOutputProfile,
+  renderJsonDetail,
+  fileName,
+  activity,
+});
+
+libraryView = createLibraryView({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getLibrary: () => automationLibrary,
+  getSelectedLibraryRecord: () => selectedLibraryRecord,
+  setSelectedLibraryRecord: (value) => {
+    selectedLibraryRecord = value;
+    window.selectedLibraryRecord = value;
+  },
+  callApi,
+  renderJsonDetail,
+  activity,
+});
+
 function renderSurfaceContext() {
-  const title = $("surface-context-title");
-  const stage = $("surface-context-stage");
-  const status = $("surface-context-status");
-  const back = $("surface-return-workspace");
-  const workspace = state?.match_workspace_summary;
-  const activeStage = state?.workspace_stage_entries?.find((entry) => entry.stage_id === state?.active_stage_id);
-  if (title) {
-    title.textContent = activeSurface === "library"
-      ? "Performance Library"
-      : activeSurface === "multi"
-        ? (workspace?.name || "No workspace open")
-        : (state?.project?.name || "Standalone stage");
-  }
-  if (stage) {
-    stage.textContent = activeStage
-      ? `${activeStage.display_name || activeStage.stage_id} (${activeStage.status || "unknown"})`
-      : activeSurface === "multi"
-        ? `${state?.workspace_stage_entries?.length || 0} stages`
-        : (state?.opened_from_match ? "Workspace stage" : "Standalone stage");
-  }
-  if (status) {
-    const profiles = state?.output_profile_summary?.total_profiles ?? state?.output_profiles?.length ?? automationProfiles.length;
-    const libraryStages = state?.library_summary?.stage_records ?? automationLibrary.total_stages ?? 0;
-    status.textContent = `${profiles || 0} output profiles • ${libraryStages || 0} library records`;
-  }
-  if (back) back.hidden = !state?.return_to_match_available;
+  return;
 }
 
 function renderOutputProfiles() {
@@ -5829,6 +5791,19 @@ function saveLibraryNotes(notes) {
   activity("ui.library.notes.save");
 }
 
+renderWorkspaceStages = (...args) => matchView?.renderWorkspaceStages(...args);
+checkSetupOnceBanner = (...args) => matchView?.renderWorkspaceStages(...args);
+renderStageComposite = (...args) => matchView?.renderStageComposite(...args);
+renderPerformanceLibrary = (...args) => libraryView?.renderPerformanceLibrary(...args);
+renderLibrarySummaryTiles = (...args) => libraryView?.renderLibrarySummaryTiles(...args);
+renderLibraryTags = (...args) => libraryView?.renderLibraryTags(...args);
+renderPersonalBests = (...args) => libraryView?.renderPersonalBests(...args);
+fetchLibraryAnalytics = (...args) => libraryView?.fetchLibraryAnalytics(...args);
+renderAnalyticsCharts = (...args) => libraryView?.renderAnalyticsCharts(...args);
+addLibraryTag = (...args) => libraryView?.addLibraryTag(...args);
+removeLibraryTag = (...args) => libraryView?.removeLibraryTag(...args);
+saveLibraryNotes = (...args) => libraryView?.saveLibraryNotes(...args);
+
 function renderAutomationSurface() {
   renderSurfaceContext();
   renderOutputProfiles();
@@ -5993,8 +5968,6 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     if (expand) expand.textContent = "Expand";
   }
   root.classList.toggle("scoring-active", tool === "scoring");
-  root.classList.toggle("automation-collapsed", activeSurface === "single" && !["project", "export"].includes(tool));
-  root.classList.toggle("automation-panel-collapsed", !automationPanelOpen);
   const inspector = document.querySelector(".inspector");
   if (inspector) inspector.dataset.activeTool = tool;
   document.querySelectorAll(".tool-item").forEach((item) => {
@@ -10229,6 +10202,21 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
   };
 };
 
+function setWorkspaceSection(viewName, sectionId, { scroll = true } = {}) {
+  document.querySelectorAll(`[data-workspace-view="${viewName}"]`).forEach((button) => {
+    button.classList.toggle("active", button.dataset.workspaceTarget === sectionId);
+  });
+  if (!sectionId) return;
+  window.localStorage.setItem(`splitshot.${viewName}.section`, sectionId);
+  if (!scroll) return;
+  document.getElementById(sectionId)?.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function applySavedWorkspaceSections() {
+  setWorkspaceSection("match", window.localStorage.getItem("splitshot.match.section") || "match-section-stages", { scroll: false });
+  setWorkspaceSection("library", window.localStorage.getItem("splitshot.library.section") || "library-section-overview", { scroll: false });
+}
+
 function wireEvents() {
   const result = shellRuntime?.wireEvents();
   document.querySelectorAll("[data-surface]").forEach((button) => {
@@ -10275,11 +10263,6 @@ function wireEvents() {
     activity("ui.landing.openfile.click");
   });
 
-  // Home button in surface header
-  $("surface-go-home")?.addEventListener("click", () => {
-    setActiveSurface("landing");
-  });
-
   // Logo click returns to landing
   const logoElement = document.querySelector(".rail-logo");
   if (logoElement) {
@@ -10289,7 +10272,28 @@ function wireEvents() {
       activity("ui.logo.click");
     });
   }
-  $("surface-return-workspace")?.addEventListener("click", () => callApi("/api/workspace/stage/return", {}));
+  $("stage-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
+  $("match-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
+  $("library-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
+  $("match-open-settings")?.addEventListener("click", () => setWorkspaceSection("match", "match-section-settings"));
+  $("library-open-settings")?.addEventListener("click", () => setWorkspaceSection("library", "library-section-settings"));
+  document.querySelectorAll("[data-workspace-target]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setWorkspaceSection(button.dataset.workspaceView || "", button.dataset.workspaceTarget || "");
+    });
+  });
+  $("match-setting-show-score")?.addEventListener("change", () => {
+    matchView?.persistMatchSettings();
+    renderWorkspaceStages();
+  });
+  $("match-setting-remember-stage")?.addEventListener("change", () => matchView?.persistMatchSettings());
+  $("library-setting-default-sort")?.addEventListener("change", () => {
+    const sort = $("library-setting-default-sort")?.value || "event_date";
+    if ($("library-sort")) $("library-sort").value = sort;
+    libraryView?.persistLibrarySettings();
+    void refreshPerformanceLibrary();
+  });
+  $("library-setting-auto-refresh")?.addEventListener("change", () => libraryView?.persistLibrarySettings());
   $("output-profile-refresh")?.addEventListener("click", () => refreshAutomationProfiles());
   $("output-profile-create")?.addEventListener("click", () => {
     createAutomationOutputProfile($("output-profile-name")?.value || "Output Profile", $("output-profile-kind")?.value || "stage_output");
@@ -11858,6 +11862,9 @@ if (!isAutomated) {
   setActiveSurface("single", { persist: false, openPanel: false });
 }
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
+matchView?.applySavedMatchSettings();
+libraryView?.applySavedLibrarySettings();
+applySavedWorkspaceSections();
 wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();
