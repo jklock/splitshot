@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. Library tags/notes/open/export routes need wiring. See `../todo.md` for live checklist.
+
+
 # Track 07: Performance Library
 
 ## Goal

@@ -1,8 +1,11 @@
+> **Note:** Historical ledger; invalidated by later audit. Do not execute this package. Migrate still-valid requirements into Automate3 only.
+
+
 # Automate2 UI Outcomes
 
 ## Completion Definition
 
-The UI overhaul is complete only when all of the following are true.
+> **Superseded.** The following were targets, not proven achievements. Current status is in `docs/automate3/14-truth-audit-matrix.md`.
 
 ## Released Baseline Preservation
 
@@ -75,13 +78,14 @@ The UI overhaul is complete only when all of the following are true.
 
 ## Current Readiness State
 
-- All P0 baseline guardrails verified: Windows export-font, Clip1.MP4 fixture, browser preview font stacks
-- All P0 UI blockers resolved: PiP playback smooth, four-surface shell model, legacy stage-edit behavior stable
-- All P1 UI-enabling support complete: stage clip persistence, dedicated read routes, angle-director plan route, landing page routes, analytics routes, archive routes
-- All P1 shell/navigation items complete: surface switcher, context header, rehomed tool panes, empty/loading/error/stale states, Landing Page
-- All P1 Stage Video Edit items complete: output-profile manager, profile CRUD, retained-review source selector, output hook editors, render-plan state, multi-angle features, multi-track waveform, color-coded segments
-- All P1 Match Video Edit items complete: workspace lifecycle, stage grid, shared-defaults editor, stage-override editor, Match Recap, Stage Composite, Setup Once Apply Everywhere, batch export
-- All P1 Performance Library items complete: summary tiles, filter/search/sort, record detail, proxy actions, reopen actions, analytics, tags, notes, export
-- All P1 proof items complete: targeted UI suites, PiP performance contract, browser E2E test suite
-- Remaining deferred: packaged automation proof and packaged PiP playback proof
-- Changelog/release-note wording is SplitShot-native; re-check only needed when shipping
+> **Superseded.** These were planned targets, not proven achievements. All "complete" claims are unproven. Current status is in `docs/automate3/14-truth-audit-matrix.md`.
+
+- P0 baseline guardrails: historical claim, must be re-verified
+- P0 UI blockers: historical claim, must be re-verified
+- P1 UI-enabling support: historical claim, must be re-verified
+- P1 shell/navigation: historical claim, must be re-verified
+- P1 Stage Video Edit: historical claim, must be re-verified
+- P1 Match Video Edit: historical claim, must be re-verified
+- P1 Performance Library: historical claim, must be re-verified
+- P1 proof items: historical claim, must be re-verified
+- Deferred: packaged automation proof and packaged PiP playback proof

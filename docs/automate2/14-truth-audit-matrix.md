@@ -1,3 +1,8 @@
+> **Note:** Automate2 is a historical feature-inventory package. Current implementation status lives in `docs/automate3/14-truth-audit-matrix.md`.
+>
+> **Warning:** Any "100% complete" or "done" language below refers to requirements carried forward, not proven implementation. UI items remain unproven.
+
+
 # Truth Audit Matrix
 
 This document audits the truth of every claim in the SplitShot v2 plan.

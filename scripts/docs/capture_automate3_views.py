@@ -1,92 +1,180 @@
 #!/usr/bin/env python3
-"""Capture Automate3 view screenshots using Playwright."""
+"""Capture Automate3 empty-state screenshots with DOM assertions."""
+from __future__ import annotations
+
 import asyncio
-import os
+import base64
+import hashlib
+import json
 import sys
-import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from playwright.async_api import async_playwright
+from playwright.async_api import Page, async_playwright
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "docs" / "screenshots" / "automate3"
+from splitshot.browser.server import BrowserControlServer
+from splitshot.ui.controller import ProjectController
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = REPO_ROOT / "docs" / "screenshots" / "automate3"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BASE_URL = "http://127.0.0.1:8765"
 
-async def wait_for_app(page):
-    """Wait for the app shell to be ready."""
-    await page.wait_for_selector("#app-shell", timeout=15000)
-    await page.wait_for_timeout(2000)
+class ProofFailure(RuntimeError):
+    pass
 
-async def switch_view(page, view_name):
-    """Click the shell nav button to switch views."""
-    nav_map = {"stage": "nav-stage", "match": "nav-match", "library": "nav-library"}
-    btn_id = nav_map.get(view_name)
-    if btn_id:
-        await page.click(f"#{btn_id}")
-    elif view_name == "landing":
+
+async def switch_view(page: Page, view_name: str) -> None:
+    if view_name == "landing":
         await page.click("#shell-go-home")
-    await page.wait_for_timeout(1500)
-    # Verify the view is active
-    await page.wait_for_selector(f"#view-{view_name}.active", timeout=5000)
-    await page.wait_for_timeout(1000)
-
-async def capture_view(page, view_name, label, filename):
-    """Capture a screenshot of a view."""
-    print(f"  Capturing {label}...")
-    view_el = await page.query_selector(f"#view-{view_name}")
-    if view_el:
-        path = OUTPUT_DIR / filename
-        await view_el.screenshot(path=path)
-        print(f"    Saved: {path} ({os.path.getsize(path)} bytes)")
     else:
-        print(f"    WARNING: #view-{view_name} not found")
+        await page.click(f"#nav-{view_name}")
+    await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
+    await page.wait_for_function(
+        "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
+        arg=view_name,
+        timeout=10_000,
+    )
 
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={"width": 1440, "height": 900})
-        page = await context.new_page()
 
-        try:
-            await page.goto(BASE_URL)
-            await wait_for_app(page)
+async def assert_view_layout(page: Page, view_name: str) -> dict[str, object]:
+    result = await page.evaluate(
+        """
+        (viewName) => {
+          const view = document.getElementById(`view-${viewName}`);
+          const shell = document.getElementById("app-shell");
+          const rail = document.querySelector(".tool-rail");
+          const rect = view?.getBoundingClientRect();
+          const railDisplay = rail ? getComputedStyle(rail).display : null;
+          return {
+            activeView: shell?.dataset.activeView || "",
+            viewActive: Boolean(view?.classList.contains("active")),
+            width: Math.round(rect?.width || 0),
+            height: Math.round(rect?.height || 0),
+            horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+            railDisplay,
+            text: view?.innerText || "",
+          };
+        }
+        """,
+        view_name,
+    )
+    failures: list[str] = []
+    if result["activeView"] != view_name or not result["viewActive"]:
+        failures.append("view is not active")
+    if result["width"] <= 0 or result["height"] <= 0:
+        failures.append("view has zero bounds")
+    if result["horizontalOverflow"]:
+        failures.append("horizontal overflow")
+    if view_name == "stage" and result["railDisplay"] == "none":
+        failures.append("stage tool rail hidden")
+    if view_name in {"match", "library", "landing"} and result["railDisplay"] != "none":
+        failures.append("non-stage tool rail visible")
+    if failures:
+        raise ProofFailure(f"{view_name} layout assertion failed: {', '.join(failures)}")
+    return {key: value for key, value in result.items() if key != "text"} | {
+        "text_length": len(result["text"])
+    }
 
-            # 1. Capture empty landing page
-            print("\n=== Empty States ===")
-            await switch_view(page, "landing")
-            await capture_view(page, "landing", "Empty Landing", "empty-landing.png")
 
-            # 2. Capture empty stage view (no media loaded)
-            await switch_view(page, "stage")
-            await capture_view(page, "stage", "Empty Stage", "empty-stage.png")
+async def capture_view(page: Page, view_name: str, filename: str) -> dict[str, object]:
+    await switch_view(page, view_name)
+    assertions = await assert_view_layout(page, view_name)
+    path = OUTPUT_DIR / filename
+    await page.locator(f"#view-{view_name}").screenshot(path=path)
+    data = path.read_bytes()
+    return {
+        "file": filename,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
 
-            # 3. Capture empty match view
-            await switch_view(page, "match")
-            await capture_view(page, "match", "Empty Match", "empty-match.png")
 
-            # 4. Capture empty library view
-            await switch_view(page, "library")
-            await capture_view(page, "library", "Empty Library", "empty-library.png")
+async def build_contact_sheet(page: Page, images: list[dict[str, object]], filename: str) -> dict[str, object]:
+    cards = "\n".join(
+        f"""
+        <figure>
+          <figcaption>{item['file']}</figcaption>
+          <img src="data:image/png;base64,{base64.b64encode(Path(str(item['path'])).read_bytes()).decode('ascii')}" />
+        </figure>
+        """
+        for item in images
+    )
+    await page.set_viewport_size({"width": 1440, "height": 900})
+    await page.set_content(
+        f"""
+        <html>
+          <head>
+            <style>
+              body {{ margin: 0; background: #101214; color: #f2f4f7; font: 13px system-ui, sans-serif; }}
+              main {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; padding: 16px; }}
+              figure {{ margin: 0; border: 1px solid #30363d; background: #171b20; }}
+              figcaption {{ padding: 8px 10px; font-weight: 800; }}
+              img {{ display: block; width: 100%; height: 360px; object-fit: contain; background: #050607; }}
+            </style>
+          </head>
+          <body><main>{cards}</main></body>
+        </html>
+        """,
+        wait_until="load",
+    )
+    path = OUTPUT_DIR / filename
+    await page.screenshot(path=path, full_page=False)
+    data = path.read_bytes()
+    return {"file": filename, "path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
 
-            # 5. Full page screenshot for contact sheet
-            print("\n=== Contact Sheet ===")
-            await page.set_viewport_size({"width": 1440, "height": 900})
-            contact_path = OUTPUT_DIR / "contact-sheet.png"
-            await page.screenshot(path=contact_path, full_page=False)
-            print(f"  Saved: {contact_path} ({os.path.getsize(contact_path)} bytes)")
 
-            print(f"\nDone. {len(list(OUTPUT_DIR.glob('*.png')))} screenshots in {OUTPUT_DIR}")
+async def run() -> dict[str, object]:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    console_errors: list[str] = []
+    results: list[dict[str, object]] = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1440, "height": 900})
+            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on("pageerror", lambda exc: console_errors.append(str(exc)))
+            await page.goto(server.url, wait_until="domcontentloaded")
+            await page.wait_for_selector("#app-shell", timeout=15_000)
 
-        except Exception as e:
-            print(f"ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
+            results.append(await capture_view(page, "landing", "empty-landing.png"))
+            results.append(await capture_view(page, "stage", "empty-stage.png"))
+            results.append(await capture_view(page, "match", "empty-match.png"))
+            results.append(await capture_view(page, "library", "empty-library.png"))
+            contact = await build_contact_sheet(page, results, "contact-sheet.png")
             await browser.close()
 
+        if console_errors:
+            raise ProofFailure(f"console errors during empty capture: {console_errors}")
+        proof = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "kind": "empty",
+            "status": "pass",
+            "screenshots": results,
+            "contact_sheet": contact,
+        }
+        (OUTPUT_DIR / "proof-results.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
+        return proof
+    finally:
+        server.shutdown()
+
+
+def main() -> int:
+    try:
+        proof = asyncio.run(run())
+    except Exception as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(proof, indent=2))
+    return 0
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

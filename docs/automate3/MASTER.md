@@ -1,3 +1,6 @@
+> **Note:** Current status: implementation in progress. See `14-truth-audit-matrix.md` for live status.
+
+
 # MASTER
 
 `docs/automate3/` is the product, backend, data, workflow, proof, and release truth source for the final SplitShot UI remediation. `docs/automate3-ui/spec.md` is the browser-shell implementation authority.

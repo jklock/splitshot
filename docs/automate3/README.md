@@ -1,3 +1,6 @@
+> **Note:** Current status: implementation in progress. See `14-truth-audit-matrix.md` for live status.
+
+
 # Automate3
 
 Automate3 is the end-to-end remediation package for the final SplitShot product UI. It supersedes the incomplete direction in `docs/automate/`, `docs/automate2/`, `docs/automate-ui/`, and `docs/automate2-ui/` without deleting those packages.

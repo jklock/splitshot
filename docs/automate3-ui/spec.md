@@ -1,3 +1,6 @@
+> **Note:** Current implementation is partial; see `14-truth-audit-matrix.md` for actual status.
+
+
 # Automate3 UI Spec
 
 ## Goal

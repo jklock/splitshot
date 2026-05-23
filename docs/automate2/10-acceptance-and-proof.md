@@ -1,3 +1,6 @@
+> **Note:** Automate2 is a historical feature-inventory package. Current implementation status lives in `docs/automate3/14-truth-audit-matrix.md`.
+
+
 # Acceptance and Proof
 
 This document defines the acceptance criteria and proof requirements for SplitShot v2.

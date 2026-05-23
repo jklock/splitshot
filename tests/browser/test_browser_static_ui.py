@@ -2030,6 +2030,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "landing-open-file",
         "retained-review-apply",
         "output-hook-close",
+        "output-hook-save",
         "shared-defaults-apply",
         "shared-defaults-reset",
         "override-apply",

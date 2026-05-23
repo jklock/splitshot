@@ -937,6 +937,9 @@ class BrowserControlServer:
                     "/api/library/tags/update": ("_handle_library_tags_update", []),
                     "/api/workspace/apply-from-first": ("_handle_workspace_apply_from_first", []),
                     "/api/workspace/apply-from-first/preview": ("_handle_workspace_apply_from_first_preview", []),
+                    "/api/workspace/export": ("_handle_workspace_export", []),
+                    "/api/workspace/recap/render": ("_handle_workspace_recap_render", []),
+                    "/api/workspace/defaults/reset": ("_handle_workspace_defaults_reset", []),
                 }
                 entry = routes.get(self.path)
                 if entry is None:
@@ -2400,121 +2403,28 @@ class BrowserControlServer:
             def _handle_workspace_apply_from_first(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Apply Stage 1 settings to all sibling stages in the workspace."""
                 with controller_lock:
-                    if not controller.workspace:
-                        return {"error": "No workspace open"}
-                    workspace = controller.workspace
-                    stage_entries = list(workspace.stage_entries.values())
-                    if len(stage_entries) < 2:
-                        return {"error": "Need at least 2 stages for apply-from-first"}
-
-                    first_stage = stage_entries[0]
-                    if not first_stage.stage_id:
-                        return {"error": "Stage 1 has no stage_id"}
-
-                    first_effective = _stage_effective_settings(
-                        first_stage,
-                        workspace.shared_defaults,
-                        _WORKSPACE_ELIGIBLE_KEYS,
-                    )
-
-                    for key, value in first_effective.items():
-                        workspace.shared_defaults[key] = value
-
-                    first_stage.override_values.clear()
-
-                    stage_changes = []
-                    applied_count = 0
-                    for entry in stage_entries[1:]:
-                        if not entry.stage_id:
-                            continue
-                        before = dict(entry.override_values)
-                        entry.override_values.clear()
-                        entry.inherited_from_first = True
-                        applied_count += 1
-                        stage_changes.append(
-                            {
-                                "stage_id": entry.stage_id,
-                                "display_name": entry.display_name,
-                                "cleared_overrides": before,
-                            }
-                        )
-
-                    workspace.first_stage_snapshot = {
-                        "stage_id": first_stage.stage_id,
-                        "applied_settings": dict(first_effective),
-                        "stage_changes": stage_changes,
-                        "applied_at": datetime.now(timezone.utc).isoformat(),
-                    }
-
-                    workspace.updated_at = datetime.now(timezone.utc)
-                    controller.autosave_project_if_needed()
-
-                return {
-                    "applied": True,
-                    "stages_updated": applied_count,
-                    "snapshot": workspace.first_stage_snapshot,
-                }
+                    return controller.workspace_apply_from_first()
 
             def _handle_workspace_apply_from_first_preview(
                 self, body: dict[str, Any]
             ) -> dict[str, Any]:
                 """Preview what would change before applying Stage 1 settings to siblings."""
                 with controller_lock:
-                    if not controller.workspace:
-                        return {"error": "No workspace open"}
-                    workspace = controller.workspace
-                    stage_entries = list(workspace.stage_entries.values())
-                    if len(stage_entries) < 2:
-                        return {"preview": [], "message": "Need at least 2 stages"}
+                    return controller.workspace_apply_from_first_preview()
 
-                    first_stage = stage_entries[0]
-                    first_effective = _stage_effective_settings(
-                        first_stage,
-                        workspace.shared_defaults,
-                        _WORKSPACE_ELIGIBLE_KEYS,
-                    )
+            def _handle_workspace_export(self, body: dict[str, Any]) -> dict[str, Any]:
+                with controller_lock:
+                    stage_id = (body or {}).get("stage_id")
+                    recipe = (body or {}).get("recipe")
+                    return controller.workspace_export(stage_id=stage_id, recipe=recipe)
 
-                    changes = []
-                    for entry in stage_entries[1:]:
-                        if not entry.stage_id:
-                            continue
-                        sibling_effective = _stage_effective_settings(
-                            entry,
-                            workspace.shared_defaults,
-                            _WORKSPACE_ELIGIBLE_KEYS,
-                        )
+            def _handle_workspace_recap_render(self, body: dict[str, Any]) -> dict[str, Any]:
+                with controller_lock:
+                    return controller.workspace_recap_render(**(body or {}))
 
-                        affected = {}
-                        conflicts = {}
-                        no_change = {}
-                        for key, new_val in first_effective.items():
-                            old_val = sibling_effective.get(key)
-                            if old_val is None and key not in sibling_effective:
-                                no_change[key] = {"new": new_val}
-                            elif old_val != new_val:
-                                if key in entry.override_values:
-                                    conflicts[key] = {"old": old_val, "new": new_val}
-                                else:
-                                    affected[key] = {"old": old_val, "new": new_val}
-
-                        changes.append(
-                            {
-                                "stage_id": entry.stage_id,
-                                "display_name": entry.display_name or f"Stage {entry.stage_number}",
-                                "current_status": entry.status,
-                                "will_inherit": not bool(entry.override_values),
-                                "affected_settings": affected,
-                                "conflicts": conflicts,
-                                "inherited": no_change,
-                            }
-                        )
-
-                    return {
-                        "preview": changes,
-                        "source_stage": first_stage.display_name or "Stage 1",
-                        "applied_settings": dict(first_effective),
-                        "eligible_settings": sorted(_WORKSPACE_ELIGIBLE_KEYS),
-                    }
+            def _handle_workspace_defaults_reset(self, body: dict[str, Any]) -> dict[str, Any]:
+                with controller_lock:
+                    return controller.workspace_reset_defaults()
 
             # === Library: Analytics ===
 
@@ -2664,56 +2574,13 @@ class BrowserControlServer:
 
             def _handle_library_backup_create(self) -> dict[str, Any]:
                 """Create a backup of the library."""
-                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
-
-                stages = read_stage_metrics()
-                matches = read_match_metrics()
-
-                manifest = {
-                    "backup_id": uuid4().hex,
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "schema_version": 1,
-                    "total_stages": len(stages),
-                    "total_matches": len(matches),
-                    "stage_records": stages[-100:],
-                    "match_records": matches[-50:],
-                }
-
-                return {
-                    "manifest": manifest,
-                    "message": f"Backup created with {len(stages)} stages and {len(matches)} matches",
-                }
+                with controller_lock:
+                    return controller.library_backup_create()
 
             def _handle_library_backup_restore(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Restore library from a backup manifest."""
-                manifest = (body or {}).get("manifest", {})
-                if not manifest:
-                    return {"error": "No backup manifest provided"}
-
-                from splitshot.persistence.library import append_stage_metric, append_match_metric
-
-                stages_restored = 0
-                matches_restored = 0
-                errors: list[str] = []
-
-                for stage in (manifest.get("stage_records") or []):
-                    try:
-                        append_stage_metric(stage)
-                        stages_restored += 1
-                    except Exception as e:
-                        errors.append(f"Stage {stage.get('display_name', '?')}: {e}")
-
-                for match in (manifest.get("match_records") or []):
-                    try:
-                        append_match_metric(match)
-                        matches_restored += 1
-                    except Exception as e:
-                        errors.append(f"Match {match.get('display_name', '?')}: {e}")
-
-                return {
-                    "stages_restored": stages_restored,
-                    "matches_restored": matches_restored,
-                    "errors": errors,
-                }
+                with controller_lock:
+                    manifest = (body or {}).get("manifest", {})
+                    return controller.library_backup_restore(manifest)
 
         return Handler

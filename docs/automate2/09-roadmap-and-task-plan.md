@@ -1,3 +1,6 @@
+> **Note:** Automate2 is a historical feature-inventory package. Current implementation status lives in `docs/automate3/14-truth-audit-matrix.md`.
+
+
 # Roadmap and Task Plan
 
 This document defines the implementation order and task breakdown for SplitShot v2.

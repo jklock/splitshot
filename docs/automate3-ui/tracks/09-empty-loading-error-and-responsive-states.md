@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. See `../todo.md` for live checklist.
+
+
 # Track 09: Empty, Loading, Error, And Responsive States
 
 ## Required States

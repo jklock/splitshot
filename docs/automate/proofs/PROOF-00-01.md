@@ -1,3 +1,6 @@
+> **Warning:** Historical snapshot; do not use as current completion status. See `docs/automate3/14-truth-audit-matrix.md` for current truth.
+
+
 # Proof: docs/automate/00-01 (Product Definition, Naming, Quality, Feature Matrix)
 
 ## 00-product-definition.md

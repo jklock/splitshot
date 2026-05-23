@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. Match/export routes are unregistered. See `../todo.md` for live checklist.
+
+
 # Track 06: Match Video Edit
 
 ## Goal

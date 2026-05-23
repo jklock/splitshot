@@ -1,3 +1,6 @@
+> **Note:** Historical first-pass UI package. Do not execute directly. Current work starts in `docs/automate3` and `docs/automate3-ui`. P0/P1 completion claims below are superseded.
+
+
 # Automate UI Progress
 
 ## 2026-05-20 (continued)

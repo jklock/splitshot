@@ -1,3 +1,6 @@
+> **Note:** Historical ledger; invalidated by later audit. Do not execute this package. Migrate still-valid requirements into Automate3 only.
+
+
 # Automate2 UI Todo
 
 ## P0 Baseline Guardrails

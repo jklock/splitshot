@@ -181,6 +181,7 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/workspace/stage/open",
     "/api/workspace/stage/return",
     "/api/workspace/defaults",
+    "/api/workspace/defaults/reset",
     "/api/workspace/stage/override",
     "/api/workspace/stage/override/reset",
     "/api/library/list",
@@ -218,6 +219,8 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/library/tags/update",
     "/api/workspace/apply-from-first",
     "/api/workspace/apply-from-first/preview",
+    "/api/workspace/export",
+    "/api/workspace/recap/render",
 }
 
 
@@ -3826,5 +3829,137 @@ def test_browser_control_api_syncs_and_swaps_secondary_video(synthetic_video_fac
 
         assert state["project"]["primary_video"]["path"] == str(secondary)
         assert state["project"]["secondary_video"]["path"] == str(primary)
+    finally:
+        server.shutdown()
+
+
+def test_output_profile_update_persists_hook_settings() -> None:
+    """Verify that updating an output profile hook field persists the change."""
+    controller = ProjectController()
+    controller.new_project()
+    profile = controller.output_profile_create(
+        "stage", controller.project.id, "Test Profile", "stage_output"
+    )
+    output_id = profile.get("output_id")
+    assert output_id, "Profile must have an ID"
+    result = controller.output_profile_update(output_id, frame_profile="widescreen")
+    assert result is not None, "Update should succeed"
+    assert result.get("frame_profile") == "widescreen", f"Expected widescreen, got {result.get('frame_profile')}"
+    profiles = controller.output_profile_list()
+    updated = [p for p in profiles if p.get("output_id") == output_id]
+    assert updated, "Updated profile should be in list"
+    assert updated[0].get("frame_profile") == "widescreen"
+
+
+def test_library_backup_restore_reports_record_errors(monkeypatch) -> None:
+    """Verify restore failures are returned to the UI instead of silently swallowed."""
+    import splitshot.persistence.library as library_module
+
+    def fail_stage(_record: dict) -> None:
+        raise ValueError("stage write failed")
+
+    restored_matches: list[dict] = []
+    monkeypatch.setattr(library_module, "append_stage_metric", fail_stage)
+    monkeypatch.setattr(library_module, "append_match_metric", restored_matches.append)
+
+    controller = ProjectController()
+    result = controller.library_backup_restore(
+        {
+            "schema_version": 1,
+            "stage_records": [{"library_record_id": "stage-a"}],
+            "match_records": [{"library_record_id": "match-a"}],
+        }
+    )
+
+    assert result["restored"] is False
+    assert result["stages_restored"] == 0
+    assert result["matches_restored"] == 1
+    assert result["errors"] == [
+        {"kind": "stage", "library_record_id": "stage-a", "error": "stage write failed"}
+    ]
+
+
+def test_library_backup_create_keeps_all_records(monkeypatch) -> None:
+    """Backup manifests must include all records, not a truncated tail subset."""
+    import splitshot.persistence.library as library_module
+
+    stage_records = [{"library_record_id": f"stage-{index}"} for index in range(125)]
+    match_records = [{"library_record_id": f"match-{index}"} for index in range(65)]
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: stage_records)
+    monkeypatch.setattr(library_module, "read_match_metrics", lambda: match_records)
+
+    controller = ProjectController()
+    result = controller.library_backup_create()
+    manifest = result["manifest"]
+
+    assert manifest["total_stages"] == 125
+    assert manifest["total_matches"] == 65
+    assert manifest["stage_records"] == stage_records
+    assert manifest["match_records"] == match_records
+
+
+def test_server_workspace_apply_from_first_uses_controller_result() -> None:
+    """Browser route must return the controller's concrete apply result."""
+    controller = ProjectController()
+    expected = {
+        "applied": 2,
+        "skipped": 1,
+        "conflicts": [{"stage_id": "stage_2", "setting": "frame_profile"}],
+        "snapshot": {"stage_id": "stage_1"},
+    }
+    calls: list[dict] = []
+
+    def fake_apply_from_first() -> dict:
+        calls.append({"called": True})
+        return expected
+
+    controller.workspace_apply_from_first = fake_apply_from_first  # type: ignore[method-assign]
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        result = _post_json(f"{server.url}api/workspace/apply-from-first", {"workspace_id": "ignored"})
+        assert result == expected
+        assert calls == [{"called": True}]
+    finally:
+        server.shutdown()
+
+
+def test_server_library_backup_routes_use_controller_contract() -> None:
+    """Browser backup routes must preserve the controller payload shape."""
+    controller = ProjectController()
+    restore_manifests: list[dict] = []
+    backup_result = {
+        "manifest": {"backup_id": "backup-1", "stage_records": [{"library_record_id": "s1"}]},
+        "backup_path": "/tmp/backup.json",
+        "total_stages": 1,
+        "total_matches": 0,
+    }
+    restore_result = {
+        "restored": False,
+        "stages_restored": 0,
+        "matches_restored": 1,
+        "errors": [{"kind": "stage", "library_record_id": "s1", "error": "write failed"}],
+    }
+
+    controller.library_backup_create = lambda: backup_result  # type: ignore[method-assign]
+
+    def fake_restore(manifest: dict) -> dict:
+        restore_manifests.append(manifest)
+        return restore_result
+
+    controller.library_backup_restore = fake_restore  # type: ignore[method-assign]
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        created = _post_json(f"{server.url}api/library/backup/create", {})
+        restored = _post_json(
+            f"{server.url}api/library/backup/restore",
+            {"manifest": {"schema_version": 1, "stage_records": [{"library_record_id": "s1"}]}},
+        )
+        assert created == backup_result
+        assert restored == restore_result
+        assert restore_manifests == [
+            {"schema_version": 1, "stage_records": [{"library_record_id": "s1"}]}
+        ]
     finally:
         server.shutdown()

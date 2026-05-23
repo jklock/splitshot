@@ -1,3 +1,6 @@
+> **Warning:** Historical snapshot; do not use as current completion status. See `docs/automate3/14-truth-audit-matrix.md` for current truth.
+
+
 # Automation Proof: 02-editor-workflow-spec.md + 03-performance-library-spec.md
 
 Generated: 2026-05-19

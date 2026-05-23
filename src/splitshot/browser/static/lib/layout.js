@@ -189,7 +189,7 @@ export function createLayoutRuntime({
     }
     const railToggle = $("toggle-rail");
     if (railToggle) {
-      railToggle.textContent = runtime.railCollapsed ? "▶" : "◀";
+      railToggle.textContent = runtime.railCollapsed ? "EXP" : railToggle.getAttribute("data-short") || "MIN";
       railToggle.title = runtime.railCollapsed ? "Expand left rail" : "Minimize left rail";
       railToggle.setAttribute("aria-label", railToggle.title);
     }

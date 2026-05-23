@@ -15,8 +15,13 @@ def test_landing_recent_route_registered() -> None:
 
 def test_landing_recent_handler_returns_recent_structure() -> None:
     """Verify the handler returns the expected response shape."""
-    source = SERVER_PY.read_text(encoding="utf-8")
-    assert '"recent"' in source or "'recent'" in source
+    # Check controller returns expected structure
+    from splitshot.ui.controller import ProjectController
+    c = ProjectController()
+    result = c.landing_recent()
+    assert isinstance(result, dict)
+    assert "recent" in result
+    assert isinstance(result["recent"], list)
 
 
 def test_workspace_apply_from_first_route_registered() -> None:

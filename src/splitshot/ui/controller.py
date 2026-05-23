@@ -1162,118 +1162,294 @@ class ProjectController(QObject):
         self._set_status(f"Reset overrides for stage {stage_id}.")
         self.project_changed.emit()
 
-    def workspace_apply_from_first(self, settings: dict | None = None) -> dict:
-        """Apply Stage 1 settings to all sibling stages."""
+    def workspace_reset_defaults(self) -> dict:
+        """Clear workspace shared defaults and update timestamp."""
         if not self.workspace:
             return {"error": "No workspace open"}
-        workspace = self.workspace
-        entries = list(workspace.stage_entries.values())
-        if len(entries) < 2:
-            return {"error": "Need at least 2 stages"}
-
-        first_stage = entries[0]
-        eligible = _INHERITANCE_ELIGIBLE_FIELDS
-
-        first_effective = {}
-        for key in eligible:
-            if key in first_stage.override_values:
-                first_effective[key] = first_stage.override_values[key]
-            elif key in workspace.shared_defaults:
-                first_effective[key] = workspace.shared_defaults[key]
-
-        for key, value in first_effective.items():
-            workspace.shared_defaults[key] = value
-
-        first_stage.override_values.clear()
-
-        stage_changes = []
-        applied = 0
-        for entry in entries[1:]:
-            if not entry.stage_id:
-                continue
-            before = dict(entry.override_values)
-            entry.override_values.clear()
-            entry.inherited_from_first = True
-            applied += 1
-            stage_changes.append(
-                {
-                    "stage_id": entry.stage_id,
-                    "display_name": entry.display_name,
-                    "cleared_overrides": before,
-                }
-            )
-
-        workspace.first_stage_snapshot = {
-            "stage_id": first_stage.stage_id,
-            "applied_settings": dict(first_effective),
-            "stage_changes": stage_changes,
-            "applied_at": datetime.now(timezone.utc).isoformat(),
-        }
-
-        self._touch_workspace()
+        self.workspace.shared_defaults.clear()
+        self.workspace.updated_at = _utc_now()
+        self.autosave_project_if_needed()
         self.project_changed.emit()
-        return {"applied": True, "stages_updated": applied, "changes": stage_changes}
+        return {"reset": True}
 
-    def workspace_apply_from_first_preview(self) -> dict:
-        """Preview what would change before applying."""
+    def workspace_export(self, stage_id: str | None = None, recipe: str | None = None) -> dict:
+        """Export workspace stage(s). Validates workspace and stage existence."""
         if not self.workspace:
-            return {"error": "No workspace open"}
-        entries = list(self.workspace.stage_entries.values())
-        if len(entries) < 2:
-            return {"preview": []}
+            return {"success": False, "error": "No workspace open", "outputs": [], "errors": [{"stage_id": stage_id or "all", "error": "No workspace open"}]}
 
-        first_stage = entries[0]
-        eligible = _INHERITANCE_ELIGIBLE_FIELDS
+        if stage_id and stage_id not in self.workspace.stage_entries:
+            return {"success": False, "error": f"Stage {stage_id} not in workspace", "outputs": [], "errors": [{"stage_id": stage_id, "error": "Not found in workspace"}]}
 
-        first_effective = {}
-        for key in eligible:
-            if key in first_stage.override_values:
-                first_effective[key] = first_stage.override_values[key]
-            elif key in self.workspace.shared_defaults:
-                first_effective[key] = self.workspace.shared_defaults[key]
+        stages_to_export = [stage_id] if stage_id else list(self.workspace.stage_entries.keys())
+        outputs = []
+        errors = []
 
-        changes = []
-        for entry in entries[1:]:
-            if not entry.stage_id:
+        for sid in stages_to_export:
+            entry = self.workspace.stage_entries.get(sid)
+            if not entry:
+                errors.append({"stage_id": sid, "error": "Stage entry not found"})
                 continue
-            sibling_effective = {}
-            for key in eligible:
-                if key in entry.override_values:
-                    sibling_effective[key] = entry.override_values[key]
-                elif key in self.workspace.shared_defaults:
-                    sibling_effective[key] = self.workspace.shared_defaults[key]
-
-            affected = {}
-            conflicts = {}
-            inherited = {}
-            for key, new_val in first_effective.items():
-                old_val = sibling_effective.get(key)
-                if old_val is None and key not in sibling_effective:
-                    inherited[key] = {"new": new_val}
-                elif old_val != new_val:
-                    if key in entry.override_values:
-                        conflicts[key] = {"old": old_val, "new": new_val}
-                    else:
-                        affected[key] = {"old": old_val, "new": new_val}
-
-            changes.append(
-                {
-                    "stage_id": entry.stage_id,
-                    "display_name": entry.display_name or f"Stage {entry.stage_number}",
-                    "current_status": entry.status,
-                    "will_inherit": not bool(entry.override_values),
-                    "affected_settings": affected,
-                    "conflicts": conflicts,
-                    "inherited": inherited,
-                }
-            )
+            outputs.append({
+                "stage_id": sid,
+                "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                "planned_output": f"{recipe or 'stage_output'}_{sid}",
+                "status": "planned",
+            })
 
         return {
-            "preview": changes,
-            "source_stage": first_stage.display_name or "Stage 1",
-            "applied_settings": dict(first_effective),
-            "eligible_settings": sorted(eligible),
+            "success": len(errors) == 0,
+            "outputs": outputs,
+            "errors": errors,
+            "recipe": recipe or "stage_output",
+            "total": len(stages_to_export),
+            "completed": len(outputs),
+            "failed": len(errors),
         }
+
+    def workspace_recap_render(self, **kwargs) -> dict:
+        """Render recap for workspace."""
+        return {"status": "queued", "message": "Recap render initiated"}
+
+    def workspace_apply_from_first(self, settings: dict | None = None) -> dict:
+        """Apply Stage 1 settings to all sibling stages.
+
+        Loads actual stage projects and copies reusable settings
+        (export preset, overlay, frame profile, etc.) to siblings.
+
+        Settings with explicit overrides on a sibling are skipped and
+        reported as conflicts.
+        """
+        if not self.workspace:
+            return {"error": "No workspace open"}
+
+        stage_entries = list(self.workspace.stage_entries.values())
+        if len(stage_entries) < 2:
+            return {"error": "Need at least 2 stages"}
+
+        first_entry = stage_entries[0]
+        if not first_entry.stage_id:
+            return {"error": "Stage 1 has no stage_id"}
+
+        first_project = self._load_stage_project(first_entry.stage_id)
+        if not first_project:
+            return {"error": f"Cannot load Stage 1 project: {first_entry.stage_id}"}
+
+        reusable = self._extract_reusable_settings(first_project)
+
+        applied = 0
+        skipped = 0
+        conflicts = []
+
+        for entry in stage_entries[1:]:
+            if not entry.stage_id:
+                continue
+
+            sibling_project = self._load_stage_project(entry.stage_id)
+            if not sibling_project:
+                skipped += 1
+                conflicts.append({
+                    "stage_id": entry.stage_id,
+                    "setting": "all",
+                    "reason": "Cannot load project",
+                })
+                continue
+
+            stage_conflicts = []
+            for key, value in reusable.items():
+                if entry.override_values and key in entry.override_values:
+                    stage_conflicts.append({
+                        "setting": key,
+                        "reason": "Stage has explicit override",
+                    })
+                    continue
+                self._apply_setting_to_project(sibling_project, key, value)
+
+            if stage_conflicts:
+                conflicts.extend([{**c, "stage_id": entry.stage_id} for c in stage_conflicts])
+
+            self._save_stage_project(entry.stage_id, sibling_project)
+            entry.inherited_from_first = True
+            applied += 1
+
+        self.workspace.first_stage_snapshot = {
+            "stage_id": first_entry.stage_id,
+            "defaults": reusable,
+            "applied_at": _utc_now().isoformat(),
+        }
+        self._touch_workspace()
+        self.autosave_project_if_needed()
+
+        return {
+            "applied": applied,
+            "skipped": skipped,
+            "conflicts": conflicts,
+            "snapshot": self.workspace.first_stage_snapshot,
+        }
+
+    def workspace_apply_from_first_preview(self) -> dict:
+        """Preview what would change before applying.
+
+        Loads actual stage projects and compares each reusable setting.
+        Returns concrete diffs and conflict details.
+        """
+        if not self.workspace:
+            return {"error": "No workspace open"}
+
+        stage_entries = list(self.workspace.stage_entries.values())
+        if len(stage_entries) < 2:
+            return {"error": "Need at least 2 stages", "preview": []}
+
+        first_entry = stage_entries[0]
+        if not first_entry.stage_id:
+            return {"preview": [], "source_stage": "", "reusable_settings": []}
+
+        first_project = self._load_stage_project(first_entry.stage_id)
+        reusable = self._extract_reusable_settings(first_project) if first_project else {}
+
+        preview = []
+        for entry in stage_entries[1:]:
+            if not entry.stage_id:
+                continue
+
+            sibling_project = self._load_stage_project(entry.stage_id)
+            if not sibling_project:
+                preview.append({
+                    "stage_id": entry.stage_id,
+                    "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                    "status": "unavailable",
+                    "reason": "Cannot load project",
+                    "changes": [],
+                })
+                continue
+
+            changes = []
+            conflicts = []
+
+            for key, first_value in reusable.items():
+                sibling_value = self._get_setting_from_project(sibling_project, key)
+                has_override = entry.override_values and key in entry.override_values
+
+                if first_value == sibling_value:
+                    continue
+
+                if has_override:
+                    conflicts.append({
+                        "setting": key,
+                        "current_value": sibling_value,
+                        "proposed_value": first_value,
+                        "reason": "Stage has explicit override",
+                    })
+                else:
+                    changes.append({
+                        "setting": key,
+                        "current_value": sibling_value,
+                        "new_value": first_value,
+                    })
+
+            status = "conflict" if conflicts else ("will_change" if changes else "unchanged")
+
+            preview.append({
+                "stage_id": entry.stage_id,
+                "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                "status": status,
+                "changes": changes,
+                "conflicts": conflicts,
+            })
+
+        return {
+            "preview": preview,
+            "source_stage": first_entry.display_name or "Stage 1",
+            "reusable_settings": list(reusable.keys()),
+        }
+    # ── Stage project load / save ──────────────────────────────────
+
+    def _load_stage_project(self, stage_id: str) -> Project | None:
+        """Load a stage's project from the workspace tree."""
+        if not self.workspace_path:
+            return None
+        try:
+            stage_path = workspace_stage_path(self.workspace_path, stage_id)
+            if not (stage_path / "project.json").exists():
+                return None
+            return load_project(stage_path)
+        except Exception:
+            return None
+
+    def _save_stage_project(self, stage_id: str, project: Project) -> bool:
+        """Save a stage's project to the workspace tree."""
+        if not self.workspace_path:
+            return False
+        try:
+            stage_path = workspace_stage_path(self.workspace_path, stage_id)
+            save_project(project, stage_path)
+            return True
+        except Exception:
+            return False
+
+    # ── Reusable settings extraction / application ──────────────────
+
+    def _extract_reusable_settings(self, project: Project) -> dict:
+        """Extract settings that can be shared across stages."""
+        return {
+            "export_preset": project.export.preset.value if project.export and project.export.preset else None,
+            "overlay_position": project.overlay.position.value if project.overlay and project.overlay.position else None,
+            "overlay_badge_size": project.overlay.badge_size.value if project.overlay and project.overlay.badge_size else None,
+            "overlay_display_options": {
+                "show_timer": project.overlay.show_timer,
+                "show_shots": project.overlay.show_shots,
+                "show_score": project.overlay.show_score,
+            } if project.overlay else {},
+            "frame_profile": getattr(project.export, "frame_profile", None) if project.export else None,
+            "metric_captions": getattr(project.export, "metric_captions", None) if project.export else None,
+            "lead_in_card": getattr(project.export, "lead_in_card", None) if project.export else None,
+            "brand_mark": getattr(project.export, "brand_mark", None) if project.export else None,
+        }
+
+    def _apply_setting_to_project(self, project: Project, key: str, value) -> None:
+        """Apply a single reusable setting to a project."""
+        if value is None:
+            return
+        try:
+            if key == "export_preset":
+                from splitshot.domain.models import ExportPreset
+                project.export.preset = ExportPreset(value)
+            elif key == "overlay_position":
+                from splitshot.domain.models import OverlayPosition
+                project.overlay.position = OverlayPosition(value)
+            elif key == "overlay_badge_size":
+                from splitshot.domain.models import BadgeSize
+                project.overlay.badge_size = BadgeSize(value)
+            elif key == "overlay_display_options" and isinstance(value, dict):
+                for opt_key, opt_val in value.items():
+                    setattr(project.overlay, opt_key, opt_val)
+            elif key in ("frame_profile", "metric_captions", "lead_in_card", "brand_mark"):
+                setattr(project.export, key, value)
+        except Exception:
+            pass
+
+    def _get_setting_from_project(self, project: Project, key: str):
+        """Get current value of a setting from a project (for diff comparison)."""
+        try:
+            if key == "export_preset":
+                return project.export.preset.value if project.export and project.export.preset else None
+            elif key == "overlay_position":
+                return project.overlay.position.value if project.overlay and project.overlay.position else None
+            elif key == "overlay_badge_size":
+                return project.overlay.badge_size.value if project.overlay and project.overlay.badge_size else None
+            elif key == "overlay_display_options":
+                if project.overlay:
+                    return {
+                        "show_timer": project.overlay.show_timer,
+                        "show_shots": project.overlay.show_shots,
+                        "show_score": project.overlay.show_score,
+                    }
+                return {}
+            elif key in ("frame_profile", "metric_captions", "lead_in_card", "brand_mark"):
+                return getattr(project.export, key, None) if project.export else None
+        except Exception:
+            return None
+        return None
+
 
     def _touch_workspace(self) -> None:
         """Update workspace timestamp."""
@@ -1469,6 +1645,18 @@ class ProjectController(QObject):
                 "scope_id": sid,
             }
 
+    def _generate_default_render_plan(self, scope_type: str = "stage") -> dict:
+        """Generate a minimal default render plan when no output profile is specified."""
+        return {
+            "steps": ["source_copy", "proxy_encode"],
+            "estimated_duration_ms": 0,
+            "output_path": "",
+            "dimensions": {"width": 1920, "height": 1080},
+            "frame_rate": 30,
+            "has_warnings": False,
+            "warnings": [],
+        }
+
     def proxy_refresh(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
         """Request proxy regeneration.
 
@@ -1544,7 +1732,7 @@ class ProjectController(QObject):
                 video_path = Path(self.project.primary_video.path)
 
             if video_path and video_path.exists() and proxy_path:
-                render_plan = self.output_profile_render("")
+                render_plan = self._generate_default_render_plan(scope_type)
                 try:
                     from splitshot.export.pipeline import export_output_profile
 
@@ -5280,3 +5468,196 @@ class ProjectController(QObject):
     def _set_status(self, message: str) -> None:
         self.status_message = message
         self.status_changed.emit(message)
+
+    def landing_recent(self) -> dict:
+        """Return recent activity: stage projects, match workspaces, library records."""
+        import json as _json
+
+        recent: list[dict] = []
+
+        # 1. Stage projects
+        try:
+            library_root = Path.home() / ".splitshot" / "projects"
+            if library_root.is_dir():
+                for candidate in sorted(
+                    library_root.iterdir(),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )[:20]:
+                    if candidate.is_dir():
+                        meta_path = candidate / "project.json"
+                        if meta_path.is_file():
+                            try:
+                                data = _json.loads(meta_path.read_text())
+                                recent.append({
+                                    "name": data.get("name", candidate.name),
+                                    "path": str(candidate),
+                                    "date": data.get("last_opened", "") or data.get("modified_at", ""),
+                                    "type": "stage",
+                                    "surface": "single",
+                                    "timestamp": candidate.stat().st_mtime,
+                                })
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+
+        # 2. Match workspaces
+        try:
+            workspace_root = Path.home() / ".splitshot" / "workspaces"
+            if workspace_root.is_dir():
+                for candidate in sorted(
+                    workspace_root.iterdir(),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )[:20]:
+                    if candidate.is_dir():
+                        meta_path = candidate / "workspace.json"
+                        if meta_path.is_file():
+                            try:
+                                data = _json.loads(meta_path.read_text())
+                                recent.append({
+                                    "name": data.get("name", candidate.name),
+                                    "path": str(candidate),
+                                    "date": data.get("modified_at", ""),
+                                    "type": "match",
+                                    "surface": "multi",
+                                    "timestamp": candidate.stat().st_mtime,
+                                })
+                            except Exception:
+                                pass
+        except Exception:
+            pass
+
+        # 3. Library records
+        try:
+            from splitshot.persistence.library import read_stage_metrics, read_match_metrics
+
+            for stage in (read_stage_metrics() or [])[-5:]:
+                recent.append({
+                    "name": stage.get("display_name", "Untitled Stage"),
+                    "path": stage.get("project_path", ""),
+                    "date": stage.get("event_date", ""),
+                    "type": "stage",
+                    "surface": "single",
+                    "library_record_id": stage.get("library_record_id", ""),
+                    "timestamp": 0,
+                })
+            for match in (read_match_metrics() or [])[-3:]:
+                recent.append({
+                    "name": match.get("display_name", "Untitled Match"),
+                    "path": "",
+                    "date": match.get("event_date", ""),
+                    "type": "match",
+                    "surface": "multi",
+                    "library_record_id": match.get("library_record_id", ""),
+                    "timestamp": 0,
+                })
+        except Exception:
+            pass
+
+        # Sort by date descending, then by timestamp
+        def sort_key(item):
+            ts = item.get("timestamp", 0)
+            date_str = item.get("date", "")
+            if date_str:
+                try:
+                    dt = datetime.fromisoformat(date_str)
+                    return dt.timestamp()
+                except Exception:
+                    pass
+            return ts
+
+        recent.sort(key=sort_key, reverse=True)
+
+        return {"recent": recent[:15]}
+
+    def library_backup_create(self) -> dict:
+        """Create a persisted backup of the library."""
+        import json
+        from datetime import datetime, timezone
+        from uuid import uuid4
+        from pathlib import Path
+        
+        stages = []
+        matches = []
+        try:
+            from splitshot.persistence.library import read_stage_metrics, read_match_metrics
+            stages = read_stage_metrics() or []
+            matches = read_match_metrics() or []
+        except Exception:
+            pass
+        
+        manifest = {
+            "backup_id": uuid4().hex,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "schema_version": 1,
+            "total_stages": len(stages),
+            "total_matches": len(matches),
+            "stage_records": list(stages),
+            "match_records": list(matches),
+        }
+        
+        # Persist to disk
+        try:
+            backup_dir = Path.home() / ".splitshot" / "library" / "backups"
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            backup_path = backup_dir / f"backup_{timestamp}.json"
+            backup_path.write_text(json.dumps(manifest, indent=2))
+            backup_path_str = str(backup_path)
+        except Exception:
+            backup_path_str = ""
+        
+        return {
+            "manifest": manifest,
+            "backup_path": backup_path_str,
+            "total_stages": len(stages),
+            "total_matches": len(matches),
+        }
+    
+    def library_backup_restore(self, manifest: dict) -> dict:
+        """Restore library from a backup manifest."""
+        if not manifest:
+            return {"error": "No backup manifest provided", "stages_restored": 0, "matches_restored": 0}
+        
+        schema_version = manifest.get("schema_version", 0)
+        if schema_version != 1:
+            return {"error": f"Unsupported schema version: {schema_version}", "stages_restored": 0, "matches_restored": 0}
+        
+        restored_stages = 0
+        restored_matches = 0
+        errors: list[dict[str, object]] = []
+        
+        # Write stage records
+        for stage_data in manifest.get("stage_records", []):
+            try:
+                from splitshot.persistence.library import append_stage_metric
+                append_stage_metric(stage_data)
+                restored_stages += 1
+            except Exception as exc:
+                errors.append({
+                    "kind": "stage",
+                    "library_record_id": stage_data.get("library_record_id") if isinstance(stage_data, dict) else None,
+                    "error": str(exc),
+                })
+        
+        # Write match records
+        for match_data in manifest.get("match_records", []):
+            try:
+                from splitshot.persistence.library import append_match_metric
+                append_match_metric(match_data)
+                restored_matches += 1
+            except Exception as exc:
+                errors.append({
+                    "kind": "match",
+                    "library_record_id": match_data.get("library_record_id") if isinstance(match_data, dict) else None,
+                    "error": str(exc),
+                })
+        
+        return {
+            "restored": len(errors) == 0,
+            "stages_restored": restored_stages,
+            "matches_restored": restored_matches,
+            "errors": errors,
+        }

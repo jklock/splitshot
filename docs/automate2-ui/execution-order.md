@@ -1,3 +1,6 @@
+> **Note:** Historical ledger; invalidated by later audit. Do not execute this package. Migrate still-valid requirements into Automate3 only.
+
+
 # Execution Order
 
 This is the same-day dependency order for completing the UI overhaul.

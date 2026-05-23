@@ -1,3 +1,6 @@
+> **Note:** Current priority is remediation of route wiring and persistence. See `todo.md` for live checklist.
+
+
 # Agent Rules
 
 ## Before Editing

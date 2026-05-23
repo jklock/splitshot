@@ -1,3 +1,8 @@
+> **Note:** Historical backend-floor package. Current Gen 2 UI status lives in `../automate3/14-truth-audit-matrix.md`.
+>
+> **Warning:** UI, browser, and packaged proof rows in this document are superseded. Treat backend-floor rows as historical evidence only.
+
+
 # Remediation and Completion Plan
 
 This document is the post-merge execution reset for the automation branch after importing `main` at `v1.0.5`.

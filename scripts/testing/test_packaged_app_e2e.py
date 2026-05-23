@@ -68,7 +68,11 @@ def _resolve_tool(command: str, *, windows_fallbacks: tuple[str, ...] = ()) -> s
             return str(explicit)
     if sys.platform == "win32":
         for fallback in windows_fallbacks:
-            expanded = Path(os.path.expandvars(fallback))
+            expanded_fallback = os.path.expandvars(fallback)
+            for name, value in os.environ.items():
+                expanded_fallback = expanded_fallback.replace(f"%{name}%", value)
+            expanded_fallback = expanded_fallback.replace("\\", os.sep)
+            expanded = Path(expanded_fallback)
             if expanded.exists():
                 return str(expanded)
     raise FileNotFoundError(f"Required executable not found: {candidate or '<empty>'}")

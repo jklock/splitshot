@@ -1,64 +1,44 @@
 #!/usr/bin/env python3
-"""Capture loaded-state Automate3 view screenshots using Playwright."""
+"""Capture Automate3 loaded-state screenshots with hard proof gates."""
+from __future__ import annotations
+
 import asyncio
+import base64
+import hashlib
+import json
 import os
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from playwright.async_api import async_playwright
+from playwright.async_api import Page, async_playwright
 
-OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "docs" / "screenshots" / "automate3"
+from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
+from splitshot.persistence.library import append_match_metric, append_stage_metric, save_match_record, save_stage_record
+from splitshot.ui.controller import ProjectController
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+OUTPUT_DIR = REPO_ROOT / "docs" / "screenshots" / "automate3"
+MEDIA_PATH = REPO_ROOT / "docs" / "Clip1.MP4"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-BASE_URL = "http://127.0.0.1:8765"
-MEDIA_PATH = str((Path(__file__).resolve().parent.parent.parent / "docs" / "Clip1.MP4").absolute())
+
+class ProofFailure(RuntimeError):
+    pass
 
 
-async def wait_for_app(page):
-    await page.wait_for_selector("#app-shell", timeout=15000)
-    await page.wait_for_timeout(2000)
-
-
-async def wait_for_app_idle(page):
-    await page.wait_for_function(
-        "() => document.getElementById('processing-bar')?.hidden === true",
-        timeout=60000,
-    )
-    await page.evaluate("() => window.forceHideProcessingBar?.()")
-    await page.wait_for_timeout(500)
-
-
-async def switch_view(page, view_name):
-    nav_map = {"stage": "nav-stage", "match": "nav-match", "library": "nav-library"}
-    btn_id = nav_map.get(view_name)
-    if btn_id:
-        await page.click(f"#{btn_id}")
-    elif view_name == "landing":
-        await page.click("#shell-go-home")
-    await page.wait_for_timeout(1500)
-    await page.wait_for_selector(f"#view-{view_name}.active", timeout=5000)
-    await page.wait_for_timeout(500)
-
-
-async def capture_view(page, view_name, filename):
-    print(f"  Capturing {filename}...")
-    view_el = await page.query_selector(f"#view-{view_name}")
-    if view_el:
-        path = OUTPUT_DIR / filename
-        await view_el.screenshot(path=path)
-        print(f"    Saved: {path} ({os.path.getsize(path)} bytes)")
-    else:
-        print(f"    WARNING: #view-{view_name} not found")
-
-
-async def call_api(page, endpoint, payload=None):
+async def call_api(page: Page, endpoint: str, payload: dict[str, object] | None = None) -> dict[str, object]:
     result = await page.evaluate(
         """
         async ([endpoint, payload]) => {
-            const resp = await callApi(endpoint, payload || {});
-            return resp;
+          const data = await callApi(endpoint, payload || {});
+          if (data?.error) throw new Error(`${endpoint} failed: ${data.error}`);
+          return data;
         }
         """,
         [endpoint, payload or {}],
@@ -66,76 +46,287 @@ async def call_api(page, endpoint, payload=None):
     return result
 
 
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={"width": 1440, "height": 900})
-        page = await context.new_page()
+async def switch_view(page: Page, view_name: str) -> None:
+    if view_name == "landing":
+        await page.click("#shell-go-home")
+    else:
+        await page.click(f"#nav-{view_name}")
+    await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
+    await page.wait_for_function(
+        "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
+        arg=view_name,
+        timeout=10_000,
+    )
+    if view_name == "library":
+        await page.wait_for_function(
+            """
+            async () => {
+              const response = await fetch("/api/library/list", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: "{}",
+              });
+              const data = await response.json();
+              return (data?.total_stages || 0) + (data?.total_matches || 0) > 0;
+            }
+            """,
+            timeout=15_000,
+        )
 
-        try:
-            await page.goto(BASE_URL)
-            await wait_for_app(page)
 
-            print("\n=== Stage: Create project and import media ===")
-            await switch_view(page, "stage")
-            await call_api(page, "/api/project/new")
-            await page.wait_for_timeout(1000)
+async def wait_for_idle(page: Page) -> None:
+    await page.wait_for_function(
+        "() => document.getElementById('processing-bar')?.hidden !== false",
+        timeout=120_000,
+    )
 
-            print(f"  Importing primary media: {MEDIA_PATH}")
-            await call_api(page, "/api/import/primary", {"path": MEDIA_PATH})
 
-            print("  Waiting for shot analysis...")
-            await page.wait_for_function(
-                "() => (state?.project?.analysis?.shots?.length || 0) > 0",
-                timeout=120000,
-            )
-            await wait_for_app_idle(page)
-            print("  Analysis complete.")
+async def setup_loaded_state(page: Page) -> dict[str, object]:
+    if not MEDIA_PATH.is_file():
+        raise ProofFailure(f"missing media fixture: {MEDIA_PATH}")
+    project_dir = Path(tempfile.mkdtemp(prefix="splitshot-automate3-proof-"))
+    project_path = project_dir / "automate3-proof.ssproj"
 
-            print("\n=== Capturing Loaded Stage ===")
-            await capture_view(page, "stage", "loaded-stage.png")
+    await switch_view(page, "stage")
+    await call_api(page, "/api/project/new")
+    await call_api(page, "/api/import/primary", {"path": str(MEDIA_PATH)})
+    await page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    await wait_for_idle(page)
+    await call_api(page, "/api/project/save", {"path": str(project_path)})
 
-            print("\n=== Match: Create workspace ===")
-            await switch_view(page, "match")
-            await call_api(page, "/api/workspace/new")
-            await page.wait_for_timeout(1000)
+    await call_api(page, "/api/workspace/new", {"name": "Automate3 Proof Match"})
+    await call_api(
+        page,
+        "/api/workspace/stage/add",
+        {"stage_id": "stage-1", "display_name": "Stage 1 - Loaded Proof", "project_path": str(project_path)},
+    )
+    await call_api(
+        page,
+        "/api/workspace/stage/add",
+        {"stage_id": "stage-2", "display_name": "Stage 2 - Loaded Proof", "project_path": str(project_path)},
+    )
+    await call_api(page, "/api/workspace/save", {"path": str(project_dir / "automate3-proof-workspace.ssmatch")})
+    await wait_for_idle(page)
+    stage_record = LibraryStageRecord(
+        stage_id="stage-1",
+        match_id="automate3-proof-match",
+        display_name="Stage 1 - Loaded Proof",
+        event_date=datetime.now(timezone.utc),
+        discipline="USPSA",
+        competitor_name="Automate3 Proof",
+        metric_summary={"shot_count": 3, "score_total": 0, "cumulative_time": 7009},
+        editor_target={"type": "single", "path": str(project_path)},
+        truth_hash="automate3-proof-stage",
+        tags=["proof"],
+        notes="Generated by Automate3 loaded screenshot proof.",
+    )
+    match_record = LibraryMatchRecord(
+        match_id="automate3-proof-match",
+        display_name="Automate3 Proof Match",
+        event_date=datetime.now(timezone.utc),
+        discipline="USPSA",
+        stage_ids=["stage-1", "stage-2"],
+        aggregate_metric_summary={"stage_count": 2, "stages": ["stage-1", "stage-2"]},
+        editor_target={"type": "multi", "path": str(project_dir / "automate3-proof-workspace.ssmatch")},
+        truth_hash="automate3-proof-match",
+        tags=["proof"],
+    )
+    save_stage_record(stage_record)
+    save_match_record(match_record)
+    append_stage_metric(
+        {
+            "library_record_id": stage_record.library_record_id,
+            "stage_id": stage_record.stage_id,
+            "match_id": stage_record.match_id,
+            "display_name": stage_record.display_name,
+            "event_date": stage_record.event_date.isoformat(),
+            "discipline": stage_record.discipline,
+            "competitor_name": stage_record.competitor_name,
+            "shot_count": 3,
+            "score_total": 0,
+            "truth_hash": stage_record.truth_hash,
+        }
+    )
+    append_match_metric(
+        {
+            "library_record_id": match_record.library_record_id,
+            "match_id": match_record.match_id,
+            "display_name": match_record.display_name,
+            "event_date": match_record.event_date.isoformat(),
+            "stage_count": 2,
+            "stage_ids": match_record.stage_ids,
+            "truth_hash": match_record.truth_hash,
+        }
+    )
+    return {"project_path": str(project_path), "project_dir": str(project_dir)}
 
-            project_path = await page.evaluate("() => state?.projectPath || ''")
-            print(f"  Project path: {project_path}")
 
-            await call_api(page, "/api/workspace/stage/add", {
-                "stage_id": "stage_1",
-                "display_name": "Stage 1 - Warmup",
-                "project_path": project_path,
-            })
-            await wait_for_app_idle(page)
+async def assert_loaded_view(page: Page, view_name: str) -> dict[str, object]:
+    result = await page.evaluate(
+        """
+        async (viewName) => {
+          const view = document.getElementById(`view-${viewName}`);
+          const shell = document.getElementById("app-shell");
+          const rail = document.querySelector(".tool-rail");
+          const rect = view?.getBoundingClientRect();
+          const stageCards = document.querySelectorAll("#workspace-stage-list .match-stage-card, #workspace-stage-list [data-stage-id]").length;
+          const libraryRows = document.querySelectorAll("#library-record-list .library-record-row, #library-record-table tbody tr").length;
+          const text = view?.innerText || "";
+          let libraryState = null;
+          try {
+            const response = await fetch("/api/library/list", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+            libraryState = await response.json();
+          } catch {}
+          return {
+            activeView: shell?.dataset.activeView || "",
+            viewActive: Boolean(view?.classList.contains("active")),
+            width: Math.round(rect?.width || 0),
+            height: Math.round(rect?.height || 0),
+            horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+            railDisplay: rail ? getComputedStyle(rail).display : null,
+            text,
+            shotCount: state?.project?.analysis?.shots?.length || 0,
+            primaryAvailable: Boolean(state?.media?.primary_available),
+            waveformSamples: state?.project?.analysis?.waveform_primary?.length || 0,
+            stageCards,
+            libraryRows,
+            libraryTotal: (libraryState?.total_stages || 0) + (libraryState?.total_matches || 0) || libraryState?.total || libraryState?.records?.length || 0,
+          };
+        }
+        """,
+        view_name,
+    )
+    failures: list[str] = []
+    if result["activeView"] != view_name or not result["viewActive"]:
+        failures.append("view is not active")
+    if result["width"] <= 0 or result["height"] <= 0:
+        failures.append("view has zero bounds")
+    if result["horizontalOverflow"]:
+        failures.append("horizontal overflow")
+    text = str(result["text"])
+    if view_name == "stage":
+        if "No Video Selected" in text:
+            failures.append("stage still shows empty media state")
+        if result["shotCount"] <= 0 or not result["primaryAvailable"] or result["waveformSamples"] <= 0:
+            failures.append("stage lacks media, shots, or waveform")
+    if view_name == "match":
+        if "No Match Open" in text or result["stageCards"] < 2:
+            failures.append("match lacks loaded stage cards")
+    if view_name == "library":
+        if "Loading library data" in text or result["libraryTotal"] <= 0:
+            failures.append("library lacks persisted records")
+    if failures:
+        raise ProofFailure(f"{view_name} loaded assertion failed: {', '.join(failures)}")
+    return {key: value for key, value in result.items() if key != "text"} | {"text_length": len(text)}
 
-            print("\n=== Capturing Loaded Match ===")
-            await capture_view(page, "match", "loaded-match.png")
 
-            print("\n=== Capturing Loaded Library ===")
-            await switch_view(page, "library")
-            await page.wait_for_timeout(2000)
-            await capture_view(page, "library", "loaded-library.png")
+async def capture_loaded_view(page: Page, view_name: str, filename: str) -> dict[str, object]:
+    await switch_view(page, view_name)
+    assertions = await assert_loaded_view(page, view_name)
+    path = OUTPUT_DIR / filename
+    await page.locator(f"#view-{view_name}").screenshot(path=path)
+    data = path.read_bytes()
+    return {
+        "file": filename,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
 
-            print("\n=== Contact Sheet ===")
-            await switch_view(page, "landing")
-            await page.wait_for_timeout(1000)
-            contact_path = OUTPUT_DIR / "contact-sheet-loaded.png"
-            await page.screenshot(path=contact_path, full_page=False)
-            print(f"  Saved: {contact_path} ({os.path.getsize(contact_path)} bytes)")
 
-            print(f"\nDone. {len(list(OUTPUT_DIR.glob('*.png')))} screenshots in {OUTPUT_DIR}")
-            for f in sorted(OUTPUT_DIR.glob('*.png')):
-                print(f"  {f.name}: {os.path.getsize(f)} bytes")
+def assert_distinct_from_empty(results: list[dict[str, object]]) -> None:
+    pairs = {
+        "loaded-stage.png": "empty-stage.png",
+        "loaded-match.png": "empty-match.png",
+        "loaded-library.png": "empty-library.png",
+    }
+    by_file = {str(item["file"]): item for item in results}
+    for loaded, empty in pairs.items():
+        empty_path = OUTPUT_DIR / empty
+        if empty_path.exists() and by_file[loaded]["sha256"] == hashlib.sha256(empty_path.read_bytes()).hexdigest():
+            raise ProofFailure(f"{loaded} is byte-identical to {empty}")
 
-        except Exception as e:
-            print(f"ERROR: {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
+
+async def build_contact_sheet(page: Page, images: list[dict[str, object]]) -> dict[str, object]:
+    cards = "\n".join(
+        f"<figure><figcaption>{item['file']}</figcaption>"
+        f"<img src=\"data:image/png;base64,{base64.b64encode(Path(str(item['path'])).read_bytes()).decode('ascii')}\" /></figure>"
+        for item in images
+    )
+    await page.set_viewport_size({"width": 1440, "height": 900})
+    await page.set_content(
+        f"""
+        <html><head><style>
+        body {{ margin: 0; background: #101214; color: #f2f4f7; font: 13px system-ui, sans-serif; }}
+        main {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 14px; }}
+        figure {{ margin: 0; border: 1px solid #30363d; background: #171b20; }}
+        figcaption {{ padding: 7px 9px; font-weight: 800; }}
+        img {{ display: block; width: 100%; height: 235px; object-fit: contain; background: #050607; }}
+        </style></head><body><main>{cards}</main></body></html>
+        """,
+        wait_until="load",
+    )
+    path = OUTPUT_DIR / "contact-sheet-final.png"
+    await page.screenshot(path=path, full_page=False)
+    data = path.read_bytes()
+    return {"file": path.name, "path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+
+async def run() -> dict[str, object]:
+    previous_library_root = os.environ.get("SPLITSHOT_LIBRARY_ROOT")
+    proof_library_root = tempfile.mkdtemp(prefix="splitshot-automate3-library-")
+    os.environ["SPLITSHOT_LIBRARY_ROOT"] = proof_library_root
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    console_errors: list[str] = []
+    loaded: list[dict[str, object]] = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page(viewport={"width": 1440, "height": 900})
+            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on("pageerror", lambda exc: console_errors.append(str(exc)))
+            await page.goto(server.url, wait_until="domcontentloaded")
+            await page.wait_for_selector("#app-shell", timeout=15_000)
+            setup = await setup_loaded_state(page)
+            loaded.append(await capture_loaded_view(page, "stage", "loaded-stage.png"))
+            loaded.append(await capture_loaded_view(page, "match", "loaded-match.png"))
+            loaded.append(await capture_loaded_view(page, "library", "loaded-library.png"))
+            assert_distinct_from_empty(loaded)
+            contact = await build_contact_sheet(page, loaded)
             await browser.close()
+
+        if console_errors:
+            raise ProofFailure(f"console errors during loaded capture: {console_errors}")
+        proof = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "kind": "loaded",
+            "status": "pass",
+            "setup": setup | {"library_root": proof_library_root},
+            "screenshots": loaded,
+            "contact_sheet": contact,
+        }
+        (OUTPUT_DIR / "loaded-proof-results.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
+        return proof
+    finally:
+        server.shutdown()
+        if previous_library_root is None:
+            os.environ.pop("SPLITSHOT_LIBRARY_ROOT", None)
+        else:
+            os.environ["SPLITSHOT_LIBRARY_ROOT"] = previous_library_root
+
+
+def main() -> int:
+    try:
+        proof = asyncio.run(run())
+    except Exception as exc:
+        print(f"FAILED: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(proof, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(main())

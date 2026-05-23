@@ -1,3 +1,6 @@
+> **Note:** Historical first-pass UI package. Do not execute directly. Current work starts in `docs/automate3` and `docs/automate3-ui`.
+
+
 # Automate UI
 
 This package is the UI completion command center for the automation work already implemented in `docs/automate/`.

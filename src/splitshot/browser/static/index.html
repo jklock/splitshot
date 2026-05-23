@@ -28,6 +28,16 @@
           <button id="shell-settings" class="shell-action-button" type="button" aria-label="Settings">⚙</button>
           <button id="shell-return-match" class="shell-action-button" type="button" hidden aria-label="Return to match">← Match</button>
         </div>
+        <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
+          <div class="processing-copy">
+            <strong id="processing-message">Ready.</strong>
+            <span id="processing-detail">Local processing</span>
+          </div>
+          <div class="processing-progress-track" aria-hidden="true">
+            <div id="processing-progress-fill" class="processing-progress-fill"></div>
+          </div>
+          <span id="processing-percent">0%</span>
+        </section>
       </header>
       <div id="view-root">
         <div id="view-landing" class="app-view view-landing">
@@ -239,16 +249,6 @@
               </section>
             </div>
           </section>
-        </section>
-        <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
-          <div class="processing-copy">
-            <strong id="processing-message">Ready.</strong>
-            <span id="processing-detail">Local processing</span>
-          </div>
-          <div class="processing-progress-track" aria-hidden="true">
-            <div id="processing-progress-fill" class="processing-progress-fill"></div>
-          </div>
-          <span id="processing-percent">0%</span>
         </section>
 
         <div class="review-grid">

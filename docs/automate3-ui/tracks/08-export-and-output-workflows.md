@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. Export/recap routes are unregistered. See `../todo.md` for live checklist.
+
+
 # Track 08: Export And Output Workflows
 
 ## Goal

@@ -1,10 +1,13 @@
+> **Note:** Historical ledger; invalidated by later audit. Do not execute this package. Migrate still-valid requirements into Automate3 only.
+
+
 # Progress
 
 This is the live execution ledger for the Automate2 UI package.
 
 ## Current Phase
 
-Phase: Complete
+Phase: Historical ledger; invalidated by later audit. All claims below are unproven unless backed by a rerun command and artifact path.
 
 ## Discovery Findings (2026-05-20)
 

@@ -1,3 +1,6 @@
+> **Warning:** Historical snapshot; do not use as current completion status. See `docs/automate3/14-truth-audit-matrix.md` for current truth.
+
+
 # PROOF-04-05: Data Model & Technical Architecture Validation
 
 Validated against:

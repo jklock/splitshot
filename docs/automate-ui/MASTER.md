@@ -1,3 +1,6 @@
+> **Note:** Historical first-pass UI package. Do not execute directly. Current work starts in `docs/automate3` and `docs/automate3-ui`.
+
+
 # MASTER
 
 `docs/automate-ui/spec.md` is the single exhaustive UI build spec for this work.

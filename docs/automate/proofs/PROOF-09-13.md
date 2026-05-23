@@ -1,3 +1,6 @@
+> **Warning:** Historical snapshot; do not use as current completion status. See `docs/automate3/14-truth-audit-matrix.md` for current truth.
+
+
 # PROOF-09-13: Automation Source-Level Validation Snapshot
 
 **Date**: 2026-05-19

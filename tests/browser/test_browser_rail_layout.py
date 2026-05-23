@@ -136,7 +136,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 page.wait_for_function(
                     "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
-                assert toggle_button.text_content() == "▶"
+                assert toggle_button.text_content() == "EXP"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
 
                 collapsed_settings_box = settings_button.bounding_box()
@@ -154,7 +154,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 )
                 page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
                 assert page.locator('.tool-item.active[data-tool="settings"]').count() == 1
-                assert page.locator("#toggle-rail").text_content() == "▶"
+                assert page.locator("#toggle-rail").text_content() == "EXP"
                 assert (
                     page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
                 )
@@ -312,11 +312,13 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                 )
 
                 processing_box = page.locator("#processing-bar").bounding_box()
+                header_box = page.locator(".shell-header").bounding_box()
                 assert processing_box is not None
-                assert processing_box["x"] == pytest.approx(status_box["x"], abs=1)
-                assert processing_box["y"] == pytest.approx(status_box["y"], abs=1)
-                assert processing_box["width"] == pytest.approx(status_box["width"], abs=1)
-                assert processing_box["height"] == pytest.approx(status_box["height"], abs=1)
+                assert header_box is not None
+                assert processing_box["x"] == pytest.approx(header_box["x"] + 16, abs=2)
+                assert processing_box["y"] == pytest.approx(57, abs=4)
+                assert processing_box["width"] == pytest.approx(header_box["width"] - 32, abs=5)
+                assert processing_box["height"] == 38
 
                 page.evaluate("""() => {
                     forceHideProcessingBar('Ready.');
@@ -487,6 +489,28 @@ def test_marker_workbench_bottom_resize_is_temporary_and_restores_waveform_heigh
                     page.evaluate("state?.project?.ui_state?.waveform_height")
                     == initial_waveform_height
                 )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_stage_surface_shows_tool_rail_after_project_load(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="rail-surface-test"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                # After loading a project, the app should be in stage view with visible tools
+                project_button = page.locator('button[data-tool="project"]')
+                project_button.wait_for(state="visible", timeout=5000)
+                assert project_button.is_visible()
+                # Also verify the rail itself is visible
+                rail = page.locator(".tool-rail")
+                assert rail.is_visible()
             finally:
                 browser.close()
     finally:

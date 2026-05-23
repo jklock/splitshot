@@ -1,3 +1,6 @@
+> **Note:** Historical first-pass UI package. Do not execute directly. Current work starts in `docs/automate3` and `docs/automate3-ui`.
+
+
 # Automate UI Spec
 
 Audited against the merged `automate` branch on 2026-05-20 after importing `main` at `v1.0.5`.

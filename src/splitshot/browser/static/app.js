@@ -10612,8 +10612,6 @@ function wireEvents() {
     const text = $("library-notes-text")?.value || "";
     saveLibraryNotes(text);
   });
-  $("setup-once-apply")?.addEventListener("click", async () => {
-
   // Backup
   $("library-backup-create")?.addEventListener("click", async () => {
     activity("ui.library.backup.create");
@@ -10671,9 +10669,11 @@ function wireEvents() {
     };
     input.click();
   });
+
+  $("setup-once-apply")?.addEventListener("click", async () => {
     activity("ui.setup-once.apply");
     if (!confirm("Applying Stage 1 settings to all stages. This will copy:\n- Output profiles\n- Trim dead time\n- Shot data on screen\n- Video shape\n- Opening title\n- Your logo\n\nProceed?")) return;
-    callApi("/api/workspace/setup-once/apply", { workspace_id: state?.project?.id });
+    callApi("/api/workspace/apply-from-first", { workspace_id: state?.project?.id });
   });
   $("setup-once-dismiss")?.addEventListener("click", () => {
     const banner = domById("setup-once-banner");
@@ -11853,6 +11853,9 @@ if (!isAutomated) {
   } else if (activeSurface === "landing") {
     setActiveSurface("landing", { persist: false, openPanel: false });
   }
+} else if (activeSurface === "landing") {
+  activeSurface = "single";
+  setActiveSurface("single", { persist: false, openPanel: false });
 }
 setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false });
 wireElectronProjectOpen();
@@ -11862,3 +11865,16 @@ wireShellHeaderEvents();
 wireLandingNavigation();
 startActivityPolling();
 refresh();
+
+// === Test Global Exposure ===
+// Expose module variables for Playwright tests. Object.defineProperty is used so
+// reassignments of the module-level variables are automatically reflected.
+Object.defineProperties(window, {
+  state: { get: () => state, configurable: true },
+  activeTool: { get: () => activeTool, configurable: true },
+  activeSurface: { get: () => activeSurface, configurable: true },
+});
+window.createNewProject = createNewProject;
+window.setActiveTool = setActiveTool;
+window.setActiveSurface = setActiveSurface;
+window.renderAutomationSurface = renderAutomationSurface;

@@ -34,7 +34,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Export | output path, preset, quality, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
+        "| Export | output path, preset, quality, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
         in matrix
     )
     assert (

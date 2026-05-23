@@ -1,12 +1,28 @@
-# Automate3 Screenshot Index
+# Automate3 Screenshot Proof Index
 
-| Filename | View | State | Viewport | Description |
-|----------|------|-------|----------|-------------|
-| empty-landing.png | Landing | Empty | 1440x900 | First-run landing page with entry cards and Recent Stages |
-| empty-stage.png | Stage | Empty | 1440x900 | Stage view with no media loaded, showing empty state |
-| empty-match.png | Match | Empty | 1440x900 | Match view with no workspace, showing "No Match Open" empty state |
-| empty-library.png | Library | Empty | 1440x900 | Library view with no records, showing "No Performance History" |
-| loaded-stage.png | Stage | Loaded | 1440x900 | Stage view with Clip1.MP4 imported and analyzed |
-| loaded-match.png | Match | Loaded | 1440x900 | Match view with workspace containing stage |
-| loaded-library.png | Library | Loaded | 1440x900 | Library view with records |
-| contact-sheet.png | All | Mixed | 1440x900 | Full-page landing contact sheet |
+Current proof files:
+
+- `proof-results.json`: empty states
+- `loaded-proof-results.json`: loaded states
+- `contact-sheet.png`: empty contact sheet
+- `contact-sheet-final.png`: loaded contact sheet
+
+Generated screenshots:
+
+| File | State | Status |
+|---|---|---|
+| `empty-landing.png` | Landing empty | pass |
+| `empty-stage.png` | Stage empty | pass |
+| `empty-match.png` | Match empty | pass |
+| `empty-library.png` | Library empty | pass |
+| `loaded-stage.png` | Stage loaded with Clip1.MP4, waveform, and shots | pass |
+| `loaded-match.png` | Match loaded with two stage cards | pass |
+| `loaded-library.png` | Library loaded with persisted rows | pass |
+
+Still required before final completion:
+
+- PiP/multi-angle loaded screenshot
+- export progress screenshot
+- export complete screenshot
+- returning-user landing screenshot
+- final human/vision approval

@@ -1,3 +1,6 @@
+> **Note:** Historical first-pass UI package. Do not execute directly. Current work starts in `docs/automate3` and `docs/automate3-ui`.
+
+
 # Automate UI Outcomes
 
 ## Completion Definition

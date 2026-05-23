@@ -1,3 +1,6 @@
+> **Note:** Track status is open. No proof has been captured with state predicates. See `../todo.md` for live checklist.
+
+
 # Track 10: Proof, Regression, And Release
 
 ## Required Test Order

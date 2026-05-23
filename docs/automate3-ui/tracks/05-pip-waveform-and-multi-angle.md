@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. See `../todo.md` for live checklist.
+
+
 # Track 05: PiP, Waveform, And Multi-Angle
 
 ## Goal

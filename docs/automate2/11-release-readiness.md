@@ -1,3 +1,6 @@
+> **Note:** Automate2 is a historical feature-inventory package. Current implementation status lives in `docs/automate3/14-truth-audit-matrix.md`.
+
+
 # Release Readiness
 
 This document defines the release readiness criteria for SplitShot v2.

@@ -1,0 +1,84 @@
+{
+  "generated_at": "2026-05-22T21:43:28.551460+00:00",
+  "kind": "loaded",
+  "status": "pass",
+  "setup": {
+    "project_path": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-proof-1fz7k_q8/automate3-proof.ssproj",
+    "project_dir": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-proof-1fz7k_q8",
+    "library_root": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-library-kc2un6s8"
+  },
+  "screenshots": [
+    {
+      "file": "loaded-stage.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-stage.png",
+      "bytes": 150259,
+      "sha256": "353b2db865ccaefa4735aa38cff285179aaa42e1c75cefe6661aa9fff5785b7c",
+      "assertions": {
+        "activeView": "stage",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "horizontalOverflow": false,
+        "railDisplay": "grid",
+        "shotCount": 3,
+        "primaryAvailable": true,
+        "waveformSamples": 4096,
+        "stageCards": 2,
+        "libraryRows": 0,
+        "libraryTotal": 4,
+        "text_length": 1461
+      },
+      "status": "pass"
+    },
+    {
+      "file": "loaded-match.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-match.png",
+      "bytes": 69768,
+      "sha256": "231dbfc46b2b14f975f68f06ef28593a0ac994fb28785a68827d88277e316d28",
+      "assertions": {
+        "activeView": "match",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "horizontalOverflow": false,
+        "railDisplay": "none",
+        "shotCount": 3,
+        "primaryAvailable": true,
+        "waveformSamples": 4096,
+        "stageCards": 2,
+        "libraryRows": 0,
+        "libraryTotal": 4,
+        "text_length": 1091
+      },
+      "status": "pass"
+    },
+    {
+      "file": "loaded-library.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-library.png",
+      "bytes": 73222,
+      "sha256": "add69528a099d99db09ec5df7cc9a9ad51745f434d8d9713421e7fc44d2df2a4",
+      "assertions": {
+        "activeView": "library",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "horizontalOverflow": false,
+        "railDisplay": "none",
+        "shotCount": 3,
+        "primaryAvailable": true,
+        "waveformSamples": 4096,
+        "stageCards": 2,
+        "libraryRows": 4,
+        "libraryTotal": 4,
+        "text_length": 790
+      },
+      "status": "pass"
+    }
+  ],
+  "contact_sheet": {
+    "file": "contact-sheet-final.png",
+    "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/contact-sheet-final.png",
+    "bytes": 66693,
+    "sha256": "626f29e78d9e76a7da3e1b65252cc0501a86bb93569358427ed782654314154c"
+  }
+}

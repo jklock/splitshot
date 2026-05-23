@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. See `../todo.md` for live checklist.
+
+
 # Track 04: Stage Video Edit
 
 ## Goal

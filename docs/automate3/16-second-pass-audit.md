@@ -1,3 +1,6 @@
+> **Note:** Historical audit. Not a current readiness gate.
+
+
 # Second-Pass Pre-Implementation Review
 
 > **Status:** All 12 gaps identified in this audit were resolved in the planning package by 2026-05-21. Core UI implementation is now ~80% complete. This document is retained as an audit trail.

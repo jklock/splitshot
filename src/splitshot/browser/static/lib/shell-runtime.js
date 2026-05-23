@@ -90,6 +90,7 @@ export function createShellRuntime({
   scheduleScoringApply = () => {},
   handleStageFullscreenChange = () => {},
   logPrimaryVideoState = () => {},
+  markPreviewSeekBoundary = () => {},
   scheduleSecondaryPreviewSync = () => {},
   startOverlayLoop = () => {},
   stopOverlayLoop = () => {},
@@ -552,7 +553,7 @@ export function createShellRuntime({
     documentObject.addEventListener("webkitfullscreenchange", handleStageFullscreenChange);
     ["loadedmetadata", "loadeddata"].forEach((eventName) => {
       $("primary-video").addEventListener(eventName, () => {
-        previewSeekBoundary = true;
+        markPreviewSeekBoundary();
         logPrimaryVideoState(eventName);
         scheduleSecondaryPreviewSync();
         renderLiveOverlay();

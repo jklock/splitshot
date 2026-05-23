@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. See `../todo.md` for live checklist.
+
+
 # Track 03: Landing Page
 
 ## Goal

@@ -1632,3 +1632,96 @@ button:disabled {
   font-size: 0.75rem;
   padding: 4px 0;
 }
+
+.library-proxy-section {
+  margin-top: 12px;
+}
+
+.library-proxy-section .warning {
+  color: var(--warning, #f59e0b);
+}
+
+.library-proxy-section .error {
+  color: var(--red);
+}
+
+.library-proxy-section .success {
+  color: var(--green);
+}
+
+.library-compare-rows {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+.library-compare-column {
+  background: var(--surface-2, #202326);
+  border: 1px solid var(--line, #30353b);
+  border-radius: 4px;
+  padding: 12px;
+}
+.library-compare-column strong {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted, #a4aab2);
+  margin-bottom: 8px;
+}
+.library-compare-content {
+  font-size: 13px;
+  color: var(--text, #f4f5f6);
+}
+.library-compare-content p {
+  margin: 4px 0;
+}
+.library-compare-content .compare-label {
+  color: var(--muted, #a4aab2);
+  font-size: 11px;
+}
+
+.notification-toast {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  padding: 10px 16px;
+  border-radius: 6px;
+  background: var(--surface-2, #202326);
+  border: 1px solid var(--line, #30353b);
+  color: var(--text, #f4f5f6);
+  font-size: 13px;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease;
+}
+.notification-toast.notification-success { border-color: var(--green, #39d06f); }
+.notification-toast.notification-error { border-color: var(--red, #f05252); }
+.notification-toast.notification-info { border-color: var(--accent, #ff7b22); }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.inline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: 4px;
+  background: rgba(240, 82, 82, 0.1);
+  border: 1px solid var(--red, #f05252);
+  color: var(--red, #f05252);
+  font-size: 12px;
+}
+.inline-error-text { flex: 1; }
+.inline-error-retry,
+.inline-error-dismiss {
+  background: var(--surface-2, #202326);
+  border: 1px solid var(--line, #30353b);
+  color: var(--text, #f4f5f6);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.inline-error-retry:hover,
+.inline-error-dismiss:hover {
+  border-color: var(--red, #f05252);
+}

@@ -1,3 +1,5 @@
+> **Note:** Historical backend-floor package.
+
 # Automation Truth Audit Matrix
 
 Audited on 2026-05-20 against live repo code, route/state surfaces, targeted tests, and the shipped `main` baseline at `v1.0.5`.

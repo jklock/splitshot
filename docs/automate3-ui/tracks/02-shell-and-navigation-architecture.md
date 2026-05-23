@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. Shell architecture is wired but rail regression and route contracts are open. See `../todo.md` for live checklist.
+
+
 # Track 02: Shell And Navigation Architecture
 
 ## Goal

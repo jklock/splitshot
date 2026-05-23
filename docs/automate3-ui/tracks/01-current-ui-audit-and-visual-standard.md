@@ -1,3 +1,6 @@
+> **Note:** Track status is partial. See `../todo.md` for live checklist.
+
+
 # Track 01: Current UI Audit And Visual Standard
 
 ## Current Evidence

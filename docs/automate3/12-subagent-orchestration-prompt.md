@@ -1,3 +1,6 @@
+> **Note:** Current priority is remediation of existing code, not new feature implementation. See `14-truth-audit-matrix.md` for blockers.
+
+
 # Automate3 Orchestration Prompt
 
 You are the Automate3 implementation agent for SplitShot. Build the final Stage/Match/Library UI end to end.

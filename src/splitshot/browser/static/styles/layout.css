@@ -164,7 +164,7 @@
   position: relative;
 }
 
-.processing-bar {
+.shell-header .processing-bar {
   align-items: center;
   background: #1f2a18;
   border-bottom: 1px solid #3f6a28;
@@ -175,25 +175,23 @@
   min-height: var(--topbar-height);
   height: var(--topbar-height);
   padding: 0 0.85rem;
-  left: 0;
-  position: absolute;
-  right: 0;
-  top: 0;
+  position: relative;
+  width: 100%;
   z-index: 20;
 }
 
-.processing-bar[hidden] {
+.shell-header .processing-bar[hidden] {
   display: none !important;
 }
 
-.processing-bar strong {
+.shell-header .processing-bar strong {
   font-weight: 950;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.processing-bar span {
+.shell-header .processing-bar span {
   color: #b7d7aa;
   font-weight: 850;
 }
@@ -495,6 +493,7 @@ small,
 .shell-header {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 16px;
   padding: 8px 16px;
@@ -657,6 +656,9 @@ small,
 .app-shell[data-active-view="library"] .tool-rail,
 .app-shell[data-active-view="landing"] .tool-rail {
   display: none;
+}
+.app-shell[data-active-view="stage"] .tool-rail {
+  display: grid;
 }
 
 .app-shell[data-active-view="match"] #resize-rail,
@@ -859,6 +861,15 @@ small,
 .match-stage-card.selected {
   border-color: var(--accent);
   background: var(--surface-2);
+}
+
+.match-stage-card.dragging {
+  opacity: 0.5;
+}
+
+.match-stage-card.drag-over {
+  border-color: var(--accent);
+  border-style: dashed;
 }
 
 .match-stage-number {
@@ -1078,12 +1089,13 @@ small,
 
 .library-record-row {
   display: grid;
-  grid-template-columns: 1fr 120px 100px 80px;
-  gap: 12px;
-  padding: 10px 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(118px, 0.65fr) minmax(92px, 0.55fr) 56px;
+  gap: 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--line);
   align-items: center;
   cursor: pointer;
+  min-width: 0;
 }
 
 .library-record-row:hover {
@@ -1102,16 +1114,25 @@ small,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .library-record-date {
   font-size: 12px;
   color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-record-discipline {
   font-size: 12px;
   color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .library-record-score {
@@ -1119,6 +1140,7 @@ small,
   font-weight: 600;
   color: var(--accent);
   text-align: right;
+  min-width: 0;
 }
 
 .library-detail {
@@ -1356,3 +1378,7 @@ small,
   display: flex;
   gap: 12px;
 }
+
+/* TODO(P2-21): Legacy .automation-card classes used in Match and Library views.
+   Migrate to .match-panel / .library-tile in a future polish pass.
+   Tests may depend on .automation-card — do not remove before migration. */
