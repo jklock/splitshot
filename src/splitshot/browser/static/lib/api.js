@@ -84,6 +84,14 @@ export function createApiRuntime({
   function apiResponseOwnsRemoteState(path) {
     const normalizedPath = String(path || "");
     if (normalizedPath === "/api/project/ui-state") return false;
+    if (normalizedPath.startsWith("/api/library/")) return false;
+    if (normalizedPath.startsWith("/api/output-profiles/")) return false;
+    if (normalizedPath.startsWith("/api/workspace/stage/clip/")) return false;
+    if (normalizedPath.startsWith("/api/angle/")) return false;
+    if (normalizedPath.startsWith("/api/audio/")) return false;
+    if (normalizedPath.startsWith("/api/proxy/")) return false;
+    if (normalizedPath.startsWith("/api/landing/")) return false;
+    if (normalizedPath.startsWith("/api/result-cards/")) return false;
     return true;
   }
 

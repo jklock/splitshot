@@ -28,6 +28,8 @@
 
 ## Remaining: Visual Proof
 
-- [x] Screenshots captured (9 files in `docs/screenshots/automate3/`)
+- [x] Screenshots captured (13 files in `docs/screenshots/automate3/`: 4 empty, 3 loaded, 4 feature, 2 contact sheets)
 - [x] Screenshot paths fixed in `capture_browser_screenshots.py`
+- [x] Export pipeline proven: workspace_export produces real MP4 files (single + batch)
+- [x] Recap pipeline proven: workspace_recap_render produces composite MP4 (2 stages → recap.mp4)
 - [ ] Visual review by human or vision-capable reviewer

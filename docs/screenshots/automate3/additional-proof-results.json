@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-05-23T03:07:01.350623+00:00",
+  "kind": "additional",
+  "status": "pass",
+  "screenshots": [
+    {
+      "file": "pip-multi-angle-loaded.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/pip-multi-angle-loaded.png",
+      "bytes": 762478,
+      "sha256": "98a02b446166d8a076c4e379a4b8f822965efd26f11ea11e86d46793eda207b0",
+      "assertions": {
+        "activeView": "stage",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "text_length": 593
+      },
+      "status": "pass"
+    },
+    {
+      "file": "export-progress.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-progress.png",
+      "bytes": 468326,
+      "sha256": "a2b4a685e2393fe4e58852f08444fd4e2ca8d93bffbc1b2a8659fd6f5b0b1d3a",
+      "assertions": {
+        "activeView": "stage",
+        "viewActive": true,
+        "width": 1440,
+        "height": 797,
+        "text_length": 1641
+      },
+      "status": "pass"
+    },
+    {
+      "file": "export-complete.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-complete.png",
+      "bytes": 480357,
+      "sha256": "1418ea3d8264a37d97081fa3a6b15632cd6e601047dea4abed1a1856afc36a68",
+      "assertions": {
+        "activeView": "stage",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "text_length": 1680
+      },
+      "status": "pass"
+    },
+    {
+      "file": "returning-user-landing.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/returning-user-landing.png",
+      "bytes": 77047,
+      "sha256": "f8f46bb5e539cd1ca172335a87e9a7438b706df42050c0252081388f85815fce",
+      "assertions": {
+        "activeView": "landing",
+        "viewActive": true,
+        "width": 1440,
+        "height": 851,
+        "text_length": 532
+      },
+      "status": "pass"
+    }
+  ],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "previewSeekBoundary is not defined",
+    "previewSeekBoundary is not defined",
+    "previewSeekBoundary is not defined",
+    "previewSeekBoundary is not defined"
+  ]
+}

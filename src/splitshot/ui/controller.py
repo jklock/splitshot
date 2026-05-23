@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from inspect import Parameter, signature
 from pathlib import Path
 import re
+import subprocess
 from uuid import uuid4 as _uuid4
 
 from PySide6.QtCore import QObject, Signal
@@ -67,6 +68,7 @@ from splitshot.domain.models import (
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
+from splitshot.export.pipeline import export_project
 from splitshot.media.ffmpeg import MediaError
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
@@ -1173,9 +1175,17 @@ class ProjectController(QObject):
         return {"reset": True}
 
     def workspace_export(self, stage_id: str | None = None, recipe: str | None = None) -> dict:
-        """Export workspace stage(s). Validates workspace and stage existence."""
+        """Export workspace stage(s) to actual video files.
+        
+        For each stage in the workspace, loads the stage project and runs
+        the export pipeline to produce an MP4 file in the workspace directory.
+        Returns output paths and file sizes for completed exports.
+        """
         if not self.workspace:
-            return {"success": False, "error": "No workspace open", "outputs": [], "errors": [{"stage_id": stage_id or "all", "error": "No workspace open"}]}
+            return {"success": False, "error": "No workspace open", "outputs": [], "errors": []}
+
+        if not self.workspace_path:
+            return {"success": False, "error": "Workspace has not been saved", "outputs": [], "errors": []}
 
         if stage_id and stage_id not in self.workspace.stage_entries:
             return {"success": False, "error": f"Stage {stage_id} not in workspace", "outputs": [], "errors": [{"stage_id": stage_id, "error": "Not found in workspace"}]}
@@ -1183,32 +1193,163 @@ class ProjectController(QObject):
         stages_to_export = [stage_id] if stage_id else list(self.workspace.stage_entries.keys())
         outputs = []
         errors = []
+        ws_path = Path(self.workspace_path)
 
         for sid in stages_to_export:
             entry = self.workspace.stage_entries.get(sid)
             if not entry:
                 errors.append({"stage_id": sid, "error": "Stage entry not found"})
                 continue
-            outputs.append({
-                "stage_id": sid,
-                "display_name": entry.display_name or f"Stage {entry.stage_number}",
-                "planned_output": f"{recipe or 'stage_output'}_{sid}",
-                "status": "planned",
-            })
+
+            project = self._load_stage_project(sid)
+            if not project:
+                errors.append({"stage_id": sid, "error": "Cannot load stage project"})
+                continue
+            if not project.primary_video or not project.primary_video.path:
+                errors.append({"stage_id": sid, "error": "No video imported for this stage"})
+                continue
+
+            output_path = ws_path / f"{sid}.mp4"
+            try:
+                display_name = entry.display_name or f"Stage {entry.stage_number}"
+                self._set_status(f"Exporting {display_name}...")
+                exported_path = export_project(
+                    project,
+                    str(output_path),
+                    progress_callback=lambda v: None,
+                    log_callback=lambda line: None,
+                )
+                size_bytes = exported_path.stat().st_size if exported_path.exists() else 0
+                outputs.append({
+                    "stage_id": sid,
+                    "display_name": display_name,
+                    "output_path": str(exported_path),
+                    "size_bytes": size_bytes,
+                    "status": "completed",
+                })
+            except Exception as exc:
+                errors.append({"stage_id": sid, "error": str(exc)})
+
+        if errors:
+            self._set_status(f"Export completed with {len(errors)} error(s).")
+        else:
+            self._set_status(f"Exported {len(outputs)} stage(s).")
 
         return {
             "success": len(errors) == 0,
             "outputs": outputs,
             "errors": errors,
-            "recipe": recipe or "stage_output",
             "total": len(stages_to_export),
             "completed": len(outputs),
             "failed": len(errors),
         }
 
     def workspace_recap_render(self, **kwargs) -> dict:
-        """Render recap for workspace."""
-        return {"status": "queued", "message": "Recap render initiated"}
+        """Render a recap composite video from workspace stages.
+        
+        Exports each selected stage to a temporary file, then concatenates
+        them into a single MP4 using the ffmpeg concat demuxer.
+        Accepts: stage_ids (list[str]), transition (str), result_card (str).
+        Returns the path to the rendered recap file.
+        """
+        if not self.workspace:
+            return {"success": False, "error": "No workspace open"}
+
+        if not self.workspace_path:
+            return {"success": False, "error": "Workspace has not been saved"}
+
+        stage_ids = kwargs.get("stage_ids") or list(self.workspace.stage_entries.keys())
+        transition = kwargs.get("transition", "cut")
+
+        ws_path = Path(self.workspace_path)
+        recap_path = ws_path / "recap.mp4"
+        temp_dir = ws_path / ".recap-tmp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        exported_segments: list[Path] = []
+        errors: list[dict] = []
+
+        try:
+            for sid in stage_ids:
+                entry = self.workspace.stage_entries.get(sid)
+                if not entry:
+                    errors.append({"stage_id": sid, "error": "Stage entry not found"})
+                    continue
+
+                project = self._load_stage_project(sid)
+                if not project:
+                    errors.append({"stage_id": sid, "error": "Cannot load stage project"})
+                    continue
+                if not project.primary_video or not project.primary_video.path:
+                    errors.append({"stage_id": sid, "error": "No video imported for this stage"})
+                    continue
+
+                seg_path = temp_dir / f"{sid}.mp4"
+                self._set_status(f"Exporting {sid} for recap...")
+                export_project(
+                    project,
+                    str(seg_path),
+                    progress_callback=lambda v: None,
+                    log_callback=lambda line: None,
+                )
+                if seg_path.exists() and seg_path.stat().st_size > 0:
+                    exported_segments.append(seg_path)
+                else:
+                    errors.append({"stage_id": sid, "error": "Export produced empty file"})
+
+            if not exported_segments:
+                return {
+                    "success": False,
+                    "error": "No stages could be exported for recap",
+                    "errors": errors,
+                }
+
+            if len(exported_segments) == 1:
+                import shutil
+                shutil.copy2(str(exported_segments[0]), str(recap_path))
+            else:
+                from splitshot.media.ffmpeg import ffmpeg_command
+                concat_file = temp_dir / "concat.txt"
+                with open(concat_file, "w") as f:
+                    for seg in exported_segments:
+                        f.write(f"file '{seg.resolve()}'\n")
+
+                cmd = [
+                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                    "-i", str(concat_file),
+                    "-c", "copy",
+                    str(recap_path),
+                ]
+                result = subprocess.run(
+                    cmd, capture_output=True, text=True, timeout=300
+                )
+                if result.returncode != 0:
+                    return {
+                        "success": False,
+                        "error": f"Recap concat failed: {result.stderr[:500]}",
+                        "errors": errors,
+                    }
+
+            if not recap_path.exists() or recap_path.stat().st_size <= 0:
+                return {
+                    "success": False,
+                    "error": "Recap file was not produced",
+                    "errors": errors,
+                }
+
+            self._set_status(f"Recap rendered to {recap_path}")
+            return {
+                "success": True,
+                "output_path": str(recap_path),
+                "size_bytes": recap_path.stat().st_size,
+                "stage_count": len(exported_segments),
+                "errors": errors,
+            }
+
+        finally:
+            import shutil
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     def workspace_apply_from_first(self, settings: dict | None = None) -> dict:
         """Apply Stage 1 settings to all sibling stages.

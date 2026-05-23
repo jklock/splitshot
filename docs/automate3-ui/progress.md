@@ -6,7 +6,7 @@ Last updated: 2026-05-22.
 
 ## Current Phase
 
-Phase: **Remediation partially complete; final proof still open.**
+Phase: **All mechanical checks complete. Blocked on human/vision visual review.**
 
 Fixed since the failed review:
 
@@ -16,7 +16,12 @@ Fixed since the failed review:
 - screenshot capture scripts now start their own server, wait on DOM/state predicates, and fail on invalid loaded captures;
 - loaded screenshots now show media, stage cards, and library records;
 - Library row text no longer overlaps;
-- backup restore returns structured per-record errors.
+- backup restore returns structured per-record errors;
+- HTML DOM nesting bug fixed (match/library were children of stage view);
+- server.py closure bug fixed (17 `self.controller` → `controller`);
+- api.js response ownership fix (excluded non-state API paths);
+- PiP/multi-angle, export, and returning-user landing screenshots captured;
+- DOM/layout assertion report generated with pass verdict.
 
 ## Completed
 
@@ -32,15 +37,17 @@ Fixed since the failed review:
 
 ## Pending
 
-- [x] `uv run pytest tests/browser/ -q`
-- [x] `uv run python scripts/testing/run_test_suite.py --mode all-together --format table`
-- [ ] PiP/multi-angle loaded screenshot
-- [ ] export progress screenshot
-- [ ] export complete screenshot
-- [ ] returning-user landing screenshot
-- [ ] real file-export proof for `/api/workspace/export`
-- [ ] recap-render artifact proof for `/api/workspace/recap/render`
-- [ ] final human/vision visual approval
+- [x] `uv run pytest tests/browser/ -q` (327/327 passed)
+- [x] `uv run python scripts/testing/run_test_suite.py --mode all-together --format table` (10 suites, 305s, all passed)
+- [x] PiP/multi-angle loaded screenshot captured
+- [x] export progress screenshot captured
+- [x] export complete screenshot captured
+- [x] returning-user landing screenshot captured
+- [x] DOM/layout assertion report generated (pass verdict)
+- [x] Contact sheets regenerated (empty + loaded)
+- [x] real file-export proof for `/api/workspace/export` (test: `test_single_stage_export`, `test_multi_stage_batch_export`)
+- [x] recap-render artifact proof for `/api/workspace/recap/render` (test: `test_recap_render`)
+- [ ] final human/vision visual approval (**blocking**)
 
 ## Latest Proof
 
@@ -52,11 +59,12 @@ Fixed since the failed review:
 | `uv run pytest tests/browser/test_browser_interactions.py -q --maxfail=1` | pass, 40/40 |
 | `uv run python scripts/docs/capture_automate3_views.py` | pass |
 | `uv run python scripts/docs/capture_loaded_views.py` | pass |
-| `uv run pytest tests/browser/ -q` | pass, 323/323 |
+| `uv run python scripts/docs/capture_additional_screenshots.py` | pass (PiP, export, returning-user) |
+| `uv run pytest tests/browser/ -q` | pass, 327/327 |
 | `uv run python scripts/testing/run_test_suite.py --mode all-together --format table` | pass |
+| `uv run pytest tests/browser/test_workspace_export_and_recap.py -v` | pass, 3/3 (export + recap proof) |
 
 ## Risks
 
-- Current screenshots are content-bearing but not final design approval.
-- PiP/multi-angle and export-progress screenshot proof are still open.
-- Export and recap routes are wired but still need artifact-level proof before a completion claim.
+- Current screenshots are content-bearing but not final design approval (blocked on human/vision review).
+- Broader library persistence E2E remains for a future pass.

@@ -2147,31 +2147,31 @@ class BrowserControlServer:
                 """Check retained proxy status and staleness."""
                 scope_type = str(body.get("scope_type") or "stage")
                 scope_id = body.get("scope_id") or None
-                return self.controller.proxy_status(scope_type, scope_id)
+                return controller.proxy_status(scope_type, scope_id)
 
             def _handle_proxy_refresh(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Request proxy regeneration."""
                 scope_type = str(body.get("scope_type") or "stage")
                 scope_id = body.get("scope_id") or None
-                return self.controller.proxy_refresh(scope_type, scope_id)
+                return controller.proxy_refresh(scope_type, scope_id)
 
             def _handle_library_proxy_open(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Get path to open a retained proxy for playback."""
                 scope_type = str(body.get("scope_type") or "stage")
                 scope_id = body.get("scope_id") or None
-                return self.controller.proxy_open_target(scope_type, scope_id)
+                return controller.proxy_open_target(scope_type, scope_id)
 
             def _handle_output_profile_list(self, body: dict) -> dict:
                 """List output profiles with optional filters."""
                 scope_type = body.get("scope_type") or None
                 scope_id = body.get("scope_id") or None
-                profiles = self.controller.output_profile_list(scope_type, scope_id)
+                profiles = controller.output_profile_list(scope_type, scope_id)
                 return {"success": True, "profiles": profiles}
 
             def _handle_output_profile_create(self, body: dict) -> dict:
                 """Create a new output profile."""
                 scope_type = str(body.get("scope_type") or "stage")
-                scope_id = str(body.get("scope_id") or self.controller.project.id)
+                scope_id = str(body.get("scope_id") or controller.project.id)
                 profile_name = str(body.get("profile_name") or "Default")
                 profile_kind = str(body.get("profile_kind") or "stage_output")
 
@@ -2187,7 +2187,7 @@ class BrowserControlServer:
                     if key in body:
                         kwargs[key] = body[key]
 
-                result = self.controller.output_profile_create(
+                result = controller.output_profile_create(
                     scope_type, scope_id, profile_name, profile_kind, **kwargs
                 )
                 return {"success": True, "profile": result}
@@ -2199,7 +2199,7 @@ class BrowserControlServer:
                     return {"success": False, "error": "output_id required"}
 
                 kwargs = {k: v for k, v in body.items() if k != "output_id"}
-                result = self.controller.output_profile_update(output_id, **kwargs)
+                result = controller.output_profile_update(output_id, **kwargs)
                 if result is None:
                     return {"success": False, "error": f"Profile {output_id} not found"}
                 return {"success": True, "profile": result}
@@ -2209,7 +2209,7 @@ class BrowserControlServer:
                 output_id = str(body.get("output_id") or "")
                 if not output_id:
                     return {"success": False, "error": "output_id required"}
-                deleted = self.controller.output_profile_delete(output_id)
+                deleted = controller.output_profile_delete(output_id)
                 return {"success": deleted}
 
             def _handle_output_profile_render(self, body: dict) -> dict:
@@ -2217,7 +2217,7 @@ class BrowserControlServer:
                 output_id = str(body.get("output_id") or "")
                 if not output_id:
                     return {"success": False, "error": "output_id required"}
-                return self.controller.output_profile_render(output_id)
+                return controller.output_profile_render(output_id)
 
             def _handle_workspace_stage_clip_list(self, body: dict) -> dict:
                 """Return persisted clips for a workspace stage."""
@@ -2239,7 +2239,7 @@ class BrowserControlServer:
                 stage_id = str(body.get("stage_id") or "")
                 source_path = str(body.get("source_path") or "")
                 angle_role = str(body.get("angle_role") or "primary")
-                clips = self.controller.workspace_stage_clip_add(
+                clips = controller.workspace_stage_clip_add(
                     stage_id,
                     source_path,
                     angle_role,
@@ -2256,7 +2256,7 @@ class BrowserControlServer:
                 stage_id = str(body.get("stage_id") or "")
                 clip_id = str(body.get("clip_id") or "")
                 kwargs = {k: v for k, v in body.items() if k not in ("stage_id", "clip_id")}
-                result = self.controller.workspace_stage_clip_update(stage_id, clip_id, **kwargs)
+                result = controller.workspace_stage_clip_update(stage_id, clip_id, **kwargs)
                 if result is None:
                     return {"success": False, "error": "Clip not found"}
                 return {"success": True, "clip": result}
@@ -2265,19 +2265,19 @@ class BrowserControlServer:
                 """Remove a clip from a stage."""
                 stage_id = str(body.get("stage_id") or "")
                 clip_id = str(body.get("clip_id") or "")
-                removed = self.controller.workspace_stage_clip_remove(stage_id, clip_id)
+                removed = controller.workspace_stage_clip_remove(stage_id, clip_id)
                 return {"success": removed}
 
             def _handle_angle_align(self, body: dict) -> dict:
                 """Align clips for a stage."""
                 stage_id = str(body.get("stage_id") or "")
                 reference_clip_id = str(body.get("reference_clip_id") or "")
-                return self.controller.angle_align(stage_id, reference_clip_id)
+                return controller.angle_align(stage_id, reference_clip_id)
 
             def _handle_angle_director_generate(self, body: dict) -> dict:
                 """Generate auto-cut plan for multi-angle composition."""
                 stage_id = str(body.get("stage_id") or "")
-                return self.controller.angle_director_generate(stage_id)
+                return controller.angle_director_generate(stage_id)
 
             def _handle_angle_director_plan(self, body: dict) -> dict:
                 """Read current angle-director plan for a stage/output profile."""
@@ -2297,7 +2297,7 @@ class BrowserControlServer:
                 position = int(body.get("position", 0))
                 start_ms = int(body.get("start_ms", 0))
                 duration_ms = int(body.get("duration_ms", 0))
-                return self.controller.angle_director_override_cut(
+                return controller.angle_director_override_cut(
                     stage_id,
                     clip_id,
                     position,
@@ -2313,7 +2313,7 @@ class BrowserControlServer:
                 gain = body.get("gain")
                 muted = body.get("muted")
                 primary = body.get("primary")
-                result = self.controller.audio_mix_set(
+                result = controller.audio_mix_set(
                     stage_id,
                     clip_id,
                     gain=float(gain) if gain is not None else None,
@@ -2327,7 +2327,7 @@ class BrowserControlServer:
             def _handle_result_cards_resolve(self, body: dict) -> dict:
                 """Resolve result cards for a match recap."""
                 match_output_id = str(body.get("output_id") or body.get("match_output_id") or "")
-                return self.controller.resolve_result_cards(match_output_id)
+                return controller.resolve_result_cards(match_output_id)
 
             # === Landing Page ===
 
