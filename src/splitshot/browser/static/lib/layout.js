@@ -189,14 +189,14 @@ export function createLayoutRuntime({
     }
     const railToggle = $("toggle-rail");
     if (railToggle) {
-      railToggle.textContent = runtime.railCollapsed ? "EXP" : railToggle.getAttribute("data-short") || "MIN";
+      railToggle.textContent = runtime.railCollapsed ? "▶" : railToggle.getAttribute("data-short") || "◀";
       railToggle.title = runtime.railCollapsed ? "Expand left rail" : "Minimize left rail";
       railToggle.setAttribute("aria-label", railToggle.title);
     }
     document.querySelectorAll("[data-layout-lock-toggle]").forEach((toggle) => {
       const target = toggle.id.replace("toggle-layout-lock-", "");
       const scope = target ? `${target} layout` : "layout";
-      toggle.textContent = runtime.layoutLocked ? "Lock" : "Unlock";
+      toggle.textContent = runtime.layoutLocked ? "🔒" : "🔓";
       toggle.setAttribute("aria-label", `${runtime.layoutLocked ? "Unlock" : "Lock"} ${scope}`);
     });
     syncLayoutBackbone();

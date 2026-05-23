@@ -10,7 +10,7 @@ export function createLibraryView({
   activity = () => {},
 } = {}) {
   function currentRecords() {
-    const library = getLibrary();
+    const library = getLibrary() || { stages: [], matches: [] };
     return [
       ...(library.stages || []).map((record) => ({ ...record, record_type: "stage" })),
       ...(library.matches || []).map((record) => ({ ...record, record_type: "match" })),
@@ -84,14 +84,15 @@ export function createLibraryView({
 
   function renderAnalyticsCharts(data) {
     if (!data) return;
-    const stageRecords = (getLibrary().stages || []).filter((record) => record.score != null);
+    const library = getLibrary() || { stages: [], matches: [] };
+    const stageRecords = (library.stages || []).filter((record) => record.score != null);
     const scoreTrend = stageRecords
       .filter((record) => record.event_date)
       .sort((a, b) => (a.event_date || "").localeCompare(b.event_date || ""))
       .map((record) => ({ date: record.event_date, score: record.score }));
 
     const disciplineMap = {};
-    (getLibrary().stages || []).forEach((record) => {
+    (library.stages || []).forEach((record) => {
       const discipline = (record.discipline || "other").toLowerCase();
       disciplineMap[discipline] = (disciplineMap[discipline] || 0) + 1;
     });
@@ -186,7 +187,7 @@ export function createLibraryView({
     if (emptyState) emptyState.hidden = hasRecords;
     if (sectionHeader) sectionHeader.hidden = !hasRecords;
     if (workspaceSections) workspaceSections.hidden = !hasRecords;
-    if (librarySidebar) librarySidebar.hidden = !hasRecords;
+    if (librarySidebar) librarySidebar.hidden = false;
   }
 
   function addLibraryTag(tag) {

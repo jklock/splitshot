@@ -47,18 +47,15 @@ async def call_api(page: Page, endpoint: str, payload: dict[str, object] | None 
 
 
 async def switch_view(page: Page, view_name: str) -> None:
-    if view_name == "landing":
-        await page.click("#shell-go-home")
-    else:
-        await page.evaluate(
-            """
-            (viewName) => {
-              const mapping = {stage: "single", match: "multi", library: "library"};
-              window.setActiveSurface?.(mapping[viewName] || "landing");
-            }
-            """,
-            view_name,
-        )
+    await page.evaluate(
+        """
+        (viewName) => {
+          const mapping = {landing: "landing", stage: "single", match: "multi", library: "library"};
+          window.setActiveSurface?.(mapping[viewName] || "landing");
+        }
+        """,
+        view_name,
+    )
     await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
     await page.wait_for_function(
         "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
@@ -175,7 +172,7 @@ async def assert_loaded_view(page: Page, view_name: str) -> dict[str, object]:
         async (viewName) => {
           const view = document.getElementById(`view-${viewName}`);
           const shell = document.getElementById("app-shell");
-          const rail = document.querySelector(".tool-rail");
+          const rail = view?.querySelector(".tool-rail");
           const rect = view?.getBoundingClientRect();
           const stageCards = document.querySelectorAll("#workspace-stage-list .match-stage-card, #workspace-stage-list [data-stage-id]").length;
           const libraryRows = document.querySelectorAll("#library-record-list .library-record-row, #library-record-table tbody tr").length;
@@ -191,7 +188,7 @@ async def assert_loaded_view(page: Page, view_name: str) -> dict[str, object]:
             width: Math.round(rect?.width || 0),
             height: Math.round(rect?.height || 0),
             horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
-            railDisplay: rail ? getComputedStyle(rail).display : null,
+            railDisplay: rail ? getComputedStyle(rail).display : "none",
             text,
             shotCount: state?.project?.analysis?.shots?.length || 0,
             primaryAvailable: Boolean(state?.media?.primary_available),

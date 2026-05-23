@@ -28,18 +28,15 @@ class ProofFailure(RuntimeError):
 
 
 async def switch_view(page: Page, view_name: str) -> None:
-    if view_name == "landing":
-        await page.click("#shell-go-home")
-    else:
-        await page.evaluate(
-            """
-            (viewName) => {
-              const mapping = {stage: "single", match: "multi", library: "library"};
-              window.setActiveSurface?.(mapping[viewName] || "landing");
-            }
-            """,
-            view_name,
-        )
+    await page.evaluate(
+        """
+        (viewName) => {
+          const mapping = {landing: "landing", stage: "single", match: "multi", library: "library"};
+          window.setActiveSurface?.(mapping[viewName] || "landing");
+        }
+        """,
+        view_name,
+    )
     await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
     await page.wait_for_function(
         "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
@@ -54,9 +51,9 @@ async def assert_view_layout(page: Page, view_name: str) -> dict[str, object]:
         (viewName) => {
           const view = document.getElementById(`view-${viewName}`);
           const shell = document.getElementById("app-shell");
-          const rail = document.querySelector(".tool-rail");
+          const rail = view?.querySelector(".tool-rail");
           const rect = view?.getBoundingClientRect();
-          const railDisplay = rail ? getComputedStyle(rail).display : null;
+          const railDisplay = rail ? getComputedStyle(rail).display : "none";
           return {
             activeView: shell?.dataset.activeView || "",
             viewActive: Boolean(view?.classList.contains("active")),
@@ -77,10 +74,10 @@ async def assert_view_layout(page: Page, view_name: str) -> dict[str, object]:
         failures.append("view has zero bounds")
     if result["horizontalOverflow"]:
         failures.append("horizontal overflow")
-    if view_name == "stage" and result["railDisplay"] == "none":
-        failures.append("stage tool rail hidden")
-    if view_name in {"match", "library", "landing"} and result["railDisplay"] != "none":
-        failures.append("non-stage tool rail visible")
+    if view_name == "landing" and result["railDisplay"] != "none":
+        failures.append("landing rail should be hidden")
+    if view_name in {"stage", "match", "library"} and result["railDisplay"] == "none":
+        failures.append(f"{view_name} rail hidden")
     if failures:
         raise ProofFailure(f"{view_name} layout assertion failed: {', '.join(failures)}")
     return {key: value for key, value in result.items() if key != "text"} | {

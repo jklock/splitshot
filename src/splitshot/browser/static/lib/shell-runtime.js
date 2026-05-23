@@ -20,6 +20,7 @@ export function createShellRuntime({
   resetMergeDraft = () => {},
   resetExportDraft = () => {},
   getOverlayFrame = () => null,
+  setPreviewSeekBoundary = () => {},
   getPopupFilterMode = () => "all",
   getPopupAuthoringCollapsed = () => false,
   setPopupAuthoringCollapsed = () => {},
@@ -573,17 +574,17 @@ export function createShellRuntime({
       logPrimaryVideoState("error");
     });
     $("primary-video").addEventListener("play", () => {
-      previewSeekBoundary = true;
+      setPreviewSeekBoundary(true);
       logPrimaryVideoState("play");
     });
     $("primary-video").addEventListener("pause", () => {
-      previewSeekBoundary = true;
+      setPreviewSeekBoundary(true);
       logPrimaryVideoState("pause");
     });
     $("primary-video").addEventListener("play", startOverlayLoop);
     $("primary-video").addEventListener("pause", stopOverlayLoop);
     $("primary-video").addEventListener("seeked", () => {
-      previewSeekBoundary = true;
+      setPreviewSeekBoundary(true);
       activity("video.seeked", { current_time_s: $("primary-video").currentTime });
       scheduleSecondaryPreviewSync();
       renderLiveOverlay();

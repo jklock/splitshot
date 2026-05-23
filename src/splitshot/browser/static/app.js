@@ -130,12 +130,7 @@ function getPreviousView() {
 }
 
 function updateShellContext() {
-  const projectNameEl = document.getElementById("shell-project-name");
   const returnBtn = document.getElementById("shell-return-match");
-
-  if (projectNameEl) {
-    projectNameEl.textContent = state?.project?.name || "Untitled Project";
-  }
 
   if (returnBtn) {
     const hasMatch = state?.workspace?.id || state?.project?.workspace_id;
@@ -167,7 +162,7 @@ function showGlobalError(message, { duration = 8000, action = null, actionLabel 
     banner = document.createElement("div");
     banner.id = "global-error-banner";
     banner.className = "error-banner";
-    banner.style.cssText = "position:fixed;top:44px;left:0;right:0;z-index:100;display:none;";
+    banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:100;display:none;";
     document.getElementById("app-shell")?.prepend(banner);
   }
   banner.innerHTML = `
@@ -196,7 +191,6 @@ function dismissGlobalError() {
 }
 
 function wireShellHeaderEvents() {
-  document.getElementById("shell-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
   document.getElementById("shell-return-match")?.addEventListener("click", () => setActiveSurface("multi"));
 }
 
@@ -5911,9 +5905,9 @@ async function refreshPerformanceLibrary() {
   automationError.library = null;
   renderAutomationSurface();
   try {
-    automationLibrary = query
+    automationLibrary = (query
       ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
-      : await callApi("/api/library/list", {});
+      : await callApi("/api/library/list", {})) || { stages: [], matches: [], total_stages: 0, total_matches: 0 };
   } catch (error) {
     automationError.library = error?.message || "Failed to load library records.";
     automationLibrary = { stages: [], matches: [], total_stages: 0, total_matches: 0 };
@@ -10207,14 +10201,36 @@ function setWorkspaceSection(viewName, sectionId, { scroll = true } = {}) {
     button.classList.toggle("active", button.dataset.workspaceTarget === sectionId);
   });
   if (!sectionId) return;
+  document.querySelectorAll(`#view-${viewName} .workspace-section`).forEach((section) => {
+    section.hidden = section.id !== sectionId;
+  });
   window.localStorage.setItem(`splitshot.${viewName}.section`, sectionId);
   if (!scroll) return;
-  document.getElementById(sectionId)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  const main = document.querySelector(`#view-${viewName} .workspace-main`);
+  if (main) main.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function applySavedWorkspaceSections() {
   setWorkspaceSection("match", window.localStorage.getItem("splitshot.match.section") || "match-section-stages", { scroll: false });
   setWorkspaceSection("library", window.localStorage.getItem("splitshot.library.section") || "library-section-overview", { scroll: false });
+}
+
+function setWorkspaceRailCollapsed(viewName, collapsed) {
+  const shell = document.querySelector(`.${viewName}-workspace-shell`);
+  if (!shell) return;
+  shell.classList.toggle("rail-collapsed", Boolean(collapsed));
+  const toggle = document.getElementById(`${viewName}-toggle-rail`);
+  if (toggle) {
+    toggle.textContent = collapsed ? "▶" : "◀";
+    toggle.title = collapsed ? `Expand ${viewName} rail` : `Minimize ${viewName} rail`;
+    toggle.setAttribute("aria-label", toggle.title);
+  }
+  window.localStorage.setItem(`splitshot.${viewName}.railCollapsed`, String(Boolean(collapsed)));
+}
+
+function applySavedWorkspaceRailState() {
+  setWorkspaceRailCollapsed("match", window.localStorage.getItem("splitshot.match.railCollapsed") === "true");
+  setWorkspaceRailCollapsed("library", window.localStorage.getItem("splitshot.library.railCollapsed") === "true");
 }
 
 function wireEvents() {
@@ -10277,6 +10293,14 @@ function wireEvents() {
   $("library-go-home")?.addEventListener("click", () => setActiveSurface("landing"));
   $("match-open-settings")?.addEventListener("click", () => setWorkspaceSection("match", "match-section-settings"));
   $("library-open-settings")?.addEventListener("click", () => setWorkspaceSection("library", "library-section-settings"));
+  $("match-toggle-rail")?.addEventListener("click", () => {
+    const shell = document.querySelector(".match-workspace-shell");
+    setWorkspaceRailCollapsed("match", !shell?.classList.contains("rail-collapsed"));
+  });
+  $("library-toggle-rail")?.addEventListener("click", () => {
+    const shell = document.querySelector(".library-workspace-shell");
+    setWorkspaceRailCollapsed("library", !shell?.classList.contains("rail-collapsed"));
+  });
   document.querySelectorAll("[data-workspace-target]").forEach((button) => {
     button.addEventListener("click", () => {
       setWorkspaceSection(button.dataset.workspaceView || "", button.dataset.workspaceTarget || "");
@@ -11554,6 +11578,7 @@ shellRuntime = createShellRuntime({
   resetMergeDraft: () => { mergeDraft = {}; },
   resetExportDraft: () => { exportDraft = {}; },
   getOverlayFrame: () => overlayFrame,
+  setPreviewSeekBoundary: (value) => { previewSeekBoundary = Boolean(value); },
   getPopupFilterMode: () => popupFilterMode,
   getPopupAuthoringCollapsed: () => popupAuthoringCollapsed,
   setPopupAuthoringCollapsed,
@@ -11865,6 +11890,7 @@ setActiveTool(activeTool, { collapseExpandedLayout: false, persistUiState: false
 matchView?.applySavedMatchSettings();
 libraryView?.applySavedLibrarySettings();
 applySavedWorkspaceSections();
+applySavedWorkspaceRailState();
 wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();

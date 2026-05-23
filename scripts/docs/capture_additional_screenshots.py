@@ -49,18 +49,15 @@ async def setup_loaded_stage(page):
     )
 
 async def switch_view(page, view_name):
-    if view_name == "landing":
-        await page.click("#shell-go-home")
-    else:
-        await page.evaluate(
-            """
-            (viewName) => {
-              const mapping = {stage: "single", match: "multi", library: "library"};
-              window.setActiveSurface?.(mapping[viewName] || "landing");
-            }
-            """,
-            view_name,
-        )
+    await page.evaluate(
+        """
+        (viewName) => {
+          const mapping = {landing: "landing", stage: "single", match: "multi", library: "library"};
+          window.setActiveSurface?.(mapping[viewName] || "landing");
+        }
+        """,
+        view_name,
+    )
     await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
     await page.wait_for_function(
         "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
@@ -153,7 +150,6 @@ async def capture_returning_user_landing(page):
             {name: 'Stage 3 - Classifier', surface: 'single', type: 'stage', path: '/tmp/classifier.ssproj', date: '4/20/2026'},
         ]));
     }""")
-    await page.click("#shell-go-home")
     await switch_view(page, "landing")
     await page.wait_for_timeout(500)
     # Verify recent items are showing

@@ -1,70 +1,66 @@
 {
-  "generated_at": "2026-05-23T03:07:01.350623+00:00",
+  "generated_at": "2026-05-23T16:10:29.436439+00:00",
   "kind": "additional",
   "status": "pass",
   "screenshots": [
     {
       "file": "pip-multi-angle-loaded.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/pip-multi-angle-loaded.png",
-      "bytes": 762478,
-      "sha256": "98a02b446166d8a076c4e379a4b8f822965efd26f11ea11e86d46793eda207b0",
+      "bytes": 772301,
+      "sha256": "f7d787d7c66ed78889fb83010c923dd07c09ca55eed6b5c6397c634116818753",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
-        "height": 851,
-        "text_length": 593
+        "height": 900,
+        "text_length": 598
       },
       "status": "pass"
     },
     {
       "file": "export-progress.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-progress.png",
-      "bytes": 468326,
-      "sha256": "a2b4a685e2393fe4e58852f08444fd4e2ca8d93bffbc1b2a8659fd6f5b0b1d3a",
+      "bytes": 804669,
+      "sha256": "d553042846951abe2a0f86f8aa5746776832c664e4d02a080cea63a53edf4ec8",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
-        "height": 797,
-        "text_length": 1641
+        "height": 900,
+        "text_length": 956
       },
       "status": "pass"
     },
     {
       "file": "export-complete.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-complete.png",
-      "bytes": 480357,
-      "sha256": "1418ea3d8264a37d97081fa3a6b15632cd6e601047dea4abed1a1856afc36a68",
+      "bytes": 809736,
+      "sha256": "bb4f470d41389b907bab7bc86c04a8ffd92804b454da1a3298441f90df250b46",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
-        "height": 851,
-        "text_length": 1680
+        "height": 900,
+        "text_length": 995
       },
       "status": "pass"
     },
     {
       "file": "returning-user-landing.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/returning-user-landing.png",
-      "bytes": 77047,
-      "sha256": "f8f46bb5e539cd1ca172335a87e9a7438b706df42050c0252081388f85815fce",
+      "bytes": 81032,
+      "sha256": "72de34ff1b8d29edadb57e8b8940a25e9f02e7166f0561409e9449b80f5e5dfd",
       "assertions": {
         "activeView": "landing",
         "viewActive": true,
         "width": 1440,
-        "height": 851,
+        "height": 900,
         "text_length": 532
       },
       "status": "pass"
     }
   ],
   "console_errors": [
-    "Failed to load resource: the server responded with a status of 404 (Not Found)",
-    "previewSeekBoundary is not defined",
-    "previewSeekBoundary is not defined",
-    "previewSeekBoundary is not defined",
-    "previewSeekBoundary is not defined"
+    "Failed to load resource: the server responded with a status of 404 (Not Found)"
   ]
 }

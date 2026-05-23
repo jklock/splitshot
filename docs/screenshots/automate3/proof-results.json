@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-05-23T14:16:09.982303+00:00",
+  "generated_at": "2026-05-23T16:28:50.549356+00:00",
   "kind": "empty",
   "status": "pass",
   "screenshots": [
     {
       "file": "empty-landing.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/empty-landing.png",
-      "bytes": 71175,
-      "sha256": "a50c7c0a7e0ff165770945357e29ff117855a6d3497051fe5dc8c4b755d7a93c",
+      "bytes": 76034,
+      "sha256": "2012b1d4db2e60dfa196057a4d77460803bb9767bcb89aa9e01deba341121db5",
       "assertions": {
         "activeView": "landing",
         "viewActive": true,
         "width": 1440,
-        "height": 848,
+        "height": 900,
         "horizontalOverflow": false,
         "railDisplay": "none",
         "text_length": 440
@@ -22,48 +22,48 @@
     {
       "file": "empty-stage.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/empty-stage.png",
-      "bytes": 108031,
-      "sha256": "23ae7bfbb7a694a9e39c8bfe3cea702785ada8e91aeb1f83a55b74ff2095bf8a",
+      "bytes": 124752,
+      "sha256": "4aa5e666e1359e80d694055e4e7531bfcbc9d9a252a141314208ec5729f5c3c8",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
-        "height": 848,
+        "height": 900,
         "horizontalOverflow": false,
         "railDisplay": "grid",
-        "text_length": 726
+        "text_length": 1415
       },
       "status": "pass"
     },
     {
       "file": "empty-match.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/empty-match.png",
-      "bytes": 16418,
-      "sha256": "51c9da442224cab7b82bd6f712842c0e45ecc2c3c3560310d8c9d7c2746ebc35",
+      "bytes": 28377,
+      "sha256": "6d7d13f6b5458c00cba5e8aedaa850e4b859e5e68f7745fedb655b5b63fe6685",
       "assertions": {
         "activeView": "match",
         "viewActive": true,
         "width": 1440,
-        "height": 848,
+        "height": 900,
         "horizontalOverflow": false,
-        "railDisplay": "none",
-        "text_length": 81
+        "railDisplay": "grid",
+        "text_length": 139
       },
       "status": "pass"
     },
     {
       "file": "empty-library.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/empty-library.png",
-      "bytes": 99245,
-      "sha256": "c047ffa26f708be5f43554f1f82b8b78b75821ba176dca0c1a954811f0a3f453",
+      "bytes": 32198,
+      "sha256": "626ecf061fbaa6b6e98305ee6fd9b8ca39881f8a005208e842029e996876362f",
       "assertions": {
         "activeView": "library",
         "viewActive": true,
         "width": 1440,
-        "height": 848,
+        "height": 900,
         "horizontalOverflow": false,
-        "railDisplay": "none",
-        "text_length": 5389
+        "railDisplay": "grid",
+        "text_length": 161
       },
       "status": "pass"
     }
@@ -71,7 +71,7 @@
   "contact_sheet": {
     "file": "contact-sheet.png",
     "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/contact-sheet.png",
-    "bytes": 117653,
-    "sha256": "c3203c9b3a97248828737c87bc3c56d6969be665e0d60796d52833f1912ef3f4"
+    "bytes": 96013,
+    "sha256": "1e546d60faca8c3fb2b4579c745c04ad66c3bd78756a846179751803885b1ff8"
   }
 }

@@ -939,6 +939,14 @@ button:disabled {
   display: grid;
 }
 
+.stage-automation-card {
+  gap: 0.65rem;
+}
+
+.stage-automation-grid {
+  grid-template-columns: 1fr;
+}
+
 .inspector[data-active-tool="markers"] .tool-pane[data-tool-pane="markers"].active {
   align-content: stretch;
   display: grid;

@@ -8,26 +8,16 @@
   </head>
   <body>
     <div id="app-shell" class="app-shell">
-      <header class="shell-header">
-        <div class="shell-brand">
-          <button id="shell-go-home" class="shell-home-button" type="button" aria-label="Go to SplitShot home">
-            <img class="shell-logo" src="/static/logo.png" alt="SplitShot" />
-          </button>
+      <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
+        <div class="processing-copy">
+          <strong id="processing-message">Ready.</strong>
+          <span id="processing-detail">Local processing</span>
         </div>
-        <div class="shell-context">
-          <span id="shell-project-name" class="shell-context-item">Untitled Project</span>
+        <div class="processing-progress-track" aria-hidden="true">
+          <div id="processing-progress-fill" class="processing-progress-fill"></div>
         </div>
-        <section id="processing-bar" class="processing-bar" aria-live="polite" hidden>
-          <div class="processing-copy">
-            <strong id="processing-message">Ready.</strong>
-            <span id="processing-detail">Local processing</span>
-          </div>
-          <div class="processing-progress-track" aria-hidden="true">
-            <div id="processing-progress-fill" class="processing-progress-fill"></div>
-          </div>
-          <span id="processing-percent">0%</span>
-        </section>
-      </header>
+        <span id="processing-percent">0%</span>
+      </section>
       <div id="view-root">
         <div id="view-landing" class="app-view view-landing">
           <section id="landing-page" aria-label="SplitShot home" hidden>
@@ -85,7 +75,6 @@
       <aside class="tool-rail" aria-label="SplitShot tools">
         <div class="rail-brand">
           <img class="rail-logo" src="/static/logo.png" alt="SplitShot" />
-          <small id="rail-project" hidden>Untitled Project</small>
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool"><b>Project</b></button>
@@ -102,6 +91,7 @@
         <div class="tool-rail-footer" aria-label="Rail controls">
           <button id="stage-go-home" class="tool-item rail-footer-button" data-short="Hom" type="button" aria-label="Return to home">Home</button>
           <button id="settings-rail-button" class="tool-item rail-footer-button" data-tool="settings" data-short="Set" type="button" aria-label="Show stage settings">⚙</button>
+          <button id="toggle-rail" class="tool-item rail-footer-button rail-toggle-button" data-short="◀" type="button" aria-label="Minimize left rail">◀</button>
         </div>
       </aside>
       <button id="resize-rail" class="resize-handle resize-handle-rail" type="button" aria-label="Resize left rail"></button>
@@ -120,7 +110,7 @@
           </div>
           <div class="status-bar-actions">
             <button id="shell-return-match" class="panel-lock-button panel-lock-button-status" type="button" hidden aria-label="Return to match">Return to Match</button>
-            <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">Lock</button>
+            <button id="toggle-layout-lock-video" class="panel-lock-button panel-lock-button-status" data-layout-lock-toggle type="button" aria-label="Unlock video layout">🔒</button>
           </div>
         </section>
 
@@ -1184,6 +1174,107 @@
                 <h3>Project</h3>
                 <span id="media-badge">No Video Selected</span>
               </div>
+              <section class="automation-card stage-automation-card">
+                <div class="section-header sub-section-header">
+                  <h3>Stage Automation</h3>
+                  <button id="output-profile-refresh" type="button">Update Profiles</button>
+                </div>
+                <div id="single-video-loading" class="automation-loading" hidden>Loading profile data...</div>
+                <div id="single-video-error" class="automation-error" hidden>Failed to load profiles.</div>
+                <div class="automation-grid stage-automation-grid">
+                  <section class="automation-card">
+                    <div class="section-header sub-section-header">
+                      <h3>Output Profiles</h3>
+                    </div>
+                    <div class="profile-toolbar">
+                      <input id="output-profile-name" type="text" placeholder="Profile name" aria-label="Output profile name" />
+                      <select id="output-profile-kind" aria-label="Output profile kind">
+                        <option value="stage_output">Stage Output</option>
+                        <option value="stage_composite">Stage Composite</option>
+                      </select>
+                      <button id="output-profile-create" type="button">Create</button>
+                    </div>
+                    <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
+                  </section>
+                  <section class="automation-card">
+                    <div class="section-header sub-section-header">
+                      <h3>Review Source</h3>
+                    </div>
+                    <div class="profile-toolbar">
+                      <select id="retained-review-source" aria-label="Retained review source profile">
+                        <option value="">Auto (current stage)</option>
+                      </select>
+                      <button id="retained-review-apply" type="button">Set Source</button>
+                    </div>
+                    <div id="retained-review-status" class="hint">Using live stage data.</div>
+                  </section>
+                  <section class="automation-card">
+                    <div class="section-header sub-section-header">
+                      <h3>Output Hooks</h3>
+                    </div>
+                    <div class="hook-grid">
+                      <button data-output-hook="run-window" type="button">Trim Dead Time</button>
+                      <button data-output-hook="metric-captions" type="button">Shot Data on Screen</button>
+                      <button data-output-hook="frame-profiles" type="button">Video Shape</button>
+                      <button data-output-hook="lead-in-card" type="button">Opening Title</button>
+                      <button data-output-hook="brand-mark" type="button">Your Logo</button>
+                      <button data-output-hook="subject-track-crop" type="button">Keep Shooter in Frame</button>
+                    </div>
+                    <div id="output-hook-editor" class="output-hook-editor" hidden>
+                      <div class="section-header sub-section-header">
+                        <h4 id="output-hook-title">Hook Editor</h4>
+                        <button id="output-hook-close" type="button">Close</button>
+                      </div>
+                      <div id="output-hook-fields" class="output-hook-fields"></div>
+                    </div>
+                    <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
+                  </section>
+                  <section class="automation-card">
+                    <div class="section-header sub-section-header">
+                      <h3>Multi-Angle Features</h3>
+                    </div>
+                    <div class="feature-grid">
+                      <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
+                        <span class="feature-icon">Sync</span>
+                        <span>Smart Angle Switching</span>
+                        <small class="hint">Auto switch between camera angles</small>
+                      </button>
+                      <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
+                        <span class="feature-icon">Frame</span>
+                        <span>Line Up Angles</span>
+                        <small class="hint">Synchronize angle timing</small>
+                      </button>
+                      <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
+                        <span class="feature-icon">Angle</span>
+                        <span>Camera Jobs</span>
+                        <small class="hint">Assign roles to each angle</small>
+                      </button>
+                      <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
+                        <span class="feature-icon">Audio</span>
+                        <span>Audio Balance</span>
+                        <small class="hint">Mute, gain, and primary selector</small>
+                      </button>
+                      <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
+                        <span class="feature-icon">Cut</span>
+                        <span>Override Smart Cuts</span>
+                        <small class="hint">Manual cut point adjustments</small>
+                      </button>
+                      <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
+                        <span class="feature-icon">Aim</span>
+                        <span>Keep Shooter in Frame</span>
+                        <small class="hint">Auto-crop tracking</small>
+                      </button>
+                    </div>
+                    <div id="feature-editor" class="output-hook-editor" hidden>
+                      <div class="section-header sub-section-header">
+                        <h4 id="feature-title">Feature Editor</h4>
+                        <button id="feature-close" type="button">Close</button>
+                      </div>
+                      <div id="feature-fields" class="output-hook-fields"></div>
+                    </div>
+                  </section>
+                </div>
+              </section>
               <label>Project folder
                 <div class="path-row">
                   <input id="project-path" placeholder="Please create / select project" readonly />
@@ -1254,24 +1345,22 @@
           </div>
   <div id="view-match" class="app-view view-match">
     <div class="workspace-shell match-workspace-shell">
-      <aside class="workspace-sidebar" aria-label="Match view navigation">
-        <div class="workspace-sidebar-header">
-          <p class="workspace-sidebar-kicker">Workspace</p>
-          <h2>Match Video Edit</h2>
-          <p class="workspace-sidebar-copy">Manage stage order, shared defaults, recap, composite, and export from one stable shell.</p>
+      <aside class="workspace-sidebar workspace-rail tool-rail" aria-label="Match view navigation">
+        <div class="rail-brand">
+          <img class="rail-logo" src="/static/logo.png" alt="SplitShot" />
         </div>
-        <nav class="workspace-sidebar-nav">
-          <button class="workspace-sidebar-button active" type="button" data-workspace-view="match" data-workspace-target="match-section-stages">Stages</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-defaults">Defaults</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-overrides">Overrides</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-recap">Recap</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-composite">Composite</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-export">Export</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="match" data-workspace-target="match-section-settings">Settings</button>
+        <nav class="tool-nav">
+          <button class="tool-item active" data-short="Stg" type="button" data-workspace-view="match" data-workspace-target="match-section-stages"><b>Stages</b></button>
+          <button class="tool-item" data-short="Def" type="button" data-workspace-view="match" data-workspace-target="match-section-defaults"><b>Defaults</b></button>
+          <button class="tool-item" data-short="Ovr" type="button" data-workspace-view="match" data-workspace-target="match-section-overrides"><b>Overrides</b></button>
+          <button class="tool-item" data-short="Rec" type="button" data-workspace-view="match" data-workspace-target="match-section-recap"><b>Recap</b></button>
+          <button class="tool-item" data-short="Cmp" type="button" data-workspace-view="match" data-workspace-target="match-section-composite"><b>Composite</b></button>
+          <button class="tool-item" data-short="Exp" type="button" data-workspace-view="match" data-workspace-target="match-section-export"><b>Export</b></button>
         </nav>
-        <div class="workspace-sidebar-footer">
-          <button id="match-go-home" class="workspace-sidebar-button workspace-sidebar-footer-button" type="button">Home</button>
-          <button id="match-open-settings" class="workspace-sidebar-button workspace-sidebar-footer-button workspace-sidebar-settings-button" type="button" data-workspace-view="match" data-workspace-target="match-section-settings">⚙</button>
+        <div class="tool-rail-footer" aria-label="Match rail controls">
+          <button id="match-go-home" class="tool-item rail-footer-button" data-short="Hom" type="button">Home</button>
+          <button id="match-open-settings" class="tool-item rail-footer-button" data-short="Set" type="button" data-workspace-view="match" data-workspace-target="match-section-settings">⚙</button>
+          <button id="match-toggle-rail" class="tool-item rail-footer-button rail-toggle-button" data-short="◀" type="button" aria-label="Minimize match rail">◀</button>
         </div>
       </aside>
       <main class="workspace-main match-workspace">
@@ -1314,7 +1403,7 @@
               </div>
             </div>
           </section>
-          <section id="match-section-defaults" class="workspace-section">
+          <section id="match-section-defaults" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Shared Defaults</h3>
             </div>
@@ -1360,7 +1449,7 @@
               </div>
             </div>
           </section>
-          <section id="match-section-overrides" class="workspace-section">
+          <section id="match-section-overrides" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Stage Overrides</h3>
             </div>
@@ -1389,7 +1478,7 @@
               </div>
             </div>
           </section>
-          <section id="match-section-recap" class="workspace-section">
+          <section id="match-section-recap" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Match Recap</h3>
             </div>
@@ -1397,7 +1486,7 @@
               <div id="match-recap-panel" class="automation-detail">Create or open a workspace to build a Match Recap.</div>
             </div>
           </section>
-          <section id="match-section-composite" class="workspace-section">
+          <section id="match-section-composite" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Stage Composite</h3>
             </div>
@@ -1414,7 +1503,7 @@
               <div id="stage-composite-list" class="automation-list" aria-label="Stage composite clip list"></div>
             </div>
           </section>
-          <section id="match-section-export" class="workspace-section">
+          <section id="match-section-export" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Batch Export</h3>
             </div>
@@ -1441,7 +1530,7 @@
               </div>
             </div>
           </section>
-          <section id="match-section-settings" class="workspace-section">
+          <section id="match-section-settings" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Match Settings</h3>
             </div>
@@ -1459,23 +1548,21 @@
   </div>
   <div id="view-library" class="app-view view-library">
     <div class="workspace-shell library-workspace-shell">
-      <aside class="workspace-sidebar" aria-label="Library view navigation">
-        <div class="workspace-sidebar-header">
-          <p class="workspace-sidebar-kicker">History</p>
-          <h2>Performance Library</h2>
-          <p class="workspace-sidebar-copy">Search history, inspect records, review trends, and reopen work from one persistent library view.</p>
+      <aside class="workspace-sidebar workspace-rail tool-rail" aria-label="Library view navigation">
+        <div class="rail-brand">
+          <img class="rail-logo" src="/static/logo.png" alt="SplitShot" />
         </div>
-        <nav class="workspace-sidebar-nav">
-          <button class="workspace-sidebar-button active" type="button" data-workspace-view="library" data-workspace-target="library-section-overview">Overview</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-records">Records</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-detail">Detail</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-analytics">Analytics</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-backup">Backup</button>
-          <button class="workspace-sidebar-button" type="button" data-workspace-view="library" data-workspace-target="library-section-settings">Settings</button>
+        <nav class="tool-nav">
+          <button class="tool-item active" data-short="Ovr" type="button" data-workspace-view="library" data-workspace-target="library-section-overview"><b>Overview</b></button>
+          <button class="tool-item" data-short="Rec" type="button" data-workspace-view="library" data-workspace-target="library-section-records"><b>Records</b></button>
+          <button class="tool-item" data-short="Det" type="button" data-workspace-view="library" data-workspace-target="library-section-detail"><b>Detail</b></button>
+          <button class="tool-item" data-short="Ana" type="button" data-workspace-view="library" data-workspace-target="library-section-analytics"><b>Analytics</b></button>
+          <button class="tool-item" data-short="Bak" type="button" data-workspace-view="library" data-workspace-target="library-section-backup"><b>Backup</b></button>
         </nav>
-        <div class="workspace-sidebar-footer">
-          <button id="library-go-home" class="workspace-sidebar-button workspace-sidebar-footer-button" type="button">Home</button>
-          <button id="library-open-settings" class="workspace-sidebar-button workspace-sidebar-footer-button workspace-sidebar-settings-button" type="button" data-workspace-view="library" data-workspace-target="library-section-settings">⚙</button>
+        <div class="tool-rail-footer" aria-label="Library rail controls">
+          <button id="library-go-home" class="tool-item rail-footer-button" data-short="Hom" type="button">Home</button>
+          <button id="library-open-settings" class="tool-item rail-footer-button" data-short="Set" type="button" data-workspace-view="library" data-workspace-target="library-section-settings">⚙</button>
+          <button id="library-toggle-rail" class="tool-item rail-footer-button rail-toggle-button" data-short="◀" type="button" aria-label="Minimize library rail">◀</button>
         </div>
       </aside>
       <main class="workspace-main library-workspace">
@@ -1502,7 +1589,7 @@
               <div id="library-summary-tiles" class="library-summary-tiles" aria-label="Library summary"></div>
             </div>
           </section>
-          <section id="library-section-records" class="workspace-section">
+          <section id="library-section-records" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Records</h3>
             </div>
@@ -1530,7 +1617,7 @@
               </div>
             </div>
           </section>
-          <section id="library-section-detail" class="workspace-section">
+          <section id="library-section-detail" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Selected Record</h3>
             </div>
@@ -1555,7 +1642,7 @@
               </div>
             </div>
           </section>
-          <section id="library-section-analytics" class="workspace-section">
+          <section id="library-section-analytics" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Analytics</h3>
             </div>
@@ -1592,7 +1679,7 @@
               </div>
             </div>
           </section>
-          <section id="library-section-backup" class="workspace-section">
+          <section id="library-section-backup" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Backup &amp; Restore</h3>
             </div>
@@ -1606,7 +1693,7 @@
               </div>
             </div>
           </section>
-          <section id="library-section-settings" class="workspace-section">
+          <section id="library-section-settings" class="workspace-section" hidden>
             <div class="section-header sub-section-header">
               <h3>Library Settings</h3>
             </div>

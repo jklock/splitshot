@@ -72,7 +72,7 @@
     overflow: visible;
   }
 
-  .shell-header .processing-bar {
+  .processing-bar {
     grid-template-columns: minmax(0, 1fr);
     height: auto;
     min-height: 48px;

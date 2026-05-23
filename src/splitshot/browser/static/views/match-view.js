@@ -207,7 +207,7 @@ export function createMatchView({
     if (emptyState) emptyState.hidden = hasWorkspace;
     if (sectionHeader) sectionHeader.hidden = !hasWorkspace;
     if (workspaceSections) workspaceSections.hidden = !hasWorkspace;
-    if (matchSidebar) matchSidebar.hidden = !hasWorkspace;
+    if (matchSidebar) matchSidebar.hidden = false;
     if (!hasStages && hasWorkspace && list.children.length === 0) {
       list.innerHTML = '<p class="hint" style="padding:12px">No stages yet. Add your first stage.</p>';
     }
