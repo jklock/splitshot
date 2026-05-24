@@ -1044,12 +1044,27 @@ class BrowserControlServer:
                 try:
                     payload = self._read_json()
                     kind = str(payload.get("kind", ""))
-                    current = (
+                    requested_current = (
                         None if payload.get("current") in {"", None} else str(payload["current"])
                     )
-                    activity.log("api.dialog.path.start", kind=kind, current=current)
-                    selected_path = path_chooser(kind, current) or ""
-                    activity.log("api.dialog.path.success", kind=kind, selected=selected_path)
+                    home = None if payload.get("home") in {"", None} else str(payload["home"])
+                    chooser_current = requested_current or home
+                    activity.log(
+                        "api.dialog.path.start",
+                        kind=kind,
+                        current=requested_current,
+                        home=home,
+                        chooser_current=chooser_current,
+                    )
+                    selected_path = path_chooser(kind, chooser_current) or ""
+                    activity.log(
+                        "api.dialog.path.success",
+                        kind=kind,
+                        current=requested_current,
+                        home=home,
+                        chooser_current=chooser_current,
+                        selected=selected_path,
+                    )
                     self._send_json({"path": selected_path})
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.dialog.path.error", error=str(exc))
@@ -2017,40 +2032,154 @@ class BrowserControlServer:
                 controller.project.touch()
                 controller.status_message = f"Exported video to {exported_path}."
 
+            def _library_record_score(self, record: dict[str, Any]) -> float | None:
+                metric_summary = record.get("metric_summary")
+                summary = metric_summary if isinstance(metric_summary, dict) else {}
+                aggregate_summary = record.get("aggregate_metric_summary")
+                aggregate = aggregate_summary if isinstance(aggregate_summary, dict) else {}
+                candidates = [
+                    record.get("score"),
+                    record.get("score_total"),
+                    summary.get("score"),
+                    summary.get("score_total"),
+                    summary.get("hit_factor"),
+                    aggregate.get("score"),
+                    aggregate.get("score_total"),
+                ]
+                for candidate in candidates:
+                    if candidate in {None, ""}:
+                        continue
+                    try:
+                        return float(candidate)
+                    except (TypeError, ValueError):
+                        continue
+                return None
+
+            def _normalize_stage_library_record(self, record: dict[str, Any]) -> dict[str, Any]:
+                normalized = dict(record or {})
+                metric_summary = normalized.get("metric_summary")
+                summary = dict(metric_summary) if isinstance(metric_summary, dict) else {}
+                if not summary:
+                    if normalized.get("first_shot_reaction_ms") not in {None, ""}:
+                        summary["first_shot_reaction"] = normalized.get("first_shot_reaction_ms")
+                    if normalized.get("cumulative_time_ms") not in {None, ""}:
+                        summary["cumulative_time"] = normalized.get("cumulative_time_ms")
+                    if normalized.get("penalties") not in {None, ""}:
+                        summary["penalties"] = normalized.get("penalties")
+                    if normalized.get("score") not in {None, ""}:
+                        summary["score"] = normalized.get("score")
+                    if normalized.get("score_total") not in {None, ""}:
+                        summary["score_total"] = normalized.get("score_total")
+                editor_target = normalized.get("editor_target")
+                normalized["metric_summary"] = summary
+                normalized["editor_target"] = dict(editor_target) if isinstance(editor_target, dict) else {}
+                normalized["tags"] = [str(tag) for tag in (normalized.get("tags") or [])]
+                normalized["notes"] = str(normalized.get("notes") or "")
+                normalized["score"] = self._library_record_score({**normalized, "metric_summary": summary})
+                normalized["project_path"] = normalized.get("project_path") or normalized["editor_target"].get("project_path", "")
+                normalized["workspace_path"] = normalized.get("workspace_path") or normalized["editor_target"].get("workspace_path", "")
+                return normalized
+
+            def _normalize_match_library_record(self, record: dict[str, Any]) -> dict[str, Any]:
+                normalized = dict(record or {})
+                aggregate_summary = normalized.get("aggregate_metric_summary")
+                summary = dict(aggregate_summary) if isinstance(aggregate_summary, dict) else {}
+                editor_target = normalized.get("editor_target")
+                stage_ids = normalized.get("stage_ids") or summary.get("stages") or []
+                normalized["aggregate_metric_summary"] = summary
+                normalized["editor_target"] = dict(editor_target) if isinstance(editor_target, dict) else {}
+                normalized["stage_ids"] = [str(stage_id) for stage_id in stage_ids]
+                normalized["stage_count"] = normalized.get("stage_count") or summary.get("stage_count") or len(normalized["stage_ids"])
+                normalized["tags"] = [str(tag) for tag in (normalized.get("tags") or [])]
+                normalized["notes"] = str(normalized.get("notes") or "")
+                normalized["workspace_path"] = normalized.get("workspace_path") or normalized["editor_target"].get("workspace_path", "")
+                normalized["score"] = self._library_record_score({**normalized, "aggregate_metric_summary": summary})
+                return normalized
+
+            def _library_stage_rows(self) -> list[dict[str, Any]]:
+                from splitshot.persistence.library import read_stage_metrics, read_stage_records
+
+                records = read_stage_records() or read_stage_metrics()
+                return [self._normalize_stage_library_record(record) for record in records]
+
+            def _library_match_rows(self) -> list[dict[str, Any]]:
+                from splitshot.persistence.library import read_match_metrics, read_match_records
+
+                records = read_match_records() or read_match_metrics()
+                return [self._normalize_match_library_record(record) for record in records]
+
+            def _library_sort_key(self, record: dict[str, Any], sort_by: str) -> tuple[int, float | str]:
+                if sort_by == "score":
+                    score = self._library_record_score(record)
+                    return (0 if score is not None else 1, score if score is not None else 0.0)
+                if sort_by == "display_name":
+                    return (0, str(record.get("display_name") or record.get("competitor_name") or ""))
+                if sort_by == "discipline":
+                    return (0, str(record.get("discipline") or ""))
+                return (0, str(record.get(sort_by) or record.get("event_date") or ""))
+
+            def _library_matches_search(self, record: dict[str, Any], query_text: str) -> bool:
+                normalized_query = query_text.strip().lower()
+                if not normalized_query:
+                    return True
+                haystacks = [
+                    record.get("display_name"),
+                    record.get("competitor_name"),
+                    record.get("discipline"),
+                    record.get("event_date"),
+                    record.get("stage_id"),
+                    record.get("match_id"),
+                    record.get("library_record_id"),
+                    " ".join(record.get("stage_ids") or []),
+                ]
+                return any(normalized_query in str(value or "").lower() for value in haystacks)
+
             def _handle_library_list(self) -> dict[str, Any]:
                 """Return paginated list of library records."""
-                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
-
-                stage_metrics = read_stage_metrics()
-                match_metrics = read_match_metrics()
+                stage_metrics = sorted(
+                    self._library_stage_rows(),
+                    key=lambda record: str(record.get("event_date") or ""),
+                    reverse=True,
+                )
+                match_metrics = sorted(
+                    self._library_match_rows(),
+                    key=lambda record: str(record.get("event_date") or ""),
+                    reverse=True,
+                )
 
                 return {
-                    "stages": stage_metrics[-50:],
-                    "matches": match_metrics[-20:],
+                    "stages": stage_metrics,
+                    "matches": match_metrics,
                     "total_stages": len(stage_metrics),
                     "total_matches": len(match_metrics),
                 }
 
             def _handle_library_filter(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Filter library records by criteria."""
-                from splitshot.persistence.library import read_stage_metrics, read_match_metrics
-
                 query = body or {}
-                stage_metrics = read_stage_metrics()
-                match_metrics = read_match_metrics()
+                stage_metrics = self._library_stage_rows()
+                match_metrics = self._library_match_rows()
 
                 filtered_stages = stage_metrics
                 if query.get("discipline"):
                     filtered_stages = [
                         s for s in filtered_stages if s.get("discipline") == query["discipline"]
                     ]
-                if query.get("competitor"):
-                    competitor = query["competitor"].lower()
+                    match_metrics = [
+                        m for m in match_metrics if m.get("discipline") == query["discipline"]
+                    ]
+                query_text = str(query.get("search") or query.get("competitor") or "").strip()
+                if query_text:
                     filtered_stages = [
                         s
                         for s in filtered_stages
-                        if competitor in str(s.get("competitor_name", "")).lower()
+                        if self._library_matches_search(s, query_text)
                     ]
+                    filtered_matches = [
+                        m for m in match_metrics if self._library_matches_search(m, query_text)
+                    ]
+                else:
+                    filtered_matches = match_metrics
                 if query.get("stage_id"):
                     filtered_stages = [
                         s for s in filtered_stages if s.get("stage_id") == query["stage_id"]
@@ -2062,20 +2191,32 @@ class BrowserControlServer:
                     filtered_matches = [
                         m for m in match_metrics if m.get("match_id") == query["match_id"]
                     ]
-                else:
-                    filtered_matches = match_metrics
 
                 sort_by = query.get("sort_by", "event_date")
                 sort_order = query.get("sort_order", "desc")
                 reverse = sort_order == "desc"
-                try:
-                    filtered_stages.sort(key=lambda x: str(x.get(sort_by) or ""), reverse=reverse)
-                except (TypeError, KeyError):
-                    pass
+                if sort_by == "score":
+                    scored_stages = [record for record in filtered_stages if self._library_record_score(record) is not None]
+                    unscored_stages = [record for record in filtered_stages if self._library_record_score(record) is None]
+                    scored_matches = [record for record in filtered_matches if self._library_record_score(record) is not None]
+                    unscored_matches = [record for record in filtered_matches if self._library_record_score(record) is None]
+                    scored_stages.sort(key=lambda record: self._library_record_score(record) or 0.0, reverse=reverse)
+                    scored_matches.sort(key=lambda record: self._library_record_score(record) or 0.0, reverse=reverse)
+                    filtered_stages = [*scored_stages, *unscored_stages]
+                    filtered_matches = [*scored_matches, *unscored_matches]
+                else:
+                    filtered_stages.sort(
+                        key=lambda record: self._library_sort_key(record, sort_by),
+                        reverse=reverse,
+                    )
+                    filtered_matches.sort(
+                        key=lambda record: self._library_sort_key(record, sort_by),
+                        reverse=reverse,
+                    )
 
                 return {
-                    "stages": filtered_stages[-100:],
-                    "matches": filtered_matches[-50:],
+                    "stages": filtered_stages,
+                    "matches": filtered_matches,
                     "total_stages": len(filtered_stages),
                     "total_matches": len(filtered_matches),
                 }
@@ -2089,27 +2230,50 @@ class BrowserControlServer:
                     return {"success": False, "error": "No record identifier provided"}
 
                 record = load_stage_record(record_id)
-                if record is None:
+                normalized_record: dict[str, Any] | None = None
+                if record is not None:
+                    normalized_record = self._normalize_stage_library_record(
+                        {
+                            "library_record_id": record.library_record_id,
+                            "stage_id": record.stage_id,
+                            "match_id": record.match_id,
+                            "display_name": record.display_name,
+                            "event_date": record.event_date.isoformat() if record.event_date else None,
+                            "discipline": record.discipline,
+                            "competitor_name": record.competitor_name,
+                            "metric_summary": dict(record.metric_summary),
+                            "editor_target": dict(record.editor_target),
+                            "truth_hash": record.truth_hash,
+                            "tags": list(record.tags),
+                            "notes": record.notes,
+                        }
+                    )
+                else:
+                    normalized_record = next(
+                        (
+                            row
+                            for row in self._library_stage_rows()
+                            if row.get("library_record_id") == record_id or row.get("stage_id") == record_id
+                        ),
+                        None,
+                    )
+
+                if normalized_record is None:
                     return {
                         "success": False,
                         "error": f"Stage record {record_id} not found",
                     }
 
+                editor_target = dict(normalized_record.get("editor_target") or {})
+                editor_target.setdefault("type", "single")
+                editor_target.setdefault("stage_id", normalized_record.get("stage_id", ""))
+                editor_target.setdefault("project_path", normalized_record.get("project_path", ""))
+                editor_target.setdefault("workspace_path", normalized_record.get("workspace_path", ""))
+
                 return {
                     "success": True,
-                    "record": {
-                        "library_record_id": record.library_record_id,
-                        "stage_id": record.stage_id,
-                        "display_name": record.display_name,
-                        "discipline": record.discipline,
-                        "competitor_name": record.competitor_name,
-                        "metric_summary": record.metric_summary,
-                        "truth_hash": record.truth_hash,
-                    },
-                    "editor_target": {
-                        "type": "single",
-                        "stage_id": record.stage_id,
-                    },
+                    "record": normalized_record,
+                    "editor_target": editor_target,
                 }
 
             def _handle_library_match_open(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -2121,26 +2285,48 @@ class BrowserControlServer:
                     return {"success": False, "error": "No record identifier provided"}
 
                 record = load_match_record(record_id)
-                if record is None:
+                normalized_record: dict[str, Any] | None = None
+                if record is not None:
+                    normalized_record = self._normalize_match_library_record(
+                        {
+                            "library_record_id": record.library_record_id,
+                            "match_id": record.match_id,
+                            "display_name": record.display_name,
+                            "event_date": record.event_date.isoformat() if record.event_date else None,
+                            "discipline": record.discipline,
+                            "stage_ids": list(record.stage_ids),
+                            "aggregate_metric_summary": dict(record.aggregate_metric_summary),
+                            "editor_target": dict(record.editor_target),
+                            "truth_hash": record.truth_hash,
+                            "tags": list(record.tags),
+                            "notes": record.notes,
+                        }
+                    )
+                else:
+                    normalized_record = next(
+                        (
+                            row
+                            for row in self._library_match_rows()
+                            if row.get("library_record_id") == record_id or row.get("match_id") == record_id
+                        ),
+                        None,
+                    )
+
+                if normalized_record is None:
                     return {
                         "success": False,
                         "error": f"Match record {record_id} not found",
                     }
 
+                editor_target = dict(normalized_record.get("editor_target") or {})
+                editor_target.setdefault("type", "multi")
+                editor_target.setdefault("match_id", normalized_record.get("match_id", ""))
+                editor_target.setdefault("workspace_path", normalized_record.get("workspace_path", ""))
+
                 return {
                     "success": True,
-                    "record": {
-                        "library_record_id": record.library_record_id,
-                        "match_id": record.match_id,
-                        "display_name": record.display_name,
-                        "stage_ids": record.stage_ids,
-                        "aggregate_metric_summary": record.aggregate_metric_summary,
-                        "truth_hash": record.truth_hash,
-                    },
-                    "editor_target": {
-                        "type": "multi",
-                        "match_id": record.match_id,
-                    },
+                    "record": normalized_record,
+                    "editor_target": editor_target,
                 }
 
             def _handle_proxy_status(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -2439,13 +2625,11 @@ class BrowserControlServer:
 
             def _handle_library_analytics_compare(self, body: dict[str, Any]) -> dict[str, Any]:
                 """Compare two stages side by side."""
-                from splitshot.persistence.library import read_stage_metrics
-
                 query = body or {}
                 stage_id_a = query.get("stage_id_a", "")
                 stage_id_b = query.get("stage_id_b", "")
 
-                all_metrics = read_stage_metrics()
+                all_metrics = self._library_stage_rows()
                 metric_a = next((m for m in all_metrics if m.get("stage_id") == stage_id_a), None)
                 metric_b = next((m for m in all_metrics if m.get("stage_id") == stage_id_b), None)
 
@@ -2538,19 +2722,23 @@ class BrowserControlServer:
 
             def _handle_library_export_csv(self) -> dict[str, Any]:
                 """Export library records as CSV data."""
-                from splitshot.persistence.library import read_stage_metrics
-
-                records = read_stage_metrics()
-                lines = ["Name,Date,Discipline,Score,StageCount"]
+                records = [
+                    *self._library_stage_rows(),
+                    *self._library_match_rows(),
+                ]
+                lines = ["Type,Name,Date,Discipline,Score,StageCount,RecordId"]
                 for r in records:
-                    summary = r.get("metric_summary", {})
-                    score = summary.get("score", summary.get("hit_factor", ""))
+                    stage_ids = r.get("stage_ids") or []
+                    stage_count = r.get("stage_count") or len(stage_ids)
+                    record_type = "match" if r.get("match_id") and stage_count else "stage"
                     lines.append(
+                        f'"{record_type}",'
                         f'"{r.get("display_name", "")}",'
                         f'"{r.get("event_date", "")}",'
                         f'"{r.get("discipline", "")}",'
-                        f'"{score}",'
-                        f'"{r.get("stage_count", "")}"'
+                        f'"{r.get("score", "") if r.get("score") not in {None, ""} else ""}",'
+                        f'"{stage_count if record_type == "match" else ""}",'
+                        f'"{r.get("library_record_id", "")}"'
                     )
 
                 return {
@@ -2561,13 +2749,15 @@ class BrowserControlServer:
 
             def _handle_library_export_json(self) -> dict[str, Any]:
                 """Export library records as JSON data."""
-                from splitshot.persistence.library import read_stage_metrics
-
-                records = read_stage_metrics()
+                stages = self._library_stage_rows()
+                matches = self._library_match_rows()
                 return {
                     "format": "json",
-                    "data": records,
-                    "record_count": len(records),
+                    "data": {
+                        "stages": stages,
+                        "matches": matches,
+                    },
+                    "record_count": len(stages) + len(matches),
                 }
 
             # === Library: Backup/Restore ===

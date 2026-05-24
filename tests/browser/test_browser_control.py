@@ -701,6 +701,62 @@ def test_browser_state_exposes_metrics_after_primary_ingest(synthetic_video_fact
     assert payload["timing_segments"][-1]["cumulative_ms"] == payload["metrics"]["raw_time_ms"]
 
 
+def test_browser_state_exposes_workspace_stage_aliases_and_override_details() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Automation Match"
+    controller.workspace.description = "Workspace state contract"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.shared_defaults = {"frame_profile": "16:9", "metric_caption_preset": "score"}
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_1"].status = "ready"
+    controller.workspace.stage_entries["stage_2"].source_media_present = False
+    controller.workspace.stage_entries["stage_2"].override_values = {
+        "frame_profile": "1:1",
+        "metric_caption_preset": "splits",
+    }
+    controller.workspace.stage_entries["stage_2"].inherited_from_first = True
+    controller.workspace.first_stage_snapshot = {
+        "stage_id": "stage_1",
+        "profiles": [{"profile_name": "Stage Output"}],
+    }
+
+    payload = browser_state(controller.project, controller.status_message, controller=controller)
+
+    assert payload["workspace"]["name"] == "Automation Match"
+    assert payload["workspace"]["stage_count"] == 2
+    assert payload["workspace_shared_defaults"]["metric_caption_preset"] == "score"
+
+    entries = {entry["stage_id"]: entry for entry in payload["workspace_stage_entries"]}
+    assert entries["stage_1"]["name"] == "Stage 1"
+    assert entries["stage_1"]["media_loaded"] is True
+    assert entries["stage_1"]["override_count"] == 0
+    assert entries["stage_2"]["name"] == "Stage 2"
+    assert entries["stage_2"]["media_loaded"] is False
+    assert entries["stage_2"]["override_count"] == 2
+    assert entries["stage_2"]["override_values"] == {
+        "frame_profile": "1:1",
+        "metric_caption_preset": "splits",
+    }
+    assert entries["stage_2"]["inherited_from_first"] is True
+    assert payload["workspace_override_summary"]["stage_2"]["metric_caption_preset"] == "splits"
+
+
+def test_browser_state_exposes_workspace_path_when_saved(tmp_path) -> None:
+    controller = ProjectController()
+    workspace_path = tmp_path / "automation-workspace"
+    controller.new_workspace()
+    controller.workspace.name = "Automation Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.save_workspace(str(workspace_path))
+
+    payload = browser_state(controller.project, controller.status_message, controller=controller)
+
+    assert payload["workspace_path"] == str(workspace_path)
+    assert payload["workspace"]["path"] == str(workspace_path)
+
+
 def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
@@ -1636,6 +1692,28 @@ def test_browser_path_dialog_endpoint_supports_project_folder_selection(tmp_path
             {"kind": "project_folder", "current": "/tmp/current.ssproj"},
         ) == {"path": str(project_path)}
         assert calls == [("project_folder", "/tmp/current.ssproj")]
+    finally:
+        server.shutdown()
+
+
+def test_browser_path_dialog_endpoint_uses_project_home_when_current_is_blank(tmp_path) -> None:
+    project_path = tmp_path / "existing-project"
+    selected = project_path / "Markers" / "popup-image.png"
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        calls.append((kind, current))
+        return str(selected)
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0, path_chooser=fake_path_chooser)
+    server.start_background(open_browser=False)
+    try:
+        assert _post_json(
+            f"{server.url}api/dialog/path",
+            {"kind": "popup_image", "current": "", "home": str(project_path)},
+        ) == {"path": str(selected)}
+        assert calls == [("popup_image", str(project_path))]
     finally:
         server.shutdown()
 
@@ -3842,13 +3920,452 @@ def test_output_profile_update_persists_hook_settings() -> None:
     )
     output_id = profile.get("output_id")
     assert output_id, "Profile must have an ID"
-    result = controller.output_profile_update(output_id, frame_profile="widescreen")
+    result = controller.output_profile_update(
+        output_id,
+        frame_profile="16:9",
+        metric_caption_preset={
+            "preset": "full",
+            "enabled_fields": ["time", "split_times", "score", "hit_factor"],
+            "position": "bottom_left",
+            "lead_in_padding_ms": 1400,
+            "tail_padding_ms": 2600,
+        },
+        lead_in_card={"style": "stage_info", "duration_s": 2.5},
+        brand_mark={"style": "splitshot", "text": "SplitShot", "duration_s": 1.25},
+        subject_track_crop={"enabled": True, "margin_percent": 14},
+    )
     assert result is not None, "Update should succeed"
-    assert result.get("frame_profile") == "widescreen", f"Expected widescreen, got {result.get('frame_profile')}"
+    assert result.get("frame_profile") == "16:9"
+    assert result.get("metric_caption_preset") == {
+        "preset": "full",
+        "enabled_fields": ["time", "split_times", "score", "hit_factor"],
+        "position": "bottom_left",
+        "lead_in_padding_ms": 1400,
+        "tail_padding_ms": 2600,
+    }
+    assert result.get("lead_in_card") == {"style": "stage_info", "duration_s": 2.5}
+    assert result.get("brand_mark") == {
+        "style": "splitshot",
+        "text": "SplitShot",
+        "duration_s": 1.25,
+    }
+    assert result.get("subject_track_crop") == {"enabled": True, "margin_percent": 14}
     profiles = controller.output_profile_list()
     updated = [p for p in profiles if p.get("output_id") == output_id]
     assert updated, "Updated profile should be in list"
-    assert updated[0].get("frame_profile") == "widescreen"
+    assert updated[0].get("frame_profile") == "16:9"
+    assert updated[0].get("metric_caption_preset", {}).get("preset") == "full"
+    assert updated[0].get("metric_caption_preset", {}).get("position") == "bottom_left"
+    assert updated[0].get("lead_in_card", {}).get("style") == "stage_info"
+    assert updated[0].get("brand_mark", {}).get("duration_s") == 1.25
+    assert updated[0].get("subject_track_crop", {}).get("margin_percent") == 14
+
+
+def test_browser_library_filter_normalizes_records_and_sorts_unscored_last(
+    monkeypatch,
+) -> None:
+    """Library list/filter routes should normalize records and keep unscored rows last."""
+    import splitshot.persistence.library as library_module
+
+    stage_records = [
+        {
+            "library_record_id": "stage-scored",
+            "stage_id": "stage-scored",
+            "display_name": "Classifier",
+            "event_date": "2026-02-03T00:00:00+00:00",
+            "discipline": "uspsa_minor",
+            "metric_summary": {"score_total": 92},
+            "editor_target": {"project_path": "/tmp/perf-stage", "stage_id": "stage-scored"},
+        },
+        {
+            "library_record_id": "stage-unscored",
+            "stage_id": "stage-unscored",
+            "display_name": "Cold Start",
+            "event_date": "2026-02-01T00:00:00+00:00",
+            "discipline": "idpa_time_plus",
+            "editor_target": {"project_path": "/tmp/perf-stage-b", "stage_id": "stage-unscored"},
+        },
+    ]
+    match_records = [
+        {
+            "library_record_id": "match-scored",
+            "match_id": "match-scored",
+            "display_name": "Weekend Match",
+            "event_date": "2026-02-04T00:00:00+00:00",
+            "discipline": "uspsa_minor",
+            "stage_ids": ["stage-scored", "stage-unscored"],
+            "aggregate_metric_summary": {"score": 180, "stage_count": 2},
+            "editor_target": {"workspace_path": "/tmp/perf-match", "match_id": "match-scored"},
+        }
+    ]
+
+    monkeypatch.setattr(library_module, "read_stage_records", lambda: list(stage_records))
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [])
+    monkeypatch.setattr(library_module, "read_match_records", lambda: list(match_records))
+    monkeypatch.setattr(library_module, "read_match_metrics", lambda: [])
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        listed = _post_json(f"{server.url}api/library/list", {})
+        filtered = _post_json(
+            f"{server.url}api/library/filter",
+            {"sort_by": "score", "sort_order": "desc"},
+        )
+        discipline_filtered = _post_json(
+            f"{server.url}api/library/filter",
+            {"discipline": "uspsa_minor", "sort_by": "display_name", "sort_order": "asc"},
+        )
+
+        assert listed["total_stages"] == 2
+        assert listed["total_matches"] == 1
+        normalized_stage = next(
+            record for record in listed["stages"] if record["library_record_id"] == "stage-scored"
+        )
+        normalized_match = listed["matches"][0]
+        assert normalized_stage["score"] == 92.0
+        assert normalized_stage["project_path"] == "/tmp/perf-stage"
+        assert normalized_stage["tags"] == []
+        assert normalized_stage["notes"] == ""
+        assert normalized_match["score"] == 180.0
+        assert normalized_match["workspace_path"] == "/tmp/perf-match"
+        assert normalized_match["stage_count"] == 2
+
+        assert [record["library_record_id"] for record in filtered["stages"]] == [
+            "stage-scored",
+            "stage-unscored",
+        ]
+        assert [record["library_record_id"] for record in discipline_filtered["stages"]] == [
+            "stage-scored"
+        ]
+        assert [record["library_record_id"] for record in discipline_filtered["matches"]] == [
+            "match-scored"
+        ]
+    finally:
+        server.shutdown()
+
+
+def test_browser_library_open_routes_fall_back_to_metrics_rows_for_reopen_targets(
+    monkeypatch,
+) -> None:
+    """Open routes should still expose reopen payloads when only metrics rows exist."""
+    import splitshot.persistence.library as library_module
+
+    monkeypatch.setattr(library_module, "read_stage_records", lambda: [])
+    monkeypatch.setattr(library_module, "read_match_records", lambda: [])
+    monkeypatch.setattr(
+        library_module,
+        "read_stage_metrics",
+        lambda: [
+            {
+                "library_record_id": "fallback-stage",
+                "stage_id": "stage-1",
+                "display_name": "Fallback Stage",
+                "event_date": "2026-02-05T00:00:00+00:00",
+                "discipline": "uspsa_minor",
+                "score_total": 87,
+                "editor_target": {"project_path": "/tmp/fallback-stage", "stage_id": "stage-1"},
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        library_module,
+        "read_match_metrics",
+        lambda: [
+            {
+                "library_record_id": "fallback-match",
+                "match_id": "match-1",
+                "display_name": "Fallback Match",
+                "event_date": "2026-02-06T00:00:00+00:00",
+                "discipline": "idpa_time_plus",
+                "stage_ids": ["stage-1"],
+                "stage_count": 1,
+                "aggregate_metric_summary": {"score": 145},
+                "editor_target": {"workspace_path": "/tmp/fallback-match", "match_id": "match-1"},
+            }
+        ],
+    )
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        stage_payload = _post_json(
+            f"{server.url}api/library/stage/open",
+            {"library_record_id": "fallback-stage"},
+        )
+        match_payload = _post_json(
+            f"{server.url}api/library/match/open",
+            {"library_record_id": "fallback-match"},
+        )
+
+        assert stage_payload["success"] is True
+        assert stage_payload["record"]["score"] == 87.0
+        assert stage_payload["record"]["project_path"] == "/tmp/fallback-stage"
+        assert stage_payload["editor_target"] == {
+            "project_path": "/tmp/fallback-stage",
+            "stage_id": "stage-1",
+            "type": "single",
+            "workspace_path": "",
+        }
+
+        assert match_payload["success"] is True
+        assert match_payload["record"]["score"] == 145.0
+        assert match_payload["record"]["workspace_path"] == "/tmp/fallback-match"
+        assert match_payload["editor_target"] == {
+            "workspace_path": "/tmp/fallback-match",
+            "match_id": "match-1",
+            "type": "multi",
+        }
+    finally:
+        server.shutdown()
+
+
+def test_browser_library_tags_and_notes_routes_round_trip_for_stage_and_match_records(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Tags and notes routes should persist for both stage and match library records."""
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
+    from splitshot.persistence.library import (
+        load_match_record,
+        load_stage_record,
+        save_match_record,
+        save_stage_record,
+    )
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="stage-record",
+            stage_id="stage-1",
+            display_name="Stage Record",
+        )
+    )
+    save_match_record(
+        LibraryMatchRecord(
+            library_record_id="match-record",
+            match_id="match-1",
+            display_name="Match Record",
+        )
+    )
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        assert _post_json(
+            f"{server.url}api/library/tags/update",
+            {"record_id": "stage-record", "tags": ["classifier", "night"]},
+        )["updated"] is True
+        assert _post_json(
+            f"{server.url}api/library/notes/update",
+            {"record_id": "stage-record", "notes": "Keep strong hands high."},
+        )["updated"] is True
+        assert _post_json(
+            f"{server.url}api/library/tags/update",
+            {"record_id": "match-record", "tags": ["major", "travel"]},
+        )["updated"] is True
+        assert _post_json(
+            f"{server.url}api/library/notes/update",
+            {"record_id": "match-record", "notes": "Review stage plan timing."},
+        )["updated"] is True
+    finally:
+        server.shutdown()
+
+    restored_stage = load_stage_record("stage-record")
+    restored_match = load_match_record("match-record")
+    assert restored_stage is not None
+    assert restored_stage.tags == ["classifier", "night"]
+    assert restored_stage.notes == "Keep strong hands high."
+    assert restored_match is not None
+    assert restored_match.tags == ["major", "travel"]
+    assert restored_match.notes == "Review stage plan timing."
+
+
+def test_browser_library_export_routes_include_normalized_stage_and_match_records(
+    monkeypatch,
+) -> None:
+    """Export routes should include normalized stage and match payloads."""
+    import splitshot.persistence.library as library_module
+
+    monkeypatch.setattr(
+        library_module,
+        "read_stage_records",
+        lambda: [
+            {
+                "library_record_id": "stage-export",
+                "stage_id": "stage-export",
+                "display_name": "Classifier Drill",
+                "event_date": "2026-02-07T00:00:00+00:00",
+                "discipline": "uspsa_minor",
+                "metric_summary": {"score_total": 88},
+            }
+        ],
+    )
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [])
+    monkeypatch.setattr(
+        library_module,
+        "read_match_records",
+        lambda: [
+            {
+                "library_record_id": "match-export",
+                "match_id": "match-export",
+                "display_name": "Weekend Match",
+                "event_date": "2026-02-08T00:00:00+00:00",
+                "discipline": "idpa_time_plus",
+                "stage_ids": ["stage-1", "stage-2"],
+                "aggregate_metric_summary": {"score": 177, "stage_count": 2},
+            }
+        ],
+    )
+    monkeypatch.setattr(library_module, "read_match_metrics", lambda: [])
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        csv_payload = _post_json(f"{server.url}api/library/export/csv", {})
+        json_payload = _post_json(f"{server.url}api/library/export/json", {})
+
+        assert csv_payload["format"] == "csv"
+        assert csv_payload["record_count"] == 2
+        assert "Type,Name,Date,Discipline,Score,StageCount,RecordId" in csv_payload["data"]
+        assert "Classifier Drill" in csv_payload["data"]
+        assert "Weekend Match" in csv_payload["data"]
+
+        assert json_payload["format"] == "json"
+        assert json_payload["record_count"] == 2
+        assert json_payload["data"]["stages"][0]["score"] == 88.0
+        assert json_payload["data"]["matches"][0]["stage_count"] == 2
+        assert json_payload["data"]["matches"][0]["score"] == 177.0
+    finally:
+        server.shutdown()
+
+
+def test_library_backup_create_prefers_full_records_when_available(monkeypatch) -> None:
+    """Backup creation should prefer full persisted records over thinner metric index rows."""
+    import splitshot.persistence.library as library_module
+
+    full_stage_records = [
+        {
+            "library_record_id": "stage-full",
+            "stage_id": "stage-1",
+            "metric_summary": {"score_total": 93},
+            "editor_target": {"project_path": "/tmp/stage-full"},
+            "notes": "Persisted note",
+        }
+    ]
+    full_match_records = [
+        {
+            "library_record_id": "match-full",
+            "match_id": "match-1",
+            "aggregate_metric_summary": {"score": 181, "stage_count": 2},
+            "editor_target": {"workspace_path": "/tmp/match-full"},
+            "tags": ["weekend"],
+        }
+    ]
+    monkeypatch.setattr(library_module, "read_stage_records", lambda: list(full_stage_records))
+    monkeypatch.setattr(library_module, "read_match_records", lambda: list(full_match_records))
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [{"library_record_id": "stage-metric"}])
+    monkeypatch.setattr(library_module, "read_match_metrics", lambda: [{"library_record_id": "match-metric"}])
+
+    controller = ProjectController()
+    result = controller.library_backup_create()
+    manifest = result["manifest"]
+
+    assert manifest["stage_records"] == full_stage_records
+    assert manifest["match_records"] == full_match_records
+
+
+def test_library_backup_restore_preserves_tags_notes_editor_target_and_truth_hash(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Backup restore should rebuild full stage/match records with usable reopen metadata."""
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from splitshot.persistence.library import (
+        load_match_record,
+        load_stage_record,
+        read_match_metrics,
+        read_stage_metrics,
+    )
+
+    controller = ProjectController()
+    result = controller.library_backup_restore(
+        {
+            "schema_version": 1,
+            "stage_records": [
+                {
+                    "library_record_id": "stage-restore",
+                    "stage_id": "stage-restore",
+                    "display_name": "Stage Restore",
+                    "event_date": "2026-02-09T00:00:00+00:00",
+                    "discipline": "uspsa_minor",
+                    "competitor_name": "Ada Example",
+                    "metric_summary": {"score_total": 95},
+                    "output_profile_refs": ["stage-output"],
+                    "active_retained_proxy": "proxy-stage",
+                    "editor_target": {"project_path": "/tmp/restore-stage", "stage_id": "stage-restore"},
+                    "truth_hash": "truth-stage",
+                    "tags": ["classifier", "night"],
+                    "notes": "Keep hands high.",
+                }
+            ],
+            "match_records": [
+                {
+                    "library_record_id": "match-restore",
+                    "match_id": "match-restore",
+                    "display_name": "Match Restore",
+                    "event_date": "2026-02-10T00:00:00+00:00",
+                    "discipline": "idpa_time_plus",
+                    "stage_ids": ["stage-a", "stage-b"],
+                    "aggregate_metric_summary": {"score": 182, "stage_count": 2},
+                    "output_profile_refs": ["match-output"],
+                    "active_retained_proxy": "proxy-match",
+                    "editor_target": {"workspace_path": "/tmp/restore-match", "match_id": "match-restore"},
+                    "truth_hash": "truth-match",
+                    "tags": ["major"],
+                    "notes": "Travel match review.",
+                }
+            ],
+        }
+    )
+
+    restored_stage = load_stage_record("stage-restore")
+    restored_match = load_match_record("match-restore")
+    stage_metrics = read_stage_metrics()
+    match_metrics = read_match_metrics()
+
+    assert result == {
+        "restored": True,
+        "stages_restored": 1,
+        "matches_restored": 1,
+        "errors": [],
+    }
+    assert restored_stage is not None
+    assert restored_stage.editor_target == {
+        "project_path": "/tmp/restore-stage",
+        "stage_id": "stage-restore",
+    }
+    assert restored_stage.truth_hash == "truth-stage"
+    assert restored_stage.tags == ["classifier", "night"]
+    assert restored_stage.notes == "Keep hands high."
+    assert restored_match is not None
+    assert restored_match.editor_target == {
+        "workspace_path": "/tmp/restore-match",
+        "match_id": "match-restore",
+    }
+    assert restored_match.truth_hash == "truth-match"
+    assert restored_match.tags == ["major"]
+    assert restored_match.notes == "Travel match review."
+    assert stage_metrics[-1]["library_record_id"] == "stage-restore"
+    assert stage_metrics[-1]["score"] == 95
+    assert match_metrics[-1]["library_record_id"] == "match-restore"
+    assert match_metrics[-1]["stage_count"] == 2
 
 
 def test_library_backup_restore_reports_record_errors(monkeypatch) -> None:
@@ -3918,6 +4435,34 @@ def test_server_workspace_apply_from_first_uses_controller_result() -> None:
     server.start_background(open_browser=False)
     try:
         result = _post_json(f"{server.url}api/workspace/apply-from-first", {"workspace_id": "ignored"})
+        assert result == expected
+        assert calls == [{"called": True}]
+    finally:
+        server.shutdown()
+
+
+def test_server_workspace_apply_from_first_preview_uses_controller_result() -> None:
+    """Browser preview route must return the controller's concrete preview result."""
+    controller = ProjectController()
+    expected = {
+        "preview": [{"stage_id": "stage_2", "status": "will_change"}],
+        "source_stage": "Stage 1",
+        "reusable_settings": ["frame_profile", "output_profiles"],
+    }
+    calls: list[dict] = []
+
+    def fake_preview() -> dict:
+        calls.append({"called": True})
+        return expected
+
+    controller.workspace_apply_from_first_preview = fake_preview  # type: ignore[method-assign]
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        result = _post_json(
+            f"{server.url}api/workspace/apply-from-first/preview",
+            {"workspace_id": "ignored"},
+        )
         assert result == expected
         assert calls == [{"called": True}]
     finally:

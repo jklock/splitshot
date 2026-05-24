@@ -151,10 +151,12 @@ id:import-practiscore
 id:landing-new-match
 id:landing-new-stage
 id:landing-open-file
+id:library-go-home
 id:library-backup-create
 id:library-backup-restore
 id:library-export-csv
 id:library-export-json
+id:library-open-settings
 id:library-filter-discipline
 id:library-notes-save
 id:library-notes-text
@@ -162,14 +164,22 @@ id:library-open-stage
 id:library-open-workspace
 id:library-refresh
 id:library-search
+id:library-setting-auto-refresh
+id:library-setting-default-sort
 id:library-sort
 id:library-tag-add
 id:library-tag-input
+id:library-toggle-rail
 id:open-practiscore-dashboard
 id:match-competitor-name
 id:match-competitor-place
+id:match-go-home
+id:match-open-settings
+id:match-setting-remember-stage
+id:match-setting-show-score
 id:match-stage-number
 id:match-type
+id:match-toggle-rail
 id:max-visible-shots
 id:markers-enable
 id:markers-workbench-filter
@@ -178,14 +188,12 @@ id:merge-layout
 id:merge-media-input
 id:metrics-export-csv
 id:metrics-export-text
-    id:nav-library
-    id:nav-match
-    id:nav-stage
     id:new-project
 id:output-profile-create
 id:output-profile-kind
 id:output-profile-name
 id:output-profile-refresh
+id:output-hook-save
 id:overlay-custom-x
 id:overlay-custom-y
 id:overlay-font-bold
@@ -308,11 +316,7 @@ id:stage-clip-path
 id:stage-clip-role
 id:stage-empty-import
 id:stage-empty-open
-id:surface-go-home
-id:surface-match-video
-id:surface-performance-library
-id:surface-return-workspace
-id:surface-stage-video
+id:stage-go-home
 id:target-height
 id:target-width
 id:threshold
@@ -329,6 +333,7 @@ id:video-bitrate
 id:video-codec
 id:workspace-new
 id:workspace-new-empty
+id:workspace-open
 id:workspace-save
 id:workspace-stage-add
 id:workspace-stage-name
@@ -346,10 +351,8 @@ id:shared-defaults-reset
 id:shared-frame-profile
 id:shared-lead-in
 id:shared-metric-captions
-    id:shell-go-home
-    id:shell-return-match
-    id:shell-settings
-    id:zoom-waveform-in
+id:shell-return-match
+id:zoom-waveform-in
 id:zoom-waveform-out
 """.splitlines()
     if line.strip()
@@ -428,6 +431,8 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "A full-app end-to-end QA claim requires satisfying the stricter exit criteria"
         in inventory_plan
     )
+    assert "Project/Match/Performance seam" in inventory_plan
+    assert "Performance Library loading, empty, stale, and manual-refresh lifecycle proof" in inventory_plan
 
     for snippet in [
         "Phase 0: Lock The Truth Boundary",
@@ -438,5 +443,7 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "Phase 5: Settings And ShotML Full Coverage",
         "Phase 6: Cross-Surface Final Truth Gate",
         "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",
+        "Performance Library loading, empty, stale, and manual-refresh lifecycle proof",
+        "Performance Library stage/workspace reopen proof from selected records",
     ]:
         assert snippet in full_e2e_plan

@@ -47,7 +47,10 @@ This is the recommended path from raw stage video to finished local export.
 
 - Choose the project folder early when you want a reusable bundle.
 - Keep using the same folder through revisions.
-- Reopen the bundle from Project when you need another export version.
+- In Match Video Edit, use `New Workspace`, `Open Workspace`, and `Save Workspace` to manage the multi-stage bundle folder.
+- Use `Open` on a Match stage card to jump into Stage Video Edit, then use `Return to Match` in the shell header to restore the workspace context.
+- Use `Match Recap` to render selected stages into one recap file, or `Batch Export` to queue `Stage Output` or `Stage Composite` renders across the saved workspace.
+- Reopen the bundle from Project or Match when you need another export version.
 
 ## Next Stops
 
@@ -56,4 +59,7 @@ This is the recommended path from raw stage video to finished local export.
 - [panes/splits.md](panes/splits.md) for manual timing.
 - [panes/export.md](panes/export.md) for final render settings.
 - [troubleshooting.md](troubleshooting.md) for common issues.
+
+Keep this checklist handy when you move between Stage and Match workflows.
+<!-- workflow-end -->
 

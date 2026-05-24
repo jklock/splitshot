@@ -54,6 +54,7 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
+    schedule_sync_body = _function_body(source, "scheduleSecondaryPreviewSync")
     export_click = shell_runtime_source[
         shell_runtime_source.index('$("export-video").addEventListener("click"') :
     ]
@@ -111,6 +112,10 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
         "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {"
         in source
     )
+    assert "function setPreviewSeekBoundary(value) {" in source
+    assert "function markPreviewSeekBoundary() {" in source
+    assert "setPreviewSeekBoundary(true);" in _function_body(source, "markPreviewSeekBoundary")
+    assert "markPreviewSeekBoundary," in source
     assert (
         "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));"
         in source
@@ -121,6 +126,7 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900" in source
     assert "if (mergePreviewDrag) return;" in _function_body(source, "syncPreviewPlaybackToTarget")
     assert "secondaryPreviewLastSeekAt.set(preview, now);" in source
+    assert "previewSeekBoundary = true;" not in schedule_sync_body
     assert "popup_template: normalizePopupTemplate(state?.project?.popup_template || {})," in source
     assert "opacity: currentSourceOpacity(source)," in source
 

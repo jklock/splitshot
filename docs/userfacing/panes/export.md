@@ -15,6 +15,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 ## When To Use This Pane
 
 - After timing, scoring, overlays, markers, review boxes, and PiP are final.
+- When you want a reusable stage-output recipe instead of one-off export settings.
 - When you need a draft or final render.
 - When the output needs a specific aspect ratio, frame rate, codec, bitrate, or container.
 - When you want to inspect the live FFmpeg log.
@@ -23,6 +24,10 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 
 | Control | What it does |
 | --- | --- |
+| `Output Profiles` | Lists reusable stage-scoped output recipes for the active stage. Create, select, preview, duplicate, and delete profiles here. |
+| `Update Profiles` | Reloads the current stage profile list. |
+| Output-hook buttons | Open the reusable hook editors for Trim Dead Time, Shot Data on Screen, Video Shape, Opening Title, Your Logo, and Keep Shooter in Frame. |
+| `Save Hook` | Writes the active hook editor back to the selected output profile. |
 | `Preset` | Chooses a built-in export profile or `Custom`. |
 | `Quality` | Sets the general quality target. |
 | `Aspect ratio` | Keeps original framing or crops to a target shape such as `16:9`, `9:16`, `1:1`, or `4:5`. |
@@ -37,21 +42,23 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | `FFmpeg preset` | Trades render speed against compression efficiency. |
 | `2-pass` | Enables two-pass bitrate allocation at the cost of extra render time. |
 | `Output path` | Sets the destination file. The extension selects the container. |
-| `Browse` | Opens a save dialog for the output path. |
+| `Browse` | Opens a save dialog for the output path, starting from the project's `Output` folder when that path has not been changed yet. |
 | `Export Video` | Starts the local render. |
 | `Show Export Log` | Opens the live/latest export log. |
 | Export Log modal | Shows recent local FFmpeg output and can export the log text. |
 
 ## How To Use It
 
-1. Choose a `Preset`, or use `Custom` for exact settings.
-2. Confirm aspect ratio and dimensions.
-3. Use H.264 for broad compatibility unless you know the target supports another codec.
-4. Set a sensible bitrate for draft versus final output.
-5. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
-6. Click `Export Video`.
-7. Click `Show Export Log` if you need to follow FFmpeg progress or diagnose a failed render.
-8. Use `Export Log` inside the modal when you need the log as a separate text file.
+1. Create or select an `Output Profile` first when you want reusable export hooks instead of stage-only one-offs.
+2. Open the hook editor you need and click `Save Hook` before starting the final export.
+3. Choose a `Preset`, or use `Custom` for exact settings.
+4. Confirm aspect ratio and dimensions.
+5. Use H.264 for broad compatibility unless you know the target supports another codec.
+6. Set a sensible bitrate for draft versus final output.
+7. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
+8. Click `Export Video`.
+9. Click `Show Export Log` if you need to follow FFmpeg progress or diagnose a failed render.
+10. Use `Export Log` inside the modal when you need the log as a separate text file.
 
 ## What The Export Includes
 
@@ -71,9 +78,11 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | PiP is missing from the output. | Turn on `Enable added media export` in [pip.md](pip.md). |
 | Review boxes are missing. | Enable the box in [review.md](review.md). |
 | Output is larger than expected. | Lower bitrate, use a slower FFmpeg preset, or choose a more appropriate preset. |
+| `Save Hook` changed the wrong recipe. | Click the intended row in `Output Profiles`, then save again. |
 
 ## Related Guides
 
 Previous: [review.md](review.md)
 Next: [settings.md](settings.md)
+<!-- export-pane-guide-eof -->
 

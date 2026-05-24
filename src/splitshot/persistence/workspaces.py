@@ -134,6 +134,7 @@ def _stage_entry_from_dict(data: dict) -> StageEntry:
         ),
         source_media_present=bool(data.get("source_media_present", False)),
         clip_sources=clip_sources,
+        inherited_from_first=bool(data.get("inherited_from_first", False)),
     )
 
 
@@ -208,6 +209,11 @@ def _workspace_from_dict(data: dict) -> MatchWorkspace:
         stage_order=[str(item) for item in (data.get("stage_order") or [])],
         shared_defaults=(
             data.get("shared_defaults", {}) if isinstance(data.get("shared_defaults"), dict) else {}
+        ),
+        first_stage_snapshot=(
+            data.get("first_stage_snapshot", {})
+            if isinstance(data.get("first_stage_snapshot"), dict)
+            else {}
         ),
         ui_state=(data.get("ui_state", {}) if isinstance(data.get("ui_state"), dict) else {}),
         schema_version=int(data.get("schema_version", 1)),

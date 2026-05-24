@@ -77,6 +77,8 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert 'import { createShellRuntime } from "./lib/shell-runtime.js";' in js
     assert "projectPane = createProjectPane({" in js
     assert "shellRuntime = createShellRuntime({" in js
+    assert "async function openPrimaryImportPathPicker() {" in js
+    assert 'document.getElementById("primary-file-input")?.click();' not in js
     assert "let projectDetailsDraft = { name: null, description: null };" in js
     assert "function mergeProjectDetailsDraft(project) {" in js
     assert "let projectFolderProbeRequestId = 0;" in js

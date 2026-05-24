@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-05-23T16:28:52.203074+00:00",
+  "generated_at": "2026-05-24T00:38:51.293767+00:00",
   "kind": "loaded",
   "status": "pass",
   "setup": {
-    "project_path": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-proof-okhzlbwm/automate3-proof.ssproj",
-    "project_dir": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-proof-okhzlbwm",
-    "library_root": "/var/folders/kq/ch3csz154gl2n22dtn0pc11w0000gn/T/splitshot-automate3-library-4hcg9_3f"
+    "project_path": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-97pk0ksp/automate3-proof.ssproj",
+    "project_dir": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-97pk0ksp",
+    "library_root": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-library-_gogbg5n"
   },
   "screenshots": [
     {
       "file": "loaded-stage.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-stage.png",
-      "bytes": 146460,
-      "sha256": "9ad28da026908b44b5c954ac6a46eec451b8439fee2c3c5c9fe14c1e0b06cb88",
+      "bytes": 142455,
+      "sha256": "8ac679ef1c69ab4ed41389eb5114ba0b9ea897dfd41d2741b12d2c7e207d11e5",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
@@ -78,7 +78,7 @@
   "contact_sheet": {
     "file": "contact-sheet-final.png",
     "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/contact-sheet-final.png",
-    "bytes": 46042,
-    "sha256": "0c9d373854cb4a17abb91c0965c50c59629966b3cbe42bf9bc8bd0854b1774eb"
+    "bytes": 45106,
+    "sha256": "0635555ae2e403cc037002f2caaa7fd1de70b2d55c6c8354623fbe1f42a40a7b"
   }
 }

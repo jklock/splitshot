@@ -23,6 +23,10 @@ splitshot = "splitshot.cli:main"
 splitshot-benchmark-csv = "splitshot.benchmarks.cli:main"
 splitshot-web = "splitshot.browser.cli:main"
 
+[tool.uv]
+python-preference = "system"
+link-mode = "copy"
+
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
@@ -39,9 +43,6 @@ minversion = "8.0"
 testpaths = ["tests"]
 qt_api = "pyside6"
 addopts = ["--import-mode=importlib"]
-
-[tool.uv]
-link-mode = "copy"
 
 [tool.ruff]
 line-length = 100

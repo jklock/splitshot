@@ -165,8 +165,14 @@ def test_practiscore_match_list_route_exposes_sync_payload_shape(
         }
     ]
     assert payload["practiscore_sync"]["state"] == "match_list_ready"
+    assert payload["practiscore_options"]["comparison_competitors"] == []
+    assert "_session_payload" not in payload["practiscore_options"]
+    assert "_sync_payload" not in payload["practiscore_options"]
     assert state_payload["practiscore_session"]["state"] == "authenticated_ready"
     assert state_payload["practiscore_sync"]["state"] == "match_list_ready"
+    assert state_payload["practiscore_options"]["comparison_competitors"] == []
+    assert "_session_payload" not in state_payload["practiscore_options"]
+    assert "_sync_payload" not in state_payload["practiscore_options"]
 
 
 def test_practiscore_selected_match_import_route_exposes_success_payload_shape(
@@ -213,8 +219,17 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(
     assert payload["practiscore_options"]["has_source"] is True
     assert payload["practiscore_options"]["source_name"] == "remote-idpa.csv"
     assert payload["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
+    assert payload["practiscore_options"]["comparison_competitors"]
+    assert (
+        payload["practiscore_options"]["comparison_competitors"]
+        == state_payload["practiscore_options"]["comparison_competitors"]
+    )
+    assert "_session_payload" not in payload["practiscore_options"]
+    assert "_sync_payload" not in payload["practiscore_options"]
     assert state_payload["practiscore_sync"]["state"] == "success"
     assert state_payload["practiscore_options"]["has_source"] is True
+    assert "_session_payload" not in state_payload["practiscore_options"]
+    assert "_sync_payload" not in state_payload["practiscore_options"]
 
 
 def test_practiscore_match_list_route_reports_expired_session_error(

@@ -291,6 +291,18 @@
                 </div>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
+              <section class="review-source-manager">
+                <div class="section-header sub-section-header">
+                  <h3>Review Source</h3>
+                </div>
+                <div class="profile-toolbar">
+                  <select id="retained-review-source" aria-label="Retained review source profile">
+                    <option value="">Auto (current stage)</option>
+                  </select>
+                  <button id="retained-review-apply" type="button">Set Source</button>
+                </div>
+                <div id="retained-review-status" class="hint">Using live stage data.</div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="metrics">
@@ -694,6 +706,50 @@
                 </div>
               </section>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
+              <section class="pip-defaults-section" data-inspector-section="angle-tools">
+                <div class="section-header sub-section-header">
+                  <h3>Multi-Angle Features</h3>
+                </div>
+                <div class="feature-grid">
+                  <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
+                    <span class="feature-icon">Sync</span>
+                    <span>Smart Angle Switching</span>
+                    <small class="hint">Auto switch between camera angles</small>
+                  </button>
+                  <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
+                    <span class="feature-icon">Frame</span>
+                    <span>Line Up Angles</span>
+                    <small class="hint">Synchronize angle timing</small>
+                  </button>
+                  <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
+                    <span class="feature-icon">Angle</span>
+                    <span>Camera Jobs</span>
+                    <small class="hint">Assign roles to each angle</small>
+                  </button>
+                  <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
+                    <span class="feature-icon">Audio</span>
+                    <span>Audio Balance</span>
+                    <small class="hint">Mute, gain, and primary selector</small>
+                  </button>
+                  <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
+                    <span class="feature-icon">Cut</span>
+                    <span>Override Smart Cuts</span>
+                    <small class="hint">Manual cut point adjustments</small>
+                  </button>
+                  <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
+                    <span class="feature-icon">Aim</span>
+                    <span>Keep Shooter in Frame</span>
+                    <small class="hint">Auto-crop tracking</small>
+                  </button>
+                </div>
+                <div id="feature-editor" class="output-hook-editor" hidden>
+                  <div class="section-header sub-section-header">
+                    <h4 id="feature-title">Feature Editor</h4>
+                    <button id="feature-close" type="button">Close</button>
+                  </div>
+                  <div id="feature-fields" class="output-hook-fields"></div>
+                </div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="export">
@@ -704,6 +760,47 @@
               <label>Preset
                 <select id="export-preset"></select>
               </label>
+              <section class="settings-section export-profile-section">
+                <div class="section-header sub-section-header">
+                  <h3>Output Profiles</h3>
+                  <button id="output-profile-refresh" type="button">Update Profiles</button>
+                </div>
+                <div id="single-video-loading" class="automation-loading" hidden>Loading profile data...</div>
+                <div id="single-video-error" class="automation-error" hidden>Failed to load profiles.</div>
+                <div class="profile-toolbar">
+                  <input id="output-profile-name" type="text" placeholder="Profile name" aria-label="Output profile name" />
+                  <select id="output-profile-kind" aria-label="Output profile kind">
+                    <option value="stage_output">Stage Output</option>
+                    <option value="stage_composite">Stage Composite</option>
+                  </select>
+                  <button id="output-profile-create" type="button">Create</button>
+                </div>
+                <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
+              </section>
+              <section class="settings-section export-hook-section">
+                <div class="section-header sub-section-header">
+                  <h3>Output Hooks</h3>
+                </div>
+                <div class="hook-grid">
+                  <button data-output-hook="run-window" type="button">Trim Dead Time</button>
+                  <button data-output-hook="metric-captions" type="button">Shot Data on Screen</button>
+                  <button data-output-hook="frame-profiles" type="button">Video Shape</button>
+                  <button data-output-hook="lead-in-card" type="button">Opening Title</button>
+                  <button data-output-hook="brand-mark" type="button">Your Logo</button>
+                  <button data-output-hook="subject-track-crop" type="button">Keep Shooter in Frame</button>
+                </div>
+                <div id="output-hook-editor" class="output-hook-editor" hidden>
+                  <div class="section-header sub-section-header">
+                    <h4 id="output-hook-title">Hook Editor</h4>
+                    <button id="output-hook-close" type="button">Close</button>
+                  </div>
+                  <div id="output-hook-fields" class="output-hook-fields"></div>
+                  <div class="button-grid two-up">
+                    <button id="output-hook-save" class="primary-button" type="button">Save Hook</button>
+                  </div>
+                </div>
+                <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
+              </section>
               <h3>Frame</h3>
               <label>Quality
                 <select id="quality">
@@ -1174,107 +1271,6 @@
                 <h3>Project</h3>
                 <span id="media-badge">No Video Selected</span>
               </div>
-              <section class="automation-card stage-automation-card">
-                <div class="section-header sub-section-header">
-                  <h3>Stage Automation</h3>
-                  <button id="output-profile-refresh" type="button">Update Profiles</button>
-                </div>
-                <div id="single-video-loading" class="automation-loading" hidden>Loading profile data...</div>
-                <div id="single-video-error" class="automation-error" hidden>Failed to load profiles.</div>
-                <div class="automation-grid stage-automation-grid">
-                  <section class="automation-card">
-                    <div class="section-header sub-section-header">
-                      <h3>Output Profiles</h3>
-                    </div>
-                    <div class="profile-toolbar">
-                      <input id="output-profile-name" type="text" placeholder="Profile name" aria-label="Output profile name" />
-                      <select id="output-profile-kind" aria-label="Output profile kind">
-                        <option value="stage_output">Stage Output</option>
-                        <option value="stage_composite">Stage Composite</option>
-                      </select>
-                      <button id="output-profile-create" type="button">Create</button>
-                    </div>
-                    <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
-                  </section>
-                  <section class="automation-card">
-                    <div class="section-header sub-section-header">
-                      <h3>Review Source</h3>
-                    </div>
-                    <div class="profile-toolbar">
-                      <select id="retained-review-source" aria-label="Retained review source profile">
-                        <option value="">Auto (current stage)</option>
-                      </select>
-                      <button id="retained-review-apply" type="button">Set Source</button>
-                    </div>
-                    <div id="retained-review-status" class="hint">Using live stage data.</div>
-                  </section>
-                  <section class="automation-card">
-                    <div class="section-header sub-section-header">
-                      <h3>Output Hooks</h3>
-                    </div>
-                    <div class="hook-grid">
-                      <button data-output-hook="run-window" type="button">Trim Dead Time</button>
-                      <button data-output-hook="metric-captions" type="button">Shot Data on Screen</button>
-                      <button data-output-hook="frame-profiles" type="button">Video Shape</button>
-                      <button data-output-hook="lead-in-card" type="button">Opening Title</button>
-                      <button data-output-hook="brand-mark" type="button">Your Logo</button>
-                      <button data-output-hook="subject-track-crop" type="button">Keep Shooter in Frame</button>
-                    </div>
-                    <div id="output-hook-editor" class="output-hook-editor" hidden>
-                      <div class="section-header sub-section-header">
-                        <h4 id="output-hook-title">Hook Editor</h4>
-                        <button id="output-hook-close" type="button">Close</button>
-                      </div>
-                      <div id="output-hook-fields" class="output-hook-fields"></div>
-                    </div>
-                    <pre id="output-profile-detail" class="automation-detail">Select or create an output profile.</pre>
-                  </section>
-                  <section class="automation-card">
-                    <div class="section-header sub-section-header">
-                      <h3>Multi-Angle Features</h3>
-                    </div>
-                    <div class="feature-grid">
-                      <button data-feature="smart-angle-switching" class="feature-button" type="button" aria-label="Open Smart Angle Switching editor">
-                        <span class="feature-icon">Sync</span>
-                        <span>Smart Angle Switching</span>
-                        <small class="hint">Auto switch between camera angles</small>
-                      </button>
-                      <button data-feature="line-up-angles" class="feature-button" type="button" aria-label="Open Line Up Angles controls">
-                        <span class="feature-icon">Frame</span>
-                        <span>Line Up Angles</span>
-                        <small class="hint">Synchronize angle timing</small>
-                      </button>
-                      <button data-feature="camera-jobs" class="feature-button" type="button" aria-label="Open Camera Jobs editor">
-                        <span class="feature-icon">Angle</span>
-                        <span>Camera Jobs</span>
-                        <small class="hint">Assign roles to each angle</small>
-                      </button>
-                      <button data-feature="audio-balance" class="feature-button" type="button" aria-label="Open Audio Balance controls">
-                        <span class="feature-icon">Audio</span>
-                        <span>Audio Balance</span>
-                        <small class="hint">Mute, gain, and primary selector</small>
-                      </button>
-                      <button data-feature="override-smart-cuts" class="feature-button" type="button" aria-label="Open Override Smart Cuts editor">
-                        <span class="feature-icon">Cut</span>
-                        <span>Override Smart Cuts</span>
-                        <small class="hint">Manual cut point adjustments</small>
-                      </button>
-                      <button data-feature="keep-shooter-in-frame" class="feature-button" type="button" aria-label="Open Keep Shooter in Frame editor">
-                        <span class="feature-icon">Aim</span>
-                        <span>Keep Shooter in Frame</span>
-                        <small class="hint">Auto-crop tracking</small>
-                      </button>
-                    </div>
-                    <div id="feature-editor" class="output-hook-editor" hidden>
-                      <div class="section-header sub-section-header">
-                        <h4 id="feature-title">Feature Editor</h4>
-                        <button id="feature-close" type="button">Close</button>
-                      </div>
-                      <div id="feature-fields" class="output-hook-fields"></div>
-                    </div>
-                  </section>
-                </div>
-              </section>
               <label>Project folder
                 <div class="path-row">
                   <input id="project-path" placeholder="Please create / select project" readonly />
@@ -1334,7 +1330,7 @@
                   <input id="primary-file-path" placeholder="Please select a video" readonly />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Select Primary Video</button>
+                  <button id="browse-primary-path" class="primary-button" type="button">Import Primary Video</button>
                 </div>
               </div>
             </section>
@@ -1366,7 +1362,7 @@
       <main class="workspace-main match-workspace">
         <div class="match-empty-state" hidden>
           <h2>No Match Open</h2>
-          <p>Create a new match or open a recent one to get started.</p>
+          <p>Create a new match or open a saved workspace to get started.</p>
           <div class="match-empty-actions">
             <button id="workspace-new-empty" class="match-action-button btn-primary" type="button">New Match</button>
           </div>
@@ -1374,6 +1370,7 @@
         <div class="workspace-action-bar" aria-label="Match workspace actions">
           <div class="workspace-action-group">
             <button id="workspace-new" type="button">New Workspace</button>
+            <button id="workspace-open" type="button">Open Workspace</button>
             <button id="workspace-save" type="button">Save Workspace</button>
           </div>
         </div>
@@ -1527,6 +1524,7 @@
                   </div>
                   <span id="batch-export-status">Ready</span>
                 </div>
+                <pre id="batch-export-results" class="automation-detail" hidden></pre>
               </div>
             </div>
           </section>
@@ -1579,7 +1577,7 @@
         </div>
         <div id="library-loading" class="automation-loading" hidden>Loading library data...</div>
         <div id="library-error" class="automation-error" hidden>Failed to load library records.</div>
-        <div id="library-stale" class="automation-stale" hidden>Library data may be out of date.</div>
+        <div id="library-stale" class="automation-stale" hidden>Auto-refresh is off. Refresh the Performance Library to load the latest records.</div>
         <div class="workspace-sections">
           <section id="library-section-overview" class="workspace-section">
             <div class="section-header sub-section-header">
@@ -1650,25 +1648,11 @@
               <div id="library-analytics" class="library-analytics">
                 <div class="analytics-chart-section">
                   <h4>Score Trend</h4>
-                  <div id="analytics-score-trend" class="analytics-chart-placeholder chart-bar">
-                    <div class="chart-bar-container">
-                      <div class="chart-bar" style="height:60%"><span>85%</span></div>
-                      <div class="chart-bar" style="height:75%"><span>92%</span></div>
-                      <div class="chart-bar" style="height:70%"><span>88%</span></div>
-                      <div class="chart-bar accent" style="height:95%"><span>98%</span></div>
-                      <div class="chart-bar" style="height:80%"><span>91%</span></div>
-                    </div>
-                  </div>
+                  <div id="analytics-score-trend" class="analytics-chart-placeholder"><p class="hint">Add scored Performance records to see a score trend.</p></div>
                 </div>
                 <div class="analytics-chart-section">
                   <h4>Discipline Breakdown</h4>
-                  <div id="analytics-discipline-chart" class="analytics-chart-placeholder">
-                    <div class="discipline-bars">
-                      <div class="discipline-bar"><span class="bar-label">USPSA</span><span class="bar-fill" style="width:65%">12</span></div>
-                      <div class="discipline-bar"><span class="bar-label">IDPA</span><span class="bar-fill" style="width:35%">6</span></div>
-                      <div class="discipline-bar"><span class="bar-label">SC</span><span class="bar-fill" style="width:20%">3</span></div>
-                    </div>
-                  </div>
+                  <div id="analytics-discipline-chart" class="analytics-chart-placeholder"><p class="hint">Add Performance records to see discipline breakdown.</p></div>
                 </div>
                 <div class="analytics-chart-section">
                   <h4>Outliers</h4>

@@ -133,8 +133,8 @@ function updateShellContext() {
   const returnBtn = document.getElementById("shell-return-match");
 
   if (returnBtn) {
-    const hasMatch = state?.workspace?.id || state?.project?.workspace_id;
-    returnBtn.hidden = !(currentView === "stage" && hasMatch);
+    const stageVisible = activeSurface === "single" || currentView === "stage";
+    returnBtn.hidden = !(stageVisible && Boolean(state?.return_to_match_available));
   }
 }
 
@@ -148,7 +148,7 @@ function updateStageEmptyState() {
 
 // Wire empty state buttons
 document.getElementById("stage-empty-import")?.addEventListener("click", () => {
-  document.getElementById("primary-file-input")?.click();
+  void openPrimaryImportPathPicker();
 });
 document.getElementById("stage-empty-open")?.addEventListener("click", () => {
   document.getElementById("browse-project-path")?.click();
@@ -191,7 +191,9 @@ function dismissGlobalError() {
 }
 
 function wireShellHeaderEvents() {
-  document.getElementById("shell-return-match")?.addEventListener("click", () => setActiveSurface("multi"));
+  document.getElementById("shell-return-match")?.addEventListener("click", () => {
+    void returnToMatchWorkspace();
+  });
 }
 
 // Keyboard shortcuts for view switching (Ctrl/Cmd + 1/2/3)
@@ -205,13 +207,14 @@ document.addEventListener("keydown", (e) => {
 
 function wireLandingNavigation() {
   // New-project / new-match buttons on the landing page (not handled by wireEvents)
-  document.getElementById("landing-new-stage")?.addEventListener("click", () => {
-    apiRuntime?.post("/api/project/new", {});
+  document.getElementById("landing-new-stage")?.addEventListener("click", async () => {
+    await callApi("/api/project/new", {});
     setActiveSurface("single");
   });
 
-  document.getElementById("landing-new-match")?.addEventListener("click", () => {
-    apiRuntime?.post("/api/workspace/new", {});
+  document.getElementById("landing-new-match")?.addEventListener("click", async () => {
+    await callApi("/api/workspace/new", {});
+    selectedStageCompositeStageId = null;
     setActiveSurface("multi");
   });
 }
@@ -341,10 +344,16 @@ let selectedLibraryRecord = null;
 let selectedStageCompositeStageId = null;
 let stageCompositeClips = [];
 let selectedCompositeOutputId = null;
+let selectedAutomationOutputProfileId = null;
+let automationProfileScopeKey = "";
 let automationLoading = { profiles: false, workspace: false, clips: false, library: false };
 let automationError = { profiles: null, workspace: null, clips: null, library: null };
+let automationStale = { library: false };
+let libraryRefreshSequence = 0;
 let retainedReviewSourceProfileId = null;
 let activeOutputHookEditor = null;
+let openFeatureEditor = () => {};
+let renderOutputHookEditor = () => {};
 
 let processingRuntime = null;
 let activityRuntime = null;
@@ -5027,7 +5036,9 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   } else if (activeSurface === "multi") {
     void refreshStageComposite();
   } else if (activeSurface === "library") {
+    automationStale.library = !(libraryView?.libraryAutoRefreshEnabled?.() ?? true);
     if (libraryView?.libraryAutoRefreshEnabled?.() ?? true) void refreshPerformanceLibrary();
+    else renderAutomationSurface();
   }
 }
 
@@ -5121,10 +5132,103 @@ function renderSurfaceContext() {
   return;
 }
 
+function automationProfilesForCurrentScope() {
+  const fallbackProfiles = Array.isArray(state?.output_profiles) ? state.output_profiles : [];
+  const allProfiles = automationProfiles.length ? automationProfiles : fallbackProfiles;
+  const scopeId = currentStageScopeId();
+  return allProfiles.filter((profile) => {
+    if (!profile) return false;
+    if (profile.scope_type && profile.scope_type !== "stage") return false;
+    return !scopeId || profile.scope_id === scopeId;
+  });
+}
+
+function activeAutomationProfile(profiles = automationProfilesForCurrentScope()) {
+  if (!profiles.length) {
+    selectedAutomationOutputProfileId = null;
+    return null;
+  }
+  const selected = profiles.find((profile) => profile.output_id === selectedAutomationOutputProfileId);
+  if (selected) return selected;
+  selectedAutomationOutputProfileId = profiles[0]?.output_id || null;
+  return profiles[0] || null;
+}
+
+function metricCaptionPresetSelection(profile = {}) {
+  const preset = profile?.metric_caption_preset;
+  if (typeof preset === "string" && preset) return preset;
+  if (!preset || typeof preset !== "object") return "none";
+  if (typeof preset.preset === "string" && preset.preset) return preset.preset;
+  const enabledFields = Array.isArray(preset.enabled_fields) ? preset.enabled_fields : [];
+  if (!enabledFields.length) return "none";
+  if (enabledFields.includes("split_times") && enabledFields.includes("hit_factor")) return "full";
+  if (enabledFields.includes("split_times")) return "splits";
+  if (enabledFields.includes("hit_factor") || enabledFields.includes("penalties")) return "score";
+  return "full";
+}
+
+function metricCaptionPosition(profile = {}) {
+  const preset = profile?.metric_caption_preset;
+  return (preset && typeof preset === "object" && preset.position) || "bottom_right";
+}
+
+function runWindowLeadInSeconds(profile = {}) {
+  const preset = profile?.metric_caption_preset;
+  const raw = preset && typeof preset === "object" ? Number(preset.lead_in_padding_ms) : NaN;
+  return Number.isFinite(raw) ? raw / 1000 : 1;
+}
+
+function runWindowTailSeconds(profile = {}) {
+  const preset = profile?.metric_caption_preset;
+  const raw = preset && typeof preset === "object" ? Number(preset.tail_padding_ms) : NaN;
+  return Number.isFinite(raw) ? raw / 1000 : 2;
+}
+
+function leadInCardStyle(profile = {}) {
+  const leadIn = profile?.lead_in_card;
+  if (typeof leadIn === "string") return leadIn;
+  if (!leadIn || typeof leadIn !== "object") return "none";
+  return leadIn.style || leadIn.kind || "none";
+}
+
+function leadInCardDurationSeconds(profile = {}) {
+  const leadIn = profile?.lead_in_card;
+  const raw = leadIn && typeof leadIn === "object" ? Number(leadIn.duration_s) : NaN;
+  return Number.isFinite(raw) ? raw : 2;
+}
+
+function brandMarkStyle(profile = {}) {
+  const mark = profile?.brand_mark;
+  if (typeof mark === "string") return mark;
+  if (!mark || typeof mark !== "object") return "none";
+  return mark.style || (mark.text ? "splitshot" : "none");
+}
+
+function brandMarkDurationSeconds(profile = {}) {
+  const mark = profile?.brand_mark;
+  const raw = mark && typeof mark === "object" ? Number(mark.duration_s) : NaN;
+  return Number.isFinite(raw) ? raw : 1;
+}
+
+function subjectTrackCropEnabled(profile = {}) {
+  const crop = profile?.subject_track_crop;
+  return Boolean(crop && typeof crop === "object" && (crop.enabled || crop.padding || crop.margin_percent));
+}
+
+function subjectTrackCropMarginPercent(profile = {}) {
+  const crop = profile?.subject_track_crop;
+  if (!crop || typeof crop !== "object") return 10;
+  const marginPercent = Number(crop.margin_percent);
+  if (Number.isFinite(marginPercent)) return marginPercent;
+  const padding = Number(crop.padding);
+  return Number.isFinite(padding) ? Math.round(padding * 100) : 10;
+}
+
 function renderOutputProfiles() {
   const list = $("output-profile-list");
   if (!list) return;
-  const profiles = automationProfiles.length ? automationProfiles : (state?.output_profiles || []);
+  const profiles = automationProfilesForCurrentScope();
+  const activeProfile = activeAutomationProfile(profiles);
   list.innerHTML = "";
   const reviewSelect = $("retained-review-source");
   if (reviewSelect) {
@@ -5138,6 +5242,10 @@ function renderOutputProfiles() {
         reviewSelect.appendChild(option);
       }
     });
+    if (retainedReviewSourceProfileId && !profiles.some((profile) => profile.output_id === retainedReviewSourceProfileId)) {
+      retainedReviewSourceProfileId = null;
+      reviewSelect.value = "";
+    }
   }
   const reviewStatus = $("retained-review-status");
   if (reviewStatus) {
@@ -5147,13 +5255,19 @@ function renderOutputProfiles() {
   }
   if (!profiles.length) {
     list.innerHTML = '<div class="hint">No output profiles yet.</div>';
+    const hookEditor = $("output-hook-editor");
+    if (hookEditor) hookEditor.hidden = true;
     renderJsonDetail("output-profile-detail", null, "Create an output profile to preview Trim Dead Time and Shot Data on Screen state.");
     return;
+  }
+  if (activeProfile && !activeOutputHookEditor) {
+    renderJsonDetail("output-profile-detail", activeProfile);
   }
   profiles.forEach((profile) => {
     const row = document.createElement("div");
     row.className = "automation-row";
     row.dataset.outputId = profile.output_id;
+    if (profile.output_id === activeProfile?.output_id) row.classList.add("selected");
     const summary = document.createElement("div");
     summary.innerHTML = `<strong>${profile.profile_name || "Output Profile"}</strong><br><small>${profile.profile_kind || "stage_output"} • ${profile.frame_profile || "source"}</small>`;
     const actions = document.createElement("div");
@@ -5163,6 +5277,7 @@ function renderOutputProfiles() {
     review.textContent = "Set Review Source";
     review.title = "Use this profile as the retained-review source";
     review.addEventListener("click", () => {
+      selectedAutomationOutputProfileId = profile.output_id;
       retainedReviewSourceProfileId = profile.output_id;
       renderOutputProfiles();
     });
@@ -5170,26 +5285,39 @@ function renderOutputProfiles() {
     select.type = "button";
     select.textContent = "Preview";
     select.addEventListener("click", async () => {
+      selectedAutomationOutputProfileId = profile.output_id;
       const plan = await callApi("/api/output-profiles/render", { output_id: profile.output_id });
       renderJsonDetail("output-profile-detail", plan || profile);
+      renderOutputProfiles();
     });
     const duplicate = document.createElement("button");
     duplicate.type = "button";
     duplicate.textContent = "Duplicate";
-    duplicate.addEventListener("click", () => createAutomationOutputProfile(`${profile.profile_name || "Profile"} Copy`, profile.profile_kind || "stage_output", profile));
+    duplicate.addEventListener("click", () => {
+      selectedAutomationOutputProfileId = profile.output_id;
+      createAutomationOutputProfile(`${profile.profile_name || "Profile"} Copy`, profile.profile_kind || "stage_output", profile);
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Delete";
     remove.addEventListener("click", async () => {
+      const removedSelectedProfile = selectedAutomationOutputProfileId === profile.output_id;
       await callApi("/api/output-profiles/delete", { output_id: profile.output_id });
+      if (removedSelectedProfile) selectedAutomationOutputProfileId = null;
       await refreshAutomationProfiles();
     });
     actions.append(review, select, duplicate, remove);
     row.append(summary, actions);
+    row.addEventListener("click", () => {
+      selectedAutomationOutputProfileId = profile.output_id;
+      renderJsonDetail("output-profile-detail", profile);
+      if (activeOutputHookEditor) renderOutputHookEditor(activeOutputHookEditor, profile);
+      renderOutputProfiles();
+    });
     list.append(row);
   });
   const hookEditor = $("output-hook-editor");
-  if (hookEditor) hookEditor.hidden = !activeOutputHookEditor;
+  if (hookEditor) hookEditor.hidden = !(activeOutputHookEditor && activeProfile);
 }
 
 function renderWorkspaceStages() {
@@ -5712,27 +5840,24 @@ function renderAnalyticsCharts(data) {
   }
 }
 
-function exportLibraryData(format) {
-  const records = [
-    ...(automationLibrary.stages || []),
-    ...(automationLibrary.matches || []),
-  ];
-  if (records.length === 0) return;
-  if (format === "csv") {
-    const headers = ["Name", "Date", "Discipline", "Score", "Stage Count"];
-    const rows = records.map(r => [
-      r.display_name || "",
-      r.event_date || "",
-      r.discipline || "",
-      r.score || "",
-      r.stage_count || ""
-    ].join(","));
-    const csv = [headers.join(","), ...rows].join("\n");
-    downloadFile("library-export.csv", csv, "text/csv");
-  } else if (format === "json") {
-    const json = JSON.stringify(records, null, 2);
-    downloadFile("library-export.json", json, "application/json");
-  }
+async function exportLibraryData(format) {
+  const normalizedFormat = format === "csv" ? "csv" : "json";
+  const result = await callApi(`/api/library/export/${normalizedFormat}`, {});
+  if (!result) return null;
+
+  const content = normalizedFormat === "csv"
+    ? String(result.data || "")
+    : JSON.stringify(result.data || {}, null, 2);
+  downloadFile(
+    normalizedFormat === "csv" ? "library-export.csv" : "library-export.json",
+    content,
+    normalizedFormat === "csv" ? "text/csv" : "application/json",
+  );
+  showExportCompleteNotification(1, "");
+  setStatus(
+    `Exported ${result.record_count || 0} Performance record${(result.record_count || 0) === 1 ? "" : "s"} as ${normalizedFormat.toUpperCase()}.`,
+  );
+  return result;
 }
 
 function downloadFile(filename, content, mimeType) {
@@ -5786,7 +5911,7 @@ function saveLibraryNotes(notes) {
 }
 
 renderWorkspaceStages = (...args) => matchView?.renderWorkspaceStages(...args);
-checkSetupOnceBanner = (...args) => matchView?.renderWorkspaceStages(...args);
+checkSetupOnceBanner = (...args) => matchView?.checkSetupOnceBanner?.(...args);
 renderStageComposite = (...args) => matchView?.renderStageComposite(...args);
 renderPerformanceLibrary = (...args) => libraryView?.renderPerformanceLibrary(...args);
 renderLibrarySummaryTiles = (...args) => libraryView?.renderLibrarySummaryTiles(...args);
@@ -5798,7 +5923,176 @@ addLibraryTag = (...args) => libraryView?.addLibraryTag(...args);
 removeLibraryTag = (...args) => libraryView?.removeLibraryTag(...args);
 saveLibraryNotes = (...args) => libraryView?.saveLibraryNotes(...args);
 
+function libraryRecordId(record = selectedLibraryRecord) {
+  return record?.library_record_id || record?.stage_id || record?.match_id || "";
+}
+
+function libraryAllRecords() {
+  return [
+    ...(automationLibrary.stages || []),
+    ...(automationLibrary.matches || []),
+  ];
+}
+
+function findLibraryRecordById(recordId) {
+  return libraryAllRecords().find((record) => libraryRecordId(record) === recordId) || null;
+}
+
+function syncSelectedLibraryRecord(record) {
+  selectedLibraryRecord = record || null;
+  window.selectedLibraryRecord = selectedLibraryRecord;
+  return selectedLibraryRecord;
+}
+
+function updateLibraryRecordInState(recordId, nextFields = {}) {
+  let nextSelected = null;
+  const applyUpdate = (records = []) => records.map((record) => {
+    if (libraryRecordId(record) !== recordId) return record;
+    const nextRecord = { ...record, ...nextFields };
+    nextSelected = nextRecord;
+    return nextRecord;
+  });
+
+  automationLibrary = {
+    ...automationLibrary,
+    stages: applyUpdate(automationLibrary.stages),
+    matches: applyUpdate(automationLibrary.matches),
+  };
+
+  if (nextSelected) syncSelectedLibraryRecord(nextSelected);
+  return nextSelected || findLibraryRecordById(recordId);
+}
+
+async function openSelectedLibraryStage() {
+  const recordId = libraryRecordId();
+  if (!recordId) {
+    setStatus("Select a Performance record first.");
+    return null;
+  }
+
+  activity("ui.library.open.stage", { record_id: recordId });
+  const result = await callApi("/api/library/stage/open", { library_record_id: recordId });
+  if (!result?.success) {
+    automationError.library = result?.error || $("status")?.textContent || "Failed to open stage.";
+    renderAutomationSurface();
+    return null;
+  }
+
+  automationError.library = null;
+  const editorTarget = result.editor_target || {};
+  const workspacePath = String(editorTarget.workspace_path || "").trim();
+  const projectPath = String(editorTarget.project_path || "").trim();
+  const stageId = String(editorTarget.stage_id || result.record?.stage_id || "").trim();
+
+  if (workspacePath) {
+    const openedWorkspace = await openWorkspaceFromPath(workspacePath);
+    if (!openedWorkspace) return null;
+    if (!stageId) {
+      setStatus("This Performance record does not include a stage reopen target.");
+      return null;
+    }
+    const stageOpened = await callApi("/api/workspace/stage/open", { stage_id: stageId });
+    if (!stageOpened && !Boolean(state?.return_to_match_available)) {
+      automationError.workspace = workspaceOperationStatus(`Failed to open stage ${stageId}.`);
+      renderAutomationSurface();
+      return null;
+    }
+    setActiveSurface("single");
+    return result;
+  }
+
+  if (projectPath) {
+    const openedProject = await callApi("/api/project/open", { path: projectPath });
+    if (!openedProject && String(state?.project?.path || "") !== projectPath) {
+      automationError.library = $("status")?.textContent || `Failed to open project at ${projectPath}.`;
+      renderAutomationSurface();
+      return null;
+    }
+    setActiveSurface("single");
+    return result;
+  }
+
+  setStatus("This Performance record does not include a reopen path.");
+  return null;
+}
+
+async function openSelectedLibraryWorkspace() {
+  const recordId = libraryRecordId();
+  if (!recordId) {
+    setStatus("Select a Performance record first.");
+    return null;
+  }
+
+  activity("ui.library.open.workspace", { record_id: recordId });
+  const result = await callApi("/api/library/match/open", { library_record_id: recordId });
+  if (!result?.success) {
+    automationError.library = result?.error || $("status")?.textContent || "Failed to open workspace.";
+    renderAutomationSurface();
+    return null;
+  }
+
+  automationError.library = null;
+  const workspacePath = String(result.editor_target?.workspace_path || "").trim();
+  if (!workspacePath) {
+    setStatus("This Performance record does not include a workspace reopen path.");
+    return null;
+  }
+  return openWorkspaceFromPath(workspacePath);
+}
+
+async function persistSelectedLibraryTags(tags) {
+  const recordId = libraryRecordId();
+  if (!recordId) {
+    setStatus("Select a Performance record first.");
+    return null;
+  }
+
+  const nextTags = [...new Set((tags || []).map((tag) => String(tag || "").trim()).filter(Boolean))];
+  activity("ui.library.tags.save", { record_id: recordId, count: nextTags.length });
+  const result = await callApi("/api/library/tags/update", { record_id: recordId, tags: nextTags });
+  if (!result?.updated) {
+    automationError.library = $("status")?.textContent || result?.error || "Failed to save tags.";
+    renderAutomationSurface();
+    return null;
+  }
+
+  automationError.library = null;
+  const nextRecord = updateLibraryRecordInState(recordId, { tags: nextTags });
+  if (nextRecord) {
+    renderJsonDetail("library-record-detail", nextRecord);
+    renderLibraryTags();
+  }
+  return result;
+}
+
+async function persistSelectedLibraryNotes(notes) {
+  const recordId = libraryRecordId();
+  if (!recordId) {
+    setStatus("Select a Performance record first.");
+    return null;
+  }
+
+  const nextNotes = String(notes || "");
+  activity("ui.library.notes.save", { record_id: recordId });
+  const result = await callApi("/api/library/notes/update", { record_id: recordId, notes: nextNotes });
+  if (!result?.updated) {
+    automationError.library = $("status")?.textContent || result?.error || "Failed to save notes.";
+    renderAutomationSurface();
+    return null;
+  }
+
+  automationError.library = null;
+  const nextRecord = updateLibraryRecordInState(recordId, { notes: nextNotes });
+  if (nextRecord) renderJsonDetail("library-record-detail", nextRecord);
+  return result;
+}
+
 function renderAutomationSurface() {
+  const desiredProfileScopeKey = `stage:${currentStageScopeId() || ""}`;
+  if (desiredProfileScopeKey !== automationProfileScopeKey && !automationLoading.profiles) {
+    automationProfileScopeKey = desiredProfileScopeKey;
+    void refreshAutomationProfiles();
+  }
   renderSurfaceContext();
   renderOutputProfiles();
   renderWorkspaceStages();
@@ -5823,26 +6117,39 @@ function renderAutomationSurface() {
     if (automationError.profiles) errorEl.single.textContent = automationError.profiles;
   }
   if (errorEl.multi) {
-    errorEl.multi.hidden = !(automationError.workspace || automationError.clips);
-    if (automationError.clips) errorEl.multi.textContent = automationError.clips;
+    const multiError = automationError.workspace || automationError.clips;
+    errorEl.multi.hidden = !multiError;
+    if (multiError) errorEl.multi.textContent = multiError;
   }
   if (errorEl.library) {
     errorEl.library.hidden = !automationError.library;
     if (automationError.library) errorEl.library.textContent = automationError.library;
   }
-  if (staleEl) staleEl.hidden = !(automationLoading.library === false && !automationError.library && !automationLibrary.stages?.length && !automationLibrary.matches?.length);
+  if (staleEl) staleEl.hidden = !automationStale.library;
+  const libraryEmptyState = document.querySelector(".library-empty-state");
+  if (libraryEmptyState && (automationLoading.library || automationError.library)) {
+    libraryEmptyState.hidden = true;
+  }
 }
 
 async function refreshAutomationProfiles() {
+  automationProfileScopeKey = `stage:${currentStageScopeId() || ""}`;
   automationLoading.profiles = true;
   automationError.profiles = null;
   renderAutomationSurface();
   try {
-    const result = await callApi("/api/output-profiles/list", {});
+    const result = await callApi("/api/output-profiles/list", {
+      scope_type: "stage",
+      scope_id: currentStageScopeId(),
+    });
     automationProfiles = result?.profiles || [];
+    if (!automationProfiles.some((profile) => profile.output_id === selectedAutomationOutputProfileId)) {
+      selectedAutomationOutputProfileId = automationProfiles[0]?.output_id || null;
+    }
   } catch (error) {
     automationError.profiles = error?.message || "Failed to load output profiles.";
     automationProfiles = [];
+    selectedAutomationOutputProfileId = null;
   }
   automationLoading.profiles = false;
   renderAutomationSurface();
@@ -5861,7 +6168,8 @@ async function createAutomationOutputProfile(profileName, profileKind, baseProfi
       if (baseProfile[key] !== undefined) payload[key] = baseProfile[key];
     });
   }
-  await callApi("/api/output-profiles/create", payload);
+  const result = await callApi("/api/output-profiles/create", payload);
+  selectedAutomationOutputProfileId = result?.profile?.output_id || selectedAutomationOutputProfileId;
   await refreshAutomationProfiles();
 }
 
@@ -5899,22 +6207,40 @@ async function refreshStageComposite(stageId = currentWorkspaceStageId()) {
 }
 
 async function refreshPerformanceLibrary() {
+  const requestSequence = ++libraryRefreshSequence;
   const query = $("library-search")?.value || "";
   const sortBy = $("library-sort")?.value || "event_date";
   automationLoading.library = true;
   automationError.library = null;
+  automationStale.library = false;
   renderAutomationSurface();
-  try {
-    automationLibrary = (query
-      ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
-      : await callApi("/api/library/list", {})) || { stages: [], matches: [], total_stages: 0, total_matches: 0 };
-  } catch (error) {
-    automationError.library = error?.message || "Failed to load library records.";
+  const result = query
+    ? await callApi("/api/library/filter", { competitor: query, sort_by: sortBy, sort_order: "desc" })
+    : await callApi("/api/library/list", {});
+
+  if (requestSequence !== libraryRefreshSequence) return null;
+
+  if (!result) {
+    automationError.library = $("status")?.textContent || "Failed to load library records.";
     automationLibrary = { stages: [], matches: [], total_stages: 0, total_matches: 0 };
+  } else {
+    automationLibrary = {
+      stages: Array.isArray(result.stages) ? result.stages : [],
+      matches: Array.isArray(result.matches) ? result.matches : [],
+      total_stages: Number(result.total_stages ?? (Array.isArray(result.stages) ? result.stages.length : 0)),
+      total_matches: Number(result.total_matches ?? (Array.isArray(result.matches) ? result.matches.length : 0)),
+    };
+    const selectedRecordId = libraryRecordId(selectedLibraryRecord);
+    if (selectedRecordId) syncSelectedLibraryRecord(findLibraryRecordById(selectedRecordId));
+    automationStale.library = !(libraryView?.libraryAutoRefreshEnabled?.() ?? true);
   }
   automationLoading.library = false;
   renderAutomationSurface();
-  fetchLibraryAnalytics().then(renderAnalyticsCharts);
+  if (!automationError.library) {
+    const discipline = $("library-filter-discipline")?.value || "";
+    fetchLibraryAnalytics(discipline).then(renderAnalyticsCharts);
+  }
+  return result;
 }
 
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
@@ -5970,6 +6296,9 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   document.querySelectorAll(".tool-pane").forEach((panel) => {
     panel.classList.toggle("active", panel.dataset.toolPane === tool);
   });
+  if (tool === "settings") {
+    renderSettingsPane();
+  }
   const popupFloatingEditor = $("popup-floating-editor");
   if (popupFloatingEditor instanceof HTMLElement && tool !== "markers") {
     popupFloatingEditor.hidden = true;
@@ -6071,14 +6400,35 @@ async function postFile(path, file) {
   }
 }
 
+function currentProjectPath(nextState = state) {
+  return String(nextState?.project?.path || "").trim();
+}
+
+function dialogPathRequestPayload(kind, currentValue = "", nextState = state) {
+  const normalizedKind = String(kind || "").trim();
+  const normalizedCurrent = String(currentValue ?? "").trim();
+  const projectHome = normalizedKind === "primary" ? "" : currentProjectPath(nextState);
+  return {
+    kind: normalizedKind,
+    current: normalizedCurrent,
+    home: normalizedCurrent ? "" : projectHome,
+  };
+}
+
 async function pickPath(kind, targetId, afterSelect = null) {
   const target = $(targetId);
-  activity("dialog.path.request", { kind, target: targetId, current: target.value });
+  const requestPayload = dialogPathRequestPayload(kind, target?.value);
+  activity("dialog.path.request", {
+    kind,
+    target: targetId,
+    current: requestPayload.current,
+    home: requestPayload.home || "",
+  });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify(requestPayload),
     });
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
@@ -6100,14 +6450,39 @@ async function pickPath(kind, targetId, afterSelect = null) {
   }
 }
 
+async function openPrimaryImportPathPicker() {
+  return pickPath("primary", "primary-file-path", async (path) => {
+    await flushPendingProjectDrafts({ primaryImport: true });
+    const result = await callApi("/api/import/primary", { path });
+    if (!result) return;
+    setActiveSurface("single");
+    setActiveTool("project");
+  });
+}
+
+function setPreviewSeekBoundary(value) {
+  previewSeekBoundary = Boolean(value);
+  if (previewSeekBoundary) previewSyncedSinceBoundary = false;
+}
+
+function markPreviewSeekBoundary() {
+  setPreviewSeekBoundary(true);
+}
+
 async function pickPathForElement(kind, target, targetLabel, afterSelect = null) {
   if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return "";
-  activity("dialog.path.request", { kind, target: targetLabel, current: target.value });
+  const requestPayload = dialogPathRequestPayload(kind, target.value);
+  activity("dialog.path.request", {
+    kind,
+    target: targetLabel,
+    current: requestPayload.current,
+    home: requestPayload.home || "",
+  });
   try {
     const response = await fetch("/api/dialog/path", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind, current: target.value }),
+      body: JSON.stringify(requestPayload),
     });
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
@@ -6128,6 +6503,115 @@ async function pickPathForElement(kind, target, targetLabel, afterSelect = null)
   }
 }
 
+function workspacePathValue(nextState = state) {
+  return String(nextState?.workspace_path || nextState?.workspace?.path || "").trim();
+}
+
+function workspaceHasEntries(nextState = state) {
+  return Boolean(nextState?.workspace || (nextState?.workspace_stage_entries || []).length);
+}
+
+function workspaceOperationStatus(fallback = "Workspace action failed.") {
+  return String($("status")?.textContent || "").trim() || fallback;
+}
+
+async function runWorkspaceOperation(action, {
+  failureMessage = "Workspace action failed.",
+  isSuccess = () => true,
+  onSuccess = null,
+} = {}) {
+  automationLoading.workspace = true;
+  automationError.workspace = null;
+  renderAutomationSurface();
+  try {
+    const result = await action();
+    if (!result || !isSuccess(result)) {
+      automationError.workspace = workspaceOperationStatus(failureMessage);
+      return null;
+    }
+    automationError.workspace = null;
+    if (typeof onSuccess === "function") {
+      await onSuccess(result);
+    }
+    return result;
+  } finally {
+    automationLoading.workspace = false;
+    renderAutomationSurface();
+  }
+}
+
+async function chooseWorkspacePath(currentPath = workspacePathValue()) {
+  const target = document.createElement("input");
+  target.value = currentPath || "";
+  return pickPathForElement("project_folder", target, "workspace-path");
+}
+
+async function openWorkspaceFromPath(path) {
+  const targetPath = String(path || "").trim();
+  if (!targetPath) return null;
+  return runWorkspaceOperation(
+    () => callApi("/api/workspace/open", { path: targetPath }),
+    {
+      failureMessage: `No workspace found at ${targetPath}`,
+      isSuccess: () => workspacePathValue() === targetPath && workspaceHasEntries(),
+      onSuccess: async (result) => {
+        selectedStageCompositeStageId = null;
+        setActiveSurface("multi");
+        requestRender();
+        return result;
+      },
+    },
+  );
+}
+
+async function openWorkspaceWithPicker() {
+  const path = await chooseWorkspacePath();
+  if (!path) return null;
+  return openWorkspaceFromPath(path);
+}
+
+async function saveWorkspaceFromUi({ forcePrompt = false } = {}) {
+  if (!workspaceHasEntries()) {
+    const message = "Create or open a workspace before saving.";
+    setStatus(message);
+    automationError.workspace = message;
+    renderAutomationSurface();
+    return null;
+  }
+  let path = forcePrompt ? "" : workspacePathValue();
+  if (!path) {
+    path = await chooseWorkspacePath();
+  }
+  if (!path) return null;
+  return runWorkspaceOperation(
+    () => callApi("/api/workspace/save", { path }),
+    {
+      failureMessage: `Failed to save workspace to ${path}.`,
+      isSuccess: () => workspacePathValue() === path,
+      onSuccess: async (result) => {
+        requestRender();
+        return result;
+      },
+    },
+  );
+}
+
+async function returnToMatchWorkspace() {
+  const previousStageId = state?.active_stage_id || selectedStageCompositeStageId || null;
+  if (state?.return_to_match_available) {
+    const result = await callApi("/api/workspace/stage/return", {});
+    if (!result) return null;
+  }
+  if ($("match-setting-remember-stage")?.checked ?? true) {
+    selectedStageCompositeStageId = state?.returned_stage_id || previousStageId || selectedStageCompositeStageId;
+  } else {
+    selectedStageCompositeStageId = null;
+  }
+  setActiveSurface("multi");
+  requestRender();
+  return true;
+}
+
 async function refresh() {
   activity("api.refresh", {});
   runtimeBackbone?.bus?.emit?.("api.refresh", {});
@@ -6136,7 +6620,7 @@ async function refresh() {
     const data = await response.json();
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
-    previewSeekBoundary = true;
+    markPreviewSeekBoundary();
     if (data?.project?.name && activeSurface !== "landing") {
       recordRecentActivity(data.project.name, activeSurface, activeSurface === 'single' ? 'Stage' : activeSurface === 'multi' ? 'Match' : 'Library', '');
     }
@@ -6836,7 +7320,6 @@ function reportSecondaryPreviewPlayError(error) {
 
 function scheduleSecondaryPreviewSync() {
   if (secondaryPreviewSyncFrame !== null) return;
-  previewSeekBoundary = true;
   secondaryPreviewSyncFrame = window.requestAnimationFrame(() => {
     secondaryPreviewSyncFrame = null;
     syncSecondaryPreview();
@@ -10274,8 +10757,7 @@ function wireEvents() {
   });
 
   $("landing-open-file")?.addEventListener("click", () => {
-    const fileInput = $("primary-file-input");
-    if (fileInput) fileInput.click();
+    void openPrimaryImportPathPicker();
     activity("ui.landing.openfile.click");
   });
 
@@ -10317,16 +10799,107 @@ function wireEvents() {
     libraryView?.persistLibrarySettings();
     void refreshPerformanceLibrary();
   });
-  $("library-setting-auto-refresh")?.addEventListener("change", () => libraryView?.persistLibrarySettings());
+  $("library-setting-auto-refresh")?.addEventListener("change", () => {
+    libraryView?.persistLibrarySettings();
+    automationStale.library = !(libraryView?.libraryAutoRefreshEnabled?.() ?? true) && activeSurface === "library";
+    renderAutomationSurface();
+  });
   $("output-profile-refresh")?.addEventListener("click", () => refreshAutomationProfiles());
   $("output-profile-create")?.addEventListener("click", () => {
     createAutomationOutputProfile($("output-profile-name")?.value || "Output Profile", $("output-profile-kind")?.value || "stage_output");
   });
+  const cloneHookPayload = (value) => {
+    if (value === null || value === undefined) return value;
+    return typeof value === "object" ? JSON.parse(JSON.stringify(value)) : value;
+  };
+  const metricCaptionPresetFields = (selection) => {
+    if (selection === "splits") return ["split_times", "cumulative_time"];
+    if (selection === "score") return ["hit_factor", "penalties"];
+    if (selection === "full") {
+      return ["shot_count", "cumulative_time", "first_shot_reaction", "hit_factor", "penalties", "split_times"];
+    }
+    return [];
+  };
+  const buildMetricCaptionPresetPayload = ({ selection, position, leadInSeconds, tailSeconds, base }) => {
+    const resolvedSelection = selection || "none";
+    const next = base && typeof base === "object" ? cloneHookPayload(base) : {};
+    next.preset = resolvedSelection;
+    next.enabled_fields = metricCaptionPresetFields(resolvedSelection);
+    next.position = position || next.position || "bottom_right";
+    next.lead_in_padding_ms = Math.max(0, Math.round((Number(leadInSeconds) || 0) * 1000));
+    next.tail_padding_ms = Math.max(0, Math.round((Number(tailSeconds) || 0) * 1000));
+    return next;
+  };
+  async function saveActiveOutputHookEditor() {
+    const profile = activeAutomationProfile();
+    if (!profile || !activeOutputHookEditor) {
+      setStatus("Select an output profile before saving hooks.");
+      return;
+    }
+
+    const update = {};
+    if (activeOutputHookEditor === "run-window") {
+      update.metric_caption_preset = buildMetricCaptionPresetPayload({
+        selection: metricCaptionPresetSelection(profile),
+        position: metricCaptionPosition(profile),
+        leadInSeconds: $("hook-run-window-lead-in")?.value || runWindowLeadInSeconds(profile),
+        tailSeconds: $("hook-run-window-tail")?.value || runWindowTailSeconds(profile),
+        base: profile.metric_caption_preset,
+      });
+    } else if (activeOutputHookEditor === "metric-captions") {
+      update.metric_caption_preset = buildMetricCaptionPresetPayload({
+        selection: $("hook-metric-captions-preset")?.value || "none",
+        position: $("hook-metric-captions-position")?.value || "bottom_right",
+        leadInSeconds: runWindowLeadInSeconds(profile),
+        tailSeconds: runWindowTailSeconds(profile),
+        base: profile.metric_caption_preset,
+      });
+    } else if (activeOutputHookEditor === "frame-profiles") {
+      update.frame_profile = $("hook-frame-profile")?.value || "source";
+    } else if (activeOutputHookEditor === "lead-in-card") {
+      const style = $("hook-lead-in-style")?.value || "none";
+      update.lead_in_card = style === "none"
+        ? null
+        : {
+          style,
+          duration_s: Number($("hook-lead-in-duration")?.value || leadInCardDurationSeconds(profile) || 2),
+        };
+    } else if (activeOutputHookEditor === "brand-mark") {
+      const style = $("hook-brand-mark-select")?.value || "none";
+      update.brand_mark = style === "none"
+        ? null
+        : {
+          style,
+          text: style === "splitshot" ? "SplitShot" : style,
+          duration_s: Number($("hook-brand-mark-duration")?.value || brandMarkDurationSeconds(profile) || 1),
+        };
+    } else if (activeOutputHookEditor === "subject-track-crop") {
+      update.subject_track_crop = $("hook-crop-enabled")?.checked
+        ? {
+          enabled: true,
+          margin_percent: Number($("hook-crop-margin")?.value || subjectTrackCropMarginPercent(profile) || 10),
+        }
+        : null;
+    }
+
+    await callApi("/api/output-profiles/update", {
+      output_id: profile.output_id,
+      ...update,
+    });
+    await refreshAutomationProfiles();
+    const updatedProfile = activeAutomationProfile();
+    if (updatedProfile) {
+      const plan = await callApi("/api/output-profiles/render", { output_id: updatedProfile.output_id });
+      renderJsonDetail("output-profile-detail", plan || updatedProfile);
+      renderOutputHookEditor(activeOutputHookEditor, updatedProfile);
+    }
+    setStatus(`Saved ${activeOutputHookEditor.replace(/-/g, " ")} for ${profile.profile_name || "output profile"}.`);
+  }
   document.querySelectorAll("[data-output-hook]").forEach((button) => {
     button.addEventListener("click", () => {
       const hook = button.dataset.outputHook;
       activeOutputHookEditor = hook;
-      const active = automationProfiles[0] || state?.output_profiles?.[0] || null;
+      const active = activeAutomationProfile();
       renderOutputHookEditor(hook, active);
       renderOutputProfiles();
     });
@@ -10334,6 +10907,9 @@ function wireEvents() {
   $("output-hook-close")?.addEventListener("click", () => {
     activeOutputHookEditor = null;
     renderOutputProfiles();
+  });
+  $("output-hook-save")?.addEventListener("click", () => {
+    void saveActiveOutputHookEditor();
   });
 
   // Multi-angle feature button handlers
@@ -10350,7 +10926,7 @@ function wireEvents() {
     const editor = $("feature-editor");
     if (editor) editor.hidden = true;
   });
-  function openFeatureEditor(feature) {
+  openFeatureEditor = function openFeatureEditor(feature) {
     const editor = $("feature-editor");
     const title = $("feature-title");
     const fields = $("feature-fields");
@@ -10443,9 +11019,9 @@ function wireEvents() {
         <p class="hint">Automatically crop and track the shooter to keep them centered in frame.</p>
       `;
     }
-  }
+  };
 
-  function renderOutputHookEditor(hook, activeProfile) {
+  renderOutputHookEditor = function renderOutputHookEditor(hook, activeProfile) {
     const editor = $("output-hook-editor");
     const title = $("output-hook-title");
     const fields = $("output-hook-fields");
@@ -10465,72 +11041,69 @@ function wireEvents() {
     fields.innerHTML = "";
     if (hook === "run-window") {
       fields.innerHTML = `<div class="control-grid">
-        <label>Start at (s) <input id="hook-run-window-start" type="number" min="0" step="0.001" value="${profile.run_window_start_s || 0}" /></label>
-        <label>Duration (s) <input id="hook-run-window-duration" type="number" min="0.001" step="0.001" value="${profile.run_window_duration_s || ''}" placeholder="full run" /></label>
-        <label>Trim start (s) <input id="hook-run-window-trim-start" type="number" min="0" step="0.001" value="${profile.run_window_trim_start_s || 0}" /></label>
-        <label>Trim end (s) <input id="hook-run-window-trim-end" type="number" min="0" step="0.001" value="${profile.run_window_trim_end_s || 0}" /></label>
+        <label>Lead-in padding (s) <input id="hook-run-window-lead-in" type="number" min="0" step="0.1" value="${runWindowLeadInSeconds(profile)}" /></label>
+        <label>Tail padding (s) <input id="hook-run-window-tail" type="number" min="0" step="0.1" value="${runWindowTailSeconds(profile)}" /></label>
       </div>
-      <p class="hint">${inherited.frame_profile ? 'Inherited: ' + JSON.stringify(inherited) : 'Values apply to selected output profile.'}</p>`;
+      <p class="hint">${inherited.metric_caption_preset ? "Inherited defaults stay visible in Match; these values save on the selected output profile." : "Values apply to the selected output profile and feed the render plan preview."}</p>`;
     } else if (hook === "metric-captions") {
       fields.innerHTML = `<div class="control-grid">
         <label>Preset
           <select id="hook-metric-captions-preset">
-            <option value="none" ${profile.metric_caption_preset === 'none' ? 'selected' : ''}>None</option>
-            <option value="splits" ${profile.metric_caption_preset === 'splits' ? 'selected' : ''}>Splits</option>
-            <option value="score" ${profile.metric_caption_preset === 'score' ? 'selected' : ''}>Score</option>
-            <option value="full" ${profile.metric_caption_preset === 'full' ? 'selected' : ''}>Full</option>
+            <option value="none" ${metricCaptionPresetSelection(profile) === "none" ? "selected" : ""}>None</option>
+            <option value="splits" ${metricCaptionPresetSelection(profile) === "splits" ? "selected" : ""}>Splits</option>
+            <option value="score" ${metricCaptionPresetSelection(profile) === "score" ? "selected" : ""}>Score</option>
+            <option value="full" ${metricCaptionPresetSelection(profile) === "full" ? "selected" : ""}>Full</option>
           </select>
         </label>
         <label>Position
           <select id="hook-metric-captions-position">
-            <option value="bottom_right" ${profile.metric_position === 'bottom_right' ? 'selected' : ''}>Bottom Right</option>
-            <option value="bottom_left" ${profile.metric_position === 'bottom_left' ? 'selected' : ''}>Bottom Left</option>
+            <option value="bottom_right" ${metricCaptionPosition(profile) === "bottom_right" ? "selected" : ""}>Bottom Right</option>
+            <option value="bottom_left" ${metricCaptionPosition(profile) === "bottom_left" ? "selected" : ""}>Bottom Left</option>
           </select>
         </label>
       </div>
-      <p class="hint">${inherited.metric_captions ? 'Inherited: ' + JSON.stringify(inherited) : 'Select a metric caption preset for the output.'}</p>`;
+      <p class="hint">${inherited.metric_caption_preset ? "Stage defaults come from Match workspace settings until you override them here." : "Select a metric caption preset for the output."}</p>`;
     } else if (hook === "frame-profiles") {
       fields.innerHTML = `<div class="control-grid">
         <label>Profile
           <select id="hook-frame-profile">
-            <option value="source" ${profile.frame_profile === 'source' ? 'selected' : ''}>Source</option>
-            <option value="16:9" ${profile.frame_profile === '16:9' ? 'selected' : ''}>16:9</option>
-            <option value="9:16" ${profile.frame_profile === '9:16' ? 'selected' : ''}>9:16</option>
-            <option value="1:1" ${profile.frame_profile === '1:1' ? 'selected' : ''}>1:1</option>
+            <option value="source" ${profile.frame_profile === "source" ? "selected" : ""}>Source</option>
+            <option value="16:9" ${profile.frame_profile === "16:9" ? "selected" : ""}>16:9</option>
+            <option value="9:16" ${profile.frame_profile === "9:16" ? "selected" : ""}>9:16</option>
+            <option value="1:1" ${profile.frame_profile === "1:1" ? "selected" : ""}>1:1</option>
           </select>
         </label>
-        <label>Width <input id="hook-frame-width" type="number" min="2" step="2" value="${profile.target_width || ''}" placeholder="source" /></label>
-        <label>Height <input id="hook-frame-height" type="number" min="2" step="2" value="${profile.target_height || ''}" placeholder="source" /></label>
-      </div>`;
+      </div>
+      <p class="hint">Frame profiles map to export aspect ratios; custom width/height is not part of this profile model.</p>`;
     } else if (hook === "lead-in-card") {
       fields.innerHTML = `<div class="control-grid">
         <label>Style
           <select id="hook-lead-in-style">
-            <option value="none" ${profile.lead_in_card === 'none' ? 'selected' : ''}>None</option>
-            <option value="stage_info" ${profile.lead_in_card === 'stage_info' ? 'selected' : ''}>Stage Info</option>
-            <option value="competitor" ${profile.lead_in_card === 'competitor' ? 'selected' : ''}>Competitor</option>
+            <option value="none" ${leadInCardStyle(profile) === "none" ? "selected" : ""}>None</option>
+            <option value="stage_info" ${leadInCardStyle(profile) === "stage_info" ? "selected" : ""}>Stage Info</option>
+            <option value="competitor" ${leadInCardStyle(profile) === "competitor" ? "selected" : ""}>Competitor</option>
           </select>
         </label>
-        <label>Duration (s) <input id="hook-lead-in-duration" type="number" min="0" step="0.1" value="${profile.lead_in_duration_s || 2}" /></label>
+        <label>Duration (s) <input id="hook-lead-in-duration" type="number" min="0" step="0.1" value="${leadInCardDurationSeconds(profile)}" /></label>
       </div>`;
     } else if (hook === "brand-mark") {
       fields.innerHTML = `<div class="control-grid">
         <label>Mark
           <select id="hook-brand-mark-select">
-            <option value="none" ${profile.brand_mark === 'none' ? 'selected' : ''}>None</option>
-            <option value="splitshot" ${profile.brand_mark === 'splitshot' ? 'selected' : ''}>SplitShot</option>
+            <option value="none" ${brandMarkStyle(profile) === "none" ? "selected" : ""}>None</option>
+            <option value="splitshot" ${brandMarkStyle(profile) === "splitshot" ? "selected" : ""}>SplitShot</option>
           </select>
         </label>
-        <label>Duration (s) <input id="hook-brand-mark-duration" type="number" min="0" step="0.1" value="${profile.brand_mark_duration_s || 1}" /></label>
+        <label>Duration (s) <input id="hook-brand-mark-duration" type="number" min="0" step="0.1" value="${brandMarkDurationSeconds(profile)}" /></label>
       </div>`;
     } else if (hook === "subject-track-crop") {
       fields.innerHTML = `<div class="control-grid">
-        <label class="check-row"><input id="hook-crop-enabled" type="checkbox" ${profile.subject_track_crop ? 'checked' : ''} /> Enable subject track crop</label>
-        <label>Margin % <input id="hook-crop-margin" type="number" min="0" max="50" step="1" value="${profile.crop_margin_percent || 10}" /></label>
+        <label class="check-row"><input id="hook-crop-enabled" type="checkbox" ${subjectTrackCropEnabled(profile) ? "checked" : ""} /> Enable subject track crop</label>
+        <label>Margin % <input id="hook-crop-margin" type="number" min="0" max="50" step="1" value="${subjectTrackCropMarginPercent(profile)}" /></label>
       </div>
       <p class="hint">Subject track crop follows detected subject motion to keep the competitor framed.</p>`;
     }
-  }
+  };
   $("retained-review-apply")?.addEventListener("click", () => {
     const profileId = $("retained-review-source")?.value;
     if (profileId) {
@@ -10539,43 +11112,72 @@ function wireEvents() {
       retainedReviewSourceProfileId = null;
     }
     renderOutputProfiles();
-    callApi("/api/output-profiles/render", { output_id: profileId || (state?.output_profiles?.[0]?.output_id) });
+    const fallbackProfileId = activeAutomationProfile()?.output_id;
+    if (profileId || fallbackProfileId) {
+      callApi("/api/output-profiles/render", { output_id: profileId || fallbackProfileId });
+    }
   });
-  $("shared-defaults-apply")?.addEventListener("click", () => {
+  $("shared-defaults-apply")?.addEventListener("click", async () => {
     const payload = {
       frame_profile: $("shared-frame-profile")?.value || "source",
-      metric_captions: $("shared-metric-captions")?.value || "none",
+      metric_caption_preset: $("shared-metric-captions")?.value || "none",
       lead_in_card: $("shared-lead-in")?.value || "none",
       brand_mark: $("shared-brand-mark")?.value || "none",
     };
-    callApi("/api/workspace/defaults", payload);
+    await callApi("/api/workspace/defaults", payload);
+    await refresh();
   });
-  $("shared-defaults-reset")?.addEventListener("click", () => {
-    callApi("/api/workspace/defaults/reset", {});
+  $("shared-defaults-reset")?.addEventListener("click", async () => {
+    await callApi("/api/workspace/defaults/reset", {});
+    await refresh();
   });
-  $("override-apply")?.addEventListener("click", () => {
+  $("override-apply")?.addEventListener("click", async () => {
     const stageId = currentWorkspaceStageId();
     if (!stageId) return;
     const overrides = {};
     const frameProfile = $("override-frame-profile")?.value;
     const metricCaptions = $("override-metric-captions")?.value;
     if (frameProfile) overrides.frame_profile = frameProfile;
-    if (metricCaptions) overrides.metric_captions = metricCaptions;
+    if (metricCaptions) overrides.metric_caption_preset = metricCaptions;
     if (Object.keys(overrides).length) {
-      callApi("/api/workspace/stage/override", { stage_id: stageId, overrides });
+      await callApi("/api/workspace/stage/override", { stage_id: stageId, ...overrides });
+      await refresh();
     }
   });
   $("workspace-new")?.addEventListener("click", async () => {
-    await callApi("/api/workspace/new", {});
-    setActiveSurface("multi");
-    await refresh();
+    await runWorkspaceOperation(
+      () => callApi("/api/workspace/new", {}),
+      {
+        failureMessage: "Failed to create a new workspace.",
+        isSuccess: () => workspaceHasEntries(),
+        onSuccess: async () => {
+          selectedStageCompositeStageId = null;
+          setActiveSurface("multi");
+          await refresh();
+        },
+      },
+    );
   });
   $("workspace-new-empty")?.addEventListener("click", async () => {
-    await callApi("/api/workspace/new", {});
-    setActiveSurface("multi");
-    await refresh();
+    await runWorkspaceOperation(
+      () => callApi("/api/workspace/new", {}),
+      {
+        failureMessage: "Failed to create a new workspace.",
+        isSuccess: () => workspaceHasEntries(),
+        onSuccess: async () => {
+          selectedStageCompositeStageId = null;
+          setActiveSurface("multi");
+          await refresh();
+        },
+      },
+    );
   });
-  $("workspace-save")?.addEventListener("click", () => callApi("/api/workspace/save", {}));
+  $("workspace-open")?.addEventListener("click", async () => {
+    await openWorkspaceWithPicker();
+  });
+  $("workspace-save")?.addEventListener("click", async () => {
+    await saveWorkspaceFromUi();
+  });
   $("match-name-input")?.addEventListener("change", (e) => {
     callApi("/api/workspace/save", { name: e.target.value });
   });
@@ -10608,14 +11210,12 @@ function wireEvents() {
   // Library export buttons
   $("library-export-csv")?.addEventListener("click", () => {
     activity("ui.library.export.csv");
-    exportLibraryData("csv");
-    showExportCompleteNotification(1, "");
+    void exportLibraryData("csv");
   });
 
   $("library-export-json")?.addEventListener("click", () => {
     activity("ui.library.export.json");
-    exportLibraryData("json");
-    showExportCompleteNotification(1, "");
+    void exportLibraryData("json");
   });
 
   // Library discipline filter
@@ -10625,20 +11225,28 @@ function wireEvents() {
   $("library-tag-add")?.addEventListener("click", () => {
     const input = $("library-tag-input");
     if (!input?.value.trim()) return;
-    addLibraryTag(input.value.trim());
+    const currentTags = selectedLibraryRecord?.tags || [];
+    void persistSelectedLibraryTags([...currentTags, input.value.trim()]);
     input.value = "";
   });
 
   $("library-tag-list")?.addEventListener("click", (e) => {
     const removeBtn = e.target.closest(".tag-remove");
     if (!removeBtn) return;
-    removeLibraryTag(removeBtn.dataset.tag);
+    const nextTags = (selectedLibraryRecord?.tags || []).filter((tag) => tag !== removeBtn.dataset.tag);
+    void persistSelectedLibraryTags(nextTags);
   });
 
   // Library notes
   $("library-notes-save")?.addEventListener("click", () => {
     const text = $("library-notes-text")?.value || "";
-    saveLibraryNotes(text);
+    void persistSelectedLibraryNotes(text);
+  });
+  $("library-open-stage")?.addEventListener("click", () => {
+    void openSelectedLibraryStage();
+  });
+  $("library-open-workspace")?.addEventListener("click", () => {
+    void openSelectedLibraryWorkspace();
   });
   // Backup
   $("library-backup-create")?.addEventListener("click", async () => {
@@ -10700,15 +11308,46 @@ function wireEvents() {
 
   $("setup-once-apply")?.addEventListener("click", async () => {
     activity("ui.setup-once.apply");
-    if (!confirm("Applying Stage 1 settings to all stages. This will copy:\n- Output profiles\n- Trim dead time\n- Shot data on screen\n- Video shape\n- Opening title\n- Your logo\n\nProceed?")) return;
-    callApi("/api/workspace/apply-from-first", { workspace_id: state?.project?.id });
+    const preview = await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });
+    if (!preview || preview.error) {
+      setStatus(preview?.error || "Failed to preview Stage 1 settings.");
+      return;
+    }
+    const previewLines = (preview?.preview || []).slice(0, 6).map((entry) => {
+      const changeCount = Array.isArray(entry?.changes) ? entry.changes.length : 0;
+      const conflictCount = Array.isArray(entry?.conflicts) ? entry.conflicts.length : 0;
+      const stageLabel = entry.display_name || entry.stage_name || entry.stage_id;
+      if (conflictCount) return `- ${stageLabel}: ${changeCount} change(s), ${conflictCount} override conflict(s)`;
+      if (changeCount) return `- ${stageLabel}: ${changeCount} change(s)`;
+      return `- ${stageLabel}: unchanged`;
+    });
+    const previewMessage = [
+      `Apply ${preview?.source_stage || "Stage 1"} settings to other stages?`,
+      "",
+      ...(previewLines.length ? previewLines : ["- No sibling stages need changes."]),
+      "",
+      "This copies shared defaults and reusable output profiles while keeping explicit stage overrides.",
+    ].join("\n");
+    if (!confirm(previewMessage)) return;
+    const result = await callApi("/api/workspace/apply-from-first", { workspace_id: state?.project?.id });
+    if (!result || result.error) {
+      setStatus(result?.error || "Failed to apply Stage 1 settings.");
+      return;
+    }
+    await refresh();
+    const conflictCount = Array.isArray(result?.conflicts) ? result.conflicts.length : 0;
+    setStatus(
+      conflictCount
+        ? `Applied Stage 1 settings to ${result?.applied || 0} stage(s) with ${conflictCount} override conflict(s).`
+        : `Applied Stage 1 settings to ${result?.applied || 0} stage(s).`,
+    );
   });
   $("setup-once-dismiss")?.addEventListener("click", () => {
     const banner = domById("setup-once-banner");
     if (banner) banner.hidden = true;
   });
   $("batch-select-all")?.addEventListener("click", () => {
-    const items = document.querySelectorAll(".batch-export-item input[type=checkbox]");
+    const items = document.querySelectorAll(".batch-export-item input[type=checkbox]:not(:disabled)");
     items.forEach((cb) => { cb.checked = true; });
   });
   $("batch-select-none")?.addEventListener("click", () => {
@@ -10717,24 +11356,56 @@ function wireEvents() {
   });
   $("batch-export-start")?.addEventListener("click", async () => {
     const recipe = domById("batch-recipe")?.value || "stage_output";
-    const checked = document.querySelectorAll(".batch-export-item input[type=checkbox]:checked");
+    const checked = document.querySelectorAll(".batch-export-item input[type=checkbox]:checked:not(:disabled)");
+    const resultsPanel = domById("batch-export-results");
     if (!checked.length) {
       setStatus("Select at least one stage to export.");
+      const status = domById("batch-export-status");
+      if (status) status.textContent = "Select at least one stage to export.";
+      if (resultsPanel) {
+        resultsPanel.hidden = true;
+        resultsPanel.textContent = "";
+      }
       return;
     }
     const stageIds = Array.from(checked).map((cb) => cb.closest(".batch-export-item")?.dataset?.stageId).filter(Boolean);
     const progress = domById("batch-export-progress");
     const status = domById("batch-export-status");
+    const fill = progress?.querySelector(".progress-fill");
+    const outputs = [];
+    const errors = [];
     if (progress) progress.hidden = false;
-    for (let i = 0; i < stageIds.length; i++) {
-      if (status) status.textContent = `Rendering ${i + 1} of ${stageIds.length}...`;
-      const fill = progress?.querySelector(".progress-fill");
-      if (fill) fill.style.width = `${Math.round(((i + 1) / stageIds.length) * 100)}%`;
-      await callApi("/api/workspace/export", { stage_id: stageIds[i], recipe });
+    if (resultsPanel) {
+      resultsPanel.hidden = true;
+      resultsPanel.textContent = "";
     }
-    if (status) status.textContent = "Done";
+    for (let i = 0; i < stageIds.length; i++) {
+      if (status) status.textContent = `Exporting ${i + 1} of ${stageIds.length}: ${stageIds[i]}...`;
+      if (fill) fill.style.width = `${Math.round((i / stageIds.length) * 100)}%`;
+      const result = await callApi("/api/workspace/export", { stage_id: stageIds[i], recipe });
+      if (result?.outputs?.length) outputs.push(...result.outputs);
+      if (result?.errors?.length) errors.push(...result.errors);
+      if (result?.error && !result?.errors?.length) {
+        errors.push({ stage_id: stageIds[i], error: result.error });
+      }
+      if (!result) {
+        errors.push({ stage_id: stageIds[i], error: $("status")?.textContent || "Export failed." });
+      }
+      if (fill) fill.style.width = `${Math.round(((i + 1) / stageIds.length) * 100)}%`;
+    }
     if (progress) progress.hidden = true;
-    showExportCompleteNotification(stageIds.length, "");
+    if (status) {
+      status.textContent = errors.length
+        ? `Exported ${outputs.length} stage(s) with ${errors.length} error(s).`
+        : `Exported ${outputs.length} stage(s).`;
+    }
+    if (resultsPanel) {
+      resultsPanel.hidden = false;
+      resultsPanel.textContent = JSON.stringify({ recipe, outputs, errors }, null, 2);
+    }
+    if (outputs.length) {
+      showExportCompleteNotification(outputs.length, outputs[0]?.output_path || "");
+    }
   });
 
   // Keyboard view switching: Ctrl/Cmd + 1/2/3
@@ -10750,16 +11421,6 @@ function wireEvents() {
   document.getElementById("match-export")?.addEventListener("click", async () => {
     await callApi("/api/workspace/export", {});
     showGlobalError("Export started. Check the processing bar for progress.", { duration: 4000 });
-  });
-
-  // Batch export select all (class-based)
-  document.getElementById("batch-select-all")?.addEventListener("click", () => {
-    document.querySelectorAll("#workspace-stage-list .match-stage-card").forEach(c => c.classList.add("selected"));
-  });
-
-  // Batch export select none (class-based)
-  document.getElementById("batch-select-none")?.addEventListener("click", () => {
-    document.querySelectorAll("#workspace-stage-list .match-stage-card").forEach(c => c.classList.remove("selected"));
   });
 
   setActiveSurface(activeSurface, { persist: false, openPanel: false });
@@ -11578,7 +12239,7 @@ shellRuntime = createShellRuntime({
   resetMergeDraft: () => { mergeDraft = {}; },
   resetExportDraft: () => { exportDraft = {}; },
   getOverlayFrame: () => overlayFrame,
-  setPreviewSeekBoundary: (value) => { previewSeekBoundary = Boolean(value); },
+  setPreviewSeekBoundary,
   getPopupFilterMode: () => popupFilterMode,
   getPopupAuthoringCollapsed: () => popupAuthoringCollapsed,
   setPopupAuthoringCollapsed,
@@ -11649,6 +12310,7 @@ shellRuntime = createShellRuntime({
   scheduleScoringApply,
   handleStageFullscreenChange,
   logPrimaryVideoState,
+  markPreviewSeekBoundary,
   scheduleSecondaryPreviewSync,
   startOverlayLoop,
   stopOverlayLoop,
@@ -11906,6 +12568,29 @@ Object.defineProperties(window, {
   state: { get: () => state, configurable: true },
   activeTool: { get: () => activeTool, configurable: true },
   activeSurface: { get: () => activeSurface, configurable: true },
+  layoutLocked: {
+    get: () => layoutLocked,
+    set: (value) => {
+      layoutLocked = Boolean(value);
+    },
+    configurable: true,
+  },
+  layoutSizes: {
+    get: () => layoutSizes,
+    set: (value) => {
+      if (!value || typeof value !== "object") return;
+      layoutSizes = {
+        railWidth: Number(value.railWidth ?? layoutSizes.railWidth) || layoutSizes.railWidth,
+        inspectorWidth:
+          Number(value.inspectorWidth ?? layoutSizes.inspectorWidth)
+          || layoutSizes.inspectorWidth,
+        waveformHeight:
+          Number(value.waveformHeight ?? layoutSizes.waveformHeight)
+          || layoutSizes.waveformHeight,
+      };
+    },
+    configurable: true,
+  },
 });
 window.createNewProject = createNewProject;
 window.setActiveTool = setActiveTool;

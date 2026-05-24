@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timezone
 from inspect import Parameter, signature
+import json
 from pathlib import Path
 import re
 import subprocess
@@ -85,6 +86,7 @@ from splitshot.persistence.projects import (
     save_project,
 )
 from splitshot.persistence.workspaces import (
+    _output_profile_from_dict,
     load_workspace,
     save_workspace,
     workspace_has_metadata,
@@ -850,9 +852,129 @@ _INHERITANCE_ELIGIBLE_FIELDS = frozenset(
     }
 )
 
+_WORKSPACE_REUSABLE_PROFILE_FIELDS = (
+    "frame_profile",
+    "metric_caption_preset",
+    "lead_in_card",
+    "brand_mark",
+    "subject_track_crop",
+    "visibility_recipe",
+)
+
+_WORKSPACE_REUSABLE_PROJECT_SETTING_KEYS = (
+    "export_preset",
+    "overlay_position",
+    "overlay_badge_size",
+    "overlay_display_options",
+    "frame_profile",
+    "export_quality",
+    "frame_rate",
+    "video_codec",
+    "audio_codec",
+)
+
+_METRIC_CAPTION_PRESET_FIELDS = {
+    "none": [],
+    "splits": ["split_times", "cumulative_time"],
+    "score": ["hit_factor", "penalties"],
+    "full": [
+        "shot_count",
+        "cumulative_time",
+        "first_shot_reaction",
+        "hit_factor",
+        "penalties",
+        "split_times",
+    ],
+}
+
 
 def _new_uuid() -> str:
     return _uuid4().hex
+
+
+def _enum_value(value: object) -> str | None:
+    if value is None:
+        return None
+    return value.value if hasattr(value, "value") else str(value)
+
+
+def _frame_profile_from_aspect_ratio(value: object) -> str:
+    normalized = _enum_value(value) or AspectRatio.ORIGINAL.value
+    return "source" if normalized == AspectRatio.ORIGINAL.value else normalized
+
+
+def _aspect_ratio_from_frame_profile(value: object) -> AspectRatio:
+    normalized = str(value or "source").strip().lower()
+    mapping = {
+        "source": AspectRatio.ORIGINAL,
+        "original": AspectRatio.ORIGINAL,
+        "16:9": AspectRatio.LANDSCAPE,
+        "9:16": AspectRatio.PORTRAIT,
+        "1:1": AspectRatio.SQUARE,
+        "4:5": AspectRatio.PORTRAIT_45,
+    }
+    return mapping.get(normalized, AspectRatio.ORIGINAL)
+
+
+def _copy_profile_payload(value: object) -> dict:
+    return deepcopy(value) if isinstance(value, dict) else {}
+
+
+def _profile_identity_key(profile: OutputProfile) -> tuple[str, str]:
+    return (profile.profile_kind, profile.profile_name.strip().casefold())
+
+
+def _metric_caption_preset_from_selection(
+    selection: object,
+    current: dict | None = None,
+) -> dict:
+    if isinstance(selection, dict):
+        return deepcopy(selection)
+    normalized = str(selection or "").strip().lower()
+    base = deepcopy(current) if isinstance(current, dict) else {}
+    if normalized not in _METRIC_CAPTION_PRESET_FIELDS:
+        return base
+    base["preset"] = normalized
+    base["enabled_fields"] = list(_METRIC_CAPTION_PRESET_FIELDS[normalized])
+    base.setdefault("format", "overlay")
+    return base
+
+
+def _lead_in_card_from_override(value: object, current: dict | None = None) -> dict:
+    if isinstance(value, dict):
+        return deepcopy(value)
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "none"}:
+        return {}
+    duration_s = 2.0
+    if isinstance(current, dict):
+        try:
+            duration_s = float(current.get("duration_s", duration_s) or duration_s)
+        except (TypeError, ValueError):
+            duration_s = 2.0
+    return {
+        "style": normalized,
+        "duration_s": duration_s,
+    }
+
+
+def _brand_mark_from_override(value: object, current: dict | None = None) -> dict:
+    if isinstance(value, dict):
+        return deepcopy(value)
+    normalized = str(value or "").strip().lower()
+    if normalized in {"", "none"}:
+        return {}
+    duration_s = 1.0
+    if isinstance(current, dict):
+        try:
+            duration_s = float(current.get("duration_s", duration_s) or duration_s)
+        except (TypeError, ValueError):
+            duration_s = 1.0
+    return {
+        "style": normalized,
+        "text": "SplitShot" if normalized == "splitshot" else normalized,
+        "duration_s": duration_s,
+    }
 
 
 class ProjectController(QObject):
@@ -1259,7 +1381,6 @@ class ProjectController(QObject):
             return {"success": False, "error": "Workspace has not been saved"}
 
         stage_ids = kwargs.get("stage_ids") or list(self.workspace.stage_entries.keys())
-        transition = kwargs.get("transition", "cut")
 
         ws_path = Path(self.workspace_path)
         recap_path = ws_path / "recap.mp4"
@@ -1308,7 +1429,6 @@ class ProjectController(QObject):
                 import shutil
                 shutil.copy2(str(exported_segments[0]), str(recap_path))
             else:
-                from splitshot.media.ffmpeg import ffmpeg_command
                 concat_file = temp_dir / "concat.txt"
                 with open(concat_file, "w") as f:
                     for seg in exported_segments:
@@ -1363,7 +1483,11 @@ class ProjectController(QObject):
         if not self.workspace:
             return {"error": "No workspace open"}
 
-        stage_entries = list(self.workspace.stage_entries.values())
+        stage_entries = [
+            self.workspace.stage_entries[stage_id]
+            for stage_id in self.workspace.stage_order
+            if stage_id in self.workspace.stage_entries
+        ]
         if len(stage_entries) < 2:
             return {"error": "Need at least 2 stages"}
 
@@ -1376,6 +1500,9 @@ class ProjectController(QObject):
             return {"error": f"Cannot load Stage 1 project: {first_entry.stage_id}"}
 
         reusable = self._extract_reusable_settings(first_project)
+        source_profiles = self._reusable_stage_output_profiles(
+            self._load_stage_profiles_for_stage(first_entry.stage_id)
+        )
 
         applied = 0
         skipped = 0
@@ -1396,29 +1523,75 @@ class ProjectController(QObject):
                 continue
 
             stage_conflicts = []
+            project_changed = False
             for key, value in reusable.items():
+                current_value = self._get_setting_from_project(sibling_project, key)
                 if entry.override_values and key in entry.override_values:
+                    retained_value = entry.override_values[key]
+                    if current_value != retained_value:
+                        self._apply_setting_to_project(sibling_project, key, retained_value)
+                        project_changed = True
                     stage_conflicts.append({
                         "setting": key,
+                        "current_value": current_value,
+                        "proposed_value": value,
+                        "retained_value": retained_value,
                         "reason": "Stage has explicit override",
                     })
                     continue
+                if current_value == value:
+                    continue
                 self._apply_setting_to_project(sibling_project, key, value)
+                project_changed = True
+
+            profile_update = self._copy_reusable_profiles_to_stage(
+                entry.stage_id,
+                source_profiles,
+                entry.override_values,
+            )
+            profile_changed = bool(profile_update["changes"])
 
             if stage_conflicts:
                 conflicts.extend([{**c, "stage_id": entry.stage_id} for c in stage_conflicts])
 
-            self._save_stage_project(entry.stage_id, sibling_project)
+            project_saved = (
+                self._save_stage_project(entry.stage_id, sibling_project)
+                if project_changed
+                else True
+            )
+            profiles_saved = (
+                self._save_stage_profiles_for_stage(entry.stage_id, profile_update["profiles"])
+                if profile_changed
+                else True
+            )
+            if not project_saved or not profiles_saved:
+                skipped += 1
+                conflicts.append(
+                    {
+                        "stage_id": entry.stage_id,
+                        "setting": "all",
+                        "reason": "Failed to persist Stage 1 settings",
+                    }
+                )
+                continue
             entry.inherited_from_first = True
             applied += 1
 
         self.workspace.first_stage_snapshot = {
             "stage_id": first_entry.stage_id,
             "defaults": reusable,
+            "profiles": [
+                self._reusable_output_profile_summary(profile) for profile in source_profiles
+            ],
             "applied_at": _utc_now().isoformat(),
         }
         self._touch_workspace()
-        self.autosave_project_if_needed()
+        self._set_status(
+            f"Applied Stage 1 settings to {applied} stage(s)."
+            if not conflicts
+            else f"Applied Stage 1 settings with {len(conflicts)} conflict(s)."
+        )
+        self.project_changed.emit()
 
         return {
             "applied": applied,
@@ -1436,7 +1609,11 @@ class ProjectController(QObject):
         if not self.workspace:
             return {"error": "No workspace open"}
 
-        stage_entries = list(self.workspace.stage_entries.values())
+        stage_entries = [
+            self.workspace.stage_entries[stage_id]
+            for stage_id in self.workspace.stage_order
+            if stage_id in self.workspace.stage_entries
+        ]
         if len(stage_entries) < 2:
             return {"error": "Need at least 2 stages", "preview": []}
 
@@ -1446,6 +1623,9 @@ class ProjectController(QObject):
 
         first_project = self._load_stage_project(first_entry.stage_id)
         reusable = self._extract_reusable_settings(first_project) if first_project else {}
+        source_profiles = self._reusable_stage_output_profiles(
+            self._load_stage_profiles_for_stage(first_entry.stage_id)
+        )
 
         preview = []
         for entry in stage_entries[1:]:
@@ -1478,6 +1658,7 @@ class ProjectController(QObject):
                         "setting": key,
                         "current_value": sibling_value,
                         "proposed_value": first_value,
+                        "retained_value": entry.override_values[key],
                         "reason": "Stage has explicit override",
                     })
                 else:
@@ -1486,6 +1667,13 @@ class ProjectController(QObject):
                         "current_value": sibling_value,
                         "new_value": first_value,
                     })
+
+            profile_update = self._copy_reusable_profiles_to_stage(
+                entry.stage_id,
+                source_profiles,
+                entry.override_values,
+            )
+            changes.extend(profile_update["changes"])
 
             status = "conflict" if conflicts else ("will_change" if changes else "unchanged")
 
@@ -1500,7 +1688,8 @@ class ProjectController(QObject):
         return {
             "preview": preview,
             "source_stage": first_entry.display_name or "Stage 1",
-            "reusable_settings": list(reusable.keys()),
+            "reusable_settings": list(reusable.keys())
+            + (["output_profiles"] if source_profiles else []),
         }
     # ── Stage project load / save ──────────────────────────────────
 
@@ -1529,21 +1718,230 @@ class ProjectController(QObject):
 
     # ── Reusable settings extraction / application ──────────────────
 
+    def _loaded_stage_profiles_for_stage(self, stage_id: str) -> list[OutputProfile]:
+        return [
+            deepcopy(profile)
+            for profile in self._output_profiles.values()
+            if profile.scope_type == "stage" and profile.scope_id == stage_id
+        ]
+
+    def _load_stage_profiles_for_stage(self, stage_id: str) -> list[OutputProfile]:
+        stage_path = self._workspace_stage_bundle_path(stage_id)
+        if stage_path is None:
+            return self._loaded_stage_profiles_for_stage(stage_id)
+        profiles_path = stage_path / "profiles.json"
+        if not profiles_path.exists():
+            return self._loaded_stage_profiles_for_stage(stage_id)
+        try:
+            raw_profiles = json.loads(profiles_path.read_text(encoding="utf-8"))
+        except Exception:
+            return self._loaded_stage_profiles_for_stage(stage_id)
+        loaded_profiles: list[OutputProfile] = []
+        if isinstance(raw_profiles, list):
+            for item in raw_profiles:
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    loaded_profiles.append(_output_profile_from_dict(item))
+                except Exception:
+                    continue
+        return loaded_profiles
+
+    def _replace_stage_profiles_in_memory(
+        self, stage_id: str, profiles: list[OutputProfile]
+    ) -> None:
+        self._output_profiles = {
+            output_id: profile
+            for output_id, profile in self._output_profiles.items()
+            if not (profile.scope_type == "stage" and profile.scope_id == stage_id)
+        }
+        for profile in profiles:
+            self._output_profiles[profile.output_id] = deepcopy(profile)
+
+    def _save_stage_profiles_for_stage(
+        self, stage_id: str, profiles: list[OutputProfile]
+    ) -> bool:
+        stage_path = self._workspace_stage_bundle_path(stage_id)
+        if stage_path is None:
+            return False
+        profiles_path = stage_path / "profiles.json"
+        try:
+            self._replace_stage_profiles_in_memory(stage_id, profiles)
+            if profiles:
+                stage_path.mkdir(parents=True, exist_ok=True)
+                profiles_path.write_text(
+                    json.dumps(
+                        [self._output_profile_to_dict_safe(profile) for profile in profiles],
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            elif profiles_path.exists():
+                profiles_path.unlink()
+            return True
+        except Exception:
+            return False
+
+    def _reusable_stage_output_profiles(
+        self, profiles: list[OutputProfile]
+    ) -> list[OutputProfile]:
+        return [
+            deepcopy(profile)
+            for profile in profiles
+            if profile.scope_type == "stage" and profile.profile_kind == "stage_output"
+        ]
+
+    def _reusable_output_profile_summary(self, profile: OutputProfile) -> dict:
+        return {
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": _copy_profile_payload(profile.metric_caption_preset),
+            "lead_in_card": _copy_profile_payload(profile.lead_in_card),
+            "brand_mark": _copy_profile_payload(profile.brand_mark),
+            "subject_track_crop": _copy_profile_payload(profile.subject_track_crop),
+            "visibility_recipe": _copy_profile_payload(profile.visibility_recipe),
+        }
+
+    def _profile_with_stage_overrides(
+        self,
+        profile: OutputProfile,
+        stage_id: str,
+        override_values: dict | None = None,
+        *,
+        output_id: str | None = None,
+    ) -> OutputProfile:
+        resolved = OutputProfile(
+            output_id=output_id or _new_uuid(),
+            scope_type="stage",
+            scope_id=stage_id,
+            profile_name=profile.profile_name,
+            profile_kind=profile.profile_kind,
+            frame_profile=profile.frame_profile,
+            metric_caption_preset=_copy_profile_payload(profile.metric_caption_preset),
+            lead_in_card=_copy_profile_payload(profile.lead_in_card),
+            brand_mark=_copy_profile_payload(profile.brand_mark),
+            subject_track_crop=_copy_profile_payload(profile.subject_track_crop),
+            visibility_recipe=_copy_profile_payload(profile.visibility_recipe),
+            angle_director_plan=[],
+            retained_proxy_id=None,
+            archive_id=None,
+            last_rendered_at=None,
+        )
+
+        if not isinstance(override_values, dict):
+            return resolved
+
+        if override_values.get("frame_profile") not in {None, ""}:
+            resolved.frame_profile = str(override_values["frame_profile"])
+        if "metric_caption_preset" in override_values:
+            resolved.metric_caption_preset = _metric_caption_preset_from_selection(
+                override_values.get("metric_caption_preset"),
+                resolved.metric_caption_preset,
+            )
+        if "lead_in_card" in override_values:
+            resolved.lead_in_card = _lead_in_card_from_override(
+                override_values.get("lead_in_card"),
+                resolved.lead_in_card,
+            )
+        if "brand_mark" in override_values:
+            resolved.brand_mark = _brand_mark_from_override(
+                override_values.get("brand_mark"),
+                resolved.brand_mark,
+            )
+        if isinstance(override_values.get("subject_track_crop"), dict):
+            resolved.subject_track_crop = deepcopy(override_values["subject_track_crop"])
+        if isinstance(override_values.get("visibility_recipe"), dict):
+            resolved.visibility_recipe = deepcopy(override_values["visibility_recipe"])
+        return resolved
+
+    def _copy_reusable_profiles_to_stage(
+        self,
+        stage_id: str,
+        source_profiles: list[OutputProfile],
+        override_values: dict | None = None,
+    ) -> dict[str, object]:
+        target_profiles = self._load_stage_profiles_for_stage(stage_id)
+        changes: list[dict[str, object]] = []
+
+        for source_profile in source_profiles:
+            source_key = _profile_identity_key(source_profile)
+            match_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(target_profiles)
+                    if _profile_identity_key(candidate) == source_key
+                ),
+                None,
+            )
+            existing_profile = None if match_index is None else target_profiles[match_index]
+            resolved_profile = self._profile_with_stage_overrides(
+                source_profile,
+                stage_id,
+                override_values,
+                output_id=None if existing_profile is None else existing_profile.output_id,
+            )
+            new_summary = self._reusable_output_profile_summary(resolved_profile)
+
+            if existing_profile is None:
+                target_profiles.append(resolved_profile)
+                changes.append(
+                    {
+                        "setting": "output_profile",
+                        "action": "created",
+                        "profile_name": source_profile.profile_name,
+                        "profile_kind": source_profile.profile_kind,
+                        "current_value": None,
+                        "new_value": new_summary,
+                    }
+                )
+                continue
+
+            current_summary = self._reusable_output_profile_summary(existing_profile)
+            if current_summary == new_summary:
+                continue
+
+            target_profiles[match_index] = resolved_profile
+            changes.append(
+                {
+                    "setting": "output_profile",
+                    "action": "updated",
+                    "profile_name": source_profile.profile_name,
+                    "profile_kind": source_profile.profile_kind,
+                    "current_value": current_summary,
+                    "new_value": new_summary,
+                }
+            )
+
+        return {
+            "profiles": target_profiles,
+            "changes": changes,
+        }
+
     def _extract_reusable_settings(self, project: Project) -> dict:
         """Extract settings that can be shared across stages."""
         return {
-            "export_preset": project.export.preset.value if project.export and project.export.preset else None,
-            "overlay_position": project.overlay.position.value if project.overlay and project.overlay.position else None,
-            "overlay_badge_size": project.overlay.badge_size.value if project.overlay and project.overlay.badge_size else None,
-            "overlay_display_options": {
-                "show_timer": project.overlay.show_timer,
-                "show_shots": project.overlay.show_shots,
-                "show_score": project.overlay.show_score,
-            } if project.overlay else {},
-            "frame_profile": getattr(project.export, "frame_profile", None) if project.export else None,
-            "metric_captions": getattr(project.export, "metric_captions", None) if project.export else None,
-            "lead_in_card": getattr(project.export, "lead_in_card", None) if project.export else None,
-            "brand_mark": getattr(project.export, "brand_mark", None) if project.export else None,
+            "export_preset": _enum_value(project.export.preset) if project.export else None,
+            "overlay_position": _enum_value(project.overlay.position) if project.overlay else None,
+            "overlay_badge_size": _enum_value(project.overlay.badge_size) if project.overlay else None,
+            "overlay_display_options": (
+                {
+                    "show_timer": bool(project.overlay.show_timer),
+                    "show_shots": bool(project.overlay.show_shots),
+                    "show_score": bool(project.overlay.show_score),
+                }
+                if project.overlay
+                else {}
+            ),
+            "frame_profile": (
+                _frame_profile_from_aspect_ratio(project.export.aspect_ratio)
+                if project.export
+                else None
+            ),
+            "export_quality": _enum_value(project.export.quality) if project.export else None,
+            "frame_rate": _enum_value(project.export.frame_rate) if project.export else None,
+            "video_codec": _enum_value(project.export.video_codec) if project.export else None,
+            "audio_codec": _enum_value(project.export.audio_codec) if project.export else None,
         }
 
     def _apply_setting_to_project(self, project: Project, key: str, value) -> None:
@@ -1552,19 +1950,24 @@ class ProjectController(QObject):
             return
         try:
             if key == "export_preset":
-                from splitshot.domain.models import ExportPreset
                 project.export.preset = ExportPreset(value)
             elif key == "overlay_position":
-                from splitshot.domain.models import OverlayPosition
                 project.overlay.position = OverlayPosition(value)
             elif key == "overlay_badge_size":
-                from splitshot.domain.models import BadgeSize
                 project.overlay.badge_size = BadgeSize(value)
             elif key == "overlay_display_options" and isinstance(value, dict):
                 for opt_key, opt_val in value.items():
                     setattr(project.overlay, opt_key, opt_val)
-            elif key in ("frame_profile", "metric_captions", "lead_in_card", "brand_mark"):
-                setattr(project.export, key, value)
+            elif key == "frame_profile":
+                project.export.aspect_ratio = _aspect_ratio_from_frame_profile(value)
+            elif key == "export_quality":
+                project.export.quality = ExportQuality(value)
+            elif key == "frame_rate":
+                project.export.frame_rate = ExportFrameRate(value)
+            elif key == "video_codec":
+                project.export.video_codec = ExportVideoCodec(value)
+            elif key == "audio_codec":
+                project.export.audio_codec = ExportAudioCodec(value)
         except Exception:
             pass
 
@@ -1572,21 +1975,29 @@ class ProjectController(QObject):
         """Get current value of a setting from a project (for diff comparison)."""
         try:
             if key == "export_preset":
-                return project.export.preset.value if project.export and project.export.preset else None
+                return _enum_value(project.export.preset) if project.export else None
             elif key == "overlay_position":
-                return project.overlay.position.value if project.overlay and project.overlay.position else None
+                return _enum_value(project.overlay.position) if project.overlay else None
             elif key == "overlay_badge_size":
-                return project.overlay.badge_size.value if project.overlay and project.overlay.badge_size else None
+                return _enum_value(project.overlay.badge_size) if project.overlay else None
             elif key == "overlay_display_options":
                 if project.overlay:
                     return {
-                        "show_timer": project.overlay.show_timer,
-                        "show_shots": project.overlay.show_shots,
-                        "show_score": project.overlay.show_score,
+                        "show_timer": bool(project.overlay.show_timer),
+                        "show_shots": bool(project.overlay.show_shots),
+                        "show_score": bool(project.overlay.show_score),
                     }
                 return {}
-            elif key in ("frame_profile", "metric_captions", "lead_in_card", "brand_mark"):
-                return getattr(project.export, key, None) if project.export else None
+            elif key == "frame_profile":
+                return _frame_profile_from_aspect_ratio(project.export.aspect_ratio)
+            elif key == "export_quality":
+                return _enum_value(project.export.quality) if project.export else None
+            elif key == "frame_rate":
+                return _enum_value(project.export.frame_rate) if project.export else None
+            elif key == "video_codec":
+                return _enum_value(project.export.video_codec) if project.export else None
+            elif key == "audio_codec":
+                return _enum_value(project.export.audio_codec) if project.export else None
         except Exception:
             return None
         return None
@@ -1606,10 +2017,18 @@ class ProjectController(QObject):
 
             presentation = build_stage_presentation(self.project)
             truth_hash = self._compute_truth_hash()
+            score_total = presentation.metrics.scoring_summary.get("total_points")
+            editor_target = {
+                "type": "single",
+                "project_path": str(self.project_path) if self.project_path else "",
+                "workspace_path": str(self.workspace_path) if self.workspace_path else "",
+                "stage_id": self.active_stage_id or self.project.id,
+                "match_id": self.workspace.match_id if self.workspace and self.editor_scope == "multi" else None,
+            }
 
             record = LibraryStageRecord(
                 stage_id=self.project.id,
-                match_id=self.active_stage_id if self.editor_scope == "multi" else None,
+                match_id=self.workspace.match_id if self.workspace and self.editor_scope == "multi" else None,
                 display_name=self.project.name,
                 event_date=self.project.created_at,
                 discipline=self.project.scoring.ruleset or "",
@@ -1621,9 +2040,11 @@ class ProjectController(QObject):
                     "cumulative_time": getattr(presentation.metrics, "cumulative_time_ms", 0),
                     "shot_count": len(self.project.analysis.shots),
                     "split_summary": getattr(presentation.metrics, "split_summary", {}),
+                    "score": score_total,
                     "score_total": presentation.metrics.scoring_summary.get("total_points"),
                     "penalties": getattr(presentation.metrics, "penalties", 0.0),
                 },
+                editor_target=editor_target,
                 truth_hash=truth_hash,
             )
             save_stage_record(record)
@@ -1637,12 +2058,19 @@ class ProjectController(QObject):
                     "event_date": record.event_date.isoformat() if record.event_date else None,
                     "discipline": record.discipline,
                     "competitor_name": record.competitor_name,
+                    "metric_summary": dict(record.metric_summary),
                     "first_shot_reaction_ms": getattr(
                         presentation.metrics, "first_shot_reaction_ms", 0
                     ),
                     "cumulative_time_ms": getattr(presentation.metrics, "cumulative_time_ms", 0),
+                    "score": score_total,
                     "score_total": presentation.metrics.scoring_summary.get("total_points"),
                     "penalties": getattr(presentation.metrics, "penalties", 0.0),
+                    "editor_target": editor_target,
+                    "project_path": editor_target.get("project_path", ""),
+                    "workspace_path": editor_target.get("workspace_path", ""),
+                    "tags": list(record.tags),
+                    "notes": record.notes,
                     "truth_hash": truth_hash,
                 }
             )
@@ -1655,6 +2083,15 @@ class ProjectController(QObject):
             return
         try:
             truth_hash = self._compute_workspace_truth_hash()
+            editor_target = {
+                "type": "multi",
+                "workspace_path": str(self.workspace_path) if self.workspace_path else "",
+                "match_id": self.workspace.match_id,
+            }
+            aggregate_metric_summary = {
+                "stage_count": len(self.workspace.stage_entries),
+                "stages": list(self.workspace.stage_order),
+            }
 
             record = LibraryMatchRecord(
                 match_id=self.workspace.match_id,
@@ -1662,10 +2099,8 @@ class ProjectController(QObject):
                 event_date=self.workspace.created_at,
                 discipline="",
                 stage_ids=list(self.workspace.stage_entries.keys()),
-                aggregate_metric_summary={
-                    "stage_count": len(self.workspace.stage_entries),
-                    "stages": list(self.workspace.stage_order),
-                },
+                aggregate_metric_summary=aggregate_metric_summary,
+                editor_target=editor_target,
                 truth_hash=truth_hash,
             )
             save_match_record(record)
@@ -1676,8 +2111,13 @@ class ProjectController(QObject):
                     "match_id": record.match_id,
                     "display_name": record.display_name,
                     "event_date": record.event_date.isoformat() if record.event_date else None,
+                    "aggregate_metric_summary": dict(aggregate_metric_summary),
                     "stage_count": len(self.workspace.stage_entries),
                     "stage_ids": list(self.workspace.stage_order),
+                    "editor_target": editor_target,
+                    "workspace_path": editor_target.get("workspace_path", ""),
+                    "tags": list(record.tags),
+                    "notes": record.notes,
                     "truth_hash": truth_hash,
                 }
             )
@@ -2885,13 +3325,13 @@ class ProjectController(QObject):
             "detected_match_type": "" if options is None else options.match_type,
             "stage_numbers": [] if options is None else list(options.stage_numbers),
             "competitors": competitors,
+            "comparison_competitors": deepcopy(self._practiscore_comparison_competitors),
         }
 
     def practiscore_browser_state(self) -> dict[str, object]:
         payload = self._practiscore_options_browser_payload()
         payload["_session_payload"] = deepcopy(self._practiscore_session_payload)
         payload["_sync_payload"] = deepcopy(self._practiscore_sync_payload)
-        payload["comparison_competitors"] = deepcopy(self._practiscore_comparison_competitors)
         return payload
 
     def _set_practiscore_session_payload(self, payload: dict[str, object]) -> None:
@@ -5723,9 +6163,15 @@ class ProjectController(QObject):
         stages = []
         matches = []
         try:
-            from splitshot.persistence.library import read_stage_metrics, read_match_metrics
-            stages = read_stage_metrics() or []
-            matches = read_match_metrics() or []
+            from splitshot.persistence.library import (
+                read_match_metrics,
+                read_match_records,
+                read_stage_metrics,
+                read_stage_records,
+            )
+
+            stages = read_stage_records() or read_stage_metrics() or []
+            matches = read_match_records() or read_match_metrics() or []
         except Exception:
             pass
         
@@ -5759,6 +6205,8 @@ class ProjectController(QObject):
     
     def library_backup_restore(self, manifest: dict) -> dict:
         """Restore library from a backup manifest."""
+        from datetime import datetime
+
         if not manifest:
             return {"error": "No backup manifest provided", "stages_restored": 0, "matches_restored": 0}
         
@@ -5769,12 +6217,77 @@ class ProjectController(QObject):
         restored_stages = 0
         restored_matches = 0
         errors: list[dict[str, object]] = []
+
+        def parse_datetime(value: object) -> datetime | None:
+            if isinstance(value, datetime):
+                return value
+            if isinstance(value, str) and value:
+                try:
+                    return datetime.fromisoformat(value)
+                except ValueError:
+                    return None
+            return None
+
+        def normalize_stage_index_row(stage_data: dict) -> dict:
+            metric_summary = stage_data.get("metric_summary")
+            summary = metric_summary if isinstance(metric_summary, dict) else {}
+            row = dict(stage_data)
+            row["metric_summary"] = summary
+            if row.get("score") in {None, ""}:
+                row["score"] = summary.get("score", summary.get("score_total", summary.get("hit_factor")))
+            return row
+
+        def normalize_match_index_row(match_data: dict) -> dict:
+            aggregate_summary = match_data.get("aggregate_metric_summary")
+            summary = aggregate_summary if isinstance(aggregate_summary, dict) else {}
+            row = dict(match_data)
+            row["aggregate_metric_summary"] = summary
+            if row.get("stage_count") in {None, ""}:
+                row["stage_count"] = summary.get("stage_count", len(row.get("stage_ids") or []))
+            return row
         
         # Write stage records
         for stage_data in manifest.get("stage_records", []):
             try:
-                from splitshot.persistence.library import append_stage_metric
-                append_stage_metric(stage_data)
+                if not isinstance(stage_data, dict):
+                    raise ValueError("Stage record must be an object")
+
+                from splitshot.domain.models import LibraryStageRecord
+                from splitshot.persistence.library import append_stage_metric, save_stage_record
+
+                has_full_stage_payload = any(
+                    key in stage_data
+                    for key in ("metric_summary", "editor_target", "notes", "tags", "output_profile_refs")
+                )
+                if has_full_stage_payload and stage_data.get("library_record_id"):
+                    save_stage_record(
+                        LibraryStageRecord(
+                            library_record_id=str(stage_data.get("library_record_id") or ""),
+                            stage_id=str(stage_data.get("stage_id") or ""),
+                            match_id=(
+                                None
+                                if stage_data.get("match_id") in {None, ""}
+                                else str(stage_data.get("match_id"))
+                            ),
+                            display_name=str(stage_data.get("display_name") or ""),
+                            event_date=parse_datetime(stage_data.get("event_date")),
+                            discipline=str(stage_data.get("discipline") or ""),
+                            competitor_name=str(stage_data.get("competitor_name") or ""),
+                            metric_summary=dict(stage_data.get("metric_summary") or {}),
+                            output_profile_refs=list(stage_data.get("output_profile_refs") or []),
+                            active_retained_proxy=(
+                                None
+                                if stage_data.get("active_retained_proxy") in {None, ""}
+                                else str(stage_data.get("active_retained_proxy"))
+                            ),
+                            editor_target=dict(stage_data.get("editor_target") or {}),
+                            truth_hash=str(stage_data.get("truth_hash") or ""),
+                            tags=[str(tag) for tag in (stage_data.get("tags") or [])],
+                            notes=str(stage_data.get("notes") or ""),
+                        )
+                    )
+
+                append_stage_metric(normalize_stage_index_row(stage_data))
                 restored_stages += 1
             except Exception as exc:
                 errors.append({
@@ -5786,8 +6299,40 @@ class ProjectController(QObject):
         # Write match records
         for match_data in manifest.get("match_records", []):
             try:
-                from splitshot.persistence.library import append_match_metric
-                append_match_metric(match_data)
+                if not isinstance(match_data, dict):
+                    raise ValueError("Match record must be an object")
+
+                from splitshot.domain.models import LibraryMatchRecord
+                from splitshot.persistence.library import append_match_metric, save_match_record
+
+                has_full_match_payload = any(
+                    key in match_data
+                    for key in ("aggregate_metric_summary", "editor_target", "notes", "tags", "output_profile_refs")
+                )
+                if has_full_match_payload and match_data.get("library_record_id"):
+                    save_match_record(
+                        LibraryMatchRecord(
+                            library_record_id=str(match_data.get("library_record_id") or ""),
+                            match_id=str(match_data.get("match_id") or ""),
+                            display_name=str(match_data.get("display_name") or ""),
+                            event_date=parse_datetime(match_data.get("event_date")),
+                            discipline=str(match_data.get("discipline") or ""),
+                            stage_ids=[str(stage_id) for stage_id in (match_data.get("stage_ids") or [])],
+                            aggregate_metric_summary=dict(match_data.get("aggregate_metric_summary") or {}),
+                            output_profile_refs=list(match_data.get("output_profile_refs") or []),
+                            active_retained_proxy=(
+                                None
+                                if match_data.get("active_retained_proxy") in {None, ""}
+                                else str(match_data.get("active_retained_proxy"))
+                            ),
+                            editor_target=dict(match_data.get("editor_target") or {}),
+                            truth_hash=str(match_data.get("truth_hash") or ""),
+                            tags=[str(tag) for tag in (match_data.get("tags") or [])],
+                            notes=str(match_data.get("notes") or ""),
+                        )
+                    )
+
+                append_match_metric(normalize_match_index_row(match_data))
                 restored_matches += 1
             except Exception as exc:
                 errors.append({

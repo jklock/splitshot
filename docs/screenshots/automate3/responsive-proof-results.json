@@ -1,0 +1,64 @@
+{
+  "generated_at": "2026-05-24T01:11:59.969983+00:00",
+  "kind": "responsive",
+  "status": "pass",
+  "setup": {
+    "project_path": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-vk2u09v_/automate3-proof.ssproj",
+    "project_dir": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-vk2u09v_",
+    "library_root": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-responsive-library-2h02x0pk"
+  },
+  "screenshots": [
+    {
+      "file": "responsive-stage-1280.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/responsive-stage-1280.png",
+      "bytes": 613680,
+      "sha256": "19159d085c7c7c3b81c2d1e97b428ffc273d600bf22327c33e709cec5f2475c9",
+      "assertions": {
+        "activeSurface": "single",
+        "activeTool": "project",
+        "viewActive": true,
+        "viewportWidth": 1280,
+        "viewportHeight": 900,
+        "mediaLoaded": true,
+        "shotCount": 3,
+        "horizontalOverflow": false,
+        "railDisplay": "grid",
+        "toolPaneVisible": true,
+        "stageWidth": 688,
+        "stageHeight": 685,
+        "inspectorWidth": 499,
+        "inspectorHeight": 862,
+        "inspectorCompact": true,
+        "expectedWidth": 1280,
+        "expectedTool": "project"
+      },
+      "status": "pass"
+    },
+    {
+      "file": "responsive-stage-900.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/responsive-stage-900.png",
+      "bytes": 330096,
+      "sha256": "533c427153148bc61710fafe534557f0eba631c4524fadd550ccc415d226ff59",
+      "assertions": {
+        "activeSurface": "single",
+        "activeTool": "settings",
+        "viewActive": true,
+        "viewportWidth": 900,
+        "viewportHeight": 900,
+        "mediaLoaded": true,
+        "shotCount": 3,
+        "horizontalOverflow": false,
+        "railDisplay": "grid",
+        "toolPaneVisible": true,
+        "stageWidth": 811,
+        "stageHeight": 280,
+        "inspectorWidth": 380,
+        "inspectorHeight": 792,
+        "inspectorCompact": true,
+        "expectedWidth": 900,
+        "expectedTool": "settings"
+      },
+      "status": "pass"
+    }
+  ]
+}

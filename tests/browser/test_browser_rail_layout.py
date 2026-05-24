@@ -43,6 +43,62 @@ def _unlock_layout(page) -> None:
     page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
 
 
+@pytest.mark.parametrize("width", [1280, 900])
+def test_loaded_stage_shell_remains_responsive_without_horizontal_overflow(
+    synthetic_video_factory,
+    width: int,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name=f"responsive-stage-layout-{width}"))
+
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "settings")
+                page.set_viewport_size({"width": width, "height": 900})
+                page.wait_for_timeout(150)
+
+                layout = page.evaluate(
+                    """() => {
+                        const stage = document.getElementById('video-stage');
+                        const inspector = document.querySelector('.inspector');
+                        const rail = document.querySelector('.tool-rail');
+                        const stageRect = stage?.getBoundingClientRect();
+                        const inspectorRect = inspector?.getBoundingClientRect();
+                        return {
+                            activeSurface: typeof activeSurface === 'string' ? activeSurface : '',
+                            activeTool: typeof activeTool === 'string' ? activeTool : '',
+                            mediaLoaded: Boolean(state?.media?.primary_available),
+                            waveformCards: document.querySelectorAll('.waveform-shot-card').length,
+                            horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth + 1,
+                            railDisplay: rail ? getComputedStyle(rail).display : 'none',
+                            stageWidth: Math.round(stageRect?.width || 0),
+                            stageHeight: Math.round(stageRect?.height || 0),
+                            inspectorWidth: Math.round(inspectorRect?.width || 0),
+                            inspectorHidden: inspector ? Boolean(inspector.hidden) : true,
+                        };
+                    }"""
+                )
+
+                assert layout["activeSurface"] == "single"
+                assert layout["activeTool"] == "settings"
+                assert layout["mediaLoaded"] is True
+                assert layout["waveformCards"] > 0
+                assert layout["horizontalOverflow"] is False
+                assert layout["railDisplay"] != "none"
+                assert layout["stageWidth"] >= 320
+                assert layout["stageHeight"] > 0
+                assert layout["inspectorWidth"] >= 320
+                assert layout["inspectorHidden"] is False
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def _drag_resize_handle(
     page,
     handle_id: str,

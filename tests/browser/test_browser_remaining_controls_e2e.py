@@ -260,9 +260,11 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
     primary_path = Path(synthetic_video_factory(name="markers-remaining-authoring-ui"))
     image_path = tmp_path / "popup-reference.png"
     image_path.write_bytes(b"fake-image")
+    expected_project_home = primary_path.parent / "browser-test.ssproj"
+    chooser_calls: list[tuple[str, str | None]] = []
 
     def fake_path_chooser(kind: str, current: str | None) -> str:
-        assert kind == "popup_image"
+        chooser_calls.append((kind, current))
         return str(image_path)
 
     server = BrowserControlServer(port=0, path_chooser=fake_path_chooser)
@@ -329,9 +331,15 @@ def test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_stat
 
                 first_card.locator('[data-popup-action="browse_image"]').click()
                 page.wait_for_function(
-                    "(payload) => (state?.project?.popups || []).find((item) => item.id === payload.popupId)?.image_path === payload.path",
-                    arg={"popupId": first_popup_id, "path": str(image_path)},
+                    """(popupId) => {
+                        const imagePath = (state?.project?.popups || []).find((item) => item.id === popupId)?.image_path || '';
+                        const normalizedPath = String(imagePath).split(String.fromCharCode(92)).join('/');
+                        const fileName = normalizedPath.split('/').pop() || '';
+                        return normalizedPath.includes('/Markers/') && fileName.startsWith('popup-reference');
+                    }""",
+                    arg=first_popup_id,
                 )
+                assert chooser_calls == [("popup_image", str(expected_project_home))]
 
                 first_card.locator('[data-popup-field="image_scale_mode"]').select_option("contain")
                 page.wait_for_function(

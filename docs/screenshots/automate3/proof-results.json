@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-23T16:28:50.549356+00:00",
+  "generated_at": "2026-05-24T00:38:28.338551+00:00",
   "kind": "empty",
   "status": "pass",
   "screenshots": [
@@ -54,8 +54,8 @@
     {
       "file": "empty-library.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/empty-library.png",
-      "bytes": 32198,
-      "sha256": "626ecf061fbaa6b6e98305ee6fd9b8ca39881f8a005208e842029e996876362f",
+      "bytes": 34563,
+      "sha256": "9f7fe3b3143a352dd26269781bf20ed1cf9b29ef6ee8a5a3af9019ca44fe28b6",
       "assertions": {
         "activeView": "library",
         "viewActive": true,
@@ -63,7 +63,7 @@
         "height": 900,
         "horizontalOverflow": false,
         "railDisplay": "grid",
-        "text_length": 161
+        "text_length": 192
       },
       "status": "pass"
     }
@@ -71,7 +71,7 @@
   "contact_sheet": {
     "file": "contact-sheet.png",
     "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/contact-sheet.png",
-    "bytes": 96013,
-    "sha256": "1e546d60faca8c3fb2b4579c745c04ad66c3bd78756a846179751803885b1ff8"
+    "bytes": 96608,
+    "sha256": "c3919e6e43175a1b1b7a1e00ce074851986d50c0ade9400abf63ca3064d5d3f0"
   }
 }

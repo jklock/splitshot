@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +22,84 @@ def test_compute_analytics_returns_correct_structure() -> None:
     result = compute_analytics()
     assert isinstance(result, dict)
     assert "metric_key" in result or "records" in result
+
+
+def test_compute_analytics_builds_trend_breakdown_bests_and_outliers_from_real_records(
+    monkeypatch,
+) -> None:
+    """compute_analytics should build truthful trend, breakdown, PB, and outlier payloads."""
+    from splitshot.persistence import library as library_module
+    from splitshot.persistence.library import compute_analytics
+
+    def iso(day: int) -> str:
+        return datetime(2026, 1, day, tzinfo=timezone.utc).isoformat()
+
+    records = [
+        {
+            "library_record_id": "stage-1",
+            "display_name": "Run 1",
+            "event_date": iso(1),
+            "discipline": "uspsa_minor",
+            "metric_summary": {"score_total": 80},
+        },
+        {
+            "library_record_id": "stage-2",
+            "display_name": "Run 2",
+            "event_date": iso(5),
+            "discipline": "idpa_time_plus",
+            "metric_summary": {"score": 81},
+        },
+        {
+            "library_record_id": "stage-3",
+            "display_name": "Run 3",
+            "event_date": iso(10),
+            "discipline": "uspsa_minor",
+            "metric_summary": {"hit_factor": 82},
+        },
+        {
+            "library_record_id": "stage-4",
+            "display_name": "Run 4",
+            "event_date": iso(15),
+            "discipline": "idpa_time_plus",
+            "metric_summary": {"score_total": 83},
+        },
+        {
+            "library_record_id": "stage-5",
+            "display_name": "Run 5",
+            "event_date": iso(20),
+            "discipline": "uspsa_minor",
+            "metric_summary": {"score_total": 130},
+        },
+    ]
+
+    monkeypatch.setattr(library_module, "read_stage_records", lambda: list(records))
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [])
+
+    result = compute_analytics()
+
+    assert result["total_records"] == 5
+    assert result["trend_direction"] == "improving"
+    assert [point["record_id"] for point in result["trend_points"]] == [
+        "stage-1",
+        "stage-2",
+        "stage-3",
+        "stage-4",
+        "stage-5",
+    ]
+    assert result["discipline_breakdown"] == [
+        {"discipline": "uspsa_minor", "count": 3},
+        {"discipline": "idpa_time_plus", "count": 2},
+    ]
+    assert result["personal_bests"][0]["record_id"] == "stage-5"
+    assert result["personal_bests"][0]["score"] == 130.0
+    assert result["outliers"] == [
+        {
+            "name": "Run 5",
+            "date": iso(20),
+            "score": 130.0,
+            "direction": "high",
+        }
+    ]
 
 
 def test_library_models_have_tags_and_notes() -> None:

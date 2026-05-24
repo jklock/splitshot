@@ -2,7 +2,11 @@
 
 The PiP pane manages added media. It can place a second angle or image as picture-in-picture, side-by-side, or above/below content, then lets each item keep its own size, opacity, position, and sync offset.
 
+<!-- markdownlint-disable MD033 -->
+
 <img src="../../screenshots/PiPPane.png" alt="PiP pane with picture-in-picture defaults, an expanded media card, per-item opacity, size, placement, and sync controls" width="960">
+
+<!-- markdownlint-enable MD033 -->
 
 ## When To Use This Pane
 
@@ -10,6 +14,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 - Add a still image or support graphic.
 - Sync secondary media against the primary run.
 - Decide whether added media appears in the final export.
+- Open multi-angle helpers such as Smart Angle Switching, Camera Jobs, or Audio Balance.
 
 ## Key Controls
 
@@ -20,6 +25,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 | `Layout` | Chooses `Side by side`, `Above / below`, or `Picture in picture`. |
 | `Default PiP size` | Sets the size for newly added PiP items. |
 | `Default PiP X` / `Default PiP Y` | Set default normalized placement for new PiP items. |
+| `Multi-Angle Features` | Opens the angle helpers for Smart Angle Switching, Line Up Angles, Camera Jobs, Audio Balance, Override Smart Cuts, and Keep Shooter in Frame. |
 | Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
 | Per-item `PiP size` | Sets one item's size. |
@@ -35,7 +41,8 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 4. Set defaults before adding several similar items.
 5. Expand each media card and adjust item-specific `PiP size`, `PiP opacity`, `PiP X`, and `PiP Y`.
 6. Use the sync nudge buttons until the secondary motion lines up with the primary video.
-7. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
+7. Open `Multi-Angle Features` when you need reusable angle helpers after the media is in place.
+8. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
 
 ## Layout Notes
 
@@ -59,4 +66,5 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 
 Previous: [score.md](score.md)
 Next: [overlay.md](overlay.md)
+<!-- pip-pane-guide-eof -->
 

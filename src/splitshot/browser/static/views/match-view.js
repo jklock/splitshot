@@ -15,11 +15,181 @@ export function createMatchView({
   fileName = (value) => value || "",
   activity = () => {},
 } = {}) {
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function stageEntryLabel(entry, index = 0) {
+    return entry.display_name || entry.name || entry.stage_id || `Stage ${index + 1}`;
+  }
+
+  function stageEntryHasExportableMedia(entry) {
+    return entry?.source_media_present !== false && entry?.media_loaded !== false;
+  }
+
   function checkSetupOnceBanner() {
     const banner = $("setup-once-banner");
     if (!banner) return;
     const stages = getState()?.workspace_stage_entries || [];
-    banner.hidden = !(stages.length > 1 && stages[0]?.name && stages[0]?.media_loaded);
+    const firstStage = stages[0] || null;
+    const firstStageNamed = Boolean(firstStage?.display_name || firstStage?.name || firstStage?.stage_id);
+    const firstStageReady = firstStage?.source_media_present !== false && firstStage?.media_loaded !== false;
+    banner.hidden = !(stages.length > 1 && firstStageNamed && firstStageReady);
+  }
+
+  function renderRecapPanel(entries = []) {
+    const recap = $("match-recap-panel");
+    if (!recap) return;
+    if (!entries.length) {
+      recap.innerHTML = '<p class="hint">Create or open a workspace to build a Match Recap.</p>';
+      return;
+    }
+
+    recap.innerHTML = `
+      <div style="margin-bottom:8px"><strong>Match Recap</strong> - ${entries.length} stages</div>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+        ${entries.map((entry, index) => `
+          <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">
+            <input type="checkbox" class="recap-stage-check" data-stage-id="${escapeHtml(entry.stage_id)}" checked style="width:auto;min-height:auto;margin:0" />
+            ${index + 1}. ${escapeHtml(stageEntryLabel(entry, index))}
+          </label>
+        `).join("")}
+      </div>
+      <div class="control-grid" style="margin-bottom:8px">
+        <label style="font-size:11px">Transition
+          <select id="recap-transition" style="font-size:11px;min-height:24px">
+            <option value="cut">Cut</option>
+            <option value="fade">Fade</option>
+            <option value="dissolve">Dissolve</option>
+          </select>
+        </label>
+        <label style="font-size:11px">Result Card
+          <select id="recap-result-card" style="font-size:11px;min-height:24px">
+            <option value="none">None</option>
+            <option value="end">At End</option>
+            <option value="each">Per Stage</option>
+          </select>
+        </label>
+      </div>
+      <button id="recap-render" class="match-action-button" type="button" style="width:100%">Render Recap</button>
+      <div id="recap-progress" hidden style="margin-top:8px">
+        <div class="progress-bar" style="background:var(--surface-2);height:4px">
+          <div class="progress-fill" style="width:0%;height:100%;background:var(--accent)"></div>
+        </div>
+      </div>
+      <p id="recap-status" class="hint" aria-live="polite" style="margin-top:8px">Ready to render a match recap.</p>
+      <pre id="recap-results" class="automation-detail" hidden></pre>
+    `;
+
+    $("recap-render")?.addEventListener("click", async () => {
+      const recapElements = () => {
+        const progress = $("recap-progress");
+        return {
+          progress,
+          fill: progress?.querySelector(".progress-fill"),
+          status: $("recap-status"),
+          results: $("recap-results"),
+        };
+      };
+      const selected = [...documentObject.querySelectorAll(".recap-stage-check:checked")]
+        .map((checkbox) => checkbox.dataset.stageId)
+        .filter(Boolean);
+      let { progress, fill, status, results } = recapElements();
+      if (!selected.length) {
+        if (progress) progress.hidden = true;
+        if (fill) fill.style.width = "0%";
+        if (status) status.textContent = "Select at least one stage for the recap.";
+        if (results) {
+          results.hidden = true;
+          results.textContent = "";
+        }
+        return;
+      }
+      if (progress) progress.hidden = false;
+      if (fill) fill.style.width = "35%";
+      if (status) status.textContent = `Rendering recap for ${selected.length} stage(s)...`;
+      if (results) {
+        results.hidden = true;
+        results.textContent = "";
+      }
+      const result = await callApi("/api/workspace/recap/render", {
+        stage_ids: selected,
+        transition: $("recap-transition")?.value || "cut",
+        result_card: $("recap-result-card")?.value || "none",
+      });
+      ({ progress, fill, status, results } = recapElements());
+      if (progress) progress.hidden = true;
+      if (fill) fill.style.width = result?.success ? "100%" : "0%";
+      if (!result) {
+        if (status) status.textContent = "Recap render failed.";
+        return;
+      }
+      if (result.success) {
+        if (status) {
+          status.textContent = `Recap ready: ${result.output_path}`;
+        }
+      } else if (status) {
+        status.textContent = result.error || "Recap render failed.";
+      }
+      if (results) {
+        results.hidden = false;
+        results.textContent = JSON.stringify(result, null, 2);
+      }
+    });
+  }
+
+  function renderBatchExportQueue(entries = []) {
+    const queue = $("batch-export-queue");
+    const status = $("batch-export-status");
+    const progress = $("batch-export-progress");
+    const results = $("batch-export-results");
+    if (!queue) return;
+    if (progress) progress.hidden = true;
+    if (results) {
+      results.hidden = true;
+      results.textContent = "";
+    }
+    if (!entries.length) {
+      queue.innerHTML = '<p class="hint">Add stages to the workspace to batch export.</p>';
+      if (status) status.textContent = "Ready";
+      return;
+    }
+
+    queue.innerHTML = entries
+      .map((entry, index) => {
+        const exportable = stageEntryHasExportableMedia(entry);
+        const summaryParts = [
+          exportable ? "Ready" : "No media",
+        ];
+        if (entry.override_count || Object.keys(entry.override_values || {}).length) {
+          summaryParts.push("Custom");
+        }
+        if (entry.inherited_from_first) {
+          summaryParts.push("Shared");
+        }
+        return `
+          <label class="batch-export-item" data-stage-id="${escapeHtml(entry.stage_id)}">
+            <input type="checkbox" ${exportable ? "checked" : "disabled"} />
+            <span class="batch-export-copy">
+              <strong>${index + 1}. ${escapeHtml(stageEntryLabel(entry, index))}</strong>
+              <small>${summaryParts.join(" • ")}</small>
+            </span>
+          </label>
+        `;
+      })
+      .join("");
+
+    if (status) {
+      const exportableCount = entries.filter((entry) => stageEntryHasExportableMedia(entry)).length;
+      status.textContent = exportableCount
+        ? `${exportableCount} stage(s) ready to export.`
+        : "No stages are ready to export.";
+    }
   }
 
   function renderWorkspaceStages() {
@@ -127,56 +297,21 @@ export function createMatchView({
         documentObject.querySelectorAll(".match-stage-card").forEach((candidate) => candidate.classList.remove("selected"));
         card.classList.add("selected");
         setSelectedStageCompositeStageId(entry.stage_id);
+        void refreshStageComposite(entry.stage_id);
       });
       list.append(card);
     });
 
     checkSetupOnceBanner();
-    const recap = $("match-recap-panel");
-    if (recap && entries.length) {
-      recap.innerHTML = `
-        <div style="margin-bottom:8px"><strong>Match Recap</strong> - ${entries.length} stages</div>
-        <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
-          ${entries.map((entry, index) => `
-            <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">
-              <input type="checkbox" class="recap-stage-check" data-stage-id="${entry.stage_id}" checked style="width:auto;min-height:auto;margin:0" />
-              ${index + 1}. ${entry.display_name || entry.stage_id}
-            </label>
-          `).join("")}
-        </div>
-        <div class="control-grid" style="margin-bottom:8px">
-          <label style="font-size:11px">Transition
-            <select id="recap-transition" style="font-size:11px;min-height:24px">
-              <option value="cut">Cut</option>
-              <option value="fade">Fade</option>
-              <option value="dissolve">Dissolve</option>
-            </select>
-          </label>
-          <label style="font-size:11px">Result Card
-            <select id="recap-result-card" style="font-size:11px;min-height:24px">
-              <option value="none">None</option>
-              <option value="end">At End</option>
-              <option value="each">Per Stage</option>
-            </select>
-          </label>
-        </div>
-        <button id="recap-render" class="match-action-button" type="button" style="width:100%">Render Recap</button>
-      `;
-      $("recap-render")?.addEventListener("click", async () => {
-        const selected = [...documentObject.querySelectorAll(".recap-stage-check:checked")].map((checkbox) => checkbox.dataset.stageId);
-        await callApi("/api/workspace/recap/render", {
-          stage_ids: selected,
-          transition: $("recap-transition")?.value || "cut",
-          result_card: $("recap-result-card")?.value || "none",
-        });
-      });
-    } else if (recap) {
-      recap.innerHTML = '<p class="hint">Create or open a workspace to build a Match Recap.</p>';
-    }
+    renderRecapPanel(entries);
+    renderBatchExportQueue(entries);
 
     const sharedDefaults = state?.workspace_shared_defaults || {};
     syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
-    syncControlValue($("shared-metric-captions"), sharedDefaults.metric_captions || "none");
+    syncControlValue(
+      $("shared-metric-captions"),
+      sharedDefaults.metric_caption_preset || sharedDefaults.metric_captions || "none",
+    );
     syncControlValue($("shared-lead-in"), sharedDefaults.lead_in_card || "none");
     syncControlValue($("shared-brand-mark"), sharedDefaults.brand_mark || "none");
 
@@ -185,12 +320,15 @@ export function createMatchView({
     const overrideButton = $("override-apply");
     if (overrideEditor && entries.length && getCurrentWorkspaceStageId()) {
       const activeEntry = entries.find((candidate) => candidate.stage_id === getCurrentWorkspaceStageId());
-      const overrides = activeEntry?.override_values || {};
+      const overrides = activeEntry?.override_values || state?.workspace_override_summary?.[getCurrentWorkspaceStageId()] || {};
       overrideEditor.querySelector("p")?.setAttribute("hidden", "");
       overrideGrids?.forEach((grid) => grid.removeAttribute("hidden"));
       if (overrideButton) overrideButton.removeAttribute("hidden");
       syncControlValue($("override-frame-profile"), overrides.frame_profile || "");
-      syncControlValue($("override-metric-captions"), overrides.metric_captions || "");
+      syncControlValue(
+        $("override-metric-captions"),
+        overrides.metric_caption_preset || overrides.metric_captions || "",
+      );
     } else if (overrideEditor) {
       const hint = overrideEditor.querySelector("p");
       if (hint) hint.removeAttribute("hidden");
@@ -204,10 +342,12 @@ export function createMatchView({
     const matchSidebar = documentObject.querySelector("#view-match .workspace-sidebar");
     const hasWorkspace = Boolean(state?.workspace || state?.workspace_stage_entries?.length);
     const hasStages = entries.length > 0;
+    const saveButton = $("workspace-save");
     if (emptyState) emptyState.hidden = hasWorkspace;
-    if (sectionHeader) sectionHeader.hidden = !hasWorkspace;
+    if (sectionHeader) sectionHeader.hidden = false;
     if (workspaceSections) workspaceSections.hidden = !hasWorkspace;
     if (matchSidebar) matchSidebar.hidden = false;
+    if (saveButton) saveButton.disabled = !hasWorkspace;
     if (!hasStages && hasWorkspace && list.children.length === 0) {
       list.innerHTML = '<p class="hint" style="padding:12px">No stages yet. Add your first stage.</p>';
     }
@@ -235,7 +375,10 @@ export function createMatchView({
       const align = documentObject.createElement("button");
       align.type = "button";
       align.textContent = "Angle Align";
-      align.addEventListener("click", () => callApi("/api/angle/align", { stage_id: stageId, reference_clip_id: clip.clip_id }));
+      align.addEventListener("click", async () => {
+        await callApi("/api/angle/align", { stage_id: stageId, reference_clip_id: clip.clip_id });
+        await refreshStageComposite(stageId);
+      });
       const audio = documentObject.createElement("button");
       audio.type = "button";
       audio.textContent = "Audio Mix";
@@ -285,6 +428,7 @@ export function createMatchView({
 
   return Object.freeze({
     applySavedMatchSettings,
+    checkSetupOnceBanner,
     persistMatchSettings,
     renderStageComposite,
     renderWorkspaceStages,

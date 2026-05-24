@@ -18,7 +18,15 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |"
+        "| Match workspace | workspace create/open/save/add-stage/remove-stage plus loading/error states, stage card selection/open/return, setup-once preview/apply/dismiss flow, shared defaults apply/reset, stage overrides apply/reset, stage clip add plus composite Angle Align/Audio Mix/cut routing, recap selection/render status, batch export recipe selection/select all/none/start, Match settings local persistence |"
+        in matrix
+    )
+    assert (
+        "| Performance Library | loading/empty/stale state affordances, overview summary tiles, records search/sort/filter plus personal-best list, selected-record detail, Open Stage/Open Workspace, notes/tags persistence entry points, analytics truth messaging, backup create/restore, CSV/JSON export, Performance settings local persistence |"
+        in matrix
+    )
+    assert (
+        "| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, multi-angle feature launchers/editor, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |"
         in matrix
     )
     assert (
@@ -26,7 +34,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |"
+        "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |"
         in matrix
     )
     assert (
@@ -34,7 +42,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Export | output path, preset, quality, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
+        "| Export | output path, preset, quality, output-profile list/create/select/delete, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
         in matrix
     )
     assert (
@@ -42,12 +50,25 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert "tests/browser/test_browser_interactions.py" in matrix
+    assert "tests/browser/test_landing_backend_routes.py" in matrix
+    assert "tests/browser/test_library_backend_contracts.py" in matrix
     assert "tests/browser/test_metrics_e2e.py" in matrix
     assert "tests/browser/test_settings_e2e.py" in matrix
     assert "dashboard-open action" in matrix
     assert "manual file import parity" in matrix
     assert "missing-folder creation notice" in matrix
     assert "metadata-only delete safety" in matrix
+    assert "output-profile create/select and output-hook save/close flows from the Export pane" in matrix
+    assert "Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states" in matrix
+    assert "Match workspace stage open and shell return-to-Match behavior" in matrix
+    assert "Match shared defaults apply/reset and stage override apply/reset" in matrix
+    assert "setup-once preview/apply confirmation and dismiss" in matrix
+    assert "Match Stage Composite Angle Align/Audio Mix actions plus cut routing and refreshed state" in matrix
+    assert "Match recap selection plus success/error status" in matrix
+    assert "Match batch export recipe selection, queue select all/none, and truthful success/error reporting" in matrix
+    assert "Match settings local persistence and remember-stage behavior" in matrix
+    assert "Performance Library selected-record reopen to Stage and Match workspace" in matrix
+    assert "Performance Library settings local persistence, stale banner, and manual refresh load behavior" in matrix
     assert "waveform expand/zoom/amplitude" in matrix
     assert "drag movement" in matrix
     assert "workbench import-selected-shot seek" in matrix
@@ -107,6 +128,8 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     for surface in [
         "Shared shell",
         "Project / import",
+        "Match workspace",
+        "Performance Library",
         "PiP",
         "Score",
         "Splits / waveform",

@@ -23,6 +23,7 @@ def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
             "editor_scope": "single",
             "active_match_id": None,
             "active_stage_id": None,
+            "workspace_path": None,
             "return_to_match_available": False,
             "match_workspace_summary": None,
             "workspace_stage_entries": [],
@@ -41,7 +42,9 @@ def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
         "editor_scope": getattr(controller, "editor_scope", "single"),
         "active_match_id": workspace.match_id if workspace else None,
         "active_stage_id": getattr(controller, "active_stage_id", None),
+        "workspace_path": str(getattr(controller, "workspace_path", "") or "") or None,
         "return_to_match_available": getattr(controller, "_return_to_workspace_available", False),
+        "workspace": None,
         "match_workspace_summary": None,
         "workspace_stage_entries": [],
         "workspace_shared_defaults": {},
@@ -65,27 +68,35 @@ def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
     if workspace is not None:
         context["match_workspace_summary"] = {
             "match_id": workspace.match_id,
+            "path": context["workspace_path"],
             "name": workspace.name,
             "description": workspace.description,
             "stage_count": len(workspace.stage_entries),
             "updated_at": workspace.updated_at.isoformat() if workspace.updated_at else None,
         }
+        context["workspace"] = dict(context["match_workspace_summary"])
         context["workspace_shared_defaults"] = dict(workspace.shared_defaults)
 
         entries = []
         override_summary = {}
         stage_status = {}
-        for stage_id in workspace.stage_order:
+        for index, stage_id in enumerate(workspace.stage_order, start=1):
             entry = workspace.stage_entries.get(stage_id)
             if entry is not None:
                 entries.append(
                     {
                         "stage_id": entry.stage_id,
+                        "name": entry.display_name,
                         "display_name": entry.display_name,
                         "stage_number": entry.stage_number,
+                        "order_index": index,
                         "status": entry.status,
+                        "media_loaded": entry.source_media_present,
                         "source_media_present": entry.source_media_present,
+                        "override_count": len(entry.override_values),
+                        "override_values": dict(entry.override_values),
                         "has_overrides": bool(entry.override_values),
+                        "inherited_from_first": entry.inherited_from_first,
                         "last_reviewed_at": entry.last_reviewed_at.isoformat()
                         if entry.last_reviewed_at
                         else None,

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 import splitshot.browser.server as browser_server_module
+import splitshot.ui.controller as controller_module
 from splitshot.browser.server import BrowserControlServer
+from splitshot.domain.models import AspectRatio, ExportPreset, OverlayPosition
 from splitshot.scoring.practiscore_web_extract import (
     RemotePractiScoreMatch,
     SelectedRemoteMatchArtifacts,
@@ -195,12 +198,13 @@ class _BrowserFakeSessionManager:
         self,
         tmp_path: Path,
         *,
+        initial_state: str = "not_authenticated",
         start_state: str = "authenticating",
         poll_states: list[str] | None = None,
     ) -> None:
         self.profile_paths = type("ProfilePaths", (), {"app_dir": tmp_path})()
         self._start_state = start_state
-        self._state = "not_authenticated"
+        self._state = initial_state
         self._poll_states = list(poll_states or [])
         self._details = {
             "profile_path": str(tmp_path / "practiscore" / "browser-profile"),
@@ -286,6 +290,124 @@ def _build_remote_match_artifacts(tmp_path: Path, remote_id: str) -> SelectedRem
                 "event_date": "2026-04-21",
             }
         },
+    )
+
+
+def _call_practiscore_session_route(
+        page,
+        endpoint: str,
+        payload: dict[str, object] | None = None,
+) -> dict[str, object]:
+        return page.evaluate(
+                """async ({ endpoint, payload }) => {
+                    const response = await fetch(endpoint, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload || {}),
+                    });
+                    const data = await response.json();
+                    if (!response.ok || data?.error) {
+                        throw new Error(JSON.stringify(data?.error || data));
+                    }
+                    applyPractiScoreSessionPayload(data, { resetSync: true });
+                    requestRender();
+                    return data;
+                }""",
+                {"endpoint": endpoint, "payload": payload or {}},
+        )
+
+
+def _call_practiscore_route(
+        page,
+        endpoint: str,
+        payload: dict[str, object] | None = None,
+        *,
+        method: str = "GET",
+) -> dict[str, object]:
+        return page.evaluate(
+                """async ({ endpoint, payload, method }) => {
+                    const request = {
+                        method,
+                        headers: { "Content-Type": "application/json" },
+                    };
+                    if (method !== "GET") {
+                        request.body = JSON.stringify(payload || {});
+                    }
+                    const response = await fetch(endpoint, request);
+                    const data = await response.json();
+                    if (!response.ok || data?.error) {
+                        throw new Error(JSON.stringify(data?.error || data));
+                    }
+                    applyPractiScoreRoutePayload(data);
+                    requestRender();
+                    return data;
+                }""",
+                {"endpoint": endpoint, "payload": payload or {}, "method": method},
+        )
+
+
+def _seed_workspace_apply_fixture(controller: ProjectController, workspace_path: Path) -> None:
+    controller.new_workspace()
+    controller.workspace.name = "Automation Workspace"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+    controller.save_workspace(str(workspace_path))
+
+    controller.new_project()
+    controller.project.export.preset = ExportPreset.YOUTUBE_LONG_1080P
+    controller.project.export.aspect_ratio = AspectRatio.LANDSCAPE
+    controller.project.overlay.position = OverlayPosition.TOP
+    assert controller._save_stage_project("stage_1", controller.project) is True
+
+    controller.new_project()
+    controller.project.export.preset = ExportPreset.SOURCE
+    controller.project.export.aspect_ratio = AspectRatio.ORIGINAL
+    controller.project.overlay.position = OverlayPosition.BOTTOM
+    assert controller._save_stage_project("stage_2", controller.project) is True
+
+    controller.output_profile_create(
+        "stage",
+        "stage_1",
+        "Stage Output",
+        "stage_output",
+        frame_profile="16:9",
+        metric_caption_preset={
+            "preset": "score",
+            "enabled_fields": ["hit_factor", "penalties"],
+            "position": "bottom_right",
+            "lead_in_padding_ms": 1200,
+            "tail_padding_ms": 2400,
+        },
+        lead_in_card={"style": "stage_info", "duration_s": 2.0},
+    )
+    controller.save_workspace()
+
+
+def _open_match_surface(page) -> None:
+    page.evaluate("() => setActiveSurface('multi')")
+    page.wait_for_function("() => activeSurface === 'multi'")
+
+
+def _open_match_section(page, section_id: str) -> None:
+    page.locator(f'[data-workspace-target="{section_id}"]').click(force=True)
+    page.wait_for_function(
+        "(targetId) => document.getElementById(targetId)?.hidden === false",
+        arg=section_id,
+    )
+
+
+def _open_library_surface(page) -> None:
+    page.evaluate("() => setActiveSurface('library')")
+    page.wait_for_function("() => activeSurface === 'library'")
+
+
+def _open_library_section(page, section_id: str) -> None:
+    page.locator(f'[data-workspace-target="{section_id}"]').click(force=True)
+    page.wait_for_function(
+        "(targetId) => document.getElementById(targetId)?.hidden === false",
+        arg=section_id,
     )
 
 
@@ -381,6 +503,1634 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
         server.shutdown()
 
 
+def test_project_pane_practiscore_connect_route_updates_browser_state(tmp_path: Path) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(
+        tmp_path,
+        start_state="authenticating",
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                payload = _call_practiscore_session_route(
+                    page,
+                    "/api/practiscore/session/start",
+                    {},
+                )
+
+                page.wait_for_function(
+                    """() => state?.practiscore_session?.state === 'authenticating'
+                      && state?.practiscore_sync?.state === 'idle'"""
+                )
+
+                assert payload["state"] == "authenticating"
+                assert page.evaluate("() => state?.practiscore_session?.state || ''") == "authenticating"
+                assert (
+                    page.evaluate("() => state?.practiscore_session?.message || ''")
+                    == "Complete PractiScore login in your browser. SplitShot will continue in the background."
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_practiscore_remote_match_list_and_import_routes_update_browser_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        controller_module,
+        "discover_remote_matches",
+        lambda browser_context: [
+            RemotePractiScoreMatch(
+                remote_id="match-200",
+                label="Remote IDPA Match",
+                match_type="idpa",
+                event_name="Remote IDPA Match",
+                event_date="2026-04-21",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        controller_module,
+        "download_remote_match_artifacts",
+        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_remote_match_artifacts(
+            tmp_path,
+            remote_id,
+        ),
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(
+        tmp_path,
+        initial_state="authenticated_ready",
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                matches = _call_practiscore_route(page, "/api/practiscore/matches")
+                page.wait_for_function(
+                    """() => state?.practiscore_session?.state === 'authenticated_ready'
+                      && state?.practiscore_sync?.state === 'match_list_ready'
+                      && (state?.practiscore_sync?.matches?.length || 0) === 1"""
+                )
+
+                assert matches["practiscore_sync"]["state"] == "match_list_ready"
+                assert page.evaluate("() => state?.practiscore_sync?.matches?.length || 0") == 1
+
+                payload = _call_practiscore_route(
+                    page,
+                    "/api/practiscore/sync/start",
+                    {"remote_id": "match-200"},
+                    method="POST",
+                )
+                page.wait_for_function(
+                    """() => state?.practiscore_sync?.state === 'success'
+                      && state?.practiscore_sync?.selected_remote_id === 'match-200'
+                      && state?.practiscore_options?.has_source === true"""
+                )
+
+                assert payload["practiscore_sync"]["state"] == "success"
+                assert payload["practiscore_sync"]["selected_remote_id"] == "match-200"
+                assert page.evaluate("() => state?.practiscore_options?.source_name || ''") == "remote-idpa.csv"
+                assert page.evaluate("() => state?.practiscore_options?.stage_numbers || []") == [1, 2, 3, 4]
+                assert (
+                    page.evaluate(
+                        "() => Array.isArray(state?.practiscore_options?.comparison_competitors) && state.practiscore_options.comparison_competitors.length > 0"
+                    )
+                    is True
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_practiscore_expired_match_list_updates_browser_state(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(controller_module, "discover_remote_matches", lambda browser_context: [])
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.practiscore_session = _BrowserFakeSessionManager(
+        tmp_path,
+        initial_state="expired",
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+
+                payload = _call_practiscore_route(page, "/api/practiscore/matches")
+                page.wait_for_function(
+                    """() => state?.practiscore_session?.state === 'expired'
+                      && state?.practiscore_sync?.state === 'error'
+                      && state?.practiscore_sync?.error_category === 'expired_authentication'"""
+                )
+
+                assert payload["practiscore_sync"]["state"] == "error"
+                assert payload["practiscore_sync"]["error_category"] == "expired_authentication"
+                assert (
+                    page.evaluate("() => state?.practiscore_session?.message || ''")
+                    == "PractiScore session expired. Reconnect in your browser to continue."
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_delete_project_confirmation_can_cancel(tmp_path: Path) -> None:
+    project_path = tmp_path / "delete-project-confirm.ssproj"
+    ProjectController().save_project(str(project_path))
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            dialogs: list[str] = []
+            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.dismiss()))
+            try:
+                _open_tool(page, "project")
+                page.evaluate(f"() => useProjectFolder({json.dumps(str(project_path))})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+
+                page.locator("#delete-project").click(force=True)
+                page.wait_for_timeout(150)
+
+                assert dialogs
+                assert dialogs[-1].startswith("Delete project metadata for:")
+                assert page.evaluate("() => state?.project?.path || ''") == str(project_path)
+                assert (project_path / "project.json").exists()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_keyboard_tab_order_advances_through_primary_controls(
+    tmp_path: Path,
+) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            page.on("dialog", lambda dialog: dialog.accept())
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'keyboard-order.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+
+                expected_focus_order = [
+                    "project-path",
+                    "browse-project-path",
+                    "new-project",
+                    "delete-project",
+                    "project-name",
+                    "project-description",
+                ]
+
+                page.locator(f"#{expected_focus_order[0]}").focus()
+                assert page.evaluate("() => document.activeElement?.id || ''") == expected_focus_order[0]
+
+                for control_id in expected_focus_order[1:]:
+                    page.keyboard.press("Tab")
+                    page.wait_for_function(
+                        "(expectedId) => document.activeElement?.id === expectedId",
+                        arg=control_id,
+                    )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_output_hook_save_updates_selected_output_profile(tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'automation-hooks.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+
+                page.locator("#output-profile-name").fill("Automation Profile")
+                page.locator("#output-profile-create").click()
+                page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
+
+                page.locator('[data-output-hook="metric-captions"]').click()
+                page.locator("#hook-metric-captions-preset").select_option("full")
+                page.locator("#hook-metric-captions-position").select_option("bottom_left")
+                page.locator("#output-hook-save").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"preset": "full"'))
+                          && Boolean(detail?.textContent?.includes('"position": "bottom_left"'));
+                    }"""
+                )
+                assert page.locator("#output-hook-save").is_visible() is True
+                profiles = controller.output_profile_list("stage", controller.project.id)
+                assert len(profiles) == 1
+                assert profiles[0]["metric_caption_preset"] == {
+                    "preset": "full",
+                    "enabled_fields": [
+                        "shot_count",
+                        "cumulative_time",
+                        "first_shot_reaction",
+                        "hit_factor",
+                        "penalties",
+                        "split_times",
+                    ],
+                    "position": "bottom_left",
+                    "lead_in_padding_ms": 1000,
+                    "tail_padding_ms": 2000,
+                }
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_project_pane_output_hook_close_hides_editor(tmp_path: Path) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'automation-hook-close.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+
+                page.locator("#output-profile-name").fill("Close Test Profile")
+                page.locator("#output-profile-create").click()
+                page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
+
+                page.locator('[data-output-hook="metric-captions"]').click()
+                page.locator("#output-hook-editor").wait_for(state="visible")
+                page.locator("#output-hook-close").click()
+                page.wait_for_function(
+                    "() => document.getElementById('output-hook-editor')?.hidden === true"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_setup_once_uses_preview_before_apply(tmp_path: Path) -> None:
+    controller = ProjectController()
+    _seed_workspace_apply_fixture(controller, tmp_path / "workspace-apply-ui")
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            dialogs: list[str] = []
+            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+            try:
+                page.evaluate("() => setActiveSurface('multi')")
+                page.wait_for_function("() => activeSurface === 'multi'")
+                page.wait_for_function(
+                    "() => document.getElementById('setup-once-banner')?.hidden === false"
+                )
+
+                page.locator("#setup-once-apply").click()
+                page.wait_for_function(
+                    "() => (state?.workspace_stage_entries || []).some((entry) => entry.stage_id === 'stage_2' && entry.inherited_from_first === true)"
+                )
+
+                assert dialogs
+                assert "Apply Stage 1 settings to other stages?" in dialogs[0]
+                assert "This copies shared defaults and reusable output profiles while keeping explicit stage overrides." in dialogs[0]
+                assert (
+                    "Stage 2:" in dialogs[0]
+                    or "No sibling stages need changes." in dialogs[0]
+                )
+                assert "Output profiles" not in dialogs[0]
+
+                stage_2_project = controller._load_stage_project("stage_2")
+                assert stage_2_project is not None
+                assert stage_2_project.export.preset == ExportPreset.YOUTUBE_LONG_1080P
+
+                stage_2_profiles = controller._load_stage_profiles_for_stage("stage_2")
+                assert any(
+                    profile.profile_name == "Stage Output" and profile.profile_kind == "stage_output"
+                    for profile in stage_2_profiles
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_setup_once_dismiss_hides_banner(tmp_path: Path) -> None:
+    controller = ProjectController()
+    _seed_workspace_apply_fixture(controller, tmp_path / "workspace-dismiss-ui")
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate("() => setActiveSurface('multi')")
+                page.wait_for_function("() => activeSurface === 'multi'")
+                page.wait_for_function(
+                    "() => document.getElementById('setup-once-banner')?.hidden === false"
+                )
+
+                page.locator("#setup-once-dismiss").click()
+                page.wait_for_function(
+                    "() => document.getElementById('setup-once-banner')?.hidden === true"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_open_button_uses_picker_and_loads_saved_workspace(
+    tmp_path: Path,
+) -> None:
+    bootstrap = ProjectController()
+    workspace_path = tmp_path / "workspace-open-ui"
+    _seed_workspace_apply_fixture(bootstrap, workspace_path)
+
+    chooser_calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+                chooser_calls.append((kind, current))
+                return str(workspace_path)
+
+    server = BrowserControlServer(
+        controller=ProjectController(),
+        port=0,
+        path_chooser=fake_path_chooser,
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+
+                page.locator("#workspace-open").click()
+                page.wait_for_function(
+                    "() => state?.workspace?.name === 'Automation Workspace'"
+                )
+
+                assert page.locator("#workspace-stage-list .match-stage-card").count() == 2
+                assert page.evaluate("() => state?.workspace_path || ''") == str(workspace_path)
+                assert chooser_calls == [("project_folder", None)]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_open_shows_loading_and_error_state_on_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    missing_workspace_path = tmp_path / "missing-workspace"
+    chooser_calls: list[tuple[str, str | None]] = []
+    original_open_workspace = ProjectController.open_workspace
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        chooser_calls.append((kind, current))
+        return str(missing_workspace_path)
+
+    def delayed_open_workspace(self, path: str) -> None:
+        time.sleep(0.25)
+        return original_open_workspace(self, path)
+
+    monkeypatch.setattr(ProjectController, "open_workspace", delayed_open_workspace)
+
+    server = BrowserControlServer(
+        controller=ProjectController(),
+        port=0,
+        path_chooser=fake_path_chooser,
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelector('.match-empty-state')?.hidden === false"
+                )
+
+                page.locator("#workspace-open").click()
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-loading')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-loading')?.hidden === true"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-error')?.hidden === false"
+                )
+
+                error_text = page.locator("#multi-video-error").text_content() or ""
+                assert f"No workspace found at {missing_workspace_path}" in error_text
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+                page.wait_for_function(
+                    "() => document.querySelector('.match-empty-state')?.hidden === false"
+                )
+                assert chooser_calls == [("project_folder", None)]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_new_from_empty_and_stage_add_select_remove_flow() -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            dialogs: list[str] = []
+            page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelector('.match-empty-state')?.hidden === false"
+                )
+
+                page.locator("#workspace-new-empty").click()
+                page.wait_for_function("() => Boolean(state?.workspace?.match_id)")
+                page.wait_for_function(
+                    "() => document.querySelector('.match-empty-state')?.hidden === true"
+                )
+
+                page.locator("#workspace-stage-name").fill("Classifier")
+                page.locator("#workspace-stage-add").click()
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
+                )
+
+                stage_card = page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]')
+                stage_card.click()
+                assert stage_card.evaluate("card => card.classList.contains('selected')") is True
+
+                stage_card.locator("button", has_text="Remove").click()
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 0"
+                )
+                assert dialogs[-1] == "Remove this stage from the match?"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_save_button_uses_picker_for_first_save(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Save Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    workspace_path = tmp_path / "workspace-save-ui"
+    chooser_calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        chooser_calls.append((kind, current))
+        return str(workspace_path)
+
+    server = BrowserControlServer(
+        controller=controller,
+        port=0,
+        path_chooser=fake_path_chooser,
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
+                )
+
+                page.locator("#workspace-save").click()
+                page.wait_for_function(
+                    "(expectedPath) => state?.workspace_path === expectedPath",
+                    arg=str(workspace_path),
+                )
+
+                assert (workspace_path / "workspace.json").exists() is True
+                assert chooser_calls == [("project_folder", None)]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_save_shows_loading_and_error_state_on_failure(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Save Failure Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    workspace_path = tmp_path / "workspace-save-failure-ui"
+    chooser_calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        chooser_calls.append((kind, current))
+        return str(workspace_path)
+
+    def failing_save_workspace(self, path: str | None = None) -> None:
+        time.sleep(0.25)
+        raise RuntimeError("Unable to save workspace for test.")
+
+    monkeypatch.setattr(ProjectController, "save_workspace", failing_save_workspace)
+
+    server = BrowserControlServer(
+        controller=controller,
+        port=0,
+        path_chooser=fake_path_chooser,
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
+                )
+
+                page.locator("#workspace-save").click()
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-loading')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-loading')?.hidden === true"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('multi-video-error')?.hidden === false"
+                )
+
+                error_text = page.locator("#multi-video-error").text_content() or ""
+                assert "Unable to save workspace for test." in error_text
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+                assert chooser_calls == [("project_folder", None)]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_override_apply_and_reset_update_selected_stage() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Override Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').click()
+                _open_match_section(page, "match-section-overrides")
+
+                page.locator("#override-frame-profile").select_option("9:16")
+                page.locator("#override-metric-captions").select_option("splits")
+                page.locator("#override-apply").click()
+
+                page.wait_for_function(
+                    """() => state?.workspace_override_summary?.stage_2?.frame_profile === '9:16'
+                      && state?.workspace_override_summary?.stage_2?.metric_caption_preset === 'splits'"""
+                )
+                assert page.evaluate("() => state?.workspace_override_summary?.stage_1 || null") is None
+
+                _open_match_section(page, "match-section-stages")
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').locator(
+                    "button",
+                    has_text="Reset",
+                ).click()
+                page.wait_for_function(
+                    "() => !(state?.workspace_override_summary && state.workspace_override_summary.stage_2)"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_shared_defaults_apply_and_reset() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Defaults Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                _open_match_section(page, "match-section-defaults")
+
+                page.locator("#shared-frame-profile").select_option("9:16")
+                page.locator("#shared-metric-captions").select_option("splits")
+                page.locator("#shared-defaults-apply").click()
+
+                page.wait_for_function(
+                    """() => state?.workspace_shared_defaults?.frame_profile === '9:16'
+                      && state?.workspace_shared_defaults?.metric_caption_preset === 'splits'"""
+                )
+
+                page.locator("#shared-defaults-reset").click()
+                page.wait_for_function(
+                    "() => Object.keys(state?.workspace_shared_defaults || {}).length === 0"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_stage_open_and_shell_return_restore_match_context() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Return Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').locator(
+                    "button",
+                    has_text="Open",
+                ).click()
+                page.wait_for_function("() => activeSurface === 'single'")
+                page.wait_for_function("() => state?.return_to_match_available === true")
+                assert page.locator("#shell-return-match").is_visible() is True
+
+                page.locator("#shell-return-match").click()
+                page.wait_for_function("() => activeSurface === 'multi'")
+                page.wait_for_function(
+                    "() => state?.return_to_match_available === false && state?.returned_stage_id === 'stage_1'"
+                )
+                selected_card = page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+                )
+                assert selected_card.evaluate("card => card.classList.contains('selected')") is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_can_reopen_stage_and_workspace_from_selected_record(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
+    from splitshot.persistence.library import save_match_record, save_stage_record
+
+    stage_project_path = tmp_path / "performance-stage.ssproj"
+    stage_controller = ProjectController()
+    stage_controller.new_project()
+    stage_controller.project.name = "Performance Stage"
+    stage_controller.save_project(str(stage_project_path))
+
+    workspace_path = tmp_path / "performance-workspace"
+    workspace_controller = ProjectController()
+    workspace_controller.new_workspace()
+    workspace_controller.workspace.name = "Performance Match"
+    workspace_controller.workspace_add_stage("stage_1", "Stage 1")
+    workspace_controller.save_workspace(str(workspace_path))
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="performance-stage-record",
+            stage_id="stage_1",
+            display_name="Practice Stage",
+            event_date=datetime(2026, 2, 11, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 96},
+            editor_target={
+                "type": "single",
+                "project_path": str(stage_project_path),
+                "stage_id": "stage_1",
+            },
+            truth_hash="stage-truth",
+        )
+    )
+    save_match_record(
+        LibraryMatchRecord(
+            library_record_id="performance-match-record",
+            match_id="match_1",
+            display_name="Weekend Match",
+            event_date=datetime(2026, 2, 12, tzinfo=timezone.utc),
+            discipline="idpa_time_plus",
+            stage_ids=["stage_1"],
+            aggregate_metric_summary={"score": 175, "stage_count": 1},
+            editor_target={
+                "type": "multi",
+                "workspace_path": str(workspace_path),
+                "match_id": "match_1",
+            },
+            truth_hash="match-truth",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length >= 2"
+                )
+
+                page.locator(
+                    "#library-record-list .library-record-row",
+                    has_text="Practice Stage",
+                ).click()
+                _open_library_section(page, "library-section-detail")
+                page.locator("#library-open-stage").click()
+                page.wait_for_function(
+                    "(expectedPath) => activeSurface === 'single' && state?.project?.path === expectedPath",
+                    arg=str(stage_project_path),
+                )
+
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length >= 2"
+                )
+
+                page.locator(
+                    "#library-record-list .library-record-row",
+                    has_text="Weekend Match",
+                ).click()
+                _open_library_section(page, "library-section-detail")
+                page.locator("#library-open-workspace").click()
+                page.wait_for_function(
+                    "(expectedPath) => activeSurface === 'multi' && state?.workspace_path === expectedPath",
+                    arg=str(workspace_path),
+                )
+                assert page.locator("#workspace-stage-list .match-stage-card").count() == 1
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_settings_persist_and_manual_refresh_loads_records(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryStageRecord
+    from splitshot.persistence.library import save_stage_record
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="settings-stage-record",
+            stage_id="stage_settings",
+            display_name="Settings Stage",
+            event_date=datetime(2026, 2, 13, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 90},
+            editor_target={"type": "single", "project_path": str(tmp_path / "settings-stage.ssproj")},
+            truth_hash="settings-truth",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+
+                _open_library_section(page, "library-section-settings")
+                page.locator("#library-setting-default-sort").select_option("score")
+                page.locator("#library-setting-auto-refresh").uncheck()
+                page.wait_for_function(
+                    """() => {
+                        const settings = JSON.parse(localStorage.getItem('splitshot.library.settings') || '{}');
+                        return settings.defaultSort === 'score' && settings.autoRefresh === false;
+                    }"""
+                )
+
+                page.reload(wait_until="domcontentloaded")
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.getElementById('library-stale')?.hidden === false"
+                )
+
+                _open_library_section(page, "library-section-settings")
+                assert page.locator("#library-setting-default-sort").input_value() == "score"
+                assert page.locator("#library-setting-auto-refresh").is_checked() is False
+
+                page.locator("#library-refresh").click()
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+                assert page.locator("#library-stale").is_visible() is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_shows_loading_and_recovers_from_route_failure(
+    monkeypatch,
+) -> None:
+    import splitshot.persistence.library as library_module
+
+    call_state = {"stage_reads": 0}
+
+    def flaky_stage_records() -> list[dict[str, object]]:
+        call_state["stage_reads"] += 1
+        time.sleep(0.35)
+        if call_state["stage_reads"] == 1:
+            raise ValueError("Library list unavailable.")
+        return [
+            {
+                "library_record_id": "recovered-stage-record",
+                "stage_id": "recovered-stage",
+                "display_name": "Recovered Stage",
+                "event_date": "2026-05-20T00:00:00+00:00",
+                "discipline": "uspsa_minor",
+                "metric_summary": {"score_total": 94},
+                "editor_target": {
+                    "type": "single",
+                    "project_path": "/tmp/recovered-stage.ssproj",
+                    "stage_id": "recovered-stage",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(library_module, "read_stage_records", flaky_stage_records)
+    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [])
+    monkeypatch.setattr(library_module, "read_match_records", lambda: [])
+    monkeypatch.setattr(library_module, "read_match_metrics", lambda: [])
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.getElementById('library-loading')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('library-error')?.hidden === false"
+                )
+                assert "Library list unavailable." in (
+                    page.locator("#library-error").text_content() or ""
+                )
+
+                page.locator("#library-refresh").click()
+                page.wait_for_function(
+                    "() => document.getElementById('library-loading')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('library-error')?.hidden === true"
+                )
+                assert "Recovered Stage" in (page.locator("#library-record-list").text_content() or "")
+                assert call_state["stage_reads"] >= 2
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_summary_tiles_and_personal_bests_follow_loaded_records(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timedelta, timezone
+
+    from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
+    from splitshot.persistence.library import save_match_record, save_stage_record
+
+    now = datetime.now(timezone.utc)
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="stage-recent-best",
+            stage_id="stage_recent_best",
+            display_name="Recent Classifier",
+            event_date=now - timedelta(days=5),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 101},
+            editor_target={"type": "single", "project_path": str(tmp_path / "recent.ssproj")},
+            truth_hash="truth-recent-best",
+        )
+    )
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="stage-older-score",
+            stage_id="stage_older_score",
+            display_name="Older Classifier",
+            event_date=now - timedelta(days=45),
+            discipline="idpa_time_plus",
+            metric_summary={"score_total": 92},
+            editor_target={"type": "single", "project_path": str(tmp_path / "older.ssproj")},
+            truth_hash="truth-older-score",
+        )
+    )
+    save_match_record(
+        LibraryMatchRecord(
+            library_record_id="match-best-record",
+            match_id="match_best_record",
+            display_name="Weekend Match",
+            event_date=now - timedelta(days=2),
+            discipline="uspsa_minor",
+            stage_ids=["stage_recent_best", "stage_older_score"],
+            aggregate_metric_summary={"score": 180, "stage_count": 2},
+            editor_target={"type": "multi", "workspace_path": str(tmp_path / "weekend-match")},
+            truth_hash="truth-match-best",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 3"
+                )
+
+                summary = page.evaluate(
+                    """() => Object.fromEntries(
+                        Array.from(document.querySelectorAll('#library-summary-tiles .library-tile')).map((tile) => [
+                            tile.querySelector('.library-tile-label')?.textContent?.trim(),
+                            tile.querySelector('.library-tile-value')?.textContent?.trim(),
+                        ])
+                    )"""
+                )
+                assert summary == {
+                    "Total Stages": "2",
+                    "Total Matches": "1",
+                    "Personal Best": "180 (Weekend Match)",
+                    "Recent (30d)": "2",
+                }
+
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#personal-bests-list .library-record-row').length === 3"
+                )
+                personal_bests = page.evaluate(
+                    """() => Array.from(document.querySelectorAll('#personal-bests-list .library-record-row')).map((row) => ({
+                        rank: row.querySelector('.record-rank')?.textContent?.trim(),
+                        name: row.querySelector('.record-name')?.textContent?.trim(),
+                        score: row.querySelector('.record-score')?.textContent?.trim(),
+                    }))"""
+                )
+                assert personal_bests == [
+                    {"rank": "#1", "name": "Weekend Match", "score": "180"},
+                    {"rank": "#2", "name": "Recent Classifier", "score": "101"},
+                    {"rank": "#3", "name": "Older Classifier", "score": "92"},
+                ]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_detail_ui_persists_tag_add_remove_and_notes(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryStageRecord
+    from splitshot.persistence.library import load_stage_record, save_stage_record
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="detail-stage-record",
+            stage_id="detail_stage",
+            display_name="Detail Stage",
+            event_date=datetime(2026, 5, 21, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 88},
+            editor_target={"type": "single", "project_path": str(tmp_path / "detail-stage.ssproj")},
+            truth_hash="detail-stage-truth",
+            tags=["existing"],
+            notes="Old note",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+
+                page.locator("#library-record-list .library-record-row", has_text="Detail Stage").click()
+                _open_library_section(page, "library-section-detail")
+                page.wait_for_function(
+                    "() => document.getElementById('library-tags-editor')?.hidden === false"
+                )
+
+                page.locator('#library-tag-list .tag-remove[data-tag="existing"]').click()
+                page.wait_for_function(
+                    "() => !(document.getElementById('library-tag-list')?.textContent || '').includes('existing')"
+                )
+
+                page.locator("#library-tag-input").fill("night")
+                page.locator("#library-tag-add").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('library-tag-list')?.textContent || '').includes('night')"
+                )
+
+                page.locator("#library-notes-text").fill("Fresh note")
+                page.locator("#library-notes-save").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('library-record-detail')?.textContent || '').includes('Fresh note')"
+                )
+
+                page.reload(wait_until="domcontentloaded")
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+                page.locator("#library-record-list .library-record-row", has_text="Detail Stage").click()
+                _open_library_section(page, "library-section-detail")
+                page.wait_for_function(
+                    "() => (document.getElementById('library-tag-list')?.textContent || '').includes('night')"
+                )
+                assert "existing" not in (page.locator("#library-tag-list").text_content() or "")
+                assert page.locator("#library-notes-text").input_value() == "Fresh note"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+    restored_record = load_stage_record("detail-stage-record")
+    assert restored_record is not None
+    assert restored_record.tags == ["night"]
+    assert restored_record.notes == "Fresh note"
+
+
+def test_performance_library_settings_remain_isolated_from_match_settings(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryStageRecord
+    from splitshot.persistence.library import save_stage_record
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="settings-isolation-record",
+            stage_id="settings_isolation_stage",
+            display_name="Settings Isolation Stage",
+            event_date=datetime(2026, 5, 22, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 91},
+            editor_target={"type": "single", "project_path": str(tmp_path / "settings-isolation.ssproj")},
+            truth_hash="settings-isolation-truth",
+        )
+    )
+
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Isolation Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+                page.locator("#match-open-settings").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-settings')?.hidden === false"
+                )
+                page.locator("#match-setting-show-score").uncheck()
+                page.locator("#match-setting-remember-stage").uncheck()
+                page.wait_for_function(
+                    """() => {
+                        const settings = JSON.parse(localStorage.getItem('splitshot.match.settings') || '{}');
+                        return settings.showScoreBadges === false && settings.rememberStageSelection === false;
+                    }"""
+                )
+
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+                _open_library_section(page, "library-section-settings")
+                page.locator("#library-setting-default-sort").select_option("score")
+                page.locator("#library-setting-auto-refresh").uncheck()
+                page.wait_for_function(
+                    """() => {
+                        const librarySettings = JSON.parse(localStorage.getItem('splitshot.library.settings') || '{}');
+                        const matchSettings = JSON.parse(localStorage.getItem('splitshot.match.settings') || '{}');
+                        return librarySettings.defaultSort === 'score'
+                          && librarySettings.autoRefresh === false
+                          && matchSettings.showScoreBadges === false
+                          && matchSettings.rememberStageSelection === false;
+                    }"""
+                )
+
+                page.reload(wait_until="domcontentloaded")
+
+                _open_match_surface(page)
+                page.locator("#match-open-settings").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-settings')?.hidden === false"
+                )
+                assert page.locator("#match-setting-show-score").is_checked() is False
+                assert page.locator("#match-setting-remember-stage").is_checked() is False
+
+                _open_library_surface(page)
+                page.wait_for_function(
+                    "() => document.getElementById('library-stale')?.hidden === false"
+                )
+                _open_library_section(page, "library-section-settings")
+                assert page.locator("#library-setting-default-sort").input_value() == "score"
+                assert page.locator("#library-setting-auto-refresh").is_checked() is False
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_recap_reports_success_and_error_states(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Recap Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.save_workspace(str(tmp_path / "recap-match-ui"))
+    recap_calls: list[dict[str, object]] = []
+    recap_mode = {"value": "success"}
+
+    def fake_workspace_recap_render(self, **kwargs):
+        recap_calls.append(dict(kwargs))
+        if recap_mode["value"] == "success":
+            return {
+                "success": True,
+                "output_path": "/tmp/recap.mp4",
+                "size_bytes": 128,
+                "stage_count": len(kwargs.get("stage_ids") or []),
+                "errors": [],
+            }
+        return {
+            "success": False,
+            "error": "Recap concat failed: boom",
+            "errors": [{"stage_id": "stage_1", "error": "boom"}],
+        }
+
+    monkeypatch.setattr(
+        ProjectController,
+        "workspace_recap_render",
+        fake_workspace_recap_render,
+    )
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                _open_match_section(page, "match-section-recap")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#match-recap-panel .recap-stage-check').length === 2"
+                )
+
+                page.locator("#match-recap-panel .recap-stage-check").nth(1).uncheck()
+                page.locator("#recap-transition").select_option("fade")
+                page.locator("#recap-result-card").select_option("end")
+                page.locator("#recap-render").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('recap-status')?.textContent || '').includes('/tmp/recap.mp4')"
+                )
+
+                assert recap_calls[0]["stage_ids"] == ["stage_1"]
+                assert recap_calls[0]["transition"] == "fade"
+                assert recap_calls[0]["result_card"] == "end"
+                assert "/tmp/recap.mp4" in (page.locator("#recap-results").text_content() or "")
+
+                recap_mode["value"] = "error"
+                page.locator("#recap-render").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('recap-status')?.textContent || '').includes('Recap concat failed')"
+                )
+                assert "boom" in (page.locator("#recap-results").text_content() or "")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_batch_export_queue_select_all_none_and_start() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Batch Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+    export_calls: list[tuple[str | None, str | None]] = []
+
+    def fake_workspace_export(stage_id: str | None = None, recipe: str | None = None):
+        export_calls.append((stage_id, recipe))
+        return {
+            "success": True,
+            "outputs": [
+                {
+                    "stage_id": stage_id,
+                    "display_name": stage_id,
+                    "output_path": f"/tmp/{stage_id}.mp4",
+                    "status": "completed",
+                }
+            ],
+            "errors": [],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+        }
+
+    controller.workspace_export = fake_workspace_export  # type: ignore[method-assign]
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                _open_match_section(page, "match-section-export")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#batch-export-queue .batch-export-item').length === 2"
+                )
+
+                assert page.locator("#batch-export-queue .batch-export-item").count() == 2
+
+                page.locator("#batch-select-none").click()
+                page.wait_for_function(
+                    "() => [...document.querySelectorAll('#batch-export-queue .batch-export-item input[type=\"checkbox\"]')].every((checkbox) => checkbox.checked === false)"
+                )
+
+                page.locator("#batch-select-all").click()
+                page.wait_for_function(
+                    "() => [...document.querySelectorAll('#batch-export-queue .batch-export-item input[type=\"checkbox\"]:not(:disabled)')].every((checkbox) => checkbox.checked === true)"
+                )
+
+                page.locator("#batch-recipe").select_option("stage_composite")
+                page.locator("#batch-export-start").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('batch-export-status')?.textContent || '').includes('Exported 2 stage')"
+                )
+
+                assert export_calls == [
+                    ("stage_1", "stage_composite"),
+                    ("stage_2", "stage_composite"),
+                ]
+                results_text = page.locator("#batch-export-results").text_content() or ""
+                assert "/tmp/stage_1.mp4" in results_text
+                assert "/tmp/stage_2.mp4" in results_text
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_batch_export_reports_errors_truthfully() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Batch Error Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+
+    def fake_workspace_export(stage_id: str | None = None, recipe: str | None = None):
+        if stage_id == "stage_2":
+            return {
+                "success": False,
+                "outputs": [],
+                "errors": [{"stage_id": stage_id, "error": "ffmpeg failed"}],
+                "total": 1,
+                "completed": 0,
+                "failed": 1,
+            }
+        return {
+            "success": True,
+            "outputs": [
+                {
+                    "stage_id": stage_id,
+                    "display_name": stage_id,
+                    "output_path": f"/tmp/{stage_id}.mp4",
+                    "status": "completed",
+                }
+            ],
+            "errors": [],
+            "total": 1,
+            "completed": 1,
+            "failed": 0,
+        }
+
+    controller.workspace_export = fake_workspace_export  # type: ignore[method-assign]
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                _open_match_section(page, "match-section-export")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#batch-export-queue .batch-export-item').length === 2"
+                )
+
+                page.locator("#batch-export-start").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('batch-export-status')?.textContent || '').includes('1 error')"
+                )
+
+                results_text = page.locator("#batch-export-results").text_content() or ""
+                assert "/tmp/stage_1.mp4" in results_text
+                assert "ffmpeg failed" in results_text
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_settings_persist_locally_and_control_match_return_selection() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Settings Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    shared_defaults_before = dict(controller.workspace.shared_defaults)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+
+                page.locator("#match-open-settings").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-settings')?.hidden === false"
+                )
+                page.locator("#match-setting-show-score").uncheck()
+                page.locator("#match-setting-remember-stage").uncheck()
+                page.wait_for_function(
+                    """() => {
+                        const settings = JSON.parse(localStorage.getItem('splitshot.match.settings') || '{}');
+                        return settings.showScoreBadges === false && settings.rememberStageSelection === false;
+                    }"""
+                )
+
+                page.reload(wait_until="domcontentloaded")
+                _open_match_surface(page)
+                page.locator("#match-open-settings").click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('match-setting-show-score') && document.getElementById('match-setting-remember-stage')"
+                )
+                assert page.locator("#match-setting-show-score").is_checked() is False
+                assert page.locator("#match-setting-remember-stage").is_checked() is False
+
+                page.locator('[data-workspace-target="match-section-stages"]').click(force=True)
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-stages')?.hidden === false"
+                )
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').locator(
+                    "button",
+                    has_text="Open",
+                ).click()
+                page.wait_for_function("() => activeSurface === 'single'")
+                page.locator("#shell-return-match").click()
+                page.wait_for_function("() => activeSurface === 'multi'")
+
+                selected_card = page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
+                )
+                assert selected_card.evaluate("card => card.classList.contains('selected')") is False
+                assert controller.workspace.shared_defaults == shared_defaults_before
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_stage_composite_angle_align_and_audio_mix_buttons_update_composite_state(
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Composite Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    first_clip = controller.workspace_stage_clip_add("stage_1", "/tmp/primary.mp4", "primary")[0]
+    controller.workspace_stage_clip_add("stage_1", "/tmp/follow.mp4", "follow")
+    angle_calls: list[dict[str, object]] = []
+    audio_calls: list[dict[str, object]] = []
+    original_angle_align = ProjectController.angle_align
+    original_audio_mix_set = ProjectController.audio_mix_set
+
+    def tracking_angle_align(self, stage_id: str, reference_clip_id: str) -> dict:
+        angle_calls.append({"stage_id": stage_id, "reference_clip_id": reference_clip_id})
+        return original_angle_align(self, stage_id, reference_clip_id)
+
+    def tracking_audio_mix_set(
+        self,
+        stage_id: str,
+        clip_id: str,
+        gain: float | None = None,
+        muted: bool | None = None,
+        primary: bool | None = None,
+    ) -> dict | None:
+        audio_calls.append(
+            {
+                "stage_id": stage_id,
+                "clip_id": clip_id,
+                "gain": gain,
+                "muted": muted,
+                "primary": primary,
+            }
+        )
+        return original_audio_mix_set(self, stage_id, clip_id, gain, muted, primary)
+
+    monkeypatch.setattr(ProjectController, "angle_align", tracking_angle_align)
+    monkeypatch.setattr(ProjectController, "audio_mix_set", tracking_audio_mix_set)
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
+                )
+
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').click()
+                _open_match_section(page, "match-section-composite")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#stage-composite-list .automation-row').length === 2"
+                )
+
+                page.locator(
+                    f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
+                ).locator("button", has_text="Angle Align").click()
+                page.wait_for_function(
+                    """async (stageId) => {
+                        const response = await fetch('/api/workspace/stage/clip/list', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ stage_id: stageId }),
+                        });
+                        const data = await response.json();
+                        return Array.isArray(data?.clips)
+                          && data.clips.length === 2
+                          && data.clips.every((clip) => clip.angle_aligned === true);
+                    }""",
+                    arg="stage_1",
+                )
+
+                assert angle_calls == [
+                    {"stage_id": "stage_1", "reference_clip_id": first_clip["clip_id"]}
+                ]
+
+                page.locator(
+                    f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
+                ).locator("button", has_text="Audio Mix").click()
+                page.wait_for_function(
+                    """(clipId) => {
+                        const row = document.querySelector(`#stage-composite-list .automation-row[data-clip-id="${clipId}"]`);
+                        return Boolean(row?.textContent?.toLowerCase().includes('audio muted'));
+                    }""",
+                    arg=first_clip["clip_id"],
+                )
+
+                assert audio_calls[-1] == {
+                    "stage_id": "stage_1",
+                    "clip_id": first_clip["clip_id"],
+                    "gain": 0,
+                    "muted": True,
+                    "primary": None,
+                }
+                row_text = page.locator(
+                    f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
+                ).text_content() or ""
+                assert "audio muted" in row_text.lower()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing(
     tmp_path: Path,
 ) -> None:
@@ -404,6 +2154,58 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
                 assert (project_path / "Output").is_dir()
                 assert page.locator("#project-path").input_value() == "partial.ssproj"
                 assert any("missing CSV, Output" in message for message in dialogs)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="blank-project-primary-import"))
+    chooser_calls: list[tuple[str, str | None]] = []
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        chooser_calls.append((kind, current))
+        assert kind == "primary"
+        return str(primary_path)
+
+    server = BrowserControlServer(
+        controller=ProjectController(),
+        port=0,
+        path_chooser=fake_path_chooser,
+    )
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+
+                page.locator("#landing-open-file").click()
+                page.wait_for_function("() => activeSurface === 'single'")
+                page.wait_for_function("() => Boolean(state?.media?.primary_available)")
+                page.locator(".waveform-shot-card").first.wait_for(state="attached")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+
+                page.evaluate("() => callApi('/api/project/new', {})")
+                page.wait_for_function("() => !Boolean(state?.media?.primary_available)")
+                page.locator("#stage-empty-import").wait_for(state="visible")
+
+                page.locator("#stage-empty-import").click(force=True)
+                page.wait_for_function("() => Boolean(state?.media?.primary_available)")
+                page.locator(".waveform-shot-card").first.wait_for(state="attached")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+
+                page.evaluate("() => callApi('/api/project/new', {})")
+                page.wait_for_function("() => !Boolean(state?.media?.primary_available)")
+                page.locator("#primary-file-input").set_input_files(str(primary_path))
+                page.wait_for_function("() => Boolean(state?.media?.primary_available)")
+                page.locator(".waveform-shot-card").first.wait_for(state="attached")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+
+                assert [kind for kind, _current in chooser_calls] == ["primary", "primary"]
             finally:
                 browser.close()
     finally:

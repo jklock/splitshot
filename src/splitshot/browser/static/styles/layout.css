@@ -93,7 +93,7 @@
 
 .rail-footer-button {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0;
   height: 32px;
   justify-items: center;
   padding: 0.15rem 0.2rem;

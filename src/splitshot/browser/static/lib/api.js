@@ -86,6 +86,15 @@ export function createApiRuntime({
     if (normalizedPath === "/api/project/ui-state") return false;
     if (normalizedPath.startsWith("/api/library/")) return false;
     if (normalizedPath.startsWith("/api/output-profiles/")) return false;
+    if (
+      normalizedPath === "/api/workspace/apply-from-first"
+      || normalizedPath === "/api/workspace/apply-from-first/preview"
+      || normalizedPath === "/api/workspace/export"
+      || normalizedPath === "/api/workspace/recap/render"
+      || normalizedPath === "/api/workspace/defaults/reset"
+    ) {
+      return false;
+    }
     if (normalizedPath.startsWith("/api/workspace/stage/clip/")) return false;
     if (normalizedPath.startsWith("/api/angle/")) return false;
     if (normalizedPath.startsWith("/api/audio/")) return false;
@@ -93,6 +102,15 @@ export function createApiRuntime({
     if (normalizedPath.startsWith("/api/landing/")) return false;
     if (normalizedPath.startsWith("/api/result-cards/")) return false;
     return true;
+  }
+
+  function apiResponseAllowsDomainError(path) {
+    const normalizedPath = String(path || "");
+    return normalizedPath === "/api/workspace/apply-from-first"
+      || normalizedPath === "/api/workspace/apply-from-first/preview"
+      || normalizedPath === "/api/workspace/export"
+      || normalizedPath === "/api/workspace/recap/render"
+      || normalizedPath === "/api/workspace/defaults/reset";
   }
 
   let apiRequestSequence = 0;
@@ -130,6 +148,7 @@ export function createApiRuntime({
     try {
       const response = await fetch(path, options);
       const data = await response.json();
+      const allowDomainError = apiResponseAllowsDomainError(path);
       if (isTrackedApiRequestStale(request)) {
         const responseDetail = {
           path,
@@ -143,7 +162,9 @@ export function createApiRuntime({
         if (finishProcessing) finishProcessing(data?.status || "Ready.");
         return null;
       }
-      if (!response.ok || data.error) throw new Error(data.error || response.statusText);
+      if (!response.ok || (data.error && !allowDomainError)) {
+        throw new Error(data.error || response.statusText);
+      }
       if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);
       requestRender();
       emitBackbone(backbone, "api.response", { path, status: data.status, shots: data.metrics?.total_shots });

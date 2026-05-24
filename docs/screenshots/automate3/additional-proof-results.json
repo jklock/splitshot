@@ -1,47 +1,47 @@
 {
-  "generated_at": "2026-05-23T16:10:29.436439+00:00",
+  "generated_at": "2026-05-24T00:39:25.053584+00:00",
   "kind": "additional",
   "status": "pass",
   "screenshots": [
     {
       "file": "pip-multi-angle-loaded.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/pip-multi-angle-loaded.png",
-      "bytes": 772301,
-      "sha256": "f7d787d7c66ed78889fb83010c923dd07c09ca55eed6b5c6397c634116818753",
+      "bytes": 768567,
+      "sha256": "9bf38641df5c7625428741134352c9c36ab4cca8511625330b6bd7be21e65d3d",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 598
+        "text_length": 594
       },
       "status": "pass"
     },
     {
       "file": "export-progress.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-progress.png",
-      "bytes": 804669,
-      "sha256": "d553042846951abe2a0f86f8aa5746776832c664e4d02a080cea63a53edf4ec8",
+      "bytes": 804002,
+      "sha256": "ec39044f8d01e5a88bb0af0f481089ad9b9a18ca6873830b41723e324fb3f851",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 956
+        "text_length": 978
       },
       "status": "pass"
     },
     {
       "file": "export-complete.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-complete.png",
-      "bytes": 809736,
-      "sha256": "bb4f470d41389b907bab7bc86c04a8ffd92804b454da1a3298441f90df250b46",
+      "bytes": 804345,
+      "sha256": "591519624962c6141fbf241c2345d5ce552997e6c542fbbeaeda5ce3827fc03b",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 995
+        "text_length": 978
       },
       "status": "pass"
     },

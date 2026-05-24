@@ -44,7 +44,7 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert "Trim Dead Time" in html
     assert "Shot Data on Screen" in html
     assert 'window.localStorage.getItem("splitshot.activeSurface")' in source
-    assert 'callApi("/api/output-profiles/list", {})' in source
+    assert 'callApi("/api/output-profiles/list",' in source
     assert 'callApi("/api/workspace/stage/clip/list", { stage_id: stageId })' in source
     assert 'callApi("/api/angle/director/plan"' in source
     assert '"/api/library/list"' in source

@@ -4,6 +4,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import get_args, get_type_hints
 
 from splitshot.domain.models import (
     LibraryStageRecord,
@@ -83,10 +84,14 @@ def _record_to_dict(record: object) -> dict:
 
 
 def _dict_to_record(cls: type, data: dict) -> object:
+    type_hints = get_type_hints(cls)
     kwargs: dict = {}
     for field_name, field_def in cls.__dataclass_fields__.items():
         value = data.get(field_name, field_def.default)
-        if field_def.type in (datetime, datetime | None) and isinstance(value, str):
+        field_type = type_hints.get(field_name)
+        if isinstance(value, str) and (
+            field_type is datetime or datetime in get_args(field_type)
+        ):
             value = datetime.fromisoformat(value)
         kwargs[field_name] = value
     return cls(**kwargs)
@@ -167,6 +172,26 @@ def read_match_metrics() -> list[dict]:
     return rows
 
 
+def _read_record_directory(record_dir: Path) -> list[dict]:
+    if not record_dir.is_dir():
+        return []
+    rows: list[dict] = []
+    for record_path in sorted(record_dir.glob("*.json")):
+        try:
+            rows.append(json.loads(record_path.read_text()))
+        except Exception:
+            continue
+    return rows
+
+
+def read_stage_records() -> list[dict]:
+    return _read_record_directory(library_root() / "records" / "stages")
+
+
+def read_match_records() -> list[dict]:
+    return _read_record_directory(library_root() / "records" / "matches")
+
+
 def save_search_catalog(catalog_data: dict) -> None:
     path = search_catalog_path()
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -198,19 +223,29 @@ def load_proxy_record(scope_type: str, scope_id: str) -> RetainedProxyRecord | N
 
 
 def update_record_tags(record_id: str, tags: list[str]) -> None:
-    """Update tags on a library stage record."""
+    """Update tags on a library stage or match record."""
     record = load_stage_record(record_id)
     if record:
         record.tags = tags
         save_stage_record(record)
+        return
+    match_record = load_match_record(record_id)
+    if match_record:
+        match_record.tags = tags
+        save_match_record(match_record)
 
 
 def update_record_notes(record_id: str, notes: str) -> None:
-    """Update notes on a library stage record."""
+    """Update notes on a library stage or match record."""
     record = load_stage_record(record_id)
     if record:
         record.notes = notes
         save_stage_record(record)
+        return
+    match_record = load_match_record(record_id)
+    if match_record:
+        match_record.notes = notes
+        save_match_record(match_record)
 
 
 def _library_archive_dir() -> Path:
@@ -226,6 +261,12 @@ def generate_archive(stage_id: str, output_path: str | None = None) -> dict:
     import subprocess
 
     record = load_stage_record(stage_id)
+    if not record:
+        for record_data in read_stage_records():
+            if record_data.get("stage_id") != stage_id:
+                continue
+            record = _dict_to_record(LibraryStageRecord, record_data)
+            break
     if not record:
         return {"error": f"Stage record not found: {stage_id}"}
 
@@ -267,7 +308,7 @@ def generate_archive(stage_id: str, output_path: str | None = None) -> dict:
         "-crf",
         "23",
         "-vf",
-        "scale='min(1280,iw)':min'(720,ih)':force_original_aspect_ratio=decrease",
+        "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
         "-c:a",
         "aac",
         "-b:a",
@@ -302,7 +343,7 @@ def compute_analytics(discipline: str | None = None, metric_key: str = "score") 
 
     Returns trend data, personal bests, outliers, and statistics.
     """
-    records = read_stage_metrics()
+    records = read_stage_records() or read_stage_metrics()
 
     if discipline:
         records = [r for r in records if r.get("discipline") == discipline]
@@ -310,18 +351,62 @@ def compute_analytics(discipline: str | None = None, metric_key: str = "score") 
     if not records:
         return {"error": "No records found", "records": 0}
 
+    def metric_value(record: dict, key: str) -> float | None:
+        metric_summary = record.get("metric_summary")
+        summary = metric_summary if isinstance(metric_summary, dict) else {}
+        candidate_keys = [key]
+        if key == "score":
+            candidate_keys.extend(["score_total", "hit_factor"])
+        for candidate_key in candidate_keys:
+            for container in (summary, record):
+                value = container.get(candidate_key)
+                if value in {None, ""}:
+                    continue
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    continue
+        return None
+
     values = []
     for r in records:
-        summary = r.get("metric_summary", {})
-        val = summary.get(metric_key)
+        val = metric_value(r, metric_key)
         if val is not None:
-            try:
-                values.append((r, float(val)))
-            except (ValueError, TypeError):
-                pass
+            values.append((r, val))
+
+    trend_points = [
+        {
+            "date": record.get("event_date", ""),
+            "score": score,
+            "record_id": record.get("library_record_id") or record.get("stage_id", ""),
+            "name": record.get("display_name", ""),
+        }
+        for record, score in sorted(
+            values,
+            key=lambda item: str(item[0].get("event_date") or ""),
+        )
+        if record.get("event_date")
+    ]
+
+    discipline_counts: dict[str, int] = {}
+    for record in records:
+        key = str(record.get("discipline") or "other")
+        discipline_counts[key] = discipline_counts.get(key, 0) + 1
+    discipline_breakdown = [
+        {"discipline": key, "count": count}
+        for key, count in sorted(
+            discipline_counts.items(),
+            key=lambda item: (-item[1], item[0]),
+        )
+    ]
 
     if not values:
-        return {"error": f"No valid {metric_key} values found"}
+        return {
+            "error": f"No valid {metric_key} values found",
+            "records": len(records),
+            "trend_points": trend_points,
+            "discipline_breakdown": discipline_breakdown,
+        }
 
     scores = [v[1] for v in values]
     scores.sort()
@@ -342,7 +427,7 @@ def compute_analytics(discipline: str | None = None, metric_key: str = "score") 
                 "date": record.get("event_date", ""),
                 "discipline": record.get("discipline", ""),
                 "score": score,
-                "record_id": record.get("stage_id", ""),
+                "record_id": record.get("library_record_id") or record.get("stage_id", ""),
             }
         )
 
@@ -389,6 +474,8 @@ def compute_analytics(discipline: str | None = None, metric_key: str = "score") 
             "min": round(scores[0], 2),
             "max": round(scores[-1], 2),
         },
+        "trend_points": trend_points,
+        "discipline_breakdown": discipline_breakdown,
         "personal_bests": personal_bests,
         "outliers": outliers,
         "trend_direction": trend,

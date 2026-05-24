@@ -12,13 +12,15 @@ If a control is missing from this matrix, it does not have an explicit owner yet
 | --- | --- |
 | Shared shell | tool-rail collapse/minimize, surface switcher tab selection, context header display, return-to-workspace visibility, resize handles, layout lock toggle |
 | Project / import | project details, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, gated primary import, metadata-only delete |
-| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |
+| Match workspace | workspace create/open/save/add-stage/remove-stage plus loading/error states, stage card selection/open/return, setup-once preview/apply/dismiss flow, shared defaults apply/reset, stage overrides apply/reset, stage clip add plus composite Angle Align/Audio Mix/cut routing, recap selection/render status, batch export recipe selection/select all/none/start, Match settings local persistence |
+| Performance Library | loading/empty/stale state affordances, overview summary tiles, records search/sort/filter plus personal-best list, selected-record detail, Open Stage/Open Workspace, notes/tags persistence entry points, analytics truth messaging, backup create/restore, CSV/JSON export, Performance settings local persistence |
+| PiP | add media, PiP default settings collapse and restore, per-item card toggle/remove, per-item size/opacity/position/sync controls, multi-angle feature launchers/editor, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF PiP media typing |
 | Score | scoring pane enable/disable, preset selection, scoring summary display, PractiScore context import, scoring table render, scoring-specific row edit behavior |
 | Splits / waveform | split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |
-| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |
+| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/PiP/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |
 | Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, PiP defaults, overlay defaults, marker defaults, export defaults, ShotML defaults, section collapse, template fields |
 | Metrics | metrics pane summary grid, expand to workbench, stage story graphs, trend table, scoring context display, timing-event metrics ordering, metrics pane row propagation, CSV/Text export buttons |
-| Export | output path, preset, quality, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |
+| Export | output path, preset, quality, output-profile list/create/select/delete, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |
 | ShotML | average auto-confidence summary, threshold apply/reset, rerun, proposal generation, reset defaults |
 
 ## Test Files
@@ -27,6 +29,8 @@ The following test files provide coverage for the controls listed above:
 
 - `tests/browser/test_browser_static_ui.py`
 - `tests/browser/test_browser_control.py`
+- `tests/browser/test_landing_backend_routes.py`
+- `tests/browser/test_library_backend_contracts.py`
 - `tests/browser/test_browser_control_inventory_audit.py`
 - `tests/browser/test_browser_control_coverage_matrix.py`
 - `tests/browser/test_browser_interactions.py`
@@ -47,9 +51,24 @@ The interaction suite (`tests/browser/test_browser_interactions.py`) verifies:
 
 - dashboard-open action
 - manual file import parity
+- PractiScore session-start browser-state bridge
+- PractiScore remote match-list and selected-match import browser-state bridge
+- PractiScore expired-session browser-state bridge
 - dashboard-open action parity with manual file import
 - missing-folder creation notice on new project
-- metadata-only delete safety confirmation
+- metadata-only delete safety confirmation and cancel path
+- project-pane keyboard tab order through primary controls
+- output-profile create/select and output-hook save/close flows from the Export pane
+- Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states
+- Match workspace stage open and shell return-to-Match behavior
+- Match shared defaults apply/reset and stage override apply/reset
+- setup-once preview/apply confirmation and dismiss
+- Match Stage Composite Angle Align/Audio Mix actions plus cut routing and refreshed state
+- Match recap selection plus success/error status
+- Match batch export recipe selection, queue select all/none, and truthful success/error reporting
+- Match settings local persistence and remember-stage behavior
+- Performance Library selected-record reopen to Stage and Match workspace
+- Performance Library settings local persistence, stale banner, and manual refresh load behavior
 - waveform expand/zoom/amplitude and drag movement
 - workbench import-selected-shot seek behavior
 - Enable Motion checkbox state transitions

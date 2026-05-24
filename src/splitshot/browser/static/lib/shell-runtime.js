@@ -468,11 +468,6 @@ export function createShellRuntime({
       item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
     });
     $("primary-file-input").addEventListener("change", async (event) => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        event.target.value = "";
-        return;
-      }
       const selectedFile = event.target.files?.[0] || null;
       if (!selectedFile) {
         event.target.value = "";

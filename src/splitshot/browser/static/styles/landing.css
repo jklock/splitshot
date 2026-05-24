@@ -123,7 +123,7 @@
   padding: 12px 16px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0;
   cursor: pointer;
   transition: border-color 150ms ease;
 }

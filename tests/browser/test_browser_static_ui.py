@@ -119,7 +119,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "<b>ShotML</b>" in html
     assert "<b>Score</b>" in html
     assert "<b>Markers</b>" in html
-    assert ">Set</button>" in html
+    assert ">⚙</button>" in html
     assert "⚙" in html  # shell-settings button
     for short in ["Pro", "PiP", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
         assert f'data-short="{short}"' in html
@@ -131,7 +131,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'class="sidebar-section sidebar-metrics"' not in html
     assert 'class="rail-action"' not in html
     assert "Open Stage Video Edit" in html
-    assert "Refresh" not in html
+    assert ">Refresh</button>" not in html
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
     assert 'id="match-type"' in html
@@ -201,10 +201,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "flex-direction: column;" in rail_footer_css
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" not in rail_footer_css
     assert ".tool-rail-footer .tool-item {" in rail_footer_css
-    assert "width: 44px;" in rail_footer_css
-    assert "height: 44px;" in rail_footer_css
+    assert "width: 100%;" in rail_footer_css
+    assert "height: 32px;" in rail_footer_css
     assert "#settings-rail-button {" in rail_footer_css
-    assert "#toggle-rail {" in rail_footer_css
+    assert ".rail-toggle-button::after" in rail_footer_css
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
@@ -219,7 +219,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Clear PractiScore Session" not in html
     assert "Import Selected Match" not in html
     assert "Manual fallback:" not in html
-    assert "Select Primary Video" in html
+    assert "Import Primary Video" in html
+    assert "Select Primary Video" not in html
+    assert "Stage Automation" not in html
     assert html.index("Project folder") < html.index("Project name")
     assert html.index("Project name") < html.index("PractiScore Import")
     assert html.index("PractiScore Import") < html.index("Primary Video")
@@ -495,13 +497,19 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="color-picker-lightness"' in html
     assert 'id="color-picker-hex"' in html
     merge_start = html.index('data-tool-pane="merge"')
+    review_start = html.index('data-tool-pane="review"')
     export_start = html.index('data-tool-pane="export"')
+    metrics_start = html.index('data-tool-pane="metrics"')
     project_start = html.index('data-tool-pane="project"')
     assert merge_start < html.index('id="add-merge-media"') < export_start
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
+    assert merge_start < html.index('data-feature="smart-angle-switching"') < export_start
     assert 'id="pip-size" type="range" min="1" max="95" step="1" value="35"' in html
     assert 'id="swap-videos"' not in html
+    assert review_start < html.index('id="retained-review-source"') < metrics_start
+    assert export_start < html.index('id="output-profile-name"') < project_start
+    assert export_start < html.index('id="output-hook-save"') < project_start
     assert export_start < html.index('id="export-preset"') < project_start
     assert export_start < html.index('id="quality"') < project_start
     assert export_start < html.index('id="export-video"') < project_start
@@ -811,6 +819,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "/api/scoring/restore" in js
     assert "syncExportPathControl" in js
     assert "buildExportPayload" in js
+    assert "function currentProjectPath(nextState = state) {" in js
+    assert 'function dialogPathRequestPayload(kind, currentValue = "", nextState = state) {' in js
+    assert 'const projectHome = normalizedKind === "primary" ? "" : currentProjectPath(nextState);' in js
+    assert 'const requestPayload = dialogPathRequestPayload(kind, target.value);' in js
+    assert 'body: JSON.stringify(requestPayload),' in js
     assert "syncOverlayPreviewStateFromControls" in js
     assert "syncMergePreviewStateFromControls" in js
     assert "controlIsActive" in js
@@ -2000,17 +2013,19 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "surface-match-video",
         "surface-performance-library",
         "surface-return-workspace",
-        "surface-go-home",
-        "shell-go-home",
         "shell-return-match",
-        "shell-settings",
-        "nav-stage",
-        "nav-match",
-        "nav-library",
+        "stage-go-home",
+        "match-go-home",
+        "library-go-home",
+        "match-open-settings",
+        "library-open-settings",
+        "match-toggle-rail",
+        "library-toggle-rail",
         "output-profile-refresh",
         "output-profile-create",
         "workspace-new",
         "workspace-new-empty",
+        "workspace-open",
         "workspace-save",
         "workspace-stage-add",
         "stage-clip-add",
@@ -2051,6 +2066,7 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "data-feature=",
         "data-surface=",
         "data-output-hook=",
+        "data-workspace-target=",
         "data-layout-lock-toggle",
         "data-motion-mode-value=",
         "data-popup-action=",
@@ -2063,6 +2079,20 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         has_wired_id = bool(id_match and id_match.group(1) in wired_button_ids)
         has_behavior_attribute = any(attribute in tag for attribute in behavior_attributes)
         assert has_wired_id or has_behavior_attribute, tag
+
+
+def test_browser_automation_surface_scopes_profiles_and_saves_hooks() -> None:
+    html = (STATIC_ROOT / "index.html").read_text()
+    js = (STATIC_ROOT / "app.js").read_text()
+
+    assert 'id="output-hook-save"' in html
+    assert "let selectedAutomationOutputProfileId = null;" in js
+    assert "scope_id: currentStageScopeId()," in js
+    assert 'await callApi("/api/output-profiles/update", {' in js
+    assert '$("output-hook-save")?.addEventListener("click", () => {' in js
+    assert 'metric_caption_preset: $("shared-metric-captions")?.value || "none",' in js
+    assert 'if (metricCaptions) overrides.metric_caption_preset = metricCaptions;' in js
+    assert 'await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });' in js
 
 
 def test_browser_display_names_strip_session_uuid_prefixes() -> None:

@@ -3,6 +3,12 @@ from __future__ import annotations
 
 import pytest
 
+from splitshot.domain.models import (
+    AspectRatio,
+    ExportPreset,
+    ExportQuality,
+    OverlayPosition,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -31,6 +37,64 @@ def controller_with_workspace(controller, tmp_path):
     return controller
 
 
+def _build_workspace_with_stage_profiles(controller: ProjectController, workspace_path) -> None:
+    controller.new_workspace()
+    controller.workspace.name = "Stage Bundle"
+    controller.workspace.description = "Workspace apply-from-first proof"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+    controller.save_workspace(str(workspace_path))
+
+    controller.new_project()
+    controller.project.export.preset = ExportPreset.YOUTUBE_LONG_1080P
+    controller.project.export.aspect_ratio = AspectRatio.LANDSCAPE
+    controller.project.export.quality = ExportQuality.MEDIUM
+    controller.project.overlay.position = OverlayPosition.TOP
+    controller.project.overlay.show_timer = True
+    controller.project.overlay.show_score = False
+    assert controller._save_stage_project("stage_1", controller.project) is True
+
+    controller.new_project()
+    controller.project.export.preset = ExportPreset.SOURCE
+    controller.project.export.aspect_ratio = AspectRatio.ORIGINAL
+    controller.project.export.quality = ExportQuality.HIGH
+    controller.project.overlay.position = OverlayPosition.BOTTOM
+    controller.project.overlay.show_timer = False
+    controller.project.overlay.show_score = True
+    assert controller._save_stage_project("stage_2", controller.project) is True
+
+    controller.output_profile_create(
+        "stage",
+        "stage_1",
+        "Stage Output",
+        "stage_output",
+        frame_profile="16:9",
+        metric_caption_preset={
+            "preset": "score",
+            "enabled_fields": ["time", "score", "hit_factor"],
+            "position": "bottom_right",
+            "lead_in_padding_ms": 1100,
+            "tail_padding_ms": 2200,
+        },
+        lead_in_card={"style": "stage_info", "duration_s": 2.5},
+        brand_mark={"style": "splitshot", "text": "SplitShot", "duration_s": 1.2},
+        subject_track_crop={"enabled": True, "margin_percent": 12},
+    )
+
+    controller.workspace_set_stage_override(
+        "stage_2",
+        {
+            "frame_profile": "1:1",
+            "metric_caption_preset": "splits",
+            "lead_in_card": "competitor",
+            "brand_mark": "splitshot",
+        },
+    )
+    controller.save_workspace()
+
+
 class TestWorkspaceLifecycle:
     """Test workspace creation, save, load, and identity stability."""
 
@@ -57,6 +121,22 @@ class TestWorkspaceLifecycle:
         assert c.workspace.match_id == original_match_id
         assert list(c.workspace.stage_entries.keys()) == original_stage_ids
         assert c.editor_scope == "multi"
+
+    def test_open_workspace_missing_metadata_sets_status_without_mutation(self, controller, tmp_path):
+        """Missing workspace open reports an error without mutating the current workspace."""
+        controller.new_workspace()
+        controller.workspace_add_stage("s1", "Stage 1")
+
+        original_match_id = controller.workspace.match_id
+        original_stage_order = list(controller.workspace.stage_order)
+        missing_path = tmp_path / "missing-workspace"
+
+        controller.open_workspace(str(missing_path))
+
+        assert controller.workspace is not None
+        assert controller.workspace.match_id == original_match_id
+        assert controller.workspace.stage_order == original_stage_order
+        assert controller.status_message == f"No workspace found at {missing_path}"
 
     def test_workspace_ids_stable_after_multiple_saves(self, controller_with_workspace, tmp_path):
         """match_id and stage_ids are stable across multiple save/load cycles."""
@@ -237,6 +317,117 @@ class TestInheritanceAndOverrides:
         controller.open_workspace(str(ws_path))
         assert controller.resolve_setting("s1", "frame_profile") == "4:5"
         assert controller.workspace.stage_entries["s1"].status == "overridden"
+
+
+class TestApplyFromFirst:
+    """Verify Stage 1 apply-to-all copies truthful reusable state."""
+
+    def test_apply_from_first_copies_profiles_and_materializes_overrides(
+        self, controller, tmp_path
+    ):
+        workspace_path = tmp_path / "apply-from-first"
+        _build_workspace_with_stage_profiles(controller, workspace_path)
+
+        result = controller.workspace_apply_from_first()
+
+        assert result["applied"] == 1
+        assert result["skipped"] == 0
+        assert result["snapshot"]["stage_id"] == "stage_1"
+        assert result["snapshot"]["profiles"]
+        assert any(
+            conflict["stage_id"] == "stage_2"
+            and conflict["setting"] == "frame_profile"
+            and conflict["retained_value"] == "1:1"
+            for conflict in result["conflicts"]
+        )
+
+        applied_project = controller._load_stage_project("stage_2")
+        assert applied_project is not None
+        assert applied_project.export.preset == ExportPreset.YOUTUBE_LONG_1080P
+        assert applied_project.export.aspect_ratio == AspectRatio.SQUARE
+        assert applied_project.export.quality == ExportQuality.MEDIUM
+        assert applied_project.overlay.position == OverlayPosition.TOP
+        assert applied_project.overlay.show_timer is True
+        assert applied_project.overlay.show_score is False
+
+        stage_profiles = controller._load_stage_profiles_for_stage("stage_2")
+        cloned_profile = next(
+            profile
+            for profile in stage_profiles
+            if profile.profile_kind == "stage_output" and profile.profile_name == "Stage Output"
+        )
+        assert cloned_profile.frame_profile == "1:1"
+        assert cloned_profile.metric_caption_preset["preset"] == "splits"
+        assert cloned_profile.metric_caption_preset["enabled_fields"] == [
+            "split_times",
+            "cumulative_time",
+        ]
+        assert cloned_profile.metric_caption_preset["position"] == "bottom_right"
+        assert cloned_profile.metric_caption_preset["lead_in_padding_ms"] == 1100
+        assert cloned_profile.metric_caption_preset["tail_padding_ms"] == 2200
+        assert cloned_profile.lead_in_card == {"style": "competitor", "duration_s": 2.5}
+        assert cloned_profile.brand_mark == {
+            "style": "splitshot",
+            "text": "SplitShot",
+            "duration_s": 1.2,
+        }
+        assert cloned_profile.subject_track_crop == {"enabled": True, "margin_percent": 12}
+        assert controller.workspace.stage_entries["stage_2"].inherited_from_first is True
+
+        controller.save_workspace()
+        controller.open_workspace(str(workspace_path))
+        assert controller.workspace.first_stage_snapshot["stage_id"] == "stage_1"
+        assert controller.workspace.first_stage_snapshot["profiles"]
+        assert controller.workspace.stage_entries["stage_2"].inherited_from_first is True
+
+    def test_apply_from_first_preview_reports_profile_changes_and_retained_overrides(
+        self, controller, tmp_path
+    ):
+        workspace_path = tmp_path / "apply-preview"
+        _build_workspace_with_stage_profiles(controller, workspace_path)
+
+        preview = controller.workspace_apply_from_first_preview()
+
+        assert preview["source_stage"] == "Stage 1"
+        assert "output_profiles" in preview["reusable_settings"]
+        assert len(preview["preview"]) == 1
+
+        stage_preview = preview["preview"][0]
+        assert stage_preview["stage_id"] == "stage_2"
+        assert stage_preview["status"] == "conflict"
+        assert any(
+            conflict["setting"] == "frame_profile"
+            and conflict["retained_value"] == "1:1"
+            and conflict["proposed_value"] == "16:9"
+            for conflict in stage_preview["conflicts"]
+        )
+        assert any(
+            change["setting"] == "output_profile"
+            and change["action"] == "created"
+            and change["profile_name"] == "Stage Output"
+            for change in stage_preview["changes"]
+        )
+
+    def test_apply_from_first_uses_workspace_stage_order_for_source(
+        self, controller, tmp_path
+    ):
+        workspace_path = tmp_path / "apply-stage-order"
+        _build_workspace_with_stage_profiles(controller, workspace_path)
+
+        controller.workspace.stage_order = ["stage_2", "stage_1"]
+        controller.workspace.stage_entries["stage_1"].override_values.clear()
+
+        result = controller.workspace_apply_from_first()
+
+        assert result["snapshot"]["stage_id"] == "stage_2"
+        applied_project = controller._load_stage_project("stage_1")
+        assert applied_project is not None
+        assert applied_project.export.preset == ExportPreset.SOURCE
+        assert applied_project.export.aspect_ratio == AspectRatio.ORIGINAL
+        assert applied_project.export.quality == ExportQuality.HIGH
+        assert applied_project.overlay.position == OverlayPosition.BOTTOM
+        assert applied_project.overlay.show_timer is False
+        assert applied_project.overlay.show_score is True
 
 
 class TestSingleProjectCompatibility:
@@ -494,6 +685,59 @@ class TestStageClips:
         assert preview["success"] is True
         assert preview["clip_count"] == 2
         assert [clip["angle_role"] for clip in preview["clips"]] == ["primary", "follow"]
+
+
+class TestAngleAlignAndAudioMix:
+    """Test Match composite align/audio actions directly on controller truth."""
+
+    def test_angle_align_marks_all_stage_clips_aligned_for_reference(self, controller):
+        """Angle Align marks all clips aligned using the selected reference clip."""
+        controller.new_workspace()
+        first_clip = controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")[0]
+        controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")
+
+        result = controller.angle_align("s1", first_clip["clip_id"])
+
+        assert result["success"] is True
+        assert result["stage_id"] == "s1"
+        assert result["reference_clip_id"] == first_clip["clip_id"]
+        assert result["aligned_clips"] == 2
+        assert all(clip["angle_aligned"] is True for clip in controller._get_stage_clips("s1"))
+
+    def test_angle_align_returns_error_for_unknown_reference_clip(self, controller):
+        """Angle Align rejects a reference clip that does not belong to the stage."""
+        controller.new_workspace()
+        controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")
+
+        result = controller.angle_align("s1", "missing-clip")
+
+        assert result == {"success": False, "error": "Reference clip missing-clip not found"}
+
+    def test_audio_mix_set_updates_gain_mute_and_primary_exclusivity(self, controller):
+        """Audio Mix updates clip gain/mute and keeps a single primary clip."""
+        controller.new_workspace()
+        first_clip = controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")[0]
+        second_clip = controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")[-1]
+
+        result = controller.audio_mix_set(
+            "s1",
+            second_clip["clip_id"],
+            gain=1.5,
+            muted=True,
+            primary=True,
+        )
+
+        assert result is not None
+        assert result["clip_id"] == second_clip["clip_id"]
+        assert result["audio_gain"] == 1.5
+        assert result["audio_muted"] is True
+        assert result["audio_primary"] is True
+
+        clips_by_id = {
+            clip["clip_id"]: clip for clip in controller._get_stage_clips("s1")
+        }
+        assert clips_by_id[second_clip["clip_id"]]["audio_primary"] is True
+        assert clips_by_id[first_clip["clip_id"]]["audio_primary"] is False
 
 
 class TestAngleDirectorPersistence:
