@@ -26,6 +26,7 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `Show draw badge` | Shows or hides the draw badge. |
 | `Show split badges` | Shows or hides the shot badge stack. |
 | `Show scoring summary` | Shows or hides the final result badge. |
+| `Show added media` | Shows or hides added-media layers in preview and export. |
 | `Review Source` | Keeps review playback on live stage data or pins it to a saved output profile. |
 | `Set Source` | Applies the selected review source immediately. |
 | `Add Custom Box` | Adds a manually typed text box. |
@@ -84,4 +85,3 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 Previous: [popup.md](popup.md) (Markers)
 Next: [export.md](export.md)
 <!-- review-pane-guide-eof -->
-

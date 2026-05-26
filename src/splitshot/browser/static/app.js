@@ -338,10 +338,18 @@ let pendingInteractionPreview = { video: false, waveform: false, overlay: false 
 let pendingSelectionFallback = null;
 let initialProjectUiStateApplied = false;
 let pendingBootstrapProjectUiStateOverride = false;
+let forcedProjectLandingPersistedTool = null;
 let automationProfiles = [];
 let automationLibrary = { stages: [], matches: [], total_stages: 0, total_matches: 0 };
 let selectedLibraryRecord = null;
 let selectedStageCompositeStageId = null;
+let matchRecapSelectedStageIds = null;
+let matchRecapKnownStageIds = new Set();
+let matchRecapTransitionValue = "cut";
+let matchRecapResultCardValue = "none";
+let matchRecapStatusText = "Ready to render a match recap.";
+let matchRecapResultsText = "";
+let matchRecapResultsHidden = true;
 let stageCompositeClips = [];
 let selectedCompositeOutputId = null;
 let selectedAutomationOutputProfileId = null;
@@ -352,7 +360,6 @@ let automationStale = { library: false };
 let libraryRefreshSequence = 0;
 let retainedReviewSourceProfileId = null;
 let activeOutputHookEditor = null;
-let openFeatureEditor = () => {};
 let renderOutputHookEditor = () => {};
 
 let processingRuntime = null;
@@ -1205,6 +1212,7 @@ function formatMatchType(matchType) {
     uspsa: "USPSA",
     ipsc: "IPSC",
     idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
   }[String(matchType || "").toLowerCase()] || "PractiScore";
 }
 
@@ -2146,7 +2154,9 @@ function readProjectUiStatePayload() {
     selected_shot_id: selectedShotId,
     timeline_zoom: waveformZoomX,
     timeline_offset_ms: Math.round(waveformOffsetMs),
-    active_tool: activeTool,
+    active_tool: activeTool === "project" && forcedProjectLandingPersistedTool
+      ? forcedProjectLandingPersistedTool
+      : activeTool,
     waveform_mode: waveformMode,
     waveform_expanded: Boolean(root?.classList.contains("waveform-expanded")),
     timing_expanded: Boolean(root?.classList.contains("timing-expanded")),
@@ -5031,7 +5041,7 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
   const surfaceToView = { landing: "landing", single: "stage", multi: "match", library: "library" };
   setActiveView(surfaceToView[activeSurface] || "stage");
   if (activeSurface === "single") {
-    setActiveTool(activeTool || "project");
+    setActiveTool(activeTool || "project", { persistUiState: false });
     updateStageEmptyState();
   } else if (activeSurface === "multi") {
     void refreshStageComposite();
@@ -5184,30 +5194,196 @@ function runWindowTailSeconds(profile = {}) {
   return Number.isFinite(raw) ? raw / 1000 : 2;
 }
 
-function leadInCardStyle(profile = {}) {
+const LEAD_IN_CARD_STYLE_DEFAULTS = Object.freeze({
+  stage_info: Object.freeze({
+    show_match: true,
+    show_stage: true,
+    show_shooter: false,
+    show_division: true,
+    show_classification: false,
+    show_date: false,
+  }),
+  competitor: Object.freeze({
+    show_match: false,
+    show_stage: true,
+    show_shooter: true,
+    show_division: true,
+    show_classification: true,
+    show_date: false,
+  }),
+});
+
+function leadInCardPayload(profile = {}) {
   const leadIn = profile?.lead_in_card;
+  return leadIn && typeof leadIn === "object" ? leadIn : {};
+}
+
+function leadInCardStyle(profile = {}) {
+  const leadIn = leadInCardPayload(profile);
   if (typeof leadIn === "string") return leadIn;
   if (!leadIn || typeof leadIn !== "object") return "none";
   return leadIn.style || leadIn.kind || "none";
 }
 
 function leadInCardDurationSeconds(profile = {}) {
-  const leadIn = profile?.lead_in_card;
+  const leadIn = leadInCardPayload(profile);
   const raw = leadIn && typeof leadIn === "object" ? Number(leadIn.duration_s) : NaN;
   return Number.isFinite(raw) ? raw : 2;
 }
 
-function brandMarkStyle(profile = {}) {
+function leadInCardAnimation(profile = {}) {
+  const leadIn = leadInCardPayload(profile);
+  const animation = String(leadIn.animation || "static").trim().toLowerCase();
+  return ["static", "fade", "slide_up"].includes(animation) ? animation : "static";
+}
+
+function leadInCardLogoPath(profile = {}) {
+  const leadIn = leadInCardPayload(profile);
+  return String(leadIn.logo_path || "").trim();
+}
+
+function leadInCardLogoScalePercent(profile = {}) {
+  const leadIn = leadInCardPayload(profile);
+  const raw = Number(leadIn.logo_scale_percent);
+  return Number.isFinite(raw) ? clampNumber(raw, 20, 400) : 100;
+}
+
+function leadInCardFieldEnabled(profile = {}, field) {
+  const leadIn = leadInCardPayload(profile);
+  if (typeof leadIn[field] === "boolean") return leadIn[field];
+  const style = leadInCardStyle(profile);
+  return Boolean(LEAD_IN_CARD_STYLE_DEFAULTS[style]?.[field]);
+}
+
+function leadInCardTextValue(profile = {}, field) {
+  const leadIn = leadInCardPayload(profile);
+  if (field === "custom_title") return String(leadIn.custom_title || leadIn.title || "");
+  if (field === "custom_subtitle") return String(leadIn.custom_subtitle || leadIn.subtitle || "");
+  return "";
+}
+
+function buildLeadInCardPayload(profile = {}) {
+  const style = $("hook-lead-in-style")?.value || "none";
+  if (style === "none") return null;
+  return {
+    style,
+    duration_s: Number($("hook-lead-in-duration")?.value || leadInCardDurationSeconds(profile) || 2),
+    animation: $("hook-lead-in-animation")?.value || leadInCardAnimation(profile),
+    show_match: $("hook-lead-in-show-match")?.checked ?? leadInCardFieldEnabled(profile, "show_match"),
+    show_stage: $("hook-lead-in-show-stage")?.checked ?? leadInCardFieldEnabled(profile, "show_stage"),
+    show_shooter: $("hook-lead-in-show-shooter")?.checked ?? leadInCardFieldEnabled(profile, "show_shooter"),
+    show_division: $("hook-lead-in-show-division")?.checked ?? leadInCardFieldEnabled(profile, "show_division"),
+    show_classification: $("hook-lead-in-show-classification")?.checked ?? leadInCardFieldEnabled(profile, "show_classification"),
+    show_date: $("hook-lead-in-show-date")?.checked ?? leadInCardFieldEnabled(profile, "show_date"),
+    custom_title: ($("hook-lead-in-custom-title")?.value || "").trim(),
+    custom_subtitle: ($("hook-lead-in-custom-subtitle")?.value || "").trim(),
+    logo_path: ($("hook-lead-in-logo-path")?.value || "").trim(),
+    logo_scale_percent: Number(
+      $("hook-lead-in-logo-scale")?.value || leadInCardLogoScalePercent(profile) || 100,
+    ),
+  };
+}
+
+function applyLeadInCardStyleDefaults(style) {
+  const defaults = LEAD_IN_CARD_STYLE_DEFAULTS[style] || {};
+  [
+    ["hook-lead-in-show-match", "show_match"],
+    ["hook-lead-in-show-stage", "show_stage"],
+    ["hook-lead-in-show-shooter", "show_shooter"],
+    ["hook-lead-in-show-division", "show_division"],
+    ["hook-lead-in-show-classification", "show_classification"],
+    ["hook-lead-in-show-date", "show_date"],
+  ].forEach(([controlId, field]) => {
+    const control = $(controlId);
+    if (control) control.checked = Boolean(defaults[field]);
+  });
+}
+
+function brandMarkPayload(profile = {}) {
   const mark = profile?.brand_mark;
+  return mark && typeof mark === "object" ? mark : {};
+}
+
+function brandMarkStyle(profile = {}) {
+  const mark = brandMarkPayload(profile);
   if (typeof mark === "string") return mark;
   if (!mark || typeof mark !== "object") return "none";
-  return mark.style || (mark.text ? "splitshot" : "none");
+  if (mark.style) return mark.style;
+  if (mark.image_path && mark.text) return "image_text";
+  if (mark.image_path) return "image";
+  return mark.text ? "custom" : "none";
 }
 
 function brandMarkDurationSeconds(profile = {}) {
-  const mark = profile?.brand_mark;
+  const mark = brandMarkPayload(profile);
   const raw = mark && typeof mark === "object" ? Number(mark.duration_s) : NaN;
   return Number.isFinite(raw) ? raw : 1;
+}
+
+function brandMarkTextValue(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  const text = String(mark.text || "").trim();
+  if (text) return text;
+  return brandMarkStyle(profile) === "splitshot" ? "SplitShot" : "";
+}
+
+function brandMarkPosition(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  return String(mark.position || "top_right").trim() || "top_right";
+}
+
+function brandMarkOpacity(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  const raw = Number(mark.opacity);
+  return Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0.72;
+}
+
+function brandMarkOpacityPercent(profile = {}) {
+  return Math.round(brandMarkOpacity(profile) * 100);
+}
+
+function brandMarkImagePath(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  return String(mark.image_path || "").trim();
+}
+
+function brandMarkImageScalePercent(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  const raw = Number(mark.image_scale_percent);
+  return Number.isFinite(raw) ? clampNumber(raw, 20, 400) : 100;
+}
+
+function brandMarkTextColor(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  return normalizeHexColor(mark.text_color || "") || "#ffffff";
+}
+
+function brandMarkFontSize(profile = {}) {
+  const mark = brandMarkPayload(profile);
+  const raw = Number(mark.font_size);
+  return Number.isFinite(raw) ? clampNumber(raw, 8, 96) : 24;
+}
+
+function buildBrandMarkPayload(profile = {}) {
+  const style = $("hook-brand-mark-select")?.value || "none";
+  if (style === "none") return null;
+  const text = ($("hook-brand-mark-text")?.value || "").trim();
+  const opacityPercent = Number($("hook-brand-mark-opacity")?.value || brandMarkOpacityPercent(profile));
+  return {
+    style,
+    text: style === "splitshot" ? (text || "SplitShot") : text,
+    position: $("hook-brand-mark-position")?.value || brandMarkPosition(profile),
+    opacity: Math.max(0, Math.min(1, opacityPercent / 100)),
+    duration_s: Number($("hook-brand-mark-duration")?.value || brandMarkDurationSeconds(profile) || 1),
+    image_path: ($("hook-brand-mark-image-path")?.value || "").trim(),
+    image_scale_percent: Number(
+      $("hook-brand-mark-image-scale")?.value || brandMarkImageScalePercent(profile) || 100,
+    ),
+    text_color:
+      normalizeHexColor($("hook-brand-mark-text-color")?.value || brandMarkTextColor(profile))
+      || "#ffffff",
+    font_size: Number($("hook-brand-mark-font-size")?.value || brandMarkFontSize(profile) || 24),
+  };
 }
 
 function subjectTrackCropEnabled(profile = {}) {
@@ -5224,11 +5400,21 @@ function subjectTrackCropMarginPercent(profile = {}) {
   return Number.isFinite(padding) ? Math.round(padding * 100) : 10;
 }
 
+function syncOutputProfileDetailVisibility() {
+  const detail = $("output-profile-detail");
+  if (!detail) return;
+  const hasContent = Boolean(String(detail.textContent || "").trim());
+  detail.hidden = Boolean(activeOutputHookEditor) || !hasContent;
+}
+
 function renderOutputProfiles() {
   const list = $("output-profile-list");
   if (!list) return;
   const profiles = automationProfilesForCurrentScope();
   const activeProfile = activeAutomationProfile(profiles);
+  const outputHookEditor = $("output-hook-editor");
+  const outputProfileDetail = $("output-profile-detail");
+  const outputHookButtons = [...document.querySelectorAll("[data-output-hook]")];
   list.innerHTML = "";
   const reviewSelect = $("retained-review-source");
   if (reviewSelect) {
@@ -5253,16 +5439,19 @@ function renderOutputProfiles() {
       ? `Review source set to profile ${retainedReviewSourceProfileId}.`
       : "Using live stage data.";
   }
+  outputHookButtons.forEach((button) => {
+    button.disabled = profiles.length === 0;
+    button.classList.toggle("active", Boolean(activeOutputHookEditor) && button.dataset.outputHook === activeOutputHookEditor);
+  });
   if (!profiles.length) {
     list.innerHTML = '<div class="hint">No output profiles yet.</div>';
-    const hookEditor = $("output-hook-editor");
-    if (hookEditor) hookEditor.hidden = true;
-    renderJsonDetail("output-profile-detail", null, "Create an output profile to preview Trim Dead Time and Shot Data on Screen state.");
+    activeOutputHookEditor = null;
+    if (outputHookEditor) outputHookEditor.hidden = true;
+    if (outputProfileDetail) outputProfileDetail.textContent = "";
+    syncOutputProfileDetailVisibility();
     return;
   }
-  if (activeProfile && !activeOutputHookEditor) {
-    renderJsonDetail("output-profile-detail", activeProfile);
-  }
+  syncOutputProfileDetailVisibility();
   profiles.forEach((profile) => {
     const row = document.createElement("div");
     row.className = "automation-row";
@@ -5276,7 +5465,8 @@ function renderOutputProfiles() {
     review.type = "button";
     review.textContent = "Set Review Source";
     review.title = "Use this profile as the retained-review source";
-    review.addEventListener("click", () => {
+    review.addEventListener("click", (event) => {
+      event.stopPropagation();
       selectedAutomationOutputProfileId = profile.output_id;
       retainedReviewSourceProfileId = profile.output_id;
       renderOutputProfiles();
@@ -5284,7 +5474,8 @@ function renderOutputProfiles() {
     const select = document.createElement("button");
     select.type = "button";
     select.textContent = "Preview";
-    select.addEventListener("click", async () => {
+    select.addEventListener("click", async (event) => {
+      event.stopPropagation();
       selectedAutomationOutputProfileId = profile.output_id;
       const plan = await callApi("/api/output-profiles/render", { output_id: profile.output_id });
       renderJsonDetail("output-profile-detail", plan || profile);
@@ -5293,14 +5484,16 @@ function renderOutputProfiles() {
     const duplicate = document.createElement("button");
     duplicate.type = "button";
     duplicate.textContent = "Duplicate";
-    duplicate.addEventListener("click", () => {
+    duplicate.addEventListener("click", (event) => {
+      event.stopPropagation();
       selectedAutomationOutputProfileId = profile.output_id;
       createAutomationOutputProfile(`${profile.profile_name || "Profile"} Copy`, profile.profile_kind || "stage_output", profile);
     });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Delete";
-    remove.addEventListener("click", async () => {
+    remove.addEventListener("click", async (event) => {
+      event.stopPropagation();
       const removedSelectedProfile = selectedAutomationOutputProfileId === profile.output_id;
       await callApi("/api/output-profiles/delete", { output_id: profile.output_id });
       if (removedSelectedProfile) selectedAutomationOutputProfileId = null;
@@ -5310,17 +5503,18 @@ function renderOutputProfiles() {
     row.append(summary, actions);
     row.addEventListener("click", () => {
       selectedAutomationOutputProfileId = profile.output_id;
-      renderJsonDetail("output-profile-detail", profile);
+      if (outputProfileDetail) outputProfileDetail.textContent = "";
       if (activeOutputHookEditor) renderOutputHookEditor(activeOutputHookEditor, profile);
       renderOutputProfiles();
     });
     list.append(row);
   });
-  const hookEditor = $("output-hook-editor");
-  if (hookEditor) hookEditor.hidden = !(activeOutputHookEditor && activeProfile);
+  if (outputHookEditor) outputHookEditor.hidden = !(activeOutputHookEditor && activeProfile);
+  syncOutputProfileDetailVisibility();
 }
 
 function renderWorkspaceStages() {
+  if (matchView) return matchView.renderWorkspaceStages();
   const list = $("workspace-stage-list");
   if (!list) return;
   const entries = state?.workspace_stage_entries || [];
@@ -5437,12 +5631,29 @@ function renderWorkspaceStages() {
   checkSetupOnceBanner();
   const recap = document.getElementById("match-recap-panel");
   if (recap && entries.length) {
+    const stageIds = entries
+      .map((entry) => String(entry?.stage_id || "").trim())
+      .filter(Boolean);
+    const stageIdSet = new Set(stageIds);
+    if (!(matchRecapSelectedStageIds instanceof Set) || matchRecapKnownStageIds.size === 0) {
+      matchRecapSelectedStageIds = new Set(stageIds);
+    } else {
+      const overlappingStageIds = stageIds.filter((stageId) => matchRecapKnownStageIds.has(stageId));
+      if (matchRecapSelectedStageIds.size > 0 && overlappingStageIds.length === 0) {
+        matchRecapSelectedStageIds = new Set(stageIds);
+      } else {
+        matchRecapSelectedStageIds = new Set(
+          [...matchRecapSelectedStageIds].filter((stageId) => stageIdSet.has(stageId)),
+        );
+      }
+    }
+    matchRecapKnownStageIds = stageIdSet;
     recap.innerHTML = `
       <div style="margin-bottom:8px"><strong>Match Recap</strong> — ${entries.length} stages</div>
       <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
         ${entries.map((entry, i) => `
           <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">
-            <input type="checkbox" class="recap-stage-check" data-stage-id="${entry.stage_id}" checked 
+            <input type="checkbox" class="recap-stage-check" data-stage-id="${entry.stage_id}" ${matchRecapSelectedStageIds?.has(String(entry.stage_id || "")) ? "checked" : ""} 
               style="width:auto;min-height:auto;margin:0" />
             ${i + 1}. ${entry.display_name || entry.stage_id}
           </label>
@@ -5469,27 +5680,121 @@ function renderWorkspaceStages() {
         <div class="progress-bar" style="background:var(--surface-2);height:4px">
           <div class="progress-fill" style="width:0%;height:100%;background:var(--accent)"></div>
         </div>
-        <span style="font-size:11px;color:var(--muted)">Ready</span>
       </div>
+      <p id="recap-status" class="hint" aria-live="polite" style="margin-top:8px">Ready to render a match recap.</p>
+      <pre id="recap-results" class="automation-detail" hidden></pre>
     `;
+
+    syncControlValue($("recap-transition"), matchRecapTransitionValue || "cut");
+    syncControlValue($("recap-result-card"), matchRecapResultCardValue || "none");
+    const recapStatus = document.getElementById("recap-status");
+    if (recapStatus) recapStatus.textContent = matchRecapStatusText;
+    const recapResults = document.getElementById("recap-results");
+    if (recapResults) {
+      recapResults.hidden = matchRecapResultsHidden;
+      recapResults.textContent = matchRecapResultsText;
+    }
+
+    const captureRecapSelection = () => {
+      const selected = [...recap.querySelectorAll(".recap-stage-check:checked")]
+        .map((checkbox) => String(checkbox.dataset.stageId || "").trim())
+        .filter(Boolean);
+      matchRecapSelectedStageIds = new Set(selected);
+      return selected;
+    };
+
+    recap.querySelectorAll(".recap-stage-check").forEach((checkbox) => {
+      checkbox.addEventListener("change", captureRecapSelection);
+    });
+    document.getElementById("recap-transition")?.addEventListener("change", (event) => {
+      matchRecapTransitionValue = event?.target?.value || "cut";
+    });
+    document.getElementById("recap-result-card")?.addEventListener("change", (event) => {
+      matchRecapResultCardValue = event?.target?.value || "none";
+    });
     
     document.getElementById("recap-render")?.addEventListener("click", async () => {
-      const selected = [...document.querySelectorAll(".recap-stage-check:checked")]
-        .map(cb => cb.dataset.stageId);
-      const progress = document.getElementById("recap-progress");
+      const recapElements = () => {
+        const progress = document.getElementById("recap-progress");
+        return {
+          progress,
+          fill: progress?.querySelector(".progress-fill"),
+          status: document.getElementById("recap-status"),
+          results: document.getElementById("recap-results"),
+        };
+      };
+      const selected = captureRecapSelection();
+      let { progress, fill, status, results } = recapElements();
+      matchRecapTransitionValue = document.getElementById("recap-transition")?.value || matchRecapTransitionValue || "cut";
+      matchRecapResultCardValue = document.getElementById("recap-result-card")?.value || matchRecapResultCardValue || "none";
+      if (!selected.length) {
+        matchRecapStatusText = "Select at least one stage for the recap.";
+        matchRecapResultsText = "";
+        matchRecapResultsHidden = true;
+        if (progress) progress.hidden = true;
+        if (fill) fill.style.width = "0%";
+        if (status) status.textContent = matchRecapStatusText;
+        if (results) {
+          results.hidden = true;
+          results.textContent = "";
+        }
+        return;
+      }
+      matchRecapStatusText = `Rendering recap for ${selected.length} stage(s)...`;
+      matchRecapResultsText = "";
+      matchRecapResultsHidden = true;
       if (progress) progress.hidden = false;
+      if (fill) fill.style.width = "35%";
+      if (status) status.textContent = matchRecapStatusText;
+      if (results) {
+        results.hidden = true;
+        results.textContent = "";
+      }
       try {
-        await callApi("/api/workspace/recap/render", {
+        const result = await callApi("/api/workspace/recap/render", {
           stage_ids: selected,
-          transition: document.getElementById("recap-transition")?.value || "cut",
-          result_card: document.getElementById("recap-result-card")?.value || "none",
+          transition: matchRecapTransitionValue,
+          result_card: matchRecapResultCardValue,
         });
+        ({ progress, fill, status, results } = recapElements());
+        if (progress) progress.hidden = true;
+        if (fill) fill.style.width = result?.success ? "100%" : "0%";
+        if (!result) {
+          matchRecapStatusText = "Recap render failed.";
+          matchRecapResultsText = "";
+          matchRecapResultsHidden = true;
+          if (status) status.textContent = matchRecapStatusText;
+          return;
+        }
+        if (result.success) {
+          matchRecapStatusText = `Recap ready: ${result.output_path}`;
+        } else {
+          matchRecapStatusText = result.error || "Recap render failed.";
+        }
+        matchRecapResultsText = JSON.stringify(result, null, 2);
+        matchRecapResultsHidden = false;
+        if (status) status.textContent = matchRecapStatusText;
+        if (results) {
+          results.hidden = false;
+          results.textContent = matchRecapResultsText;
+        }
       } catch (e) {
+        matchRecapStatusText = "Recap render failed.";
+        matchRecapResultsText = "";
+        matchRecapResultsHidden = true;
+        if (progress) progress.hidden = true;
+        if (fill) fill.style.width = "0%";
+        if (status) status.textContent = matchRecapStatusText;
         console.error("Recap render failed:", e);
       }
     });
   } else if (recap) {
     recap.innerHTML = '<p class="hint">Create or open a workspace to build a Match Recap.</p>';
+    matchRecapSelectedStageIds = null;
+    matchRecapKnownStageIds = new Set();
+    matchRecapStatusText = "Ready to render a match recap.";
+    matchRecapResultsText = "";
+    matchRecapResultsHidden = true;
   }
   const sharedDefaults = state?.workspace_shared_defaults || {};
   syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
@@ -5532,6 +5837,7 @@ function renderWorkspaceStages() {
   }
 }
 function checkSetupOnceBanner() {
+  if (matchView) return matchView.checkSetupOnceBanner?.();
   const banner = domById("setup-once-banner");
   if (!banner) return;
   const stages = state?.workspace_stage_entries || [];
@@ -5541,6 +5847,7 @@ function checkSetupOnceBanner() {
 }
 
 function renderStageComposite() {
+  if (matchView) return matchView.renderStageComposite();
   const list = $("stage-composite-list");
   if (!list) return;
   list.innerHTML = "";
@@ -5595,6 +5902,7 @@ function renderStageComposite() {
 }
 
 function renderPerformanceLibrary() {
+  if (libraryView) return libraryView.renderPerformanceLibrary();
   renderLibrarySummaryTiles();
   const list = $("library-record-list");
   if (!list) return;
@@ -5680,6 +5988,7 @@ function renderPerformanceLibrary() {
 }
 
 function renderLibrarySummaryTiles() {
+  if (libraryView) return libraryView.renderLibrarySummaryTiles();
   const container = $("library-summary-tiles");
   if (!container) return;
   const records = [
@@ -5718,6 +6027,7 @@ function renderLibrarySummaryTiles() {
 }
 
 function renderLibraryTags() {
+  if (libraryView) return libraryView.renderLibraryTags();
   const container = $("library-tag-list");
   if (!container) return;
   const tags = window.selectedLibraryRecord?.tags || [];
@@ -5730,6 +6040,7 @@ function renderLibraryTags() {
 }
 
 function renderPersonalBests() {
+  if (libraryView) return libraryView.renderPersonalBests();
   const container = $("personal-bests-list");
   if (!container) return;
   const records = [
@@ -5752,6 +6063,7 @@ function renderPersonalBests() {
 }
 
 async function fetchLibraryAnalytics(discipline) {
+  if (libraryView) return libraryView.fetchLibraryAnalytics(discipline);
   try {
     const response = await callApi("/api/library/analytics/trend", {
       metric_key: "score",
@@ -5764,6 +6076,7 @@ async function fetchLibraryAnalytics(discipline) {
 }
 
 function renderAnalyticsCharts(data) {
+  if (libraryView) return libraryView.renderAnalyticsCharts(data);
   if (!data) return;
 
   const records = (automationLibrary.stages || []).filter(r => r.score != null);
@@ -5890,6 +6203,7 @@ function showExportCompleteNotification(count, outputPath) {
 }
 
 function addLibraryTag(tag) {
+  if (libraryView) return libraryView.addLibraryTag(tag);
   if (!window.selectedLibraryRecord) return;
   window.selectedLibraryRecord.tags = window.selectedLibraryRecord.tags || [];
   if (!window.selectedLibraryRecord.tags.includes(tag)) {
@@ -5899,29 +6213,18 @@ function addLibraryTag(tag) {
 }
 
 function removeLibraryTag(tag) {
+  if (libraryView) return libraryView.removeLibraryTag(tag);
   if (!window.selectedLibraryRecord?.tags) return;
   window.selectedLibraryRecord.tags = window.selectedLibraryRecord.tags.filter(t => t !== tag);
   renderLibraryTags();
 }
 
 function saveLibraryNotes(notes) {
+  if (libraryView) return libraryView.saveLibraryNotes(notes);
   if (!window.selectedLibraryRecord) return;
   window.selectedLibraryRecord.notes = notes;
   activity("ui.library.notes.save");
 }
-
-renderWorkspaceStages = (...args) => matchView?.renderWorkspaceStages(...args);
-checkSetupOnceBanner = (...args) => matchView?.checkSetupOnceBanner?.(...args);
-renderStageComposite = (...args) => matchView?.renderStageComposite(...args);
-renderPerformanceLibrary = (...args) => libraryView?.renderPerformanceLibrary(...args);
-renderLibrarySummaryTiles = (...args) => libraryView?.renderLibrarySummaryTiles(...args);
-renderLibraryTags = (...args) => libraryView?.renderLibraryTags(...args);
-renderPersonalBests = (...args) => libraryView?.renderPersonalBests(...args);
-fetchLibraryAnalytics = (...args) => libraryView?.fetchLibraryAnalytics(...args);
-renderAnalyticsCharts = (...args) => libraryView?.renderAnalyticsCharts(...args);
-addLibraryTag = (...args) => libraryView?.addLibraryTag(...args);
-removeLibraryTag = (...args) => libraryView?.removeLibraryTag(...args);
-saveLibraryNotes = (...args) => libraryView?.saveLibraryNotes(...args);
 
 function libraryRecordId(record = selectedLibraryRecord) {
   return record?.library_record_id || record?.stage_id || record?.match_id || "";
@@ -6123,11 +6426,15 @@ function renderAutomationSurface() {
   }
   if (errorEl.library) {
     errorEl.library.hidden = !automationError.library;
-    if (automationError.library) errorEl.library.textContent = automationError.library;
+    if (automationError.library) {
+      const libraryErrorMessage = $("library-error-message");
+      if (libraryErrorMessage) libraryErrorMessage.textContent = automationError.library;
+      else errorEl.library.textContent = automationError.library;
+    }
   }
   if (staleEl) staleEl.hidden = !automationStale.library;
   const libraryEmptyState = document.querySelector(".library-empty-state");
-  if (libraryEmptyState && (automationLoading.library || automationError.library)) {
+  if (libraryEmptyState && (automationLoading.library || automationError.library || automationStale.library)) {
     libraryEmptyState.hidden = true;
   }
 }
@@ -6246,6 +6553,9 @@ async function refreshPerformanceLibrary() {
 function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = true } = {}) {
   tool = normalizeToolId(tool);
   if (!VALID_TOOL_IDS.has(tool) || !document.querySelector(`[data-tool-pane="${tool}"]`)) tool = "project";
+  if (persistUiState || tool !== "project") {
+    forcedProjectLandingPersistedTool = null;
+  }
   const changed = activeTool !== tool;
   const root = $("cockpit-root");
   const hadExpandedLayout = root?.classList.contains("waveform-expanded")
@@ -6666,6 +6976,7 @@ function stateHasShot(nextState, shotId) {
 function resetLocalProjectView() {
   resetProjectUiStateApplyState();
   pendingBootstrapProjectUiStateOverride = false;
+  forcedProjectLandingPersistedTool = null;
   setSelectedShotIdValue(null);
   draggingShotId = null;
   draggingShotPointerId = null;
@@ -7089,8 +7400,8 @@ const SETTINGS_LAYER_FIELDS = [
   { label: "Reopen last pane", path: ["reopen_last_tool"] },
   { label: "Overlay position", path: ["overlay_position"] },
   { label: "Badge size", path: ["badge_size"] },
-  { label: "PiP layout", path: ["merge_layout"] },
-  { label: "PiP size", path: ["pip_size"] },
+  { label: "Composition layout", path: ["merge_layout"] },
+  { label: "Layer size", path: ["pip_size"] },
   { label: "Export quality", path: ["export_quality"] },
   { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
   {
@@ -10679,18 +10990,93 @@ const readSettingsDefaultsPayload = ({ projectDefaults = false, section = null }
   };
 };
 
+const WORKSPACE_PANE_LAYOUTS = {
+  match: {
+    "match-section-stages": {
+      lower: ["match-section-stage-detail"],
+      inspector: ["match-section-stage-workflow"],
+    },
+    "match-section-defaults": {
+      lower: ["match-section-stage-detail"],
+      inspector: ["match-section-defaults"],
+    },
+    "match-section-overrides": {
+      lower: ["match-section-stage-detail"],
+      inspector: ["match-section-overrides"],
+    },
+    "match-section-recap": {
+      lower: ["match-section-stage-detail"],
+      inspector: ["match-section-recap"],
+    },
+    "match-section-composite": {
+      lower: ["match-section-composite"],
+      inspector: ["match-section-stage-workflow"],
+    },
+    "match-section-export": {
+      lower: ["match-section-export"],
+      inspector: ["match-section-stage-workflow"],
+    },
+    "match-section-settings": {
+      lower: ["match-section-stage-detail"],
+      inspector: ["match-section-settings"],
+    },
+  },
+  library: {
+    "library-section-overview": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-overview-inspector"],
+    },
+    "library-section-records": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-record-filters"],
+    },
+    "library-section-detail": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-detail-actions"],
+    },
+    "library-section-analytics": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-analytics-inspector"],
+    },
+    "library-section-backup": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-backup"],
+    },
+    "library-section-settings": {
+      lower: ["library-section-detail"],
+      inspector: ["library-section-settings"],
+    },
+  },
+};
+
 function setWorkspaceSection(viewName, sectionId, { scroll = true } = {}) {
   document.querySelectorAll(`[data-workspace-view="${viewName}"]`).forEach((button) => {
     button.classList.toggle("active", button.dataset.workspaceTarget === sectionId);
   });
   if (!sectionId) return;
-  document.querySelectorAll(`#view-${viewName} .workspace-section`).forEach((section) => {
-    section.hidden = section.id !== sectionId;
-  });
+  const viewRoot = document.querySelector(`#view-${viewName}`);
+  const paneLayout = WORKSPACE_PANE_LAYOUTS[viewName]?.[sectionId];
+  const paneSections = viewRoot ? [...viewRoot.querySelectorAll(".workspace-section[data-workspace-pane]")] : [];
+  if (paneLayout && paneSections.length) {
+    paneSections.forEach((section) => {
+      const paneName = section.dataset.workspacePane || "";
+      const visibleIds = paneLayout[paneName] || [];
+      section.hidden = !visibleIds.includes(section.id);
+    });
+  } else {
+    document.querySelectorAll(`#view-${viewName} .workspace-section`).forEach((section) => {
+      section.hidden = section.id !== sectionId;
+    });
+  }
   window.localStorage.setItem(`splitshot.${viewName}.section`, sectionId);
   if (!scroll) return;
-  const main = document.querySelector(`#view-${viewName} .workspace-main`);
-  if (main) main.scrollTo({ top: 0, behavior: "smooth" });
+  const scrollTargets = paneLayout && paneSections.length
+    ? [
+      document.querySelector(`#view-${viewName} .workspace-main-column`),
+      document.querySelector(`#view-${viewName} .workspace-inspector`),
+    ].filter(Boolean)
+    : [document.querySelector(`#view-${viewName} .workspace-main`)].filter(Boolean);
+  scrollTargets.forEach((target) => target.scrollTo?.({ top: 0, behavior: "smooth" }));
 }
 
 function applySavedWorkspaceSections() {
@@ -10698,8 +11084,15 @@ function applySavedWorkspaceSections() {
   setWorkspaceSection("library", window.localStorage.getItem("splitshot.library.section") || "library-section-overview", { scroll: false });
 }
 
+function workspaceShell(viewName) {
+  if (!viewName) return null;
+  return document.querySelector(`[data-shell-family="stage-workspace"][data-shell-view="${viewName}"]`)
+    || document.querySelector(`.${viewName}-workspace-shell`)
+    || document.querySelector(`#view-${viewName} .workspace-shell`);
+}
+
 function setWorkspaceRailCollapsed(viewName, collapsed) {
-  const shell = document.querySelector(`.${viewName}-workspace-shell`);
+  const shell = workspaceShell(viewName);
   if (!shell) return;
   shell.classList.toggle("rail-collapsed", Boolean(collapsed));
   const toggle = document.getElementById(`${viewName}-toggle-rail`);
@@ -10776,11 +11169,11 @@ function wireEvents() {
   $("match-open-settings")?.addEventListener("click", () => setWorkspaceSection("match", "match-section-settings"));
   $("library-open-settings")?.addEventListener("click", () => setWorkspaceSection("library", "library-section-settings"));
   $("match-toggle-rail")?.addEventListener("click", () => {
-    const shell = document.querySelector(".match-workspace-shell");
+    const shell = workspaceShell("match");
     setWorkspaceRailCollapsed("match", !shell?.classList.contains("rail-collapsed"));
   });
   $("library-toggle-rail")?.addEventListener("click", () => {
-    const shell = document.querySelector(".library-workspace-shell");
+    const shell = workspaceShell("library");
     setWorkspaceRailCollapsed("library", !shell?.classList.contains("rail-collapsed"));
   });
   document.querySelectorAll("[data-workspace-target]").forEach((button) => {
@@ -10804,6 +11197,8 @@ function wireEvents() {
     automationStale.library = !(libraryView?.libraryAutoRefreshEnabled?.() ?? true) && activeSurface === "library";
     renderAutomationSurface();
   });
+  $("library-error-retry")?.addEventListener("click", () => refreshPerformanceLibrary());
+  $("library-stale-refresh")?.addEventListener("click", () => refreshPerformanceLibrary());
   $("output-profile-refresh")?.addEventListener("click", () => refreshAutomationProfiles());
   $("output-profile-create")?.addEventListener("click", () => {
     createAutomationOutputProfile($("output-profile-name")?.value || "Output Profile", $("output-profile-kind")?.value || "stage_output");
@@ -10829,6 +11224,17 @@ function wireEvents() {
     next.lead_in_padding_ms = Math.max(0, Math.round((Number(leadInSeconds) || 0) * 1000));
     next.tail_padding_ms = Math.max(0, Math.round((Number(tailSeconds) || 0) * 1000));
     return next;
+  };
+  const outputHookDisplayLabel = (hook) => {
+    const hookLabels = {
+      "run-window": "Run Padding",
+      "metric-captions": "Overlay Data",
+      "frame-profiles": "Aspect Ratio / Framing",
+      "lead-in-card": "Opening Title",
+      "brand-mark": "Your Logo",
+      "subject-track-crop": "Subject Tracking (inactive)",
+    };
+    return hookLabels[hook] || String(hook || "").replace(/-/g, " ");
   };
   async function saveActiveOutputHookEditor() {
     const profile = activeAutomationProfile();
@@ -10857,22 +11263,9 @@ function wireEvents() {
     } else if (activeOutputHookEditor === "frame-profiles") {
       update.frame_profile = $("hook-frame-profile")?.value || "source";
     } else if (activeOutputHookEditor === "lead-in-card") {
-      const style = $("hook-lead-in-style")?.value || "none";
-      update.lead_in_card = style === "none"
-        ? null
-        : {
-          style,
-          duration_s: Number($("hook-lead-in-duration")?.value || leadInCardDurationSeconds(profile) || 2),
-        };
+      update.lead_in_card = buildLeadInCardPayload(profile);
     } else if (activeOutputHookEditor === "brand-mark") {
-      const style = $("hook-brand-mark-select")?.value || "none";
-      update.brand_mark = style === "none"
-        ? null
-        : {
-          style,
-          text: style === "splitshot" ? "SplitShot" : style,
-          duration_s: Number($("hook-brand-mark-duration")?.value || brandMarkDurationSeconds(profile) || 1),
-        };
+      update.brand_mark = buildBrandMarkPayload(profile);
     } else if (activeOutputHookEditor === "subject-track-crop") {
       update.subject_track_crop = $("hook-crop-enabled")?.checked
         ? {
@@ -10893,10 +11286,14 @@ function wireEvents() {
       renderJsonDetail("output-profile-detail", plan || updatedProfile);
       renderOutputHookEditor(activeOutputHookEditor, updatedProfile);
     }
-    setStatus(`Saved ${activeOutputHookEditor.replace(/-/g, " ")} for ${profile.profile_name || "output profile"}.`);
+    setStatus(`Saved ${outputHookDisplayLabel(activeOutputHookEditor)} for ${profile.profile_name || "output profile"}.`);
   }
   document.querySelectorAll("[data-output-hook]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (!activeAutomationProfile()) {
+        setStatus("Create or select an output profile before editing saved output settings.");
+        return;
+      }
       const hook = button.dataset.outputHook;
       activeOutputHookEditor = hook;
       const active = activeAutomationProfile();
@@ -10912,130 +11309,13 @@ function wireEvents() {
     void saveActiveOutputHookEditor();
   });
 
-  // Multi-angle feature button handlers
-  document.querySelectorAll("[data-feature]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const feature = button.dataset.feature;
-      openFeatureEditor(feature);
-      activity("ui.feature.click", { feature });
-    });
-  });
-
-  // Feature editor close button
-  $("feature-close")?.addEventListener("click", () => {
-    const editor = $("feature-editor");
-    if (editor) editor.hidden = true;
-  });
-  openFeatureEditor = function openFeatureEditor(feature) {
-    const editor = $("feature-editor");
-    const title = $("feature-title");
-    const fields = $("feature-fields");
-    if (!editor || !title || !fields) return;
-
-    const featureLabels = {
-      "smart-angle-switching": "Smart Angle Switching",
-      "line-up-angles": "Line Up Angles",
-      "camera-jobs": "Camera Jobs",
-      "audio-balance": "Audio Balance",
-      "override-smart-cuts": "Override Smart Cuts",
-      "keep-shooter-in-frame": "Keep Shooter in Frame",
-    };
-
-    title.textContent = featureLabels[feature] || "Feature Editor";
-    editor.hidden = false;
-
-    if (feature === "smart-angle-switching") {
-      fields.innerHTML = `
-        <div class="control-grid">
-          <label>Auto-switch mode
-            <select id="feature-angle-switch-mode">
-              <option value="auto">Automatic</option>
-              <option value="manual">Manual</option>
-              <option value="disabled">Disabled</option>
-            </select>
-          </label>
-          <label>Switch threshold (s)
-            <input id="feature-angle-switch-threshold" type="number" min="0.1" step="0.1" value="0.5" />
-          </label>
-        </div>
-        <p class="hint">Automatically switch between available camera angles based on motion detection.</p>
-      `;
-    } else if (feature === "line-up-angles") {
-      fields.innerHTML = `
-        <div class="control-grid">
-          <label>Sync method
-            <select id="feature-line-up-method">
-              <option value="audio">Audio waveform</option>
-              <option value="visual">Visual marker</option>
-              <option value="timecode">Timecode</option>
-            </select>
-          </label>
-          <label>Sync offset (ms)
-            <input id="feature-line-up-offset" type="number" step="1" value="0" />
-          </label>
-        </div>
-        <p class="hint">Align multiple camera angles to a common timeline reference point.</p>
-      `;
-    } else if (feature === "camera-jobs") {
-      fields.innerHTML = `
-        <div id="camera-jobs-list" class="automation-list">
-          <p class="hint">Camera job assignment will be available when multiple angles are loaded.</p>
-        </div>
-      `;
-    } else if (feature === "audio-balance") {
-      fields.innerHTML = `
-        <div id="audio-balance-list" class="automation-list">
-          <p class="hint">Audio balance controls will be available when multiple audio sources are loaded.</p>
-        </div>
-      `;
-    } else if (feature === "override-smart-cuts") {
-      fields.innerHTML = `
-        <div class="control-grid">
-          <label>Cut mode
-            <select id="feature-cut-mode">
-              <option value="auto">Auto (shot detection)</option>
-              <option value="manual">Manual override</option>
-            </select>
-          </label>
-        </div>
-        <div id="override-cuts-list" class="automation-list">
-          <p class="hint">Override smart cut points by adding manual cut positions.</p>
-        </div>
-      `;
-    } else if (feature === "keep-shooter-in-frame") {
-      fields.innerHTML = `
-        <div class="control-grid">
-          <label>Tracking mode
-            <select id="feature-tracking-mode">
-              <option value="auto">Automatic</option>
-              <option value="center">Center weighted</option>
-              <option value="off">Off</option>
-            </select>
-          </label>
-          <label>Crop margin (%)
-            <input id="feature-crop-margin" type="number" min="0" max="50" step="5" value="10" />
-          </label>
-        </div>
-        <p class="hint">Automatically crop and track the shooter to keep them centered in frame.</p>
-      `;
-    }
-  };
-
   renderOutputHookEditor = function renderOutputHookEditor(hook, activeProfile) {
     const editor = $("output-hook-editor");
     const title = $("output-hook-title");
     const fields = $("output-hook-fields");
     if (!editor || !title || !fields) return;
     editor.hidden = false;
-    const hookLabels = {
-      "run-window": "Trim Dead Time",
-      "metric-captions": "Shot Data on Screen",
-      "frame-profiles": "Video Shape",
-      "lead-in-card": "Opening Title",
-      "brand-mark": "Your Logo",
-      "subject-track-crop": "Keep Shooter in Frame",
-    };
-    title.textContent = hookLabels[hook] || hook;
+    title.textContent = outputHookDisplayLabel(hook);
     const profile = activeProfile || {};
     const inherited = state?.opened_from_match ? state?.workspace_shared_defaults || {} : {};
     fields.innerHTML = "";
@@ -11044,7 +11324,7 @@ function wireEvents() {
         <label>Lead-in padding (s) <input id="hook-run-window-lead-in" type="number" min="0" step="0.1" value="${runWindowLeadInSeconds(profile)}" /></label>
         <label>Tail padding (s) <input id="hook-run-window-tail" type="number" min="0" step="0.1" value="${runWindowTailSeconds(profile)}" /></label>
       </div>
-      <p class="hint">${inherited.metric_caption_preset ? "Inherited defaults stay visible in Match; these values save on the selected output profile." : "Values apply to the selected output profile and feed the render plan preview."}</p>`;
+      <p class="hint">${inherited.metric_caption_preset ? "Inherited defaults stay visible in Match; these padding values save on the selected output profile." : "Stage timing is reviewed earlier in Splits/Review. Save only the extra lead-in and tail padding for this output profile here."}</p>`;
     } else if (hook === "metric-captions") {
       fields.innerHTML = `<div class="control-grid">
         <label>Preset
@@ -11062,7 +11342,7 @@ function wireEvents() {
           </select>
         </label>
       </div>
-      <p class="hint">${inherited.metric_caption_preset ? "Stage defaults come from Match workspace settings until you override them here." : "Select a metric caption preset for the output."}</p>`;
+      <p class="hint">${inherited.metric_caption_preset ? "Stage defaults come from Match workspace settings until you override them here." : "Uses the current overlay styling, but lets this output profile choose which overlay data badges render into export."}</p>`;
     } else if (hook === "frame-profiles") {
       fields.innerHTML = `<div class="control-grid">
         <label>Profile
@@ -11071,10 +11351,11 @@ function wireEvents() {
             <option value="16:9" ${profile.frame_profile === "16:9" ? "selected" : ""}>16:9</option>
             <option value="9:16" ${profile.frame_profile === "9:16" ? "selected" : ""}>9:16</option>
             <option value="1:1" ${profile.frame_profile === "1:1" ? "selected" : ""}>1:1</option>
+            <option value="4:5" ${profile.frame_profile === "4:5" ? "selected" : ""}>4:5</option>
           </select>
         </label>
       </div>
-      <p class="hint">Frame profiles map to export aspect ratios; custom width/height is not part of this profile model.</p>`;
+      <p class="hint">Stores the profile-specific aspect ratio / framing for export. Width and height still stay in the main Frame section below.</p>`;
     } else if (hook === "lead-in-card") {
       fields.innerHTML = `<div class="control-grid">
         <label>Style
@@ -11085,23 +11366,101 @@ function wireEvents() {
           </select>
         </label>
         <label>Duration (s) <input id="hook-lead-in-duration" type="number" min="0" step="0.1" value="${leadInCardDurationSeconds(profile)}" /></label>
-      </div>`;
+      </div>
+      <div class="control-grid">
+        <label>Animation
+          <select id="hook-lead-in-animation">
+            <option value="static" ${leadInCardAnimation(profile) === "static" ? "selected" : ""}>Static</option>
+            <option value="fade" ${leadInCardAnimation(profile) === "fade" ? "selected" : ""}>Fade</option>
+            <option value="slide_up" ${leadInCardAnimation(profile) === "slide_up" ? "selected" : ""}>Slide Up</option>
+          </select>
+        </label>
+        <label>Logo scale (%) <input id="hook-lead-in-logo-scale" type="number" min="20" max="400" step="5" value="${leadInCardLogoScalePercent(profile)}" /></label>
+      </div>
+      <div class="control-grid">
+        <label class="check-row"><input id="hook-lead-in-show-match" type="checkbox" ${leadInCardFieldEnabled(profile, "show_match") ? "checked" : ""} /> Match</label>
+        <label class="check-row"><input id="hook-lead-in-show-stage" type="checkbox" ${leadInCardFieldEnabled(profile, "show_stage") ? "checked" : ""} /> Stage</label>
+        <label class="check-row"><input id="hook-lead-in-show-shooter" type="checkbox" ${leadInCardFieldEnabled(profile, "show_shooter") ? "checked" : ""} /> Shooter</label>
+      </div>
+      <div class="control-grid">
+        <label class="check-row"><input id="hook-lead-in-show-division" type="checkbox" ${leadInCardFieldEnabled(profile, "show_division") ? "checked" : ""} /> Division</label>
+        <label class="check-row"><input id="hook-lead-in-show-classification" type="checkbox" ${leadInCardFieldEnabled(profile, "show_classification") ? "checked" : ""} /> Classification</label>
+        <label class="check-row"><input id="hook-lead-in-show-date" type="checkbox" ${leadInCardFieldEnabled(profile, "show_date") ? "checked" : ""} /> Date</label>
+      </div>
+      <div class="control-grid">
+        <label>Custom Title <input id="hook-lead-in-custom-title" type="text" placeholder="Optional title override" value="${escapeHtml(leadInCardTextValue(profile, "custom_title"))}" /></label>
+        <label>Custom Subtitle <input id="hook-lead-in-custom-subtitle" type="text" placeholder="Optional subtitle override" value="${escapeHtml(leadInCardTextValue(profile, "custom_subtitle"))}" /></label>
+      </div>
+      <label>Logo file
+        <div class="path-row">
+          <input id="hook-lead-in-logo-path" type="text" placeholder="Optional local logo" value="${escapeHtml(leadInCardLogoPath(profile))}" />
+          <button id="hook-lead-in-logo-pick" type="button">Choose</button>
+        </div>
+      </label>
+      <p class="hint">Style picks a title preset, while the toggles decide which saved stage, shooter, division, classification, and date details the export title should include when available. Animation and logo settings save on the selected profile.</p>`;
+      $("hook-lead-in-style")?.addEventListener("change", (event) => {
+        applyLeadInCardStyleDefaults(event.target?.value || "none");
+      });
+      $("hook-lead-in-logo-pick")?.addEventListener("click", async () => {
+        await pickPathForElement(
+          "popup_image",
+          $("hook-lead-in-logo-path"),
+          "hook-lead-in-logo-path",
+        );
+      });
     } else if (hook === "brand-mark") {
       fields.innerHTML = `<div class="control-grid">
         <label>Mark
           <select id="hook-brand-mark-select">
             <option value="none" ${brandMarkStyle(profile) === "none" ? "selected" : ""}>None</option>
             <option value="splitshot" ${brandMarkStyle(profile) === "splitshot" ? "selected" : ""}>SplitShot</option>
+            <option value="custom" ${brandMarkStyle(profile) === "custom" ? "selected" : ""}>Custom Text</option>
+            <option value="image" ${brandMarkStyle(profile) === "image" ? "selected" : ""}>Image</option>
+            <option value="image_text" ${brandMarkStyle(profile) === "image_text" ? "selected" : ""}>Image + Text</option>
           </select>
         </label>
         <label>Duration (s) <input id="hook-brand-mark-duration" type="number" min="0" step="0.1" value="${brandMarkDurationSeconds(profile)}" /></label>
-      </div>`;
+      </div>
+      <div class="control-grid">
+        <label>Text <input id="hook-brand-mark-text" type="text" placeholder="Brand text" value="${escapeHtml(brandMarkTextValue(profile))}" /></label>
+        <label>Position
+          <select id="hook-brand-mark-position">
+            <option value="top_left" ${brandMarkPosition(profile) === "top_left" ? "selected" : ""}>Top Left</option>
+            <option value="top_right" ${brandMarkPosition(profile) === "top_right" ? "selected" : ""}>Top Right</option>
+            <option value="bottom_left" ${brandMarkPosition(profile) === "bottom_left" ? "selected" : ""}>Bottom Left</option>
+            <option value="bottom_right" ${brandMarkPosition(profile) === "bottom_right" ? "selected" : ""}>Bottom Right</option>
+            <option value="center" ${brandMarkPosition(profile) === "center" ? "selected" : ""}>Center</option>
+          </select>
+        </label>
+      </div>
+      <div class="control-grid">
+        <label>Opacity (%) <input id="hook-brand-mark-opacity" type="number" min="0" max="100" step="5" value="${brandMarkOpacityPercent(profile)}" /></label>
+        <label>Text size (px) <input id="hook-brand-mark-font-size" type="number" min="8" max="96" step="1" value="${brandMarkFontSize(profile)}" /></label>
+      </div>
+      <div class="control-grid">
+        <label>Text color <input id="hook-brand-mark-text-color" type="color" value="${brandMarkTextColor(profile)}" /></label>
+        <label>Image scale (%) <input id="hook-brand-mark-image-scale" type="number" min="20" max="400" step="5" value="${brandMarkImageScalePercent(profile)}" /></label>
+      </div>
+      <label>Image file
+        <div class="path-row">
+          <input id="hook-brand-mark-image-path" type="text" placeholder="Optional local watermark image" value="${escapeHtml(brandMarkImagePath(profile))}" />
+          <button id="hook-brand-mark-image-pick" type="button">Choose</button>
+        </div>
+      </label>
+      <p class="hint">Your Logo can now be text, image, or both. Set duration to <code>0</code> to keep it visible for the full export.</p>`;
+      $("hook-brand-mark-image-pick")?.addEventListener("click", async () => {
+        await pickPathForElement(
+          "popup_image",
+          $("hook-brand-mark-image-path"),
+          "hook-brand-mark-image-path",
+        );
+      });
     } else if (hook === "subject-track-crop") {
       fields.innerHTML = `<div class="control-grid">
         <label class="check-row"><input id="hook-crop-enabled" type="checkbox" ${subjectTrackCropEnabled(profile) ? "checked" : ""} /> Enable subject track crop</label>
         <label>Margin % <input id="hook-crop-margin" type="number" min="0" max="50" step="1" value="${subjectTrackCropMarginPercent(profile)}" /></label>
       </div>
-      <p class="hint">Subject track crop follows detected subject motion to keep the competitor framed.</p>`;
+      <p class="hint">Reserved for a future tracker-backed workflow. Stage export does not currently ship an automatic keep shooter in frame feature.</p>`;
     }
   };
   $("retained-review-apply")?.addEventListener("click", () => {
@@ -12015,6 +12374,7 @@ projectPane = createProjectPane({
   setProjectDetailsDraft: (value) => { projectDetailsDraft = value; },
   getProjectFolderProbeRequestId: () => projectFolderProbeRequestId,
   setProjectFolderProbeRequestId: (value) => { projectFolderProbeRequestId = value; },
+  setForcedProjectLandingPersistedTool: (value) => { forcedProjectLandingPersistedTool = value ? normalizeToolId(value) : null; },
   controlIsActive,
   normalizeToolId,
   setActiveTool,
@@ -12038,6 +12398,7 @@ projectPane = createProjectPane({
   fileName,
   splitSeconds,
   formatNumber,
+  formatMatchType,
   formatPractiScoreTime,
   autoApplyProjectDetails,
   autoApplyPractiScoreContext,
@@ -12534,16 +12895,12 @@ installLegacyGlobalCompat({
 
 applyLayoutState();
 
-// Show landing page on first visit only (skip in test/automation environments)
+// Default to the landing page on normal app loads (skip in test/automation environments)
 const isAutomated = window.navigator.webdriver || false;
 if (!isAutomated) {
-  if (!window.localStorage.getItem("splitshot.hasVisited")) {
-    window.localStorage.setItem("splitshot.hasVisited", "true");
-    activeSurface = "landing";
-    setActiveSurface("landing", { persist: true, openPanel: false });
-  } else if (activeSurface === "landing") {
-    setActiveSurface("landing", { persist: false, openPanel: false });
-  }
+  window.localStorage.setItem("splitshot.hasVisited", "true");
+  activeSurface = "landing";
+  setActiveSurface("landing", { persist: true, openPanel: false });
 } else if (activeSurface === "landing") {
   activeSurface = "single";
   setActiveSurface("single", { persist: false, openPanel: false });

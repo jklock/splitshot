@@ -31,6 +31,14 @@ def _scale_to_width(width: int, height: int, target_width: int) -> tuple[int, in
     return target_width, int(round(height * ratio))
 
 
+def _portrait_width_for_height(target_height: int) -> int:
+    return max(2, int(round(target_height * (9 / 16))))
+
+
+def _hud_band_size(target_extent: int) -> int:
+    return max(72, int(round(target_extent * 0.18)))
+
+
 def _pip_scale(size: PipSize | int | float) -> float:
     if isinstance(size, PipSize):
         return {
@@ -105,6 +113,48 @@ def calculate_merge_canvas(
             height=p_height + s_height,
             primary_rect=Rect(0, 0, p_width, p_height),
             secondary_rect=Rect(0, p_height, s_width, s_height),
+        )
+
+    if layout == MergeLayout.FULL_SCREEN_PORTRAIT:
+        target_height = max(primary.height, secondary.height)
+        canvas_width = _portrait_width_for_height(target_height)
+        portrait_canvas = VideoAsset(width=canvas_width, height=target_height)
+        pip_rect = calculate_pip_rect(
+            portrait_canvas,
+            secondary,
+            pip_size,
+            0.5 if pip_x is None else pip_x,
+            0.82 if pip_y is None else pip_y,
+        )
+        return MergeCanvas(
+            width=canvas_width,
+            height=target_height,
+            primary_rect=Rect(0, 0, canvas_width, target_height),
+            secondary_rect=pip_rect,
+        )
+
+    if layout == MergeLayout.DUAL_CENTER_HUD:
+        target_height = max(primary.height, secondary.height)
+        p_width, p_height = _scale_to_height(primary.width, primary.height, target_height)
+        s_width, s_height = _scale_to_height(secondary.width, secondary.height, target_height)
+        gutter_width = _hud_band_size(target_height)
+        return MergeCanvas(
+            width=p_width + gutter_width + s_width,
+            height=target_height,
+            primary_rect=Rect(0, 0, p_width, p_height),
+            secondary_rect=Rect(p_width + gutter_width, 0, s_width, s_height),
+        )
+
+    if layout == MergeLayout.DUAL_TOP_HUD:
+        target_height = max(primary.height, secondary.height)
+        p_width, p_height = _scale_to_height(primary.width, primary.height, target_height)
+        s_width, s_height = _scale_to_height(secondary.width, secondary.height, target_height)
+        hud_height = _hud_band_size(target_height)
+        return MergeCanvas(
+            width=p_width + s_width,
+            height=hud_height + target_height,
+            primary_rect=Rect(0, hud_height, p_width, p_height),
+            secondary_rect=Rect(p_width, hud_height, s_width, s_height),
         )
 
     pip_rect = calculate_pip_rect(primary, secondary, pip_size, pip_x, pip_y)

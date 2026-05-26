@@ -205,6 +205,50 @@ export function createWaveformComponent({
     ctx.fillRect(Math.max(0, x - 44), 0, 88, height);
   }
 
+  function drawWaveformLane(ctx, waveform, {
+    width,
+    visible,
+    totalDuration,
+    laneTop,
+    laneHeight,
+    color,
+    baselineColor = color,
+    timeOffsetMs = 0,
+    amplitudeForTime = () => 1,
+  }) {
+    if (!Array.isArray(waveform) || waveform.length === 0 || laneHeight <= 0) return;
+
+    const laneCenter = laneTop + (laneHeight / 2);
+    const laneAmplitude = laneHeight * 0.38;
+    const lastIndex = Math.max(1, waveform.length - 1);
+
+    ctx.strokeStyle = baselineColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, laneCenter);
+    ctx.lineTo(width, laneCenter);
+    ctx.stroke();
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+
+    for (let index = 0; index < waveform.length; index += 1) {
+      const value = Number(waveform[index] || 0);
+      const sampleTime = (index / lastIndex) * totalDuration;
+      const alignedTime = sampleTime - timeOffsetMs;
+      if (alignedTime < visible.start || alignedTime > visible.end) continue;
+      const x = waveformState?.waveformX?.(alignedTime, width) ?? 0;
+      const amp = value * amplitudeForTime(alignedTime);
+      const yTop = laneCenter - (amp * laneAmplitude);
+      const yBottom = laneCenter + (amp * laneAmplitude);
+      ctx.moveTo(x, yTop);
+      ctx.lineTo(x, yBottom);
+    }
+
+    ctx.stroke();
+  }
+
   function renderWaveformShotList() {
     const list = $("waveform-shot-list");
     if (!list) return;
@@ -285,32 +329,81 @@ export function createWaveformComponent({
     const { width, height } = resizeCanvasToDisplay(canvas);
     const ctx = canvas.getContext("2d");
     const waveform = currentState()?.project?.analysis?.waveform_primary || [];
+    const secondaryWaveform = currentState()?.project?.analysis?.waveform_secondary || [];
+    const secondarySourceId = String(currentState()?.project?.analysis?.analyzed_secondary_source_id || "");
+    const hasSecondaryWaveform = secondaryWaveform.length > 0
+      && (Boolean(secondarySourceId) || (currentState()?.project?.merge_sources || []).length > 0);
     const expanded = $("cockpit-root")?.classList.contains("waveform-expanded") ?? false;
     canvas.classList.toggle("waveform-pannable", expanded && getWaveformZoomX() > 1);
     canvas.classList.toggle("waveform-panning", Boolean(getWaveformPanDrag()));
+    canvas.dataset.secondaryWaveform = hasSecondaryWaveform ? "true" : "false";
+    canvas.dataset.waveformLaneLayout = hasSecondaryWaveform ? "stacked" : "single";
+    canvas.dataset.secondarySourceId = hasSecondaryWaveform ? secondarySourceId : "";
+    canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform ? String(secondaryWaveform.length) : "0";
     const visible = waveformState?.waveformWindow?.() || { start: 0, end: durationMs(), duration: durationMs() };
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = "#102033";
     ctx.fillRect(0, 0, width, height);
     drawWaveformScale(ctx, visible, width, height);
     drawSelectedRegion(ctx, width, height);
-    ctx.strokeStyle = "#3aa0ff";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
     const totalDuration = Math.max(1, durationMs());
-    const startIndex = Math.max(0, Math.floor((visible.start / totalDuration) * waveform.length));
-    const endIndex = Math.min(waveform.length - 1, Math.ceil((visible.end / totalDuration) * waveform.length));
-    for (let index = startIndex; index <= endIndex; index += 1) {
-      const value = waveform[index] || 0;
-      const sampleTime = (index / Math.max(1, waveform.length - 1)) * totalDuration;
-      const x = waveformState?.waveformX?.(sampleTime, width) ?? 0;
-      const amp = value * waveformAmplitudeForTime(sampleTime);
-      const yTop = (height / 2) - (amp * height * 0.42);
-      const yBottom = (height / 2) + (amp * height * 0.42);
-      ctx.moveTo(x, yTop);
-      ctx.lineTo(x, yBottom);
+    const laneGap = hasSecondaryWaveform ? Math.max(12, Math.round(height * 0.06)) : 0;
+    const primaryLaneHeight = hasSecondaryWaveform ? Math.max(72, Math.round(height * 0.54)) : height;
+    const secondaryLaneTop = primaryLaneHeight + laneGap;
+    const secondaryLaneHeight = hasSecondaryWaveform ? Math.max(44, height - secondaryLaneTop - 20) : 0;
+
+    if (hasSecondaryWaveform) {
+      const separatorY = Math.max(0, secondaryLaneTop - Math.max(4, Math.round(laneGap / 2)));
+      ctx.strokeStyle = "rgba(226, 232, 240, 0.16)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, separatorY);
+      ctx.lineTo(width, separatorY);
+      ctx.stroke();
+      drawOutlinedText(
+        ctx,
+        "Primary",
+        12,
+        10,
+        "rgba(58, 160, 255, 0.94)",
+        "800 11px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
+        3,
+      );
+      const syncOffsetMs = Math.round(Number(currentState()?.project?.analysis?.sync_offset_ms) || 0);
+      drawOutlinedText(
+        ctx,
+        `Secondary • ${syncOffsetMs > 0 ? "+" : ""}${syncOffsetMs} ms`,
+        12,
+        secondaryLaneTop + 6,
+        "rgba(57, 208, 111, 0.96)",
+        "800 11px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif",
+        3,
+      );
     }
-    ctx.stroke();
+
+    drawWaveformLane(ctx, waveform, {
+      width,
+      visible,
+      totalDuration,
+      laneTop: 0,
+      laneHeight: primaryLaneHeight,
+      color: "#3aa0ff",
+      baselineColor: "rgba(58, 160, 255, 0.18)",
+      amplitudeForTime: waveformAmplitudeForTime,
+    });
+
+    if (hasSecondaryWaveform) {
+      drawWaveformLane(ctx, secondaryWaveform, {
+        width,
+        visible,
+        totalDuration,
+        laneTop: secondaryLaneTop,
+        laneHeight: secondaryLaneHeight,
+        color: "#39d06f",
+        baselineColor: "rgba(57, 208, 111, 0.24)",
+        timeOffsetMs: Math.round(Number(currentState()?.project?.analysis?.sync_offset_ms) || 0),
+      });
+    }
 
     const beep = waveformBeepDragging
       ? (getPendingDragTimeMs() ?? currentState()?.project?.analysis?.beep_time_ms_primary)

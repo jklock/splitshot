@@ -7,6 +7,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 INDEX_HTML = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "index.html"
 APP_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "app.js"
+MATCH_VIEW_JS = REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "views" / "match-view.js"
 SERVER_PY = REPO_ROOT / "src" / "splitshot" / "browser" / "server.py"
 
 
@@ -36,13 +37,20 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert 'data-surface="single"' in html
     assert 'data-surface="multi"' in html
     assert 'data-surface="library"' in html
+    assert html.count('data-shell-family="stage-workspace"') == 3
+    assert 'data-shell-view="stage"' in html
+    assert 'data-shell-view="match"' in html
+    assert 'data-shell-view="library"' in html
     assert "Stage Video Edit" in html
     assert "Match Video Edit" in html
     assert "Performance Library" in html
     assert "Match Recap" in html
     assert "Stage Composite" in html
-    assert "Trim Dead Time" in html
-    assert "Shot Data on Screen" in html
+    assert "Video &amp; Data" in html
+    assert "Run Padding" in html
+    assert "Overlay Data" in html
+    assert "Aspect Ratio / Framing" in html
+    assert "Stage Recipe" not in html
     assert 'window.localStorage.getItem("splitshot.activeSurface")' in source
     assert 'callApi("/api/output-profiles/list",' in source
     assert 'callApi("/api/workspace/stage/clip/list", { stage_id: stageId })' in source
@@ -51,6 +59,11 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert "Review Source" in html
     assert "Shared Defaults" in html
     assert "Stage Overrides" in html
+    assert "function workspaceShell(viewName) {" in source
+    assert '[data-shell-family="stage-workspace"][data-shell-view="${viewName}"]' in source
+    assert 'const shell = workspaceShell(viewName);' in source
+    assert 'document.querySelector(".match-workspace-shell")' not in source
+    assert 'document.querySelector(".library-workspace-shell")' not in source
     assert 'callApi("/api/workspace/defaults"' in source
     assert 'callApi("/api/workspace/stage/override"' in source
 
@@ -61,12 +74,14 @@ def test_non_landing_views_avoid_emoji_and_use_compact_full_width_workspaces() -
     landing_end = html.index('<div id="view-stage"', landing_start)
     view_root_start = html.index('<div id="view-root">')
     non_landing_html = html[view_root_start:landing_start] + html[landing_end:]
+    for functional_glyph in ["⚙", "🔒", "🔓", "◀", "▶"]:
+        non_landing_html = non_landing_html.replace(functional_glyph, "")
     emoji_pattern = re.compile(r"[\U0001F300-\U0001FAFF\u2600-\u27BF]")
     assert not emoji_pattern.search(non_landing_html)
     assert "<h2>Match Video Edit</h2>" not in non_landing_html
     assert "<h2>Performance Library</h2>" not in non_landing_html
-    assert 'class="workspace-action-bar" aria-label="Match workspace actions"' in html
-    assert 'class="workspace-action-bar" aria-label="Performance library actions"' in html
+    assert 'class="status-bar workspace-status-bar" aria-label="Match workspace status"' in html
+    assert 'class="status-bar workspace-status-bar" aria-label="Performance library status"' in html
     layout_css = (
         REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "styles" / "layout.css"
     ).read_text(encoding="utf-8")
@@ -74,6 +89,18 @@ def test_non_landing_views_avoid_emoji_and_use_compact_full_width_workspaces() -
     assert ".library-workspace {\n  width: 100%;" in layout_css
     assert ".view-match {\n  background: #13151a;\n  padding: 0;" in layout_css
     assert ".view-library {\n  background: #0f1115;\n  padding: 0;" in layout_css
+
+
+def test_match_shell_contract_keeps_preview_tiles_and_pinned_lower_pane() -> None:
+    html = INDEX_HTML.read_text(encoding="utf-8")
+    match_view = MATCH_VIEW_JS.read_text(encoding="utf-8")
+
+    assert 'aria-label="Match stage selection and lower detail pane"' in html
+    assert 'class="workspace-lower-pane" aria-label="Selected stage information"' in html
+    assert 'id="match-stage-detail-panel"' in html
+    assert 'id="match-stage-workflow-panel"' in html
+    assert '<video class="match-stage-preview-video"' in match_view
+    assert "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export." in match_view
 
 
 def test_ui_routes_are_registered_on_server() -> None:

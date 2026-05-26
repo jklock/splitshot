@@ -125,6 +125,27 @@ def test_discover_remote_matches_returns_stable_match_shape() -> None:
     ]
 
 
+def test_remote_match_from_dict_normalizes_steel_challenge_aliases() -> None:
+    match = RemotePractiScoreMatch.from_dict(
+        {
+            "remote_id": "match-300",
+            "label": "Tuesday Night Steel",
+            "match_type": "Steel Challenge",
+            "event_name": "Tuesday Night Steel",
+            "event_date": "2026-05-23",
+        }
+    )
+
+    assert match == RemotePractiScoreMatch(
+        remote_id="match-300",
+        label="Tuesday Night Steel",
+        match_type="steel_challenge",
+        event_name="Tuesday Night Steel",
+        event_date="2026-05-23",
+        details_url="",
+    )
+
+
 def test_download_remote_match_artifacts_writes_deterministic_cache_metadata(
     tmp_path: Path,
 ) -> None:

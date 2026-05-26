@@ -7,7 +7,7 @@ This is the recommended path from raw stage video to finished local export.
 - Launch SplitShot from the root [README.md](../../README.md).
 - Keep the primary video on a local drive.
 - Keep your PractiScore login available if official match context is needed. A local CSV/TXT export still works as the fallback path.
-- Keep secondary angles or graphics ready if you plan to use PiP.
+- Keep secondary angles or graphics ready if you plan to use added media.
 
 ## End-To-End Flow
 
@@ -23,7 +23,7 @@ This is the recommended path from raw stage video to finished local export.
 10. Download the relevant PractiScore CSV/TXT result in your browser, then return to SplitShot and click `Select PractiScore File`.
 11. Continue in the existing local `Match type`, `Stage #`, `Competitor name`, and `Place` controls.
 12. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.
-13. Open [panes/pip.md](panes/pip.md) if added media is needed; sync and place each item.
+13. Open [panes/pip.md](panes/pip.md) if added media is needed; use `Compose` to sync and place each item.
 14. Open [panes/score.md](panes/score.md) for final score and penalty edits if timing changed.
 15. Open [panes/popup.md](panes/popup.md) for shot-linked or time-based markers, including text/image callouts.
 16. Open [panes/overlay.md](panes/overlay.md) and configure badge layout, locks, fonts, colors, and score-token colors.
@@ -38,16 +38,19 @@ This is the recommended path from raw stage video to finished local export.
 - Keep a manual PractiScore CSV/TXT export around when remote sync is unavailable or when the staged source should change again.
 - Finish timing before scoring because score rows follow the shot list.
 - Score before Markers when shot-linked markers should show score and penalties.
-- Configure PiP before final overlay placement when added media changes where badges should sit.
+- Configure Compose before final overlay placement when added media changes where badges should sit.
 - Configure Overlay before Review when text boxes need to align with the final badge stack.
 - Check Metrics before Export when you need confidence, raw delta, or CSV confirmation.
-- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and PiP.
+- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and added media.
 
 ## Bundle Guidance
 
 - Choose the project folder early when you want a reusable bundle.
 - Keep using the same folder through revisions.
 - In Match Video Edit, use `New Workspace`, `Open Workspace`, and `Save Workspace` to manage the multi-stage bundle folder.
+- When you open or save a stage project that belongs to a Match workspace, SplitShot now auto-attaches that stage back into Match membership so it is ready when you switch surfaces.
+- Use [panes/match.md](panes/match.md) when you need a section-by-section explanation of `Stages`, `Defaults`, `Overrides`, `Recap`, `Composite`, `Export`, or `Match Settings`.
+- In `Match Video Edit`, stage cards can show live preview video when SplitShot can resolve the saved stage project, and the selected-stage lower pane stays pinned while `Composite` or `Export` use the lower workflow area beneath it.
 - Use `Open` on a Match stage card to jump into Stage Video Edit, then use `Return to Match` in the shell header to restore the workspace context.
 - Use `Match Recap` to render selected stages into one recap file, or `Batch Export` to queue `Stage Output` or `Stage Composite` renders across the saved workspace.
 - Reopen the bundle from Project or Match when you need another export version.
@@ -62,4 +65,3 @@ This is the recommended path from raw stage video to finished local export.
 
 Keep this checklist handy when you move between Stage and Match workflows.
 <!-- workflow-end -->
-

@@ -140,7 +140,6 @@ id:expand-scoring
 id:expand-timing
 id:expand-waveform
 id:export-export-log
-id:feature-close
 id:export-path
 id:export-preset
 id:export-video
@@ -156,6 +155,7 @@ id:library-backup-create
 id:library-backup-restore
 id:library-export-csv
 id:library-export-json
+id:library-error-retry
 id:library-open-settings
 id:library-filter-discipline
 id:library-notes-save
@@ -163,6 +163,7 @@ id:library-notes-text
 id:library-open-stage
 id:library-open-workspace
 id:library-refresh
+id:library-stale-refresh
 id:library-search
 id:library-setting-auto-refresh
 id:library-setting-default-sort
@@ -432,6 +433,10 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         in inventory_plan
     )
     assert "Project/Match/Performance seam" in inventory_plan
+    assert (
+        "Match-workspace media-backed stage tiles and selected-stage lower-pane truth across lower-pane workflow switches"
+        in inventory_plan
+    )
     assert "Performance Library loading, empty, stale, and manual-refresh lifecycle proof" in inventory_plan
 
     for snippet in [
@@ -439,10 +444,11 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "Phase 1: Shared Shell And Drag/Layout Interactions",
         "Phase 2: Splits And Score End-To-End Closeout",
         "Phase 3: Markers, Review, Overlay, And Color Picker",
-        "Phase 4: PiP, Merge, Export Settings, And Export Log",
+        "Phase 4: Compose, Merge, Export Settings, And Export Log",
         "Phase 5: Settings And ShotML Full Coverage",
         "Phase 6: Cross-Surface Final Truth Gate",
         "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",
+        "Match live preview tiles plus selected-stage lower-pane persistence across Stage Composite and Batch Export proof",
         "Performance Library loading, empty, stale, and manual-refresh lifecycle proof",
         "Performance Library stage/workspace reopen proof from selected records",
     ]:

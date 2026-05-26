@@ -64,18 +64,62 @@ IDPA_PENALTY_SECONDS = {
     "finger_pe": 3.0,
 }
 
+_MATCH_TYPE_ALIASES = {
+    "uspsa": "uspsa",
+    "ipsc": "ipsc",
+    "idpa": "idpa",
+    "steel": "steel_challenge",
+    "steelchallenge": "steel_challenge",
+    "steel_challenge": "steel_challenge",
+    "scsa": "steel_challenge",
+}
+
+_STEEL_MISS_KEYS = (
+    "Miss",
+    "Misses",
+    "Plate Miss",
+    "Plate Misses",
+)
+
+_STEEL_STOP_PLATE_KEYS = (
+    "Stop Plate Failure",
+    "Stop Plate Failures",
+    "Stop Plate Miss",
+    "Stop Plate Misses",
+    "StopPlateFailure",
+    "StopPlateFailures",
+    "Stop Plate",
+    "Stop Plates",
+    "SPF",
+)
+
+_STEEL_TOTAL_PENALTY_KEYS = (
+    "Total Penalty",
+    "Penalty",
+    "Penalties",
+    "Total Penalties",
+)
+
+_STEEL_RAW_TIME_KEYS = ("Raw Time", "Stage Raw Time")
+_STEEL_FINAL_TIME_KEYS = ("Final Time", "Total Time")
+_STEEL_TIME_KEYS = ("Time", "Stage Time")
+_STEEL_STAGE_PLACE_KEYS = ("Stage Place", "Place")
+
 
 def normalize_match_type(value: str | None) -> str:
-    normalized = (value or "").strip().lower()
-    if normalized not in {"uspsa", "ipsc", "idpa"}:
-        raise ValueError("Match type must be USPSA, IPSC, or IDPA.")
-    return normalized
+    normalized = re.sub(r"[\s-]+", "_", (value or "").strip().lower())
+    canonical = _MATCH_TYPE_ALIASES.get(normalized)
+    if canonical is None:
+        raise ValueError("Match type must be USPSA, IPSC, IDPA, or Steel Challenge.")
+    return canonical
 
 
 def default_ruleset_for_match_type(match_type: str | None) -> str:
     normalized = normalize_match_type(match_type)
     if normalized == "idpa":
         return "idpa_time_plus"
+    if normalized == "steel_challenge":
+        return "steel_challenge"
     return f"{normalized}_minor"
 
 
@@ -190,9 +234,15 @@ def _infer_match_type(path: Path) -> str:
     text = path.read_text(encoding="utf-8", errors="replace")
     region_match = re.search(r"^\$INFO\s+Region:(?P<region>\w+)", text, re.MULTILINE)
     if region_match:
-        region = region_match.group("region").strip().lower()
-        if region in {"uspsa", "ipsc", "idpa"}:
-            return region
+        try:
+            return normalize_match_type(region_match.group("region"))
+        except ValueError:
+            pass
+    lowered_text = text.lower()
+    if "steel challenge" in lowered_text or "scsa" in lowered_text:
+        return "steel_challenge"
+    if "stop plate" in lowered_text and "stage place" in lowered_text:
+        return "steel_challenge"
     if "place overall" in text.lower() and "power factor" in text.lower():
         return "uspsa"
     raise ValueError("Could not infer the PractiScore match type from the selected file.")
@@ -393,6 +443,14 @@ def import_practiscore_stage(
         raise ValueError("Competitor name is required before importing PractiScore results.")
     if normalized == "idpa":
         return _import_idpa(results_path, display_name, stage, clean_name, competitor_place)
+    if normalized == "steel_challenge":
+        return _import_steel_challenge_report(
+            results_path,
+            display_name,
+            stage,
+            clean_name,
+            competitor_place,
+        )
     return _import_hit_factor_report(
         results_path,
         display_name,
@@ -627,6 +685,104 @@ def _import_hit_factor_report(
     )
 
 
+def _import_steel_challenge_report(
+    path: Path,
+    source_name: str,
+    stage_number: int,
+    competitor_name: str,
+    competitor_place: int | None,
+) -> PractiScoreStageImport:
+    report = _load_hit_factor_report(path)
+    competitor_rows = report.competitor_rows
+    stage_rows = report.stage_rows
+    stage_results = report.stage_results
+
+    competitor_row = _find_competitor_row(
+        competitor_rows,
+        competitor_name,
+        competitor_place,
+        place_key="Place Overall",
+        first_name_key="FirstName",
+        last_name_key="LastName",
+    )
+    competitor_id = str(competitor_row.get("Comp", "")).strip()
+    stage_key = str(stage_number)
+    stage_result = next(
+        (
+            row
+            for row in stage_results
+            if str(row.get("Comp", "")).strip() == competitor_id
+            and str(row.get("Stage", "")).strip() == stage_key
+        ),
+        None,
+    )
+    if stage_result is None:
+        raise ValueError(
+            f"No stage {stage_number} result was found for {competitor_name} in {source_name}."
+        )
+
+    (
+        raw_seconds,
+        final_time,
+        manual_penalties,
+        penalty_counts,
+        score_counts,
+    ) = _steel_stage_result_details(stage_result)
+    stage_info = stage_rows.get(stage_key, {})
+    imported_stage = ImportedStageScore(
+        source_name=source_name,
+        source_path=str(path),
+        match_type="steel_challenge",
+        competitor_name=_row_name(competitor_row, "FirstName", "LastName"),
+        competitor_place=_int_or_none(competitor_row.get("Place Overall")),
+        stage_number=stage_number,
+        stage_name=str(stage_info.get("Stage_name", "")).strip() or f"Stage {stage_number}",
+        division=str(competitor_row.get("Division", "")).strip(),
+        classification=str(competitor_row.get("Class", "")).strip(),
+        raw_seconds=raw_seconds,
+        aggregate_points=0.0,
+        shot_penalties=0.0,
+        final_time=final_time,
+        stage_place=_int_or_none(_first_present_value(stage_result, *_STEEL_STAGE_PLACE_KEYS)),
+        score_counts=score_counts,
+    )
+    comparison_competitors = []
+    competitor_row_by_id = {
+        str(row.get("Comp", "")).strip(): row for row in competitor_rows if row.get("Comp")
+    }
+    competitor_name_by_id = {
+        competitor_id: _row_name(row, "FirstName", "LastName")
+        for competitor_id, row in competitor_row_by_id.items()
+    }
+    for sr in stage_results:
+        if str(sr.get("Stage", "")).strip() != stage_key:
+            continue
+        sr_comp_id = str(sr.get("Comp", "")).strip()
+        sr_name = competitor_name_by_id.get(sr_comp_id)
+        if not sr_name or sr_name == imported_stage.competitor_name:
+            continue
+        sr_row = competitor_row_by_id.get(sr_comp_id)
+        sr_raw_seconds, sr_final_time, _manual, _penalties, _scores = _steel_stage_result_details(sr)
+        comparison_competitors.append(
+            PractiScoreCompetitorOption(
+                name=sr_name,
+                place=_int_or_none(sr_row.get("Place Overall")) if sr_row else None,
+                division=str(sr_row.get("Division", "")).strip() if sr_row else "",
+                classification=str(sr_row.get("Class", "")).strip() if sr_row else "",
+                raw_seconds=sr_raw_seconds,
+                final_time=sr_final_time,
+                stage_place=_int_or_none(_first_present_value(sr, *_STEEL_STAGE_PLACE_KEYS)),
+            )
+        )
+    return PractiScoreStageImport(
+        ruleset="steel_challenge",
+        manual_penalties=manual_penalties,
+        penalty_counts=penalty_counts,
+        imported_stage=imported_stage,
+        comparison_competitors=comparison_competitors,
+    )
+
+
 def _find_competitor_row(
     rows: list[dict[str, str]],
     competitor_name: str,
@@ -724,6 +880,67 @@ def _competitor_options(
             _normalize_name(option.name),
         ),
     )
+
+
+def _first_present_value(row: dict[str, str], *keys: str) -> str | None:
+    for key in keys:
+        value = row.get(key)
+        if value not in {None, ""} and str(value).strip():
+            return str(value)
+    return None
+
+
+def _steel_stage_result_details(
+    stage_result: dict[str, str],
+) -> tuple[float, float, float, dict[str, float], dict[str, float]]:
+    raw_time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_RAW_TIME_KEYS))
+    final_time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_FINAL_TIME_KEYS))
+    time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_TIME_KEYS))
+    if raw_time_candidate is None and time_candidate is None and final_time_candidate is None:
+        raise ValueError("Stage Time is missing from the PractiScore export.")
+
+    total_penalty = _float_or_zero(
+        _first_present_value(stage_result, *_STEEL_TOTAL_PENALTY_KEYS)
+    )
+    raw_seconds = raw_time_candidate
+    if raw_seconds is None:
+        if final_time_candidate is not None and time_candidate is not None and total_penalty > 0 and abs(time_candidate - final_time_candidate) < 1e-9:
+            raw_seconds = max(0.0, final_time_candidate - total_penalty)
+        else:
+            raw_seconds = time_candidate if time_candidate is not None else final_time_candidate or 0.0
+    final_time = final_time_candidate if final_time_candidate is not None else raw_seconds + total_penalty
+    if total_penalty <= 0 and final_time > raw_seconds:
+        total_penalty = max(0.0, final_time - raw_seconds)
+
+    misses = _float_or_zero(_first_present_value(stage_result, *_STEEL_MISS_KEYS))
+    stop_plate_failures = _float_or_zero(
+        _first_present_value(stage_result, *_STEEL_STOP_PLATE_KEYS)
+    )
+    accounted_penalty = misses * 3.0 + stop_plate_failures * 30.0
+    if stop_plate_failures == 0 and total_penalty > misses * 3.0:
+        derived_stop_plate_failures = round((total_penalty - (misses * 3.0)) / 30.0)
+        if derived_stop_plate_failures > 0:
+            stop_plate_failures = float(derived_stop_plate_failures)
+            accounted_penalty = misses * 3.0 + stop_plate_failures * 30.0
+
+    manual_penalties = max(0.0, total_penalty - accounted_penalty)
+    penalty_counts = {
+        key: value
+        for key, value in {
+            "steel_misses": misses,
+            "stop_plate_failures": stop_plate_failures,
+        }.items()
+        if value
+    }
+    score_counts = {
+        label: value
+        for label, value in {
+            "Plate Miss": misses,
+            "Stop Plate Failure": stop_plate_failures,
+        }.items()
+        if value
+    }
+    return raw_seconds, final_time, manual_penalties, penalty_counts, score_counts
 
 
 def _name_matches(input_name: str, first_name: str, last_name: str) -> bool:

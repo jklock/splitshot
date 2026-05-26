@@ -8,7 +8,9 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     OverlayPosition,
+    VideoAsset,
 )
+import splitshot.ui.controller as controller_module
 from splitshot.ui.controller import ProjectController
 
 
@@ -154,6 +156,50 @@ class TestWorkspaceLifecycle:
         c.save_workspace()
         c.open_workspace(str(ws_path))
         assert list(c.workspace.stage_entries.keys()) == original_stage_ids
+
+    def test_open_project_inside_saved_workspace_auto_attaches_stage_membership(
+        self,
+        tmp_path,
+    ) -> None:
+        workspace_owner = ProjectController()
+        workspace_owner.new_workspace()
+        workspace_owner.workspace.name = "Owning Match"
+        workspace_path = tmp_path / "owning-match"
+        workspace_owner.save_workspace(str(workspace_path))
+
+        workspace_owner.new_project()
+        workspace_owner.project.name = "Auto Attached Stage"
+        stage_path = workspace_path / "Stages" / "stage_auto"
+        workspace_owner.save_project(str(stage_path))
+
+        controller = ProjectController()
+        controller.open_project(str(stage_path))
+
+        assert controller.workspace is not None
+        assert controller.workspace_path == workspace_path
+        assert "stage_auto" in controller.workspace.stage_entries
+        assert controller.workspace.stage_entries["stage_auto"].display_name == "Auto Attached Stage"
+        assert controller.active_stage_id == "stage_auto"
+        assert controller._return_to_workspace_available is True
+
+    def test_save_project_without_saved_workspace_auto_creates_unsaved_match_membership(
+        self,
+        controller,
+        tmp_path,
+    ) -> None:
+        controller.new_project()
+        controller.project.name = "Standalone Stage"
+
+        project_path = tmp_path / "standalone-stage"
+        controller.save_project(str(project_path))
+
+        assert controller.workspace is not None
+        assert controller.workspace_path is None
+        assert controller.active_stage_id == controller.project.id
+        assert controller.project.id in controller.workspace.stage_entries
+        entry = controller.workspace.stage_entries[controller.project.id]
+        assert entry.display_name == "Standalone Stage"
+        assert entry.relative_project_path == str(project_path.resolve())
 
 
 class TestStageMembership:
@@ -633,6 +679,22 @@ class TestStageClips:
         result = controller.workspace_stage_clip_remove("s1", "nonexistent")
         assert result is False
 
+    def test_reorder_clip_within_stage_updates_clip_sequence(self, controller):
+        """Reordering a clip persists the new composite order."""
+        controller.new_workspace()
+        first = controller.workspace_stage_clip_add("s1", "/tmp/first.mp4", "primary")[0]
+        controller.workspace_stage_clip_add("s1", "/tmp/second.mp4", "follow")
+        controller.workspace_stage_clip_add("s1", "/tmp/third.mp4", "detail")
+
+        reordered = controller.workspace_stage_clip_reorder("s1", first["clip_id"], 2)
+
+        assert reordered is not None
+        assert [clip["source_path"] for clip in reordered] == [
+            "/tmp/second.mp4",
+            "/tmp/third.mp4",
+            "/tmp/first.mp4",
+        ]
+
     def test_clips_isolated_per_stage(self, controller):
         """Clips for one stage don't leak to another."""
         controller.new_workspace()
@@ -801,3 +863,145 @@ class TestAngleDirectorPersistence:
         assert plan["success"] is True
         assert plan["has_overrides"] is True
         assert plan["cut_plan"][0]["start_ms"] == 90
+
+    def test_angle_director_plan_merges_generated_cuts_with_persisted_override(
+        self, controller
+    ):
+        """Overrides replace the matching generated slot without dropping the rest of the plan."""
+        controller.new_workspace()
+        first_clip = controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")[0]
+        controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")
+        profile = controller.output_profile_create("stage", "s1", "Composite", "stage_composite")
+
+        override = controller.angle_director_override_cut(
+            "s1",
+            first_clip["clip_id"],
+            1,
+            start_ms=250,
+            duration_ms=500,
+            output_id=profile["output_id"],
+        )
+
+        assert override["success"] is True
+        plan = controller.angle_director_plan("s1", profile["output_id"])
+        assert plan["success"] is True
+        assert len(plan["cut_plan"]) == 2
+        assert plan["cut_plan"][1]["clip_id"] == first_clip["clip_id"]
+        assert plan["cut_plan"][1]["start_ms"] == 250
+        assert plan["cut_plan"][1]["duration_ms"] == 500
+
+    def test_angle_director_clear_cut_removes_only_requested_override(self, controller):
+        """Clearing one override preserves other persisted cut decisions."""
+        controller.new_workspace()
+        first_clip = controller.workspace_stage_clip_add("s1", "/tmp/1.mp4", "primary")[0]
+        second_clip = controller.workspace_stage_clip_add("s1", "/tmp/2.mp4", "follow")[-1]
+        profile = controller.output_profile_create("stage", "s1", "Composite", "stage_composite")
+
+        controller.angle_director_override_cut(
+            "s1",
+            first_clip["clip_id"],
+            0,
+            start_ms=100,
+            duration_ms=200,
+            output_id=profile["output_id"],
+        )
+        controller.angle_director_override_cut(
+            "s1",
+            second_clip["clip_id"],
+            1,
+            start_ms=300,
+            duration_ms=400,
+            output_id=profile["output_id"],
+        )
+
+        cleared = controller.angle_director_clear_cut("s1", 0, profile["output_id"])
+
+        assert cleared["success"] is True
+        assert len(cleared["cut_plan"]) == 1
+        assert cleared["cut_plan"][0]["clip_id"] == second_clip["clip_id"]
+
+
+class TestWorkspaceRecapRender:
+    """Test recap rendering orchestration on controller truth."""
+
+    def test_workspace_recap_render_uses_transition_and_result_cards(
+        self, controller, tmp_path, monkeypatch
+    ):
+        """Recap render threads transition and result-card mode into the final render sequence."""
+        controller.new_workspace()
+        controller.workspace_add_stage("s1", "Stage 1")
+        controller.workspace_add_stage("s2", "Stage 2")
+        controller.workspace.stage_entries["s1"].source_media_present = True
+        controller.workspace.stage_entries["s2"].source_media_present = True
+        workspace_path = tmp_path / "recap-workspace"
+        controller.save_workspace(str(workspace_path))
+
+        for stage_id in ("s1", "s2"):
+            controller.new_project()
+            controller.project.primary_video = VideoAsset(
+                path=f"/tmp/{stage_id}.mp4",
+                width=640,
+                height=360,
+                duration_ms=1000,
+                fps=30.0,
+            )
+            assert controller._save_stage_project(stage_id, controller.project) is True
+
+        def fake_export_project(project, output_path, progress_callback=None, log_callback=None):
+            path = controller_module.Path(output_path)
+            path.write_bytes(b"segment")
+            return path
+
+        def fake_probe_video(path):
+            return VideoAsset(
+                path=str(path),
+                width=640,
+                height=360,
+                duration_ms=1000,
+                fps=30.0,
+            )
+
+        rendered_cards: list[str] = []
+        render_calls: list[dict] = []
+
+        def fake_render_card_video(self, title, detail_lines, output_path, **kwargs):
+            rendered_cards.append(title)
+            controller_module.Path(output_path).write_bytes(b"card")
+            return controller_module.Path(output_path)
+
+        def fake_render_sequence(self, sequence_paths, recap_path, **kwargs):
+            recap_path.write_bytes(b"recap")
+            render_calls.append(
+                {
+                    "paths": [controller_module.Path(path).name for path in sequence_paths],
+                    "transition": kwargs["transition"],
+                }
+            )
+            return {"success": True, "sequence_count": len(sequence_paths)}
+
+        monkeypatch.setattr(controller_module, "export_project", fake_export_project)
+        monkeypatch.setattr(controller_module, "probe_video", fake_probe_video)
+        monkeypatch.setattr(ProjectController, "_render_recap_card_video", fake_render_card_video)
+        monkeypatch.setattr(ProjectController, "_render_recap_sequence", fake_render_sequence)
+
+        result = controller.workspace_recap_render(
+            stage_ids=["s1", "s2"],
+            transition="fade",
+            result_card="each",
+        )
+
+        assert result["success"] is True
+        assert result["transition"] == "fade"
+        assert result["result_card"] == "each"
+        assert rendered_cards == ["Stage 1", "Stage 2"]
+        assert render_calls == [
+            {
+                "paths": [
+                    "s1.mp4",
+                    "s1-result-card.mp4",
+                    "s2.mp4",
+                    "s2-result-card.mp4",
+                ],
+                "transition": "fade",
+            }
+        ]

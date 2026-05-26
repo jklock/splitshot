@@ -30,6 +30,19 @@ export function createLibraryView({
     return record?.library_record_id || record?.stage_id || record?.match_id || "";
   }
 
+  function recordDisplayName(record) {
+    return record?.display_name || record?.competitor_name || libraryRecordId(record) || "Untitled";
+  }
+
+  function formatTimestamp(value) {
+    if (!value) return "--";
+    try {
+      return new Date(value).toLocaleString();
+    } catch {
+      return String(value);
+    }
+  }
+
   function normalizedDiscipline(record) {
     const raw = String(record?.discipline || "")
       .trim()
@@ -38,6 +51,77 @@ export function createLibraryView({
     if (raw.startsWith("uspsa")) return "uspsa";
     if (raw.startsWith("idpa")) return "idpa";
     return raw;
+  }
+
+  function recordMatchesSearch(record, searchTerm) {
+    if (!searchTerm) return true;
+    const haystack = [
+      record?.display_name,
+      record?.competitor_name,
+      record?.event_date,
+      record?.discipline,
+      record?.stage_id,
+      record?.match_id,
+      record?.library_record_id,
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    return haystack.includes(searchTerm);
+  }
+
+  function resolveSelectedRecord(records = []) {
+    const selectedRecordId = libraryRecordId(getSelectedLibraryRecord());
+    const current = records.find((record) => libraryRecordId(record) === selectedRecordId) || null;
+    const nextRecord = current || records[0] || null;
+    if (nextRecord && libraryRecordId(nextRecord) !== selectedRecordId) {
+      setSelectedLibraryRecord(nextRecord);
+    }
+    return nextRecord;
+  }
+
+  function renderInspectorPanels(records = [], selectedRecord = null, { searchTerm = "", filterDiscipline = "" } = {}) {
+    const overviewStatus = $("library-overview-inspector-status");
+    const overviewPanel = $("library-overview-inspector-panel");
+    const analyticsStatus = $("library-analytics-inspector-status");
+    const analyticsPanel = $("library-analytics-inspector-panel");
+    const detailStatus = $("library-detail-actions-status");
+
+    if (overviewStatus) {
+      overviewStatus.textContent = `${records.length} visible record(s)${filterDiscipline ? ` • ${filterDiscipline.toUpperCase()}` : ""}`;
+    }
+    if (overviewPanel) {
+      overviewPanel.innerHTML = `
+        <dl class="details workspace-summary-list">
+          <div><dt>Visible records</dt><dd>${escapeHtml(records.length)}</dd></div>
+          <div><dt>Search</dt><dd>${escapeHtml(searchTerm || "No search filter")}</dd></div>
+          <div><dt>Discipline</dt><dd>${escapeHtml(filterDiscipline ? filterDiscipline.toUpperCase() : "All disciplines")}</dd></div>
+          <div><dt>Selected</dt><dd>${escapeHtml(selectedRecord ? recordDisplayName(selectedRecord) : "No record selected")}</dd></div>
+        </dl>
+      `;
+    }
+
+    if (analyticsStatus) {
+      analyticsStatus.textContent = selectedRecord
+        ? `${recordDisplayName(selectedRecord)} • ${selectedRecord.discipline || "No discipline"}`
+        : "Charts reflect the current filter scope.";
+    }
+    if (analyticsPanel) {
+      analyticsPanel.innerHTML = `
+        <dl class="details workspace-summary-list">
+          <div><dt>Current scope</dt><dd>${escapeHtml(filterDiscipline ? filterDiscipline.toUpperCase() : "All records")}</dd></div>
+          <div><dt>Selected record</dt><dd>${escapeHtml(selectedRecord ? recordDisplayName(selectedRecord) : "No record selected")}</dd></div>
+          <div><dt>Event date</dt><dd>${escapeHtml(selectedRecord?.event_date || "--")}</dd></div>
+          <div><dt>Updated</dt><dd>${escapeHtml(formatTimestamp(selectedRecord?.updated_at || selectedRecord?.event_date))}</dd></div>
+        </dl>
+        <p class="hint workspace-panel-note">Use the Performance rail to switch between overview, filters, detail actions, analytics notes, backup, and settings while keeping the selected record in view below.</p>
+      `;
+    }
+
+    if (detailStatus) {
+      detailStatus.textContent = selectedRecord
+        ? `Working with ${recordDisplayName(selectedRecord)}`
+        : "Select a record to reopen, tag, or annotate it.";
+    }
   }
 
   function renderLibrarySummaryTiles() {
@@ -177,21 +261,56 @@ export function createLibraryView({
     renderLibrarySummaryTiles();
     const list = $("library-record-list");
     if (!list) return;
+    const allRecords = currentRecords();
     const filterDiscipline = $("library-filter-discipline")?.value || "";
     const sortBy = $("library-sort")?.value || "event_date";
-    const selectedRecordId = libraryRecordId(getSelectedLibraryRecord());
-    let filtered = currentRecords();
+    const searchTerm = String($("library-search")?.value || "").trim().toLowerCase();
+    let filtered = [...allRecords];
     if (filterDiscipline) {
       filtered = filtered.filter((record) => normalizedDiscipline(record) === filterDiscipline);
+    }
+    if (searchTerm) {
+      filtered = filtered.filter((record) => recordMatchesSearch(record, searchTerm));
     }
     if (sortBy === "score") filtered.sort((a, b) => (b.score || 0) - (a.score || 0));
     else if (sortBy === "display_name") filtered.sort((a, b) => (a.display_name || "").localeCompare(b.display_name || ""));
     else if (sortBy === "discipline") filtered.sort((a, b) => (a.discipline || "").localeCompare(b.discipline || ""));
+    const selectedRecord = resolveSelectedRecord(filtered);
+    const selectedRecordId = libraryRecordId(selectedRecord);
+    const detailStatus = $("library-detail-status");
+    const overviewStatus = $("library-overview-status");
+    const recordsStatus = $("library-records-status");
+    const emptyState = documentObject.querySelector(".library-empty-state");
+    const reviewGrid = documentObject.querySelector("#view-library .library-review-grid");
+    const librarySidebar = documentObject.querySelector("#view-library .workspace-sidebar");
+    const libraryTitle = $("library-workspace-title");
+    const libraryStatus = $("library-workspace-status");
+    const hasAnyRecords = allRecords.length > 0;
+    const hasVisibleRecords = filtered.length > 0;
     list.innerHTML = "";
     if (!filtered.length) {
-      list.innerHTML = '<div class="hint">No performance records yet.</div>';
+      list.innerHTML = `<div class="hint">${hasAnyRecords ? "No records match the current filters." : "No performance records yet."}</div>`;
       renderPersonalBests();
+      if (detailStatus) detailStatus.textContent = "Select a Performance record.";
+      const recordDetail = $("library-record-detail");
+      if (recordDetail) recordDetail.textContent = "Select a library record.";
+      renderInspectorPanels([], null, { searchTerm, filterDiscipline });
+      if (emptyState) emptyState.hidden = hasAnyRecords;
+      if (reviewGrid) reviewGrid.hidden = !hasAnyRecords;
+      if (librarySidebar) librarySidebar.hidden = false;
+      if (libraryTitle) libraryTitle.textContent = "Performance Library";
+      if (libraryStatus) {
+        libraryStatus.textContent = hasAnyRecords
+          ? `0 visible record(s)${searchTerm ? ` • search: ${searchTerm}` : ""}`
+          : "Waiting for performance records.";
+      }
       return;
+    }
+    if (overviewStatus) {
+      overviewStatus.textContent = `${filtered.length} visible record(s)${searchTerm ? ` • search: ${searchTerm}` : ""}`;
+    }
+    if (recordsStatus) {
+      recordsStatus.textContent = `${filtered.length} record(s) sorted by ${sortBy.replace("_", " ")}`;
     }
     filtered.forEach((record) => {
       const id = record.library_record_id || record.stage_id || record.match_id;
@@ -209,6 +328,9 @@ export function createLibraryView({
         documentObject.querySelectorAll(".library-record-row").forEach((candidate) => candidate.classList.remove("selected"));
         row.classList.add("selected");
         setSelectedLibraryRecord(record);
+        if (detailStatus) {
+          detailStatus.textContent = `${recordDisplayName(record)} • ${record.discipline || "No discipline"}`;
+        }
         renderJsonDetail("library-record-detail", record);
         const tagsEditor = $("library-tags-editor");
         const notesEditor = $("library-notes-editor");
@@ -219,12 +341,12 @@ export function createLibraryView({
         renderLibraryTags();
         const notesText = $("library-notes-text");
         if (notesText) notesText.value = record.notes || "";
+        renderInspectorPanels(filtered, record, { searchTerm, filterDiscipline });
       });
       list.appendChild(row);
     });
     renderPersonalBests();
 
-    const selectedRecord = getSelectedLibraryRecord();
     if (selectedRecord && selectedRecordId) {
       const tagsEditor = $("library-tags-editor");
       const notesEditor = $("library-notes-editor");
@@ -232,6 +354,9 @@ export function createLibraryView({
       if (tagsEditor) tagsEditor.hidden = false;
       if (notesEditor) notesEditor.hidden = false;
       if (recordActions) recordActions.hidden = false;
+      if (detailStatus) {
+        detailStatus.textContent = `${recordDisplayName(selectedRecord)} • ${selectedRecord.discipline || "No discipline"}`;
+      }
       renderJsonDetail("library-record-detail", selectedRecord);
       renderLibraryTags();
       const notesText = $("library-notes-text");
@@ -243,20 +368,23 @@ export function createLibraryView({
       if (tagsEditor) tagsEditor.hidden = true;
       if (notesEditor) notesEditor.hidden = true;
       if (recordActions) recordActions.hidden = true;
-      renderJsonDetail("library-record-detail", {});
+      const recordDetail = $("library-record-detail");
+      if (recordDetail) recordDetail.textContent = "Select a library record.";
       const notesText = $("library-notes-text");
       if (notesText) notesText.value = "";
+      if (detailStatus) detailStatus.textContent = "Select a Performance record.";
     }
+    renderInspectorPanels(filtered, selectedRecord, { searchTerm, filterDiscipline });
 
-    const emptyState = documentObject.querySelector(".library-empty-state");
-    const sectionHeader = documentObject.querySelector("#view-library .workspace-action-bar");
-    const workspaceSections = documentObject.querySelector("#view-library .workspace-sections");
-    const librarySidebar = documentObject.querySelector("#view-library .workspace-sidebar");
-    const hasRecords = filtered.length > 0;
-    if (emptyState) emptyState.hidden = hasRecords;
-    if (sectionHeader) sectionHeader.hidden = !hasRecords;
-    if (workspaceSections) workspaceSections.hidden = !hasRecords;
+    if (emptyState) emptyState.hidden = true;
+    if (reviewGrid) reviewGrid.hidden = false;
     if (librarySidebar) librarySidebar.hidden = false;
+    if (libraryTitle) libraryTitle.textContent = "Performance Library";
+    if (libraryStatus) {
+      libraryStatus.textContent = hasVisibleRecords
+        ? `${filtered.length} visible record(s)${searchTerm ? ` • search: ${searchTerm}` : ""}`
+        : "Waiting for performance records.";
+    }
   }
 
   function addLibraryTag(tag) {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 import json
 import os
 import platform
@@ -435,6 +436,205 @@ def test_overlay_renderer_formats_timer_and_draw_like_browser_preview() -> None:
 
     assert "Timer 0.50" in texts
     assert "Draw 1.00" in texts
+
+
+def test_overlay_renderer_build_badges_includes_intro_title_and_brand_mark_hooks() -> None:
+    project = Project(name="Classifier 7")
+    project.overlay.position = OverlayPosition.NONE
+    project.scoring.imported_stage = ImportedStageScore(
+        competitor_name="Alex Shooter",
+        stage_number=3,
+        stage_name="Speed Option",
+        division="CO",
+        classification="A",
+    )
+    project._lead_in_card = {"style": "stage_info", "duration_s": 2.0}
+    project._brand_mark = {"style": "splitshot", "text": "SplitShot", "duration_s": 1.25}
+
+    intro_badges, _score_marks = OverlayRenderer().build_badges(project, 500)
+    intro_texts = {badge.text for badge in intro_badges}
+
+    assert "Classifier 7\nSpeed Option • CO" in intro_texts
+    assert "SplitShot" in intro_texts
+
+    after_intro_badges, _score_marks = OverlayRenderer().build_badges(project, 2500)
+    after_intro_texts = {badge.text for badge in after_intro_badges}
+
+    assert "SplitShot" not in after_intro_texts
+    assert "Classifier 7\nSpeed Option • CO" not in after_intro_texts
+
+
+def test_overlay_renderer_composes_richer_opening_title_fields() -> None:
+    project = Project(name="Classifier 7")
+    project.created_at = datetime(2026, 5, 24, 12, 0, tzinfo=UTC)
+    project.overlay.position = OverlayPosition.NONE
+    project.scoring.match_type = "uspsa"
+    project.scoring.imported_stage = ImportedStageScore(
+        competitor_name="Alex Shooter",
+        stage_number=3,
+        stage_name="Speed Option",
+        division="CO",
+        classification="A",
+    )
+    project._lead_in_card = {
+        "style": "competitor",
+        "duration_s": 3.0,
+        "show_match": True,
+        "show_stage": False,
+        "show_shooter": True,
+        "show_division": True,
+        "show_classification": True,
+        "show_date": True,
+        "custom_title": "Championship Opener",
+        "custom_subtitle": "Final squad",
+    }
+
+    badges, _score_marks = OverlayRenderer().build_badges(project, 500)
+    texts = {badge.text for badge in badges}
+
+    assert (
+        "Championship Opener\nFinal squad • USPSA • Alex Shooter • CO • A • 2026-05-24"
+        in texts
+    )
+
+
+def test_overlay_renderer_uses_text_logo_position_and_opacity_payload() -> None:
+    project = Project(name="Custom Brand")
+    project.overlay.position = OverlayPosition.NONE
+    project._brand_mark = {
+        "style": "custom",
+        "text": "Team Split",
+        "position": "bottom_left",
+        "opacity": 0.55,
+        "duration_s": 0,
+    }
+
+    _badges, positioned_badges, score_marks = OverlayRenderer()._build_badges_with_positions(
+        project, 12_500
+    )
+
+    assert score_marks == []
+    assert len(positioned_badges) == 1
+    badge, brand_x, brand_y = positioned_badges[0]
+    assert badge.text == "Team Split"
+    assert badge.style.opacity == pytest.approx(0.55)
+    assert brand_x == pytest.approx(0.13)
+    assert brand_y == pytest.approx(0.9)
+
+
+def test_overlay_renderer_supports_lead_in_logo_and_animation_payload(tmp_path: Path) -> None:
+    logo_path = tmp_path / "lead-in-logo.png"
+    logo = QImage(48, 48, QImage.Format_ARGB32)
+    logo.fill(QColor("#ff7b22"))
+    assert logo.save(str(logo_path))
+
+    project = Project(name="Animated Intro")
+    project.overlay.position = OverlayPosition.NONE
+    project.scoring.imported_stage = ImportedStageScore(stage_name="Bay 5", division="CO")
+    project._lead_in_card = {
+        "style": "stage_info",
+        "duration_s": 2.0,
+        "animation": "slide_up",
+        "logo_path": str(logo_path),
+        "logo_scale_percent": 80,
+    }
+
+    _badges, positioned_badges, _score_marks = OverlayRenderer()._build_badges_with_positions(
+        project, 200
+    )
+
+    assert len(positioned_badges) == 1
+    badge, _x, y = positioned_badges[0]
+    assert badge.image_path == str(logo_path)
+    assert badge.image_scale_percent == 80
+    assert badge.content_opacity is not None and badge.content_opacity < 1.0
+    assert y > 0.18
+
+
+def test_overlay_renderer_supports_image_and_text_brand_mark_payload(tmp_path: Path) -> None:
+    brand_image_path = tmp_path / "brand-image.png"
+    image = QImage(64, 32, QImage.Format_ARGB32)
+    image.fill(QColor("#2dd4bf"))
+    assert image.save(str(brand_image_path))
+
+    project = Project(name="Image Brand")
+    project.overlay.position = OverlayPosition.NONE
+    project._brand_mark = {
+        "style": "image_text",
+        "text": "Team Split",
+        "image_path": str(brand_image_path),
+        "image_scale_percent": 70,
+        "text_color": "#00ff00",
+        "font_size": 28,
+        "position": "top_left",
+        "opacity": 0.4,
+        "duration_s": 0,
+    }
+
+    _badges, positioned_badges, _score_marks = OverlayRenderer()._build_badges_with_positions(
+        project, 500
+    )
+
+    assert len(positioned_badges) == 1
+    badge, brand_x, brand_y = positioned_badges[0]
+    assert badge.text == "Team Split"
+    assert badge.image_path == str(brand_image_path)
+    assert badge.image_scale_percent == 70
+    assert badge.text_color == "#00ff00"
+    assert badge.font_size == 28
+    assert badge.show_background is False
+    assert badge.content_opacity == pytest.approx(0.4)
+    assert badge.style.opacity == pytest.approx(0.4)
+    assert brand_x == pytest.approx(0.13)
+    assert brand_y == pytest.approx(0.1)
+
+
+def test_overlay_renderer_paints_intro_hooks_even_when_normal_overlay_is_hidden() -> None:
+    project = Project(name="Intro Hook Paint")
+    project.overlay.position = OverlayPosition.NONE
+    project.scoring.imported_stage = ImportedStageScore(stage_name="Bay 5", division="Carry Optics")
+    project._lead_in_card = {"style": "stage_info", "duration_s": 2.0}
+    project._brand_mark = {
+        "style": "splitshot",
+        "text": "SplitShot",
+        "duration_s": 2.0,
+        "position": "bottom_right",
+        "opacity": 0.6,
+    }
+
+    image = QImage(320, 180, QImage.Format_ARGB32)
+    image.fill(QColor("black"))
+    painter = QPainter(image)
+    try:
+        OverlayRenderer().paint(painter, project, 500, 320, 180)
+    finally:
+        painter.end()
+
+    non_black_pixels = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            color = image.pixelColor(x, y)
+            if color.red() or color.green() or color.blue() or color.alpha() != 255:
+                non_black_pixels += 1
+
+    assert non_black_pixels > 200
+
+
+def test_overlay_renderer_keeps_zero_duration_brand_mark_visible_for_full_export() -> None:
+    project = Project(name="Persistent Brand Mark")
+    project.overlay.position = OverlayPosition.NONE
+    project._brand_mark = {
+        "style": "splitshot",
+        "text": "SplitShot",
+        "duration_s": 0,
+        "position": "top_right",
+    }
+
+    early_badges, _score_marks = OverlayRenderer().build_badges(project, 250)
+    late_badges, _score_marks = OverlayRenderer().build_badges(project, 12_500)
+
+    assert any(badge.text == "SplitShot" for badge in early_badges)
+    assert any(badge.text == "SplitShot" for badge in late_badges)
 
 
 def test_overlay_renderer_shows_draw_only_before_first_shot(synthetic_video_factory) -> None:
@@ -1361,15 +1561,73 @@ class TestOutputProfileExport:
             ), f"Unexpected error: {e}"
 
     def test_metric_captions_applied_to_overlay(self):
-        """Metric captions preset activates overlay visibility."""
-        from splitshot.domain.models import Project
+        """Metric captions preset maps onto the existing overlay recipe."""
+        from splitshot.domain.models import OverlayPosition, Project
         from splitshot.export.pipeline import _apply_metric_captions_to_project
 
         project = Project()
         project.overlay.show_timer = False
+        project.overlay.show_draw = True
+        project.overlay.show_shots = False
+        project.overlay.show_score = False
+        project.overlay.position = OverlayPosition.NONE
 
-        _apply_metric_captions_to_project(project, {"enabled_fields": ["cumulative_time"]})
+        _apply_metric_captions_to_project(
+            project,
+            {
+                "enabled_fields": ["cumulative_time", "split_times", "hit_factor"],
+                "position": "bottom_right",
+            },
+        )
         assert project.overlay.show_timer is True
+        assert project.overlay.show_draw is False
+        assert project.overlay.show_shots is True
+        assert project.overlay.show_score is True
+        assert project.overlay.position == OverlayPosition.BOTTOM
+        assert project.overlay.shot_quadrant == "bottom_right"
+        assert project._metric_caption_overlay == {
+            "enabled_fields": ["cumulative_time", "hit_factor", "split_times"],
+            "show_split_times": True,
+            "show_shot_scores": True,
+        }
+
+    def test_export_output_profile_restores_editor_state_after_failure(self, tmp_path):
+        """Profile exports should not leak temporary trim/caption/frame overrides into the editor state."""
+        from splitshot.domain.models import AspectRatio, OverlayPosition, Project
+        from splitshot.export.pipeline import export_output_profile
+
+        project = Project()
+        project.primary_video.path = "/dev/null"
+        project.export.aspect_ratio = AspectRatio.ORIGINAL
+        project.overlay.position = OverlayPosition.NONE
+        project.overlay.show_timer = False
+        project.overlay.show_draw = False
+        project.overlay.show_shots = False
+        project.overlay.show_score = False
+
+        plan = {
+            "run_window": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
+            "frame_profile": "9:16",
+            "metric_caption_preset": {
+                "enabled_fields": ["cumulative_time", "split_times"],
+                "position": "bottom_left",
+            },
+            "lead_in_card": {"style": "stage_info"},
+            "brand_mark": {"text": "SplitShot"},
+        }
+
+        with pytest.raises(Exception):
+            export_output_profile(project, tmp_path / "profile-output.mp4", plan)
+
+        assert project.export.aspect_ratio == AspectRatio.ORIGINAL
+        assert project.overlay.position == OverlayPosition.NONE
+        assert project.overlay.show_timer is False
+        assert project.overlay.show_draw is False
+        assert project.overlay.show_shots is False
+        assert project.overlay.show_score is False
+        assert project._metric_caption_overlay is None
+        assert project._lead_in_card is None
+        assert project._brand_mark is None
 
     def test_lead_in_card_stored_on_project(self):
         """Lead-in card metadata is stored on project for render pipeline."""

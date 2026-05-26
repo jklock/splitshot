@@ -1,0 +1,13 @@
+$INFO Region:Steel Challenge
+$INFO MatchName:Tuesday Night Steel
+D Comp,FirstName,LastName,Place Overall,Division,Class,Power Factor
+E 1,Jane,Steel,1,CO,A,
+E 2,Ben,Rice,2,CO,B,
+F Number,Stage_name
+G 1,Smoke & Hope
+G 2,Roundabout
+H Comp,Stage,Time,Total Penalty,Miss,Stop Plate Failure,Stage Place
+I 1,1,13.42,0,0,0,1
+I 2,1,14.25,3,1,0,2
+I 1,2,14.91,0,0,0,1
+I 2,2,16.50,33,1,1,2

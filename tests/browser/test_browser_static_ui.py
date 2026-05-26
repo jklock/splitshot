@@ -71,6 +71,26 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
 
     assert 'class="app-shell"' in html
     assert 'class="cockpit-shell"' in html
+    assert html.count('data-shell-family="stage-workspace"') == 3
+    assert 'data-shell-view="stage"' in html
+    assert 'data-shell-view="match"' in html
+    assert 'data-shell-view="library"' in html
+    assert "function workspaceShell(viewName) {" in js
+    assert 'id="match-section-stage-detail"' in html
+    assert 'id="match-section-stage-workflow"' in html
+    assert 'id="library-section-overview-inspector"' in html
+    assert 'id="library-section-record-filters"' in html
+    assert 'id="library-section-detail-actions"' in html
+    assert 'id="library-section-analytics-inspector"' in html
+    assert "const WORKSPACE_PANE_LAYOUTS = {" in js
+    assert '"match-section-stages": {' in js
+    assert '"match-section-export": {' in js
+    assert '"library-section-records": {' in js
+    assert '"library-section-detail": {' in js
+    assert '[data-shell-family="stage-workspace"][data-shell-view="${viewName}"]' in js
+    assert 'const shell = workspaceShell(viewName);' in js
+    assert 'document.querySelector(".match-workspace-shell")' not in js
+    assert 'document.querySelector(".library-workspace-shell")' not in js
     assert 'href="/static/styles.css?v=20260501f"' in html
     assert 'src="/static/app.js?v=20260501f"' in html
     assert '<script type="module" src="/static/app.js?v=20260501f"></script>' in html
@@ -112,7 +132,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
-    assert "<b>PiP</b>" in html
+    assert "<b>Compose</b>" in html
     assert "<b>Metrics</b>" in html
     assert "<b>Review</b>" in html
     assert "<b>Splits</b>" in html
@@ -121,7 +141,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "<b>Markers</b>" in html
     assert ">⚙</button>" in html
     assert "⚙" in html  # shell-settings button
-    for short in ["Pro", "PiP", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
+    for short in ["Pro", "Cmp", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
         assert f'data-short="{short}"' in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
@@ -135,6 +155,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="project-name"' in html
     assert 'id="project-description"' in html
     assert 'id="match-type"' in html
+    assert html.count('<option value="steel_challenge">Steel Challenge</option>') >= 2
     assert '<select id="match-stage-number">' in html
     assert '<select id="match-competitor-name">' in html
     assert '<select id="match-competitor-place">' in html
@@ -209,7 +230,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
     assert ">Add Media</button>" in html
-    assert "Default PiP size" in html
+    assert "Default layer size" in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
     assert "Open PractiScore Dashboard" in html
@@ -251,7 +272,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="show-pip"' in html
     assert 'id="markers-enable"' in html
     assert "Show markers" in html
-    assert "Show PiP" in html
+    assert "Show added media" in html
     assert "Enable Markers" in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="markers"' in html
@@ -333,6 +354,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-save-current-pip"' in html
     assert 'id="settings-reset-section-pip"' in html
     assert 'id="settings-pip-summary"' in html
+    assert '<option value="merge">Compose</option>' in html
     assert 'id="settings-save-current-overlay"' in html
     assert 'id="settings-reset-section-overlay"' in html
     assert 'id="settings-save-current-markers"' in html
@@ -344,6 +366,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="settings-merge-layout"' in html
     assert 'id="settings-merge-pip-x"' in html
     assert 'id="settings-pip-size"' in html
+    assert '<option value="pip">Picture in picture</option>' in html
+    assert "No saved added-media defaults." in html
     assert 'id="settings-export-quality"' in html
     assert 'id="settings-export-preset"' in html
     assert 'id="settings-export-ffmpeg-preset"' in html
@@ -504,8 +528,14 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert merge_start < html.index('id="add-merge-media"') < export_start
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
-    assert merge_start < html.index('data-feature="smart-angle-switching"') < export_start
+    assert merge_start < html.index('id="merge-media-list"') < export_start
     assert 'id="pip-size" type="range" min="1" max="95" step="1" value="35"' in html
+    assert '<option value="full_screen_portrait">Full-screen portrait</option>' in html
+    assert '<option value="dual_center_hud">Dual center HUD</option>' in html
+    assert '<option value="dual_top_hud">Dual top HUD</option>' in html
+    assert 'Multi-Angle Features' not in html
+    assert 'data-feature=' not in html
+    assert 'id="feature-editor"' not in html
     assert 'id="swap-videos"' not in html
     assert review_start < html.index('id="retained-review-source"') < metrics_start
     assert export_start < html.index('id="output-profile-name"') < project_start
@@ -513,6 +543,21 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert export_start < html.index('id="export-preset"') < project_start
     assert export_start < html.index('id="quality"') < project_start
     assert export_start < html.index('id="export-video"') < project_start
+    assert '<pre id="output-profile-detail" class="automation-detail" hidden></pre>' in html
+    assert "Stage Recipe" not in html
+    assert ">Run Padding</button>" in html
+    assert ">Overlay Data</button>" in html
+    assert ">Aspect Ratio / Framing</button>" in html
+    assert (
+        'These profile settings use reviewed Stage timing, scoring, and framing truth when exporting a single video or a synced Stage composite.'
+        not in html
+    )
+    assert 'These finishing touches layer on top of the export after the Stage recipe is resolved.' not in html
+    assert 'Select or create an output profile.' not in html
+    assert 'Stage recipe and finishing settings attach to an output profile. Create or select a profile first.' not in js
+    assert 'Use Preview to inspect the render plan, or edit the Stage recipe for trim, on-screen data, and video shape before adding titles and branding.' not in js
+    assert 'Create or select an output profile before editing saved output settings.' in js
+    assert 'function syncOutputProfileDetailVisibility() {' in js
     assert project_start < html.index('id="match-type"')
     assert project_start < html.index('id="match-stage-number"')
     assert project_start < html.index('id="match-competitor-name"')
@@ -668,7 +713,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="add-merge-media"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
-    assert "PiP Default Settings" in html
+    assert "Composition Defaults" in html
     assert 'id="restore-merge-defaults"' in html
     assert (
         "Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync."
@@ -790,11 +835,11 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
         in layout_js
     )
     assert (
-        'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")'
+        'buildSourceNumberInput("Layer X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")'
         in merge_pane
     )
     assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in merge_pane
-    assert 'text.textContent = "PiP opacity";' in merge_pane
+    assert 'text.textContent = "Layer opacity";' in merge_pane
     assert "pip_size_percent: nextSize," in merge_pane
     assert 'let exportPathDraft = "";' in js
     assert "let projectDetailsDraft = { name: null, description: null };" in js
@@ -1450,7 +1495,7 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert "grid-template-rows: var(--topbar-height) minmax(0, 1fr);" in css
     assert "min-height: var(--topbar-height);" in css
     assert "height: var(--topbar-height);" in css
-    assert "top: var(--topbar-height);" in css
+    assert "top: 0;" in css
     assert ".processing-bar[hidden] {\n  display: none !important;" in css
     assert "grid-auto-rows: 56px;" in css
     assert "align-content: start;" in css
@@ -1474,6 +1519,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert 'content: "🔓";' not in css
     assert ".video-stage.merge-preview" in css
     assert ".video-stage.merge-pip #secondary-video" in css
+    assert ".video-stage.merge-full-screen-portrait" in css
+    assert ".video-stage.merge-dual-center-hud" in css
+    assert ".video-stage.merge-dual-top-hud" in css
     assert ".merge-media-list" in css
     assert ".merge-media-card" in css
     assert ".merge-media-card-header" in css
@@ -1517,6 +1565,12 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
     assert (
         "  .popup-style-card {\n    grid-template-columns: repeat(2, minmax(0, 1fr));\n  }" in css
     )
+    assert (
+        ".review-style-grid .custom-box-style-card,\n.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card {\n  grid-template-columns: repeat(2, minmax(0, 1fr));"
+        in css
+    )
+    assert ".review-style-grid .custom-box-style-card h4 {\n  grid-column: 1 / -1;" in css
+    assert ".review-style-grid .custom-box-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
     assert "#badge-style-grid {\n  grid-template-columns: repeat(4, minmax(0, 1fr));" in css
     assert "#badge-style-grid .badge-style-card .color-swatch-button" in css
     assert "#badge-style-grid .badge-style-card .opacity-percent-input" in css
@@ -2035,11 +2089,13 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "library-backup-restore",
         "library-export-csv",
         "library-export-json",
+            "library-error-retry",
         "library-open-stage",
         "library-open-workspace",
         "library-tag-add",
         "library-notes-save",
         "library-refresh",
+            "library-stale-refresh",
         "landing-new-stage",
         "landing-new-match",
         "landing-open-file",
@@ -2049,7 +2105,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "shared-defaults-apply",
         "shared-defaults-reset",
         "override-apply",
-        "feature-close",
         "waveform-mode-single",
         "waveform-mode-multi",
         "setup-once-apply",
@@ -2063,7 +2118,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "data-waveform-mode=",
         "data-sync=",
         "data-open-merge-media",
-        "data-feature=",
         "data-surface=",
         "data-output-hook=",
         "data-workspace-target=",
@@ -2090,9 +2144,49 @@ def test_browser_automation_surface_scopes_profiles_and_saves_hooks() -> None:
     assert "scope_id: currentStageScopeId()," in js
     assert 'await callApi("/api/output-profiles/update", {' in js
     assert '$("output-hook-save")?.addEventListener("click", () => {' in js
+    assert 'id="hook-lead-in-custom-title"' in js
+    assert 'id="hook-lead-in-animation"' in js
+    assert 'id="hook-lead-in-logo-path"' in js
+    assert 'id="hook-lead-in-logo-scale"' in js
+    assert 'id="hook-lead-in-show-match"' in js
+    assert 'id="hook-brand-mark-text"' in js
+    assert 'id="hook-brand-mark-image-path"' in js
+    assert 'id="hook-brand-mark-image-scale"' in js
+    assert 'id="hook-brand-mark-text-color"' in js
+    assert 'id="hook-brand-mark-font-size"' in js
+    assert 'id="hook-brand-mark-position"' in js
+    assert 'id="hook-brand-mark-opacity"' in js
     assert 'metric_caption_preset: $("shared-metric-captions")?.value || "none",' in js
     assert 'if (metricCaptions) overrides.metric_caption_preset = metricCaptions;' in js
     assert 'await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });' in js
+
+
+def test_browser_match_workspace_uses_live_preview_tiles_and_pinned_lower_pane_contract() -> None:
+    html = (STATIC_ROOT / "index.html").read_text()
+    match_js = (STATIC_ROOT / "views" / "match-view.js").read_text()
+    css = _read_split_css()
+
+    assert 'class="workspace-lower-pane" aria-label="Selected stage information"' in html
+    assert 'id="match-stage-detail-panel"' in html
+    assert 'id="match-stage-workflow-panel"' in html
+    assert (
+        'id="match-section-composite" class="workspace-section workspace-section-lower" data-workspace-pane="lower" hidden'
+        in html
+    )
+    assert (
+        'id="match-section-export" class="workspace-section workspace-section-lower" data-workspace-pane="lower" hidden'
+        in html
+    )
+    assert (
+        '<video class="match-stage-preview-video" src="${escapeHtml(entry.preview_url)}" muted playsinline loop autoplay preload="metadata"></video>'
+        in match_js
+    )
+    assert "preview_url" in match_js
+    assert "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export." in match_js
+    assert "if (previewVideo) {" in match_js
+    assert ".match-stage-preview-video {" in css
+    assert ".match-stage-preview.has-preview {" in css
+    assert ".match-context-panel,\n.match-recap-detail {" in css
 
 
 def test_browser_display_names_strip_session_uuid_prefixes() -> None:
@@ -2453,6 +2547,9 @@ def test_browser_app_bootstrap_delegates_shell_components() -> None:
         'const primaryMediaPath = buildMediaUrl(state.media.primary_url || "/media/primary", path);'
         in video_player
     )
+    assert '"merge-full-screen-portrait"' in video_player
+    assert '"merge-dual-center-hud"' in video_player
+    assert '"merge-dual-top-hud"' in video_player
     assert "const waveformEnabled = Boolean(state.project.analysis?.shots?.length);" in video_player
     assert "scheduleSecondaryPreviewSync();" in video_player
 

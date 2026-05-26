@@ -4,6 +4,7 @@ from dataclasses import asdict
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from splitshot.domain.models import Project, project_to_dict
 from splitshot.export.presets import export_presets_for_api
@@ -16,7 +17,11 @@ from splitshot.scoring.logic import (
 from splitshot.timeline.model import compute_split_rows
 
 
-def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
+def _build_workspace_context(
+    controller: Any | None,
+    *,
+    media_cache_token: str | None = None,
+) -> dict[str, Any]:
     """Build workspace/scope context from controller state."""
     if controller is None:
         return {
@@ -83,6 +88,19 @@ def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
         for index, stage_id in enumerate(workspace.stage_order, start=1):
             entry = workspace.stage_entries.get(stage_id)
             if entry is not None:
+                preview_url = None
+                stage_project_file = None
+                resolve_stage_project = getattr(controller, "_workspace_stage_project_file", None)
+                if entry.source_media_present and callable(resolve_stage_project):
+                    try:
+                        stage_project_file = resolve_stage_project(entry.stage_id, entry=entry)
+                    except TypeError:
+                        stage_project_file = resolve_stage_project(entry.stage_id)
+                    except Exception:
+                        stage_project_file = None
+                if stage_project_file is not None and Path(stage_project_file).is_file():
+                    cache_suffix = f"?v={quote(str(media_cache_token))}" if media_cache_token else ""
+                    preview_url = f"/media/workspace-stage/{quote(entry.stage_id)}{cache_suffix}"
                 entries.append(
                     {
                         "stage_id": entry.stage_id,
@@ -97,6 +115,7 @@ def _build_workspace_context(controller: Any | None) -> dict[str, Any]:
                         "override_values": dict(entry.override_values),
                         "has_overrides": bool(entry.override_values),
                         "inherited_from_first": entry.inherited_from_first,
+                        "preview_url": preview_url,
                         "last_reviewed_at": entry.last_reviewed_at.isoformat()
                         if entry.last_reviewed_at
                         else None,
@@ -358,7 +377,7 @@ def browser_state(
     controller: Any | None = None,
 ) -> dict[str, Any]:
     # Extract workspace context when controller is available
-    workspace_context = _build_workspace_context(controller)
+    workspace_context = _build_workspace_context(controller, media_cache_token=media_cache_token)
 
     rows = compute_split_rows(project)
     shotml_project = deepcopy(project)

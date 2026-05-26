@@ -93,10 +93,6 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
     assert "media.style.opacity = String(currentSourceOpacity(source));" in source
     assert 'input.dataset.mergeSourceField = "opacity";' in source
-    assert (
-        "These values are saved per item and take effect in PiP layout and export timing." in source
-    )
-
     assert "export function createMergePane({" in merge_pane_source
     assert (
         "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {"
@@ -104,10 +100,18 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     )
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
+    assert 'select.dataset.mergeSourceField = "angle_role";' in merge_pane_source
+    assert 'text.textContent = "Angle role";' in merge_pane_source
+    assert "angle_role: currentSourceAngleRole(source)," in merge_pane_source
     assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
     assert "Re-run beep sync" in merge_pane_source
     assert "Analyze beep sync" in merge_pane_source
     assert "supports_sync_analysis" in merge_pane_source
+    assert (
+        "These values are saved per item and take effect in composition layouts and export timing."
+        in merge_pane_source
+    )
+    assert "openFeatureEditor" not in source
     assert (
         "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {"
         in source
@@ -162,13 +166,14 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
     controller.project.secondary_video = controller.project.merge_sources[0].asset
     first_id = controller.project.merge_sources[0].id
     second_id = controller.project.merge_sources[1].id
-    captured: list[list[tuple[str, int | None, float, float, float, int]]] = []
+    captured: list[list[tuple[str, str, int | None, float, float, float, int]]] = []
 
     def fake_export_project(project, output_path, progress_callback=None, log_callback=None):
         captured.append(
             [
                 (
                     source.id,
+                    source.angle_role,
                     source.pip_size_percent,
                     source.pip_x,
                     source.pip_y,
@@ -193,6 +198,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
             f"{server.url}api/merge/source",
             {
                 "source_id": first_id,
+                "angle_role": "static",
                 "pip_size_percent": 1,
                 "pip_x": 0.25,
                 "pip_y": 0.75,
@@ -203,6 +209,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         first = next(
             source for source in state["project"]["merge_sources"] if source["id"] == first_id
         )
+        assert first["angle_role"] == "static"
         assert first["pip_size_percent"] == 1
         assert first["pip_x"] == 0.25
         assert first["pip_y"] == 0.75
@@ -213,6 +220,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
             f"{server.url}api/merge/source",
             {
                 "source_id": second_id,
+                "angle_role": "detail",
                 "pip_size_percent": 55,
                 "pip_x": 0.1,
                 "pip_y": 0.2,
@@ -227,6 +235,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
 
         reopened_sources = reopened["project"]["merge_sources"]
         assert [source["id"] for source in reopened_sources] == [first_id, second_id]
+        assert [source["angle_role"] for source in reopened_sources] == ["static", "detail"]
         assert [source["sync_offset_ms"] for source in reopened_sources] == [125, -75]
         assert reopened_sources[0]["pip_x"] == 0.25
         assert reopened_sources[0]["opacity"] == 0.45
@@ -245,6 +254,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                     "sources": [
                         {
                             "source_id": first_id,
+                            "angle_role": "follow",
                             "pip_size_percent": 46,
                             "pip_x": 0.3,
                             "pip_y": 0.7,
@@ -253,6 +263,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                         },
                         {
                             "source_id": second_id,
+                            "angle_role": "static",
                             "pip_size_percent": 58,
                             "pip_x": 0.12,
                             "pip_y": 0.22,
@@ -266,7 +277,10 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
 
         assert state["project"]["export"]["output_path"] == str(output_path)
         assert captured == [
-            [(first_id, 46, 0.3, 0.7, 0.4, 140), (second_id, 58, 0.12, 0.22, 0.85, -90)]
+            [
+                (first_id, "follow", 46, 0.3, 0.7, 0.4, 140),
+                (second_id, "static", 58, 0.12, 0.22, 0.85, -90),
+            ]
         ]
     finally:
         server.shutdown()

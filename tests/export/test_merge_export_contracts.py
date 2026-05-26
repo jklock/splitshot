@@ -113,6 +113,40 @@ def test_multi_pip_merge_plan_uses_per_source_positions_and_offsets() -> None:
     assert plan.duration_ms == 1200
 
 
+def test_positioned_two_source_merge_plan_uses_background_canvas_and_rect_overlays() -> None:
+    project = Project(name="Portrait Focus Contract")
+    project.primary_video = _asset("/tmp/primary.mp4", width=640, height=360)
+    project.merge.enabled = True
+    project.merge.layout = MergeLayout.FULL_SCREEN_PORTRAIT
+    project.merge_sources = [
+        MergeSource(
+            asset=_asset("/tmp/secondary.mp4", width=320, height=240),
+            pip_size_percent=40,
+            pip_x=0.5,
+            pip_y=0.75,
+            opacity=0.6,
+        )
+    ]
+
+    plan = _build_merge_plan(project)
+    command = _command_text(plan.command)
+    canvas = calculate_merge_canvas(
+        project.primary_video,
+        project.merge_sources[0].asset,
+        MergeLayout.FULL_SCREEN_PORTRAIT,
+        40,
+        0.5,
+        0.75,
+    )
+
+    assert f"color=c=black:s={canvas.width}x{canvas.height}:r=30.000[bg0]" in command
+    assert f"crop={canvas.primary_rect.width}:{canvas.primary_rect.height}" in command
+    assert f"overlay=x={canvas.secondary_rect.x}:y={canvas.secondary_rect.y}" in command
+    assert "colorchannelmixer=aa=0.600" in command
+    assert plan.width == canvas.width
+    assert plan.height == canvas.height
+
+
 def test_pip_preview_and_export_use_same_positive_offset_semantics() -> None:
     project = Project(name="Preview Export Positive Offset Parity")
     project.primary_video = _asset("/tmp/primary.mp4", duration_ms=1000)

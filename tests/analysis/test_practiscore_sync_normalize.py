@@ -75,3 +75,25 @@ def test_normalize_downloaded_artifact_handles_last_first_name_equivalence() -> 
     assert normalized.resolved_context.competitor_name == "Stephen Lutman"
     assert normalized.stage_import.imported_stage.competitor_name == "Stephen Lutman"
     assert normalized.stage_import.imported_stage.stage_number == 1
+
+
+def test_normalize_downloaded_steel_artifact_matches_import_semantics() -> None:
+    normalized = normalize_downloaded_practiscore_artifact(
+        EXAMPLES_DIR / "SteelChallenge" / "report.txt",
+        source_name="remote-steel.txt",
+        match_type="steel challenge",
+        stage_number=2,
+        competitor_name="Ben Rice",
+        competitor_place=2,
+    )
+
+    assert normalized.options.match_type == "steel_challenge"
+    assert normalized.resolved_context.match_type == "steel_challenge"
+    assert normalized.resolved_context.stage_number == 2
+    assert normalized.stage_import.imported_stage.source_name == "remote-steel.txt"
+    assert normalized.stage_import.imported_stage.raw_seconds == 16.50
+    assert normalized.stage_import.imported_stage.final_time == 49.50
+    assert normalized.stage_import.penalty_counts == {
+        "steel_misses": 1.0,
+        "stop_plate_failures": 1.0,
+    }

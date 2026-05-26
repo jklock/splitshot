@@ -1759,12 +1759,28 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.review-style-grid .custom-box-style-card,
+.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .popup-style-card h4 {
+  grid-column: 1 / -1;
+}
+
+.review-style-grid .custom-box-style-card h4 {
   grid-column: 1 / -1;
 }
 
 .popup-style-card label,
 .cockpit-shell.inspector-compact .popup-style-card label {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.review-style-grid .custom-box-style-card label,
+.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card label {
   align-items: stretch;
   flex-direction: column;
   gap: 0.18rem;
@@ -1778,6 +1794,14 @@
   width: 100%;
 }
 
+.review-style-grid .custom-box-style-card .color-control-pair,
+.review-style-grid .custom-box-style-card .opacity-control-pair,
+.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card .color-control-pair,
+.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card .opacity-control-pair {
+  margin-left: 0;
+  width: 100%;
+}
+
 .popup-style-card .color-hex-input,
 .cockpit-shell.inspector-compact .popup-style-card .color-hex-input {
   flex: 1 1 auto;
@@ -1786,7 +1810,19 @@
   width: 100%;
 }
 
+.review-style-grid .custom-box-style-card .color-hex-input,
+.cockpit-shell.inspector-compact .review-style-grid .custom-box-style-card .color-hex-input {
+  flex: 1 1 auto;
+  max-width: 10rem;
+  min-width: 0;
+  width: 100%;
+}
+
 .popup-style-card .opacity-field {
+  grid-column: 1 / -1;
+}
+
+.review-style-grid .custom-box-style-card .opacity-field {
   grid-column: 1 / -1;
 }
 
@@ -1987,6 +2023,10 @@
   }
 
   .popup-style-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-style-grid .custom-box-style-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

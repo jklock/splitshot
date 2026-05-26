@@ -266,7 +266,7 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     first_card.get_by_role("button", name="+1", exact=True).click()
 
     second_card = page.locator(".merge-media-card").nth(1)
-    second_card.locator('button[aria-label*="PiP item controls"]').click()
+    second_card.locator('button[aria-label*="composition item controls"]').click()
     second_card.locator('[data-merge-source-field="size"]').evaluate(
         """(input) => {
             input.value = '55';

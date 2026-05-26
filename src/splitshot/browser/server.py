@@ -21,7 +21,7 @@ from importlib import resources
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 from uuid import uuid4
 
 from splitshot.browser.activity import ActivityLogger
@@ -40,6 +40,7 @@ from splitshot.domain.models import (
 from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
 from splitshot.persistence.projects import (
+    load_project,
     missing_required_project_dirs,
     normalize_project_path,
     resolve_project_path,
@@ -337,21 +338,26 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             root.attributes("-topmost", True)
         except tk.TclError:
             pass
-        if kind in {"primary", "secondary", "popup_image"}:
+        if kind in {"primary", "secondary"}:
             return filedialog.askopenfilename(
                 title=(
                     "Choose stage video"
                     if kind == "primary"
-                    else (
-                        "Choose secondary angle video"
-                        if kind == "secondary"
-                        else "Choose marker image"
-                    )
+                    else "Choose secondary angle video"
                 ),
                 initialdir=initial_dir,
                 filetypes=[
                     ("Image files", COMMON_IMAGE_FILE_PATTERNS),
                     ("Video files", COMMON_VIDEO_FILE_PATTERNS),
+                    ("All files", "*.*"),
+                ],
+            )
+        if kind == "popup_image":
+            return filedialog.askopenfilename(
+                title="Choose local image asset",
+                initialdir=initial_dir,
+                filetypes=[
+                    ("Image files", COMMON_IMAGE_FILE_PATTERNS),
                     ("All files", "*.*"),
                 ],
             )
@@ -379,16 +385,32 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
         project_path=kind in {"project", "project_save", "project_open", "project_folder"},
     )
     default_name = "output.mp4"
-    if kind in {"primary", "secondary", "popup_image"}:
+    if kind in {"primary", "secondary"}:
         prompt = (
             "Choose stage video"
             if kind == "primary"
-            else ("Choose secondary angle video" if kind == "secondary" else "Choose marker image")
+            else "Choose secondary angle video"
         )
         script = "\n".join(
             [
                 f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
                 f"default location POSIX file {_applescript_string(str(default_dir))}",
+                "POSIX path of chosenFile",
+            ]
+        )
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        if "User canceled" in result.stderr:
+            return None
+        raise RuntimeError(result.stderr.strip() or "Native file browser failed.")
+    if kind == "popup_image":
+        script = "\n".join(
+            [
+                f"set chosenFile to choose file with prompt {_applescript_string('Choose local image asset')} "
+                f"of type {{'public.image'}} default location POSIX file {_applescript_string(str(default_dir))}",
                 "POSIX path of chosenFile",
             ]
         )
@@ -805,6 +827,11 @@ class BrowserControlServer:
                         return
                     self._send_media(Path(controller.project.secondary_video.path))
                     return
+                if request_path.startswith("/media/workspace-stage/"):
+                    self._send_workspace_stage_media(
+                        request_path.removeprefix("/media/workspace-stage/")
+                    )
+                    return
                 if request_path.startswith("/media/merge/"):
                     self._send_merge_media(request_path.removeprefix("/media/merge/"))
                     return
@@ -918,11 +945,13 @@ class BrowserControlServer:
                     "/api/workspace/stage/clip/list": ("_handle_workspace_stage_clip_list", []),
                     "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", []),
                     "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", []),
+                    "/api/workspace/stage/clip/reorder": ("_handle_workspace_stage_clip_reorder", []),
                     "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", []),
                     "/api/angle/align": ("_handle_angle_align", []),
                     "/api/angle/director/plan": ("_handle_angle_director_plan", []),
                     "/api/angle/director/generate": ("_handle_angle_director_generate", []),
                     "/api/angle/director/override": ("_handle_angle_director_override", []),
+                    "/api/angle/director/override/clear": ("_handle_angle_director_override_clear", []),
                     "/api/audio/mix": ("_handle_audio_mix", []),
                     "/api/result-cards/resolve": ("_handle_result_cards_resolve", []),
                     "/api/landing/recent": ("_handle_landing_recent", ["_no_body"]),
@@ -1448,6 +1477,39 @@ class BrowserControlServer:
                     return
                 self._send_media(Path(source.asset.path))
 
+            def _send_workspace_stage_media(self, stage_id: str) -> None:
+                normalized_stage_id = unquote(str(stage_id or "")).strip()
+                if not normalized_stage_id:
+                    activity.log("workspace_stage_media.missing", stage_id=stage_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                try:
+                    stage_project_file = controller._workspace_stage_project_file(
+                        normalized_stage_id
+                    )
+                except Exception:
+                    stage_project_file = None
+                if stage_project_file is None or not Path(stage_project_file).is_file():
+                    activity.log("workspace_stage_media.missing", stage_id=normalized_stage_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                try:
+                    stage_project = load_project(Path(stage_project_file).parent)
+                except Exception:
+                    activity.log(
+                        "workspace_stage_media.load_failed",
+                        stage_id=normalized_stage_id,
+                        project_file=str(stage_project_file),
+                    )
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                primary_video_path_value = str(getattr(stage_project.primary_video, "path", "") or "").strip()
+                if not primary_video_path_value:
+                    activity.log("workspace_stage_media.missing", stage_id=normalized_stage_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self._send_media(Path(primary_video_path_value))
+
             def _send_popup_media(self, popup_id: str) -> None:
                 popup = next(
                     (item for item in controller.project.popups if item.id == popup_id), None
@@ -1918,6 +1980,9 @@ class BrowserControlServer:
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
+                    None
+                    if payload.get("angle_role") in {None, ""}
+                    else str(payload["angle_role"]),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(
@@ -2447,6 +2512,16 @@ class BrowserControlServer:
                     return {"success": False, "error": "Clip not found"}
                 return {"success": True, "clip": result}
 
+            def _handle_workspace_stage_clip_reorder(self, body: dict) -> dict:
+                """Reorder a clip within the stage composite list."""
+                stage_id = str(body.get("stage_id") or "")
+                clip_id = str(body.get("clip_id") or "")
+                target_index = int(body.get("target_index", 0))
+                clips = controller.workspace_stage_clip_reorder(stage_id, clip_id, target_index)
+                if clips is None:
+                    return {"success": False, "error": "Clip not found"}
+                return {"success": True, "clips": clips}
+
             def _handle_workspace_stage_clip_remove(self, body: dict) -> dict:
                 """Remove a clip from a stage."""
                 stage_id = str(body.get("stage_id") or "")
@@ -2489,6 +2564,17 @@ class BrowserControlServer:
                     position,
                     start_ms,
                     duration_ms,
+                    None if output_id in {None, ""} else str(output_id),
+                )
+
+            def _handle_angle_director_override_clear(self, body: dict) -> dict:
+                """Clear a persisted cut override from the angle director plan."""
+                stage_id = str(body.get("stage_id") or "")
+                output_id = body.get("output_id")
+                position = int(body.get("position", 0))
+                return controller.angle_director_clear_cut(
+                    stage_id,
+                    position,
                     None if output_id in {None, ""} else str(output_id),
                 )
 

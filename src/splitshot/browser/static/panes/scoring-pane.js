@@ -387,6 +387,12 @@ export function createScoringPane({
       const pointsDown = Number(imported.aggregate_points ?? imported.score_counts?.["Points Down"] ?? 0);
       return Number.isFinite(pointsDown) ? `PD ${formatNumber(pointsDown, 2)}` : "";
     }
+    if (imported.match_type === "steel_challenge") {
+      const finalTime = imported.final_time ?? imported.raw_seconds;
+      return finalTime !== null && finalTime !== undefined
+        ? `Final ${formatPractiScoreTime(finalTime, { includeUnits: false })}`
+        : "";
+    }
     const parts = [];
     const pointsValue = imported.total_points ?? imported.aggregate_points;
     if (pointsValue !== null && pointsValue !== undefined) {

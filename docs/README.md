@@ -78,7 +78,7 @@ uv run python scripts/docs/capture_browser_screenshots.py
 
 Covered surfaces:
 
-- Every left-rail pane: `Project`, `PiP`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, `ShotML`
+- Every left-rail pane: `Project`, `Compose`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, `ShotML`
 - Expanded score, splits, waveform, metrics, marker, settings, review, and ShotML states already represented by the capture script
 - Shared modals: color picker and export log
 

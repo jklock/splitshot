@@ -197,6 +197,19 @@ def test_app_uses_single_resolved_selection_for_timing_and_waveform() -> None:
     assert "function nearestShot(event) {" in waveform_state_js
 
 
+def test_waveform_component_renders_secondary_pip_lane_when_available() -> None:
+    static_root = Path(__file__).resolve().parents[2] / "src/splitshot/browser/static"
+    waveform_js = (static_root / "components/waveform.js").read_text(encoding="utf-8")
+
+    assert "function drawWaveformLane(ctx, waveform" in waveform_js
+    assert 'const secondaryWaveform = currentState()?.project?.analysis?.waveform_secondary || [];' in waveform_js
+    assert 'canvas.dataset.secondaryWaveform = hasSecondaryWaveform ? "true" : "false";' in waveform_js
+    assert 'canvas.dataset.waveformLaneLayout = hasSecondaryWaveform ? "stacked" : "single";' in waveform_js
+    assert 'canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform ? String(secondaryWaveform.length) : "0";' in waveform_js
+    assert 'drawWaveformLane(ctx, secondaryWaveform, {' in waveform_js
+    assert '`Secondary • ${syncOffsetMs > 0 ? "+" : ""}${syncOffsetMs} ms`' in waveform_js
+
+
 def test_timing_pane_modularization_wrappers_are_source_visible() -> None:
     static_root = Path(__file__).resolve().parents[2] / "src/splitshot/browser/static"
     app_js = (static_root / "app.js").read_text(encoding="utf-8")
@@ -239,6 +252,95 @@ def _load_primary_video(page, primary_path: Path) -> None:
         page.wait_for_function("() => Boolean(state?.project?.path)")
     page.locator("#primary-file-input").set_input_files(str(primary_path))
     page.locator(".waveform-shot-card").first.wait_for(state="attached")
+
+
+def _waveform_lower_lane_stats(page) -> dict[str, int | str]:
+    return page.evaluate(
+        """() => {
+            if (typeof renderWaveform === 'function') renderWaveform();
+            const canvas = document.getElementById('waveform');
+            if (!(canvas instanceof HTMLCanvasElement)) return null;
+            const context = canvas.getContext('2d');
+            if (!context) return null;
+            const width = canvas.width;
+            const height = canvas.height;
+            const startY = Math.floor(height * 0.56);
+            const step = Math.max(4, Math.floor(Math.min(width, height) / 160));
+            const image = context.getImageData(0, 0, width, height).data;
+            let lowerGreenPixels = 0;
+            let lowerBluePixels = 0;
+            for (let y = startY; y < height - 12; y += step) {
+              for (let x = 0; x < width; x += step) {
+                const offset = ((y * width) + x) * 4;
+                const red = image[offset];
+                const green = image[offset + 1];
+                const blue = image[offset + 2];
+                const alpha = image[offset + 3];
+                if (alpha < 8) continue;
+                if (green > 110 && green > red + 24 && green > blue + 10) lowerGreenPixels += 1;
+                if (blue > 140 && blue > red + 18 && blue > green + 10) lowerBluePixels += 1;
+              }
+            }
+            return {
+              secondaryWaveform: canvas.dataset.secondaryWaveform || '',
+                            waveformLaneLayout: canvas.dataset.waveformLaneLayout || '',
+              secondarySourceId: canvas.dataset.secondarySourceId || '',
+                            secondaryWaveformSamples: canvas.dataset.secondaryWaveformSamples || '0',
+              lowerGreenPixels,
+              lowerBluePixels,
+            };
+        }"""
+    )
+
+
+def test_waveform_canvas_shows_secondary_lane_after_merge_analysis(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="waveform-secondary-primary-ui"))
+    secondary_path = Path(synthetic_video_factory(name="waveform-secondary-pip-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+
+                page.locator("#expand-waveform").click()
+                page.wait_for_timeout(150)
+                page.wait_for_function(
+                    "() => document.getElementById('waveform')?.dataset.secondaryWaveform === 'false'"
+                )
+                before = _waveform_lower_lane_stats(page)
+
+                page.locator('button[data-tool="merge"]').click(force=True)
+                page.wait_for_timeout(100)
+                page.locator("#merge-media-input").set_input_files(str(secondary_path))
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                page.wait_for_function(
+                    "() => (state?.project?.analysis?.secondary_analysis_status || '') !== 'running'"
+                )
+                page.wait_for_function(
+                    "() => (state?.project?.analysis?.waveform_secondary || []).length > 0"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('waveform')?.dataset.secondaryWaveform === 'true'"
+                )
+
+                after = _waveform_lower_lane_stats(page)
+
+                assert before is not None
+                assert after is not None
+                assert before["secondaryWaveform"] == "false"
+                assert before["waveformLaneLayout"] == "single"
+                assert after["secondaryWaveform"] == "true"
+                assert after["waveformLaneLayout"] == "stacked"
+                assert after["secondarySourceId"]
+                assert int(after["secondaryWaveformSamples"]) > 0
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
 
 
 def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_factory) -> None:

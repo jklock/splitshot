@@ -12,7 +12,8 @@ import re
 import subprocess
 from uuid import uuid4 as _uuid4
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 from splitshot.analysis.detection import (
     analyze_video_audio,
@@ -43,6 +44,7 @@ from splitshot.domain.models import (
     ExportQuality,
     ExportVideoCodec,
     _merge_source_from_dict,
+    _normalize_merge_source_angle_role,
     _popup_bubble_from_dict,
     MatchWorkspace,
     MergeLayout,
@@ -63,6 +65,7 @@ from splitshot.domain.models import (
     TimingEvent,
     TimingChangeProposal,
     VideoAsset,
+    default_merge_source_angle_role,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
@@ -88,8 +91,10 @@ from splitshot.persistence.projects import (
 from splitshot.persistence.workspaces import (
     _output_profile_from_dict,
     load_workspace,
+    normalize_workspace_path,
     save_workspace,
     workspace_has_metadata,
+    workspace_stage_project_path,
     workspace_stage_path,
 )
 from splitshot.persistence.library import (
@@ -1068,6 +1073,147 @@ class ProjectController(QObject):
             return None
         return workspace_stage_path(self.workspace_path, stage_id)
 
+    def _workspace_stage_project_file(
+        self,
+        stage_id: str,
+        *,
+        workspace_path: str | Path | None = None,
+        entry: StageEntry | None = None,
+    ) -> Path | None:
+        stage_entry = entry or self._workspace_stage_entry(stage_id)
+        workspace_root = None
+        if workspace_path is not None:
+            workspace_root = normalize_workspace_path(workspace_path)
+        elif self.workspace_path is not None:
+            workspace_root = normalize_workspace_path(self.workspace_path)
+
+        canonical_path = None
+        if workspace_root is not None:
+            canonical_path = workspace_stage_project_path(workspace_root, stage_id)
+            if canonical_path.is_file():
+                return canonical_path
+            if stage_entry and stage_entry.relative_project_path:
+                candidate = (workspace_root / stage_entry.relative_project_path).resolve(strict=False)
+                if candidate.is_dir() or candidate.name != "project.json":
+                    candidate = candidate / "project.json"
+                if candidate.is_file():
+                    return candidate
+
+        if stage_entry and stage_entry.relative_project_path:
+            candidate = Path(stage_entry.relative_project_path).expanduser().resolve(strict=False)
+            if candidate.is_dir() or candidate.name != "project.json":
+                candidate = candidate / "project.json"
+            if candidate.is_file():
+                return candidate
+
+        return canonical_path
+
+    def _find_workspace_stage_for_project_path(
+        self,
+        project_path: str | Path,
+        *,
+        workspace: MatchWorkspace | None = None,
+        workspace_path: str | Path | None = None,
+    ) -> str | None:
+        active_workspace = workspace or self.workspace
+        if active_workspace is None:
+            return None
+        normalized_project_path = normalize_project_path(project_path)
+        for stage_id, entry in active_workspace.stage_entries.items():
+            candidate = self._workspace_stage_project_file(
+                stage_id,
+                workspace_path=workspace_path,
+                entry=entry,
+            )
+            if candidate is None:
+                continue
+            if normalize_project_path(candidate) == normalized_project_path:
+                return stage_id
+        return None
+
+    def _seed_workspace_defaults(self, workspace: MatchWorkspace) -> None:
+        effective = self.effective_settings()
+        for field in _INHERITANCE_ELIGIBLE_FIELDS:
+            if hasattr(effective, field):
+                value = getattr(effective, field)
+                if value is not None:
+                    workspace.shared_defaults[field] = value
+
+    def _ensure_project_workspace_membership(self, project_path: str | Path) -> str | None:
+        normalized_project_path = normalize_project_path(project_path)
+        owner_workspace = None
+        owner_workspace_path: Path | None = None
+        stage_id = self._find_workspace_stage_for_project_path(normalized_project_path)
+
+        if stage_id is not None and self.workspace is not None:
+            owner_workspace = self.workspace
+            if self.workspace_path is not None:
+                owner_workspace_path = normalize_workspace_path(self.workspace_path)
+
+        if owner_workspace is None:
+            for candidate in [normalized_project_path, *normalized_project_path.parents]:
+                if not workspace_has_metadata(candidate):
+                    continue
+                owner_workspace_path = normalize_workspace_path(candidate)
+                owner_workspace = load_workspace(owner_workspace_path)
+                stage_id = self._find_workspace_stage_for_project_path(
+                    normalized_project_path,
+                    workspace=owner_workspace,
+                    workspace_path=owner_workspace_path,
+                )
+                if stage_id is None:
+                    relative_project_path = normalized_project_path.relative_to(owner_workspace_path)
+                    if len(relative_project_path.parts) >= 2 and relative_project_path.parts[0] == "Stages":
+                        stage_id = relative_project_path.parts[1]
+                break
+
+        if owner_workspace is None:
+            if self.workspace is not None and self.workspace_path is None:
+                owner_workspace = self.workspace
+            elif self.workspace is not None and self.workspace_path is not None:
+                return None
+            else:
+                owner_workspace = MatchWorkspace()
+                owner_workspace.name = (
+                    f"{(self.project.name or normalized_project_path.name).strip()} Match"
+                )
+                self._seed_workspace_defaults(owner_workspace)
+
+        resolved_stage_id = stage_id or self.project.id or normalized_project_path.name
+        entry = owner_workspace.stage_entries.get(resolved_stage_id)
+        if entry is None:
+            entry = StageEntry(stage_id=resolved_stage_id)
+            owner_workspace.stage_entries[resolved_stage_id] = entry
+        if resolved_stage_id not in owner_workspace.stage_order:
+            owner_workspace.stage_order.append(resolved_stage_id)
+        if entry.stage_number is None:
+            entry.stage_number = owner_workspace.stage_order.index(resolved_stage_id) + 1
+
+        entry.display_name = self.project.name or entry.display_name or normalized_project_path.name
+        if owner_workspace_path is not None:
+            try:
+                entry.relative_project_path = str(normalized_project_path.relative_to(owner_workspace_path))
+            except ValueError:
+                entry.relative_project_path = str(normalized_project_path)
+        else:
+            entry.relative_project_path = str(normalized_project_path)
+        entry.source_media_present = bool(str(self.project.primary_video.path or "").strip())
+        if not entry.override_values:
+            entry.status = "complete" if entry.source_media_present else "incomplete"
+
+        owner_workspace.updated_at = _utc_now()
+        self.workspace = owner_workspace
+        self.workspace_path = owner_workspace_path
+        self.active_stage_id = resolved_stage_id
+        self._return_to_workspace_available = owner_workspace_path is not None
+
+        if owner_workspace_path is not None:
+            self._load_workspace_stage_profiles()
+            save_workspace(owner_workspace, owner_workspace_path)
+
+        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
+        return resolved_stage_id
+
     def _workspace_persistence_snapshot(self) -> dict | None:
         if self.workspace is None:
             return None
@@ -1131,12 +1277,7 @@ class ProjectController(QObject):
         self.active_stage_id = None
         self._return_to_workspace_available = False
 
-        effective = self.effective_settings()
-        for field in _INHERITANCE_ELIGIBLE_FIELDS:
-            if hasattr(effective, field):
-                value = getattr(effective, field)
-                if value is not None:
-                    self.workspace.shared_defaults[field] = value
+        self._seed_workspace_defaults(self.workspace)
 
         self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
         self._set_status("New match workspace created.")
@@ -1222,8 +1363,8 @@ class ProjectController(QObject):
         if self.workspace_path is not None:
             self.save_workspace()
         if self.workspace_path is not None:
-            stage_project = self.workspace_path / "Stages" / stage_id / "project.json"
-            if stage_project.exists():
+            stage_project = self._workspace_stage_project_file(stage_id)
+            if stage_project is not None and stage_project.exists():
                 self.open_project(str(stage_project.parent))
                 self._load_stage_profiles(Path(self.project_path))
         self.active_stage_id = stage_id
@@ -1366,12 +1507,378 @@ class ProjectController(QObject):
             "failed": len(errors),
         }
 
+    @staticmethod
+    def _recap_transition(value: str | None) -> str:
+        transition = str(value or "cut").strip().lower()
+        return transition if transition in {"cut", "fade", "dissolve"} else "cut"
+
+    @staticmethod
+    def _recap_result_card_mode(value: str | None) -> str:
+        mode = str(value or "none").strip().lower()
+        return mode if mode in {"none", "end", "each"} else "none"
+
+    @staticmethod
+    def _recap_status_label(value: str | None) -> str:
+        return str(value or "incomplete").replace("_", " ").strip().title() or "Incomplete"
+
+    @staticmethod
+    def _recap_stage_options(value: object) -> dict[str, dict[str, object]]:
+        raw_items: list[object] = []
+        if isinstance(value, dict):
+            raw_items = [
+                {"stage_id": stage_id, **(raw if isinstance(raw, dict) else {})}
+                for stage_id, raw in value.items()
+            ]
+        elif isinstance(value, list):
+            raw_items = value
+
+        options_by_stage: dict[str, dict[str, object]] = {}
+        for raw_item in raw_items:
+            if not isinstance(raw_item, dict):
+                continue
+            stage_id = str(raw_item.get("stage_id") or "").strip()
+            if not stage_id:
+                continue
+            subtitle = " ".join(str(raw_item.get("subtitle") or "").split()).strip()[:120]
+            try:
+                audio_gain = float(raw_item.get("audio_gain", 1.0))
+            except (TypeError, ValueError):
+                audio_gain = 1.0
+            options_by_stage[stage_id] = {
+                "subtitle": subtitle,
+                "audio_gain": max(0.0, min(2.0, audio_gain)),
+                "audio_muted": bool(raw_item.get("audio_muted", False)),
+            }
+        return options_by_stage
+
+    @staticmethod
+    def _recap_stage_option_requested(stage_option: dict[str, object] | None) -> bool:
+        if not isinstance(stage_option, dict):
+            return False
+        subtitle = str(stage_option.get("subtitle") or "").strip()
+        try:
+            audio_gain = float(stage_option.get("audio_gain", 1.0))
+        except (TypeError, ValueError):
+            audio_gain = 1.0
+        return bool(subtitle) or bool(stage_option.get("audio_muted", False)) or abs(audio_gain - 1.0) > 0.001
+
+    def _render_recap_card_image(
+        self,
+        title: str,
+        detail_lines: list[str],
+        output_path: Path,
+        *,
+        width: int,
+        height: int,
+    ) -> Path:
+        image = QImage(width, height, QImage.Format.Format_ARGB32)
+        image.fill(QColor("#0b0f14"))
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+        painter.fillRect(0, 0, width, height, QColor("#0b0f14"))
+        painter.fillRect(0, 0, width, max(8, height // 48), QColor("#ff7b22"))
+        painter.fillRect(width // 12, height // 6, width // 18, (height * 2) // 3, QColor("#141c27"))
+
+        title_font = QFont("Helvetica Neue")
+        title_font.setBold(True)
+        title_font.setPixelSize(max(32, min(68, height // 11)))
+        painter.setFont(title_font)
+        painter.setPen(QColor("#ffffff"))
+        title_rect = QRectF(width * 0.14, height * 0.18, width * 0.72, height * 0.24)
+        painter.drawText(title_rect, Qt.AlignCenter | Qt.TextWordWrap, title)
+
+        detail_font = QFont("Helvetica Neue")
+        detail_font.setPixelSize(max(18, min(34, height // 26)))
+        painter.setFont(detail_font)
+        painter.setPen(QColor("#d7dee8"))
+        detail_rect = QRectF(width * 0.18, height * 0.46, width * 0.64, height * 0.28)
+        painter.drawText(
+            detail_rect,
+            Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap,
+            "\n".join(detail_lines),
+        )
+
+        footer_font = QFont("Helvetica Neue")
+        footer_font.setPixelSize(max(14, min(22, height // 36)))
+        painter.setFont(footer_font)
+        painter.setPen(QColor("#8ca0b7"))
+        painter.drawText(
+            QRectF(width * 0.12, height * 0.82, width * 0.76, height * 0.08),
+            Qt.AlignCenter | Qt.AlignVCenter,
+            "Rendered by SplitShot Match Recap",
+        )
+        painter.end()
+
+        image.save(str(output_path))
+        return output_path
+
+    def _render_recap_card_video(
+        self,
+        title: str,
+        detail_lines: list[str],
+        output_path: Path,
+        *,
+        width: int,
+        height: int,
+        fps: float,
+        duration_ms: int,
+    ) -> Path:
+        image_path = output_path.with_suffix(".png")
+        self._render_recap_card_image(title, detail_lines, image_path, width=width, height=height)
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-i",
+            str(image_path),
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-t",
+            f"{max(0.5, duration_ms / 1000):.3f}",
+            "-vf",
+            (
+                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
+                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                f"fps={fps:.3f}"
+            ),
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            str(output_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Result card render failed")
+        return output_path
+
+    def _render_recap_subtitle_overlay_image(
+        self,
+        subtitle: str,
+        output_path: Path,
+        *,
+        width: int,
+        height: int,
+    ) -> Path:
+        image = QImage(width, height, QImage.Format.Format_ARGB32)
+        image.fill(QColor(0, 0, 0, 0))
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
+
+        band_height = max(72, min(132, height // 6 if height else 96))
+        top_accent_height = max(4, band_height // 18)
+        band_y = max(0, height - band_height)
+        painter.fillRect(QRectF(0, band_y, width, band_height), QColor(0, 0, 0, 176))
+        painter.fillRect(QRectF(0, band_y, width, top_accent_height), QColor("#ff7b22"))
+
+        text_font = QFont("Helvetica Neue")
+        text_font.setBold(True)
+        text_font.setPixelSize(max(22, min(38, band_height // 2)))
+        painter.setFont(text_font)
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(
+            QRectF(width * 0.08, band_y + max(8, band_height * 0.18), width * 0.84, band_height * 0.62),
+            Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+            subtitle,
+        )
+        painter.end()
+
+        image.save(str(output_path))
+        return output_path
+
+    def _render_recap_stage_variant(
+        self,
+        source_path: Path,
+        output_path: Path,
+        *,
+        subtitle: str = "",
+        audio_gain: float = 1.0,
+        audio_muted: bool = False,
+        width: int,
+        height: int,
+    ) -> Path:
+        normalized_subtitle = " ".join(str(subtitle or "").split()).strip()
+        normalized_audio_gain = max(0.0, min(2.0, float(audio_gain)))
+        apply_subtitle = bool(normalized_subtitle)
+        apply_audio_filter = audio_muted or abs(normalized_audio_gain - 1.0) > 0.001
+
+        if not apply_subtitle and not apply_audio_filter:
+            import shutil
+
+            shutil.copy2(str(source_path), str(output_path))
+            return output_path
+
+        input_args = ["-i", str(source_path)]
+        filter_parts: list[str] = []
+        video_label = "0:v:0"
+        audio_label = "0:a:0?"
+
+        if apply_subtitle:
+            overlay_path = output_path.with_suffix(".subtitle.png")
+            self._render_recap_subtitle_overlay_image(
+                normalized_subtitle,
+                overlay_path,
+                width=width,
+                height=height,
+            )
+            input_args.extend(["-i", str(overlay_path)])
+            filter_parts.append("[1:v]format=rgba[subtitle_overlay]")
+            filter_parts.append("[0:v][subtitle_overlay]overlay=0:0[vout]")
+            video_label = "[vout]"
+
+        if apply_audio_filter:
+            volume_level = 0.0 if audio_muted else normalized_audio_gain
+            filter_parts.append(f"[0:a]volume={volume_level:.3f}[aout]")
+            audio_label = "[aout]"
+
+        cmd = ["ffmpeg", "-y", *input_args]
+        if filter_parts:
+            cmd.extend(["-filter_complex", ";".join(filter_parts), "-map", video_label, "-map", audio_label])
+        else:
+            cmd.extend(["-map", "0:v:0", "-map", "0:a:0?"])
+        cmd.extend(
+            [
+                "-c:v",
+                "libx264",
+                "-preset",
+                "veryfast",
+                "-crf",
+                "18",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                str(output_path),
+            ]
+        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Recap stage render failed")
+        return output_path
+
+    def _render_recap_sequence(
+        self,
+        sequence_paths: list[Path],
+        recap_path: Path,
+        *,
+        transition: str,
+        target_width: int,
+        target_height: int,
+        target_fps: float,
+    ) -> dict:
+        if not sequence_paths:
+            return {"success": False, "error": "No recap media to render"}
+
+        if len(sequence_paths) == 1 and transition == "cut":
+            import shutil
+
+            shutil.copy2(str(sequence_paths[0]), str(recap_path))
+            return {"success": True, "sequence_count": 1, "transition": transition}
+
+        sequence_assets = [probe_video(path) for path in sequence_paths]
+        filter_parts: list[str] = []
+        input_args: list[str] = []
+        for index, path in enumerate(sequence_paths):
+            input_args.extend(["-i", str(path)])
+            filter_parts.append(
+                (
+                    f"[{index}:v]scale={target_width}:{target_height}:"
+                    "force_original_aspect_ratio=decrease,"
+                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                    f"setsar=1,fps={target_fps:.3f},format=yuv420p[v{index}]"
+                )
+            )
+            filter_parts.append(
+                f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]"
+            )
+
+        if transition == "cut" or len(sequence_paths) == 1:
+            concat_inputs = "".join(f"[v{index}][a{index}]" for index in range(len(sequence_paths)))
+            filter_parts.append(
+                f"{concat_inputs}concat=n={len(sequence_paths)}:v=1:a=1[vout][aout]"
+            )
+            video_label = "[vout]"
+            audio_label = "[aout]"
+        else:
+            fade_duration_s = 0.35
+            xfade_transition = "dissolve" if transition == "dissolve" else "fade"
+            video_label = "[v0]"
+            audio_label = "[a0]"
+            elapsed_s = max(0.0, sequence_assets[0].duration_ms / 1000)
+            for index in range(1, len(sequence_paths)):
+                next_video = f"[v{index}]"
+                next_audio = f"[a{index}]"
+                out_video = f"[vx{index}]"
+                out_audio = f"[ax{index}]"
+                offset_s = max(0.0, elapsed_s - fade_duration_s)
+                filter_parts.append(
+                    (
+                        f"{video_label}{next_video}xfade=transition={xfade_transition}:"
+                        f"duration={fade_duration_s:.3f}:offset={offset_s:.3f}{out_video}"
+                    )
+                )
+                filter_parts.append(
+                    f"{audio_label}{next_audio}acrossfade=d={fade_duration_s:.3f}{out_audio}"
+                )
+                video_label = out_video
+                audio_label = out_audio
+                elapsed_s = max(
+                    fade_duration_s,
+                    elapsed_s + (sequence_assets[index].duration_ms / 1000) - fade_duration_s,
+                )
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            *input_args,
+            "-filter_complex",
+            ";".join(filter_parts),
+            "-map",
+            video_label,
+            "-map",
+            audio_label,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "18",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            str(recap_path),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            return {
+                "success": False,
+                "error": f"Recap render failed: {result.stderr[:500]}",
+            }
+        return {
+            "success": True,
+            "sequence_count": len(sequence_paths),
+            "transition": transition,
+        }
+
     def workspace_recap_render(self, **kwargs) -> dict:
         """Render a recap composite video from workspace stages.
         
         Exports each selected stage to a temporary file, then concatenates
         them into a single MP4 using the ffmpeg concat demuxer.
-        Accepts: stage_ids (list[str]), transition (str), result_card (str).
+        Accepts: stage_ids (list[str]), transition (str), result_card (str),
+        and stage_options (list[dict]) for ordered subtitle/audio overrides.
         Returns the path to the rendered recap file.
         """
         if not self.workspace:
@@ -1380,14 +1887,21 @@ class ProjectController(QObject):
         if not self.workspace_path:
             return {"success": False, "error": "Workspace has not been saved"}
 
-        stage_ids = kwargs.get("stage_ids") or list(self.workspace.stage_entries.keys())
+        raw_stage_ids = kwargs.get("stage_ids") or list(self.workspace.stage_order or self.workspace.stage_entries.keys())
+        if isinstance(raw_stage_ids, (str, bytes)):
+            stage_ids = [str(raw_stage_ids).strip()] if str(raw_stage_ids).strip() else []
+        else:
+            stage_ids = [str(stage_id).strip() for stage_id in raw_stage_ids if str(stage_id).strip()]
+        transition = self._recap_transition(kwargs.get("transition"))
+        result_card_mode = self._recap_result_card_mode(kwargs.get("result_card"))
+        stage_options = self._recap_stage_options(kwargs.get("stage_options"))
 
         ws_path = Path(self.workspace_path)
         recap_path = ws_path / "recap.mp4"
         temp_dir = ws_path / ".recap-tmp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        exported_segments: list[Path] = []
+        exported_segments: list[dict] = []
         errors: list[dict] = []
 
         try:
@@ -1414,7 +1928,44 @@ class ProjectController(QObject):
                     log_callback=lambda line: None,
                 )
                 if seg_path.exists() and seg_path.stat().st_size > 0:
-                    exported_segments.append(seg_path)
+                    segment_path = seg_path
+                    segment_asset = probe_video(seg_path)
+                    stage_option = stage_options.get(str(sid), {})
+                    if self._recap_stage_option_requested(stage_option):
+                        processed_path = temp_dir / f"{sid}-recap-variant.mp4"
+                        try:
+                            self._set_status(f"Applying recap options to {sid}...")
+                            self._render_recap_stage_variant(
+                                seg_path,
+                                processed_path,
+                                subtitle=str(stage_option.get("subtitle") or ""),
+                                audio_gain=float(stage_option.get("audio_gain", 1.0)),
+                                audio_muted=bool(stage_option.get("audio_muted", False)),
+                                width=max(2, int(segment_asset.width or 0)),
+                                height=max(2, int(segment_asset.height or 0)),
+                            )
+                            if processed_path.exists() and processed_path.stat().st_size > 0:
+                                segment_path = processed_path
+                                segment_asset = probe_video(segment_path)
+                            else:
+                                errors.append({
+                                    "stage_id": sid,
+                                    "error": "Recap stage overrides produced an empty file",
+                                })
+                        except Exception as exc:
+                            errors.append({
+                                "stage_id": sid,
+                                "error": f"Recap stage overrides failed: {exc}",
+                            })
+                    exported_segments.append(
+                        {
+                            "stage_id": sid,
+                            "entry": entry,
+                            "path": segment_path,
+                            "asset": segment_asset,
+                            "recap_options": stage_option,
+                        }
+                    )
                 else:
                     errors.append({"stage_id": sid, "error": "Export produced empty file"})
 
@@ -1425,30 +1976,89 @@ class ProjectController(QObject):
                     "errors": errors,
                 }
 
-            if len(exported_segments) == 1:
-                import shutil
-                shutil.copy2(str(exported_segments[0]), str(recap_path))
-            else:
-                concat_file = temp_dir / "concat.txt"
-                with open(concat_file, "w") as f:
-                    for seg in exported_segments:
-                        f.write(f"file '{seg.resolve()}'\n")
+            reference_asset = exported_segments[0]["asset"]
+            target_width = max(2, int(reference_asset.width) - (int(reference_asset.width) % 2))
+            target_height = max(2, int(reference_asset.height) - (int(reference_asset.height) % 2))
+            target_fps = max(1.0, float(reference_asset.fps or 30.0))
 
-                cmd = [
-                    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-                    "-i", str(concat_file),
-                    "-c", "copy",
-                    str(recap_path),
-                ]
-                result = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=300
-                )
-                if result.returncode != 0:
-                    return {
-                        "success": False,
-                        "error": f"Recap concat failed: {result.stderr[:500]}",
-                        "errors": errors,
+            sequence_paths = [segment["path"] for segment in exported_segments]
+            if result_card_mode != "none":
+                cards_result = self.resolve_result_cards("recap")
+                if not cards_result.get("success"):
+                    errors.append({"error": cards_result.get("error", "Result cards unavailable")})
+                else:
+                    cards_by_stage = {
+                        str(card.get("stage_id") or ""): card
+                        for card in cards_result.get("cards", [])
                     }
+                    if result_card_mode == "each":
+                        sequence_paths = []
+                        for segment in exported_segments:
+                            sequence_paths.append(segment["path"])
+                            card = cards_by_stage.get(segment["stage_id"])
+                            if not card or not card.get("enabled", True):
+                                continue
+                            card_path = temp_dir / f"{segment['stage_id']}-result-card.mp4"
+                            try:
+                                self._render_recap_card_video(
+                                    card.get("stage_name") or f"Stage {card.get('stage_number') or ''}".strip(),
+                                    [
+                                        f"Stage {card.get('stage_number') or '--'}",
+                                        f"Status: {self._recap_status_label(card.get('status'))}",
+                                    ],
+                                    card_path,
+                                    width=target_width,
+                                    height=target_height,
+                                    fps=target_fps,
+                                    duration_ms=int(card.get("duration_ms", 3000)),
+                                )
+                                sequence_paths.append(card_path)
+                            except Exception as exc:
+                                errors.append(
+                                    {
+                                        "stage_id": segment["stage_id"],
+                                        "error": f"Result card render failed: {exc}",
+                                    }
+                                )
+                    elif result_card_mode == "end":
+                        summary_lines = []
+                        for segment in exported_segments:
+                            card = cards_by_stage.get(segment["stage_id"])
+                            if not card or not card.get("enabled", True):
+                                continue
+                            summary_lines.append(
+                                f"Stage {card.get('stage_number') or '--'} • {card.get('stage_name') or segment['stage_id']} • {self._recap_status_label(card.get('status'))}"
+                            )
+                        if summary_lines:
+                            summary_path = temp_dir / "recap-summary-card.mp4"
+                            try:
+                                self._render_recap_card_video(
+                                    self.workspace.name or "Match Recap",
+                                    summary_lines[:8],
+                                    summary_path,
+                                    width=target_width,
+                                    height=target_height,
+                                    fps=target_fps,
+                                    duration_ms=3500,
+                                )
+                                sequence_paths.append(summary_path)
+                            except Exception as exc:
+                                errors.append({"error": f"Result card render failed: {exc}"})
+
+            render_result = self._render_recap_sequence(
+                sequence_paths,
+                recap_path,
+                transition=transition,
+                target_width=target_width,
+                target_height=target_height,
+                target_fps=target_fps,
+            )
+            if not render_result.get("success"):
+                return {
+                    "success": False,
+                    "error": render_result.get("error", "Recap render failed"),
+                    "errors": errors,
+                }
 
             if not recap_path.exists() or recap_path.stat().st_size <= 0:
                 return {
@@ -1463,6 +2073,14 @@ class ProjectController(QObject):
                 "output_path": str(recap_path),
                 "size_bytes": recap_path.stat().st_size,
                 "stage_count": len(exported_segments),
+                "transition": transition,
+                "result_card": result_card_mode,
+                "sequence_count": len(sequence_paths),
+                "stage_options_applied": [
+                    segment["stage_id"]
+                    for segment in exported_segments
+                    if self._recap_stage_option_requested(segment.get("recap_options"))
+                ],
                 "errors": errors,
             }
 
@@ -2843,8 +3461,27 @@ class ProjectController(QObject):
         for clip in clips:
             if clip.clip_id == clip_id:
                 for key, value in kwargs.items():
-                    if hasattr(clip, key):
-                        setattr(clip, key, value)
+                    if not hasattr(clip, key):
+                        continue
+                    if key == "sync_offset_ms":
+                        try:
+                            value = int(value)
+                        except (TypeError, ValueError):
+                            continue
+                    elif key == "audio_gain":
+                        try:
+                            value = max(0.0, min(2.0, float(value)))
+                        except (TypeError, ValueError):
+                            continue
+                    elif key in {"audio_muted", "audio_primary", "angle_aligned"}:
+                        value = bool(value)
+                    elif key == "angle_role":
+                        value = str(value or clip.angle_role).strip() or clip.angle_role
+                    setattr(clip, key, value)
+                if clip.audio_primary:
+                    for other in clips:
+                        if other.clip_id != clip_id:
+                            other.audio_primary = False
                 if self.workspace is not None:
                     self.workspace.updated_at = _utc_now()
                     self.project_changed.emit()
@@ -2862,6 +3499,23 @@ class ProjectController(QObject):
                     self.project_changed.emit()
                 return True
         return False
+
+    def workspace_stage_clip_reorder(
+        self, stage_id: str, clip_id: str, target_index: int
+    ) -> list[dict] | None:
+        """Move a clip to a new index within a stage composite list."""
+        clips = self._workspace_stage_clip_models(stage_id)
+        for index, clip in enumerate(clips):
+            if clip.clip_id != clip_id:
+                continue
+            moving_clip = clips.pop(index)
+            next_index = max(0, min(len(clips), int(target_index)))
+            clips.insert(next_index, moving_clip)
+            if self.workspace is not None:
+                self.workspace.updated_at = _utc_now()
+                self.project_changed.emit()
+            return self._get_stage_clips(stage_id)
+        return None
 
     # ── Angle Align ─────────────────────────────────────────────────
 
@@ -2949,7 +3603,15 @@ class ProjectController(QObject):
         persisted_plan = [
             self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
         ]
-        cut_plan = persisted_plan or generated["cut_plan"]
+        if persisted_plan:
+            plan_by_position = {
+                int(item["position"]): dict(item) for item in generated["cut_plan"]
+            }
+            for item in persisted_plan:
+                plan_by_position[int(item["position"])] = dict(item)
+            cut_plan = [plan_by_position[position] for position in sorted(plan_by_position)]
+        else:
+            cut_plan = generated["cut_plan"]
         return {
             "success": True,
             "stage_id": stage_id,
@@ -2958,6 +3620,23 @@ class ProjectController(QObject):
             "cut_plan": cut_plan,
             "has_overrides": bool(profile.angle_director_plan),
         }
+
+    def _stage_composite_profile(
+        self, stage_id: str, output_id: str | None = None
+    ) -> OutputProfile | None:
+        if output_id:
+            profile = self._find_output_profile(output_id)
+            if profile is None:
+                return None
+            return profile
+        for candidate in self._output_profiles.values():
+            if (
+                candidate.scope_type == "stage"
+                and candidate.scope_id == stage_id
+                and candidate.profile_kind == "stage_composite"
+            ):
+                return candidate
+        return None
 
     def angle_director_override_cut(
         self,
@@ -2970,47 +3649,32 @@ class ProjectController(QObject):
     ) -> dict:
         """Override a suggested cut in the angle director plan."""
         clips = self._workspace_stage_clip_models(stage_id)
-        profile = None
-        if output_id:
-            profile = self._find_output_profile(output_id)
-        elif self.workspace is not None:
-            for candidate in self._output_profiles.values():
-                if (
-                    candidate.scope_type == "stage"
-                    and candidate.scope_id == stage_id
-                    and candidate.profile_kind == "stage_composite"
-                ):
-                    profile = candidate
-                    break
+        profile = self._stage_composite_profile(stage_id, output_id)
         if profile is None:
             return {"success": False, "error": "Stage composite output profile not found"}
         if profile.scope_type != "stage" or profile.scope_id != stage_id:
             return {"success": False, "error": "Output profile does not belong to this stage"}
+        if position < 0:
+            return {"success": False, "error": "position must be 0 or greater"}
 
         for clip in clips:
             if clip.clip_id == clip_id:
                 angle_role = clip.angle_role
-                updated = False
-                for decision in profile.angle_director_plan:
-                    if decision.position == position:
-                        decision.clip_id = clip_id
-                        decision.angle_role = angle_role
-                        decision.start_ms = start_ms
-                        decision.duration_ms = duration_ms
-                        decision.suggested = False
-                        updated = True
-                        break
-                if not updated:
-                    profile.angle_director_plan.append(
-                        AngleDirectorCutDecision(
-                            position=position,
-                            clip_id=clip_id,
-                            angle_role=angle_role,
-                            start_ms=start_ms,
-                            duration_ms=duration_ms,
-                            suggested=False,
-                        )
+                profile.angle_director_plan = [
+                    decision
+                    for decision in profile.angle_director_plan
+                    if decision.position != position
+                ]
+                profile.angle_director_plan.append(
+                    AngleDirectorCutDecision(
+                        position=position,
+                        clip_id=clip_id,
+                        angle_role=angle_role,
+                        start_ms=max(0, int(start_ms)),
+                        duration_ms=max(0, int(duration_ms)),
+                        suggested=False,
                     )
+                )
                 profile.angle_director_plan.sort(key=lambda item: item.position)
                 if self.workspace is not None:
                     self.workspace.updated_at = _utc_now()
@@ -3020,8 +3684,38 @@ class ProjectController(QObject):
                     "clip_id": clip_id,
                     "output_id": profile.output_id,
                     "overrides": len(profile.angle_director_plan),
+                    "cut_plan": [
+                        self._angle_director_cut_to_dict(item)
+                        for item in profile.angle_director_plan
+                    ],
                 }
         return {"success": False, "error": f"Clip {clip_id} not found"}
+
+    def angle_director_clear_cut(
+        self,
+        stage_id: str,
+        position: int,
+        output_id: str | None = None,
+    ) -> dict:
+        """Remove a persisted angle-director override for a given position."""
+        profile = self._stage_composite_profile(stage_id, output_id)
+        if profile is None:
+            return {"success": False, "error": "Stage composite output profile not found"}
+        before_count = len(profile.angle_director_plan)
+        profile.angle_director_plan = [
+            decision for decision in profile.angle_director_plan if decision.position != position
+        ]
+        if len(profile.angle_director_plan) == before_count:
+            return {"success": False, "error": "Override not found"}
+        if self.workspace is not None:
+            self.workspace.updated_at = _utc_now()
+            self.project_changed.emit()
+        return {
+            "success": True,
+            "output_id": profile.output_id,
+            "overrides": len(profile.angle_director_plan),
+            "cut_plan": [self._angle_director_cut_to_dict(item) for item in profile.angle_director_plan],
+        }
 
     # ── Audio Mix Lanes ─────────────────────────────────────────────
 
@@ -4173,6 +4867,7 @@ class ProjectController(QObject):
         self.project.merge_sources.append(
             MergeSource(
                 asset=asset,
+                angle_role=default_merge_source_angle_role(asset),
                 pip_size_percent=self.project.merge.pip_size_percent,
                 pip_x=self.project.merge.pip_x,
                 pip_y=self.project.merge.pip_y,
@@ -5241,6 +5936,7 @@ class ProjectController(QObject):
         pip_x: float | None = None,
         pip_y: float | None = None,
         opacity: float | None = None,
+        angle_role: str | None = None,
     ) -> None:
         for source in self.project.merge_sources:
             if source.id != source_id:
@@ -5253,6 +5949,8 @@ class ProjectController(QObject):
                 source.pip_y = max(0.0, min(1.0, float(pip_y)))
             if opacity is not None:
                 source.opacity = max(0.0, min(1.0, float(opacity)))
+            if angle_role is not None:
+                source.angle_role = _normalize_merge_source_angle_role(angle_role, source.asset)
             self.project.touch()
             self.project_changed.emit()
             return
@@ -5478,6 +6176,7 @@ class ProjectController(QObject):
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_original_shots()
         self._remember_project(self.project_path)
+        self._ensure_project_workspace_membership(self.project_path)
         self._set_status(f"Project folder ready at {self.project_path}.")
         self.project_path_changed.emit(str(self.project_path))
         self.project_changed.emit()
@@ -5499,6 +6198,7 @@ class ProjectController(QObject):
         )
         self._remember_original_shots()
         self._remember_project(self.project_path)
+        self._ensure_project_workspace_membership(self.project_path)
         if recovered_media and recovered_practiscore and self._practiscore_source_name:
             self._set_status(
                 f"Opened project folder {self.project_path} and restored renamed project media and PractiScore from {self._practiscore_source_name}."

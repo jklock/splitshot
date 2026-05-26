@@ -2,7 +2,7 @@
 
 The Project pane is the setup surface for a SplitShot run. It chooses the project folder, stores project details, stages PractiScore context from a local CSV/TXT export, offers a quick browser shortcut to PractiScore, and imports the primary video.
 
-Once a project is active, SplitShot keeps later workflow controls in their working panes: reusable output profiles and hooks live in [export.md](export.md), review-source selection lives in [review.md](review.md), and multi-angle tools live in [pip.md](pip.md). The Project pane stays focused on setup.
+Once a project is active, SplitShot keeps later workflow controls in their working panes: reusable output profiles and hooks live in [export.md](export.md), review-source selection lives in [review.md](review.md), and added-media angle-role/source-management controls live in [pip.md](pip.md). The Project pane stays focused on setup.
 
 ![Project pane with project name, PractiScore browser opener, import controls, primary video path, and project folder controls](../../screenshots/ProjectPane.png)
 
@@ -28,7 +28,7 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 | `PractiScore Import` | Groups the browser shortcut, local file import, and staged match-context controls while showing whether stage data is imported. |
 | `Open PractiScore Dashboard` | Opens `https://practiscore.com/dashboard/home` in your system browser so you can log in or download results. Disabled until a project is active. |
 | `Select PractiScore File` | Imports a local PractiScore CSV/TXT file as the active staged source. Disabled until a project is active. |
-| `Match type` | Chooses the scoring family for the staged file, such as IDPA, USPSA, or IPSC. |
+| `Match type` | Chooses the scoring family for the staged file, such as IDPA, USPSA, or Steel Challenge. |
 | `Stage #` | Selects the stage from the imported match file. |
 | `Competitor name` | Selects the competitor record from the staged data. |
 | `Place` | Selects the matching place entry when duplicate competitor rows exist. `Competitor name` and `Place` stay synchronized. |
@@ -46,7 +46,7 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 6. When a competitor name is unique, selecting it also selects the matching `Place`. Selecting a duplicate `Place` backfills the matching competitor row.
 7. Click `Import Primary Video`, or paste the absolute path into `Primary Video` and press Enter.
 8. Wait for local analysis to finish. The waveform, shot list, metrics, score rows, and overlays depend on that analysis.
-9. Continue into [pip.md](pip.md), [review.md](review.md), and [export.md](export.md) for angle tools, review-source selection, reusable output recipes, and export hooks.
+9. Continue into [pip.md](pip.md), [review.md](review.md), and [export.md](export.md) for Compose source roles and sync, review-source selection, reusable output recipes, and export hooks.
 10. Use `Create Project` for a clean session and `Delete Project` when the saved metadata should be removed without deleting the folder contents.
 
 ## Downstream Effects
@@ -56,7 +56,7 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 - PractiScore file imports are staged inside the project's `CSV` folder.
 - Once a project is active, later browse dialogs start from that project folder by default. Primary-video import stays a source-file picker so you can import from anywhere.
 - Export defaults point at the project's `Output/output.mp4` path unless you override them.
-- Replacing the primary video resets media-bound state such as timing, PiP media, and export logs.
+- Replacing the primary video resets media-bound state such as timing, added media, and export logs.
 - The project folder is the persistent home for the current bundle.
 
 ## Common Fixes
@@ -78,4 +78,4 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 See [../USER_GUIDE.md](../USER_GUIDE.md) for the broader guide, then continue to [pip.md](pip.md), [review.md](review.md), [export.md](export.md), or [shotml.md](shotml.md).
 <!-- project-pane-guide -->
 <!-- project-pane-guide-eof -->
-
+<!-- project-pane-guide-end -->

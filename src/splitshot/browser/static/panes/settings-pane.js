@@ -131,6 +131,7 @@ export function createSettingsPane({
       .filter((source) => source && typeof source === "object")
       .map((source) => ({
         asset: { ...(source.asset || {}) },
+        angle_role: String(source.angle_role || (source.asset?.is_still_image ? "detail" : "follow")),
         pip_size_percent: source.pip_size_percent ?? null,
         pip_x: Number(source.pip_x ?? 1.0),
         pip_y: Number(source.pip_y ?? 1.0),
@@ -366,8 +367,8 @@ export function createSettingsPane({
     if (pipSummary) {
       const sourceCount = Array.isArray(persistedSettings.merge_source_defaults) ? persistedSettings.merge_source_defaults.length : 0;
       pipSummary.textContent = sourceCount > 0
-        ? `${sourceCount} saved PiP source${sourceCount === 1 ? "" : "s"} in defaults.`
-        : "No saved PiP media defaults.";
+        ? `${sourceCount} saved added-media source${sourceCount === 1 ? "" : "s"} in defaults.`
+        : "No saved added-media defaults.";
     }
     renderSettingsSections();
     renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);

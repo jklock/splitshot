@@ -129,6 +129,10 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .review-style-grid .custom-box-style-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .opacity-control-pair {
     margin-left: 0;
   }

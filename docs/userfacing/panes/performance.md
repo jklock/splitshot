@@ -2,6 +2,8 @@
 
 The Performance pane is the history and analytics surface for saved stage and match records. It lets you browse prior results, reopen the linked Stage or Match workspace, keep lightweight notes and tags with each record, export the library as CSV or JSON, and create or restore a library backup without reopening the original edit session first.
 
+In the current shared shell, summary tiles, record lists, and analytics stay in the main area, the selected record stays visible in the lower pane, and the right-hand inspector owns filters, reopen actions, notes/tags, backup/export, and Performance-only settings.
+
 ![Performance overview with summary tiles and top-level export and refresh actions](../../../artifacts/performance-bundle-20260524/screenshots/overview.png)
 
 ![Performance detail view with the selected record payload, reopen actions, tags, and notes editors](../../../artifacts/performance-bundle-20260524/screenshots/detail.png)
@@ -21,10 +23,10 @@ The Performance pane is the history and analytics surface for saved stage and ma
 
 | Control | What it does |
 | --- | --- |
-| `Overview` | Shows summary tiles for the currently loaded Performance records. |
-| `Records` | Lists saved stage and match records with search, sort, and discipline filter controls. |
-| `Detail` | Shows the selected record payload, then surfaces reopen, tags, and notes actions when that record supports them. |
-| `Analytics` | Shows score trend, discipline breakdown, and outlier messaging. When there is not enough data yet, the pane says so directly instead of inventing a chart. |
+| `Overview` | Keeps the summary tiles and personal-best list in the main area while the right-hand inspector summarizes the current dataset. |
+| `Records` | Keeps the saved stage and match rows in the main area while the right-hand inspector owns search, sort, discipline filter, refresh, and export actions. |
+| `Detail` | Keeps the selected record payload in the lower pane and opens the right-hand inspector section for reopen, tags, and notes actions. |
+| `Analytics` | Keeps score trend, discipline breakdown, and outlier messaging in the main area while the right-hand inspector reports the current analytics scope. |
 | `Backup` | Opens the library backup and restore entry points for saved history records. |
 | `Settings` | Stores Performance-only defaults such as the default sort order and whether the library refreshes automatically when it opens. |
 | `Update Library` | Reloads the current library records from disk. Use this when auto-refresh is turned off or after new records are saved elsewhere. |
@@ -38,8 +40,8 @@ The Performance pane is the history and analytics surface for saved stage and ma
 
 1. Open `Performance Library` from the landing surface.
 2. Start in `Overview` for a quick read on how many records are loaded and what the current library looks like.
-3. Move to `Records` when you need to search by name/date, sort the library, or narrow the list by discipline.
-4. Click a row, then open `Detail` to inspect the selected record, review or update tags/notes, or jump back into the underlying stage or workspace.
+3. Move to `Records` when you need to search by name/date, sort the library, or narrow the list by discipline; those controls live in the right-hand inspector while the rows stay in the main area.
+4. Click a row to refresh the lower selected-record pane, then open `Detail` when you want reopen actions, tags, or notes for that record.
 5. Open `Analytics` when you want the trend and discipline roll-up view. If SplitShot does not have enough data yet, trust the hint text — it is intentionally conservative.
 6. Use `Export CSV` or `Export JSON` when you need a portable copy of the current library data.
 7. Open `Backup` before a migration or cleanup pass so you can create a restorable library snapshot.

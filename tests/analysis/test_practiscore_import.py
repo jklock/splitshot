@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from splitshot.scoring.practiscore import (
+    default_ruleset_for_match_type,
     describe_practiscore_file,
     infer_practiscore_context,
     import_practiscore_stage,
+    normalize_match_type,
 )
 
 
@@ -46,6 +48,26 @@ def test_infer_practiscore_context_from_uspsa_report_text() -> None:
     assert result.competitor_place == 1
 
 
+def test_infer_practiscore_context_from_steel_challenge_report_text() -> None:
+    result = infer_practiscore_context(EXAMPLES_DIR / "SteelChallenge" / "report.txt")
+
+    assert result.match_type == "steel_challenge"
+    assert result.stage_number == 1
+    assert result.competitor_name == "Jane Steel"
+    assert result.competitor_place == 1
+
+
+def test_normalize_match_type_accepts_steel_challenge_aliases() -> None:
+    assert normalize_match_type("Steel Challenge") == "steel_challenge"
+    assert normalize_match_type("steel-challenge") == "steel_challenge"
+    assert normalize_match_type("SCSA") == "steel_challenge"
+
+
+def test_default_ruleset_uses_steel_challenge_for_aliases() -> None:
+    assert default_ruleset_for_match_type("Steel Challenge") == "steel_challenge"
+    assert default_ruleset_for_match_type("SCSA") == "steel_challenge"
+
+
 def test_describe_practiscore_file_lists_idpa_stage_and_competitor_options() -> None:
     result = describe_practiscore_file(EXAMPLES_DIR / "IDPA" / "IDPA.csv")
 
@@ -70,6 +92,17 @@ def test_describe_practiscore_file_lists_hit_factor_stage_and_competitor_options
     assert any(
         option.name == "Stephen Lutman" and option.place == 1 for option in result.competitors
     )
+
+
+def test_describe_practiscore_file_lists_steel_challenge_stage_and_competitor_options() -> None:
+    result = describe_practiscore_file(EXAMPLES_DIR / "SteelChallenge" / "report.txt")
+
+    assert result.source_name == "report.txt"
+    assert result.match_type == "steel_challenge"
+    assert result.stage_numbers == [1, 2]
+    assert result.competitors[0].name == "Jane Steel"
+    assert result.competitors[0].place == 1
+    assert any(option.name == "Ben Rice" and option.place == 2 for option in result.competitors)
 
 
 def test_import_idpa_stage_results_from_csv() -> None:
@@ -144,6 +177,33 @@ def test_import_uspsa_stage_results_from_report_text() -> None:
     assert result.imported_stage.stage_points == 125.0
     assert result.imported_stage.stage_place == 1
     assert result.imported_stage.score_counts == {"A": 15.0, "C": 8.0, "D": 2.0}
+
+
+def test_import_steel_challenge_stage_results_from_report_text() -> None:
+    result = import_practiscore_stage(
+        EXAMPLES_DIR / "SteelChallenge" / "report.txt",
+        match_type="steel_challenge",
+        stage_number=2,
+        competitor_name="Rice, Ben",
+        competitor_place=2,
+        source_name="report.txt",
+    )
+
+    assert result.ruleset == "steel_challenge"
+    assert result.manual_penalties == 0.0
+    assert result.penalty_counts == {"steel_misses": 1.0, "stop_plate_failures": 1.0}
+    assert result.imported_stage.source_name == "report.txt"
+    assert result.imported_stage.match_type == "steel_challenge"
+    assert result.imported_stage.competitor_name == "Ben Rice"
+    assert result.imported_stage.competitor_place == 2
+    assert result.imported_stage.stage_number == 2
+    assert result.imported_stage.stage_name == "Roundabout"
+    assert result.imported_stage.raw_seconds == 16.50
+    assert result.imported_stage.final_time == 49.50
+    assert result.imported_stage.score_counts == {
+        "Plate Miss": 1.0,
+        "Stop Plate Failure": 1.0,
+    }
 
 
 def test_describe_practiscore_file_handles_idpa_dnf_place_rows(tmp_path: Path) -> None:

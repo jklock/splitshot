@@ -22,7 +22,6 @@ Stage*.mp4
 !tests/fixtures/media/stage-merge.mp4
 artifacts/*.png
 artifacts/
-development/
 .archive/
 
 # Electron

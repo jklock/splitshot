@@ -6,6 +6,7 @@ import shlex
 import subprocess
 import sys
 import threading
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,10 +24,11 @@ from splitshot.domain.models import (
     ExportVideoCodec,
     MergeLayout,
     MergeSource,
+    OverlayPosition,
     Project,
 )
 from splitshot.media.ffmpeg import ffmpeg_command
-from splitshot.merge.layouts import calculate_merge_canvas, calculate_pip_rect
+from splitshot.merge.layouts import Rect, calculate_merge_canvas, calculate_pip_rect
 from splitshot.overlay.render import OverlayRenderer
 from splitshot.scoring.logic import calculate_hit_factor
 
@@ -356,6 +358,109 @@ def _build_multi_pip_merge_plan(
     )
 
 
+def _rect_filter_chain(
+    input_label: str,
+    rect: Rect,
+    *,
+    output_label: str,
+    fit_mode: str = "contain",
+    offset_ms: int = 0,
+    opacity: float | None = None,
+) -> str:
+    chain = f"{input_label}setpts=PTS-STARTPTS"
+    if offset_ms < 0:
+        chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"
+    if fit_mode == "cover":
+        chain += (
+            f",scale={rect.width}:{rect.height}:force_original_aspect_ratio=increase,"
+            f"crop={rect.width}:{rect.height}"
+        )
+    else:
+        chain += (
+            f",scale={rect.width}:{rect.height}:force_original_aspect_ratio=decrease,"
+            f"pad={rect.width}:{rect.height}:(ow-iw)/2:(oh-ih)/2:color=black"
+        )
+    if opacity is not None and opacity < 1.0:
+        chain += f",format=rgba,colorchannelmixer=aa={opacity:.3f}"
+    return f"{chain}[{output_label}]"
+
+
+def _build_positioned_two_source_merge_plan(
+    project: Project,
+    secondary_source: MergeSource,
+    canvas,
+    *,
+    primary_fit_mode: str = "contain",
+    secondary_fit_mode: str = "contain",
+) -> BaseRenderPlan:
+    if canvas.secondary_rect is None:
+        raise ValueError("Positioned merge layouts require a secondary rectangle")
+
+    fps = _output_fps(project)
+    input_args = [
+        *ffmpeg_command(
+            [
+                "-v",
+                "info",
+            ]
+        ),
+        "-i",
+        project.primary_video.path,
+    ]
+    input_args.extend(_source_input_args(secondary_source, fps))
+    input_args.append("-an")
+
+    filter_complex = ";".join(
+        [
+            f"color=c=black:s={canvas.width}x{canvas.height}:r={fps:.3f}[bg0]",
+            _rect_filter_chain(
+                "[0:v]",
+                canvas.primary_rect,
+                output_label="v0",
+                fit_mode=primary_fit_mode,
+            ),
+            _rect_filter_chain(
+                "[1:v]",
+                canvas.secondary_rect,
+                output_label="v1",
+                fit_mode=secondary_fit_mode,
+                offset_ms=_source_sync_offset_ms(secondary_source),
+                opacity=_source_opacity(secondary_source),
+            ),
+            (
+                f"[bg0][v0]overlay=x={canvas.primary_rect.x}:y={canvas.primary_rect.y}:"
+                "eof_action=pass:shortest=0:repeatlast=1[bg1]"
+            ),
+            (
+                f"[bg1][v1]overlay=x={canvas.secondary_rect.x}:y={canvas.secondary_rect.y}:"
+                "eof_action=pass:shortest=0:repeatlast=0,format=rgba[f]"
+            ),
+        ]
+    )
+
+    command = [
+        *input_args,
+        "-filter_complex",
+        filter_complex,
+        "-map",
+        "[f]",
+        "-r",
+        f"{fps:.3f}",
+        "-pix_fmt",
+        "rgba",
+        "-f",
+        "rawvideo",
+        "pipe:1",
+    ]
+    return BaseRenderPlan(
+        command=command,
+        width=canvas.width,
+        height=canvas.height,
+        fps=fps,
+        duration_ms=_merged_duration_ms(project, [secondary_source]),
+    )
+
+
 def _build_single_video_plan(project: Project) -> BaseRenderPlan:
     fps = _output_fps(project)
     command = ffmpeg_command(
@@ -404,6 +509,21 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
         secondary_source.pip_x,
         secondary_source.pip_y,
     )
+    if project.merge.layout in {
+        MergeLayout.FULL_SCREEN_PORTRAIT,
+        MergeLayout.DUAL_CENTER_HUD,
+        MergeLayout.DUAL_TOP_HUD,
+    }:
+        return _build_positioned_two_source_merge_plan(
+            project,
+            secondary_source,
+            canvas,
+            primary_fit_mode=(
+                "cover"
+                if project.merge.layout == MergeLayout.FULL_SCREEN_PORTRAIT
+                else "contain"
+            ),
+        )
     fps = _output_fps(project)
     offset_ms = _source_sync_offset_ms(secondary_source)
 
@@ -551,6 +671,8 @@ def _encoder_command(
     pass_number: int | None = None,
     passlogfile: Path | None = None,
     first_pass: bool = False,
+    audio_start_ms: int = 0,
+    audio_duration_ms: int | None = None,
 ) -> list[str]:
     video_bitrate = f"{project.export.video_bitrate_mbps:g}M"
     audio_bitrate = f"{project.export.audio_bitrate_kbps}k"
@@ -572,6 +694,12 @@ def _encoder_command(
         []
         if first_pass
         else [
+            *(["-ss", f"{max(0, audio_start_ms) / 1000:.3f}"] if audio_start_ms > 0 else []),
+            *(
+                ["-t", f"{max(0, audio_duration_ms) / 1000:.3f}"]
+                if audio_duration_ms is not None and audio_duration_ms > 0
+                else []
+            ),
             "-i",
             project.primary_video.path,
             "-map",
@@ -655,6 +783,8 @@ def _render_pass(
     progress_callback: Callable[[float], None] | None,
     progress_start: float,
     progress_span: float,
+    source_start_ms: int = 0,
+    output_duration_ms: int | None = None,
 ) -> None:
     crop_left, crop_top, crop_width, crop_height = crop_box
     decoder = subprocess.Popen(
@@ -671,8 +801,17 @@ def _render_pass(
     encoder_log_thread = _start_log_reader(encoder.stderr, "encoder", log_lines, log_callback)
     renderer = OverlayRenderer()
     bytes_per_frame = plan.width * plan.height * 4
-    total_frames = max(1, int(math.ceil((plan.duration_ms / 1000.0) * plan.fps)))
+    effective_duration_ms = max(
+        0,
+        output_duration_ms if output_duration_ms is not None else plan.duration_ms,
+    )
+    total_frames = max(1, int(math.ceil((effective_duration_ms / 1000.0) * plan.fps)))
+    source_start_frame = max(0, int(round((max(0, source_start_ms) / 1000.0) * plan.fps)))
     try:
+        for _ in range(source_start_frame):
+            skipped = _read_exact(decoder.stdout, bytes_per_frame)
+            if len(skipped) < bytes_per_frame:
+                return
         for frame_index in range(total_frames):
             raw = _read_exact(decoder.stdout, bytes_per_frame)
             if len(raw) < bytes_per_frame:
@@ -700,7 +839,7 @@ def _render_pass(
             renderer.paint(
                 painter,
                 project,
-                int(round((frame_index / plan.fps) * 1000)),
+                int(round(((source_start_frame + frame_index) / plan.fps) * 1000)),
                 output_width,
                 output_height,
             )
@@ -754,6 +893,8 @@ def export_project(
     output_path: str | Path,
     progress_callback: Callable[[float], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
+    timeline_start_ms: int = 0,
+    timeline_end_ms: int | None = None,
 ) -> Path:
     project.export.last_log = ""
     project.export.last_error = None
@@ -763,6 +904,15 @@ def export_project(
     _ensure_qt_gui_application()
     project.scoring.hit_factor = calculate_hit_factor(project)
     plan = build_base_render_plan(project)
+    effective_start_ms = max(0, min(int(timeline_start_ms or 0), plan.duration_ms))
+    requested_end_ms = plan.duration_ms if timeline_end_ms is None else int(timeline_end_ms)
+    effective_end_ms = max(
+        effective_start_ms,
+        min(max(effective_start_ms, requested_end_ms), plan.duration_ms),
+    )
+    effective_duration_ms = max(0, effective_end_ms - effective_start_ms)
+    if effective_duration_ms <= 0:
+        raise ValueError("Export window produced no video frames.")
     crop_left, crop_top, crop_width, crop_height = compute_crop_box(
         plan.width,
         plan.height,
@@ -782,6 +932,7 @@ def export_project(
         f"Audio: {project.export.audio_codec.value} {project.export.audio_sample_rate} Hz {project.export.audio_bitrate_kbps} kbps",
         f"Color: {project.export.color_space.value}",
         f"Two pass requested: {project.export.two_pass}",
+        f"Render window: {effective_start_ms}ms → {effective_end_ms}ms ({effective_duration_ms}ms)",
         f"Decoder command: {shlex.join(plan.command)}",
     ]
 
@@ -806,6 +957,8 @@ def export_project(
                     pass_number=1,
                     passlogfile=passlogfile,
                     first_pass=True,
+                    audio_start_ms=effective_start_ms,
+                    audio_duration_ms=effective_duration_ms,
                 )
                 pass_two_command = _encoder_command(
                     project,
@@ -816,6 +969,8 @@ def export_project(
                     pass_number=2,
                     passlogfile=passlogfile,
                     first_pass=False,
+                    audio_start_ms=effective_start_ms,
+                    audio_duration_ms=effective_duration_ms,
                 )
                 log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
                 log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
@@ -832,6 +987,8 @@ def export_project(
                     progress_callback,
                     0.0,
                     0.5,
+                    source_start_ms=effective_start_ms,
+                    output_duration_ms=effective_duration_ms,
                 )
                 _render_pass(
                     project,
@@ -845,10 +1002,18 @@ def export_project(
                     progress_callback,
                     0.5,
                     0.5,
+                    source_start_ms=effective_start_ms,
+                    output_duration_ms=effective_duration_ms,
                 )
         else:
             encoder_command = _encoder_command(
-                project, output_width, output_height, plan.fps, output_target
+                project,
+                output_width,
+                output_height,
+                plan.fps,
+                output_target,
+                audio_start_ms=effective_start_ms,
+                audio_duration_ms=effective_duration_ms,
             )
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
             project.export.last_log = "\n".join(log_lines[-400:])
@@ -864,6 +1029,8 @@ def export_project(
                 progress_callback,
                 0.0,
                 1.0,
+                source_start_ms=effective_start_ms,
+                output_duration_ms=effective_duration_ms,
             )
     except RuntimeError as exc:
         project.export.last_error = str(exc)
@@ -887,38 +1054,55 @@ def export_output_profile(
     Delegates to existing export_project for base rendering.
     """
     frame_profile = render_plan.get("frame_profile", "source")
-    if frame_profile != "source":
-        ratio_map = {
-            "16:9": AspectRatio.LANDSCAPE,
-            "9:16": AspectRatio.PORTRAIT,
-            "1:1": AspectRatio.SQUARE,
-            "4:5": AspectRatio.PORTRAIT_45,
-        }
-        target_ratio = ratio_map.get(frame_profile)
-        if target_ratio is not None:
-            project.export.aspect_ratio = target_ratio
-
     metric_captions = render_plan.get("metric_caption_preset", {})
     lead_in_card = render_plan.get("lead_in_card", {})
     brand_mark = render_plan.get("brand_mark", {})
+    run_window = render_plan.get("run_window") or {}
+    render_start_ms = int(run_window.get("start_ms") or 0)
+    render_end_ms = run_window.get("end_ms")
 
-    if metric_captions:
-        _apply_metric_captions_to_project(project, metric_captions)
-    if lead_in_card:
-        _apply_lead_in_card_to_project(project, lead_in_card)
-    if brand_mark:
-        _apply_brand_mark_to_project(project, brand_mark)
-
-    if log_callback:
-        log_callback(
-            f"Exporting with profile: frame={frame_profile}, "
-            f"captions={bool(metric_captions)}, "
-            f"lead_in={bool(lead_in_card)}, "
-            f"brand={bool(brand_mark)}"
-        )
+    original_export = deepcopy(project.export)
+    original_overlay = deepcopy(project.overlay)
+    original_metric_caption_overlay = deepcopy(project._metric_caption_overlay)
+    original_lead_in_card = deepcopy(project._lead_in_card)
+    original_brand_mark = deepcopy(project._brand_mark)
 
     try:
-        result = export_project(project, output_path, progress_callback, log_callback)
+        if frame_profile != "source":
+            ratio_map = {
+                "16:9": AspectRatio.LANDSCAPE,
+                "9:16": AspectRatio.PORTRAIT,
+                "1:1": AspectRatio.SQUARE,
+                "4:5": AspectRatio.PORTRAIT_45,
+            }
+            target_ratio = ratio_map.get(frame_profile)
+            if target_ratio is not None:
+                project.export.aspect_ratio = target_ratio
+
+        if metric_captions:
+            _apply_metric_captions_to_project(project, metric_captions)
+        if lead_in_card:
+            _apply_lead_in_card_to_project(project, lead_in_card)
+        if brand_mark:
+            _apply_brand_mark_to_project(project, brand_mark)
+
+        if log_callback:
+            log_callback(
+                f"Exporting with profile: frame={frame_profile}, "
+                f"trim=({render_start_ms}→{render_end_ms if render_end_ms is not None else 'source_end'}), "
+                f"captions={bool(metric_captions)}, "
+                f"lead_in={bool(lead_in_card)}, "
+                f"brand={bool(brand_mark)}"
+            )
+
+        result = export_project(
+            project,
+            output_path,
+            progress_callback,
+            log_callback,
+            timeline_start_ms=render_start_ms,
+            timeline_end_ms=None if render_end_ms is None else int(render_end_ms),
+        )
 
         if log_callback:
             log_callback(f"Export complete: {result}")
@@ -927,15 +1111,48 @@ def export_output_profile(
         if log_callback:
             log_callback(f"Export failed: {exc}")
         raise
+    finally:
+        last_log = project.export.last_log
+        last_error = project.export.last_error
+        project.export = original_export
+        project.export.last_log = last_log
+        project.export.last_error = last_error
+        project.overlay = original_overlay
+        project._metric_caption_overlay = original_metric_caption_overlay
+        project._lead_in_card = original_lead_in_card
+        project._brand_mark = original_brand_mark
 
 
 def _apply_metric_captions_to_project(project: Project, captions: dict) -> None:
     """Apply metric caption settings to project overlay state."""
-    enabled_fields = captions.get("enabled_fields", [])
-    if "cumulative_time" in enabled_fields:
-        project.overlay.show_timer = True
-    if "hit_factor" in enabled_fields:
-        project.overlay.show_timer = True
+    enabled_fields = {
+        str(field).strip()
+        for field in captions.get("enabled_fields", [])
+        if str(field).strip()
+    }
+    show_timer = "cumulative_time" in enabled_fields
+    show_draw = "first_shot_reaction" in enabled_fields
+    show_shots = "split_times" in enabled_fields
+    show_score = "hit_factor" in enabled_fields or "penalties" in enabled_fields
+    position = str(captions.get("position", "bottom_right") or "bottom_right").strip().lower()
+
+    project._metric_caption_overlay = {
+        "enabled_fields": sorted(enabled_fields),
+        "show_split_times": show_shots,
+        "show_shot_scores": show_shots and show_score,
+    } if enabled_fields else None
+
+    project.overlay.show_timer = show_timer
+    project.overlay.show_draw = show_draw
+    project.overlay.show_shots = show_shots
+    project.overlay.show_score = show_score
+    if enabled_fields and project.overlay.position == OverlayPosition.NONE:
+        project.overlay.position = OverlayPosition.BOTTOM
+    if position in {"bottom_left", "bottom_right"}:
+        project.overlay.shot_quadrant = position
+        project.overlay.timer_lock_to_stack = True
+        project.overlay.draw_lock_to_stack = True
+        project.overlay.score_lock_to_stack = True
 
 
 def _apply_lead_in_card_to_project(project: Project, card: dict) -> None:

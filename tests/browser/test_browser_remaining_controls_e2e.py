@@ -769,18 +769,18 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 first_body = first_card.locator(".merge-media-card-body")
                 source_id = first_card.get_attribute("data-source-id")
                 if first_body.evaluate("body => body.hidden"):
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_card.locator('button[aria-label*="composition item controls"]').click()
                     page.wait_for_function(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=source_id,
                     )
                 else:
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_card.locator('button[aria-label*="composition item controls"]').click()
                     page.wait_for_function(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === true",
                         arg=source_id,
                     )
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_card.locator('button[aria-label*="composition item controls"]').click()
                     page.wait_for_function(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=source_id,
@@ -789,6 +789,15 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     "() => document.querySelector('[data-inspector-section=\"pip-defaults\"]')?.classList.contains('collapsed') === true"
                 )
                 first_body.wait_for(state="visible")
+
+                first_card.locator('[data-merge-source-field="angle_role"]').select_option("static")
+                page.wait_for_function(
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        return Boolean(source) && source.angle_role === payload.expected;
+                    }""",
+                    arg={"sourceId": source_id, "expected": "static"},
+                )
 
                 _set_input_value(first_card.locator('[data-merge-source-field="size"]'), "60")
                 _set_input_value(first_card.locator('[data-merge-source-field="opacity"]'), "80")
@@ -824,6 +833,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     """(sourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
                         return Boolean(source)
+                            && source.angle_role === 'static'
                             && source.pip_size_percent === 60
                             && source.opacity === 0.8
                             && source.pip_x === 0.1

@@ -70,7 +70,7 @@ Use [../../src/splitshot/browser/static/README.md](../../src/splitshot/browser/s
 - analysis state and timing events
 - scoring state
 - overlay and review text-box state
-- merge and PiP state
+- merge and composition state
 - export state
 - UI state
 

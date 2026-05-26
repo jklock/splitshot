@@ -55,6 +55,9 @@ _DISCOVER_MATCHES_SCRIPT = r"""
   };
   const inferMatchType = (value) => {
     const lowered = normalizeText(value).toLowerCase();
+        if (lowered.includes("steel challenge") || lowered.includes("scsa")) {
+            return "steel_challenge";
+        }
     if (lowered.includes("idpa")) {
       return "idpa";
     }
@@ -140,6 +143,9 @@ _SELECT_MATCH_SCRIPT = r"""
   };
   const inferMatchType = (value) => {
     const lowered = normalizeText(value).toLowerCase();
+        if (lowered.includes("steel challenge") || lowered.includes("scsa")) {
+            return "steel_challenge";
+        }
     if (lowered.includes("idpa")) {
       return "idpa";
     }
@@ -198,6 +204,9 @@ _SELECTED_MATCH_SCRIPT = r"""
   const normalizeText = (value) => String(value || "").replace(/\s+/g, " ").trim();
   const inferMatchType = (value) => {
     const lowered = normalizeText(value).toLowerCase();
+        if (lowered.includes("steel challenge") || lowered.includes("scsa")) {
+            return "steel_challenge";
+        }
     if (lowered.includes("idpa")) {
       return "idpa";
     }
@@ -804,9 +813,11 @@ def _snapshot_metadata(payload: object) -> dict[str, str]:
 
 
 def _normalize_match_type(value: object) -> str:
-    lowered = _clean_text(value).lower()
+    lowered = re.sub(r"[\s-]+", "_", _clean_text(value).lower())
     if lowered in {"uspsa", "ipsc", "idpa"}:
         return lowered
+    if lowered in {"steel", "steelchallenge", "steel_challenge", "scsa"}:
+        return "steel_challenge"
     return ""
 
 

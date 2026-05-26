@@ -53,7 +53,10 @@ export function createExportPane({
         description.className = "hint export-preset-description";
         select.closest("label")?.insertAdjacentElement("afterend", description);
       }
-      if (description) description.textContent = preset ? preset.description : "Manual custom export settings.";
+      if (description) {
+        description.textContent = preset ? (preset.description || "") : "";
+        description.hidden = !Boolean(description.textContent.trim());
+      }
     }
   }
 
@@ -84,9 +87,8 @@ export function createExportPane({
         ? `Latest export failed: ${projectExport.last_error}`
         : getActiveProcessingPath() === "/api/export"
           ? `Export log is updating in real time. Current progress: ${Math.round(getProcessingProgressPercent())}%.`
-          : (visibleLines.length > 0
-            ? "The last local export log is available in the modal window."
-            : "The live export log opens in a separate window so the output settings stay readable while rendering runs.");
+          : (visibleLines.length > 0 ? "" : "No export log yet.");
+      status.hidden = !Boolean(status.textContent);
     }
     if (button) {
       button.textContent = getActiveProcessingPath() === "/api/export"

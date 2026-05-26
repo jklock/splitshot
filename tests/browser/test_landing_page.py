@@ -42,7 +42,9 @@ def test_landing_page_surface_buttons_renamed() -> None:
 def test_landing_page_home_button() -> None:
     html = INDEX_HTML.read_text(encoding="utf-8")
 
-    assert 'id="surface-go-home"' in html
+    assert 'id="stage-go-home"' in html
+    assert 'id="match-go-home"' in html
+    assert 'id="library-go-home"' in html
 
 
 def test_landing_page_css_exists() -> None:

@@ -108,6 +108,22 @@ export function createMergePane({
       return clampNumber(Number(source?.opacity ?? 1) || 0, 0, 1);
     }
 
+    const mergeSourceAngleRoles = [
+      { value: "follow", label: "Follow" },
+      { value: "static", label: "Static" },
+      { value: "detail", label: "Detail" },
+    ];
+
+    function normalizedAngleRoleValue(value, source = null) {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (mergeSourceAngleRoles.some((item) => item.value === normalized)) return normalized;
+      return source?.asset?.is_still_image ? "detail" : "follow";
+    }
+
+    function currentSourceAngleRole(source = null) {
+      return normalizedAngleRoleValue(source?.angle_role, source);
+    }
+
     function formatSyncOffsetLabel(offsetMs) {
       const numeric = Math.round(Number(offsetMs) || 0);
       return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
@@ -152,12 +168,13 @@ export function createMergePane({
       scheduleProjectUiStateApply();
     }
 
-    function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null) {
+    function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null, angleRole = null) {
       const xValue = Number.isFinite(pipX) ? pipX.toFixed(3) : "";
       const yValue = Number.isFinite(pipY) ? pipY.toFixed(3) : "";
       const sizeValue = Number.isFinite(pipSizePercent) ? Math.round(pipSizePercent) : "";
       const offsetValue = Math.round(Number(syncOffsetMs) || 0);
       const opacityValue = String(opacityPercentValue(opacity ?? 1));
+      const roleValue = normalizedAngleRoleValue(angleRole, mergeSourceById(sourceId));
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="x"]`).forEach((input) => {
         syncControlValue(input, xValue);
       });
@@ -173,12 +190,15 @@ export function createMergePane({
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
         syncControlValue(input, opacityValue);
       });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="angle_role"]`).forEach((input) => {
+        syncControlValue(input, roleValue);
+      });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
         label.textContent = formatSyncOffsetLabel(offsetValue);
       });
     }
 
-    function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null) {
+    function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null, angleRole = null) {
       const source = mergeSourceById(sourceId);
       if (!source || !currentState()?.project) return;
       const nextSize = clampNumber(
@@ -194,11 +214,13 @@ export function createMergePane({
       const nextX = normalizedCoordinateValue(pipX) ?? 1;
       const nextY = normalizedCoordinateValue(pipY) ?? 1;
       const nextOpacity = currentSourceOpacity({ opacity: opacity ?? source.opacity ?? 1 });
+      const nextAngleRole = normalizedAngleRoleValue(angleRole ?? source.angle_role, source);
       source.pip_size_percent = nextSize;
       source.pip_x = nextX;
       source.pip_y = nextY;
       source.opacity = nextOpacity;
-      syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity);
+      source.angle_role = nextAngleRole;
+      syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity, nextAngleRole);
     }
 
     function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
@@ -215,12 +237,14 @@ export function createMergePane({
         currentPipSizePercent(source),
         source.sync_offset_ms,
         currentSourceOpacity(source),
+        currentSourceAngleRole(source),
       );
     }
 
     function mergeSourcePositionPayload(sourceId, source) {
       return {
         source_id: sourceId,
+        angle_role: currentSourceAngleRole(source),
         pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
         pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
         pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
@@ -383,6 +407,14 @@ export function createMergePane({
     }
   }
 
+  function renderLocalMergePreview() {
+    const video = $("primary-video");
+    const stage = $("video-stage");
+    if (!video || !stage) return;
+    const mergeSources = currentState()?.project?.merge_sources || [];
+    renderMergePreviewLayer(video, stage, mergeSources, currentPipSizePercent());
+  }
+
   function renderMergeMediaList() {
     const list = $("merge-media-list");
     if (!list) return;
@@ -396,7 +428,7 @@ export function createMergePane({
       if (mergeSources.length === 0) {
         const empty = documentObject.createElement("div");
         empty.className = "hint";
-        empty.textContent = "No PiP media added yet.";
+          empty.textContent = "No added media yet. Add media to set roles, sync, and placement.";
         list.appendChild(empty);
         return;
       }
@@ -420,8 +452,8 @@ export function createMergePane({
         toggle.type = "button";
         toggle.className = "scoring-shot-toggle";
         toggle.textContent = expanded ? "v" : ">";
-        toggle.title = expanded ? "Hide PiP item controls" : "Show PiP item controls";
-        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} PiP item controls`);
+        toggle.title = expanded ? "Hide composition item controls" : "Show composition item controls";
+        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} composition item controls`);
         toggle.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -462,6 +494,7 @@ export function createMergePane({
         syncRow.className = "merge-source-sync-row";
 
         const readSourcePayload = () => {
+          const roleControl = controls.querySelector('[data-merge-source-field="angle_role"]');
           const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 1, 95);
           const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
           const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
@@ -469,6 +502,7 @@ export function createMergePane({
           const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
           return {
             source_id: sourceId,
+            angle_role: normalizedAngleRoleValue(roleControl?.value, source),
             pip_size_percent: nextSize,
             pip_x: nextX,
             pip_y: nextY,
@@ -478,9 +512,31 @@ export function createMergePane({
 
         const previewSourceUpdate = () => {
           const payload = readSourcePayload();
-          updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
+          updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity, payload.angle_role);
+          renderLocalMergePreview();
           scheduleInteractionPreviewRender({ video: true });
           return payload;
+        };
+
+        const buildSourceRoleSelect = () => {
+          const label = documentObject.createElement("label");
+          label.className = "merge-source-field";
+          const text = documentObject.createElement("span");
+          text.textContent = "Angle role";
+          const select = documentObject.createElement("select");
+          select.dataset.mergeSourceField = "angle_role";
+          select.dataset.sourceId = sourceId;
+          select.title = "Track whether this item is a follow angle, static reference, or detail source.";
+          mergeSourceAngleRoles.forEach((role) => {
+            const option = documentObject.createElement("option");
+            option.value = role.value;
+            option.textContent = role.label;
+            select.appendChild(option);
+          });
+          syncControlValue(select, currentSourceAngleRole(source));
+          select.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+          label.append(text, select);
+          return label;
         };
 
         const buildSourceNumberInput = (labelText, field, value, min, max, step, titleText) => {
@@ -507,7 +563,7 @@ export function createMergePane({
         const sizeField = documentObject.createElement("label");
         sizeField.className = "merge-source-field merge-source-size-field";
         const sizeText = documentObject.createElement("span");
-        sizeText.textContent = "PiP size";
+        sizeText.textContent = "Layer size";
         const sizeControl = documentObject.createElement("span");
         sizeControl.className = "pip-size-control";
         const sizeInput = documentObject.createElement("input");
@@ -537,7 +593,7 @@ export function createMergePane({
           const label = documentObject.createElement("label");
           label.className = "merge-source-field merge-source-opacity-field";
           const text = documentObject.createElement("span");
-          text.textContent = "PiP opacity";
+          text.textContent = "Layer opacity";
           const percentField = documentObject.createElement("span");
           percentField.className = "opacity-percent-field";
           const input = documentObject.createElement("input");
@@ -577,7 +633,7 @@ export function createMergePane({
           const button = documentObject.createElement("button");
           button.type = "button";
           button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;
-          button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
+          button.title = `Nudge this composition item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
           button.addEventListener("click", () => {
             const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
             updateLocalMergeSourceSyncOffset(sourceId, nextOffset);
@@ -592,7 +648,7 @@ export function createMergePane({
           analyzeButton.type = "button";
           analyzeButton.textContent = source.sync_analysis_status === "ready" ? "Re-run beep sync" : "Analyze beep sync";
           analyzeButton.disabled = source.sync_analysis_status === "running";
-          analyzeButton.title = "Use ShotML to find this PiP video's start beep and set sync automatically.";
+          analyzeButton.title = "Use ShotML to find this added media clip's start beep and set sync automatically.";
           analyzeButton.addEventListener("click", () => {
             callApi("/api/merge/source/analyze", { source_id: sourceId });
           });
@@ -600,17 +656,18 @@ export function createMergePane({
         }
 
         controls.append(
+          buildSourceRoleSelect(),
           sizeField,
           buildSourceOpacityInput(),
-          buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-          buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+          buildSourceNumberInput("Layer X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
+          buildSourceNumberInput("Layer Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
         );
 
         const syncHint = documentObject.createElement("small");
         syncHint.className = "merge-source-sync-hint";
-        syncHint.textContent = currentState().project.merge.layout === "pip"
+          syncHint.textContent = ["pip", "full_screen_portrait"].includes(currentState().project.merge.layout)
           ? "Use these nudges or drag the preview to match the primary video exactly."
-          : "These values are saved per item and take effect in PiP layout and export timing.";
+            : "These values are saved per item and take effect in composition layouts and export timing.";
         syncRow.append(syncLabel, syncButtons, syncStatus, syncHint);
 
         const body = documentObject.createElement("div");
@@ -625,6 +682,7 @@ export function createMergePane({
           currentPipSizePercent(source),
           currentSourceSyncOffsetMs(source),
           currentSourceOpacity(source),
+          currentSourceAngleRole(source),
         );
         list.appendChild(card);
       });
@@ -673,6 +731,7 @@ export function createMergePane({
     scheduleMergeSourceCommit,
     flushPendingMergeSourceCommits,
     renderMergeMediaList,
+    renderLocalMergePreview,
     readMergePayload,
     scheduleMergeApply,
   });

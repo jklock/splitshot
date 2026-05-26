@@ -115,7 +115,17 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
         in project_pane_js
     )
     assert (
-        "setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });"
+        "setForcedProjectLandingPersistedTool(configuredTool);" in project_pane_js
+    )
+    assert (
+        'setActiveTool("project", { collapseExpandedLayout: true, persistUiState: false });'
+        in project_pane_js
+    )
+    assert (
+        "setForcedProjectLandingPersistedTool(null);" in project_pane_js
+    )
+    assert (
+        "setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });"
         in project_pane_js
     )
     assert "windowObject.alert(folderMessage);" in project_pane_js

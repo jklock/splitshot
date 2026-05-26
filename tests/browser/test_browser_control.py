@@ -200,11 +200,13 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/workspace/stage/clip/list",
     "/api/workspace/stage/clip/add",
     "/api/workspace/stage/clip/update",
+    "/api/workspace/stage/clip/reorder",
     "/api/workspace/stage/clip/remove",
     "/api/angle/align",
     "/api/angle/director/plan",
     "/api/angle/director/generate",
     "/api/angle/director/override",
+    "/api/angle/director/override/clear",
     "/api/audio/mix",
     "/api/result-cards/resolve",
     "/api/landing/recent",
@@ -743,6 +745,39 @@ def test_browser_state_exposes_workspace_stage_aliases_and_override_details() ->
     assert payload["workspace_override_summary"]["stage_2"]["metric_caption_preset"] == "splits"
 
 
+def test_browser_state_exposes_workspace_stage_preview_urls_for_resolved_projects(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    workspace_path = tmp_path / "preview-workspace"
+    controller.new_workspace()
+    controller.workspace.name = "Preview Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+    controller.save_workspace(str(workspace_path))
+
+    stage_controller = ProjectController()
+    stage_controller.new_project()
+    stage_controller.project.name = "Preview Stage"
+    stage_video_path = Path(synthetic_video_factory(name="workspace-stage-preview"))
+    stage_controller.ingest_primary_video(str(stage_video_path))
+    assert controller._save_stage_project("stage_1", stage_controller.project) is True
+
+    payload = browser_state(
+        controller.project,
+        controller.status_message,
+        media_cache_token="preview-token",
+        controller=controller,
+    )
+
+    entries = {entry["stage_id"]: entry for entry in payload["workspace_stage_entries"]}
+    assert entries["stage_1"]["preview_url"] == "/media/workspace-stage/stage_1?v=preview-token"
+    assert entries["stage_2"]["preview_url"] is None
+
+
 def test_browser_state_exposes_workspace_path_when_saved(tmp_path) -> None:
     controller = ProjectController()
     workspace_path = tmp_path / "automation-workspace"
@@ -755,6 +790,51 @@ def test_browser_state_exposes_workspace_path_when_saved(tmp_path) -> None:
 
     assert payload["workspace_path"] == str(workspace_path)
     assert payload["workspace"]["path"] == str(workspace_path)
+
+
+def test_browser_workspace_stage_media_route_serves_saved_stage_primary_video(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    workspace_path = tmp_path / "workspace-stage-media-route"
+    controller.new_workspace()
+    controller.workspace.name = "Preview Route Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.save_workspace(str(workspace_path))
+
+    stage_controller = ProjectController()
+    stage_controller.new_project()
+    stage_controller.project.name = "Route Preview Stage"
+    stage_video_path = Path(synthetic_video_factory(name="workspace-stage-route"))
+    stage_controller.ingest_primary_video(str(stage_video_path))
+    assert controller._save_stage_project("stage_1", stage_controller.project) is True
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        state = _get_json(f"{server.url}api/state")
+        preview_url = state["workspace_stage_entries"][0]["preview_url"]
+        assert isinstance(preview_url, str)
+        assert preview_url.startswith("/media/workspace-stage/stage_1")
+
+        request = urllib.request.Request(
+            f"{server.url.rstrip('/')}{preview_url}",
+            headers={"Range": "bytes=0-255"},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            status = response.status
+            content_type = response.headers["Content-Type"]
+            content_range = response.headers["Content-Range"]
+            payload = response.read()
+
+        assert status == 206
+        assert content_type.startswith("video/")
+        assert content_range.startswith("bytes 0-255/")
+        assert len(payload) == 256
+    finally:
+        server.shutdown()
 
 
 def test_browser_control_api_imports_and_edits_video(synthetic_video_factory) -> None:
@@ -866,6 +946,7 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
             assert project.merge.layout.value == "pip"
             assert project.merge.pip_size_percent == 44
             assert len(project.merge_sources) == 1
+            assert project.merge_sources[0].angle_role == "static"
             assert project.merge_sources[0].pip_size_percent == 44
             assert project.merge_sources[0].pip_x == pytest.approx(0.12)
             assert project.merge_sources[0].pip_y == pytest.approx(0.76)
@@ -913,6 +994,7 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
                     "sources": [
                         {
                             "source_id": merge_source_id,
+                            "angle_role": "static",
                             "pip_size_percent": 44,
                             "pip_x": 0.12,
                             "pip_y": 0.76,
@@ -935,6 +1017,7 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
         assert state["project"]["overlay"]["custom_box_width"] == 160
         assert state["project"]["overlay"]["custom_box_height"] == 48
         assert state["project"]["merge"]["pip_size_percent"] == 44
+        assert state["project"]["merge_sources"][0]["angle_role"] == "static"
         assert state["project"]["merge_sources"][0]["pip_size_percent"] == 44
         assert state["project"]["merge_sources"][0]["opacity"] == pytest.approx(0.35)
         assert state["project"]["merge_sources"][0]["sync_offset_ms"] == -25
@@ -1276,6 +1359,58 @@ def test_browser_control_reimports_practiscore_from_staged_file_when_context_cha
             state["project"]["scoring"]["imported_stage"]["competitor_name"] == "John Klockenkemper"
         )
         assert state["project"]["scoring"]["imported_stage"]["competitor_place"] == 4
+    finally:
+        server.shutdown()
+
+
+def test_browser_control_api_imports_steel_challenge_results() -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    examples_dir = EXAMPLES_DIR / "SteelChallenge"
+    try:
+        server.start_background(open_browser=False)
+
+        state = _post_json(
+            f"{server.url}api/project/practiscore",
+            {
+                "match_type": "steel_challenge",
+                "stage_number": 2,
+                "competitor_name": "Ben Rice",
+                "competitor_place": 2,
+            },
+        )
+
+        assert state["project"]["overlay"]["custom_box_enabled"] is False
+        assert state["project"]["overlay"]["custom_box_mode"] == "manual"
+
+        state = _post_multipart(
+            f"{server.url}api/files/practiscore",
+            "file",
+            "report.txt",
+            (examples_dir / "report.txt").read_bytes(),
+        )
+
+        assert state["project"]["scoring"]["enabled"] is True
+        assert state["project"]["scoring"]["ruleset"] == "steel_challenge"
+        assert state["project"]["scoring"]["match_type"] == "steel_challenge"
+        assert state["project"]["scoring"]["stage_number"] == 2
+        assert state["project"]["scoring"]["competitor_name"] == "Ben Rice"
+        assert state["project"]["scoring"]["competitor_place"] == 2
+        assert state["project"]["scoring"]["imported_stage"]["source_name"] == "report.txt"
+        assert state["project"]["scoring"]["imported_stage"]["stage_name"] == "Roundabout"
+        assert state["project"]["scoring"]["imported_stage"]["raw_seconds"] == 16.5
+        assert state["project"]["scoring"]["imported_stage"]["final_time"] == 49.5
+        assert state["practiscore_options"]["source_name"] == "report.txt"
+        assert state["practiscore_options"]["detected_match_type"] == "steel_challenge"
+        assert state["practiscore_options"]["stage_numbers"] == [1, 2]
+        assert state["project"]["scoring"]["penalty_counts"] == {
+            "steel_misses": 1.0,
+            "stop_plate_failures": 1.0,
+        }
+        assert state["project"]["overlay"]["custom_box_enabled"] is True
+        assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
+        assert state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 16.50\nFinal 49.50"
+        assert state["scoring_summary"]["display_value"] == "49.50"
     finally:
         server.shutdown()
 
@@ -2967,6 +3102,7 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
                                 "rotation": 0,
                                 "is_still_image": True,
                             },
+                            "angle_role": "detail",
                             "pip_size_percent": 42,
                             "pip_x": 0.25,
                             "pip_y": 0.75,
@@ -2987,6 +3123,7 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
             tmp_path / "reference.png"
         )
         assert created["project"]["merge_sources"][0]["asset"]["is_still_image"] is True
+        assert created["project"]["merge_sources"][0]["angle_role"] == "detail"
         assert created["project"]["merge_sources"][0]["pip_size_percent"] == 42
         assert created["project"]["merge_sources"][0]["pip_x"] == 0.25
         assert created["project"]["merge_sources"][0]["pip_y"] == 0.75
@@ -3930,8 +4067,25 @@ def test_output_profile_update_persists_hook_settings() -> None:
             "lead_in_padding_ms": 1400,
             "tail_padding_ms": 2600,
         },
-        lead_in_card={"style": "stage_info", "duration_s": 2.5},
-        brand_mark={"style": "splitshot", "text": "SplitShot", "duration_s": 1.25},
+        lead_in_card={
+            "style": "stage_info",
+            "duration_s": 2.5,
+            "show_match": True,
+            "show_stage": True,
+            "show_shooter": False,
+            "show_division": True,
+            "show_classification": False,
+            "show_date": True,
+            "custom_title": "My Match",
+            "custom_subtitle": "2026-05-24",
+        },
+        brand_mark={
+            "style": "custom",
+            "text": "SplitShot Labs",
+            "position": "bottom_left",
+            "opacity": 0.55,
+            "duration_s": 0,
+        },
         subject_track_crop={"enabled": True, "margin_percent": 14},
     )
     assert result is not None, "Update should succeed"
@@ -3943,11 +4097,24 @@ def test_output_profile_update_persists_hook_settings() -> None:
         "lead_in_padding_ms": 1400,
         "tail_padding_ms": 2600,
     }
-    assert result.get("lead_in_card") == {"style": "stage_info", "duration_s": 2.5}
+    assert result.get("lead_in_card") == {
+        "style": "stage_info",
+        "duration_s": 2.5,
+        "show_match": True,
+        "show_stage": True,
+        "show_shooter": False,
+        "show_division": True,
+        "show_classification": False,
+        "show_date": True,
+        "custom_title": "My Match",
+        "custom_subtitle": "2026-05-24",
+    }
     assert result.get("brand_mark") == {
-        "style": "splitshot",
-        "text": "SplitShot",
-        "duration_s": 1.25,
+        "style": "custom",
+        "text": "SplitShot Labs",
+        "position": "bottom_left",
+        "opacity": 0.55,
+        "duration_s": 0,
     }
     assert result.get("subject_track_crop") == {"enabled": True, "margin_percent": 14}
     profiles = controller.output_profile_list()
@@ -3956,8 +4123,10 @@ def test_output_profile_update_persists_hook_settings() -> None:
     assert updated[0].get("frame_profile") == "16:9"
     assert updated[0].get("metric_caption_preset", {}).get("preset") == "full"
     assert updated[0].get("metric_caption_preset", {}).get("position") == "bottom_left"
-    assert updated[0].get("lead_in_card", {}).get("style") == "stage_info"
-    assert updated[0].get("brand_mark", {}).get("duration_s") == 1.25
+    assert updated[0].get("lead_in_card", {}).get("custom_title") == "My Match"
+    assert updated[0].get("lead_in_card", {}).get("show_date") is True
+    assert updated[0].get("brand_mark", {}).get("position") == "bottom_left"
+    assert updated[0].get("brand_mark", {}).get("duration_s") == 0
     assert updated[0].get("subject_track_crop", {}).get("margin_percent") == 14
 
 

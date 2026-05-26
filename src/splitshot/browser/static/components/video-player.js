@@ -77,6 +77,18 @@ export function createVideoPlayerComponent({
     stage.classList.toggle("merge-side-by-side", mergePreview && merge.layout === "side_by_side");
     stage.classList.toggle("merge-above-below", mergePreview && merge.layout === "above_below");
     stage.classList.toggle("merge-pip", mergePreview && merge.layout === "pip");
+    stage.classList.toggle(
+      "merge-full-screen-portrait",
+      mergePreview && merge.layout === "full_screen_portrait",
+    );
+    stage.classList.toggle(
+      "merge-dual-center-hud",
+      mergePreview && merge.layout === "dual_center_hud",
+    );
+    stage.classList.toggle(
+      "merge-dual-top-hud",
+      mergePreview && merge.layout === "dual_top_hud",
+    );
 
     const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
     const pipSizeValue = currentPipSizePercent();
@@ -112,6 +124,7 @@ export function createVideoPlayerComponent({
       video.style.zIndex = "";
     }
     [secondary, secondaryImage].forEach((element) => {
+      element.style.position = "";
       element.style.left = "";
       element.style.top = "";
       element.style.right = "";
@@ -121,6 +134,7 @@ export function createVideoPlayerComponent({
       element.style.maxWidth = "";
       element.style.maxHeight = "";
       element.style.opacity = "";
+      element.style.zIndex = "";
     });
 
     if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
@@ -153,33 +167,47 @@ export function createVideoPlayerComponent({
             ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
             : (secondary.videoHeight || state.project.secondary_video?.height || 1),
         );
-        if (merge.layout === "pip" && frameRect) {
+        if (
+          (merge.layout === "pip" && frameRect)
+          || merge.layout === "full_screen_portrait"
+        ) {
           const activeSource = mergeSources[0] || null;
+          const previewRect =
+            merge.layout === "full_screen_portrait"
+              ? {
+                  left: 0,
+                  top: 0,
+                  width: Math.max(1, stage.clientWidth || video.clientWidth || 1),
+                  height: Math.max(1, stage.clientHeight || video.clientHeight || 1),
+                }
+              : frameRect;
           const rect = activeSource
-            ? mergeSourcePipRect(activeSource, frameRect, pipSizeValue)
+            ? mergeSourcePipRect(activeSource, previewRect, pipSizeValue)
             : (() => {
-                let insetWidth = Math.max(1, Math.round(frameRect.width * (pipSizeValue / 100)));
+                let insetWidth = Math.max(1, Math.round(previewRect.width * (pipSizeValue / 100)));
                 let insetHeight = Math.max(1, Math.round((secondaryHeight / secondaryWidth) * insetWidth));
-                if (insetHeight > frameRect.height) {
-                  const fitScale = frameRect.height / insetHeight;
+                if (insetHeight > previewRect.height) {
+                  const fitScale = previewRect.height / insetHeight;
                   insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
                   insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
                 }
-                const travelX = Math.max(0, frameRect.width - insetWidth);
-                const travelY = Math.max(0, frameRect.height - insetHeight);
+                const travelX = Math.max(0, previewRect.width - insetWidth);
+                const travelY = Math.max(0, previewRect.height - insetHeight);
                 return {
-                  left: frameRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1)),
-                  top: frameRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1)),
+                  left: previewRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1)),
+                  top: previewRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1)),
                   width: insetWidth,
                   height: insetHeight,
                 };
               })();
+          activeSecondary.style.position = "absolute";
           activeSecondary.style.left = `${rect.left}px`;
           activeSecondary.style.top = `${rect.top}px`;
           activeSecondary.style.width = `${rect.width}px`;
           activeSecondary.style.height = `${rect.height}px`;
           activeSecondary.style.maxWidth = `${rect.width}px`;
           activeSecondary.style.maxHeight = `${rect.height}px`;
+          activeSecondary.style.zIndex = "1";
         }
       }
     }

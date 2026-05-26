@@ -62,6 +62,9 @@ class MergeLayout(StrEnum):
     SIDE_BY_SIDE = "side_by_side"
     ABOVE_BELOW = "above_below"
     PIP = "pip"
+    FULL_SCREEN_PORTRAIT = "full_screen_portrait"
+    DUAL_CENTER_HUD = "dual_center_hud"
+    DUAL_TOP_HUD = "dual_top_hud"
 
 
 class PipSize(StrEnum):
@@ -158,10 +161,30 @@ class VideoAsset:
         return self.width, self.height
 
 
+_MERGE_SOURCE_ANGLE_ROLES = {"follow", "static", "detail"}
+
+
+def default_merge_source_angle_role(asset: VideoAsset | None = None) -> str:
+    if asset is not None and asset.is_still_image:
+        return "detail"
+    return "follow"
+
+
+def _normalize_merge_source_angle_role(
+    value: Any,
+    asset: VideoAsset | None = None,
+) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in _MERGE_SOURCE_ANGLE_ROLES:
+        return normalized
+    return default_merge_source_angle_role(asset)
+
+
 @dataclass(slots=True)
 class MergeSource:
     id: str = field(default_factory=lambda: uuid4().hex)
     asset: VideoAsset = field(default_factory=VideoAsset)
+    angle_role: str = "follow"
     pip_size_percent: int | None = None
     pip_x: float = 1.0
     pip_y: float = 1.0
@@ -590,6 +613,7 @@ class Project:
     merge: MergeSettings = field(default_factory=MergeSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     ui_state: UIState = field(default_factory=UIState)
+    _metric_caption_overlay: dict | None = None
     _lead_in_card: dict | None = None
     _brand_mark: dict | None = None
     schema_version: int = 1
@@ -1218,9 +1242,11 @@ def _path_looks_like_still_image(path: str) -> bool:
 def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
     payload = data or {}
     asset_data = payload.get("asset", payload)
+    asset = _video_from_dict(asset_data)
     return MergeSource(
         id=str(payload.get("id", uuid4().hex)),
-        asset=_video_from_dict(asset_data),
+        asset=asset,
+        angle_role=_normalize_merge_source_angle_role(payload.get("angle_role"), asset),
         pip_size_percent=(
             None
             if payload.get("pip_size_percent") in {None, ""}
@@ -1391,6 +1417,7 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         merge_sources = [
             MergeSource(
                 asset=secondary_video,
+                angle_role=default_merge_source_angle_role(secondary_video),
                 pip_size_percent=int(merge_data.get("pip_size_percent", merge_pip_percent_default)),
                 pip_x=float(merge_data.get("pip_x", 1.0)),
                 pip_y=float(merge_data.get("pip_y", 1.0)),

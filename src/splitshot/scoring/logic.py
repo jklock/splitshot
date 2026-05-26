@@ -461,6 +461,11 @@ def format_imported_stage_overlay_text(
             lines.append(f"Final {display_final_time:.2f}")
         return "\n".join(lines)
 
+    if imported_stage.match_type == "steel_challenge":
+        if display_final_time is not None:
+            lines.append(f"Final {display_final_time:.2f}")
+        return "\n".join(lines)
+
     points_value = (
         float(imported_stage.total_points)
         if imported_stage.total_points is not None

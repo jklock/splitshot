@@ -165,21 +165,27 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
+                stage_rail = page.locator('#view-stage .tool-rail[aria-label="SplitShot tools"]')
                 settings_button = page.locator("#settings-rail-button")
                 toggle_button = page.locator("#toggle-rail")
                 settings_pane = page.locator('[data-tool-pane="settings"]')
 
+                stage_rail.wait_for(state="visible")
                 settings_button.wait_for(state="visible")
                 toggle_button.wait_for(state="visible")
 
+                rail_box = stage_rail.bounding_box()
                 settings_box = settings_button.bounding_box()
                 toggle_box = toggle_button.bounding_box()
+                assert rail_box is not None
                 assert settings_box is not None
                 assert toggle_box is not None
-                assert settings_box["width"] == pytest.approx(settings_box["height"])
-                assert toggle_box["width"] == pytest.approx(toggle_box["height"])
+                assert settings_box["width"] > settings_box["height"]
+                assert toggle_box["width"] > toggle_box["height"]
                 assert settings_box["width"] == pytest.approx(toggle_box["width"])
                 assert settings_box["height"] == pytest.approx(toggle_box["height"])
+                assert settings_box["width"] < rail_box["width"]
+                assert settings_box["width"] >= rail_box["width"] * 0.8
                 assert abs(settings_box["x"] - toggle_box["x"]) <= 2
                 assert settings_box["y"] < toggle_box["y"]
 
@@ -192,17 +198,21 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 page.wait_for_function(
                     "document.querySelector('.cockpit-shell')?.classList.contains('rail-collapsed') === true"
                 )
-                assert toggle_button.text_content() == "EXP"
+                assert toggle_button.text_content() == "▶"
                 assert page.evaluate("localStorage.getItem('splitshot.railCollapsed')") == "true"
 
+                collapsed_rail_box = stage_rail.bounding_box()
                 collapsed_settings_box = settings_button.bounding_box()
                 collapsed_toggle_box = toggle_button.bounding_box()
+                assert collapsed_rail_box is not None
                 assert collapsed_settings_box is not None
                 assert collapsed_toggle_box is not None
-                assert collapsed_settings_box["width"] == pytest.approx(settings_box["width"])
+                assert collapsed_settings_box["width"] < settings_box["width"]
                 assert collapsed_settings_box["height"] == pytest.approx(settings_box["height"])
-                assert collapsed_toggle_box["width"] == pytest.approx(toggle_box["width"])
+                assert collapsed_toggle_box["width"] == pytest.approx(collapsed_settings_box["width"])
                 assert collapsed_toggle_box["height"] == pytest.approx(toggle_box["height"])
+                assert collapsed_settings_box["width"] < collapsed_rail_box["width"]
+                assert collapsed_settings_box["width"] >= collapsed_settings_box["height"]
 
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function(
@@ -210,7 +220,7 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 )
                 page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
                 assert page.locator('.tool-item.active[data-tool="settings"]').count() == 1
-                assert page.locator("#toggle-rail").text_content() == "EXP"
+                assert page.locator("#toggle-rail").text_content() == "▶"
                 assert (
                     page.locator("#toggle-rail").get_attribute("aria-label") == "Expand left rail"
                 )
@@ -300,11 +310,12 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
                 shell = page.locator(".cockpit-shell")
 
                 assert page.evaluate("localStorage.getItem('splitshot.layoutLocked')") != "false"
-                assert toggle_button.text_content() == "Lock"
+                assert toggle_button.text_content() == "🔒"
+                assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'false'")
-                assert toggle_button.text_content() == "Unlock"
+                assert toggle_button.text_content() == "🔓"
                 assert toggle_button.get_attribute("aria-label") == "Lock video layout"
                 assert (
                     shell.evaluate("element => element.classList.contains('layout-unlocked')")
@@ -313,7 +324,7 @@ def test_layout_lock_toggle_switches_shell_state_and_persistence() -> None:
 
                 toggle_button.click()
                 page.wait_for_function("localStorage.getItem('splitshot.layoutLocked') === 'true'")
-                assert toggle_button.text_content() == "Lock"
+                assert toggle_button.text_content() == "🔒"
                 assert toggle_button.get_attribute("aria-label") == "Unlock video layout"
                 assert (
                     shell.evaluate("element => element.classList.contains('layout-locked')") is True
@@ -331,9 +342,9 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
         with sync_playwright() as playwright:
             browser, page = _open_test_page(playwright, server)
             try:
-                status_bar = page.locator(".status-bar")
+                status_bar = page.locator("#view-stage .status-bar")
                 toggle_button = page.locator("#toggle-layout-lock-video")
-                video_stage = page.locator(".video-stage")
+                video_stage = page.locator("#view-stage .video-stage")
 
                 status_box = status_bar.bounding_box()
                 toggle_box = toggle_button.bounding_box()
@@ -367,13 +378,13 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
                     "() => document.getElementById('processing-bar')?.hidden === false"
                 )
 
+                app_shell_box = page.locator("#app-shell").bounding_box()
                 processing_box = page.locator("#processing-bar").bounding_box()
-                header_box = page.locator(".shell-header").bounding_box()
+                assert app_shell_box is not None
                 assert processing_box is not None
-                assert header_box is not None
-                assert processing_box["x"] == pytest.approx(header_box["x"] + 16, abs=2)
-                assert processing_box["y"] == pytest.approx(57, abs=4)
-                assert processing_box["width"] == pytest.approx(header_box["width"] - 32, abs=5)
+                assert processing_box["x"] == pytest.approx(app_shell_box["x"], abs=2)
+                assert processing_box["y"] == pytest.approx(app_shell_box["y"], abs=2)
+                assert processing_box["width"] == pytest.approx(app_shell_box["width"], abs=5)
                 assert processing_box["height"] == 38
 
                 page.evaluate("""() => {
@@ -391,7 +402,7 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
 @pytest.mark.parametrize(
     ("handle_id", "panel_selector", "storage_key", "css_var", "delta_x", "delta_y"),
     [
-        ("resize-rail", ".tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
+        ("resize-rail", "#view-stage .tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
         (
             "resize-waveform",
             ".waveform-panel",
@@ -402,7 +413,7 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
         ),
         (
             "resize-sidebar",
-            ".inspector",
+            "#view-stage .inspector",
             "splitshot.layout.inspectorWidth",
             "--inspector-width",
             120,
@@ -565,8 +576,36 @@ def test_stage_surface_shows_tool_rail_after_project_load(synthetic_video_factor
                 project_button.wait_for(state="visible", timeout=5000)
                 assert project_button.is_visible()
                 # Also verify the rail itself is visible
-                rail = page.locator(".tool-rail")
+                rail = page.locator('#view-stage .tool-rail[aria-label="SplitShot tools"]')
                 assert rail.is_visible()
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_workspace_rail_toggles_follow_shared_shell_markers() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate("""() => setActiveSurface('multi')""")
+                page.wait_for_function("() => activeSurface === 'multi'")
+                page.locator("#match-toggle-rail").click(force=True)
+                page.wait_for_function(
+                    """() => document.querySelector('[data-shell-family="stage-workspace"][data-shell-view="match"]')?.classList.contains('rail-collapsed') === true"""
+                )
+                assert page.evaluate("localStorage.getItem('splitshot.match.railCollapsed')") == "true"
+
+                page.evaluate("""() => setActiveSurface('library')""")
+                page.wait_for_function("() => activeSurface === 'library'")
+                page.locator("#library-toggle-rail").click(force=True)
+                page.wait_for_function(
+                    """() => document.querySelector('[data-shell-family="stage-workspace"][data-shell-view="library"]')?.classList.contains('rail-collapsed') === true"""
+                )
+                assert page.evaluate("localStorage.getItem('splitshot.library.railCollapsed')") == "true"
             finally:
                 browser.close()
     finally:

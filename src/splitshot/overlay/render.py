@@ -51,6 +51,14 @@ class Badge:
     text_bias: str = "center"
     image_path: str = ""
     image_scale_mode: str = "contain"
+    image_scale_percent: int | None = None
+    content_opacity: float | None = None
+    show_background: bool = True
+    font_family: str | None = None
+    font_size: int | None = None
+    font_bold: bool | None = None
+    font_italic: bool | None = None
+    use_individual_auto_size: bool = False
 
 
 _FONT_SIZE = {
@@ -80,6 +88,25 @@ _PENALTY_LABELS = {
 }
 
 _ABOVE_FINAL_TEXT_BOX_QUADRANT = "above_final"
+
+_LEAD_IN_CARD_STYLE_DEFAULTS = {
+    "stage_info": {
+        "show_match": True,
+        "show_stage": True,
+        "show_shooter": False,
+        "show_division": True,
+        "show_classification": False,
+        "show_date": False,
+    },
+    "competitor": {
+        "show_match": False,
+        "show_stage": True,
+        "show_shooter": True,
+        "show_division": True,
+        "show_classification": True,
+        "show_date": False,
+    },
+}
 
 
 def _ordered_unique_families(*families: str) -> list[str]:
@@ -193,18 +220,41 @@ def _score_token_color(project: Project, token: str) -> str | None:
     return project.overlay.scoring_colors.get(normalized_token)
 
 
+def _metric_caption_overlay_config(project: Project) -> dict:
+    config = getattr(project, "_metric_caption_overlay", None)
+    return config if isinstance(config, dict) else {}
+
+
+def _metric_caption_show_split_times(project: Project) -> bool:
+    config = _metric_caption_overlay_config(project)
+    if not config:
+        return True
+    return bool(config.get("show_split_times"))
+
+
+def _metric_caption_show_shot_scores(project: Project) -> bool:
+    config = _metric_caption_overlay_config(project)
+    if not config:
+        return True
+    return bool(config.get("show_shot_scores"))
+
+
 def _shot_badge_base_text(shot_number: int, split_text: str, interval_label: str | None) -> str:
+    normalized_split = str(split_text or "").strip()
     normalized_label = str(interval_label or "").strip()
-    if not normalized_label or normalized_label == "Split":
-        return f"Shot {shot_number} {split_text}"
-    return f"Shot {shot_number} {normalized_label} {split_text}"
+    parts = [f"Shot {shot_number}"]
+    if normalized_label and normalized_label != "Split":
+        parts.append(normalized_label)
+    if normalized_split:
+        parts.append(normalized_split)
+    return " ".join(parts)
 
 
 def _shot_score_badge_content(
     project: Project, shot: object, base_text: str
 ) -> tuple[str, tuple[tuple[str, str | None], ...] | None]:
     score = getattr(shot, "score", None)
-    if not project.scoring.enabled or score is None:
+    if not project.scoring.enabled or score is None or not _metric_caption_show_shot_scores(project):
         return base_text, None
 
     text_parts: list[tuple[str, str | None]] = [
@@ -264,6 +314,333 @@ def _text_bias_for_direction(direction: str | None) -> str:
     return "center"
 
 
+def _hook_duration_ms(payload: dict | None, fallback_seconds: float = 0.0) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    try:
+        duration_s = float(payload.get("duration_s", fallback_seconds) or fallback_seconds)
+    except (TypeError, ValueError):
+        duration_s = fallback_seconds
+    return max(0, int(round(duration_s * 1000)))
+
+
+def _stage_title_line(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    title = str(project.name or "").strip()
+    if title:
+        return title
+    if imported is not None and str(imported.stage_name or "").strip():
+        return str(imported.stage_name).strip()
+    if imported is not None and imported.stage_number is not None:
+        return f"Stage {imported.stage_number}"
+    if project.scoring.stage_number is not None:
+        return f"Stage {project.scoring.stage_number}"
+    return "SplitShot"
+
+
+def _stage_subtitle_line(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    parts: list[str] = []
+    if imported is not None:
+        stage_name = str(imported.stage_name or "").strip()
+        if stage_name and stage_name != _stage_title_line(project):
+            parts.append(stage_name)
+        elif imported.stage_number is not None:
+            parts.append(f"Stage {imported.stage_number}")
+        if imported.division:
+            parts.append(str(imported.division).strip())
+        if imported.match_type:
+            parts.append(str(imported.match_type).strip().upper())
+    elif project.description.strip():
+        parts.append(project.description.strip())
+    return " • ".join(part for part in parts if part)
+
+
+def _hook_bool(payload: dict | None, key: str, default: bool = False) -> bool:
+    if not isinstance(payload, dict):
+        return default
+    value = payload.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _lead_in_card_field_enabled(card: dict | None, key: str, style: str) -> bool:
+    default = bool(_LEAD_IN_CARD_STYLE_DEFAULTS.get(style, {}).get(key, False))
+    return _hook_bool(card, key, default)
+
+
+def _lead_in_card_match_value(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    candidate = ""
+    if imported is not None:
+        candidate = str(imported.match_type or "").strip()
+    if not candidate:
+        candidate = str(project.scoring.match_type or "").strip()
+    return candidate.upper() if candidate else ""
+
+
+def _lead_in_card_shooter_value(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    if imported is not None:
+        candidate = str(imported.competitor_name or "").strip()
+        if candidate:
+            return candidate
+    return str(project.scoring.competitor_name or "").strip()
+
+
+def _lead_in_card_division_value(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    return str(imported.division or "").strip() if imported is not None else ""
+
+
+def _lead_in_card_classification_value(project: Project) -> str:
+    imported = project.scoring.imported_stage
+    return str(imported.classification or "").strip() if imported is not None else ""
+
+
+def _lead_in_card_date_value(project: Project) -> str:
+    created_at = getattr(project, "created_at", None)
+    if created_at is None:
+        return ""
+    try:
+        return created_at.date().isoformat()
+    except AttributeError:
+        return ""
+
+
+def _lead_in_card_stage_subtitle_value(project: Project, title: str) -> str:
+    imported = project.scoring.imported_stage
+    if imported is not None:
+        stage_name = str(imported.stage_name or "").strip()
+        if stage_name and stage_name != title:
+            return stage_name
+        if imported.stage_number is not None:
+            stage_number = f"Stage {imported.stage_number}"
+            if stage_number != title:
+                return stage_number
+    candidate = _stage_title_line(project)
+    return "" if candidate == title else candidate
+
+
+def _append_unique_part(parts: list[str], value: str, *, title: str = "") -> None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return
+    if title and normalized == title:
+        return
+    if normalized in parts:
+        return
+    parts.append(normalized)
+
+
+def _lead_in_card_text(project: Project, card: dict | None) -> str:
+    if not isinstance(card, dict):
+        return ""
+    style = str(card.get("style", "") or "").strip().lower()
+    if style in {"", "none"}:
+        return ""
+
+    title_override = str(card.get("custom_title") or card.get("title") or "").strip()
+    subtitle_override = str(card.get("custom_subtitle") or card.get("subtitle") or "").strip()
+    field_values = {
+        "match": _lead_in_card_match_value(project),
+        "stage": _stage_title_line(project),
+        "shooter": _lead_in_card_shooter_value(project),
+        "division": _lead_in_card_division_value(project),
+        "classification": _lead_in_card_classification_value(project),
+        "date": _lead_in_card_date_value(project),
+    }
+    enabled_fields = {
+        field_name
+        for field_name in field_values
+        if _lead_in_card_field_enabled(card, f"show_{field_name}", style)
+    }
+
+    title = title_override
+    if not title:
+        preferred_order = (
+            ("shooter", "stage", "match") if style == "competitor" else ("stage", "shooter", "match")
+        )
+        for field_name in preferred_order:
+            candidate = field_values.get(field_name, "")
+            if field_name in enabled_fields and candidate:
+                title = candidate
+                break
+    if not title:
+        title = field_values.get("stage") or "SplitShot"
+
+    subtitle_parts: list[str] = []
+    _append_unique_part(subtitle_parts, subtitle_override, title=title)
+    for field_name in ("match", "stage", "shooter", "division", "classification", "date"):
+        if field_name not in enabled_fields:
+            continue
+        candidate = (
+            _lead_in_card_stage_subtitle_value(project, title)
+            if field_name == "stage"
+            else field_values.get(field_name, "")
+        )
+        _append_unique_part(subtitle_parts, candidate, title=title)
+
+    has_explicit_composition = any(
+        key in card
+        for key in (
+            "show_match",
+            "show_stage",
+            "show_shooter",
+            "show_division",
+            "show_classification",
+            "show_date",
+            "custom_title",
+            "custom_subtitle",
+            "title",
+            "subtitle",
+        )
+    )
+    subtitle = (
+        " • ".join(subtitle_parts)
+        if subtitle_parts
+        else ("" if has_explicit_composition else _stage_subtitle_line(project))
+    )
+    return title if not subtitle else f"{title}\n{subtitle}"
+
+
+def _clamped_float(
+    value: object,
+    default: float,
+    *,
+    minimum: float = 0.0,
+    maximum: float = 1.0,
+) -> float:
+    try:
+        return max(minimum, min(maximum, float(value)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _clamped_int(
+    value: object,
+    default: int,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        return max(minimum, min(maximum, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return default
+
+
+def _lead_in_card_animation(card: dict | None) -> str:
+    if not isinstance(card, dict):
+        return "static"
+    animation = str(card.get("animation") or "static").strip().lower()
+    return animation if animation in {"static", "fade", "slide_up"} else "static"
+
+
+def _lead_in_card_logo_path(card: dict | None) -> str:
+    if not isinstance(card, dict):
+        return ""
+    return str(card.get("logo_path") or "").strip()
+
+
+def _lead_in_card_logo_scale_percent(card: dict | None) -> int:
+    if not isinstance(card, dict):
+        return 100
+    return _clamped_int(card.get("logo_scale_percent", 100), 100, minimum=20, maximum=400)
+
+
+def _lead_in_card_animation_state(
+    card: dict | None,
+    position_ms: int,
+    duration_ms: int,
+) -> tuple[float, float]:
+    animation = _lead_in_card_animation(card)
+    if animation == "static" or duration_ms <= 0:
+        return 1.0, 0.18
+
+    edge_ms = max(180, min(650, int(duration_ms * 0.25)))
+    fade_in = _clamped_float(position_ms / max(1, edge_ms), 0.0)
+    fade_out = _clamped_float((duration_ms - position_ms) / max(1, edge_ms), 0.0)
+    opacity = min(fade_in, fade_out)
+    if animation == "fade":
+        return opacity, 0.18
+    return opacity, 0.18 + ((1.0 - fade_in) * 0.06) - ((1.0 - fade_out) * 0.02)
+
+
+def _brand_mark_text(brand: dict | None) -> str:
+    if not isinstance(brand, dict):
+        return ""
+    style = str(brand.get("style", "") or "").strip().lower()
+    if style in {"", "none"}:
+        return ""
+    text = str(brand.get("text", "") or "").strip()
+    if style == "splitshot":
+        return text or "SplitShot"
+    if style == "image":
+        return text
+    return text or style.replace("_", " ").title()
+
+
+def _brand_mark_image_path(brand: dict | None) -> str:
+    if not isinstance(brand, dict):
+        return ""
+    return str(brand.get("image_path") or "").strip()
+
+
+def _brand_mark_image_scale_percent(brand: dict | None) -> int:
+    if not isinstance(brand, dict):
+        return 100
+    return _clamped_int(brand.get("image_scale_percent", 100), 100, minimum=20, maximum=400)
+
+
+def _brand_mark_text_color(brand: dict | None) -> str:
+    if not isinstance(brand, dict):
+        return "#ffffff"
+    color = str(brand.get("text_color") or "").strip()
+    return color or "#ffffff"
+
+
+def _brand_mark_font_size(brand: dict | None) -> int | None:
+    if not isinstance(brand, dict):
+        return None
+    raw_value = brand.get("font_size")
+    if raw_value in (None, "", 0):
+        return None
+    return _clamped_int(raw_value, 14, minimum=8, maximum=96)
+
+
+def _brand_mark_font_family(brand: dict | None) -> str | None:
+    if not isinstance(brand, dict):
+        return None
+    value = str(brand.get("font_family") or "").strip()
+    return value or None
+
+
+def _brand_mark_point(brand: dict | None) -> tuple[float, float]:
+    position = str((brand or {}).get("position", "top_right") or "top_right").strip().lower()
+    return {
+        "top_left": (0.13, 0.1),
+        "top_right": (0.87, 0.1),
+        "bottom_left": (0.13, 0.9),
+        "bottom_right": (0.87, 0.9),
+        "center": (0.5, 0.5),
+    }.get(position, (0.87, 0.1))
+
+
+def _brand_mark_opacity(brand: dict | None) -> float:
+    if not isinstance(brand, dict):
+        return 0.72
+    try:
+        return max(0.0, min(1.0, float(brand.get("opacity", 0.72))))
+    except (TypeError, ValueError):
+        return 0.72
+
+
 def _standard_badge_texts(project: Project) -> tuple[str, ...]:
     texts: list[str] = []
     shots = sort_shots(project.analysis.shots)
@@ -282,7 +659,11 @@ def _standard_badge_texts(project: Project) -> tuple[str, ...]:
         for index, shot in enumerate(shots, start=1):
             split_row = split_row_by_shot_id.get(shot.id)
             split_ms = None if split_row is None else split_row.split_ms
-            split_text = _format_split_seconds(max(0, split_ms or 0))
+            split_text = (
+                _format_split_seconds(max(0, split_ms or 0))
+                if _metric_caption_show_split_times(project)
+                else ""
+            )
             base_text = _shot_badge_base_text(
                 index,
                 split_text,
@@ -344,7 +725,21 @@ class OverlayRenderer:
     ) -> tuple[
         list[Badge], list[tuple[Badge, float, float]], list[tuple[str, float, float, float]]
     ]:
-        if project.overlay.position == OverlayPosition.NONE:
+        lead_in_text = _lead_in_card_text(project, project._lead_in_card)
+        lead_in_logo_path = _lead_in_card_logo_path(project._lead_in_card)
+        lead_in_duration_ms = _hook_duration_ms(project._lead_in_card, 0.0)
+        lead_in_visible = (
+            bool(lead_in_text or lead_in_logo_path)
+            and lead_in_duration_ms > 0
+            and position_ms < lead_in_duration_ms
+        )
+        brand_text = _brand_mark_text(project._brand_mark)
+        brand_image_path = _brand_mark_image_path(project._brand_mark)
+        brand_duration_ms = _hook_duration_ms(project._brand_mark, 0.0)
+        brand_visible = bool(brand_text or brand_image_path) and (
+            brand_duration_ms <= 0 or position_ms < brand_duration_ms
+        )
+        if project.overlay.position == OverlayPosition.NONE and not lead_in_visible and not brand_visible:
             return [], [], []
         shots = sort_shots(project.analysis.shots)
         current_index = current_shot_index(project, position_ms)
@@ -394,7 +789,11 @@ class OverlayRenderer:
                 shot = shots[index]
                 split_row = split_row_by_shot_id.get(shot.id)
                 split_ms = None if split_row is None else split_row.split_ms
-                split_text = _format_split_seconds(max(0, split_ms or 0))
+                split_text = (
+                    _format_split_seconds(max(0, split_ms or 0))
+                    if _metric_caption_show_split_times(project)
+                    else ""
+                )
                 style = (
                     project.overlay.current_shot_badge
                     if index == current_index
@@ -429,6 +828,54 @@ class OverlayRenderer:
                     None if project.overlay.score_lock_to_stack else project.overlay.score_y,
                 )
 
+        if lead_in_visible:
+            intro_opacity, intro_y = _lead_in_card_animation_state(
+                project._lead_in_card,
+                position_ms,
+                lead_in_duration_ms,
+            )
+            append_badge(
+                Badge(
+                    lead_in_text,
+                    BadgeStyle(
+                        background_color="#000000",
+                        text_color="#ffffff",
+                        opacity=0.84 * intro_opacity,
+                    ),
+                    text_bias="center",
+                    image_path=lead_in_logo_path,
+                    image_scale_percent=_lead_in_card_logo_scale_percent(project._lead_in_card),
+                    content_opacity=intro_opacity,
+                    use_individual_auto_size=True,
+                ),
+                0.5,
+                intro_y,
+            )
+
+        if brand_visible:
+            brand_x, brand_y = _brand_mark_point(project._brand_mark)
+            append_badge(
+                Badge(
+                    brand_text,
+                    BadgeStyle(
+                        background_color="#000000",
+                        text_color=_brand_mark_text_color(project._brand_mark),
+                        opacity=_brand_mark_opacity(project._brand_mark),
+                    ),
+                    text_color=_brand_mark_text_color(project._brand_mark),
+                    text_bias="center",
+                    image_path=brand_image_path,
+                    image_scale_percent=_brand_mark_image_scale_percent(project._brand_mark),
+                    content_opacity=_brand_mark_opacity(project._brand_mark),
+                    show_background=False,
+                    font_family=_brand_mark_font_family(project._brand_mark),
+                    font_size=_brand_mark_font_size(project._brand_mark),
+                    use_individual_auto_size=True,
+                ),
+                brand_x,
+                brand_y,
+            )
+
         score_marks: list[tuple[str, float, float, float]] = []
 
         return badges, positioned_badges, score_marks
@@ -456,13 +903,23 @@ class OverlayRenderer:
     def paint(
         self, painter: QPainter, project: Project, position_ms: int, width: int, height: int
     ) -> None:
+        lead_in_duration_ms = _hook_duration_ms(project._lead_in_card, 0.0)
+        lead_in_visible = bool(
+            _lead_in_card_text(project, project._lead_in_card)
+            or _lead_in_card_logo_path(project._lead_in_card)
+        ) and lead_in_duration_ms > 0 and position_ms < lead_in_duration_ms
+        brand_duration_ms = _hook_duration_ms(project._brand_mark, 0.0)
+        brand_visible = bool(
+            _brand_mark_text(project._brand_mark)
+            or _brand_mark_image_path(project._brand_mark)
+        ) and (brand_duration_ms <= 0 or position_ms < brand_duration_ms)
         has_visible_popup = any(
             popup.enabled
             and popup_bubble_display_text(project, popup).strip()
             and popup_bubble_is_visible_at(project, popup, position_ms)
             for popup in project.popups
         )
-        if project.overlay.position == OverlayPosition.NONE and not has_visible_popup:
+        if project.overlay.position == OverlayPosition.NONE and not has_visible_popup and not lead_in_visible and not brand_visible:
             return
 
         painter.save()
@@ -512,6 +969,13 @@ class OverlayRenderer:
         if has_final_score_badge and project.overlay.score_lock_to_stack and badge_rects:
             final_score_rect = badge_rects[-1]
         for index, (badge, x, y) in enumerate(positioned_badges):
+            positioned_badge_auto_size = auto_badge_size
+            if badge.use_individual_auto_size and not badge.width and not badge.height:
+                positioned_badge_auto_size = _auto_badge_size(
+                    (badge.text,),
+                    metrics,
+                    line_height=line_height,
+                )
             rects = self._paint_badges(
                 painter,
                 [badge],
@@ -521,7 +985,7 @@ class OverlayRenderer:
                 quadrant="custom",
                 custom_x=x,
                 custom_y=y,
-                auto_badge_size=auto_badge_size,
+                auto_badge_size=positioned_badge_auto_size,
             )
             if (
                 has_final_score_badge
@@ -708,9 +1172,28 @@ class OverlayRenderer:
         previous_rect: QRectF | None = None
         painted_rects: list[QRectF] = []
         for index, badge in enumerate(badges):
+            badge_font = _overlay_qfont(
+                badge.font_family or project.overlay.font_family or default_overlay_font_family(),
+                badge.font_size or font_size,
+                project.overlay.font_bold if badge.font_bold is None else badge.font_bold,
+                project.overlay.font_italic if badge.font_italic is None else badge.font_italic,
+            )
+            painter.setFont(badge_font)
+            metrics = painter.fontMetrics()
+            line_height = _badge_line_height(badge_font, metrics)
             lines = badge.text.splitlines() or [""]
             image = QImage(badge.image_path) if badge.image_path else QImage()
             has_image = not image.isNull()
+            badge_auto_size = auto_badge_size
+            if (
+                has_image
+                or badge.image_scale_percent
+                or badge.font_family
+                or badge.font_size
+                or badge.font_bold is not None
+                or badge.font_italic is not None
+            ):
+                badge_auto_size = None
             if badge.text_runs:
                 text_width = sum(
                     metrics.horizontalAdvance(segment_text)
@@ -733,8 +1216,24 @@ class OverlayRenderer:
             fallback_width = text_width + (padding_x * 2)
             fallback_height = text_height + (padding_y * 2)
             if has_image:
-                fallback_width = max(fallback_width, min(320, max(220, image.width())))
-                image_height = min(220, max(124, image.height()))
+                image_scale = max(
+                    0.2,
+                    min(4.0, float((badge.image_scale_percent or 100) / 100.0)),
+                )
+                scaled_image_width = max(96.0, float(image.width()) * image_scale)
+                scaled_image_height = max(72.0, float(image.height()) * image_scale)
+                if image.width() > 0 and image.height() > 0:
+                    fit_ratio = min(
+                        min(320.0, max(220.0, scaled_image_width)) / float(image.width()),
+                        min(220.0, max(124.0, scaled_image_height)) / float(image.height()),
+                    )
+                    scaled_image_width = max(1.0, float(image.width()) * fit_ratio)
+                    scaled_image_height = max(1.0, float(image.height()) * fit_ratio)
+                fallback_width = max(
+                    fallback_width,
+                    int(round(scaled_image_width)) + (padding_x * 2),
+                )
+                image_height = int(round(scaled_image_height))
                 fallback_height = max(
                     fallback_height,
                     image_height if not badge.text else image_height + text_height + 14,
@@ -742,12 +1241,12 @@ class OverlayRenderer:
             badge_width = (
                 explicit_width
                 if explicit_width > 0
-                else (auto_badge_size[0] if auto_badge_size else fallback_width)
+                else (badge_auto_size[0] if badge_auto_size else fallback_width)
             )
             badge_height = (
                 explicit_height
                 if explicit_height > 0
-                else (auto_badge_size[1] if auto_badge_size else fallback_height)
+                else (badge_auto_size[1] if badge_auto_size else fallback_height)
             )
             base_rect = previous_rect or after_rect
             if base_rect is None:
@@ -795,27 +1294,52 @@ class OverlayRenderer:
             previous_rect = rect
             painted_rects.append(rect)
             text_bias = badge.text_bias or "center"
+            content_opacity = _clamped_float(
+                1.0 if badge.content_opacity is None else badge.content_opacity,
+                1.0,
+            )
 
-            background = QColor(badge.background_color or badge.style.background_color)
-            background.setAlphaF(badge.style.opacity)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(background)
-            if project.overlay.style_type == "bubble":
-                radius = rect.height() / 2
-            elif project.overlay.style_type == "rounded":
-                radius = 16
-            else:
-                radius = 0
-            if radius:
-                painter.drawRoundedRect(rect, radius, radius)
-            else:
-                painter.drawRect(rect)
+            if badge.show_background:
+                background = QColor(badge.background_color or badge.style.background_color)
+                background.setAlphaF(badge.style.opacity)
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(background)
+                if project.overlay.style_type == "bubble":
+                    radius = rect.height() / 2
+                elif project.overlay.style_type == "rounded":
+                    radius = 16
+                else:
+                    radius = 0
+                if radius:
+                    painter.drawRoundedRect(rect, radius, radius)
+                else:
+                    painter.drawRect(rect)
             text_rect = rect.adjusted(padding_x, padding_y, -padding_x, -padding_y)
             if has_image:
                 image_rect = QRectF(text_rect)
                 if badge.text:
                     image_rect.setBottom(
                         max(image_rect.top(), image_rect.bottom() - line_height - 6)
+                    )
+                if badge.image_scale_percent:
+                    requested_scale = max(
+                        0.2,
+                        min(4.0, float(badge.image_scale_percent) / 100.0),
+                    )
+                    requested_width = max(1.0, float(image.width()) * requested_scale)
+                    requested_height = max(1.0, float(image.height()) * requested_scale)
+                    fit_ratio = min(
+                        image_rect.width() / max(1.0, requested_width),
+                        image_rect.height() / max(1.0, requested_height),
+                        1.0,
+                    )
+                    draw_width = max(1.0, requested_width * fit_ratio)
+                    draw_height = max(1.0, requested_height * fit_ratio)
+                    image_rect = QRectF(
+                        image_rect.center().x() - (draw_width / 2),
+                        image_rect.center().y() - (draw_height / 2),
+                        draw_width,
+                        draw_height,
                     )
                 source_rect = QRectF(0.0, 0.0, float(image.width()), float(image.height()))
                 if (
@@ -833,7 +1357,10 @@ class OverlayRenderer:
                         cropped_height = image.width() / max(0.0001, target_ratio)
                         source_rect.setTop((image.height() - cropped_height) / 2.0)
                         source_rect.setHeight(cropped_height)
+                painter.save()
+                painter.setOpacity(content_opacity)
                 painter.drawImage(image_rect, image, source_rect)
+                painter.restore()
             if badge.text_runs:
                 default_color = QColor(badge.text_color or badge.style.text_color)
                 total_text_width = sum(
@@ -854,13 +1381,18 @@ class OverlayRenderer:
                     + metrics.ascent()
                 )
                 cursor_x = start_x
+                painter.save()
+                painter.setOpacity(content_opacity)
                 for segment_text, segment_color in badge.text_runs:
                     if not segment_text:
                         continue
                     painter.setPen(QColor(segment_color) if segment_color else default_color)
                     painter.drawText(QPointF(cursor_x, baseline_y), segment_text)
                     cursor_x += metrics.horizontalAdvance(segment_text)
+                painter.restore()
             else:
+                painter.save()
+                painter.setOpacity(content_opacity)
                 painter.setPen(QColor(badge.text_color or badge.style.text_color))
                 if len(lines) > 1:
                     total_text_height = line_height * len(lines)
@@ -897,6 +1429,7 @@ class OverlayRenderer:
                         text_flags,
                         badge.text,
                     )
+                painter.restore()
         return painted_rects
 
     @staticmethod

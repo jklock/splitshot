@@ -20,6 +20,7 @@ def _open_test_page(playwright, server: BrowserControlServer):
 def _open_settings(page) -> None:
     page.locator("#settings-rail-button").click(force=True)
     page.wait_for_function("() => activeTool === 'settings'")
+    page.wait_for_timeout(100)
     page.locator('[data-tool-pane="settings"]').wait_for(state="visible")
 
 
@@ -81,32 +82,17 @@ def _set_global_template_defaults(
     default_tool: str | None = None,
     reopen_last_tool: bool | None = None,
 ) -> None:
-    page.evaluate(
-        """(values) => {
-            const scopeControl = document.getElementById('settings-scope');
-            const defaultToolControl = document.getElementById('settings-default-tool');
-            const reopenLastToolControl = document.getElementById('settings-reopen-last-tool');
-            if (scopeControl && values.scope !== null) {
-                scopeControl.value = String(values.scope);
-            }
-            if (defaultToolControl && values.defaultTool !== null) {
-                defaultToolControl.value = String(values.defaultTool);
-            }
-            if (reopenLastToolControl && values.reopenLastTool !== null) {
-                reopenLastToolControl.checked = Boolean(values.reopenLastTool);
-            }
-        }""",
-        {
-            "scope": scope,
-            "defaultTool": default_tool,
-            "reopenLastTool": reopen_last_tool,
-        },
-    )
+    if scope is not None:
+        _set_control(page, "settings-scope", str(scope))
+    if default_tool is not None:
+        _set_control(page, "settings-default-tool", str(default_tool))
+    if reopen_last_tool is not None:
+        _set_control(page, "settings-reopen-last-tool", bool(reopen_last_tool))
+    page.wait_for_timeout(50)
 
 
 def _apply_settings_defaults_and_wait(page, predicate: str) -> None:
     page.wait_for_function("() => state?.settings !== undefined")
-    page.evaluate("() => flushPendingSettingsDefaults()")
     page.evaluate("() => applySettingsDefaults()")
     page.wait_for_function("() => window.pendingSettingsDefaultsPromise === null")
     _wait_for_page_predicate(page, predicate)

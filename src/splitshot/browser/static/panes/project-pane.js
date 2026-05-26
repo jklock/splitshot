@@ -7,6 +7,7 @@ export function createProjectPane({
   setProjectDetailsDraft = () => {},
   getProjectFolderProbeRequestId = () => 0,
   setProjectFolderProbeRequestId = () => {},
+  setForcedProjectLandingPersistedTool = () => {},
   controlIsActive = (control) => Boolean(control) && documentObject.activeElement === control,
   normalizeToolId = (tool) => String(tool || "project"),
   setActiveTool = () => {},
@@ -30,6 +31,12 @@ export function createProjectPane({
   fileName = (value) => String(value || ""),
   splitSeconds = (value) => String(value ?? ""),
   formatNumber = (value) => String(value ?? ""),
+  formatMatchType = (matchType) => ({
+    uspsa: "USPSA",
+    ipsc: "IPSC",
+    idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
+  }[String(matchType || "").toLowerCase()] || "PractiScore"),
   formatPractiScoreTime = (value) => String(value ?? ""),
   autoApplyProjectDetails = () => {},
   autoApplyPractiScoreContext = () => {},
@@ -400,7 +407,7 @@ export function createProjectPane({
     const ssStageSeconds = ssStageTimeSeconds(state);
     const psStageSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
     const videoDurationMs = state.project?.primary_video?.duration_ms;
-    if (status) status.textContent = `${stagedMatchType ? stagedMatchType.toUpperCase() : "PractiScore"} Stage ${imported.stage_number} imported`;
+    if (status) status.textContent = `${formatMatchType(stagedMatchType)} Stage ${imported.stage_number} imported`;
     renderOwnedSummaryList("practiscore-import-summary", [
       ["Stage Start (Beep)", splitSeconds(beepMs)],
       ["Shots in Stage", shots.length > 0 ? String(shots.length) : "0"],
@@ -478,12 +485,16 @@ export function createProjectPane({
   async function applyConfiguredProjectLandingTool(options = {}) {
     const forceProjectTool = Boolean(options?.forceProjectTool);
     const reopenLastTool = Boolean(currentState()?.settings?.reopen_last_tool ?? true);
-    const configuredTool = forceProjectTool
-      ? "project"
-      : reopenLastTool
+    const configuredTool = reopenLastTool
         ? normalizeToolId(currentState()?.settings?.default_tool || currentState()?.project?.ui_state?.active_tool || "project")
         : "project";
-    setActiveTool(configuredTool, { collapseExpandedLayout: forceProjectTool, persistUiState: false });
+    if (forceProjectTool) {
+      setForcedProjectLandingPersistedTool(configuredTool);
+      setActiveTool("project", { collapseExpandedLayout: true, persistUiState: false });
+      return null;
+    }
+    setForcedProjectLandingPersistedTool(null);
+    setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });
     return applyProjectUiStatePayload();
   }
 

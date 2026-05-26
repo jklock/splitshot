@@ -503,6 +503,37 @@ def test_project_pane_manual_practiscore_file_import_remains_functional_with_act
         server.shutdown()
 
 
+def test_project_pane_steel_challenge_import_uses_formatted_status_label(
+    tmp_path: Path,
+) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'steel-import.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                page.locator("#practiscore-file-input").set_input_files(
+                    str(EXAMPLES_DIR / "SteelChallenge" / "report.txt")
+                )
+                page.wait_for_function(
+                    "() => (document.getElementById('practiscore-status')?.textContent || '').includes('Steel Challenge Stage 1 imported')"
+                )
+
+                assert (
+                    page.locator("#practiscore-status").text_content().strip()
+                    == "Steel Challenge Stage 1 imported"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_project_pane_practiscore_connect_route_updates_browser_state(tmp_path: Path) -> None:
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.practiscore_session = _BrowserFakeSessionManager(
@@ -799,6 +830,104 @@ def test_project_pane_output_hook_close_hides_editor(tmp_path: Path) -> None:
                 page.wait_for_function(
                     "() => document.getElementById('output-hook-editor')?.hidden === true"
                 )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_export_pane_output_hook_save_persists_richer_title_and_logo_payloads(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'automation-rich-hooks.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+
+                page.locator("#output-profile-name").fill("Rich Hook Profile")
+                page.locator("#output-profile-create").click()
+                page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
+
+                page.locator('[data-output-hook="lead-in-card"]').click()
+                page.locator("#hook-lead-in-style").select_option("competitor")
+                page.locator("#hook-lead-in-duration").fill("3.5")
+                page.locator("#hook-lead-in-animation").select_option("fade")
+                page.locator("#hook-lead-in-show-match").check()
+                page.locator("#hook-lead-in-show-stage").uncheck()
+                page.locator("#hook-lead-in-show-date").check()
+                page.locator("#hook-lead-in-custom-title").fill("Championship Opener")
+                page.locator("#hook-lead-in-custom-subtitle").fill("Final squad")
+                page.locator("#hook-lead-in-logo-path").fill("/tmp/intro-logo.png")
+                page.locator("#hook-lead-in-logo-scale").fill("85")
+                page.locator("#output-hook-save").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"custom_title": "Championship Opener"'))
+                          && Boolean(detail?.textContent?.includes('"show_stage": false'));
+                    }"""
+                )
+
+                page.locator('[data-output-hook="brand-mark"]').click()
+                page.locator("#hook-brand-mark-select").select_option("image_text")
+                page.locator("#hook-brand-mark-text").fill("Team Split")
+                page.locator("#hook-brand-mark-position").select_option("bottom_left")
+                page.locator("#hook-brand-mark-opacity").fill("55")
+                page.locator("#hook-brand-mark-font-size").fill("28")
+                page.locator("#hook-brand-mark-image-scale").fill("70")
+                page.locator("#hook-brand-mark-image-path").fill("/tmp/brand-mark.png")
+                page.locator("#hook-brand-mark-text-color").fill("#00ff00")
+                page.locator("#hook-brand-mark-duration").fill("0")
+                page.locator("#output-hook-save").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"text": "Team Split"'))
+                                                    && Boolean(detail?.textContent?.includes('"image_path": "/tmp/brand-mark.png"'))
+                          && Boolean(detail?.textContent?.includes('"position": "bottom_left"'))
+                          && Boolean(detail?.textContent?.includes('"duration_s": 0'));
+                    }"""
+                )
+
+                profiles = controller.output_profile_list("stage", controller.project.id)
+                assert len(profiles) == 1
+                assert profiles[0]["lead_in_card"] == {
+                    "style": "competitor",
+                    "duration_s": 3.5,
+                    "animation": "fade",
+                    "show_match": True,
+                    "show_stage": False,
+                    "show_shooter": True,
+                    "show_division": True,
+                    "show_classification": True,
+                    "show_date": True,
+                    "custom_title": "Championship Opener",
+                    "custom_subtitle": "Final squad",
+                    "logo_path": "/tmp/intro-logo.png",
+                    "logo_scale_percent": 85,
+                }
+                assert profiles[0]["brand_mark"] == {
+                    "style": "image_text",
+                    "text": "Team Split",
+                    "position": "bottom_left",
+                    "opacity": pytest.approx(0.55),
+                    "duration_s": 0,
+                    "image_path": "/tmp/brand-mark.png",
+                    "image_scale_percent": 70,
+                    "text_color": "#00ff00",
+                    "font_size": 28,
+                }
             finally:
                 browser.close()
     finally:
@@ -1236,6 +1365,120 @@ def test_match_workspace_stage_open_and_shell_return_restore_match_context() -> 
         server.shutdown()
 
 
+def test_match_workspace_shell_keeps_selected_stage_detail_and_workflow_visible() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Shell Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = True
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').click()
+                page.wait_for_function(
+                    "() => (document.getElementById('match-stage-detail-status')?.textContent || '').includes('Stage 2')"
+                )
+                assert page.locator("#match-section-stage-detail").evaluate("node => node.hidden") is False
+
+                _open_match_section(page, "match-section-composite")
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-composite')?.hidden === false && document.getElementById('match-section-stage-workflow')?.hidden === false"
+                )
+                assert "2 total" in (page.locator("#match-stage-workflow-panel").text_content() or "")
+
+                _open_match_section(page, "match-section-defaults")
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-stage-detail')?.hidden === false && document.getElementById('match-section-defaults')?.hidden === false"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_workspace_preview_tiles_render_live_media_and_export_keeps_selected_stage_detail(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    workspace_path = tmp_path / "preview-match-workspace"
+    controller.new_workspace()
+    controller.workspace.name = "Preview Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    controller.workspace_add_stage("stage_2", "Stage 2")
+    controller.workspace.stage_entries["stage_1"].source_media_present = True
+    controller.workspace.stage_entries["stage_2"].source_media_present = False
+    controller.save_workspace(str(workspace_path))
+
+    stage_controller = ProjectController()
+    stage_controller.new_project()
+    stage_controller.project.name = "Preview Stage"
+    stage_video_path = Path(synthetic_video_factory(name="match-preview-tile"))
+    stage_controller.ingest_primary_video(str(stage_video_path))
+    assert controller._save_stage_project("stage_1", stage_controller.project) is True
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
+                )
+                page.wait_for_function(
+                    "() => Boolean(document.querySelector('#workspace-stage-list .match-stage-card[data-stage-id=\"stage_1\"] .match-stage-preview-video'))"
+                )
+
+                preview_src = page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"] .match-stage-preview-video'
+                ).get_attribute("src")
+                assert preview_src is not None
+                assert "/media/workspace-stage/stage_1" in preview_src
+
+                preview_fetch = page.evaluate(
+                    """async (src) => {
+                        const response = await fetch(src);
+                        const buffer = await response.arrayBuffer();
+                        return {
+                            status: response.status,
+                            contentType: response.headers.get('content-type') || '',
+                            byteLength: buffer.byteLength,
+                        };
+                    }""",
+                    preview_src,
+                )
+                assert preview_fetch["status"] == 200
+                assert preview_fetch["contentType"] == "video/mp4"
+                assert preview_fetch["byteLength"] > 0
+
+                page.wait_for_function(
+                    "() => (document.getElementById('match-stage-detail-status')?.textContent || '').includes('Stage 1')"
+                )
+
+                _open_match_section(page, "match-section-export")
+                page.wait_for_function(
+                    "() => document.getElementById('match-section-export')?.hidden === false && document.getElementById('match-section-stage-detail')?.hidden === false"
+                )
+                assert "Stage 1" in (page.locator("#match-stage-detail-panel").text_content() or "")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_performance_library_can_reopen_stage_and_workspace_from_selected_record(
     monkeypatch,
     tmp_path: Path,
@@ -1395,7 +1638,8 @@ def test_performance_library_settings_persist_and_manual_refresh_loads_records(
                 assert page.locator("#library-setting-default-sort").input_value() == "score"
                 assert page.locator("#library-setting-auto-refresh").is_checked() is False
 
-                page.locator("#library-refresh").click()
+                assert page.locator("#library-stale-refresh").is_visible() is True
+                page.locator("#library-stale-refresh").click()
                 page.wait_for_function(
                     "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
                 )
@@ -1456,7 +1700,8 @@ def test_performance_library_shows_loading_and_recovers_from_route_failure(
                     page.locator("#library-error").text_content() or ""
                 )
 
-                page.locator("#library-refresh").click()
+                assert page.locator("#library-error-retry").is_visible() is True
+                page.locator("#library-error-retry").click()
                 page.wait_for_function(
                     "() => document.getElementById('library-loading')?.hidden === false"
                 )
@@ -1567,6 +1812,77 @@ def test_performance_library_summary_tiles_and_personal_bests_follow_loaded_reco
                     {"rank": "#2", "name": "Recent Classifier", "score": "101"},
                     {"rank": "#3", "name": "Older Classifier", "score": "92"},
                 ]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_performance_library_search_filters_records_and_keeps_lower_detail_truth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryStageRecord
+    from splitshot.persistence.library import save_stage_record
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="alpha-record",
+            stage_id="alpha_stage",
+            display_name="Alpha Drill",
+            event_date=datetime(2026, 5, 23, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 92},
+            editor_target={"type": "single", "project_path": str(tmp_path / "alpha.ssproj")},
+            truth_hash="alpha-truth",
+        )
+    )
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="bravo-record",
+            stage_id="bravo_stage",
+            display_name="Bravo Drill",
+            event_date=datetime(2026, 5, 24, tzinfo=timezone.utc),
+            discipline="idpa_time_plus",
+            metric_summary={"score_total": 87},
+            editor_target={"type": "single", "project_path": str(tmp_path / "bravo.ssproj")},
+            truth_hash="bravo-truth",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 2"
+                )
+
+                page.locator("#library-search").fill("Bravo")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
+                )
+                assert "Bravo Drill" in (page.locator("#library-record-list").text_content() or "")
+
+                page.locator("#library-record-list .library-record-row", has_text="Bravo Drill").click()
+                page.wait_for_function(
+                    "() => (document.getElementById('library-detail-status')?.textContent || '').includes('Bravo Drill')"
+                )
+                assert page.locator("#library-section-detail").evaluate("node => node.hidden") is False
+
+                _open_library_section(page, "library-section-detail")
+                page.wait_for_function(
+                    "() => document.getElementById('library-section-detail-actions')?.hidden === false"
+                )
+                assert page.locator("#library-open-stage").is_visible() is True
             finally:
                 browser.close()
     finally:
@@ -1800,6 +2116,9 @@ def test_match_workspace_recap_reports_success_and_error_states(
                 )
 
                 page.locator("#match-recap-panel .recap-stage-check").nth(1).uncheck()
+                page.wait_for_function(
+                    """() => document.querySelectorAll('#match-recap-panel .recap-stage-check')[1]?.checked === false"""
+                )
                 page.locator("#recap-transition").select_option("fade")
                 page.locator("#recap-result-card").select_option("end")
                 page.locator("#recap-render").click()
@@ -2024,7 +2343,7 @@ def test_match_settings_persist_locally_and_control_match_return_selection() -> 
         server.shutdown()
 
 
-def test_match_stage_composite_angle_align_and_audio_mix_buttons_update_composite_state(
+def test_match_stage_composite_controls_update_composite_state(
     monkeypatch,
 ) -> None:
     controller = ProjectController()
@@ -2032,11 +2351,13 @@ def test_match_stage_composite_angle_align_and_audio_mix_buttons_update_composit
     controller.workspace.name = "Composite Match"
     controller.workspace_add_stage("stage_1", "Stage 1")
     first_clip = controller.workspace_stage_clip_add("stage_1", "/tmp/primary.mp4", "primary")[0]
-    controller.workspace_stage_clip_add("stage_1", "/tmp/follow.mp4", "follow")
+    second_clip = controller.workspace_stage_clip_add("stage_1", "/tmp/follow.mp4", "follow")[-1]
     angle_calls: list[dict[str, object]] = []
     audio_calls: list[dict[str, object]] = []
+    reorder_calls: list[dict[str, object]] = []
     original_angle_align = ProjectController.angle_align
     original_audio_mix_set = ProjectController.audio_mix_set
+    original_reorder = ProjectController.workspace_stage_clip_reorder
 
     def tracking_angle_align(self, stage_id: str, reference_clip_id: str) -> dict:
         angle_calls.append({"stage_id": stage_id, "reference_clip_id": reference_clip_id})
@@ -2061,8 +2382,19 @@ def test_match_stage_composite_angle_align_and_audio_mix_buttons_update_composit
         )
         return original_audio_mix_set(self, stage_id, clip_id, gain, muted, primary)
 
+    def tracking_reorder(self, stage_id: str, clip_id: str, target_index: int):
+        reorder_calls.append(
+            {
+                "stage_id": stage_id,
+                "clip_id": clip_id,
+                "target_index": target_index,
+            }
+        )
+        return original_reorder(self, stage_id, clip_id, target_index)
+
     monkeypatch.setattr(ProjectController, "angle_align", tracking_angle_align)
     monkeypatch.setattr(ProjectController, "audio_mix_set", tracking_audio_mix_set)
+    monkeypatch.setattr(ProjectController, "workspace_stage_clip_reorder", tracking_reorder)
 
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -2103,28 +2435,136 @@ def test_match_stage_composite_angle_align_and_audio_mix_buttons_update_composit
                     {"stage_id": "stage_1", "reference_clip_id": first_clip["clip_id"]}
                 ]
 
-                page.locator(
+                row = page.locator(
                     f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
-                ).locator("button", has_text="Audio Mix").click()
+                )
+                row.locator("label", has_text="Audio gain").locator("input").fill("0.5")
+                row.locator("label", has_text="Audio gain").locator("input").dispatch_event("change")
+                row.locator("label", has_text="Mute").locator("input").check()
                 page.wait_for_function(
-                    """(clipId) => {
-                        const row = document.querySelector(`#stage-composite-list .automation-row[data-clip-id="${clipId}"]`);
-                        return Boolean(row?.textContent?.toLowerCase().includes('audio muted'));
+                    """async (clipId) => {
+                        const response = await fetch('/api/workspace/stage/clip/list', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ stage_id: 'stage_1' }),
+                        });
+                        const data = await response.json();
+                        const clip = (data?.clips || []).find((item) => item.clip_id === clipId);
+                        return Boolean(clip)
+                          && clip.audio_muted === true
+                          && clip.audio_gain === 0.5;
                     }""",
                     arg=first_clip["clip_id"],
                 )
 
-                assert audio_calls[-1] == {
+                second_row = page.locator(
+                    f'#stage-composite-list .automation-row[data-clip-id="{second_clip["clip_id"]}"]'
+                )
+                second_row.locator("label", has_text="Primary audio").locator("input").check()
+                page.wait_for_function(
+                    """async (clipId) => {
+                        const response = await fetch('/api/workspace/stage/clip/list', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ stage_id: 'stage_1' }),
+                        });
+                        const data = await response.json();
+                        const clip = (data?.clips || []).find((item) => item.clip_id === clipId);
+                        return Boolean(clip) && clip.audio_primary === true;
+                    }""",
+                    arg=second_clip["clip_id"],
+                )
+
+                row.locator("button", has_text="↓").click()
+                page.wait_for_function(
+                    """(clipId) => {
+                        const firstRow = document.querySelector('#stage-composite-list .automation-row');
+                        return Boolean(firstRow) && firstRow.dataset.clipId !== clipId;
+                    }""",
+                    arg=first_clip["clip_id"],
+                )
+
+                assert audio_calls[0] == {
                     "stage_id": "stage_1",
                     "clip_id": first_clip["clip_id"],
-                    "gain": 0,
-                    "muted": True,
+                    "gain": 0.5,
+                    "muted": None,
                     "primary": None,
                 }
-                row_text = page.locator(
+                assert {
+                    "stage_id": "stage_1",
+                    "clip_id": first_clip["clip_id"],
+                    "gain": None,
+                    "muted": True,
+                    "primary": None,
+                } in audio_calls
+                assert {
+                    "stage_id": "stage_1",
+                    "clip_id": second_clip["clip_id"],
+                    "gain": None,
+                    "muted": None,
+                    "primary": True,
+                } in audio_calls
+                assert reorder_calls == [
+                    {
+                        "stage_id": "stage_1",
+                        "clip_id": first_clip["clip_id"],
+                        "target_index": 1,
+                    }
+                ]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_match_stage_composite_cut_override_editor_updates_plan_detail() -> None:
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Composite Match"
+    controller.workspace_add_stage("stage_1", "Stage 1")
+    first_clip = controller.workspace_stage_clip_add("stage_1", "/tmp/primary.mp4", "primary")[0]
+    controller.workspace_stage_clip_add("stage_1", "/tmp/follow.mp4", "follow")
+
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_match_surface(page)
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
+                )
+                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').click()
+                _open_match_section(page, "match-section-composite")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#stage-composite-list .automation-row').length === 2"
+                )
+
+                row = page.locator(
                     f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
-                ).text_content() or ""
-                assert "audio muted" in row_text.lower()
+                )
+                row.locator("label", has_text="Cut slot").locator("input").fill("1")
+                row.locator("label", has_text="Start (ms)").locator("input").fill("250")
+                row.locator("label", has_text="Duration (ms)").locator("input").fill("500")
+                row.locator("button", has_text="Apply Cut").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"start_ms": 250'))
+                          && Boolean(detail?.textContent?.includes('"duration_ms": 500'));
+                    }"""
+                )
+
+                row.locator("button", has_text="Clear Cut").click()
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent) && !detail.textContent.includes('"start_ms": 250');
+                    }"""
+                )
             finally:
                 browser.close()
     finally:
@@ -2182,6 +2622,9 @@ def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_proje
             browser, page = _open_test_page(playwright, server)
             try:
                 assert page.evaluate("() => state?.project?.path || ''") == ""
+                page.evaluate("() => setActiveSurface('landing')")
+                page.wait_for_function("() => activeSurface === 'landing'")
+                page.locator("#landing-open-file").wait_for(state="visible")
 
                 page.locator("#landing-open-file").click()
                 page.wait_for_function("() => activeSurface === 'single'")
@@ -2823,6 +3266,66 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(
                 assert preview_style["opacity"] == pytest.approx(0.7)
                 assert preview_style["backgroundValue"] == "#ff0000"
                 assert preview_style["textValue"] == "#00ff00"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_review_text_box_style_controls_use_two_column_layout(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="review-style-layout-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "review")
+
+                before_cards = page.locator("#review-text-box-list .text-box-card").count()
+                page.evaluate("document.getElementById('review-add-text-box').click()")
+                page.wait_for_function(
+                    "(count) => document.querySelectorAll('#review-text-box-list .text-box-card').length > count",
+                    arg=before_cards,
+                )
+
+                new_card = page.locator("#review-text-box-list .text-box-card").nth(before_cards)
+                box_id = new_card.get_attribute("data-box-id")
+                assert box_id
+
+                page.evaluate(
+                    """(targetBoxId) => {
+                        setReviewTextBoxExpanded(targetBoxId, true);
+                        renderTextBoxEditors();
+                    }""",
+                    box_id,
+                )
+                layout = page.evaluate(
+                    """(targetBoxId) => {
+                        const card = document.querySelector(
+                            `#review-text-box-list .text-box-card[data-box-id="${targetBoxId}"] .review-style-grid .custom-box-style-card`
+                        );
+                        if (!(card instanceof HTMLElement)) return null;
+                        const heading = card.querySelector('h4');
+                        const opacityField = card.querySelector('.opacity-field');
+                        return {
+                            columnCount: window.getComputedStyle(card).gridTemplateColumns.split(' ').filter(Boolean).length,
+                            headingColumn: heading ? window.getComputedStyle(heading).gridColumn : null,
+                            opacityColumn: opacityField ? window.getComputedStyle(opacityField).gridColumn : null,
+                            labelDirections: [...card.querySelectorAll('label')].map((label) => window.getComputedStyle(label).flexDirection),
+                        };
+                    }""",
+                    box_id,
+                )
+
+                assert layout is not None
+                assert layout["columnCount"] == 2
+                assert layout["headingColumn"] == "1 / -1"
+                assert layout["opacityColumn"] == "1 / -1"
+                assert all(direction == "column" for direction in layout["labelDirections"])
             finally:
                 browser.close()
     finally:
@@ -4395,6 +4898,34 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 )
                 assert page.locator("#merge-preview-layer").is_hidden() is True
 
+                page.locator("#merge-layout").select_option("full_screen_portrait")
+                page.wait_for_function(
+                    "() => state?.project?.merge?.layout === 'full_screen_portrait'"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-full-screen-portrait')"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('secondary-video')?.style.position === 'absolute'"
+                )
+                assert page.locator("#merge-preview-layer").is_hidden() is True
+
+                page.locator("#merge-layout").select_option("dual_center_hud")
+                page.wait_for_function(
+                    "() => state?.project?.merge?.layout === 'dual_center_hud'"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-dual-center-hud')"
+                )
+
+                page.locator("#merge-layout").select_option("dual_top_hud")
+                page.wait_for_function(
+                    "() => state?.project?.merge?.layout === 'dual_top_hud'"
+                )
+                page.wait_for_function(
+                    "() => document.getElementById('video-stage')?.classList.contains('merge-dual-top-hud')"
+                )
+
                 page.locator("#merge-layout").select_option("pip")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
                 page.wait_for_function(
@@ -4419,40 +4950,63 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
 
                 before_style = read_preview_style()
                 assert page.locator("#pip-size-label").text_content().strip().endswith("%")
+                initial_size_percent = page.evaluate(
+                    "() => state?.project?.merge_sources?.[0]?.pip_size_percent ?? null"
+                )
+                assert isinstance(initial_size_percent, int | float)
+                target_size_percent = 65 if initial_size_percent < 65 else 25
 
                 page.evaluate(
-                    """(selector) => {
+                    """({ selector, value }) => {
                         const control = document.querySelector(selector);
-                        control.value = '50';
+                        control.value = String(value);
                         control.dispatchEvent(new Event('input', { bubbles: true }));
                         control.dispatchEvent(new Event('change', { bubbles: true }));
                     }""",
-                    '[data-merge-source-field="size"]',
+                    {"selector": '[data-merge-source-field="size"]', "value": target_size_percent},
                 )
                 page.wait_for_function(
-                    """() => document.querySelector('[data-merge-source-output="size"]')?.textContent === '50%'"""
+                    """(expected) => document.querySelector('[data-merge-source-output="size"]')?.textContent === expected""",
+                    arg=f"{target_size_percent}%",
                 )
                 page.wait_for_function(
-                    "() => state?.project?.merge_sources?.[0]?.pip_size_percent === 50"
+                    "(expected) => state?.project?.merge_sources?.[0]?.pip_size_percent === expected",
+                    arg=target_size_percent,
                 )
+                expected_direction = "grow" if target_size_percent > initial_size_percent else "shrink"
                 page.wait_for_function(
-                    """({ previousWidth, previousHeight }) => {
+                    """({ previousWidth, previousHeight, direction }) => {
                         const item = document.querySelector('#merge-preview-layer .merge-preview-item');
-                        return Boolean(item) && (item.style.width !== previousWidth || item.style.height !== previousHeight);
+                        if (!item) return false;
+                        const width = Number.parseFloat(item.style.width || '0');
+                        const height = Number.parseFloat(item.style.height || '0');
+                        const previousWidthValue = Number.parseFloat(previousWidth || '0');
+                        const previousHeightValue = Number.parseFloat(previousHeight || '0');
+                        if (!Number.isFinite(width) || !Number.isFinite(height)) return false;
+                        if (!Number.isFinite(previousWidthValue) || !Number.isFinite(previousHeightValue)) {
+                            return item.style.width !== previousWidth || item.style.height !== previousHeight;
+                        }
+                        if (direction === 'grow') {
+                            return width > previousWidthValue || height > previousHeightValue;
+                        }
+                        return width < previousWidthValue || height < previousHeightValue;
                     }""",
                     arg={
                         "previousWidth": before_style["width"],
                         "previousHeight": before_style["height"],
+                        "direction": expected_direction,
                     },
                 )
                 after_size_style = read_preview_style()
-                assert size_output.text_content().strip() == "50%"
-                assert float(after_size_style["width"].removesuffix("px")) > float(
-                    before_style["width"].removesuffix("px")
-                )
-                assert float(after_size_style["height"].removesuffix("px")) > float(
-                    before_style["height"].removesuffix("px")
-                )
+                assert size_output.text_content().strip() == f"{target_size_percent}%"
+                before_width = float(before_style["width"].removesuffix("px"))
+                before_height = float(before_style["height"].removesuffix("px"))
+                after_width = float(after_size_style["width"].removesuffix("px"))
+                after_height = float(after_size_style["height"].removesuffix("px"))
+                if target_size_percent > initial_size_percent:
+                    assert after_width > before_width or after_height > before_height
+                else:
+                    assert after_width < before_width or after_height < before_height
 
                 page.evaluate(
                     """(selector) => {
@@ -4546,8 +5100,10 @@ def test_merge_default_pip_controls_commit_to_state_and_label(synthetic_video_fa
                 assert page.locator("#pip-y").input_value() == "0.75"
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
-                page.locator("#merge-layout").select_option("pip")
-                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.locator("#merge-layout").select_option("full_screen_portrait")
+                page.wait_for_function(
+                    "() => state?.project?.merge?.layout === 'full_screen_portrait'"
+                )
                 page.locator("#restore-merge-defaults").click()
                 page.wait_for_function(
                     """() => {
@@ -5493,7 +6049,8 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                     "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === true"
                 )
                 page.locator("#scoring-workbench").wait_for(state="visible")
-                assert page.locator(".inspector").is_visible() is False
+                context_inspector = page.locator('aside.inspector[aria-label="Context tools"]')
+                assert context_inspector.is_visible() is False
                 assert page.locator(".video-stage").is_visible() is False
                 assert page.locator(".waveform-panel").is_visible() is False
 
@@ -5599,7 +6156,7 @@ def test_scoring_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fac
                     "() => document.getElementById('cockpit-root')?.classList.contains('scoring-expanded') === false"
                 )
                 assert page.evaluate("activeTool") == "scoring"
-                assert page.locator(".inspector").is_visible() is True
+                assert context_inspector.is_visible() is True
 
                 page.locator("#expand-scoring").click()
                 page.wait_for_function(
