@@ -207,6 +207,47 @@ def test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes(
                     page.evaluate("waveformShotAmplitudeById[selectedShotId] || 1")
                 )
 
+                assert (
+                    page.locator("#waveform-tracks-controls").evaluate("element => element.hidden")
+                    is True
+                )
+                multi_mode_state = page.evaluate(
+                    """() => {
+                        document.getElementById('waveform-mode-multi')?.click();
+                        const single = document.getElementById('waveform-mode-single');
+                        const multi = document.getElementById('waveform-mode-multi');
+                        const controls = document.getElementById('waveform-tracks-controls');
+                        return {
+                            single_active: Boolean(single?.classList.contains('active')),
+                            multi_active: Boolean(multi?.classList.contains('active')),
+                            controls_hidden: Boolean(controls?.hidden),
+                        };
+                    }"""
+                )
+                assert multi_mode_state == {
+                    "single_active": False,
+                    "multi_active": True,
+                    "controls_hidden": False,
+                }
+                single_mode_state = page.evaluate(
+                    """() => {
+                        document.getElementById('waveform-mode-single')?.click();
+                        const single = document.getElementById('waveform-mode-single');
+                        const multi = document.getElementById('waveform-mode-multi');
+                        const controls = document.getElementById('waveform-tracks-controls');
+                        return {
+                            single_active: Boolean(single?.classList.contains('active')),
+                            multi_active: Boolean(multi?.classList.contains('active')),
+                            controls_hidden: Boolean(controls?.hidden),
+                        };
+                    }"""
+                )
+                assert single_mode_state == {
+                    "single_active": True,
+                    "multi_active": False,
+                    "controls_hidden": True,
+                }
+
                 page.locator("#zoom-waveform-in").click()
                 page.wait_for_function("(before) => waveformZoomX > before", arg=baseline_zoom)
                 page.locator("#zoom-waveform-out").click()
@@ -740,9 +781,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 _load_primary_video(page, primary_path)
                 _open_tool(page, "merge")
 
-                page.locator("#merge-media-input").set_input_files(
-                    [str(secondary_path), str(tertiary_path)]
-                )
+                with page.expect_file_chooser() as file_chooser_info:
+                    page.locator("#add-merge-media").click()
+                file_chooser_info.value.set_files([str(secondary_path), str(tertiary_path)])
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
 
                 page.locator("#merge-enabled").check()

@@ -9,11 +9,16 @@
       "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
     ],
     "doc_refs": [
-      "docs/project/completion-bundles/development/proof.md",
+      "docs/project/development/completion-bundles/development/proof.md",
       "docs/project/browser-control-qa-matrix.md",
       "docs/project/browser-control-coverage-plan.md",
-      "docs/project/browser-full-e2e-qa-plan.md"
+      "docs/project/browser-full-e2e-qa-plan.md",
+      "docs/project/development/Testing/spec.md",
+      "docs/project/development/Testing/artifacts.md"
     ],
+    "taxonomy_role": "supporting seam only; never a standalone TAX-0..TAX-5 closeout",
+    "taxonomy_note": "Supports landing-view feature and view planning, but broader pane or full end-to-end closure still requires accepted visual or video evidence records under the canonical Testing contract.",
+    "evidence_requirement": "Any taxonomy class that cites this seam must still provide accepted visual or video evidence; seam labels alone never close a class.",
     "caveat": "Recent-row clicks remain surface-only by design; they do not auto-open a saved project or workspace."
   },
   "DEV-107.root_shell_compat": {
@@ -30,12 +35,22 @@
       "tests/browser/test_workspace_flows.py"
     ],
     "doc_refs": [
-      "docs/project/completion-bundles/development/proof.md",
-      "docs/project/completion-bundles/development/match-reference.md",
+      "docs/project/development/completion-bundles/development/proof.md",
+      "docs/project/development/completion-bundles/development/match-reference.md",
       "docs/project/browser-control-qa-matrix.md",
       "docs/project/browser-control-coverage-plan.md",
-      "docs/project/browser-full-e2e-qa-plan.md"
+      "docs/project/browser-full-e2e-qa-plan.md",
+      "docs/project/development/Testing/spec.md",
+      "docs/project/development/Testing/artifacts.md"
     ],
+    "manifest_ref": "scripts/testing/pane_feature_manifests.json",
+    "pane_ids": [
+      "pane.match",
+      "pane.performance"
+    ],
+    "taxonomy_role": "supporting seam only; never a standalone TAX-0..TAX-5 closeout",
+    "taxonomy_note": "Supports shared-shell feature, pane, and view planning for `pane.match` and `pane.performance`, but compat/static strength must never be mistaken for taxonomy closure without accepted evidence records.",
+    "evidence_requirement": "Any taxonomy class that cites this seam must still provide accepted visual or video evidence; seam labels alone never close a class.",
     "compat_consumers": [
       "window.splitshot.onOpenProject",
       "renderAutomationSurface",
@@ -56,11 +71,20 @@
       "tests/analysis/test_practiscore_web_extract.py"
     ],
     "doc_refs": [
-      "docs/project/completion-bundles/development/stage-reference.md",
+      "docs/project/development/completion-bundles/development/stage-reference.md",
       "docs/project/browser-control-qa-matrix.md",
       "docs/project/browser-control-coverage-plan.md",
-      "docs/project/browser-full-e2e-qa-plan.md"
+      "docs/project/browser-full-e2e-qa-plan.md",
+      "docs/project/development/Testing/spec.md",
+      "docs/project/development/Testing/artifacts.md"
     ],
+    "manifest_ref": "scripts/testing/pane_feature_manifests.json",
+    "pane_ids": [
+      "pane.project"
+    ],
+    "taxonomy_role": "supporting seam only; never a standalone TAX-0..TAX-5 closeout",
+    "taxonomy_note": "Supports `pane.project` and `tax0.project.practiscore_import`, preserves the manual Select PractiScore File fallback plus local Match type / Stage # / Competitor name / Place selectors, and must not be read as standalone TAX-3 backend-end or TAX-5 full end-to-end closure.",
+    "evidence_requirement": "Any taxonomy class that cites this seam must still provide accepted visual or video evidence; seam labels alone never close a class.",
     "caveat": "The remote session/match-list/import bridge is proven without claiming every downstream consumer path."
   }
 }

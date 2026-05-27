@@ -427,54 +427,88 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
     full_e2e_plan = FULL_E2E_PLAN.read_text(encoding="utf-8")
 
     assert (
-        "For the phase-gated execution plan that defines what counts as truthful full-control end-to-end coverage"
+        "For the browser-slice plan that supports the canonical full end-to-end class, see `browser-full-e2e-qa-plan.md`."
         in inventory_plan
     )
     assert (
-        "A full-app end-to-end QA claim requires satisfying the stricter exit criteria"
+        "These statuses help measure browser readiness for `TAX-0`, `TAX-1`, `TAX-2`, and the browser portion of `TAX-5`, but they do not redefine those classes."
         in inventory_plan
     )
-    assert (
-        "These coverage statuses describe browser inventory/testing ownership only."
-        in inventory_plan
-    )
-    assert "They are **not** proof-taxonomy classes" in inventory_plan
-    assert "Project/Match/Performance seam" in inventory_plan
+    assert "scripts/testing/pane_feature_manifests.json" in inventory_plan
+    assert "support_surface_ids" in inventory_plan
+    assert "state-led" in inventory_plan
+    assert "`settings.section_visibility`" in inventory_plan
+    assert "`metrics.row_propagation`" in inventory_plan
+    assert "`metrics.stage_story`" in inventory_plan
+    assert "`metrics.scoring_context`" in inventory_plan
+    assert "surface.stage.compose" in inventory_plan
+    assert "surface.stage.scoring" in inventory_plan
+    assert "surface.stage.splits_waveform" in inventory_plan
+    assert "surface.stage.markers_review_overlay" in inventory_plan
+    assert "surface.stage.export" in inventory_plan
+    assert "surface.stage.shotml" in inventory_plan
+    assert "`match.recap` is `control-led`" in inventory_plan
+    assert "`recap-select-all`" in inventory_plan
+    assert "`recap-render`" in inventory_plan
+    assert "pane.project" in inventory_plan
+    assert "pane.match" in inventory_plan
+    assert "pane.performance" in inventory_plan
+    assert "pane.settings" in inventory_plan
+    assert "pane.metrics" in inventory_plan
+    assert "Project/Match/Performance/Settings/Metrics seam" in inventory_plan
     assert (
         "Match-workspace media-backed stage tiles and selected-stage lower-pane truth across lower-pane workflow switches"
         in inventory_plan
     )
     assert "Performance Library loading, empty, stale, and manual-refresh lifecycle proof" in inventory_plan
+    assert "Settings global template scope, landing pane, reopen-last-tool, and app-vs-folder default-layer truth" in inventory_plan
+    assert (
+        "Within `settings.layout_defaults`, `settings-use-current-layout` and `settings-release-layout` own the live interaction path; the rendered layout fields remain state assertions."
+        in inventory_plan
+    )
+    assert "Metrics summary/workbench expansion/collapse plus row propagation from timing and scoring edits" in inventory_plan
     assert "DEV-106.landing_recent" in inventory_plan
     assert "DEV-107.root_shell_compat" in inventory_plan
     assert "project.practiscore_bridge" in inventory_plan
+    assert "support_target_exceptions" in inventory_plan
     assert (
         "manual `Select PractiScore File` fallback plus local `Match type` / `Stage #` / `Competitor name` / `Place` selectors remain required"
         in inventory_plan
     )
+    for test_path in [
+        "tests/browser/test_settings_e2e.py",
+        "tests/browser/test_settings_defaults_truth_gate.py",
+        "tests/browser/test_metrics_e2e.py",
+        "tests/browser/test_scoring_metrics_contracts.py",
+    ]:
+        assert test_path in inventory_plan
     assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-106.landing_recent"]["doc_refs"]
     assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-107.root_shell_compat"]["doc_refs"]
 
+    assert "scripts/testing/pane_feature_manifests.json" in full_e2e_plan
+    assert "support_target_exceptions" in full_e2e_plan
+    assert "surface.stage.compose" in full_e2e_plan
+    assert "surface.stage.export" in full_e2e_plan
+    assert "surface.stage.shotml" in full_e2e_plan
+    assert "`pane.project` / `tax0.project.practiscore_import`" in full_e2e_plan
+    assert "Manual `Select PractiScore File` fallback remains required." in full_e2e_plan
     assert (
-        "`full-control QA coverage` is an interaction-coverage target, not a proof-taxonomy label."
+        "Local `Match type`, `Stage #`, `Competitor name`, and `Place` selectors remain required."
         in full_e2e_plan
     )
 
     for snippet in [
-        "Phase 0: Lock The Truth Boundary",
-        "Phase 1: Shared Shell And Drag/Layout Interactions",
-        "Phase 2: Splits And Score End-To-End Closeout",
-        "Phase 3: Markers, Review, Overlay, And Color Picker",
-        "Phase 4: Compose, Merge, Export Settings, And Export Log",
-        "Phase 5: Settings And ShotML Full Coverage",
-        "Phase 6: Cross-Surface Final Truth Gate",
-        "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",
-        "Match live preview tiles plus selected-stage lower-pane persistence across Stage Composite and Batch Export proof",
-        "Performance Library loading, empty, stale, and manual-refresh lifecycle proof",
-        "Performance Library stage/workspace reopen proof from selected records",
+        "### Phase 0 — Lock the browser truth boundary",
+        "### Phase 1 — Project and shared-shell foundations",
+        "### Phase 2 — Stage feature enablement support",
+        "### Phase 3 — Match workspace flow support",
+        "### Phase 4 — Performance import and proof support",
+        "### Phase 5 — Project-pane PractiScore support",
+        "### Phase 6 — Final browser gate for `TAX-5`",
+        "loading, empty, stale, and manual-refresh lifecycle proof",
+        "reopen/import entry points for saved stage and match records",
         "DEV-106.landing_recent",
         "DEV-107.root_shell_compat",
         "project.practiscore_bridge",
-        "PractiScore manual-file fallback plus local `Match type` / `Stage #` / `Competitor name` / `Place` selectors",
     ]:
         assert snippet in full_e2e_plan

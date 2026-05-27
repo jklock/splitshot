@@ -16,6 +16,23 @@
       "label": "Browser",
       "description": "Browser API, static shell, and browser-first workflow tests.",
       "group": "core",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5"
+      ],
+      "support_surface_ids": [
+        "surface.stage.compose",
+        "surface.stage.scoring",
+        "surface.stage.splits_waveform",
+        "surface.stage.markers_review_overlay",
+        "surface.stage.export",
+        "surface.stage.shotml"
+      ],
+      "support_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
       "include_in_default": true,
       "targets": [
         "tests/browser"
@@ -104,8 +121,55 @@
     {
       "name": "pane-project",
       "label": "Pane Project",
-      "description": "Opt-in browser pane lane for Project, landing, and PractiScore workflows.",
+      "description": "Opt-in browser pane lane supporting the Project pane manifest plus explicit landing bootstrap exceptions and PractiScore workflows.",
       "group": "pane",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "pane_ids": [
+        "pane.project"
+      ],
+      "pane_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
+      "support_target_exceptions": [
+        {
+          "target": "tests/browser/test_landing_page.py",
+          "surface_id": "surface.landing",
+          "support_role": "pre-pane bootstrap",
+          "related_feature_ids": [
+            "project.lifecycle",
+            "project.primary_video_import"
+          ],
+          "reason": "Landing owns the create/select/import affordances that must work before pane.project can exist."
+        },
+        {
+          "target": "tests/browser/test_landing_backend_routes.py",
+          "surface_id": "surface.landing",
+          "support_role": "bootstrap route contract",
+          "related_feature_ids": [
+            "project.lifecycle"
+          ],
+          "reason": "Landing route truth stays visible here until the repo grows a dedicated landing lane."
+        },
+        {
+          "target": "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project",
+          "surface_id": "surface.landing",
+          "support_role": "pre-project primary import handoff",
+          "related_feature_ids": [
+            "project.primary_video_import"
+          ],
+          "reason": "This covers the empty-project import affordance that precedes pane.project activation."
+        },
+        {
+          "target": "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open",
+          "surface_id": "surface.landing",
+          "support_role": "recent-activity bootstrap",
+          "related_feature_ids": [],
+          "reason": "This remains an explicit landing support target until landing receives its own suite."
+        }
+      ],
       "include_in_default": false,
       "targets": [
         "tests/browser/test_landing_page.py",
@@ -122,8 +186,6 @@
         "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_expired_match_list_updates_browser_state",
         "tests/browser/test_browser_interactions.py::test_project_pane_delete_project_confirmation_can_cancel",
         "tests/browser/test_browser_interactions.py::test_project_pane_keyboard_tab_order_advances_through_primary_controls",
-        "tests/browser/test_browser_interactions.py::test_project_pane_output_hook_save_updates_selected_output_profile",
-        "tests/browser/test_browser_interactions.py::test_project_pane_output_hook_close_hides_editor",
         "tests/browser/test_browser_interactions.py::test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing",
         "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project",
         "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
@@ -132,8 +194,18 @@
     {
       "name": "pane-match",
       "label": "Pane Match",
-      "description": "Opt-in browser pane lane for Match workspace, recap, composite, and export workflows.",
+      "description": "Opt-in browser pane lane supporting the Match pane manifest plus workspace, recap, composite, and export workflows.",
       "group": "pane",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "pane_ids": [
+        "pane.match"
+      ],
+      "pane_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
       "include_in_default": false,
       "targets": [
         "tests/browser/test_workspace_flows.py",
@@ -161,8 +233,18 @@
     {
       "name": "pane-performance",
       "label": "Pane Performance",
-      "description": "Opt-in browser pane lane for Performance Library workflows and contracts.",
+      "description": "Opt-in browser pane lane supporting the Performance pane manifest plus Library workflows and contracts.",
       "group": "pane",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "pane_ids": [
+        "pane.performance"
+      ],
+      "pane_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
       "include_in_default": false,
       "targets": [
         "tests/browser/test_library_backend_contracts.py",
@@ -179,8 +261,18 @@
     {
       "name": "pane-settings",
       "label": "Pane Settings",
-      "description": "Opt-in browser pane lane for Settings defaults and section workflows.",
+      "description": "Opt-in browser pane lane supporting the Settings pane manifest plus defaults and section workflows.",
       "group": "pane",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "pane_ids": [
+        "pane.settings"
+      ],
+      "pane_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
       "include_in_default": false,
       "targets": [
         "tests/browser/test_settings_e2e.py",
@@ -190,8 +282,18 @@
     {
       "name": "pane-metrics",
       "label": "Pane Metrics",
-      "description": "Opt-in browser pane lane for Metrics pane workflows and scoring/metrics contracts.",
+      "description": "Opt-in browser pane lane supporting the Metrics pane manifest plus pane workflows and scoring/metrics contracts.",
       "group": "pane",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "pane_ids": [
+        "pane.metrics"
+      ],
+      "pane_manifest_refs": [
+        "scripts/testing/pane_feature_manifests.json"
+      ],
       "include_in_default": false,
       "targets": [
         "tests/browser/test_metrics_e2e.py",

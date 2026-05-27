@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "testing" / "run_test_suite.py"
+SUITE_TAXONOMY = ROOT / "scripts" / "testing" / "test_suite_taxonomy.json"
 
 
 def run_runner(*args: str) -> subprocess.CompletedProcess[str]:
@@ -26,6 +27,7 @@ def test_runner_lists_available_suites_as_json() -> None:
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     suite_names = [suite["name"] for suite in payload["suites"]]
+    suites_by_name = {suite["name"]: suite for suite in payload["suites"]}
     assert "analysis" in suite_names
     assert "browser" in suite_names
     assert "pane-project" in suite_names
@@ -34,6 +36,78 @@ def test_runner_lists_available_suites_as_json() -> None:
     assert "pane-settings" in suite_names
     assert "pane-metrics" in suite_names
     assert "scripts" in suite_names
+    assert suites_by_name["browser"]["taxonomy_support"] == [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5",
+    ]
+    assert suites_by_name["browser"]["support_surface_ids"] == [
+        "surface.stage.compose",
+        "surface.stage.scoring",
+        "surface.stage.splits_waveform",
+        "surface.stage.markers_review_overlay",
+        "surface.stage.export",
+        "surface.stage.shotml",
+    ]
+    assert suites_by_name["browser"]["support_manifest_refs"] == [
+        "scripts/testing/pane_feature_manifests.json"
+    ]
+    assert suites_by_name["pane-project"]["group"] == "pane"
+    assert suites_by_name["pane-project"]["taxonomy_support"] == ["TAX-0", "TAX-1"]
+    assert suites_by_name["pane-project"]["pane_ids"] == ["pane.project"]
+    assert suites_by_name["pane-project"]["pane_manifest_refs"] == [
+        "scripts/testing/pane_feature_manifests.json"
+    ]
+    assert len(suites_by_name["pane-project"]["support_target_exceptions"]) == 4
+    assert {
+        exception["surface_id"]
+        for exception in suites_by_name["pane-project"]["support_target_exceptions"]
+    } == {"surface.landing"}
+    assert suites_by_name["pane-match"]["pane_ids"] == ["pane.match"]
+    assert suites_by_name["pane-performance"]["pane_ids"] == ["pane.performance"]
+    assert suites_by_name["pane-settings"]["taxonomy_support"] == ["TAX-0", "TAX-1"]
+    assert suites_by_name["pane-settings"]["pane_ids"] == ["pane.settings"]
+    assert suites_by_name["pane-settings"]["pane_manifest_refs"] == [
+        "scripts/testing/pane_feature_manifests.json"
+    ]
+    assert suites_by_name["pane-metrics"]["taxonomy_support"] == ["TAX-0", "TAX-1"]
+    assert suites_by_name["pane-metrics"]["pane_ids"] == ["pane.metrics"]
+    assert suites_by_name["pane-metrics"]["pane_manifest_refs"] == [
+        "scripts/testing/pane_feature_manifests.json"
+    ]
+
+
+def test_runner_catalog_matches_machine_readable_suite_taxonomy_targets() -> None:
+    result = run_runner("--list", "--format", "json")
+
+    assert result.returncode == 0
+    catalog = {suite["name"]: suite for suite in json.loads(result.stdout)["suites"]}
+    taxonomy = {
+        suite["name"]: suite
+        for suite in json.loads(SUITE_TAXONOMY.read_text(encoding="utf-8"))["suites"]
+    }
+
+    assert set(catalog) == set(taxonomy)
+    for suite_name, taxonomy_suite in taxonomy.items():
+        catalog_suite = catalog[suite_name]
+        assert catalog_suite["label"] == taxonomy_suite["label"]
+        assert catalog_suite["description"] == taxonomy_suite["description"]
+        assert catalog_suite["targets"] == taxonomy_suite["targets"]
+        assert catalog_suite["default_selected"] == taxonomy_suite["include_in_default"]
+        for key in (
+            "group",
+            "taxonomy_support",
+            "pane_ids",
+            "pane_manifest_refs",
+            "support_surface_ids",
+            "support_manifest_refs",
+            "support_target_exceptions",
+        ):
+            if key in taxonomy_suite:
+                assert catalog_suite[key] == taxonomy_suite[key]
+            else:
+                assert key not in catalog_suite
 
 
 def test_runner_dry_run_supports_opt_in_pane_suite_targets_as_json() -> None:

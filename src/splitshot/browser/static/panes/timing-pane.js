@@ -460,6 +460,8 @@ export function createTimingPane({
     const lockButton = documentObject.createElement("button");
     lockButton.type = "button";
     lockButton.className = `lock-button ${editing ? "unlocked" : "locked"}`;
+    lockButton.dataset.timingRowAction = "toggle-edit";
+    lockButton.dataset.timingShotId = row.shot_id;
     lockButton.textContent = editing ? "Lock" : "Unlock";
     lockButton.title = editing ? "Lock row" : "Unlock row";
     lockButton.addEventListener("click", () => toggleTimingRowEdit(row.shot_id));
@@ -474,6 +476,8 @@ export function createTimingPane({
     const deleteShot = documentObject.createElement("button");
     deleteShot.type = "button";
     deleteShot.className = "danger-button restore-button";
+    deleteShot.dataset.timingRowAction = "delete-shot";
+    deleteShot.dataset.timingShotId = row.shot_id;
     deleteShot.textContent = "Delete";
     deleteShot.title = "Delete this shot from the run.";
     deleteShot.addEventListener("click", () => deleteShotById(row.shot_id, "timing_row"));
@@ -488,6 +492,8 @@ export function createTimingPane({
     const restore = documentObject.createElement("button");
     restore.type = "button";
     restore.className = "restore-button";
+    restore.dataset.timingRowAction = "restore-shot";
+    restore.dataset.timingShotId = row.shot_id;
     restore.textContent = "Restore";
     restore.title = "Restore this shot to its ShotML timing.";
     restore.addEventListener("click", () => restoreOriginalSplit(row.shot_id));

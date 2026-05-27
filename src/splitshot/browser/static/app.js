@@ -8124,6 +8124,8 @@ function renderTimingTable(tableId = "timing-table") {
         input.inputMode = "decimal";
         input.step = "0.01";
         input.className = "timing-adjustment-input";
+        input.dataset.timingRowField = "adjustment-seconds";
+        input.dataset.timingShotId = row.shot_id;
         input.value = String(timingAdjustmentDrafts.get(row.shot_id) ?? signedSeconds(adjustmentMs));
         input.setAttribute("aria-label", `Adjustment for ${splitRowEntryLabel(row)}`);
         input.title = "Edit the adjustment in seconds, for example +0.06 or -0.06.";
@@ -10671,8 +10673,13 @@ async function flushPendingSettingsDefaults() {
 }
 
 async function applySettingsDefaults(options = {}) {
-  if (options.scheduled && options.scheduledGeneration !== window.settingsDefaultsApplyGeneration) {
-    return window.pendingSettingsDefaultsPromise || null;
+  if (options.scheduled) {
+    const scheduledGeneration = Number.isFinite(options.scheduledGeneration)
+      ? Number(options.scheduledGeneration)
+      : window.settingsDefaultsApplyGeneration;
+    if (scheduledGeneration !== window.settingsDefaultsApplyGeneration) {
+      return window.pendingSettingsDefaultsPromise || null;
+    }
   }
   if (!options.scheduled) {
     window.settingsDefaultsApplyGeneration += 1;
@@ -10985,7 +10992,13 @@ function scheduleScoringApply() {
 
 const scheduleSettingsDefaultsApply = debounce((options = {}) => {
   activity("auto_apply.settings_defaults", {});
-  applySettingsDefaults({ ...options, scheduled: true });
+  applySettingsDefaults({
+    ...options,
+    scheduled: true,
+    scheduledGeneration: Number.isFinite(options.scheduledGeneration)
+      ? Number(options.scheduledGeneration)
+      : window.settingsDefaultsApplyGeneration,
+  });
 }, 300);
 
 const handleViewportLayoutChange = debounce(() => {
@@ -12816,6 +12829,7 @@ shellRuntime = createShellRuntime({
   popupBubbles,
   readPopupTemplatePayload,
   scheduleSettingsDefaultsApply,
+  flushPendingSettingsDefaults,
   applySettingsDefaults,
   toggleLayoutLock,
   resetLayout,

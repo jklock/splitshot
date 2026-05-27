@@ -948,6 +948,56 @@ def test_compose_pane_trim_dead_time_uses_output_profile_editor(tmp_path: Path) 
         server.shutdown()
 
 
+def test_export_pane_frame_profile_output_hook_persists_selected_profile(
+    tmp_path: Path,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'automation-frame-profile-hook.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+
+                page.locator("#output-profile-name").fill("Frame Hook Profile")
+                page.locator("#output-profile-create").click()
+                page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
+
+                page.locator('[data-output-hook="frame-profiles"]').click()
+                page.wait_for_function(
+                    """() => {
+                        const editor = document.getElementById('output-hook-editor');
+                        return Boolean(editor)
+                          && editor.hidden === false
+                          && editor.closest('[data-tool-pane]')?.dataset.toolPane === 'export';
+                    }"""
+                )
+
+                page.locator("#hook-frame-profile").select_option("9:16")
+                page.locator("#output-hook-save").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"frame_profile": "9:16"'));
+                    }"""
+                )
+
+                profiles = controller.output_profile_list("stage", controller.project.id)
+                assert len(profiles) == 1
+                assert profiles[0]["frame_profile"] == "9:16"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_export_pane_output_hook_save_persists_richer_title_and_logo_payloads(
     tmp_path: Path,
 ) -> None:

@@ -1,0 +1,1555 @@
+{
+  "version": 1,
+  "wave_id": "tax-0-tax-1-wave-a",
+  "wave_label": "TAX-0/TAX-1 Wave A",
+  "status": "foundation",
+  "scope_note": "First-class pane feature manifests for Project, Match, Performance, Settings, and Metrics plus browser-owned support-surface manifests for the current Stage tool families: Compose, Score, Splits / waveform, Markers / Review / Overlay, Export, and ShotML. Project/Match/Performance remain the proven Wave A base; Settings and Metrics extend that same pane model; the Stage tool rows stay support-only and do not create first-class TAX-2 view closure. These records bind TAX-0 feature IDs to TAX-1 pane IDs for the pane slice and to current browser support surfaces for the Stage tool slice. They are not evidence closeout records.",
+  "feature_audit_models": {
+    "control-led": {
+      "description": "Use when a feature has explicit browser control identifiers that must stay mapped to the pane inventory.",
+      "requires_control_ids": true,
+      "requires_state_values": false
+    },
+    "state-led": {
+      "description": "Use when a feature is audited through required state, status, or result assertions instead of pane-owned control identifiers.",
+      "requires_control_ids": false,
+      "requires_state_values": true,
+      "notes": "State-led features remain first-class TAX-0 rows. Empty control_ids are intentional only when the manifest makes the state/result assertions explicit."
+    }
+  },
+  "panes": [
+    {
+      "pane_id": "pane.project",
+      "pane_label": "Project",
+      "taxonomy_class": "TAX-1",
+      "pane_test_id": "tax1.project.pane",
+      "manifest_status": "wave_a_foundation",
+      "runner_suites": [
+        "pane-project",
+        "browser"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "proof_seams": [
+        "project.practiscore_bridge"
+      ],
+      "feature_id_prefix": "project.",
+      "features": [
+        {
+          "feature_id": "project.lifecycle",
+          "feature_label": "Project lifecycle and metadata",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.project.lifecycle",
+          "audit_model": "control-led",
+          "control_ids": [
+            "project-path",
+            "browse-project-path",
+            "new-project",
+            "delete-project",
+            "project-name",
+            "project-description"
+          ],
+          "state_values": [
+            "project folder selection",
+            "project title",
+            "project description",
+            "project deletion confirmation state"
+          ],
+          "inventory_terms": [
+            "project details",
+            "create/select project",
+            "project-folder display",
+            "metadata-only delete"
+          ]
+        },
+        {
+          "feature_id": "project.practiscore_import",
+          "feature_label": "PractiScore local import and remote sync bridge",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.project.practiscore_import",
+          "audit_model": "control-led",
+          "control_ids": [
+            "open-practiscore-dashboard",
+            "import-practiscore",
+            "match-type",
+            "match-stage-number",
+            "match-competitor-name",
+            "match-competitor-place"
+          ],
+          "state_values": [
+            "practiscore import summary",
+            "remote match-list availability",
+            "selected remote import status"
+          ],
+          "inventory_terms": [
+            "gated PractiScore dashboard opener",
+            "manual Select PractiScore File fallback",
+            "Match type",
+            "Stage #",
+            "Competitor name",
+            "Place"
+          ],
+          "browser_contract_keys": [
+            "practiscore_session",
+            "practiscore_sync",
+            "practiscore_options"
+          ]
+        },
+        {
+          "feature_id": "project.primary_video_import",
+          "feature_label": "Primary video path and import handoff",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.project.primary_video_import",
+          "audit_model": "control-led",
+          "control_ids": [
+            "primary-file-path",
+            "browse-primary-path"
+          ],
+          "state_values": [
+            "primary video selection",
+            "project media badge"
+          ],
+          "inventory_terms": [
+            "gated primary import",
+            "primary video path"
+          ]
+        }
+      ]
+    },
+    {
+      "pane_id": "pane.match",
+      "pane_label": "Match",
+      "taxonomy_class": "TAX-1",
+      "pane_test_id": "tax1.match.pane",
+      "manifest_status": "wave_a_foundation",
+      "runner_suites": [
+        "pane-match",
+        "browser"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "proof_seams": [
+        "DEV-107.root_shell_compat"
+      ],
+      "feature_id_prefix": "match.",
+      "features": [
+        {
+          "feature_id": "match.workspace_lifecycle",
+          "feature_label": "Workspace lifecycle and stage list management",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.workspace_lifecycle",
+          "audit_model": "control-led",
+          "control_ids": [
+            "workspace-new",
+            "workspace-open",
+            "workspace-save",
+            "workspace-stage-name",
+            "workspace-stage-add"
+          ],
+          "state_values": [
+            "workspace loading state",
+            "workspace error state",
+            "stage list",
+            "selected stage detail"
+          ],
+          "inventory_terms": [
+            "workspace create/open/save/add-stage/remove-stage plus loading/error states",
+            "stage card selection"
+          ]
+        },
+        {
+          "feature_id": "match.setup_once_and_defaults",
+          "feature_label": "Setup-once, shared defaults, and per-stage overrides",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.setup_once_and_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "setup-once-apply",
+            "setup-once-dismiss",
+            "shared-frame-profile",
+            "shared-metric-captions",
+            "shared-lead-in",
+            "shared-brand-mark",
+            "shared-defaults-apply",
+            "shared-defaults-reset",
+            "override-frame-profile",
+            "override-metric-captions",
+            "override-apply"
+          ],
+          "state_values": [
+            "setup-once preview state",
+            "shared defaults status",
+            "override detail state"
+          ],
+          "inventory_terms": [
+            "setup-once preview/apply/dismiss flow",
+            "shared defaults apply/reset",
+            "stage overrides apply/reset"
+          ]
+        },
+        {
+          "feature_id": "match.stage_navigation_shell",
+          "feature_label": "Stage navigation and Match shell return behavior",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.stage_navigation_shell",
+          "audit_model": "control-led",
+          "control_ids": [
+            "match-go-home",
+            "match-open-settings",
+            "match-toggle-rail",
+            "shell-return-match"
+          ],
+          "state_values": [
+            "selected-stage lower-pane truth",
+            "stage open and return state",
+            "live preview tile state"
+          ],
+          "inventory_terms": [
+            "stage card selection/open/return",
+            "selected-stage lower-pane truth stays pinned while Composite/Export swap beneath it",
+            "media-backed stage tiles"
+          ]
+        },
+        {
+          "feature_id": "match.composite_editor",
+          "feature_label": "Stage composite clip authoring",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.composite_editor",
+          "audit_model": "control-led",
+          "control_ids": [
+            "stage-clip-path",
+            "stage-clip-role",
+            "stage-clip-add"
+          ],
+          "state_values": [
+            "stage composite clip list",
+            "composite plan detail",
+            "cut override status"
+          ],
+          "inventory_terms": [
+            "stage clip add plus composite reorder/per-clip role-sync-audio editing/plan refresh/apply-clear cut overrides"
+          ]
+        },
+        {
+          "feature_id": "match.recap",
+          "feature_label": "Match recap configuration and result reporting",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.recap",
+          "audit_model": "control-led",
+          "control_ids": [
+            "recap-select-all",
+            "recap-select-none",
+            ".recap-stage-check",
+            "[data-stage-move]",
+            ".recap-stage-subtitle",
+            ".recap-stage-gain",
+            ".recap-stage-mute",
+            "recap-transition",
+            "recap-result-card",
+            "recap-render"
+          ],
+          "state_values": [
+            "selected recap stages",
+            "recap stage order",
+            "per-stage subtitle/audio options",
+            "transition configuration",
+            "result-card configuration",
+            "recap success and error state"
+          ],
+          "inventory_terms": [
+            "recap stage selection plus transition/result-card configuration and render outcomes"
+          ]
+        },
+        {
+          "feature_id": "match.batch_export",
+          "feature_label": "Batch export queue and recipe execution",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.batch_export",
+          "audit_model": "control-led",
+          "control_ids": [
+            "batch-select-all",
+            "batch-select-none",
+            "batch-recipe",
+            "batch-export-start"
+          ],
+          "state_values": [
+            "batch export queue",
+            "batch export progress",
+            "batch export results"
+          ],
+          "inventory_terms": [
+            "batch export recipe selection/select all/none/start",
+            "truthful success/error reporting"
+          ]
+        },
+        {
+          "feature_id": "match.settings",
+          "feature_label": "Match-local settings",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.match.settings",
+          "audit_model": "control-led",
+          "control_ids": [
+            "match-setting-show-score",
+            "match-setting-remember-stage"
+          ],
+          "state_values": [
+            "match settings persistence",
+            "remember-stage behavior"
+          ],
+          "inventory_terms": [
+            "Match settings local persistence"
+          ]
+        }
+      ]
+    },
+    {
+      "pane_id": "pane.performance",
+      "pane_label": "Performance",
+      "taxonomy_class": "TAX-1",
+      "pane_test_id": "tax1.performance.pane",
+      "manifest_status": "wave_a_foundation",
+      "runner_suites": [
+        "pane-performance",
+        "browser"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "proof_seams": [
+        "DEV-107.root_shell_compat"
+      ],
+      "feature_id_prefix": "performance.",
+      "features": [
+        {
+          "feature_id": "performance.overview",
+          "feature_label": "Library overview summary and personal bests",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.overview",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "summary tiles",
+            "personal bests list",
+            "overview status messaging"
+          ],
+          "inventory_terms": [
+            "overview summary tiles",
+            "personal-best list"
+          ]
+        },
+        {
+          "feature_id": "performance.records_filtering",
+          "feature_label": "Record list loading, refresh, search, and filtering",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.records_filtering",
+          "audit_model": "control-led",
+          "control_ids": [
+            "library-search",
+            "library-sort",
+            "library-filter-discipline",
+            "library-refresh",
+            "library-stale-refresh",
+            "library-error-retry"
+          ],
+          "state_values": [
+            "loading state",
+            "empty state",
+            "stale state",
+            "record list status"
+          ],
+          "inventory_terms": [
+            "loading/empty/stale state affordances",
+            "records search/sort/filter"
+          ]
+        },
+        {
+          "feature_id": "performance.record_detail_actions",
+          "feature_label": "Selected record detail, reopen, tags, and notes",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.record_detail_actions",
+          "audit_model": "control-led",
+          "control_ids": [
+            "library-open-stage",
+            "library-open-workspace",
+            "library-tag-input",
+            "library-tag-add",
+            "library-notes-text",
+            "library-notes-save"
+          ],
+          "state_values": [
+            "selected-record lower-pane detail",
+            "tag list",
+            "notes persistence state"
+          ],
+          "inventory_terms": [
+            "selected-record lower-pane detail",
+            "Open Stage/Open Workspace",
+            "notes/tags persistence entry points"
+          ]
+        },
+        {
+          "feature_id": "performance.analytics",
+          "feature_label": "Analytics truth messaging and chart state",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.analytics",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "analytics truth messaging",
+            "score trend state",
+            "discipline breakdown state",
+            "outlier status"
+          ],
+          "inventory_terms": [
+            "analytics truth messaging"
+          ]
+        },
+        {
+          "feature_id": "performance.backup_and_export",
+          "feature_label": "Library backup and export actions",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.backup_and_export",
+          "audit_model": "control-led",
+          "control_ids": [
+            "library-backup-create",
+            "library-backup-restore",
+            "library-export-csv",
+            "library-export-json"
+          ],
+          "state_values": [
+            "backup status",
+            "export action state"
+          ],
+          "inventory_terms": [
+            "backup create/restore",
+            "CSV/JSON export"
+          ]
+        },
+        {
+          "feature_id": "performance.settings",
+          "feature_label": "Performance Library shell and settings",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.performance.settings",
+          "audit_model": "control-led",
+          "control_ids": [
+            "library-go-home",
+            "library-open-settings",
+            "library-toggle-rail",
+            "library-setting-default-sort",
+            "library-setting-auto-refresh"
+          ],
+          "state_values": [
+            "library settings persistence",
+            "rail visibility state"
+          ],
+          "inventory_terms": [
+            "Performance settings local persistence"
+          ]
+        }
+      ]
+    },
+    {
+      "pane_id": "pane.settings",
+      "pane_label": "Settings",
+      "taxonomy_class": "TAX-1",
+      "pane_test_id": "tax1.settings.pane",
+      "manifest_status": "settings_metrics_extension",
+      "runner_suites": [
+        "pane-settings",
+        "browser"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "proof_seams": [],
+      "feature_id_prefix": "settings.",
+      "features": [
+        {
+          "feature_id": "settings.global_template_scope",
+          "feature_label": "Global template scope, landing pane, and reopen-last-tool defaults",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.global_template_scope",
+          "audit_model": "control-led",
+          "control_ids": [
+            "settings-scope",
+            "settings-default-tool",
+            "settings-reopen-last-tool",
+            "settings-import-current",
+            "settings-reset-defaults"
+          ],
+          "state_values": [
+            "selected settings scope",
+            "default landing pane",
+            "reopen-last-tool persistence",
+            "app-vs-folder defaults separation"
+          ],
+          "inventory_terms": [
+            "Scope",
+            "landing pane",
+            "reopen-last-tool",
+            "template fields"
+          ]
+        },
+        {
+          "feature_id": "settings.layout_defaults",
+          "feature_label": "Layout defaults capture, persistence, and release",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.layout_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "settings-use-current-layout",
+            "settings-release-layout"
+          ],
+          "state_values": [
+            "saved layout defaults",
+            "released layout defaults",
+            "rendered layout status and summary state"
+          ],
+          "inventory_terms": [
+            "layout defaults",
+            "section save current/reset default actions"
+          ]
+        },
+        {
+          "feature_id": "settings.scoring_and_compose_defaults",
+          "feature_label": "Scoring and Compose defaults",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.scoring_and_compose_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "settings-default-match-type",
+            "settings-save-current-scoring",
+            "settings-reset-section-scoring",
+            "settings-merge-layout",
+            "settings-pip-size",
+            "settings-merge-pip-x",
+            "settings-merge-pip-y",
+            "settings-save-current-pip",
+            "settings-reset-section-pip"
+          ],
+          "state_values": [
+            "default match type",
+            "compose defaults persistence",
+            "section-scoped reset isolation"
+          ],
+          "inventory_terms": [
+            "Compose defaults",
+            "template fields",
+            "section save current/reset default actions"
+          ]
+        },
+        {
+          "feature_id": "settings.overlay_and_marker_defaults",
+          "feature_label": "Overlay and marker template defaults",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.overlay_and_marker_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "settings-overlay-position",
+            "settings-badge-size",
+            "settings-overlay-custom-background-color",
+            "settings-overlay-custom-text-color",
+            "settings-overlay-custom-opacity",
+            "settings-timer-badge-background-color",
+            "settings-timer-badge-text-color",
+            "settings-timer-badge-opacity",
+            "settings-shot-badge-background-color",
+            "settings-shot-badge-text-color",
+            "settings-shot-badge-opacity",
+            "settings-current-shot-badge-background-color",
+            "settings-current-shot-badge-text-color",
+            "settings-current-shot-badge-opacity",
+            "settings-hit-factor-badge-background-color",
+            "settings-hit-factor-badge-text-color",
+            "settings-hit-factor-badge-opacity",
+            "settings-save-current-overlay",
+            "settings-reset-section-overlay",
+            "settings-marker-enabled",
+            "settings-marker-content-type",
+            "settings-marker-text-source",
+            "settings-marker-duration",
+            "settings-marker-use-shot-split-duration",
+            "settings-marker-width",
+            "settings-marker-height",
+            "settings-marker-follow-motion",
+            "settings-marker-background-color",
+            "settings-marker-text-color",
+            "settings-marker-opacity",
+            "settings-save-current-markers",
+            "settings-reset-section-markers"
+          ],
+          "state_values": [
+            "overlay defaults seeded into new projects",
+            "marker template defaults",
+            "section-scoped reset isolation"
+          ],
+          "inventory_terms": [
+            "overlay defaults",
+            "marker defaults",
+            "template fields",
+            "section save current/reset default actions"
+          ]
+        },
+        {
+          "feature_id": "settings.export_and_shotml_defaults",
+          "feature_label": "Export and ShotML defaults",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.export_and_shotml_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "settings-export-quality",
+            "settings-export-preset",
+            "settings-export-frame-rate",
+            "settings-export-video-codec",
+            "settings-export-audio-codec",
+            "settings-export-color-space",
+            "settings-export-ffmpeg-preset",
+            "settings-export-two-pass",
+            "settings-save-current-export",
+            "settings-reset-section-export",
+            "settings-shotml-threshold",
+            "settings-save-current-shotml",
+            "settings-reset-section-shotml"
+          ],
+          "state_values": [
+            "export defaults",
+            "shotml threshold default",
+            "new-project seeded defaults",
+            "section-scoped reset isolation"
+          ],
+          "inventory_terms": [
+            "export defaults",
+            "ShotML defaults",
+            "section save current/reset default actions"
+          ]
+        },
+        {
+          "feature_id": "settings.section_visibility",
+          "feature_label": "Section collapse state and route persistence",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.settings.section_visibility",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "global-template section collapse state",
+            "layout section collapse state",
+            "scoring section collapse state",
+            "pip section collapse state",
+            "overlay section collapse state",
+            "markers section collapse state",
+            "export section collapse state",
+            "shotml section collapse state",
+            "section collapse persistence across tool route changes"
+          ],
+          "inventory_terms": [
+            "section collapse"
+          ]
+        }
+      ]
+    },
+    {
+      "pane_id": "pane.metrics",
+      "pane_label": "Metrics",
+      "taxonomy_class": "TAX-1",
+      "pane_test_id": "tax1.metrics.pane",
+      "manifest_status": "settings_metrics_extension",
+      "runner_suites": [
+        "pane-metrics",
+        "browser"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "proof_seams": [],
+      "feature_id_prefix": "metrics.",
+      "features": [
+        {
+          "feature_id": "metrics.summary_and_workbench",
+          "feature_label": "Summary grid and workbench expansion",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.metrics.summary_and_workbench",
+          "audit_model": "control-led",
+          "control_ids": [
+            "expand-metrics",
+            "collapse-metrics"
+          ],
+          "state_values": [
+            "metrics summary grid",
+            "metrics workbench visibility",
+            "metrics-expanded shell state"
+          ],
+          "inventory_terms": [
+            "Metrics pane summary grid",
+            "expand to workbench"
+          ]
+        },
+        {
+          "feature_id": "metrics.row_propagation",
+          "feature_label": "Row model propagation from timing and scoring edits",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.metrics.row_propagation",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "timing-event metrics ordering",
+            "metrics pane row propagation",
+            "scoring edit propagation",
+            "selected-shot nudge and delete propagation"
+          ],
+          "inventory_terms": [
+            "timing-event metrics ordering",
+            "metrics pane row propagation"
+          ]
+        },
+        {
+          "feature_id": "metrics.stage_story",
+          "feature_label": "Stage story graphs and trend table",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.metrics.stage_story",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "stage story graphs",
+            "trend table",
+            "run comparison overlay",
+            "stage segment breakdown"
+          ],
+          "inventory_terms": [
+            "stage story graphs",
+            "trend table"
+          ]
+        },
+        {
+          "feature_id": "metrics.scoring_context",
+          "feature_label": "Scoring context display and imported-stage truth",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.metrics.scoring_context",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "scoring context display",
+            "imported stage metadata",
+            "metrics scoring summary details"
+          ],
+          "inventory_terms": [
+            "scoring context display"
+          ]
+        },
+        {
+          "feature_id": "metrics.export",
+          "feature_label": "Metrics CSV and text export",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.metrics.export",
+          "audit_model": "control-led",
+          "control_ids": [
+            "metrics-export-csv",
+            "metrics-export-text"
+          ],
+          "state_values": [
+            "current metrics export filename",
+            "CSV export sections",
+            "text export summary content"
+          ],
+          "inventory_terms": [
+            "CSV/Text export buttons"
+          ]
+        }
+      ]
+    }
+  ],
+  "support_surfaces": [
+    {
+      "surface_id": "surface.stage.compose",
+      "surface_label": "Compose",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_merge_export_contracts.py::test_app_merge_export_commit_and_log_freshness_contracts",
+        "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_merge_remaining_controls_commit_default_and_per_source_state",
+        "tests/browser/test_browser_interactions.py::test_merge_controls_update_live_preview_layout_and_position",
+        "tests/browser/test_browser_interactions.py::test_merge_default_pip_controls_commit_to_state_and_label",
+        "tests/browser/test_browser_interactions.py::test_compose_pane_trim_dead_time_uses_output_profile_editor",
+        "tests/browser/test_timing_waveform_contracts.py::test_waveform_canvas_shows_secondary_lane_after_merge_analysis"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.compose.",
+      "features": [
+        {
+          "feature_id": "stage.compose.defaults_and_media",
+          "feature_label": "Added media defaults, layout selection, and run-window handoff",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.compose.defaults_and_media",
+          "audit_model": "control-led",
+          "control_ids": [
+            "add-merge-media",
+            "merge-media-input",
+            "merge-enabled",
+            "merge-layout",
+            "pip-size",
+            "pip-x",
+            "pip-y",
+            "restore-merge-defaults",
+            "[data-output-hook=\"run-window\"]"
+          ],
+          "state_values": [
+            "added media list",
+            "composition defaults collapse state",
+            "layout selection",
+            "default layer size",
+            "default layer position",
+            "run-window output-hook host"
+          ],
+          "inventory_terms": [
+            "Add media",
+            "Composition Defaults collapse and restore",
+            "layout selection",
+            "Trim Dead Time run-window editor"
+          ],
+          "control_owner_targets": {
+            "add-merge-media": [
+              "tests/browser/test_browser_remaining_controls_e2e.py::test_merge_remaining_controls_commit_default_and_per_source_state"
+            ]
+          }
+        },
+        {
+          "feature_id": "stage.compose.per_source_authoring",
+          "feature_label": "Per-source card controls, role selection, and layer authoring",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.compose.per_source_authoring",
+          "audit_model": "control-led",
+          "control_ids": [
+            "[data-merge-source-field=\"angle_role\"]",
+            "[data-merge-source-field=\"size\"]",
+            "[data-merge-source-field=\"opacity\"]",
+            "[data-merge-source-field=\"x\"]",
+            "[data-merge-source-field=\"y\"]",
+            "[data-merge-source-remove]"
+          ],
+          "state_values": [
+            "per-item layer size",
+            "per-item opacity",
+            "per-item position",
+            "per-item sync offsets",
+            "per-item removal"
+          ],
+          "inventory_terms": [
+            "per-item card toggle/remove",
+            "per-item angle-role selection",
+            "per-item layer size/opacity/position/sync controls"
+          ]
+        },
+        {
+          "feature_id": "stage.compose.secondary_waveform_sync",
+          "feature_label": "Secondary analysis status and waveform-lane sync truth",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.compose.secondary_waveform_sync",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "beep-sync analysis status",
+            "secondary waveform visibility",
+            "secondary waveform lane layout",
+            "secondary preview sync state"
+          ],
+          "inventory_terms": [
+            "visible beep-sync analyze/rerun action",
+            "first-video secondary sync-analysis status/rerun",
+            "shared-lane secondary waveform visibility"
+          ]
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.stage.scoring",
+      "surface_label": "Score",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-5"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_browser_interactions.py::test_scoring_workbench_rows_lock_edit_delete_and_restore",
+        "tests/browser/test_browser_interactions.py::test_scoring_workbench_uses_fixed_full_width_columns",
+        "tests/browser/test_scoring_metrics_contracts.py::test_browser_state_refreshes_imported_stage_context_for_metrics_consumers",
+        "tests/browser/test_scoring_metrics_contracts.py::test_static_scoring_pane_extracts_owned_scoring_blocks_into_module",
+        "tests/browser/test_metrics_e2e.py::test_metrics_pane_reflects_scoring_workbench_edits_and_restore",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.scoring.",
+      "features": [
+        {
+          "feature_id": "stage.scoring.enablement_and_preset",
+          "feature_label": "Scoring enablement, preset selection, and workbench visibility",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.scoring.enablement_and_preset",
+          "audit_model": "control-led",
+          "control_ids": [
+            "scoring-enabled",
+            "scoring-preset",
+            "expand-scoring",
+            "collapse-scoring"
+          ],
+          "state_values": [
+            "scoring summary display",
+            "scoring description",
+            "scoring workbench visibility"
+          ],
+          "inventory_terms": [
+            "Scoring pane enable/disable",
+            "preset selection",
+            "scoring summary display"
+          ]
+        },
+        {
+          "feature_id": "stage.scoring.summary_and_editing",
+          "feature_label": "Scoring table render, imported context, and row editing truth",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.scoring.summary_and_editing",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "PractiScore context import",
+            "scoring table render",
+            "scoring-specific row edit behavior",
+            "selected scoring row state"
+          ],
+          "inventory_terms": [
+            "PractiScore context import",
+            "scoring table render",
+            "scoring-specific row edit behavior"
+          ]
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.stage.splits_waveform",
+      "surface_label": "Splits / waveform",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_timing_waveform_contracts.py",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes",
+        "tests/browser/test_browser_interactions.py::test_waveform_controls_expand_zoom_and_amplitude_update_project_state",
+        "tests/browser/test_browser_interactions.py::test_waveform_pan_drag_updates_zoomed_viewport_offset",
+        "tests/browser/test_browser_interactions.py::test_waveform_shot_drag_moves_selected_shot_time",
+        "tests/browser/test_browser_interactions.py::test_waveform_viewport_window_drag_persists_after_reload"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.splits_waveform.",
+      "features": [
+        {
+          "feature_id": "stage.splits_waveform.summary_and_workbench",
+          "feature_label": "Split summary, workbench expansion, and timing-event authoring",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.splits_waveform.summary_and_workbench",
+          "audit_model": "control-led",
+          "control_ids": [
+            "timing-enabled",
+            "expand-timing",
+            "collapse-timing",
+            "timing-event-kind",
+            "timing-event-label",
+            "timing-event-position",
+            "add-timing-event"
+          ],
+          "state_values": [
+            "split pane summary",
+            "timing workbench visibility",
+            "timing event list",
+            "imported timing summary"
+          ],
+          "inventory_terms": [
+            "Split pane summary",
+            "enable splits toggle",
+            "Edit",
+            "timing-event controls"
+          ]
+        },
+        {
+          "feature_id": "stage.splits_waveform.waveform_navigation",
+          "feature_label": "Waveform expansion, zoom, amplitude, pan, and mode toggles",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.splits_waveform.waveform_navigation",
+          "audit_model": "control-led",
+          "control_ids": [
+            "expand-waveform",
+            "zoom-waveform-in",
+            "zoom-waveform-out",
+            "amp-waveform-in",
+            "amp-waveform-out",
+            "reset-waveform-view",
+            "waveform-mode-single",
+            "waveform-mode-multi"
+          ],
+          "state_values": [
+            "waveform expanded shell state",
+            "waveform zoom",
+            "waveform amplitude",
+            "waveform viewport offset"
+          ],
+          "inventory_terms": [
+            "waveform expand/zoom/amplitude",
+            "waveform pan",
+            "waveform mode toggle"
+          ],
+          "control_owner_targets": {
+            "waveform-mode-single": [
+              "tests/browser/test_browser_remaining_controls_e2e.py::test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes"
+            ],
+            "waveform-mode-multi": [
+              "tests/browser/test_browser_remaining_controls_e2e.py::test_waveform_shell_remaining_controls_and_workbench_toggles_survive_routes"
+            ]
+          }
+        },
+        {
+          "feature_id": "stage.splits_waveform.split_row_editing",
+          "feature_label": "Split-row lock, edit, delete, and restore behavior",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.splits_waveform.split_row_editing",
+          "audit_model": "control-led",
+          "control_ids": [
+            "#timing-workbench-table [data-timing-row-action=\"toggle-edit\"]",
+            "#timing-workbench-table [data-timing-row-field=\"adjustment-seconds\"]",
+            "#timing-workbench-table [data-timing-row-action=\"restore-shot\"]",
+            "#timing-workbench-table [data-timing-row-action=\"delete-shot\"]"
+          ],
+          "state_values": [
+            "split row adjustment",
+            "shot deletion fallback",
+            "split restoration",
+            "timing-event position and delete propagation"
+          ],
+          "inventory_terms": [
+            "workbench row lock/edit/delete/restore",
+            "timing-event position and delete propagation"
+          ]
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.stage.markers_review_overlay",
+      "surface_label": "Markers / Review / Overlay",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_overlay_review_contracts.py",
+        "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_markers_template_toggle_and_popup_bubble_authoring_controls_commit_state",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_review_text_box_style_controls_and_color_picker_modal_commit_preview",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_overlay_badge_style_grid_applies_timer_shot_current_and_score_styles",
+        "tests/browser/test_browser_interactions.py::test_markers_import_shots_select_selected_marker_and_seek_video",
+        "tests/browser/test_browser_interactions.py::test_marker_workbench_steps_duplicate_delete_and_close",
+        "tests/browser/test_browser_interactions.py::test_overlay_visibility_and_badge_toggles_round_trip_through_browser_ui",
+        "tests/browser/test_browser_interactions.py::test_project_pane_output_hook_save_updates_selected_output_profile",
+        "tests/browser/test_browser_review_owner_targets.py::test_review_source_controls_apply_selected_output_profile_render_plan",
+        "tests/browser/test_browser_interactions.py::test_review_add_custom_text_box_creates_editor_card",
+        "tests/browser/test_browser_interactions.py::test_review_text_box_drag_updates_overlay_coordinates",
+        "tests/browser/test_browser_interactions.py::test_overlay_badge_position_controls_update_state_and_persist"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.markers_review_overlay.",
+      "features": [
+        {
+          "feature_id": "stage.markers_review_overlay.marker_authoring",
+          "feature_label": "Marker authoring, workbench navigation, and motion editing",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.markers_review_overlay.marker_authoring",
+          "audit_model": "control-led",
+          "control_ids": [
+            "markers-enable",
+            "popup-edit-selected",
+            "popup-add-bubble",
+            "popup-add-bubble-workbench",
+            "popup-add-selected-shot-workbench",
+            "popup-import-shots-workbench",
+            "markers-workbench-filter",
+            "popup-prev-workbench",
+            "popup-next-workbench",
+            "[data-popup-field=\"follow_motion\"]",
+            "[data-popup-action=\"add_motion_step\"]",
+            "[data-popup-action=\"clear_motion_path\"]"
+          ],
+          "state_values": [
+            "marker list",
+            "selected marker editor",
+            "marker motion path",
+            "marker selection and seek state"
+          ],
+          "inventory_terms": [
+            "compact marker enable toggle",
+            "compact Edit launcher",
+            "compact Add Time Marker action",
+            "compact/workbench marker list",
+            "selected-marker editor",
+            "Enable Motion checkbox",
+            "guided motion navigation",
+            "editor duplicate/remove actions"
+          ]
+        },
+        {
+          "feature_id": "stage.markers_review_overlay.review_boxes_and_visibility",
+          "feature_label": "Review visibility selectors, text boxes, and retained source controls",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.markers_review_overlay.review_boxes_and_visibility",
+          "audit_model": "control-led",
+          "control_ids": [
+            "show-markers",
+            "show-pip",
+            "show-timer",
+            "show-draw",
+            "show-shots",
+            "show-score",
+            "review-add-text-box",
+            "review-add-imported-box",
+            "retained-review-source",
+            "retained-review-apply",
+            "color-picker-hue",
+            "color-picker-saturation",
+            "color-picker-lightness",
+            "color-picker-hex",
+            "close-color-picker"
+          ],
+          "state_values": [
+            "review show-box selector state",
+            "review text-box list",
+            "review source status",
+            "text-box drag and preview state"
+          ],
+          "inventory_terms": [
+            "review show-box selectors",
+            "review-source picker",
+            "text boxes",
+            "popup editor",
+            "text-box drag",
+            "review text-box background/text color and opacity",
+            "review text-box typography controls"
+          ],
+          "control_owner_targets": {
+            "retained-review-source": [
+              "tests/browser/test_browser_review_owner_targets.py::test_review_source_controls_apply_selected_output_profile_render_plan"
+            ],
+            "retained-review-apply": [
+              "tests/browser/test_browser_review_owner_targets.py::test_review_source_controls_apply_selected_output_profile_render_plan"
+            ]
+          }
+        },
+        {
+          "feature_id": "stage.markers_review_overlay.overlay_styling_and_positioning",
+          "feature_label": "Overlay badge styling, placement, and export-badge handoff",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.markers_review_overlay.overlay_styling_and_positioning",
+          "audit_model": "control-led",
+          "control_ids": [
+            "show-overlay",
+            "badge-size",
+            "overlay-style",
+            "overlay-spacing",
+            "overlay-margin",
+            "max-visible-shots",
+            "shot-quadrant",
+            "shot-direction",
+            "overlay-custom-x",
+            "overlay-custom-y",
+            "timer-x",
+            "timer-y",
+            "timer-lock-to-stack",
+            "draw-x",
+            "draw-y",
+            "draw-lock-to-stack",
+            "score-x",
+            "score-y",
+            "score-lock-to-stack",
+            "bubble-width",
+            "bubble-height",
+            "overlay-font-family",
+            "overlay-font-size",
+            "overlay-font-bold",
+            "overlay-font-italic",
+            "[data-output-hook=\"metric-captions\"]"
+          ],
+          "state_values": [
+            "badge style grid",
+            "overlay badge preview",
+            "stack lock behavior",
+            "export badges handoff"
+          ],
+          "inventory_terms": [
+            "show overlay checkbox",
+            "badge size/style/custom font sizing",
+            "stack gap",
+            "edge padding",
+            "timer/draw/score position inputs and lock-to-stack controls",
+            "bubble size override",
+            "font size",
+            "bold/italic controls",
+            "Export Badges output-profile handoff"
+          ]
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.stage.export",
+      "surface_label": "Export",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-5"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_merge_export_contracts.py",
+        "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_export_remaining_encoding_controls_drive_export_payload",
+        "tests/browser/test_browser_interactions.py::test_export_pane_frame_profile_output_hook_persists_selected_profile",
+        "tests/browser/test_browser_interactions.py::test_export_pane_output_hook_save_persists_richer_title_and_logo_payloads",
+        "tests/browser/test_browser_interactions.py::test_export_log_modal_opens_closes_backdrop_and_downloads_last_log",
+        "tests/browser/test_browser_interactions.py::test_export_controls_update_preset_and_settings_state"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.export.",
+      "features": [
+        {
+          "feature_id": "stage.export.render_settings",
+          "feature_label": "Render settings, output path, and export payload truth",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.export.render_settings",
+          "audit_model": "control-led",
+          "control_ids": [
+            "export-preset",
+            "quality",
+            "aspect-ratio",
+            "target-width",
+            "target-height",
+            "frame-rate",
+            "video-codec",
+            "video-bitrate",
+            "audio-codec",
+            "audio-sample-rate",
+            "audio-bitrate",
+            "color-space",
+            "ffmpeg-preset",
+            "two-pass",
+            "export-path",
+            "browse-export-path",
+            "export-video"
+          ],
+          "state_values": [
+            "current export settings payload",
+            "output path draft",
+            "export status"
+          ],
+          "inventory_terms": [
+            "Output path",
+            "preset",
+            "quality"
+          ]
+        },
+        {
+          "feature_id": "stage.export.output_profiles_and_hooks",
+          "feature_label": "Output-profile management and framing/title/logo hooks",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.export.output_profiles_and_hooks",
+          "audit_model": "control-led",
+          "control_ids": [
+            "output-profile-refresh",
+            "output-profile-name",
+            "output-profile-kind",
+            "output-profile-create",
+            "output-hook-save",
+            "output-hook-close",
+            "[data-output-hook=\"frame-profiles\"]",
+            "[data-output-hook=\"lead-in-card\"]",
+            "[data-output-hook=\"brand-mark\"]"
+          ],
+          "state_values": [
+            "output-profile list",
+            "selected output profile detail",
+            "framing hook state",
+            "title/logo hook state"
+          ],
+          "inventory_terms": [
+            "output-profile list/create/select/delete",
+            "framing/title/logo output-hook save/close controls"
+          ]
+        },
+        {
+          "feature_id": "stage.export.log_and_artifact_output",
+          "feature_label": "Export-log modal behavior and artifact handoff",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.export.log_and_artifact_output",
+          "audit_model": "control-led",
+          "control_ids": [
+            "show-export-log",
+            "close-export-log",
+            "export-export-log"
+          ],
+          "state_values": [
+            "export log modal open/close/backdrop state",
+            "downloaded export log",
+            "CI Clip1 MP4 proof export"
+          ],
+          "inventory_terms": [
+            "show export log modal open/close/backdrop and download",
+            "CI Clip1 MP4 proof export"
+          ]
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.stage.shotml",
+      "surface_label": "ShotML",
+      "support_kind": "stage-tool-support",
+      "support_only": true,
+      "support_note": "Stage-tool support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1"
+      ],
+      "host_surface_id": "surface.stage",
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_shotml_remaining_numeric_controls_commit_from_browser",
+        "tests/browser/test_browser_remaining_controls_e2e.py::test_shotml_section_toggles_persist_routes_and_proposal_actions_apply_or_discard",
+        "tests/browser/test_browser_interactions.py::test_shotml_threshold_apply_and_reset_defaults_update_project_analysis",
+        "tests/browser/test_browser_interactions.py::test_shotml_settings_controls_commit_and_reset_defaults_update_project_analysis"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "stage.shotml.",
+      "features": [
+        {
+          "feature_id": "stage.shotml.threshold_and_defaults",
+          "feature_label": "Threshold rerun, reset defaults, and summary truth",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.shotml.threshold_and_defaults",
+          "audit_model": "control-led",
+          "control_ids": [
+            "apply-threshold",
+            "reset-shotml-defaults",
+            "threshold"
+          ],
+          "state_values": [
+            "average auto-confidence summary",
+            "shotml run summary",
+            "threshold rerun state"
+          ],
+          "inventory_terms": [
+            "Average auto-confidence summary",
+            "threshold apply/reset",
+            "rerun"
+          ]
+        },
+        {
+          "feature_id": "stage.shotml.detector_settings",
+          "feature_label": "Detector settings families and section-owned numeric controls",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.shotml.detector_settings",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "beep detection settings",
+            "shot candidate detection settings",
+            "shot refinement settings",
+            "false positive suppression settings",
+            "confidence review settings",
+            "advanced runtime settings"
+          ],
+          "inventory_terms": [
+            "full ShotML numeric/checkbox/select settings",
+            "section-owned detector settings"
+          ]
+        },
+        {
+          "feature_id": "stage.shotml.proposals_and_section_persistence",
+          "feature_label": "Proposal actions and section-collapse persistence across routes",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.stage.shotml.proposals_and_section_persistence",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "timing proposal list",
+            "proposal apply/discard status",
+            "section collapse persistence across tool route changes"
+          ],
+          "inventory_terms": [
+            "proposal generation",
+            "proposal actions",
+            "section toggles persist routes"
+          ]
+        }
+      ]
+    }
+  ]
+}

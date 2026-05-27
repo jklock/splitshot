@@ -236,6 +236,10 @@ def test_timing_pane_modularization_wrappers_are_source_visible() -> None:
     assert (
         "function setTimingExpanded(expanded, { persistUiState = true } = {}) {" in timing_pane_js
     )
+    assert 'lockButton.dataset.timingRowAction = "toggle-edit";' in timing_pane_js
+    assert 'deleteShot.dataset.timingRowAction = "delete-shot";' in timing_pane_js
+    assert 'restore.dataset.timingRowAction = "restore-shot";' in timing_pane_js
+    assert 'input.dataset.timingRowField = "adjustment-seconds";' in app_js
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -382,10 +386,12 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                     )
                 )
 
-                lock_button = page.locator("#timing-workbench-table .lock-button").first
+                lock_button = page.locator(
+                    '#timing-workbench-table [data-timing-row-action="toggle-edit"]'
+                ).first
                 lock_button.click()
                 adjustment_input = page.locator(
-                    "#timing-workbench-table .timing-adjustment-input"
+                    '#timing-workbench-table [data-timing-row-field="adjustment-seconds"]'
                 ).first
                 adjustment_input.wait_for(state="visible")
                 adjustment_input.fill("0.25")
@@ -410,7 +416,7 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                 assert updated_adjustment_ms != original_adjustment_ms
 
                 page.locator(
-                    "#timing-workbench-table button.restore-button:not(.danger-button)"
+                    '#timing-workbench-table [data-timing-row-action="restore-shot"]'
                 ).first.click()
                 page.wait_for_function(
                     """({ shotId, originalTime }) => {
@@ -428,7 +434,9 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                 )
                 assert restored_time_ms == original_time_ms
 
-                page.locator("#timing-workbench-table button.danger-button").nth(1).click()
+                page.locator(
+                    '#timing-workbench-table [data-timing-row-action="delete-shot"]'
+                ).nth(1).click()
                 page.wait_for_function(
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     arg=second_shot_id,

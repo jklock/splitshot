@@ -246,6 +246,39 @@ def test_metrics_pane_reflects_scoring_workbench_edits_and_restore(synthetic_vid
         server.shutdown()
 
 
+def test_metrics_workbench_expand_and_collapse_controls_toggle_shell_state(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="metrics-expand-collapse-ui"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_metrics_pane(page)
+
+                page.locator("#collapse-metrics").click()
+                page.wait_for_function(
+                    """() => activeTool === 'metrics'
+                        && document.getElementById('cockpit-root')?.classList.contains('metrics-expanded') === false"""
+                )
+                page.locator("#metrics-workbench").wait_for(state="hidden")
+                page.locator("#metrics-summary-grid").wait_for(state="visible")
+
+                page.locator("#expand-metrics").click()
+                page.wait_for_function(
+                    """() => activeTool === 'metrics'
+                        && document.getElementById('cockpit-root')?.classList.contains('metrics-expanded') === true"""
+                )
+                page.locator("#metrics-workbench").wait_for(state="visible")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_metrics_pane_reflects_timing_event_position_and_delete(synthetic_video_factory) -> None:
     primary_path = Path(synthetic_video_factory(name="metrics-timing-event-ui"))
     server = BrowserControlServer(port=0)

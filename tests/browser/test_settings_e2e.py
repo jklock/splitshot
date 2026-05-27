@@ -7,6 +7,7 @@ from splitshot.browser.server import BrowserControlServer
 
 SETTINGS_SECTION_IDS = [
     "global-template",
+    "layout",
     "scoring",
     "pip",
     "overlay",
@@ -71,6 +72,87 @@ def _apply_settings_defaults_and_wait(page, predicate: str, arg=None) -> None:
         page.wait_for_function(predicate, arg=arg)
 
 
+def _seed_project_state_for_settings_save_current_buttons(page) -> None:
+    page.evaluate(
+        """() => {
+            state.project.scoring = {
+                ...(state.project.scoring || {}),
+                match_type: 'idpa',
+            };
+            state.project.merge = {
+                ...(state.project.merge || {}),
+                layout: 'pip',
+                pip_size: '50%',
+                pip_x: 0.25,
+                pip_y: 0.75,
+            };
+            state.project.overlay = {
+                ...(state.project.overlay || {}),
+                position: 'left',
+                badge_size: 'L',
+                custom_box_background_color: '#123456',
+                custom_box_text_color: '#abcdef',
+                custom_box_opacity: 0.75,
+                timer_badge: {
+                    background_color: '#101010',
+                    text_color: '#f8fafc',
+                    opacity: 0.85,
+                },
+                shot_badge: {
+                    background_color: '#1d4ed8',
+                    text_color: '#eef2ff',
+                    opacity: 0.8,
+                },
+                current_shot_badge: {
+                    background_color: '#dc2626',
+                    text_color: '#ffffff',
+                    opacity: 0.75,
+                },
+                hit_factor_badge: {
+                    background_color: '#047857',
+                    text_color: '#ecfdf5',
+                    opacity: 0.7,
+                },
+            };
+            state.project.popup_template = {
+                ...(state.project.popup_template || {}),
+                enabled: false,
+                content_type: 'text_image',
+                text_source: 'custom',
+                duration_ms: 1500,
+                use_shot_split_duration: true,
+                quadrant: 'middle_middle',
+                width: 222,
+                height: 88,
+                follow_motion: true,
+                motion_mode: 'guided',
+                background_color: '#202020',
+                text_color: '#f8fafc',
+                opacity: 0.55,
+            };
+            state.project.export = {
+                ...(state.project.export || {}),
+                quality: 'low',
+                preset: 'universal_vertical',
+                frame_rate: '60',
+                video_codec: 'hevc',
+                audio_codec: 'aac',
+                color_space: 'bt709_sdr',
+                two_pass: true,
+                ffmpeg_preset: 'fast',
+            };
+            state.project.analysis = {
+                ...(state.project.analysis || {}),
+                shotml_settings: {
+                    ...(state.project.analysis?.shotml_settings || {}),
+                    detection_threshold: 0.5,
+                },
+            };
+            renderSettingsPane();
+        }"""
+    )
+
+
 def test_settings_section_toggles_survive_tool_route_changes() -> None:
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -90,10 +172,10 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                         is True
                     )
                     toggle.click()
-                page.wait_for_function(
-                    "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
-                    arg=selector,
-                )
+                    page.wait_for_function(
+                        "(sectionSelector) => !document.querySelector(sectionSelector)?.classList.contains('collapsed')",
+                        arg=selector,
+                    )
 
                 page.locator('button[data-tool="project"]').click(force=True)
                 page.wait_for_function("() => activeTool === 'project'")
@@ -195,6 +277,10 @@ def test_settings_global_template_fields_update_defaults_state_and_reset() -> No
                 page.locator("#settings-scope").select_option("app")
                 page.locator("#settings-default-tool").select_option("metrics")
                 page.locator("#settings-reopen-last-tool").uncheck()
+                page.wait_for_function(
+                    """() => document.querySelector('#settings-default-tool')?.value === 'metrics'
+                      && document.querySelector('#settings-reopen-last-tool')?.checked === false"""
+                )
                 _apply_settings_defaults_and_wait(
                     page,
                     "() => state?.settings?.default_tool === 'metrics' && state?.settings?.reopen_last_tool === false",
@@ -355,8 +441,8 @@ def test_settings_layout_section_captures_current_layout_and_resets() -> None:
                 _expand_settings_section(page, "layout")
                 page.evaluate(
                     """() => {
-                        layoutLocked = false;
-                        layoutSizes = { railWidth: 96, inspectorWidth: 620, waveformHeight: 240 };
+                        window.layoutLocked = false;
+                        window.layoutSizes = { railWidth: 96, inspectorWidth: 620, waveformHeight: 240 };
                         syncLocalProjectUiState();
                         renderSettingsPane();
                     }"""
@@ -405,6 +491,105 @@ def test_settings_section_reset_preserves_other_sections() -> None:
                 page.wait_for_function(
                     """() => state?.settings?.pip_size === '50%'
                       && state?.settings?.export_quality === 'high'"""
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() -> None:
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_settings(page)
+                for section_id in ["scoring", "pip", "overlay", "markers", "export", "shotml"]:
+                    _expand_settings_section(page, section_id)
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+
+                page.locator("#settings-save-current-scoring").click()
+                page.wait_for_function(
+                    "() => state?.settings?.default_match_type === 'idpa'"
+                )
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+                page.locator("#settings-save-current-pip").click()
+                page.wait_for_function(
+                    """() => state?.settings?.merge_layout === 'pip'
+                        && state?.settings?.pip_size === '50%'"""
+                )
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+                page.locator("#settings-save-current-overlay").click()
+                page.wait_for_function(
+                    """() => state?.settings?.overlay_position === 'left'
+                      && state?.settings?.badge_size === 'L'
+                      && state?.settings?.overlay_custom_box_background_color === '#123456'"""
+                )
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+                page.locator("#settings-save-current-markers").click()
+                page.wait_for_function(
+                    """() => state?.settings?.marker_template?.content_type === 'text_image'
+                      && state?.settings?.marker_template?.use_shot_split_duration === true
+                      && state?.settings?.marker_template?.follow_motion === true"""
+                )
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+                page.locator("#settings-save-current-export").click()
+                page.wait_for_function(
+                    """() => state?.settings?.export_quality === 'low'
+                      && state?.settings?.export_video_codec === 'hevc'
+                      && state?.settings?.export_two_pass === true"""
+                )
+
+                _seed_project_state_for_settings_save_current_buttons(page)
+                page.locator("#settings-save-current-shotml").click()
+                page.wait_for_function(
+                                        """() => state?.settings?.shotml_defaults?.detection_threshold === 0.5
+                                            && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.5"""
+                )
+
+                page.locator("#settings-reset-section-scoring").click()
+                page.wait_for_function(
+                    "() => state?.settings?.default_match_type === 'uspsa'"
+                )
+
+                page.locator("#settings-reset-section-pip").click()
+                page.wait_for_function(
+                    """() => state?.settings?.merge_layout === 'side_by_side'
+                        && state?.settings?.pip_size === '35%'"""
+                )
+
+                page.locator("#settings-reset-section-overlay").click()
+                page.wait_for_function(
+                    """() => state?.settings?.overlay_position === 'bottom'
+                      && state?.settings?.badge_size === 'M'
+                      && state?.settings?.overlay_custom_box_background_color === '#000000'"""
+                )
+
+                page.locator("#settings-reset-section-markers").click()
+                page.wait_for_function(
+                    """() => state?.settings?.marker_template?.enabled === true
+                      && state?.settings?.marker_template?.content_type === 'text'
+                      && state?.settings?.marker_template?.follow_motion === false"""
+                )
+
+                page.locator("#settings-reset-section-export").click()
+                page.wait_for_function(
+                    """() => state?.settings?.export_quality === 'high'
+                      && state?.settings?.export_video_codec === 'h264'
+                      && state?.settings?.export_two_pass === false"""
+                )
+
+                page.locator("#settings-reset-section-shotml").click()
+                page.wait_for_function(
+                                        """() => state?.settings?.shotml_defaults?.detection_threshold === 0.35
+                                            && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.35"""
                 )
             finally:
                 browser.close()
