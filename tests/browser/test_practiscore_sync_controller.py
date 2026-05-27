@@ -281,3 +281,53 @@ def test_practiscore_selected_match_import_route_reports_missing_artifact_error(
     assert payload["practiscore_sync"]["state"] == "error"
     assert payload["practiscore_sync"]["selected_remote_id"] == "match-300"
     assert payload["practiscore_sync"]["error_category"] == "missing_required_remote_artifact"
+
+
+def test_practiscore_controller_methods_delegate_to_service_module(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Controller Task-B hooks should delegate to the extracted PractiScore service."""
+    import splitshot.ui.services.practiscore_sync as practiscore_sync_service
+
+    controller = ProjectController()
+    session = _FakeSessionManager(tmp_path)
+    calls: list[tuple[str, object]] = []
+
+    list_result = {
+        "practiscore_session": {"state": "authenticated_ready"},
+        "practiscore_sync": {"state": "match_list_ready"},
+        "practiscore_options": {"has_source": False},
+        "matches": [],
+    }
+    start_result = {
+        "practiscore_session": {"state": "authenticated_ready"},
+        "practiscore_sync": {"state": "success", "selected_remote_id": "match-900"},
+        "practiscore_options": {"has_source": True},
+        "matches": [],
+    }
+
+    def fake_list(
+        passed_controller: ProjectController,
+        passed_session: object,
+    ) -> dict[str, object]:
+        calls.append(("list", passed_controller))
+        assert passed_session is session
+        return list_result
+
+    def fake_start(
+        passed_controller: ProjectController,
+        payload: dict[str, object],
+        passed_session: object,
+    ) -> dict[str, object]:
+        calls.append(("start", passed_controller))
+        assert payload == {"remote_id": "match-900"}
+        assert passed_session is session
+        return start_result
+
+    monkeypatch.setattr(practiscore_sync_service, "list_practiscore_matches", fake_list)
+    monkeypatch.setattr(practiscore_sync_service, "start_practiscore_sync", fake_start)
+
+    assert controller.list_practiscore_matches(session) == list_result
+    assert controller.start_practiscore_sync({"remote_id": "match-900"}, session) == start_result
+    assert calls == [("list", controller), ("start", controller)]

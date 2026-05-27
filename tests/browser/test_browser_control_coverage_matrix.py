@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+
+SEAM_REGISTRY = json.loads(
+    Path("docs/project/browser-proof-seams.json").read_text(encoding="utf-8")
+)
 
 
 def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
@@ -11,6 +17,11 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     )
     assert (
         "If a control is missing from this matrix, it does not have an explicit owner yet."
+        in matrix
+    )
+    assert "Coverage ownership in this matrix is **not** a proof-taxonomy class." in matrix
+    assert (
+        "Inventory presence, surface ownership, or companion-plan status does **not** by itself establish meaningful closure"
         in matrix
     )
     assert (
@@ -26,7 +37,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Compose | add media, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, per-item card toggle/remove, per-item angle-role selection, per-item layer size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |"
+        "| Compose | add media, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, reusable Trim Dead Time run-window editor, per-item card toggle/remove, per-item angle-role selection, per-item layer size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |"
         in matrix
     )
     assert (
@@ -34,7 +45,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/added media/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |"
+        "| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/added media/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, Export Badges output-profile handoff, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |"
         in matrix
     )
     assert (
@@ -42,7 +53,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Export | output path, preset, quality, output-profile list/create/select/delete, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
+        "| Export | output path, preset, quality, output-profile list/create/select/delete, framing/title/logo output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |"
         in matrix
     )
     assert (
@@ -58,7 +69,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "manual file import parity" in matrix
     assert "missing-folder creation notice" in matrix
     assert "metadata-only delete safety" in matrix
-    assert "output-profile create/select and output-hook save/close flows from the Export pane" in matrix
+    assert "output-profile create/select plus Compose Trim Dead Time, Overlay Export Badges, and Export framing/title/logo output-hook save/close flows" in matrix
     assert "Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states" in matrix
     assert "Match workspace stage open and shell return-to-Match behavior" in matrix
     assert "Match workspace live preview tiles and selected-stage lower-pane truth across Composite/Export lower-pane swaps" in matrix
@@ -109,6 +120,13 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "layout capture/release defaults" in matrix
     assert "visible analyze or re-run beep-sync action" in matrix
     assert "CI artifact export proof from `docs/Clip1.MP4`" in matrix
+    assert "DEV-106.landing_recent" in matrix
+    assert "DEV-107.root_shell_compat" in matrix
+    assert "project.practiscore_bridge" in matrix
+    assert (
+        "PractiScore proof keeps manual `Select PractiScore File` fallback and local `Match type` / `Stage #` / `Competitor name` / `Place` selectors in scope"
+        not in matrix
+    )
 
     for test_path in [
         "tests/browser/test_browser_static_ui.py",
@@ -144,3 +162,67 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         "ShotML",
     ]:
         assert surface in matrix
+
+
+def test_browser_proof_seam_registry_tracks_cross_surface_closeout_targets() -> None:
+    landing = SEAM_REGISTRY["DEV-106.landing_recent"]
+    compat = SEAM_REGISTRY["DEV-107.root_shell_compat"]
+    practiscore = SEAM_REGISTRY["project.practiscore_bridge"]
+
+    assert landing["status"] == "interaction-proven"
+    assert landing["proof_strength"] == "backend-route + static-contract + interaction"
+    assert (
+        "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
+        in landing["evidence_tests"]
+    )
+    assert "docs/project/browser-control-qa-matrix.md" in landing["doc_refs"]
+
+    assert compat["status"] == "interaction-proven"
+    assert compat["proof_strength"] == "compat-static-contract + guarded interaction consumers"
+    assert (
+        "tests/browser/test_browser_interactions.py::test_shell_compat_host_on_open_project_callback_opens_saved_project"
+        in compat["evidence_tests"]
+    )
+    assert (
+        "tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth"
+        in compat["evidence_tests"]
+    )
+    assert compat["compat_consumers"] == [
+        "window.splitshot.onOpenProject",
+        "renderAutomationSurface",
+        "selectedLibraryRecord",
+    ]
+
+    assert practiscore["status"] == "bridge-proven"
+    assert "docs/project/completion-bundles/development/stage-reference.md" in practiscore["doc_refs"]
+    assert "tests/browser/test_practiscore_session_api.py" in practiscore["evidence_tests"]
+
+
+def test_development_proof_docs_capture_mixed_family_taxonomy_and_honesty_caveats() -> None:
+    proof = Path("docs/project/completion-bundles/development/proof.md").read_text(
+        encoding="utf-8"
+    )
+    stage_reference = Path(
+        "docs/project/completion-bundles/development/stage-reference.md"
+    ).read_text(encoding="utf-8")
+    match_reference = Path(
+        "docs/project/completion-bundles/development/match-reference.md"
+    ).read_text(encoding="utf-8")
+
+    assert "docs/project/browser-proof-seams.json" in proof
+    assert "DEV-106.landing_recent" in proof
+    assert "DEV-107.root_shell_compat" in proof
+    assert (
+        "Coverage-plan phases and inventory ownership describe browser test/document ownership"
+        in proof
+    )
+
+    assert "## Stage family proof-taxonomy summary" in stage_reference
+    assert "project.practiscore_bridge" in stage_reference
+
+    assert "## Match family proof-taxonomy summary" in match_reference
+    assert (
+        "Stage selection/order/options are runtime-only until `Render Recap` produces `recap.mp4`."
+        in match_reference
+    )
+    assert "DEV-107.root_shell_compat" in match_reference

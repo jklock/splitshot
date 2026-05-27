@@ -120,9 +120,16 @@ Allowed edit surface:
 Execute:
 
 - [x] Carry forward `STG-007` as Work Effort 2 scope.
-- [ ] Close `STG-008` with targeted proof, screenshots, artifact paths, and final-gate notes.
-- [ ] Record whether Stage requires any explicit visual approval note.
-- [ ] Route any newly discovered first-order Stage implementation defect back to `development/`.
+- [x] Close `STG-008` with targeted proof, screenshots, artifact paths, and final-gate notes.
+- [x] Record whether Stage requires any explicit visual approval note.
+- [x] Route any newly discovered first-order Stage implementation defect back to `development/`.
+
+Progress note (`2026-05-26`):
+
+- The full Stage gate was rerun after the Compose/Overlay/Export workflow relocation.
+- Runtime health passed, followed by `49 passed` across shell/static/inventory/coverage, `47 passed` across lifecycle/import and PractiScore browser+analysis proof, `37 passed` across timing/waveform/review/control proof, and `59 passed` across export/output-hook proof.
+- `scripts/docs/capture_browser_screenshots.py` refreshed the repo-owned Stage screenshot set, and `scripts/docs/capture_stage_responsive_views.py` rewrote `docs/screenshots/automate3/responsive-proof-results.json` with passing responsive assertions at `1280px` and `900px`.
+- No first-order Stage implementation defect was found, so nothing routes back to `development/`, and no new visual-approval note was required beyond the existing Stage signoff already recorded in the source bundle.
 
 Commands:
 
@@ -166,9 +173,16 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Close the proof side of Match lifecycle, membership auto-seed, lower-pane ownership, right-inspector behavior, and return-to-context flows.
-- [ ] Capture any required evidence for `MCH-002`, `MCH-003`, and the lifecycle portions of `MCH-004`.
-- [ ] Route any new implementation defect back to `development/` with exact failing command output.
+- [x] Close the proof side of Match lifecycle, membership auto-seed, lower-pane ownership, right-inspector behavior, and return-to-context flows.
+- [x] Capture any required evidence for `MCH-002`, `MCH-003`, and the lifecycle portions of `MCH-004`.
+- [x] Route any new implementation defect back to `development/` with exact failing command output.
+
+Progress note (`2026-05-26`):
+
+- The Match lifecycle proof pack stayed green with `3 passed`.
+- The Match membership auto-seed pack stayed green with `2 passed`.
+- The Match lower-pane / workflow proof pack stayed green with `4 passed`.
+- No Match implementation defect was uncovered, so nothing routed back to `development/`.
 
 Commands:
 
@@ -211,17 +225,25 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Close the proof side of `MCH-004`, `MCH-006`, and `MCH-007`.
-- [ ] Capture recap, composite, batch export, angle-director, screenshot, and artifact evidence.
-- [ ] Record the Match final-gate result and any required visual approval note.
+- [x] Close the proof side of `MCH-004`, `MCH-006`, and `MCH-007`.
+- [x] Capture recap, composite, batch export, angle-director, screenshot, and artifact evidence.
+- [x] Record the Match final-gate result and any required visual approval note.
+
+Progress note (`2026-05-26`):
+
+- The Match recap proof pack stayed green with `2 passed`.
+- The Match batch export proof pack stayed green with `2 passed`.
+- The Match composite / angle-director proof pack stayed green with `4 passed`.
+- The Match settings isolation rerun stayed green with `2 passed`.
+- `./.venv/bin/python scripts/docs/capture_match_proof.py` exited `0` and produced `artifacts/match-proof-20260526/`, including the empty/loaded/recap/composite/export/settings screenshot set, the recap output, the stage-composite export outputs, the auto-seed proof JSON, and the composite-plan artifacts.
+- No additional visual-approval note was required beyond the Match source-bundle signoff recorded from the current proof bundle.
 
 Commands:
 
 - Match recap proof pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_workspace_recap_reports_success_and_error_states tests/browser/test_workspace_flows.py -k "workspace_recap_render_uses_transition_and_result_cards"`
 - Match batch export proof pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_workspace_batch_export_queue_select_all_none_and_start tests/browser/test_browser_interactions.py::test_match_workspace_batch_export_reports_errors_truthfully`
 - Match composite / angle-director proof pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_stage_composite_controls_update_composite_state tests/browser/test_browser_interactions.py::test_match_stage_composite_cut_override_editor_updates_plan_detail tests/browser/test_workspace_flows.py -k "angle_director_plan_merges_generated_cuts_with_persisted_override or angle_director_clear_cut_removes_only_requested_override"`
-- Match loaded-state capture pack: `./.venv/bin/python scripts/docs/capture_loaded_views.py`
-- Match supplemental screenshot pack when source docs still need extra browser shots: `./.venv/bin/python scripts/docs/capture_additional_screenshots.py`
+- Match proof bundle capture pack: `./.venv/bin/python scripts/docs/capture_match_proof.py`
 
 Update when done:
 

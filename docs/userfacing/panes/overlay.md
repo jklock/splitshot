@@ -18,6 +18,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 - When badge placement covers the subject.
 - When timer, draw, split, or final score badges need different visibility.
 - When the final export needs a specific visual style.
+- When the selected output profile needs a different set of timing or score badges in the finished video.
 
 ## Key Controls
 
@@ -38,6 +39,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | `Font`, `Font size`, `Bold`, `Italic` | Control badge typography. `Font size` becomes the exact sizing control when `Badge size` is `Custom`. |
 | Badge style cards | Compact side-by-side cards for timer, shot, current shot, and score badge background, text color, and opacity. |
 | `Score Colors` | Sets colors for score tokens such as `-0`, `-1`, `M`, `NS`, `PE`, and similar values. |
+| `Export Badges` | Saves which timing and score badges the selected output profile should render into export while keeping the visual style from this pane. |
 | Color swatches | Open the shared color picker modal with quick swatches, hue, saturation, lightness, and hex input. |
 
 ## How To Use It
@@ -51,13 +53,15 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 7. Drag a locked timer, draw, or score badge when you want to reposition the whole locked stack directly in preview.
 8. Tune `Stack gap`, `Edge padding`, bubble dimensions, and typography.
 9. Finish with the compact badge style cards and `Score Colors` while watching the preview.
-10. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
+10. If the selected output profile needs a different finished-video badge set, click `Export Badges` and save the preset here.
+11. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
 
 ## Preview And Export Behavior
 
 - Overlay edits auto-apply.
 - Review visibility toggles can hide individual badge types without changing the underlying style.
 - Export uses the same overlay style and placement you see in preview.
+- `Export Badges` only changes which timing and score badges render into the finished video; it does not move styling ownership out of `Overlay`.
 - Score text colors affect the text token, not the badge background.
 - The same color picker modal is used by Overlay, Markers, and Review color swatches.
 

@@ -16,6 +16,7 @@ The Compose pane manages added media. It can place a second angle or image as pi
 - Add a still image or support graphic.
 - Sync secondary media against the primary run.
 - Decide whether added media appears in the final export.
+- Save `Trim Dead Time` once the reviewed beep and last shot are right.
 - Tag each added source as a follow angle, static reference, or detail/graphic item.
 
 ## Key Controls
@@ -27,6 +28,7 @@ The Compose pane manages added media. It can place a second angle or image as pi
 | `Layout` | Chooses `Side by side`, `Above / below`, `Picture in picture`, `Full-screen portrait`, `Dual center HUD`, or `Dual top HUD`. |
 | `Default layer size` | Sets the floating-layer size for newly added media. |
 | `Default Layer X` / `Default Layer Y` | Set default normalized placement for new added-media layers. |
+| `Run Window` / `Trim Dead Time` | Saves the selected output profile's lead-in and tail padding around the reviewed run window so stage output and stage composite exports use the same trimmed range. |
 | Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
 | Per-item `Angle role` | Tags that item as `Follow`, `Static`, or `Detail` so secondary sources stay organized in the editing flow. |
@@ -44,6 +46,7 @@ The Compose pane manages added media. It can place a second angle or image as pi
 5. Expand each media card and adjust item-specific `Angle role`, `Layer size`, `Layer opacity`, `Layer X`, and `Layer Y`.
 6. Use the sync nudge buttons until the secondary motion lines up with the primary video.
 7. In `Picture in picture` or `Full-screen portrait` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
+8. When the selected output profile needs a reusable trimmed run window, click `Trim Dead Time` here and save the lead-in and tail padding after the beep and last shot look right.
 
 ## Layout Notes
 
@@ -51,6 +54,7 @@ The Compose pane manages added media. It can place a second angle or image as pi
 - `Side by side`, `Above / below`, `Dual center HUD`, and `Dual top HUD` are layout-wide compositions, but the same item list and sync controls remain available.
 - Defaults apply to new items. Existing media cards keep their own saved values.
 - Each item keeps its own angle role, size, opacity, position, and sync.
+- `Trim Dead Time` lives in `Compose` because it shapes the stage before the finishing/export pass, not after the last render click.
 - Preview dragging is clamped to the live video frame so the inset stays fully visible.
 - Source roles live inside each media card instead of behind a separate helper launcher.
 - The current composition model uses one stage-wide layout at a time. Nested combinations such as floating a layer over a side-by-side base are future work.

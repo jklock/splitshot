@@ -6,8 +6,8 @@ Align Match to the Stage shell and make it the match-level workflow that sits in
 
 ## Current execution status
 
-- Normalized lane status: `implementation advanced / proof pending`
-- Task status: `MCH-001`, `MCH-005`, and `MCH-006` complete; `MCH-002`, `MCH-003`, and `MCH-004` partial; `MCH-007` open
+- Normalized lane status: `done`
+- Task status: `MCH-001` through `MCH-007` complete
 - Cross-lane authority: `../../MASTER_STATUS.md`
 
 ## Scope
@@ -35,14 +35,14 @@ This bundle does not by itself complete:
 
 ## Current-state summary
 
-Match now follows the Stage-shell direction in implementation, but the lane is still waiting on proof packaging and signoff.
+Match now follows the Stage-shell direction in implementation, and the lane is closed with proof packaging and signoff recorded.
 
 Current facts that matter:
 
 - Match routes, workspace persistence, defaults/overrides, recap, composite, and export behavior already exist.
 - The bundle has been reset around Match as a Stage-shell variant rather than a standalone shell family.
 - Shared-shell convergence, the tile-plus-lower-info grammar, and the recap/composite/export workflows are materially implemented.
-- Match still depends on reliable Stage handoff/return behavior plus Stage-to-Match auto-seed proof, both of which remain part of the open proof-packaging work.
+- The current proof bundle records reliable Stage handoff/return behavior, Stage-to-Match auto-seed proof, current shell screenshots, and recap/composite/export artifacts for the shared-shell Match contract.
 
 ## Architecture boundaries
 

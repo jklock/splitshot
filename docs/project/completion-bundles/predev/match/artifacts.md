@@ -4,7 +4,7 @@
 
 This file tracks the proof package required to call the Match shared-shell reset complete.
 
-Current normalized lane status: `implementation advanced / proof pending`
+Current normalized lane status: `done`
 
 Cross-lane summary authority: `../../MASTER_STATUS.md`
 
@@ -109,6 +109,12 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
   - Date: `2026-05-25`
   - Notes: proves reorder, inline clip editing, plan refresh, apply-cut, and clear-cut behavior for the current Match composite workflow.
 
+- Artifact: Match final proof rerun and done-gate bundle
+  - Path: `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_rail_layout.py`, `tests/browser/test_browser_control_inventory_audit.py`, `tests/browser/test_browser_control_coverage_matrix.py`, `tests/browser/test_browser_interactions.py`, `tests/browser/test_workspace_flows.py`, `artifacts/match-proof-20260526/summary.txt`, `artifacts/match-proof-20260526/proof-results.json`, `artifacts/match-proof-20260526/screenshots/match-empty.png`, `artifacts/match-proof-20260526/screenshots/match-loaded.png`, `artifacts/match-proof-20260526/screenshots/match-recap.png`, `artifacts/match-proof-20260526/screenshots/match-composite.png`, `artifacts/match-proof-20260526/screenshots/match-export.png`, `artifacts/match-proof-20260526/screenshots/match-settings.png`, `artifacts/match-proof-20260526/workspace/recap.mp4`, `artifacts/match-proof-20260526/workspace/exports/stage_1-stage_composite.mp4`, `artifacts/match-proof-20260526/workspace/exports/stage_2-stage_composite.mp4`, `artifacts/match-proof-20260526/workspace/auto-seed-proof.json`, `artifacts/match-proof-20260526/workspace/composite-plan.json`, `artifacts/match-proof-20260526/workspace/composite-plan-detail.txt`, `scripts/docs/capture_match_proof.py`
+  - Produced by: 2026-05-26 Match rerun and final proof capture pass
+  - Date: `2026-05-26`
+  - Notes: the shared shell/static/inventory/coverage pack stayed green with `49 passed`, the Match lifecycle/lower-pane packs stayed green with `3 passed`, `2 passed`, and `4 passed`, the recap/batch-export/composite packs stayed green with `2 passed`, `2 passed`, and `4 passed`, the Match settings isolation rerun stayed green with `2 passed`, and `scripts/docs/capture_match_proof.py` produced the current empty/loaded/recap/composite/export/settings screenshot set plus recap/export/composite/auto-seed artifacts for the shared-shell Match contract.
+
 - Artifact: QA/doc sync anchor
   - Path: `docs/project/browser-control-qa-matrix.md`, `docs/project/browser-control-coverage-plan.md`, `docs/project/browser-full-e2e-qa-plan.md`, `docs/userfacing/USER_GUIDE.md`, `docs/userfacing/workflow.md`, `docs/userfacing/panes/match.md`
   - Produced by: shared-shell doc sync
@@ -129,4 +135,4 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
 
 ## Completion rule
 
-Match is not complete until `MCH-007` is closed and the remaining auto-seed proof, lower-pane grammar convergence, focused proof-run outputs, recap/export artifact paths, and visual signoff are linked alongside the evidence already recorded here.
+Match is complete: `MCH-007` is closed, the focused proof reruns are recorded, the Match proof bundle is linked, and visual signoff is recorded alongside the evidence above.

@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+from tempfile import TemporaryDirectory
 from uuid import uuid4 as _uuid4
 
 from PySide6.QtCore import QObject, QRectF, Qt, Signal
@@ -72,7 +73,7 @@ from splitshot.domain.models import (
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
-from splitshot.export.pipeline import export_project
+from splitshot.export.pipeline import export_output_profile, export_project
 from splitshot.media.ffmpeg import MediaError
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
@@ -117,22 +118,18 @@ from splitshot.scoring.practiscore import (
     normalize_match_type,
 )
 from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_practiscore_artifact
-from splitshot.scoring.practiscore_web_extract import (
-    EXPIRED_AUTHENTICATION_ERROR,
-    MALFORMED_REMOTE_RESPONSE_ERROR,
-    NORMALIZATION_IMPORT_FAILURE_ERROR,
-    PractiScoreSyncError,
-    RemotePractiScoreMatch,
-    TRANSIENT_NETWORK_FAILURE_ERROR,
-    discover_remote_matches,
-    download_remote_match_artifacts,
-    practiscore_sync_audit_root,
-)
+from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch
 from splitshot.timeline.model import (
     normalize_project_timing_events,
     normalized_timing_event_for_shots,
     sort_shots,
 )
+from splitshot.ui.services import practiscore_sync as practiscore_sync_service
+from splitshot.ui.services import shared_backend as shared_backend_service
+
+
+discover_remote_matches = practiscore_sync_service.discover_remote_matches
+download_remote_match_artifacts = practiscore_sync_service.download_remote_match_artifacts
 
 
 VALID_OVERLAY_BADGE_NAMES = {
@@ -160,107 +157,6 @@ _VALID_BROWSER_UI_TOOLS = {
 }
 
 _VALID_WAVEFORM_MODES = {"select", "add"}
-
-_PRACTISCORE_SYNC_UNSET = object()
-_VALID_PRACTISCORE_SYNC_STATES = {
-    "idle",
-    "discovering_matches",
-    "match_list_ready",
-    "importing_selected_match",
-    "success",
-    "error",
-}
-
-
-def _default_practiscore_session_payload() -> dict[str, object]:
-    return {
-        "state": "not_authenticated",
-        "message": "Connect PractiScore to use your browser session for background sync.",
-        "details": {},
-    }
-
-
-def _default_practiscore_sync_payload() -> dict[str, object]:
-    return {
-        "state": "idle",
-        "message": "No remote PractiScore sync activity yet.",
-        "matches": [],
-        "selected_remote_id": None,
-        "error_category": "",
-        "details": {},
-    }
-
-
-def _practiscore_session_payload_from_status(status: object) -> dict[str, object]:
-    payload = _default_practiscore_session_payload()
-    if isinstance(status, dict):
-        source = status
-    else:
-        to_dict = getattr(status, "to_dict", None)
-        if callable(to_dict):
-            source = to_dict()
-        else:
-            source = {
-                "state": getattr(status, "state", payload["state"]),
-                "message": getattr(status, "message", payload["message"]),
-                "details": getattr(status, "details", payload["details"]),
-            }
-    payload["state"] = str(source.get("state") or payload["state"])
-    payload["message"] = str(source.get("message") or payload["message"])
-    details = source.get("details")
-    payload["details"] = dict(details) if isinstance(details, dict) else {}
-    return payload
-
-
-def _practiscore_session_payload_from_manager(practiscore_session: object) -> dict[str, object]:
-    current_status = getattr(practiscore_session, "current_status", None)
-    if callable(current_status):
-        return _practiscore_session_payload_from_status(current_status())
-    serialize_status = getattr(practiscore_session, "serialize_status", None)
-    if callable(serialize_status):
-        return _practiscore_session_payload_from_status(serialize_status())
-    return _default_practiscore_session_payload()
-
-
-def _serialize_practiscore_remote_matches(matches: object) -> list[dict[str, object]]:
-    if not isinstance(matches, list):
-        return []
-    payloads: list[dict[str, object]] = []
-    for item in matches:
-        match = (
-            item
-            if isinstance(item, RemotePractiScoreMatch)
-            else RemotePractiScoreMatch.from_dict(item)
-        )
-        if match is None:
-            continue
-        payloads.append(match.to_dict())
-    return payloads
-
-
-def _practiscore_remote_match_objects(matches: object) -> list[RemotePractiScoreMatch]:
-    if not isinstance(matches, list):
-        return []
-    resolved: list[RemotePractiScoreMatch] = []
-    for item in matches:
-        match = (
-            item
-            if isinstance(item, RemotePractiScoreMatch)
-            else RemotePractiScoreMatch.from_dict(item)
-        )
-        if match is not None:
-            resolved.append(match)
-    return resolved
-
-
-def _practiscore_error_category_from_exception(exc: BaseException) -> str:
-    message = str(exc).lower()
-    if any(
-        token in message
-        for token in ("timeout", "timed out", "network", "fetch", "net::", "connection")
-    ):
-        return TRANSIENT_NETWORK_FAILURE_ERROR
-    return MALFORMED_REMOTE_RESPONSE_ERROR
 
 
 @dataclass(slots=True)
@@ -1001,8 +897,12 @@ class ProjectController(QObject):
         self._practiscore_source_name: str = ""
         self._practiscore_options: PractiScoreOptions | None = None
         self._practiscore_comparison_competitors: list[dict[str, object]] = []
-        self._practiscore_session_payload = _default_practiscore_session_payload()
-        self._practiscore_sync_payload = _default_practiscore_sync_payload()
+        self._practiscore_session_payload = (
+            practiscore_sync_service.default_practiscore_session_payload()
+        )
+        self._practiscore_sync_payload = (
+            practiscore_sync_service.default_practiscore_sync_payload()
+        )
         self.workspace = None
         self.workspace_path = None
         self._output_profiles: dict[str, OutputProfile] = {}  # output_id -> OutputProfile
@@ -1259,7 +1159,9 @@ class ProjectController(QObject):
         self.project = self._new_project_with_settings_defaults()
         self.project_path = None
         self._clear_practiscore_source()
-        self._practiscore_sync_payload = _default_practiscore_sync_payload()
+        self._practiscore_sync_payload = (
+            practiscore_sync_service.default_practiscore_sync_payload()
+        )
         self._set_status("Ready.")
         self._saved_snapshot = project_to_dict(self.project)
         self._remember_original_shots()
@@ -1437,6 +1339,368 @@ class ProjectController(QObject):
         self.project_changed.emit()
         return {"reset": True}
 
+    @staticmethod
+    def _workspace_export_recipe(value: str | None) -> tuple[str, bool]:
+        raw_value = "" if value is None else str(value).strip().lower()
+        if not raw_value:
+            return "stage_output", True
+        if raw_value in {"stage_output", "stage_composite"}:
+            return raw_value, False
+        raise ValueError(f"Unsupported workspace export recipe: {value}")
+
+    @staticmethod
+    def _workspace_export_output_path(
+        workspace_path: Path,
+        stage_id: str,
+        recipe: str,
+        *,
+        legacy_default: bool = False,
+    ) -> Path:
+        if legacy_default and recipe == "stage_output":
+            return workspace_path / f"{stage_id}.mp4"
+        exports_dir = workspace_path / "exports"
+        exports_dir.mkdir(parents=True, exist_ok=True)
+        return exports_dir / f"{stage_id}-{recipe}.mp4"
+
+    @staticmethod
+    def _target_even_dimensions(width: int, height: int) -> tuple[int, int]:
+        safe_width = max(2, int(width) - (int(width) % 2))
+        safe_height = max(2, int(height) - (int(height) % 2))
+        return safe_width, safe_height
+
+    def _workspace_export_dimensions(
+        self,
+        project: Project | None,
+        frame_profile: str,
+        base_width: int,
+        base_height: int,
+    ) -> tuple[int, int]:
+        if (
+            project is not None
+            and project.export.target_width
+            and project.export.target_height
+            and int(project.export.target_width) > 0
+            and int(project.export.target_height) > 0
+        ):
+            return self._target_even_dimensions(
+                int(project.export.target_width),
+                int(project.export.target_height),
+            )
+        profile_dimensions = {
+            "16:9": (640, 360),
+            "9:16": (360, 640),
+            "1:1": (360, 360),
+            "4:5": (360, 450),
+        }
+        if frame_profile in profile_dimensions:
+            return profile_dimensions[frame_profile]
+        return self._target_even_dimensions(base_width, base_height)
+
+    @staticmethod
+    def _run_media_command(
+        command: list[str],
+        *,
+        timeout: int = 600,
+        error_message: str,
+    ) -> None:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or error_message)
+
+    def _stage_profile_for_kind(self, stage_id: str, profile_kind: str) -> OutputProfile | None:
+        for candidate in self._output_profiles.values():
+            if (
+                candidate.scope_type == "stage"
+                and candidate.scope_id == stage_id
+                and candidate.profile_kind == profile_kind
+            ):
+                return candidate
+        return None
+
+    def _output_profile_render_plan_for_project(
+        self,
+        project: Project,
+        profile: OutputProfile,
+    ) -> dict[str, object]:
+        return {
+            "success": True,
+            "output_id": profile.output_id,
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "scope_type": profile.scope_type,
+            "scope_id": profile.scope_id,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": dict(profile.metric_caption_preset),
+            "lead_in_card": dict(profile.lead_in_card),
+            "brand_mark": dict(profile.brand_mark),
+            "subject_track_crop": dict(profile.subject_track_crop),
+            "visibility_recipe": dict(profile.visibility_recipe),
+            "run_window": self._resolve_run_window(profile, project=project),
+            "source": "output_profile",
+        }
+
+    def _workspace_export_stage_output_item(
+        self,
+        stage_id: str,
+        workspace_path: Path,
+        *,
+        legacy_default: bool = False,
+    ) -> dict[str, object]:
+        entry = self.workspace.stage_entries.get(stage_id) if self.workspace is not None else None
+        if entry is None:
+            raise ValueError("Stage entry not found")
+
+        project = self._load_stage_project(stage_id)
+        if not project:
+            raise ValueError("Cannot load stage project")
+        if not project.primary_video or not project.primary_video.path:
+            raise ValueError("No video imported for this stage")
+
+        output_path = self._workspace_export_output_path(
+            workspace_path,
+            stage_id,
+            "stage_output",
+            legacy_default=legacy_default,
+        )
+        display_name = entry.display_name or f"Stage {entry.stage_number}"
+        profile = self._stage_profile_for_kind(stage_id, "stage_output")
+
+        self._set_status(f"Exporting {display_name}...")
+        if profile is None:
+            exported_path = export_project(
+                project,
+                str(output_path),
+                progress_callback=lambda _value: None,
+                log_callback=lambda _line: None,
+            )
+        else:
+            render_plan = self._output_profile_render_plan_for_project(project, profile)
+            exported_path = export_output_profile(
+                project,
+                output_path,
+                render_plan,
+                progress_callback=lambda _value: None,
+                log_callback=lambda _line: None,
+            )
+            profile.last_rendered_at = _utc_now()
+
+        size_bytes = exported_path.stat().st_size if exported_path.exists() else 0
+        return {
+            "stage_id": stage_id,
+            "display_name": display_name,
+            "output_path": str(exported_path),
+            "size_bytes": size_bytes,
+            "status": "completed",
+            "recipe": "stage_output",
+        }
+
+    def _workspace_stage_composite_segments(
+        self,
+        stage_id: str,
+        output_id: str | None = None,
+    ) -> tuple[OutputProfile, list[dict[str, object]]]:
+        entry = self._workspace_stage_entry(stage_id)
+        if entry is None:
+            raise ValueError("Stage not found in workspace")
+
+        profile = self._stage_composite_profile(stage_id, output_id)
+        if profile is None:
+            raise ValueError("Stage composite output profile not found")
+
+        clips = [
+            clip
+            for clip in self._workspace_stage_clip_models(stage_id)
+            if clip.source_path and Path(clip.source_path).exists()
+        ]
+        if not clips:
+            raise ValueError("No clip sources available for Stage Composite export")
+
+        clip_by_id = {clip.clip_id: clip for clip in clips}
+        segments: list[dict[str, object]] = []
+        persisted_plan = [
+            self._angle_director_cut_to_dict(cut)
+            for cut in profile.angle_director_plan
+            if int(cut.duration_ms) > 0
+        ]
+
+        if persisted_plan:
+            for plan_item in sorted(
+                persisted_plan,
+                key=lambda item: (int(item.get("position") or 0), int(item.get("start_ms") or 0)),
+            ):
+                clip = clip_by_id.get(str(plan_item.get("clip_id") or ""))
+                if clip is None:
+                    continue
+                asset = probe_video(Path(clip.source_path))
+                asset_duration_ms = max(1, int(asset.duration_ms or 0))
+                start_ms = max(0, int(plan_item.get("start_ms") or 0))
+                if start_ms >= asset_duration_ms:
+                    continue
+                duration_ms = max(0, int(plan_item.get("duration_ms") or 0))
+                if duration_ms <= 0:
+                    continue
+                duration_ms = min(duration_ms, asset_duration_ms - start_ms)
+                if duration_ms <= 0:
+                    continue
+                segments.append(
+                    {
+                        "clip": clip,
+                        "asset": asset,
+                        "start_ms": start_ms,
+                        "duration_ms": duration_ms,
+                        "position": int(plan_item.get("position") or 0),
+                    }
+                )
+
+        if not segments:
+            for index, clip in enumerate(clips):
+                asset = probe_video(Path(clip.source_path))
+                asset_duration_ms = max(1, int(asset.duration_ms or 0))
+                start_ms = max(0, int(clip.sync_offset_ms) if int(clip.sync_offset_ms) > 0 else 0)
+                if start_ms >= asset_duration_ms:
+                    continue
+                duration_ms = min(asset_duration_ms - start_ms, 1500)
+                if duration_ms <= 0:
+                    continue
+                segments.append(
+                    {
+                        "clip": clip,
+                        "asset": asset,
+                        "start_ms": start_ms,
+                        "duration_ms": duration_ms,
+                        "position": index,
+                    }
+                )
+
+        if not segments:
+            raise ValueError("Stage composite export has no renderable clip segments")
+
+        return profile, segments
+
+    def _workspace_export_stage_composite_item(
+        self,
+        stage_id: str,
+        workspace_path: Path,
+    ) -> dict[str, object]:
+        entry = self.workspace.stage_entries.get(stage_id) if self.workspace is not None else None
+        if entry is None:
+            raise ValueError("Stage entry not found")
+
+        stage_project = self._load_stage_project(stage_id)
+        profile, segments = self._workspace_stage_composite_segments(stage_id)
+        display_name = entry.display_name or f"Stage {entry.stage_number}"
+        first_asset = segments[0]["asset"]
+        target_width, target_height = self._workspace_export_dimensions(
+            stage_project,
+            profile.frame_profile,
+            int(first_asset.width or 640),
+            int(first_asset.height or 360),
+        )
+        output_path = self._workspace_export_output_path(workspace_path, stage_id, "stage_composite")
+
+        self._set_status(f"Exporting {display_name} composite...")
+        with TemporaryDirectory(prefix="splitshot-stage-composite-") as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            rendered_segments: list[Path] = []
+            for index, segment in enumerate(segments):
+                clip = segment["clip"]
+                source_path = Path(clip.source_path)
+                segment_path = temp_dir / f"segment-{index:02d}.mp4"
+                segment_seconds = max(0.05, float(segment["duration_ms"]) / 1000.0)
+                command = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{float(segment['start_ms']) / 1000.0:.3f}",
+                    "-i",
+                    str(source_path),
+                    "-t",
+                    f"{segment_seconds:.3f}",
+                    "-vf",
+                    (
+                        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+                        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                        "setsar=1"
+                    ),
+                    "-map",
+                    "0:v:0",
+                    "-map",
+                    "0:a:0?",
+                ]
+                if clip.audio_muted:
+                    command.extend(["-af", "volume=0.000"])
+                elif abs(float(clip.audio_gain) - 1.0) > 0.001:
+                    command.extend(["-af", f"volume={max(0.0, min(2.0, float(clip.audio_gain))):.3f}"])
+                command.extend(
+                    [
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "veryfast",
+                        "-crf",
+                        "18",
+                        "-c:a",
+                        "aac",
+                        "-ar",
+                        "48000",
+                        "-ac",
+                        "2",
+                        "-b:a",
+                        "192k",
+                        str(segment_path),
+                    ]
+                )
+                self._run_media_command(
+                    command,
+                    error_message=f"Stage composite segment export failed for {source_path.name}",
+                )
+                rendered_segments.append(segment_path)
+
+            concat_path = temp_dir / "segments.txt"
+            concat_path.write_text(
+                "\n".join(
+                    f"file '{str(path).replace("'", "'\\''")}'" for path in rendered_segments
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            self._run_media_command(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_path),
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "veryfast",
+                    "-crf",
+                    "18",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "192k",
+                    str(output_path),
+                ],
+                error_message="Stage composite export failed",
+            )
+
+        profile.last_rendered_at = _utc_now()
+        size_bytes = output_path.stat().st_size if output_path.exists() else 0
+        return {
+            "stage_id": stage_id,
+            "display_name": display_name,
+            "output_path": str(output_path),
+            "size_bytes": size_bytes,
+            "status": "completed",
+            "recipe": "stage_composite",
+            "segment_count": len(segments),
+        }
+
     def workspace_export(self, stage_id: str | None = None, recipe: str | None = None) -> dict:
         """Export workspace stage(s) to actual video files.
         
@@ -1453,6 +1717,16 @@ class ProjectController(QObject):
         if stage_id and stage_id not in self.workspace.stage_entries:
             return {"success": False, "error": f"Stage {stage_id} not in workspace", "outputs": [], "errors": [{"stage_id": stage_id, "error": "Not found in workspace"}]}
 
+        try:
+            resolved_recipe, legacy_default = self._workspace_export_recipe(recipe)
+        except ValueError as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "outputs": [],
+                "errors": [{"stage_id": stage_id or "", "error": str(exc)}],
+            }
+
         stages_to_export = [stage_id] if stage_id else list(self.workspace.stage_entries.keys())
         outputs = []
         errors = []
@@ -1464,32 +1738,17 @@ class ProjectController(QObject):
                 errors.append({"stage_id": sid, "error": "Stage entry not found"})
                 continue
 
-            project = self._load_stage_project(sid)
-            if not project:
-                errors.append({"stage_id": sid, "error": "Cannot load stage project"})
-                continue
-            if not project.primary_video or not project.primary_video.path:
-                errors.append({"stage_id": sid, "error": "No video imported for this stage"})
-                continue
-
-            output_path = ws_path / f"{sid}.mp4"
             try:
-                display_name = entry.display_name or f"Stage {entry.stage_number}"
-                self._set_status(f"Exporting {display_name}...")
-                exported_path = export_project(
-                    project,
-                    str(output_path),
-                    progress_callback=lambda v: None,
-                    log_callback=lambda line: None,
-                )
-                size_bytes = exported_path.stat().st_size if exported_path.exists() else 0
-                outputs.append({
-                    "stage_id": sid,
-                    "display_name": display_name,
-                    "output_path": str(exported_path),
-                    "size_bytes": size_bytes,
-                    "status": "completed",
-                })
+                if resolved_recipe == "stage_composite":
+                    outputs.append(self._workspace_export_stage_composite_item(sid, ws_path))
+                else:
+                    outputs.append(
+                        self._workspace_export_stage_output_item(
+                            sid,
+                            ws_path,
+                            legacy_default=legacy_default,
+                        )
+                    )
             except Exception as exc:
                 errors.append({"stage_id": sid, "error": str(exc)})
 
@@ -2782,243 +3041,16 @@ class ProjectController(QObject):
     # ── Proxy management ────────────────────────────────────────────
 
     def proxy_status(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
-        """Check retained proxy status and staleness.
-
-        Returns:
-            dict with keys: exists, stale, truth_hash, proxy_path, last_generated
-        """
-        sid = scope_id or self.project.id
-        try:
-            from splitshot.persistence.library import (
-                load_proxy_record,
-                stage_proxy_path,
-                match_proxy_path,
-            )
-
-            record = load_proxy_record(scope_type, sid)
-            current_hash = (
-                self._compute_truth_hash()
-                if scope_type == "stage"
-                else self._compute_workspace_truth_hash()
-            )
-
-            if record is None:
-                return {
-                    "exists": False,
-                    "stale": True,
-                    "truth_hash": current_hash,
-                    "proxy_path": None,
-                    "last_generated": None,
-                    "scope_type": scope_type,
-                    "scope_id": sid,
-                }
-
-            stale = record.generated_from_truth_hash != current_hash
-            proxy_path = (
-                stage_proxy_path(sid, record.generated_from_truth_hash)
-                if scope_type == "stage"
-                else match_proxy_path(sid, record.generated_from_truth_hash)
-            )
-
-            return {
-                "exists": True,
-                "stale": stale,
-                "truth_hash": current_hash,
-                "proxy_path": str(proxy_path) if proxy_path else None,
-                "last_generated": record.generated_at.isoformat() if record.generated_at else None,
-                "scope_type": scope_type,
-                "scope_id": sid,
-                "width": record.width,
-                "height": record.height,
-                "duration_ms": record.duration_ms,
-                "file_size_bytes": record.file_size_bytes,
-            }
-        except Exception:
-            return {
-                "exists": False,
-                "stale": True,
-                "truth_hash": "",
-                "proxy_path": None,
-                "last_generated": None,
-                "scope_type": scope_type,
-                "scope_id": sid,
-            }
+        return shared_backend_service.proxy_status(self, scope_type, scope_id)
 
     def _generate_default_render_plan(self, scope_type: str = "stage") -> dict:
-        """Generate a minimal default render plan when no output profile is specified."""
-        return {
-            "steps": ["source_copy", "proxy_encode"],
-            "estimated_duration_ms": 0,
-            "output_path": "",
-            "dimensions": {"width": 1920, "height": 1080},
-            "frame_rate": 30,
-            "has_warnings": False,
-            "warnings": [],
-        }
+        return shared_backend_service.generate_default_render_plan(scope_type)
 
     def proxy_refresh(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
-        """Request proxy regeneration.
-
-        When a video source is available, triggers actual render via export pipeline.
-        """
-        sid = scope_id or self.project.id
-
-        if scope_type == "stage" and not self.project.primary_video.path:
-            return {
-                "status": "no_media",
-                "message": "No primary video available for proxy generation.",
-                "scope_type": scope_type,
-                "scope_id": sid,
-            }
-
-        current_hash = (
-            self._compute_truth_hash()
-            if scope_type == "stage"
-            else self._compute_workspace_truth_hash()
-        )
-
-        try:
-            from splitshot.persistence.library import load_proxy_record
-
-            existing = load_proxy_record(scope_type, sid)
-            if existing and existing.generated_from_truth_hash == current_hash:
-                return {
-                    "status": "skipped_current",
-                    "message": "Proxy is already current for this truth hash.",
-                    "truth_hash": current_hash,
-                    "scope_type": scope_type,
-                    "scope_id": sid,
-                }
-        except Exception:
-            pass
-
-        try:
-            from splitshot.domain.models import RetainedProxyRecord
-            from splitshot.persistence.library import (
-                save_proxy_record,
-                stage_proxy_path,
-                match_proxy_path,
-            )
-            from datetime import datetime, timezone
-            from pathlib import Path
-
-            proxy_path = (
-                stage_proxy_path(sid, current_hash)
-                if scope_type == "stage"
-                else match_proxy_path(sid, current_hash)
-            )
-            if proxy_path:
-                Path(proxy_path).parent.mkdir(parents=True, exist_ok=True)
-
-            record = RetainedProxyRecord(
-                scope_type=scope_type,
-                scope_id=sid,
-                generated_from_truth_hash=current_hash,
-                generated_at=datetime.now(timezone.utc),
-                codec_profile="h264_aac",
-                relative_path=str(proxy_path) if proxy_path else "",
-                width=0,
-                height=0,
-                duration_ms=0,
-                file_size_bytes=0,
-            )
-            save_proxy_record(record)
-
-            video_path = None
-            if scope_type == "stage" and self.project.primary_video.path:
-                video_path = Path(self.project.primary_video.path)
-            elif scope_type == "match" and self.project.primary_video.path:
-                video_path = Path(self.project.primary_video.path)
-
-            if video_path and video_path.exists() and proxy_path:
-                render_plan = self._generate_default_render_plan(scope_type)
-                try:
-                    from splitshot.export.pipeline import export_output_profile
-
-                    result = export_output_profile(self.project, proxy_path, render_plan)
-                    if result and result.exists():
-                        record.width = 0
-                        record.height = 0
-                        record.duration_ms = 0
-                        record.file_size_bytes = result.stat().st_size
-                        record.relative_path = str(proxy_path)
-                        save_proxy_record(record)
-                        return {
-                            "status": "rendered",
-                            "message": "Proxy rendered successfully.",
-                            "truth_hash": current_hash,
-                            "proxy_path": str(result),
-                            "scope_type": scope_type,
-                            "scope_id": sid,
-                        }
-                except Exception:
-                    pass
-
-        except Exception:
-            pass
-
-        return {
-            "status": "scheduled",
-            "message": "Proxy refresh scheduled. Render will occur via export pipeline when media is available.",
-            "truth_hash": current_hash,
-            "scope_type": scope_type,
-            "scope_id": sid,
-        }
+        return shared_backend_service.proxy_refresh(self, scope_type, scope_id)
 
     def proxy_open_target(self, scope_type: str = "stage", scope_id: str | None = None) -> dict:
-        """Get the path to open a retained proxy for playback.
-
-        Returns:
-            dict with proxy_path or error
-        """
-        sid = scope_id or self.project.id
-        try:
-            from splitshot.persistence.library import (
-                load_proxy_record,
-                stage_proxy_path,
-                match_proxy_path,
-            )
-            from pathlib import Path
-
-            record = load_proxy_record(scope_type, sid)
-            if record is None:
-                return {
-                    "success": False,
-                    "error": "No proxy record found. Generate a proxy first.",
-                    "scope_type": scope_type,
-                    "scope_id": sid,
-                }
-
-            proxy_path = (
-                stage_proxy_path(sid, record.generated_from_truth_hash)
-                if scope_type == "stage"
-                else match_proxy_path(sid, record.generated_from_truth_hash)
-            )
-
-            proxy_exists = Path(proxy_path).exists() if proxy_path else False
-
-            return {
-                "success": proxy_exists,
-                "proxy_path": str(proxy_path) if proxy_path else None,
-                "error": None
-                if proxy_exists
-                else "Proxy file not found on disk. Try regenerating.",
-                "stale": record.generated_from_truth_hash
-                != (
-                    self._compute_truth_hash()
-                    if scope_type == "stage"
-                    else self._compute_workspace_truth_hash()
-                ),
-                "scope_type": scope_type,
-                "scope_id": sid,
-            }
-        except Exception as exc:
-            return {
-                "success": False,
-                "error": str(exc),
-                "scope_type": scope_type,
-                "scope_id": sid,
-            }
+        return shared_backend_service.proxy_open_target(self, scope_type, scope_id)
 
     # ── Output Profiles ─────────────────────────────────────────────
 
@@ -3285,18 +3317,19 @@ class ProjectController(QObject):
 
     # ── Trim Dead Time ───────────────────────────────────────────────
 
-    def _resolve_run_window(self, profile) -> dict:
+    def _resolve_run_window(self, profile, project: Project | None = None) -> dict:
         """Resolve Trim Dead Time from reviewed timing truth.
 
         Derives effective stage window from beep time and last shot,
         with configurable lead-in and tail padding from the profile.
         """
+        target_project = project or self.project
         mc = profile.metric_caption_preset
 
-        beep_ms = self.project.analysis.beep_time_ms_primary or 0
+        beep_ms = target_project.analysis.beep_time_ms_primary or 0
         lead_in_pad = mc.get("lead_in_padding_ms", 1000)
 
-        shots = self.project.analysis.shots
+        shots = target_project.analysis.shots
         last_shot_ms = shots[-1].time_ms if shots else beep_ms + 5000
         tail_pad = mc.get("tail_padding_ms", 2000)
 
@@ -4029,7 +4062,9 @@ class ProjectController(QObject):
         return payload
 
     def _set_practiscore_session_payload(self, payload: dict[str, object]) -> None:
-        self._practiscore_session_payload = _practiscore_session_payload_from_status(payload)
+        self._practiscore_session_payload = (
+            practiscore_sync_service.practiscore_session_payload_from_status(payload)
+        )
 
     def _set_practiscore_sync_state(
         self,
@@ -4037,268 +4072,46 @@ class ProjectController(QObject):
         message: str,
         *,
         matches: list[RemotePractiScoreMatch] | list[dict[str, object]] | None = None,
-        selected_remote_id: str | None | object = _PRACTISCORE_SYNC_UNSET,
+        selected_remote_id: str | None | object = practiscore_sync_service.PRACTISCORE_SYNC_UNSET,
         error_category: str = "",
         details: dict[str, object] | None = None,
     ) -> None:
-        next_matches = (
-            _serialize_practiscore_remote_matches(matches)
-            if matches is not None
-            else _serialize_practiscore_remote_matches(
-                self._practiscore_sync_payload.get("matches")
+        self._practiscore_sync_payload = (
+            practiscore_sync_service.build_practiscore_sync_payload(
+                self._practiscore_sync_payload,
+                state,
+                message,
+                matches=matches,
+                selected_remote_id=selected_remote_id,
+                error_category=error_category,
+                details=details,
             )
         )
-        next_selected_remote_id = (
-            self._practiscore_sync_payload.get("selected_remote_id")
-            if selected_remote_id is _PRACTISCORE_SYNC_UNSET
-            else (None if selected_remote_id in {None, ""} else str(selected_remote_id))
-        )
-        self._practiscore_sync_payload = {
-            "state": state if state in _VALID_PRACTISCORE_SYNC_STATES else "error",
-            "message": str(message),
-            "matches": next_matches,
-            "selected_remote_id": next_selected_remote_id,
-            "error_category": str(error_category or ""),
-            "details": deepcopy(details or {}),
-        }
 
     def _practiscore_route_payload(self) -> dict[str, object]:
         return {
             "practiscore_session": deepcopy(self._practiscore_session_payload),
             "practiscore_sync": deepcopy(self._practiscore_sync_payload),
             "practiscore_options": self._practiscore_options_browser_payload(),
-            "matches": _serialize_practiscore_remote_matches(
+            "matches": practiscore_sync_service.serialize_practiscore_remote_matches(
                 self._practiscore_sync_payload.get("matches")
             ),
         }
 
     def list_practiscore_matches(self, practiscore_session: object) -> dict[str, object]:
-        session_payload = _practiscore_session_payload_from_manager(practiscore_session)
-        self._set_practiscore_session_payload(session_payload)
-        if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(
-                self._practiscore_session_payload.get("message")
-                or "PractiScore session is not ready."
-            )
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                matches=[],
-                error_category=EXPIRED_AUTHENTICATION_ERROR,
-                details={"route": "/api/practiscore/matches"},
-            )
-            return self._practiscore_route_payload()
-
-        self._set_status("Discovering remote PractiScore matches...")
-        self._set_practiscore_sync_state(
-            "discovering_matches",
-            "Discovering remote PractiScore matches...",
-            matches=[],
+        return practiscore_sync_service.list_practiscore_matches(
+            self,
+            practiscore_session,
         )
-        try:
-            browser_context = practiscore_session.require_authenticated_browser()
-            matches = discover_remote_matches(browser_context)
-        except PractiScoreSyncError as exc:
-            self._set_status(str(exc))
-            self._set_practiscore_sync_state(
-                "error",
-                str(exc),
-                matches=[],
-                error_category=exc.category,
-                details=exc.details,
-            )
-            self._set_practiscore_session_payload(
-                _practiscore_session_payload_from_manager(practiscore_session)
-            )
-            return self._practiscore_route_payload()
-        except Exception as exc:  # noqa: BLE001
-            session_payload = _practiscore_session_payload_from_manager(practiscore_session)
-            self._set_practiscore_session_payload(session_payload)
-            category = (
-                EXPIRED_AUTHENTICATION_ERROR
-                if self._practiscore_session_payload.get("state") != "authenticated_ready"
-                else _practiscore_error_category_from_exception(exc)
-            )
-            message = str(exc) or "Unable to list remote PractiScore matches."
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                matches=[],
-                error_category=category,
-                details={"route": "/api/practiscore/matches"},
-            )
-            return self._practiscore_route_payload()
-
-        match_payloads = _serialize_practiscore_remote_matches(matches)
-        previous_selected_remote_id = self._practiscore_sync_payload.get("selected_remote_id")
-        selected_remote_id = (
-            previous_selected_remote_id
-            if any(
-                payload.get("remote_id") == previous_selected_remote_id
-                for payload in match_payloads
-            )
-            else None
-        )
-        message = (
-            "No remote PractiScore matches found."
-            if not match_payloads
-            else f"Found {len(match_payloads)} remote PractiScore match(es)."
-        )
-        self._set_status(message)
-        self._set_practiscore_sync_state(
-            "match_list_ready",
-            message,
-            matches=match_payloads,
-            selected_remote_id=selected_remote_id,
-            details={"match_count": len(match_payloads)},
-        )
-        self._set_practiscore_session_payload(
-            _practiscore_session_payload_from_manager(practiscore_session)
-        )
-        return self._practiscore_route_payload()
 
     def start_practiscore_sync(
         self, payload: dict[str, object], practiscore_session: object
     ) -> dict[str, object]:
-        remote_id = str(payload.get("remote_id") or "").strip()
-        if not remote_id:
-            message = "A remote PractiScore match must be selected before import."
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                error_category=MALFORMED_REMOTE_RESPONSE_ERROR,
-                details={"route": "/api/practiscore/sync/start"},
-            )
-            return self._practiscore_route_payload()
-
-        session_payload = _practiscore_session_payload_from_manager(practiscore_session)
-        self._set_practiscore_session_payload(session_payload)
-        if self._practiscore_session_payload.get("state") != "authenticated_ready":
-            message = str(
-                self._practiscore_session_payload.get("message")
-                or "PractiScore session is not ready."
-            )
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                selected_remote_id=remote_id,
-                error_category=EXPIRED_AUTHENTICATION_ERROR,
-                details={"route": "/api/practiscore/sync/start", "remote_id": remote_id},
-            )
-            return self._practiscore_route_payload()
-
-        existing_matches = _practiscore_remote_match_objects(
-            self._practiscore_sync_payload.get("matches")
+        return practiscore_sync_service.start_practiscore_sync(
+            self,
+            payload,
+            practiscore_session,
         )
-        self._set_status("Importing selected remote PractiScore match...")
-        self._set_practiscore_sync_state(
-            "importing_selected_match",
-            "Importing selected remote PractiScore match...",
-            matches=existing_matches,
-            selected_remote_id=remote_id,
-        )
-        try:
-            browser_context = practiscore_session.require_authenticated_browser()
-            app_dir = getattr(getattr(practiscore_session, "profile_paths", None), "app_dir", None)
-            artifacts = download_remote_match_artifacts(
-                browser_context,
-                remote_id,
-                practiscore_sync_audit_root(app_dir),
-                match_catalog=existing_matches,
-            )
-            normalize_downloaded_practiscore_artifact(
-                artifacts.source_artifact_path,
-                source_name=artifacts.source_name,
-                match_type=self.project.scoring.match_type or None,
-                stage_number=self.project.scoring.stage_number,
-                competitor_name=self.project.scoring.competitor_name or None,
-                competitor_place=self.project.scoring.competitor_place,
-            )
-            self.import_practiscore_file(
-                str(artifacts.source_artifact_path), source_name=artifacts.source_name
-            )
-        except PractiScoreSyncError as exc:
-            self._set_status(str(exc))
-            self._set_practiscore_sync_state(
-                "error",
-                str(exc),
-                matches=existing_matches,
-                selected_remote_id=remote_id,
-                error_category=exc.category,
-                details={**exc.details, "remote_id": remote_id},
-            )
-            self._set_practiscore_session_payload(
-                _practiscore_session_payload_from_manager(practiscore_session)
-            )
-            return self._practiscore_route_payload()
-        except ValueError as exc:
-            message = str(exc) or "Unable to normalize the downloaded PractiScore artifact."
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                matches=existing_matches,
-                selected_remote_id=remote_id,
-                error_category=NORMALIZATION_IMPORT_FAILURE_ERROR,
-                details={"remote_id": remote_id},
-            )
-            self._set_practiscore_session_payload(
-                _practiscore_session_payload_from_manager(practiscore_session)
-            )
-            return self._practiscore_route_payload()
-        except Exception as exc:  # noqa: BLE001
-            session_payload = _practiscore_session_payload_from_manager(practiscore_session)
-            self._set_practiscore_session_payload(session_payload)
-            category = (
-                EXPIRED_AUTHENTICATION_ERROR
-                if self._practiscore_session_payload.get("state") != "authenticated_ready"
-                else _practiscore_error_category_from_exception(exc)
-            )
-            message = str(exc) or "Unable to import the selected remote PractiScore match."
-            self._set_status(message)
-            self._set_practiscore_sync_state(
-                "error",
-                message,
-                matches=existing_matches,
-                selected_remote_id=remote_id,
-                error_category=category,
-                details={"remote_id": remote_id},
-            )
-            return self._practiscore_route_payload()
-
-        imported_stage = self.project.scoring.imported_stage
-        updated_matches = _serialize_practiscore_remote_matches(existing_matches)
-        if not any(item.get("remote_id") == artifacts.match.remote_id for item in updated_matches):
-            updated_matches.append(artifacts.match.to_dict())
-        message = f"Imported remote PractiScore match {artifacts.match.label}."
-        self._set_practiscore_sync_state(
-            "success",
-            message,
-            matches=updated_matches,
-            selected_remote_id=remote_id,
-            details={
-                "remote_id": remote_id,
-                "label": artifacts.match.label,
-                "cache_dir": str(artifacts.cache_dir),
-                "source_artifact_path": str(artifacts.source_artifact_path),
-                "html_path": str(artifacts.html_path),
-                "summary_path": str(artifacts.summary_path),
-                "staged_source_path": ""
-                if self._practiscore_source_path is None
-                else str(self._practiscore_source_path),
-                "imported_stage_number": None
-                if imported_stage is None
-                else imported_stage.stage_number,
-            },
-        )
-        self._set_practiscore_session_payload(
-            _practiscore_session_payload_from_manager(practiscore_session)
-        )
-        return self._practiscore_route_payload()
 
     def _clear_practiscore_source(self) -> None:
         self._practiscore_source_path = None
@@ -6751,299 +6564,10 @@ class ProjectController(QObject):
         self.status_changed.emit(message)
 
     def landing_recent(self) -> dict:
-        """Return recent activity: stage projects, match workspaces, library records."""
-        import json as _json
-
-        recent: list[dict] = []
-
-        # 1. Stage projects
-        try:
-            library_root = Path.home() / ".splitshot" / "projects"
-            if library_root.is_dir():
-                for candidate in sorted(
-                    library_root.iterdir(),
-                    key=lambda p: p.stat().st_mtime,
-                    reverse=True,
-                )[:20]:
-                    if candidate.is_dir():
-                        meta_path = candidate / "project.json"
-                        if meta_path.is_file():
-                            try:
-                                data = _json.loads(meta_path.read_text())
-                                recent.append({
-                                    "name": data.get("name", candidate.name),
-                                    "path": str(candidate),
-                                    "date": data.get("last_opened", "") or data.get("modified_at", ""),
-                                    "type": "stage",
-                                    "surface": "single",
-                                    "timestamp": candidate.stat().st_mtime,
-                                })
-                            except Exception:
-                                pass
-        except Exception:
-            pass
-
-        # 2. Match workspaces
-        try:
-            workspace_root = Path.home() / ".splitshot" / "workspaces"
-            if workspace_root.is_dir():
-                for candidate in sorted(
-                    workspace_root.iterdir(),
-                    key=lambda p: p.stat().st_mtime,
-                    reverse=True,
-                )[:20]:
-                    if candidate.is_dir():
-                        meta_path = candidate / "workspace.json"
-                        if meta_path.is_file():
-                            try:
-                                data = _json.loads(meta_path.read_text())
-                                recent.append({
-                                    "name": data.get("name", candidate.name),
-                                    "path": str(candidate),
-                                    "date": data.get("modified_at", ""),
-                                    "type": "match",
-                                    "surface": "multi",
-                                    "timestamp": candidate.stat().st_mtime,
-                                })
-                            except Exception:
-                                pass
-        except Exception:
-            pass
-
-        # 3. Library records
-        try:
-            from splitshot.persistence.library import read_stage_metrics, read_match_metrics
-
-            for stage in (read_stage_metrics() or [])[-5:]:
-                recent.append({
-                    "name": stage.get("display_name", "Untitled Stage"),
-                    "path": stage.get("project_path", ""),
-                    "date": stage.get("event_date", ""),
-                    "type": "stage",
-                    "surface": "single",
-                    "library_record_id": stage.get("library_record_id", ""),
-                    "timestamp": 0,
-                })
-            for match in (read_match_metrics() or [])[-3:]:
-                recent.append({
-                    "name": match.get("display_name", "Untitled Match"),
-                    "path": "",
-                    "date": match.get("event_date", ""),
-                    "type": "match",
-                    "surface": "multi",
-                    "library_record_id": match.get("library_record_id", ""),
-                    "timestamp": 0,
-                })
-        except Exception:
-            pass
-
-        # Sort by date descending, then by timestamp
-        def sort_key(item):
-            ts = item.get("timestamp", 0)
-            date_str = item.get("date", "")
-            if date_str:
-                try:
-                    dt = datetime.fromisoformat(date_str)
-                    return dt.timestamp()
-                except Exception:
-                    pass
-            return ts
-
-        recent.sort(key=sort_key, reverse=True)
-
-        return {"recent": recent[:15]}
+        return shared_backend_service.landing_recent(self)
 
     def library_backup_create(self) -> dict:
-        """Create a persisted backup of the library."""
-        import json
-        from datetime import datetime, timezone
-        from uuid import uuid4
-        from pathlib import Path
-        
-        stages = []
-        matches = []
-        try:
-            from splitshot.persistence.library import (
-                read_match_metrics,
-                read_match_records,
-                read_stage_metrics,
-                read_stage_records,
-            )
-
-            stages = read_stage_records() or read_stage_metrics() or []
-            matches = read_match_records() or read_match_metrics() or []
-        except Exception:
-            pass
-        
-        manifest = {
-            "backup_id": uuid4().hex,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "schema_version": 1,
-            "total_stages": len(stages),
-            "total_matches": len(matches),
-            "stage_records": list(stages),
-            "match_records": list(matches),
-        }
-        
-        # Persist to disk
-        try:
-            backup_dir = Path.home() / ".splitshot" / "library" / "backups"
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-            backup_path = backup_dir / f"backup_{timestamp}.json"
-            backup_path.write_text(json.dumps(manifest, indent=2))
-            backup_path_str = str(backup_path)
-        except Exception:
-            backup_path_str = ""
-        
-        return {
-            "manifest": manifest,
-            "backup_path": backup_path_str,
-            "total_stages": len(stages),
-            "total_matches": len(matches),
-        }
+        return shared_backend_service.library_backup_create()
     
     def library_backup_restore(self, manifest: dict) -> dict:
-        """Restore library from a backup manifest."""
-        from datetime import datetime
-
-        if not manifest:
-            return {"error": "No backup manifest provided", "stages_restored": 0, "matches_restored": 0}
-        
-        schema_version = manifest.get("schema_version", 0)
-        if schema_version != 1:
-            return {"error": f"Unsupported schema version: {schema_version}", "stages_restored": 0, "matches_restored": 0}
-        
-        restored_stages = 0
-        restored_matches = 0
-        errors: list[dict[str, object]] = []
-
-        def parse_datetime(value: object) -> datetime | None:
-            if isinstance(value, datetime):
-                return value
-            if isinstance(value, str) and value:
-                try:
-                    return datetime.fromisoformat(value)
-                except ValueError:
-                    return None
-            return None
-
-        def normalize_stage_index_row(stage_data: dict) -> dict:
-            metric_summary = stage_data.get("metric_summary")
-            summary = metric_summary if isinstance(metric_summary, dict) else {}
-            row = dict(stage_data)
-            row["metric_summary"] = summary
-            if row.get("score") in {None, ""}:
-                row["score"] = summary.get("score", summary.get("score_total", summary.get("hit_factor")))
-            return row
-
-        def normalize_match_index_row(match_data: dict) -> dict:
-            aggregate_summary = match_data.get("aggregate_metric_summary")
-            summary = aggregate_summary if isinstance(aggregate_summary, dict) else {}
-            row = dict(match_data)
-            row["aggregate_metric_summary"] = summary
-            if row.get("stage_count") in {None, ""}:
-                row["stage_count"] = summary.get("stage_count", len(row.get("stage_ids") or []))
-            return row
-        
-        # Write stage records
-        for stage_data in manifest.get("stage_records", []):
-            try:
-                if not isinstance(stage_data, dict):
-                    raise ValueError("Stage record must be an object")
-
-                from splitshot.domain.models import LibraryStageRecord
-                from splitshot.persistence.library import append_stage_metric, save_stage_record
-
-                has_full_stage_payload = any(
-                    key in stage_data
-                    for key in ("metric_summary", "editor_target", "notes", "tags", "output_profile_refs")
-                )
-                if has_full_stage_payload and stage_data.get("library_record_id"):
-                    save_stage_record(
-                        LibraryStageRecord(
-                            library_record_id=str(stage_data.get("library_record_id") or ""),
-                            stage_id=str(stage_data.get("stage_id") or ""),
-                            match_id=(
-                                None
-                                if stage_data.get("match_id") in {None, ""}
-                                else str(stage_data.get("match_id"))
-                            ),
-                            display_name=str(stage_data.get("display_name") or ""),
-                            event_date=parse_datetime(stage_data.get("event_date")),
-                            discipline=str(stage_data.get("discipline") or ""),
-                            competitor_name=str(stage_data.get("competitor_name") or ""),
-                            metric_summary=dict(stage_data.get("metric_summary") or {}),
-                            output_profile_refs=list(stage_data.get("output_profile_refs") or []),
-                            active_retained_proxy=(
-                                None
-                                if stage_data.get("active_retained_proxy") in {None, ""}
-                                else str(stage_data.get("active_retained_proxy"))
-                            ),
-                            editor_target=dict(stage_data.get("editor_target") or {}),
-                            truth_hash=str(stage_data.get("truth_hash") or ""),
-                            tags=[str(tag) for tag in (stage_data.get("tags") or [])],
-                            notes=str(stage_data.get("notes") or ""),
-                        )
-                    )
-
-                append_stage_metric(normalize_stage_index_row(stage_data))
-                restored_stages += 1
-            except Exception as exc:
-                errors.append({
-                    "kind": "stage",
-                    "library_record_id": stage_data.get("library_record_id") if isinstance(stage_data, dict) else None,
-                    "error": str(exc),
-                })
-        
-        # Write match records
-        for match_data in manifest.get("match_records", []):
-            try:
-                if not isinstance(match_data, dict):
-                    raise ValueError("Match record must be an object")
-
-                from splitshot.domain.models import LibraryMatchRecord
-                from splitshot.persistence.library import append_match_metric, save_match_record
-
-                has_full_match_payload = any(
-                    key in match_data
-                    for key in ("aggregate_metric_summary", "editor_target", "notes", "tags", "output_profile_refs")
-                )
-                if has_full_match_payload and match_data.get("library_record_id"):
-                    save_match_record(
-                        LibraryMatchRecord(
-                            library_record_id=str(match_data.get("library_record_id") or ""),
-                            match_id=str(match_data.get("match_id") or ""),
-                            display_name=str(match_data.get("display_name") or ""),
-                            event_date=parse_datetime(match_data.get("event_date")),
-                            discipline=str(match_data.get("discipline") or ""),
-                            stage_ids=[str(stage_id) for stage_id in (match_data.get("stage_ids") or [])],
-                            aggregate_metric_summary=dict(match_data.get("aggregate_metric_summary") or {}),
-                            output_profile_refs=list(match_data.get("output_profile_refs") or []),
-                            active_retained_proxy=(
-                                None
-                                if match_data.get("active_retained_proxy") in {None, ""}
-                                else str(match_data.get("active_retained_proxy"))
-                            ),
-                            editor_target=dict(match_data.get("editor_target") or {}),
-                            truth_hash=str(match_data.get("truth_hash") or ""),
-                            tags=[str(tag) for tag in (match_data.get("tags") or [])],
-                            notes=str(match_data.get("notes") or ""),
-                        )
-                    )
-
-                append_match_metric(normalize_match_index_row(match_data))
-                restored_matches += 1
-            except Exception as exc:
-                errors.append({
-                    "kind": "match",
-                    "library_record_id": match_data.get("library_record_id") if isinstance(match_data, dict) else None,
-                    "error": str(exc),
-                })
-        
-        return {
-            "restored": len(errors) == 0,
-            "stages_restored": restored_stages,
-            "matches_restored": restored_matches,
-            "errors": errors,
-        }
+        return shared_backend_service.library_backup_restore(manifest)

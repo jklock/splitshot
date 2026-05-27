@@ -2,88 +2,164 @@
 
 ## Normative statement
 
-`development/` is Work Effort 1 / Set 1 for the SplitShot completion program.
+`development/` is the active execution bundle for finishing the Landing Zone, shared backend, and modularization foundation without changing frozen Stage and Match behavior.
 
-It is the implementation-only overlay across the source bundles stored under `predev/`. It owns development, refactoring, route/state hardening, architecture work, and implementation-facing contract updates. It does not own final proof packaging, screenshot capture, final QA/doc sync, or signoff closure.
+It is a **builder-facing execution contract**, not a historical archive and not the final signoff bundle.
 
-## Work-effort boundary requirements
+## Required document set
 
-### Included source scope
+The active `development/` bundle must contain and keep synchronized:
 
-`development/` must aggregate the implementation side of the source bundles as follows:
+- `spec.md` — normative contract and execution rules
+- `plan.md` — sequencing, dependencies, milestones, and exit criteria
+- `tasks.md` — active executable backlog for builders
+- `progress.md` — integrator-owned shared progress ledger
+- `proof.md` — proof taxonomy and evidence requirements
+- `outcome.md` — status narrative and current gate position
+- `orchestration.prompt.md` — agent execution instructions
 
-- Stage: `STG-001` through `STG-006`
-- Match: `MCH-001` plus the implementation side of `MCH-002` through `MCH-006`
-- Performance: `PRF-001` plus the implementation side of `PRF-002` through `PRF-005`
-- Backend: `BEK-001` through `BEK-006`
-- Modularization: `MOD-001` through `MOD-005`
+`artifacts.md` may remain only as a backward-compatibility pointer. New execution truth belongs in `progress.md`, `proof.md`, and `outcome.md`.
 
-### Excluded source scope
+## Frozen behavior baselines
 
-`development/` must not claim completion of:
+### Stage baseline
 
-- Stage `STG-007` or `STG-008`
-- Match proof/signoff packaging tied to `MCH-002`, `MCH-003`, `MCH-004`, `MCH-006`, or `MCH-007`
-- Performance proof/signoff packaging tied to `PRF-002`, `PRF-003`, `PRF-004`, `PRF-006`, or `PRF-007`
-- Backend `BEK-007` or `BEK-008`
-- Modularization `MOD-006` or `MOD-007`
-- any `TST-*` work from the source `predev/tests/` bundle
+Stage behavior is frozen against:
 
-## Source-bundle integrity requirements
+- `stage-reference.md`
+- `../predev/stage/outcome.md`
+- `../predev/stage/artifacts.md`
 
-- The six source bundles under `predev/` remain the detailed task truth.
-- `development/` must not contradict the source `tasks.md`, `spec.md`, `outcome.md`, or `artifacts.md` files.
-- Any implementation change that moves a source bundle forward must update the touched source bundle and the aggregate `development/` bundle in the same change.
-- `development/` may summarize, but it must not silently redefine, source task ownership.
+### Match baseline
 
-## Implementation requirements
+Match behavior is frozen against:
 
-`development/` must own only work that changes or settles implementation truth, including:
+- `match-reference.md`
+- `../predev/match/outcome.md`
+- `../predev/match/artifacts.md`
 
-- code and architecture changes
-- shell/layout/runtime changes
-- route/state/controller changes
-- persistence and ownership refactors
-- implementation-facing documentation or contract updates required to keep the delivered behavior truthful
-- explicit implementation deferrals or residual risks when work is intentionally left for later
+### Frozen-baseline rules
 
-## Documentation and contract requirements
+- Do **not** introduce new Stage or Match features in this bundle.
+- Do **not** change Stage or Match user-visible workflow semantics unless an explicit reopen is triggered.
+- Treat the current Stage and Match source-lane outcomes as the baseline the foundation work must preserve.
+- Use **Performance Library** in user-facing language. Internal `library` naming may remain in code and storage during this bundle unless a dedicated rename task is opened later.
 
-Implementation-facing documentation may be updated in `development/` when needed to keep current behavior truthful.
+### Protected route and behavior freeze
 
-However, the following remain reserved for `testing/` unless the same change is merely preparing them for future closure:
+The following route families are frozen by default in this bundle:
 
-- screenshot packages
-- proof ledgers used for acceptance
-- final artifact capture
-- QA matrix closeout
-- coverage-plan closeout
-- final signoff language
+- `/api/workspace/*`
+- `/api/angle/*`
+- `/api/audio/mix`
+- `/api/scoring*`
+- `/api/shots/*`
 
-Important distinction:
+They may be touched only to preserve existing behavior while refactoring ownership boundaries. A semantic change to any of them is a reopen trigger.
 
-- the source `predev/tests/` bundle is the detailed lane for `TST-*` work
-- aggregate `testing/` is the Work Effort 2 overlay
-- they are not interchangeable
+## Active scope
 
-## Handoff requirements
+This bundle actively owns only the remaining foundation work required to support modular, parallel-safe app development:
 
-At the end of Work Effort 1, `development/` must make it explicit that:
+- make Landing Zone backend-driven and trustworthy
+- split shared shell versus app ownership more explicitly
+- keep `/api/state` summary-only and slice-based
+- make route ownership explicit in the browser/server boundary
+- extract shared services out of monolithic controller ownership where required
+- remove legacy fallback ownership from root shell code where safe
+- codify proof readiness for frozen Stage and Match behavior families
+- prepare the system so a future app module can slot beside Stage, Match, and Performance Library without direct cross-app dependence
 
-- implementation work is complete or explicitly deferred
-- remaining work belongs to proof, artifacts, QA/doc sync, suite closure, or signoff
-- `testing/` can proceed without re-litigating which implementation tasks still belong to Work Effort 1
+## Excluded scope
 
-## Validation requirements
+This bundle does **not** own:
 
-`development/` may reference narrow validation used to unblock implementation.
+- new Stage feature scope
+- new Match feature scope
+- Performance Library product expansion beyond foundation-seam work
+- final screenshot packages
+- final proof bundles and acceptance artifact capture
+- final QA matrix closeout
+- final visual approval and signoff
+- silent reinterpretation of source-lane ownership
 
-But:
+## Parallel execution model
 
-- narrow validation does not by itself close Work Effort 2
-- broad green runs do not by themselves close source-bundle proof gates
-- `development/` must not use testing-style evidence to claim signoff completion
+### One owner per file per wave
 
-## Definition of specification success
+- Each active task must have an explicit allowlist and forbid widening its edit surface without integrator approval.
+- In a parallel wave, no two worker tasks may claim the same file.
+- If two tasks need the same file, the plan must serialize them.
 
-The development spec is satisfied only when the aggregate bundle, the source bundles, and the code-facing contract all describe the same implementation boundary for Work Effort 1 / Set 1.
+### Worker versus integrator responsibilities
+
+- Worker tasks edit only their allowed implementation files and task-local tests.
+- Worker tasks do **not** edit `progress.md`, `proof.md`, `outcome.md`, or shared source-lane ledgers.
+- The integrator task owns shared ledgers, cross-lane synthesis, review-agent follow-up, and final handoff updates.
+
+### Read order
+
+Every execution pass must read in this order:
+
+1. `spec.md`
+2. `plan.md`
+3. `tasks.md`
+4. `progress.md`
+5. `proof.md`
+6. `outcome.md`
+7. `stage-reference.md` and `match-reference.md`
+
+## Reopen protocol
+
+A frozen baseline may be reopened only when one of the following objective triggers fires:
+
+1. a protected guardrail test fails after a foundation refactor
+2. a semantic change to a protected frozen route or state contract becomes unavoidable
+3. a data-loss, persistence-corruption, or reopen-path bug is found in the frozen baseline
+4. a mandatory contract such as PractiScore fallback support cannot be preserved without a named behavior change
+
+When a reopen trigger fires:
+
+- stop the current worker task
+- record the trigger in `progress.md`
+- create a named reopen item in `outcome.md`
+- update the relevant source lane before continuing
+- do **not** hide the reopen inside general cleanup language
+
+## Documentation and update obligations
+
+Whenever a control owner, route, persistence target, or output path changes, the same change must update all applicable anchors:
+
+- `stage-reference.md` and/or `match-reference.md`
+- `proof.md`
+- `docs/project/browser-control-qa-matrix.md`
+- `docs/project/browser-control-coverage-plan.md` when coverage claims change
+- `docs/project/browser-full-e2e-qa-plan.md` when end-to-end scope changes
+- `tests/browser/test_browser_control_coverage_matrix.py`
+- `tests/browser/test_browser_control_inventory_audit.py` when IDs or surfaces change
+- relevant interaction, contract, persistence, and export tests
+- user-facing docs when user-visible naming or workflow changes
+
+Worker tasks satisfy this requirement by returning the required doc and proof updates in their handoff packet. The integrator merges those shared-ledger updates in the same integrated change before the wave is considered complete.
+
+If a Project-pane PractiScore workflow or state changes, the same change must also preserve and update:
+
+- manual `Select PractiScore File` fallback
+- local `Match type`, `Stage #`, `Competitor name`, and `Place` controls
+- `practiscore_session`, `practiscore_sync`, and `practiscore_options`
+
+## Proof boundary
+
+This bundle owns proof readiness, honest proof classification, and evidence requirements.
+
+This bundle does **not** own final acceptance closure. Final screenshot packaging, acceptance artifacts, broad signoff, and testing-owned gates remain outside this bundle.
+
+## Definition of success
+
+The development specification is satisfied only when all of the following are true:
+
+- Stage and Match remain frozen or are explicitly reopened and reclosed through the documented protocol
+- Landing/shared shell/backend ownership is explicit enough for builder agents to work in parallel without overlap
+- `plan.md`, `tasks.md`, `progress.md`, `proof.md`, and `outcome.md` all describe the same active execution model
+- builder agents can execute tasks without inventing missing rules or widening scope on their own
+- proof requirements are explicit enough that later `testing/` work does not need to rediscover what counts as meaningful closure

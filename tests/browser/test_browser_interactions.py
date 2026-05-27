@@ -712,6 +712,56 @@ def test_project_pane_delete_project_confirmation_can_cancel(tmp_path: Path) -> 
         server.shutdown()
 
 
+def test_shell_compat_host_on_open_project_callback_opens_saved_project(
+    tmp_path: Path,
+) -> None:
+    project_path = tmp_path / "host-open.ssproj"
+    bootstrap = ProjectController()
+    bootstrap.new_project()
+    bootstrap.project.name = "Host Open Project"
+    bootstrap.save_project(str(project_path))
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.on("dialog", lambda dialog: dialog.accept())
+            page.add_init_script(
+                """
+                window.__legacyOpenProjectCallback = null;
+                window.splitshot = {
+                  onOpenProject(callback) {
+                    window.__legacyOpenProjectCallback = callback;
+                  },
+                };
+                """
+            )
+            page.goto(server.url, wait_until="domcontentloaded")
+            try:
+                page.wait_for_function(
+                    "() => typeof window.__legacyOpenProjectCallback === 'function'"
+                )
+
+                page.evaluate(
+                    "(projectPath) => window.__legacyOpenProjectCallback(projectPath)",
+                    str(project_path),
+                )
+                page.wait_for_function(
+                    "(expectedPath) => state?.project?.path === expectedPath",
+                    arg=str(project_path),
+                )
+
+                _open_tool(page, "project")
+                assert page.locator("#project-path").input_value() == "host-open.ssproj"
+                assert page.evaluate("() => state?.project?.name || ''") == "Host Open Project"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_project_pane_keyboard_tab_order_advances_through_primary_controls(
     tmp_path: Path,
 ) -> None:
@@ -771,7 +821,16 @@ def test_project_pane_output_hook_save_updates_selected_output_profile(tmp_path:
                 page.locator("#output-profile-create").click()
                 page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
 
+                _open_tool(page, "overlay")
                 page.locator('[data-output-hook="metric-captions"]').click()
+                page.wait_for_function(
+                    """() => {
+                        const editor = document.getElementById('output-hook-editor');
+                        return Boolean(editor)
+                          && editor.hidden === false
+                          && editor.closest('[data-tool-pane]')?.dataset.toolPane === 'overlay';
+                    }"""
+                )
                 page.locator("#hook-metric-captions-preset").select_option("full")
                 page.locator("#hook-metric-captions-position").select_option("bottom_left")
                 page.locator("#output-hook-save").click()
@@ -824,12 +883,65 @@ def test_project_pane_output_hook_close_hides_editor(tmp_path: Path) -> None:
                 page.locator("#output-profile-create").click()
                 page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
 
+                _open_tool(page, "overlay")
                 page.locator('[data-output-hook="metric-captions"]').click()
                 page.locator("#output-hook-editor").wait_for(state="visible")
                 page.locator("#output-hook-close").click()
                 page.wait_for_function(
                     "() => document.getElementById('output-hook-editor')?.hidden === true"
                 )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_compose_pane_trim_dead_time_uses_output_profile_editor(tmp_path: Path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_tool(page, "project")
+                page.evaluate(
+                    f"() => createNewProject({json.dumps(str(tmp_path / 'compose-trim-hooks.ssproj'))})"
+                )
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+
+                page.locator("#output-profile-name").fill("Trim Profile")
+                page.locator("#output-profile-create").click()
+                page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
+
+                _open_tool(page, "merge")
+                page.locator('[data-output-hook="run-window"]').click()
+                page.wait_for_function(
+                    """() => {
+                        const editor = document.getElementById('output-hook-editor');
+                        return Boolean(editor)
+                          && editor.hidden === false
+                          && editor.closest('[data-tool-pane]')?.dataset.toolPane === 'merge';
+                    }"""
+                )
+
+                page.locator("#hook-run-window-lead-in").fill("0.4")
+                page.locator("#hook-run-window-tail").fill("1.2")
+                page.locator("#output-hook-save").click()
+
+                page.wait_for_function(
+                    """() => {
+                        const detail = document.getElementById('output-profile-detail');
+                        return Boolean(detail?.textContent?.includes('"lead_in_padding_ms": 400'))
+                          && Boolean(detail?.textContent?.includes('"tail_padding_ms": 1200'));
+                    }"""
+                )
+
+                profiles = controller.output_profile_list("stage", controller.project.id)
+                assert len(profiles) == 1
+                assert profiles[0]["metric_caption_preset"]["lead_in_padding_ms"] == 400
+                assert profiles[0]["metric_caption_preset"]["tail_padding_ms"] == 1200
             finally:
                 browser.close()
     finally:
@@ -1974,6 +2086,126 @@ def test_performance_library_detail_ui_persists_tag_add_remove_and_notes(
     assert restored_record.notes == "Fresh note"
 
 
+def test_performance_library_compat_selected_record_and_render_rerender_detail_truth(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SPLITSHOT_LIBRARY_ROOT", str(tmp_path / "library"))
+
+    from datetime import datetime, timezone
+
+    from splitshot.domain.models import LibraryStageRecord
+    from splitshot.persistence.library import load_stage_record, save_stage_record
+
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="compat-stage-record-a",
+            stage_id="compat_stage_a",
+            display_name="Compat Stage A",
+            event_date=datetime(2026, 5, 25, tzinfo=timezone.utc),
+            discipline="uspsa_minor",
+            metric_summary={"score_total": 95},
+            editor_target={"type": "single", "project_path": str(tmp_path / "compat-stage-a.ssproj")},
+            truth_hash="compat-stage-truth-a",
+            tags=["existing"],
+            notes="Original note A",
+        )
+    )
+    save_stage_record(
+        LibraryStageRecord(
+            library_record_id="compat-stage-record-b",
+            stage_id="compat_stage_b",
+            display_name="Compat Stage B",
+            event_date=datetime(2026, 5, 26, tzinfo=timezone.utc),
+            discipline="idpa_time_plus",
+            metric_summary={"score_total": 89},
+            editor_target={"type": "single", "project_path": str(tmp_path / "compat-stage-b.ssproj")},
+            truth_hash="compat-stage-truth-b",
+            tags=["switch-target"],
+            notes="Original note B",
+        )
+    )
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _open_library_surface(page)
+                _open_library_section(page, "library-section-records")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#library-record-list .library-record-row').length === 2"
+                )
+
+                page.locator(
+                    "#library-record-list .library-record-row",
+                    has_text="Compat Stage A",
+                ).click()
+                _open_library_section(page, "library-section-detail")
+                page.wait_for_function(
+                    "() => window.selectedLibraryRecord?.library_record_id === 'compat-stage-record-a'"
+                )
+
+                page.evaluate("() => renderAutomationSurface()")
+                page.wait_for_function(
+                    """() => {
+                        const notes = document.getElementById('library-notes-text')?.value || '';
+                        const tags = document.getElementById('library-tag-list')?.textContent || '';
+                        const detail = document.getElementById('library-detail-status')?.textContent || '';
+                        return notes === 'Original note A'
+                          && tags.includes('existing')
+                          && detail.includes('Compat Stage A')
+                          && document.getElementById('library-section-detail')?.hidden === false;
+                    }"""
+                )
+
+                save_result = page.evaluate(
+                    """async () => {
+                        const recordId = window.selectedLibraryRecord?.library_record_id || '';
+                        const notes = 'Compat rerender note';
+                        const result = await callApi('/api/library/notes/update', {
+                          record_id: recordId,
+                          notes,
+                        });
+                        if (result?.updated) {
+                          window.selectedLibraryRecord = {
+                            ...window.selectedLibraryRecord,
+                            notes,
+                          };
+                                                    document.getElementById('library-refresh')?.click();
+                        }
+                        return result;
+                    }"""
+                )
+                assert save_result == {
+                    "record_id": "compat-stage-record-a",
+                    "notes": "Compat rerender note",
+                    "updated": True,
+                }
+
+                page.wait_for_function(
+                    """() => {
+                        const notes = document.getElementById('library-notes-text')?.value || '';
+                        const tags = document.getElementById('library-tag-list')?.textContent || '';
+                        const detail = document.getElementById('library-detail-status')?.textContent || '';
+                        return window.selectedLibraryRecord?.library_record_id === 'compat-stage-record-a'
+                          && notes === 'Compat rerender note'
+                          && tags.includes('existing')
+                          && detail.includes('Compat Stage A')
+                          && document.getElementById('library-section-detail')?.hidden === false;
+                    }"""
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+    restored_record = load_stage_record("compat-stage-record-a")
+    assert restored_record is not None
+    assert restored_record.notes == "Compat rerender note"
+
+
 def test_performance_library_settings_remain_isolated_from_match_settings(
     monkeypatch,
     tmp_path: Path,
@@ -2649,6 +2881,79 @@ def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_proje
                 assert page.evaluate("() => state?.project?.path || ''") == ""
 
                 assert [kind for kind, _current in chooser_calls] == ["primary", "primary"]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_landing_recent_stage_rows_switch_surface_without_auto_open(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    recent_project_path = tmp_path / "landing-recent-stage.ssproj"
+    open_project_calls: list[str] = []
+    open_workspace_calls: list[str] = []
+
+    def fake_landing_recent(self: ProjectController) -> dict[str, object]:
+        return {
+            "recent": [
+                {
+                    "name": "Recent Classifier",
+                    "surface": "single",
+                    "type": "stage",
+                    "path": str(recent_project_path),
+                    "date": "2026-05-26T00:00:00+00:00",
+                }
+            ]
+        }
+
+    def fake_open_project(self: ProjectController, path: str) -> None:
+        open_project_calls.append(path)
+
+    def fake_open_workspace(self: ProjectController, path: str) -> None:
+        open_workspace_calls.append(path)
+
+    monkeypatch.setattr(ProjectController, "landing_recent", fake_landing_recent)
+    monkeypatch.setattr(ProjectController, "open_project", fake_open_project)
+    monkeypatch.setattr(ProjectController, "open_workspace", fake_open_workspace)
+
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate(
+                    """() => {
+                        localStorage.setItem('splitshot.recentActivity', JSON.stringify([
+                          {
+                            name: 'Local Breadcrumb',
+                            surface: 'multi',
+                            type: 'Match',
+                            path: '/tmp/local-workspace',
+                            date: '1/1/2026',
+                          },
+                        ]));
+                        setActiveSurface('landing');
+                    }"""
+                )
+                page.wait_for_function("() => activeSurface === 'landing'")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#landing-recent-list .landing-recent-item').length === 1"
+                )
+
+                recent_text = page.locator("#landing-recent-list").text_content() or ""
+                assert "Recent Classifier" in recent_text
+                assert "Local Breadcrumb" not in recent_text
+
+                page.locator("#landing-recent-list .landing-recent-item").click()
+                page.wait_for_function("() => activeSurface === 'single'")
+
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+                assert open_project_calls == []
+                assert open_workspace_calls == []
             finally:
                 browser.close()
     finally:
@@ -5819,6 +6124,14 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
                     """() => {
                         const badge = document.querySelector('[data-overlay-drag="timer"]');
                         return Boolean(badge) && window.getComputedStyle(badge).fontFamily.includes('Courier New');
+                    }"""
+                )
+                page.wait_for_function(
+                    """() => {
+                        const badge = document.querySelector('[data-overlay-drag="timer"]');
+                        if (!(badge instanceof HTMLElement)) return false;
+                        const rect = badge.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
                     }"""
                 )
 

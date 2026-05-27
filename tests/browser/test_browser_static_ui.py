@@ -522,6 +522,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="color-picker-hex"' in html
     merge_start = html.index('data-tool-pane="merge"')
     review_start = html.index('data-tool-pane="review"')
+    overlay_start = html.index('data-tool-pane="overlay"')
+    markers_start = html.index('data-tool-pane="markers"')
     export_start = html.index('data-tool-pane="export"')
     metrics_start = html.index('data-tool-pane="metrics"')
     project_start = html.index('data-tool-pane="project"')
@@ -529,6 +531,9 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
     assert merge_start < html.index('id="merge-media-list"') < export_start
+    assert merge_start < html.index('data-output-hook="run-window"') < export_start
+    assert overlay_start < html.index('data-output-hook="metric-captions"') < markers_start
+    assert export_start < html.index('data-output-hook="frame-profiles"') < project_start
     assert 'id="pip-size" type="range" min="1" max="95" step="1" value="35"' in html
     assert '<option value="full_screen_portrait">Full-screen portrait</option>' in html
     assert '<option value="dual_center_hud">Dual center HUD</option>' in html
@@ -544,10 +549,10 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert export_start < html.index('id="quality"') < project_start
     assert export_start < html.index('id="export-video"') < project_start
     assert '<pre id="output-profile-detail" class="automation-detail" hidden></pre>' in html
-    assert "Stage Recipe" not in html
-    assert ">Run Padding</button>" in html
-    assert ">Overlay Data</button>" in html
-    assert ">Aspect Ratio / Framing</button>" in html
+    assert 'Stage Recipe' not in html
+    assert 'Titles &amp; Branding' not in html
+    assert 'Export Badges' in html
+    assert 'Aspect Ratio / Framing' in html
     assert (
         'These profile settings use reviewed Stage timing, scoring, and framing truth when exporting a single video or a synced Stage composite.'
         not in html
@@ -556,7 +561,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'Select or create an output profile.' not in html
     assert 'Stage recipe and finishing settings attach to an output profile. Create or select a profile first.' not in js
     assert 'Use Preview to inspect the render plan, or edit the Stage recipe for trim, on-screen data, and video shape before adding titles and branding.' not in js
-    assert 'Create or select an output profile before editing saved output settings.' in js
+    assert 'Create or select an output profile in Export before editing reusable trim, overlay, or finishing settings.' in js
     assert 'function syncOutputProfileDetailVisibility() {' in js
     assert project_start < html.index('id="match-type"')
     assert project_start < html.index('id="match-stage-number"')
@@ -2158,7 +2163,35 @@ def test_browser_automation_surface_scopes_profiles_and_saves_hooks() -> None:
     assert 'id="hook-brand-mark-opacity"' in js
     assert 'metric_caption_preset: $("shared-metric-captions")?.value || "none",' in js
     assert 'if (metricCaptions) overrides.metric_caption_preset = metricCaptions;' in js
+    assert 'function mountOutputHookEditor(hook) {' in js
+    assert '"run-window": "output-hook-host-merge"' in js
+    assert '"metric-captions": "output-hook-host-overlay"' in js
+    assert '"frame-profiles": "output-hook-host-export-frame"' in js
     assert 'await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });' in js
+
+
+def test_browser_landing_recent_activity_uses_backend_stage_entries_without_auto_opening() -> None:
+    js = (STATIC_ROOT / "app.js").read_text()
+    render_recent_source = js.split("function renderRecentActivity() {", 1)[1].split(
+        "function escapeHtml(str) {", 1
+    )[0]
+    recent_click_source = js.split("// Landing page recent activity clicks", 1)[1].split(
+        "// Quick-start buttons", 1
+    )[0]
+
+    assert "let landingRecentItems = [];" in js
+    assert "let landingRecentLoaded = false;" in js
+    assert "let landingRecentRequestSequence = 0;" in js
+    assert "function normalizeLandingRecentItems(items = []) {" in js
+    assert "async function refreshLandingRecentActivity() {" in js
+    assert 'await callApi("/api/landing/recent", {});' in js
+    assert 'if (surface !== "single" && typeLabel !== "Stage") return null;' in js
+    assert "void refreshLandingRecentActivity();" in js
+    assert "splitshot.recentActivity" not in render_recent_source
+    assert "No recent stages. Create a new stage or open an existing project." in render_recent_source
+    assert "setActiveSurface(surface);" in recent_click_source
+    assert "/api/project/open" not in recent_click_source
+    assert "/api/workspace/open" not in recent_click_source
 
 
 def test_browser_match_workspace_uses_live_preview_tiles_and_pinned_lower_pane_contract() -> None:
@@ -2470,17 +2503,24 @@ def test_browser_app_bootstrap_delegates_backbone_core_modules() -> None:
         "sendProjectUiStateKeepalive: [() => sendProjectUiStateKeepalive"
         not in legacy_mutable_bindings
     )
+    assert "selectedLibraryRecord: [() => selectedLibraryRecord" in legacy_mutable_bindings
     assert "createNewProject: [() => createNewProject" in legacy_mutable_bindings
     assert "renderTextBoxEditors: [() => renderTextBoxEditors" in legacy_mutable_bindings
     assert "setPopupBubbles: [() => setPopupBubbles" in legacy_mutable_bindings
 
     assert "renderControls, renderStyleControls," not in legacy_values
+    assert "setActiveSurface," in legacy_values
+    assert "renderAutomationSurface," in legacy_values
     assert "sendKeepaliveJson, sendProjectUiStateKeepalive," not in legacy_values
     assert (
         "scheduleThresholdApply, applyThresholdNow, scheduleShotMLSettingsApply, scheduleProjectUiStateApply,"
         not in legacy_values
     )
     assert "flushQueuedProjectUiStateApply, scheduleOverlayApply, wireEvents," not in legacy_values
+    assert "window.createNewProject = createNewProject;" not in js
+    assert "window.setActiveTool = setActiveTool;" not in js
+    assert "window.setActiveSurface = setActiveSurface;" not in js
+    assert "window.renderAutomationSurface = renderAutomationSurface;" not in js
 
     assert "export const $ = (id) => document.getElementById(id);" in utils
     assert "export function debounce(fn, delayMs = 250) {" in utils

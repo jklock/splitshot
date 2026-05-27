@@ -289,9 +289,17 @@ def _merge_source_from_project_json(project_payload: dict, source_id: str) -> di
 def _extract_browser_post_routes_from_server_source() -> set[str]:
     server_source = Path(browser_server_module.__file__).read_text(encoding="utf-8")
     direct_routes = set(re.findall(r'if self\.path == "([^"]+)"', server_source))
-    mapped_routes = set(re.findall(r'"(/api/[^"]+)": self\._[A-Za-z0-9_]+', server_source))
-    mapped_routes |= set(re.findall(r'"(/api/[^"]+)": \("_[A-Za-z0-9_]+"', server_source))
-    return direct_routes | mapped_routes
+    mapped_routes = set(re.findall(r'"(/api/[^"]+)":\s*self\._[A-Za-z0-9_]+', server_source))
+    mapped_routes |= set(
+        re.findall(r'"(/api/[^"]+)":\s*\(\s*"_[A-Za-z0-9_]+"', server_source)
+    )
+    get_only_routes = {
+        "/api/activity/poll",
+        "/api/practiscore/matches",
+        "/api/practiscore/session/status",
+        "/api/state",
+    }
+    return (direct_routes | mapped_routes) - get_only_routes
 
 
 def test_browser_foreground_server_handles_keyboard_interrupt_cleanly(capsys) -> None:
@@ -2177,6 +2185,56 @@ def test_browser_post_route_manifest_is_classified_and_disk_asserted() -> None:
             assert "_read_project_json(" in test_source, (
                 f"{test_name} does not assert project.json writes"
             )
+
+
+def test_browser_api_runtime_marks_structured_routes_as_non_owning_remote_state() -> None:
+    api_js = (
+        REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js"
+    ).read_text(encoding="utf-8")
+    match = re.search(
+        r"function apiResponseOwnsRemoteState\(path\) \{(?P<body>.*?)\n  \}",
+        api_js,
+        re.S,
+    )
+
+    assert match is not None
+    body = match.group("body")
+    assert 'normalizedPath === "/api/project/ui-state"' in body
+    assert "apiRouteCarriesStructuredPractiScorePayload(normalizedPath)" in body
+    assert 'normalizedPath.startsWith("/api/library/")' in body
+    assert 'normalizedPath.startsWith("/api/output-profiles/")' in body
+    assert 'normalizedPath === "/api/workspace/export"' in body
+    assert 'normalizedPath === "/api/workspace/recap/render"' in body
+    assert 'normalizedPath.startsWith("/api/workspace/stage/clip/")' in body
+    assert 'normalizedPath.startsWith("/api/angle/")' in body
+    assert 'normalizedPath.startsWith("/api/audio/")' in body
+    assert 'normalizedPath.startsWith("/api/proxy/")' in body
+    assert 'normalizedPath.startsWith("/api/landing/")' in body
+    assert 'normalizedPath.startsWith("/api/result-cards/")' in body
+    assert "if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);" in api_js
+    assert "else applyStructuredRoutePayload(path, data);" in api_js
+
+
+def test_browser_api_runtime_applies_structured_practiscore_payloads_without_full_state() -> None:
+    api_js = (
+        REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js"
+    ).read_text(encoding="utf-8")
+    match = re.search(
+        r"function applyStructuredRoutePayload\(path, payload\) \{(?P<body>.*?)\n  \}",
+        api_js,
+        re.S,
+    )
+
+    assert match is not None
+    body = match.group("body")
+    assert "if (!apiRouteCarriesStructuredPractiScorePayload(normalizedPath)) return;" in body
+    assert "if (apiRouteCarriesPractiScoreSessionPayload(normalizedPath)) {" in body
+    assert 'resetSync: normalizedPath === "/api/practiscore/session/clear"' in body
+    assert "applyPractiScoreRoutePayload(payload);" in body
+    assert 'normalizedPath === "/api/practiscore/matches"' in body
+    assert 'normalizedPath === "/api/practiscore/sync/start"' in body
+    assert "runtime.state.practiscore_sync = normalizePractiScoreSyncPayload({" in body
+    assert "return apiRouteCarriesStructuredPractiScorePayload(normalizedPath)" in api_js
 
 
 def test_browser_autosave_persists_analysis_scoring_timing_and_ui_changes_to_project_json(

@@ -81,9 +81,22 @@ export function createApiRuntime({
     return normalizedPath;
   }
 
+  function apiRouteCarriesStructuredPractiScorePayload(path) {
+    const normalizedPath = String(path || "");
+    return normalizedPath.startsWith("/api/practiscore/");
+  }
+
+  function apiRouteCarriesPractiScoreSessionPayload(path) {
+    const normalizedPath = String(path || "");
+    return normalizedPath === "/api/practiscore/session/start"
+      || normalizedPath === "/api/practiscore/session/status"
+      || normalizedPath === "/api/practiscore/session/clear";
+  }
+
   function apiResponseOwnsRemoteState(path) {
     const normalizedPath = String(path || "");
     if (normalizedPath === "/api/project/ui-state") return false;
+    if (apiRouteCarriesStructuredPractiScorePayload(normalizedPath)) return false;
     if (normalizedPath.startsWith("/api/library/")) return false;
     if (normalizedPath.startsWith("/api/output-profiles/")) return false;
     if (
@@ -106,11 +119,37 @@ export function createApiRuntime({
 
   function apiResponseAllowsDomainError(path) {
     const normalizedPath = String(path || "");
-    return normalizedPath === "/api/workspace/apply-from-first"
+    return apiRouteCarriesStructuredPractiScorePayload(normalizedPath)
+      || normalizedPath === "/api/workspace/apply-from-first"
       || normalizedPath === "/api/workspace/apply-from-first/preview"
       || normalizedPath === "/api/workspace/export"
       || normalizedPath === "/api/workspace/recap/render"
       || normalizedPath === "/api/workspace/defaults/reset";
+  }
+
+  function applyStructuredRoutePayload(path, payload) {
+    const normalizedPath = String(path || "");
+    if (!runtime.state || !payload || typeof payload !== "object") return;
+    if (!apiRouteCarriesStructuredPractiScorePayload(normalizedPath)) return;
+    if (apiRouteCarriesPractiScoreSessionPayload(normalizedPath)) {
+      applyPractiScoreSessionPayload(payload, {
+        resetSync: normalizedPath === "/api/practiscore/session/clear",
+      });
+      return;
+    }
+    applyPractiScoreRoutePayload(payload);
+    if (
+      !Object.prototype.hasOwnProperty.call(payload, "practiscore_sync")
+      && (
+        normalizedPath === "/api/practiscore/matches"
+        || normalizedPath === "/api/practiscore/sync/start"
+      )
+    ) {
+      runtime.state.practiscore_sync = normalizePractiScoreSyncPayload({
+        ...practiScoreSyncPayload(),
+        ...payload,
+      });
+    }
   }
 
   let apiRequestSequence = 0;
@@ -166,6 +205,7 @@ export function createApiRuntime({
         throw new Error(data.error || response.statusText);
       }
       if (apiResponseOwnsRemoteState(path)) applyRemoteState(data);
+      else applyStructuredRoutePayload(path, data);
       requestRender();
       emitBackbone(backbone, "api.response", { path, status: data.status, shots: data.metrics?.total_shots });
       activity("api.response", { path, status: data.status, shots: data.metrics?.total_shots });

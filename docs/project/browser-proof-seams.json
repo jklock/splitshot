@@ -1,0 +1,66 @@
+{
+  "DEV-106.landing_recent": {
+    "status": "interaction-proven",
+    "proof_strength": "backend-route + static-contract + interaction",
+    "summary": "Landing recent rows come from /api/landing/recent, stay stage-only after normalization, and switch surfaces without auto-opening a project or workspace.",
+    "evidence_tests": [
+      "tests/browser/test_landing_backend_routes.py::test_landing_recent_filters_non_stage_entries_before_15_item_cap",
+      "tests/browser/test_browser_static_ui.py::test_browser_landing_recent_activity_uses_backend_stage_entries_without_auto_opening",
+      "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
+    ],
+    "doc_refs": [
+      "docs/project/completion-bundles/development/proof.md",
+      "docs/project/browser-control-qa-matrix.md",
+      "docs/project/browser-control-coverage-plan.md",
+      "docs/project/browser-full-e2e-qa-plan.md"
+    ],
+    "caveat": "Recent-row clicks remain surface-only by design; they do not auto-open a saved project or workspace."
+  },
+  "DEV-107.root_shell_compat": {
+    "status": "interaction-proven",
+    "proof_strength": "compat-static-contract + guarded interaction consumers",
+    "summary": "Root-shell globals route through installLegacyGlobalCompat and retain the host open-project callback plus direct Performance-library rerender/selected-record consumers.",
+    "evidence_tests": [
+      "tests/browser/test_automation_ui_shell_contracts.py",
+      "tests/browser/test_browser_static_ui.py",
+      "tests/browser/test_browser_interactions.py::test_shell_compat_host_on_open_project_callback_opens_saved_project",
+      "tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth",
+      "tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context",
+      "tests/browser/test_browser_interactions.py::test_match_workspace_setup_once_uses_preview_before_apply",
+      "tests/browser/test_workspace_flows.py"
+    ],
+    "doc_refs": [
+      "docs/project/completion-bundles/development/proof.md",
+      "docs/project/completion-bundles/development/match-reference.md",
+      "docs/project/browser-control-qa-matrix.md",
+      "docs/project/browser-control-coverage-plan.md",
+      "docs/project/browser-full-e2e-qa-plan.md"
+    ],
+    "compat_consumers": [
+      "window.splitshot.onOpenProject",
+      "renderAutomationSurface",
+      "selectedLibraryRecord"
+    ],
+    "caveat": "Coverage targets the retained host and Performance-library compatibility consumers plus guarded Match shell workflows."
+  },
+  "project.practiscore_bridge": {
+    "status": "bridge-proven",
+    "proof_strength": "browser-state bridge + guarded project controls",
+    "summary": "Project-pane PractiScore coverage proves manual file fallback, local selectors, and browser-state/session bridging without claiming every downstream consumer path.",
+    "evidence_tests": [
+      "tests/browser/test_browser_interactions.py",
+      "tests/browser/test_practiscore_session_api.py",
+      "tests/browser/test_practiscore_sync_controller.py",
+      "tests/analysis/test_practiscore_import.py",
+      "tests/analysis/test_practiscore_sync_normalize.py",
+      "tests/analysis/test_practiscore_web_extract.py"
+    ],
+    "doc_refs": [
+      "docs/project/completion-bundles/development/stage-reference.md",
+      "docs/project/browser-control-qa-matrix.md",
+      "docs/project/browser-control-coverage-plan.md",
+      "docs/project/browser-full-e2e-qa-plan.md"
+    ],
+    "caveat": "The remote session/match-list/import bridge is proven without claiming every downstream consumer path."
+  }
+}

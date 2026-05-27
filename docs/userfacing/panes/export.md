@@ -1,6 +1,6 @@
 # Export Pane
 
-The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, marker, review-box, and enabled added-media state at the moment you start the render.
+The Export pane renders the finished video locally through FFmpeg. It owns output-profile selection, final frame settings, and finishing graphics such as `Opening Title` and `Your Logo`. Reusable trim now lives in `Compose`, and reusable badge selection now lives in `Overlay`, once you pick the output profile here.
 
 <!-- markdownlint-disable MD033 -->
 
@@ -15,22 +15,20 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 ## When To Use This Pane
 
 - After timing, scoring, overlays, markers, review boxes, and added media are final.
-- When you want a reusable output profile instead of one-off export settings.
+- When you want a reusable stage-output profile instead of one-off export settings.
 - When you need a draft or final render.
 - When the output needs a specific aspect ratio, frame rate, codec, bitrate, or container.
+- When the output needs final framing, an intro card, or a watermark.
 - When you want to inspect the live FFmpeg log.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Output Profiles` | Lists reusable stage-scoped output recipes for the active stage. Create, select, preview, duplicate, and delete profiles here. |
+| `Output Profiles` | Lists reusable stage-scoped output profiles for the active stage. Create, select, preview, duplicate, and delete profiles here. Select a profile here before editing `Trim Dead Time` in `Compose`, `Export Badges` in `Overlay`, or finishing settings here in `Export`. |
 | `Update Profiles` | Reloads the current stage profile list. |
-| `Run Padding` | Saves the extra lead-in / tail padding wrapped around the reviewed stage run for the selected output profile. It does not replace Stage timing review. |
-| `Overlay Data` | Chooses which timing / score badges render into export while reusing the current overlay styling. |
-| `Aspect Ratio / Framing` | Saves the profile-specific export framing (`Source`, `16:9`, `9:16`, `1:1`, or `4:5`) while width and height stay in the main `Frame` section. |
-| `Opening Title` | Opens the reusable title-card editor. It can combine saved match/stage/shooter/division/classification/date details with optional custom title/subtitle text, animation mode, and a local logo file. |
-| `Your Logo` | Opens the reusable branding editor. It can render text, image, or both with position, opacity, size, color, and duration. Set duration to `0` when it should stay visible for the full export. |
+| `Aspect Ratio / Framing` | Opens the reusable profile editor for the selected output profile's aspect-ratio choice (`Source`, `16:9`, `9:16`, `1:1`, `4:5`). Width and height still stay in the main `Frame` section. |
+| `Opening Title` / `Your Logo` | Open the reusable finishing editors for the selected output profile. `Opening Title` can combine saved match/stage/shooter/division/classification/date details with optional custom title/subtitle text, animation mode, and a local logo file. `Your Logo` can render text, image, or both with position, opacity, size, color, and duration. Set `Your Logo` duration to `0` when it should stay visible for the full export. |
 | `Save Hook` | Writes the active hook editor back to the selected output profile. |
 | `Preset` | Chooses a built-in export profile or `Custom`. |
 | `Quality` | Sets the general quality target. |
@@ -54,21 +52,18 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 ## How To Use It
 
 1. Create or select an `Output Profile` first when you want reusable export settings instead of stage-only one-offs.
-2. If the profile needs saved video/output adjustments, open the matching editor and click `Save Hook` before exporting.
-   - `Run Padding`: save only the extra lead-in and tail padding that should wrap the reviewed run window for this profile.
-   - `Overlay Data`: choose which Stage timing / score badges should render into export while keeping the current overlay styling.
-   - `Aspect Ratio / Framing`: save the profile-specific framing (`Source`, `16:9`, `9:16`, `1:1`, or `4:5`).
-3. Open `Opening Title` or `Your Logo` when the export needs finishing graphics.
+2. If the profile needs a trimmed run window, open `Compose`, click `Trim Dead Time`, and click `Save Hook`.
+3. If the profile needs a different badge set in the finished video, open `Overlay`, click `Export Badges`, and click `Save Hook`.
+4. Return to `Export` for `Aspect Ratio / Framing`, `Opening Title`, and `Your Logo`.
+   - `Aspect Ratio / Framing`: save the profile-specific output shape (`Source`, `16:9`, `9:16`, `1:1`, or `4:5`).
    - `Opening Title`: choose a preset style, then enable the saved match/stage/shooter/division/classification/date fields you want in the title card. Add custom title/subtitle text, choose `Static`, `Fade`, or `Slide Up`, and optionally point the profile at a local logo image.
    - `Your Logo`: choose `SplitShot`, `Custom Text`, `Image`, or `Image + Text`, then set the rendered text, image file, text color, text size, position, opacity, and duration.
-4. Choose a `Preset`, or use `Custom` for exact settings.
-5. Confirm aspect ratio and dimensions.
-6. Use H.264 for broad compatibility unless you know the target supports another codec.
-7. Set a sensible bitrate for draft versus final output.
-8. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
-9. Click `Export Video`.
-10. Click `Show Export Log` if you need to follow FFmpeg progress or diagnose a failed render.
-11. Use `Export Log` inside the modal when you need the log as a separate text file.
+5. Choose a `Preset`, or use `Custom` for exact settings.
+6. Confirm aspect ratio, dimensions, frame rate, codec, and bitrate.
+7. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.
+8. Click `Export Video`.
+9. Click `Show Export Log` if you need to follow FFmpeg progress or diagnose a failed render.
+10. Use `Export Log` inside the modal when you need the log as a separate text file.
 
 ## What The Export Includes
 
@@ -78,8 +73,9 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 - Enabled markers.
 - Enabled review text boxes.
 - Enabled added media.
-- Any saved `Run Padding`, `Overlay Data`, and `Aspect Ratio / Framing` values on the selected output profile.
-- Any saved `Opening Title` intro-card composition, animation, and logo hook values plus `Your Logo` text/image/position/opacity hook values on the selected output profile.
+- Any saved `Trim Dead Time` run-window values from `Compose` on the selected output profile.
+- Any saved `Export Badges` values from `Overlay` on the selected output profile.
+- Any saved `Aspect Ratio / Framing`, `Opening Title`, and `Your Logo` values on the selected output profile.
 
 ## Common Fixes
 
@@ -87,7 +83,6 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | --- | --- |
 | Export fails immediately. | Check output path, extension, and folder permissions. |
 | FFmpeg is missing. | Install `ffmpeg` and `ffprobe`, then relaunch SplitShot. |
-| The run starts or ends in the wrong place. | Fix the reviewed beep / last-shot timing in Stage editing first. `Run Padding` only adds extra lead-in and tail around that reviewed run. |
 | Added media is missing from the output. | Turn on `Enable added media export` in [pip.md](pip.md). |
 | Review boxes are missing. | Enable the box in [review.md](review.md). |
 | Output is larger than expected. | Lower bitrate, use a slower FFmpeg preset, or choose a more appropriate preset. |

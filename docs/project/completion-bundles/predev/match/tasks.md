@@ -29,7 +29,7 @@ Proof:
 ## MCH-002 — Reuse the Stage shell grammar
 
 - [x] Move Match onto the same shell family as Stage.
-- [ ] Preserve the persistent rail, right inspector, and lower-pane grammar end-to-end.
+- [x] Preserve the persistent rail, right inspector, and lower-pane grammar end-to-end.
 - [x] Remove Match-specific shell-family assumptions from docs/tests/code.
 - [x] Keep footer order and shared-shell status behavior stable.
 
@@ -38,6 +38,12 @@ Progress note (`2026-05-24`):
 - Match root markup now advertises the shared `stage-workspace` shell family and uses the shared rail/runtime helpers.
 - The Match DOM/CSS/runtime now pin stage tiles in the main area, selected-stage truth in the lower pane, and workflow sections in the right-hand inspector.
 - Proof, screenshots, and full interaction coverage for that new grammar are still pending before the checkbox can close.
+
+Proof closeout note (`2026-05-26`):
+
+- The shared shell/static/inventory/coverage pack stayed green with `49 passed in 169.86s (0:02:49)` across `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_rail_layout.py`, `tests/browser/test_browser_control_inventory_audit.py`, and `tests/browser/test_browser_control_coverage_matrix.py`.
+- The lower-pane/right-inspector proof rerun stayed green with `4 passed` in `tests/browser/test_browser_interactions.py`.
+- `artifacts/match-proof-20260526/screenshots/match-loaded.png` now records the current loaded Match shell with the selected-stage lower pane visible.
 
 Depends on:
 
@@ -55,7 +61,7 @@ Proof:
 
 - [x] Prove new/open/save workspace flow under the shared shell.
 - [x] Prove stage add/remove/select behavior.
-- [ ] Auto-create or attach Match membership when a Stage folder/project is opened.
+- [x] Auto-create or attach Match membership when a Stage folder/project is opened.
 - [x] Prove Stage open from Match and return to Match.
 
 Progress note (`2026-05-24`):
@@ -63,6 +69,12 @@ Progress note (`2026-05-24`):
 - Match new/open/save, stage add/remove/select, and Stage open/return are covered by targeted browser interactions.
 - Auto-seed / auto-attach from Stage project open/save into Match membership is now implemented in `src/splitshot/ui/controller.py`.
 - Targeted controller tests were added in `tests/browser/test_workspace_flows.py`, but proof is still pending until the suite is actually run.
+
+Proof closeout note (`2026-05-26`):
+
+- The Match lifecycle proof rerun stayed green with `3 passed` across `tests/browser/test_browser_interactions.py::test_match_workspace_open_button_uses_picker_and_loads_saved_workspace`, `tests/browser/test_browser_interactions.py::test_match_workspace_save_button_uses_picker_for_first_save`, and `tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context`.
+- The Match membership auto-seed pack stayed green with `2 passed` in `tests/browser/test_workspace_flows.py`.
+- `artifacts/match-proof-20260526/workspace/auto-seed-proof.json` now records both the saved-workspace auto-attach path and the unsaved-workspace membership creation path.
 
 Depends on:
 
@@ -79,8 +91,8 @@ Proof:
 ## MCH-004 — Build the tile and lower-info workflow
 
 - [x] Render stage/media tiles in the main area.
-- [ ] Use the lower pane for selected-tile information instead of the current section-driven flow everywhere the spec expects it.
-- [ ] Keep Match workflow options fully right-inspector centric.
+- [x] Use the lower pane for selected-tile information instead of the current section-driven flow everywhere the spec expects it.
+- [x] Keep Match workflow options fully right-inspector centric.
 - [x] Preserve truthful defaults, overrides, setup-once, and apply-from-first behavior.
 
 Progress note (`2026-05-24`):
@@ -88,6 +100,11 @@ Progress note (`2026-05-24`):
 - The tile/main-area workflow, setup-once flow, shared defaults, and per-stage overrides are covered.
 - The selected-stage lower pane and right-inspector workflow routing are now implemented in code.
 - The remaining gap is proof depth and artifact packaging for that new grammar.
+
+Proof closeout note (`2026-05-26`):
+
+- The lower-pane/workflow proof rerun stayed green with `4 passed` across `tests/browser/test_browser_interactions.py::test_match_workspace_setup_once_uses_preview_before_apply`, `tests/browser/test_browser_interactions.py::test_match_workspace_shared_defaults_apply_and_reset`, `tests/browser/test_browser_interactions.py::test_match_workspace_override_apply_and_reset_update_selected_stage`, and `tests/browser/test_browser_interactions.py::test_match_workspace_shell_keeps_selected_stage_detail_and_workflow_visible`.
+- `artifacts/match-proof-20260526/screenshots/match-loaded.png`, `match-recap.png`, `match-composite.png`, `match-export.png`, and `match-settings.png` now capture the right-inspector sections under the current shell.
 
 Depends on:
 
@@ -158,11 +175,20 @@ Proof:
 
 ## MCH-007 — Match done gate
 
-- [ ] Confirm Match-owned tests are green for the new contract.
-- [ ] Confirm shared-shell/backend dependencies used by Match are green.
-- [ ] Confirm recap/export artifacts exist for the new shell.
-- [ ] Confirm Stage handoff/return and auto-seed behavior are proven.
-- [ ] Confirm visual approval is recorded.
+- [x] Confirm Match-owned tests are green for the new contract.
+- [x] Confirm shared-shell/backend dependencies used by Match are green.
+- [x] Confirm recap/export artifacts exist for the new shell.
+- [x] Confirm Stage handoff/return and auto-seed behavior are proven.
+- [x] Confirm visual approval is recorded.
+
+Progress note (`2026-05-26`):
+
+- The shared shell/static/inventory/coverage pack stayed green with `49 passed in 169.86s (0:02:49)`.
+- The Match lifecycle/lower-pane proof reruns stayed green with `3 passed`, `2 passed`, and `4 passed`.
+- The Match recap/batch export/composite reruns stayed green with `2 passed`, `2 passed`, and `4 passed`.
+- The Match settings isolation rerun stayed green with `2 passed` across `tests/browser/test_browser_interactions.py::test_match_settings_persist_locally_and_control_match_return_selection` and `tests/browser/test_browser_interactions.py::test_performance_library_settings_remain_isolated_from_match_settings`.
+- `./.venv/bin/python scripts/docs/capture_match_proof.py` exited `0` and wrote the current acceptance bundle to `artifacts/match-proof-20260526/`, including `match-empty.png`, `match-loaded.png`, `match-recap.png`, `match-composite.png`, `match-export.png`, `match-settings.png`, `workspace/recap.mp4`, `workspace/exports/stage_1-stage_composite.mp4`, `workspace/exports/stage_2-stage_composite.mp4`, `workspace/auto-seed-proof.json`, and `workspace/composite-plan.json`.
+- No Match implementation defect was reopened during the rerun, so the Match done gate is closed.
 
 Depends on:
 

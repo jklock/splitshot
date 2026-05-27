@@ -2,1129 +2,626 @@
 
 ## Usage
 
-- This bundle tracks Work Effort 1 / Set 1 only.
-- The source bundles under `../predev/` remain the detailed truth; this file is the execution overlay for subagents.
-- Treat each atomic slice as incomplete until code, narrow validation, source ledgers, and aggregate ledgers all agree.
-- Do not count screenshots, proof packaging, artifact ledgers, final suite closure, or visual approval as development completion here.
+- This file is the active execution backlog for builder agents.
+- Treat every task as **not started** until the integrator records otherwise in `progress.md` and `outcome.md`.
+- Follow the task allowlist exactly. Do not widen scope on your own.
+- If a task would touch the same file as another active task, stop and ask the integrator to serialize or retag the work.
 
-## Subagent execution contract
+## Global execution rules
 
-- Assign one owner per atomic slice unless this file explicitly marks a safe parallel bundle.
-- Read the named source docs before touching code.
-- Keep changes inside the listed edit surface unless a directly imported helper seam forces a documented expansion.
-- Run commands from the repo root in this order: bootstrap only if needed, runtime health, targeted validation, broader suite validation only if the slice requires it, then ledger sync.
-- Update the touched source bundle and the aggregate `development/` ledgers in the same change.
-- If a first-order implementation blocker is discovered inside a proof-owned lane, reopen a development slice explicitly; do not bury it inside `testing/` language.
-- If no code change is required, still record the verification result and handoff status in the source and aggregate ledgers.
+0. Read this file end to end before starting any task.
+1. Read `spec.md`, `plan.md`, `progress.md`, `proof.md`, and `outcome.md` before starting.
+2. Read `stage-reference.md` and `match-reference.md` before touching any shared shell, route, or state seam.
+3. Workers edit only their allowed implementation files and task-local tests.
+4. Workers do **not** edit `progress.md`, `proof.md`, `outcome.md`, or shared source-lane ledgers.
+5. Only the integrator task may merge shared ledger updates after a wave closes.
+6. If a frozen-baseline reopen trigger fires, stop immediately and route it through the reopen protocol.
+
+Per-task `Read first` sections supplement these global rules; they do not replace them.
 
 ## Command policy
 
-- Environment repair only when needed: `uv sync --extra dev`
-- Runtime health before a new execution lane or cross-app handoff: `uv run splitshot --check`
-- Narrow Python validation: `./.venv/bin/python -m pytest ...`
-- Python lint after code changes: `uvx ruff check .`
-- Final repo-health anchor only at the integration handoff gate: `uv run python scripts/testing/run_test_suite.py --mode all-together --format table`
-- Record the exact command, exit status, and artifact path in the touched `outcome.md` / `artifacts.md` files.
+- For this bundle, this command policy overrides repo-level example commands for routine execution and verification.
+- Use the repo `.venv` executables for routine commands; do not use `uv run` as a harmless launcher.
+- Environment repair only when actually blocked: `uv sync --extra dev`
+- Runtime health: `./.venv/bin/splitshot --check`
+- Targeted tests: `./.venv/bin/python -m pytest ...`
+- Python lint after Python changes: `uvx ruff check .`
+- Final full-suite anchor for the integrator only: `./.venv/bin/python scripts/testing/run_test_suite.py --mode all-together --format table`
 
-## DEV-001 — Lock the Work Effort 1 boundary
+## Frozen-baseline guardrail pack
 
-- [x] Record the `development/` versus `testing/` split.
-- [x] Record the exact source-bundle mapping for Work Effort 1.
-- [x] Record that source `predev/tests/` is not the same thing as aggregate `testing/`.
-- [x] Add an execution schema that subagents can follow slice by slice.
-- [x] Add explicit command policy, blocker-routing, and parallelization rules to this file.
+Before merging any task that touched shared shell, state, server, or controller seams, keep the following guardrails green unless the task itself is a named reopen:
 
-Progress note (`2026-05-25`):
+- `tests/browser/test_automation_ui_shell_contracts.py`
+- `tests/browser/test_browser_static_ui.py`
+- `tests/browser/test_browser_interactions.py`
+- `tests/browser/test_workspace_flows.py`
+- `tests/browser/test_workspace_export_and_recap.py`
+- `tests/browser/test_practiscore_session_api.py`
+- `tests/browser/test_practiscore_sync_controller.py`
 
-- The aggregate Work Effort 1 bundle now defines atomic slices, command policy, and subagent-safe execution rules.
-- `../MASTER_STATUS.md`, `../README.md`, and `../RECOVERY_NEXT_STEPS.md` remain the cross-bundle coordination points for this split.
-- The detailed source bundles for this split live under `../predev/`.
+## Task state matrix
 
-Parallelization:
+| Task | State | Depends on |
+| --- | --- | --- |
+| `DEV-001` | `complete` | — |
+| `DEV-101` | `complete` | `DEV-001` |
+| `DEV-102` | `complete` | `DEV-001` |
+| `DEV-103` | `complete` | `DEV-001` |
+| `DEV-104` | `complete` | `DEV-001` |
+| `DEV-105` | `complete` | `DEV-102`, `DEV-103`, `DEV-104` |
+| `DEV-106` | `complete` | `DEV-101`, `DEV-102`, `DEV-103`, `DEV-105` |
+| `DEV-107` | `complete` | `DEV-101`, `DEV-105`, `DEV-106` |
+| `DEV-201` | `complete` | `DEV-106`, `DEV-107` |
+| `DEV-301` | `complete` | `DEV-201` and all prior worker lanes |
 
-- Must be complete before any other `DEV-*` slice starts.
+## DEV-001 — Freeze contract and execution preflight
 
-Required sources:
+Owner type:
 
-- `plan.md`
+- integrator only
+
+Depends on:
+
+- none
+
+Can run in parallel with:
+
+- none
+
+Read first:
+
 - `spec.md`
+- `plan.md`
+- `progress.md`
+- `proof.md`
 - `outcome.md`
-- `artifacts.md`
-- `../MASTER_STATUS.md`
-- `../RECOVERY_NEXT_STEPS.md`
-
-Commands:
-
-- No code command is required unless the work-effort boundary changes again.
-
-Exit criteria:
-
-- Every later slice can rely on this file for scope, command policy, blocker routing, and parallelization rules.
-
-## DEV-002 — Stage baseline integrity gate
-
-Source scope:
-
-- `STG-001` through `STG-006`
-
-Parallelization:
-
-- Must finish before any slice that changes shared Stage shell, Project-pane defaults, or Stage parity behavior.
-- May run as a verification audit in parallel with `DEV-003A` and `DEV-004A` after `DEV-001` is locked.
-
-Read first:
-
-- `../predev/stage/plan.md`
-- `../predev/stage/spec.md`
-- `../predev/stage/tasks.md`
-- `../predev/stage/outcome.md`
-- `../predev/stage/artifacts.md`
+- `stage-reference.md`
+- `match-reference.md`
 
 Allowed edit surface:
 
-- `src/splitshot/browser/static/index.html`
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/styles/layout.css`
-- `src/splitshot/ui/controller.py`
-- `../predev/stage/tasks.md`
-- `../predev/stage/outcome.md`
-- `../predev/stage/artifacts.md`
+- `spec.md`
+- `plan.md`
+- `tasks.md`
+- `progress.md`
+- `proof.md`
 - `outcome.md`
+- `orchestration.prompt.md`
 - `artifacts.md`
 
-Do not claim here:
+Forbidden edit surface:
 
-- `STG-007`
-- `STG-008`
-- screenshots
-- visual approval
-- final proof/signoff closure
+- `src/**`
+- `tests/**`
+- `../predev/**`
+
+Deliverables:
+
+- freeze rules confirmed live
+- task-state matrix confirmed accurate
+- first parallel wave released in `progress.md`
 
 Execute:
 
-- [x] Carry forward `STG-001` through `STG-006` as Work Effort 1 scope.
-- [x] Keep Stage shell, Project redistribution, defaults, regression closure, and parity implementation out of testing rework unless a real implementation blocker is discovered.
-- [x] Verify that no newly touched code reopens the Stage shell, import/defaults, waveform/review, or PractiScore contracts.
-- [x] If a blocker exists, land the smallest code fix required to restore the Stage baseline and name the reopened Stage seam explicitly in `../predev/stage/outcome.md`; no Stage reopen was required in the current pass.
-- [x] Record either `no reopen required` or the reopened blocker plus its residual risk in the Stage and aggregate ledgers.
+1. Confirm the document set matches `spec.md`.
+2. Confirm Stage and Match freeze references are current.
+3. Confirm the worker/integrator split is explicit.
+4. Release the first parallel wave only after all rules are stable.
 
-Progress note (`2026-05-25`):
+Required validation:
 
-- The current closeout audit re-ran runtime health plus the Stage shell/static, project/defaults/import, waveform/review/overlay, and PractiScore guardrail packs.
-- The audit stayed green with `44 passed`, `13 passed`, `37 passed`, and `16 passed`, and no Stage-owned code seam required a Work Effort 1 reopen.
-- Remaining Stage work stays confined to `STG-008` final-gate proof/signoff closure in `testing/`.
+- doc self-consistency review only; no code validation required
 
-Commands:
+Done when:
 
-- Preflight when Stage-owned code changed: `uv run splitshot --check`
-- Shell/static regression pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py tests/browser/test_browser_rail_layout.py`
-- Project/defaults/import pack: `./.venv/bin/python -m pytest tests/browser/test_project_lifecycle_contracts.py tests/browser/test_merge_export_contracts.py`
-- Review/waveform/overlay pack when those surfaces changed: `./.venv/bin/python -m pytest tests/browser/test_timing_waveform_contracts.py tests/browser/test_overlay_review_contracts.py tests/browser/test_browser_remaining_controls_e2e.py`
-- PractiScore/session guardrail when Project-pane Stage import behavior changed: `./.venv/bin/python -m pytest tests/browser/test_practiscore_session_api.py tests/browser/test_practiscore_sync_controller.py`
-- Lint after Python changes: `uvx ruff check .`
+- builders can start `DEV-101`, `DEV-102`, `DEV-103`, and `DEV-104` without asking for missing rules
 
-Update when done:
+## DEV-101 — API runtime boundary lane
 
-- `../predev/stage/outcome.md`
-- `../predev/stage/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+Owner type:
 
-Exit criteria:
-
-- The Stage baseline remains implementation-complete through `STG-006`.
-- Any true Stage regression is either fixed now or explicitly reopened as development work.
-- Only testing-owned proof/signoff work remains for Stage.
-
-## DEV-003 — Match implementation closure umbrella
-
-Source scope:
-
-- `MCH-001`
-- implementation side of `MCH-002` through `MCH-006`
-
-Parallelization:
-
-- `DEV-003A` and `DEV-003B` may run in parallel after `DEV-002`.
-- `DEV-003C` is the single-owner Match integrator and must run after `DEV-003A` and `DEV-003B`.
-
-Read first:
-
-- `../predev/match/plan.md`
-- `../predev/match/spec.md`
-- `../predev/match/tasks.md`
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `../predev/stage/spec.md`
-- `../predev/stage/tasks.md`
-
-Do not claim anywhere in `DEV-003`:
-
-- `MCH-007`
-- screenshots
-- recap/composite/export proof package
-- visual approval
-
-### DEV-003A — Match auto-seed and workspace lifecycle integrity
+- worker
 
 Depends on:
 
 - `DEV-001`
-- `DEV-002`
 
 Can run in parallel with:
 
-- `DEV-003B`
-- `DEV-004A`
-- `DEV-004B`
+- `DEV-102`
+- `DEV-103`
+- `DEV-104`
+
+Read first:
+
+- `spec.md`
+- `proof.md`
+- `stage-reference.md`
+- `match-reference.md`
 
 Allowed edit surface:
 
-- `src/splitshot/ui/controller.py`
+- `src/splitshot/browser/static/lib/api.js`
+- `tests/browser/test_browser_control.py`
+
+Forbidden edit surface:
+
+- `src/splitshot/browser/static/app.js`
 - `src/splitshot/browser/server.py`
 - `src/splitshot/browser/state.py`
-- `../predev/match/tasks.md`
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+- `src/splitshot/ui/controller.py`
+- `src/splitshot/browser/static/views/match-view.js`
+
+Deliverables:
+
+- explicit route-response ownership remains correct
+- no accidental remote-state apply on structured responses
 
 Execute:
 
-- [x] Verify Stage project open/save continues to auto-attach or auto-create Match membership where the source bundle expects it.
-- [x] Verify Stage open and return-to-Match context remains stable.
-- [x] Land the smallest controller/state fix needed if the lifecycle contract drifted; no lifecycle drift requiring a code change was found in the current pass.
-- [x] Record any remaining proof-only work for `testing/` without claiming it complete here.
+1. Audit which responses own full remote state and which are structured payloads only.
+2. Tighten the response-ownership boundary without changing Stage or Match semantics.
+3. Update only task-local tests needed to prove the boundary.
 
-Progress note (`2026-05-25`):
+Required validation:
 
-- The current closeout audit re-ran the Match auto-attach / auto-create controller pack (`2 passed`), the Stage-open shell-return pack (`1 passed`), and the Match open/save smoke pack (`2 passed`).
-- No Match lifecycle reopen was required; the remaining Match work stays in proof/signoff packaging owned by `testing/`.
+- `./.venv/bin/python -m pytest tests/browser/test_browser_control.py tests/browser/test_automation_ui_shell_contracts.py`
 
-Commands:
+Done when:
 
-- Preflight when controller/server/state changed: `uv run splitshot --check`
-- Auto-attach / auto-create controller pack: `./.venv/bin/python -m pytest tests/browser/test_workspace_flows.py -k "open_project_inside_saved_workspace_auto_attaches_stage_membership or save_project_without_saved_workspace_auto_creates_unsaved_match_membership"`
-- Browser lifecycle shell-return pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context`
-- Workspace lifecycle smoke pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_workspace_open_button_uses_picker_and_loads_saved_workspace tests/browser/test_browser_interactions.py::test_match_workspace_save_button_uses_picker_for_first_save`
-- Lint after Python changes: `uvx ruff check .`
+- route-response ownership is explicit and task-local tests stay green
 
-Update when done:
+## DEV-102 — Server route-dispatch modularization lane
 
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+Owner type:
 
-Exit criteria:
-
-- Match lifecycle implementation is stable enough that Work Effort 2 only has proof/signoff work left for this seam.
-
-### DEV-003B — Match lower-pane and right-inspector implementation integrity
+- worker
 
 Depends on:
 
 - `DEV-001`
-- `DEV-002`
 
 Can run in parallel with:
 
-- `DEV-003A`
-- `DEV-004A`
-- `DEV-004B`
+- `DEV-101`
+- `DEV-103`
+- `DEV-104`
+
+Read first:
+
+- `spec.md`
+- `plan.md`
+- `../predev/backend/spec.md`
 
 Allowed edit surface:
 
-- `src/splitshot/browser/static/app.js`
+- `src/splitshot/browser/server.py`
+- `tests/browser/test_landing_backend_routes.py`
+- `tests/browser/test_automation_ui_shell_contracts.py`
+
+Forbidden edit surface:
+
+- `src/splitshot/ui/controller.py` except for import or call-site wiring already required by the existing interface
+- `src/splitshot/browser/state.py`
+- `src/splitshot/browser/static/views/match-view.js`
+- `src/splitshot/browser/static/panes/**`
+
+Deliverables:
+
+- route families grouped more explicitly by owner
+- `landing_recent` dispatch delegates to a single backend owner
+- no public route URL changes
+
+Execute:
+
+1. Refactor route dispatch so owner families are clearer.
+2. Keep public route paths unchanged.
+3. Ensure landing recent uses a single backend owner rather than duplicated logic.
+
+Required validation:
+
+- `./.venv/bin/python -m pytest tests/browser/test_landing_backend_routes.py tests/browser/test_automation_ui_shell_contracts.py`
+
+Done when:
+
+- route dispatch is clearer and the landing route contract remains green
+
+## DEV-103 — `/api/state` summary-contract lane
+
+Owner type:
+
+- worker
+
+Depends on:
+
+- `DEV-001`
+
+Can run in parallel with:
+
+- `DEV-101`
+- `DEV-102`
+- `DEV-104`
+
+Read first:
+
+- `spec.md`
+- `proof.md`
+- `../predev/backend/spec.md`
+- `stage-reference.md`
+- `match-reference.md`
+
+Allowed edit surface:
+
+- `src/splitshot/browser/state.py`
+- `tests/browser/test_library_backend_contracts.py`
+
+Forbidden edit surface:
+
+- `src/splitshot/browser/server.py`
+- `src/splitshot/ui/controller.py`
+- Match workspace state semantics in frozen keys unless preserved exactly
+
+Deliverables:
+
+- explicit shared, Stage, Match, and Performance Library summary slices
+- heavy workflow payloads kept off `/api/state`
+
+Execute:
+
+1. Split summary building into explicit slices.
+2. Keep `/api/state` summary-only.
+3. Preserve frozen Match and Stage summary semantics while clarifying ownership.
+
+Required validation:
+
+- `./.venv/bin/python -m pytest tests/browser/test_browser_control.py tests/browser/test_library_backend_contracts.py`
+
+Done when:
+
+- summary slices are explicit and tests confirm no contract drift
+
+## DEV-104 — Persistence-support lane
+
+Owner type:
+
+- integrator only
+
+Depends on:
+
+- `DEV-001`
+
+Can run in parallel with:
+
+- `DEV-101`
+- `DEV-102`
+- `DEV-103`
+
+Read first:
+
+- `spec.md`
+- `../predev/backend/spec.md`
+
+Allowed edit surface:
+
+- `src/splitshot/persistence/library.py`
+- `src/splitshot/persistence/projects.py`
+- `tests/persistence/**`
+
+Forbidden edit surface:
+
+- `src/splitshot/persistence/workspaces.py`
+- `src/splitshot/ui/controller.py`
+- `src/splitshot/browser/static/**`
+
+Deliverables:
+
+- helper seams for recent activity and library-backed support data
+- no workspace schema or per-stage project format changes
+
+Execute:
+
+1. Add or tighten persistence helpers needed by Landing/shared backend work.
+2. Preserve current project and library truth contracts.
+3. Do not modify workspace schema behavior.
+
+Required validation:
+
+- `./.venv/bin/python -m pytest tests/persistence`
+
+Done when:
+
+- persistence helpers support later shared-service work without changing frozen schemas
+
+## DEV-105 — Shared controller/service lane
+
+Owner type:
+
+- worker
+
+Depends on:
+
+- `DEV-102`
+- `DEV-103`
+- `DEV-104`
+
+Can run in parallel with:
+
+- none
+
+Read first:
+
+- `spec.md`
+- `proof.md`
+- `../predev/backend/spec.md`
+
+Allowed edit surface:
+
+- `src/splitshot/ui/controller.py`
+- `src/splitshot/ui/services/**` (new files may be created here if needed)
+- `tests/browser/test_landing_backend_routes.py`
+- `tests/browser/test_practiscore_session_api.py`
+- `tests/browser/test_practiscore_sync_controller.py`
+- `tests/browser/test_library_backend_contracts.py`
+
+Forbidden edit surface:
+
+- semantic changes to `workspace_*` methods
+- semantic changes to Stage analysis/scoring methods
+- `src/splitshot/browser/static/views/match-view.js`
+
+Deliverables:
+
+- shared non-Stage/non-Match responsibilities isolated behind clearer seams
+- no hidden behavior changes to frozen workspace or Stage editor flows
+
+Execute:
+
+1. Isolate shared controller responsibilities such as landing, proxy, backup, and shared support behavior.
+2. Keep frozen Match workspace and Stage editing methods behaviorally unchanged.
+3. Use thin delegation if new shared-service modules are introduced.
+
+Required validation:
+
+- `./.venv/bin/python -m pytest tests/browser/test_landing_backend_routes.py tests/browser/test_practiscore_session_api.py tests/browser/test_practiscore_sync_controller.py tests/browser/test_library_backend_contracts.py`
+- `uvx ruff check .`
+
+Done when:
+
+- shared services are clearer and protected frozen behaviors still test green
+
+## DEV-106 — Landing UI backend-adoption lane
+
+Owner type:
+
+- worker
+
+Depends on:
+
+- `DEV-101`
+- `DEV-102`
+- `DEV-103`
+- `DEV-105`
+
+Can run in parallel with:
+
+- none
+
+Read first:
+
+- `spec.md`
+- `proof.md`
+- `stage-reference.md`
+- `match-reference.md`
+
+Allowed edit surface:
+
+- `src/splitshot/browser/static/app.js` (landing functions and landing event wiring only)
+- `src/splitshot/ui/services/shared_backend.py` (landing recent payload shaping only)
+- `src/splitshot/browser/static/index.html` (landing section only)
+- `src/splitshot/browser/static/styles/landing.css`
+- `tests/browser/test_landing_backend_routes.py`
+- `tests/browser/test_browser_static_ui.py`
+
+Forbidden edit surface:
+
+- non-landing `app.js` orchestration
 - `src/splitshot/browser/static/lib/shell-runtime.js`
 - `src/splitshot/browser/static/views/match-view.js`
-- `src/splitshot/browser/static/index.html`
-- `../predev/match/tasks.md`
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+- `src/splitshot/browser/static/panes/**`
+
+Deliverables:
+
+- Landing recent activity is backend-driven
+- local browser storage is no longer the authoritative landing truth
+- `Recent Stages` remains truthful even when newer match or library recents exist
 
 Execute:
 
-- [x] Verify the selected-stage lower pane remains the information owner for Match where the source spec expects it.
-- [x] Verify workflow sections remain right-inspector centric.
-- [x] Keep shared defaults, overrides, setup-once, and apply-from-first behavior stable.
-- [x] Land the smallest shell/runtime/view fix needed if the implementation grammar drifted; no grammar drift requiring a code change was found in the current pass.
+1. Replace landing recent-activity truth sourced only from browser local storage.
+2. Use the backend contract as the authoritative source.
+3. Preserve stage entries in the landing payload before truncation so mixed recents cannot crowd them out.
+4. Preserve current landing navigation and user-facing labels.
 
-Progress note (`2026-05-25`):
+Required validation:
 
-- The shared-shell contract pack stayed green (`44 passed`), and the focused lower-pane/workflow pack stayed green (`4 passed`).
-- Match lower-pane truth, right-inspector workflow ownership, and defaults/override behavior remain implementation-stable for Work Effort 1 handoff.
+- `./.venv/bin/python -m pytest tests/browser/test_landing_backend_routes.py tests/browser/test_browser_static_ui.py`
 
-Commands:
+Done when:
 
-- Shell/static contract pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py tests/browser/test_browser_rail_layout.py`
-- Match lower-pane and workflow pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_workspace_setup_once_uses_preview_before_apply tests/browser/test_browser_interactions.py::test_match_workspace_shared_defaults_apply_and_reset tests/browser/test_browser_interactions.py::test_match_workspace_override_apply_and_reset_update_selected_stage tests/browser/test_browser_interactions.py::test_match_workspace_shell_keeps_selected_stage_detail_and_workflow_visible`
-- Lint after JavaScript-adjacent Python changes only: `uvx ruff check .`
+- Landing reflects backend truth and no frozen app behavior is touched
 
-Update when done:
+## DEV-107 — Root-shell registration and fallback-cleanup lane
 
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+Owner type:
 
-Exit criteria:
-
-- Match implementation grammar is stable enough that screenshots and proof packaging can remain wholly in Work Effort 2.
-
-### DEV-003C — Match implementation integrator and handoff check
+- worker
 
 Depends on:
 
-- `DEV-003A`
-- `DEV-003B`
+- `DEV-101`
+- `DEV-105`
+- `DEV-106`
 
-Must stay serialized with:
+Can run in parallel with:
 
-- `DEV-007`
-
-Allowed edit surface:
-
-- `../predev/match/tasks.md`
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Confirm `MCH-001` plus the implementation side of `MCH-002` through `MCH-006` are either implementation-complete or explicitly deferred.
-- [x] Confirm `MCH-007`, screenshots, recap/export artifact proof, and visual approval remain reserved for `testing/`.
-- [x] Record any residual implementation blocker as a named reopen item rather than vague risk text; no residual Match implementation blocker remained in the current pass.
-
-Progress note (`2026-05-25`):
-
-- The current closeout audit confirmed that Work Effort 1 owns only the implementation side of `MCH-001` through `MCH-006`, while `MCH-007` and the remaining screenshot/artifact/signoff work stay reserved for `testing/`.
-- No Match implementation reopen was required in the aggregate handoff.
-
-Commands:
-
-- Match integration smoke pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py tests/browser/test_workspace_flows.py`
-
-Update when done:
-
-- `../predev/match/outcome.md`
-- `../predev/match/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Match is ready to hand off only proof/signoff work into `testing/`.
-
-## DEV-004 — Performance implementation closure umbrella
-
-Source scope:
-
-- `PRF-001`
-- implementation side of `PRF-002` through `PRF-005`
-
-Parallelization:
-
-- `DEV-004A` and `DEV-004B` may run in parallel after `DEV-002`.
-- `DEV-004C` is the single-owner Performance integrator and must run after `DEV-004A` and `DEV-004B`.
+- none
 
 Read first:
 
-- `../predev/performance/plan.md`
-- `../predev/performance/spec.md`
-- `../predev/performance/tasks.md`
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `../predev/stage/spec.md`
+- `spec.md`
+- `plan.md`
+- `stage-reference.md`
+- `match-reference.md`
 
-Do not claim anywhere in `DEV-004`:
+Allowed edit surface:
 
-- `PRF-006`
-- `PRF-007`
-- screenshots
-- backup/export proof package
-- visual approval
+- `src/splitshot/browser/static/app.js` (non-landing shell orchestration only)
+- `src/splitshot/browser/static/lib/global-compat.js`
+- `tests/browser/test_automation_ui_shell_contracts.py`
+- `tests/browser/test_browser_static_ui.py`
+- `tests/browser/test_browser_interactions.py`
 
-### DEV-004A — Performance shell, lower-pane, and reopen integrity
+Forbidden edit surface:
+
+- `src/splitshot/browser/static/views/match-view.js`
+- `src/splitshot/browser/static/panes/**`
+- protected frozen route semantics
+
+Deliverables:
+
+- less fallback ownership in the root shell
+- clearer app registration and shell-only responsibilities
+
+Execute:
+
+1. Remove or reduce legacy fallback ownership in the root shell where delegate-first behavior already exists.
+2. Keep Stage and Match user-visible behavior unchanged.
+3. Keep shared shell limited to landing/home/surface switch/global status/app registration.
+
+Required validation:
+
+- `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py tests/browser/test_browser_interactions.py tests/browser/test_workspace_flows.py`
+
+Done when:
+
+- shell ownership is smaller and guardrail packs prove no frozen-baseline drift
+
+## DEV-201 — Frozen-baseline proof-audit lane
+
+Owner type:
+
+- integrator only
 
 Depends on:
 
-- `DEV-001`
-- `DEV-002`
+- `DEV-106`
+- `DEV-107`
 
 Can run in parallel with:
 
-- `DEV-004B`
-- `DEV-003A`
-- `DEV-003B`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- `src/splitshot/browser/static/views/library-view.js`
-- `src/splitshot/browser/static/index.html`
-- `../predev/performance/tasks.md`
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Verify the lower pane remains the selected-record detail owner where the Performance spec expects it.
-- [x] Verify filters, actions, and settings stay in the right inspector.
-- [x] Verify Stage/workspace reopen behavior remains stable from the current shell.
-- [x] Land the smallest shell/runtime/view fix needed if this grammar drifted; no Performance shell grammar drift requiring a code change remained after the current pass.
-
-Progress note (`2026-05-25`):
-
-- Existing Work Effort 1 anchors remain sufficient for closeout: the shared-shell/control-inventory pack (`50 passed`), the focused Performance/PractiScore recovery slice (`13 passed`), and the cross-surface reopen guardrail pack (`18 passed`).
-- No Work Effort 1 reopen was required for the Performance lower-pane/right-inspector grammar or reopen flows.
-
-Commands:
-
-- Shell/static contract pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py tests/browser/test_browser_rail_layout.py`
-- Performance shell/reopen pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_performance_library_shows_loading_and_recovers_from_route_failure tests/browser/test_browser_interactions.py::test_performance_library_can_reopen_stage_and_workspace_from_selected_record`
-- Detail-grammar smoke pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_performance_library_search_filters_records_and_keeps_lower_detail_truth`
-
-Update when done:
-
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Performance shell and reopen behavior are implementation-stable enough that Work Effort 2 only needs proof, screenshots, and final closeout.
-
-### DEV-004B — Performance search, analytics, backup, and export implementation integrity
-
-Depends on:
-
-- `DEV-001`
-- `DEV-002`
-
-Can run in parallel with:
-
-- `DEV-004A`
-- `DEV-003A`
-- `DEV-003B`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/views/library-view.js`
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `src/splitshot/ui/controller.py`
-- `../predev/performance/tasks.md`
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Verify search, sort, and filter behavior remains implementation-complete.
-- [x] Verify note/tag persistence and analytics truth remain stable.
-- [x] Verify backup and export implementation seams are code-complete even if proof packaging remains for `testing/`.
-- [x] Land the smallest backend/controller/view fix needed if the implementation seam drifted; no Performance backend/controller/view reopen was required in the current pass.
-
-Progress note (`2026-05-25`):
-
-- Existing source-ledger anchors already cover the Work Effort 1 implementation seam for search/detail, notes/tags persistence, analytics truth, settings isolation, and backend/export support.
-- Backup/export proof packaging remains reserved for `testing/`, but no first-order implementation blocker remained open in Work Effort 1.
-
-Commands:
-
-- Search/detail pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_performance_library_search_filters_records_and_keeps_lower_detail_truth`
-- Analytics and notes/tags pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_performance_library_detail_ui_persists_tag_add_remove_and_notes tests/browser/test_browser_interactions.py::test_performance_library_summary_tiles_and_personal_bests_follow_loaded_records`
-- Settings isolation pack when persistence changed: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_performance_library_settings_persist_and_manual_refresh_loads_records tests/browser/test_browser_interactions.py::test_performance_library_settings_remain_isolated_from_match_settings`
-- Backend/export smoke pack when backup/export code changed: `./.venv/bin/python -m pytest tests/browser/test_library_backend_contracts.py tests/export/test_export.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Performance implementation is stable enough that Work Effort 2 only needs proof packaging, screenshots, and final signoff.
-
-### DEV-004C — Performance implementation integrator and handoff check
-
-Depends on:
-
-- `DEV-004A`
-- `DEV-004B`
-
-Must stay serialized with:
-
-- `DEV-007`
-
-Allowed edit surface:
-
-- `../predev/performance/tasks.md`
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Confirm `PRF-001` plus the implementation side of `PRF-002` through `PRF-005` are either implementation-complete or explicitly deferred.
-- [x] Confirm `PRF-006`, `PRF-007`, screenshots, backup/export proof, and visual approval remain reserved for `testing/`.
-- [x] Record any residual implementation blocker as a named reopen item; no residual Performance implementation blocker remained after the current pass.
-
-Progress note (`2026-05-25`):
-
-- The aggregate handoff now treats the current Performance implementation baseline as closed for Work Effort 1, with `PRF-006`, `PRF-007`, and the remaining screenshot/artifact/signoff work explicitly reserved for `testing/`.
-- No Performance implementation reopen was required after the stale/error recovery fix and source-ledger sync.
-
-Commands:
-
-- Performance integration smoke pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py tests/browser/test_library_backend_contracts.py`
-
-Update when done:
-
-- `../predev/performance/outcome.md`
-- `../predev/performance/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Performance is ready to hand off only proof/signoff work into `testing/`.
-
-## DEV-005 — Backend implementation pass umbrella
-
-Source scope:
-
-- `BEK-001` through `BEK-006`
-
-Parallelization:
-
-- `DEV-005A` must finish first.
-- `DEV-005B` and `DEV-005C` must follow `DEV-005A`.
-- `DEV-005D` and `DEV-005E` may run in parallel after `DEV-005B` and `DEV-005C` are stable.
-- `DEV-005F` is the single-owner backend integrator and must run last inside the backend lane.
+- none
 
 Read first:
 
-- `../predev/backend/plan.md`
-- `../predev/backend/spec.md`
-- `../predev/backend/tasks.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-
-Resolved baseline for this umbrella:
-
-- The source backend docs now carry the explicit route/state inventory, `/api/state` summary families, and owning-test matrix needed for downstream backend slice closure.
-
-Progress note (`2026-05-25`):
-
-- The backend source bundle is now materially executed through `BEK-006`.
-- `../predev/backend/spec.md` now carries the explicit route/state inventory and `/api/state` summary families required by this umbrella.
-- Targeted backend/persistence/PractiScore/library packs are recorded in `../predev/backend/artifacts.md`, and the aggregate handoff now treats `BEK-007` / `BEK-008` as testing-owned proof/signoff work.
-
-### DEV-005A — Inventory route and state ownership
-
-Depends on:
-
-- `DEV-001`
-- `DEV-003C`
-- `DEV-004C`
-
-Must stay serialized before:
-
-- `DEV-005B`
-- `DEV-005C`
-- `DEV-005D`
-- `DEV-005E`
-- `DEV-005F`
+- `spec.md`
+- `proof.md`
+- `stage-reference.md`
+- `match-reference.md`
+- `docs/project/browser-control-qa-matrix.md`
 
 Allowed edit surface:
 
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `src/splitshot/ui/controller.py`
-- `../predev/backend/spec.md`
-- `../predev/backend/tasks.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+- `proof.md`
+- `stage-reference.md`
+- `match-reference.md`
+- `docs/project/browser-control-qa-matrix.md`
+- `docs/project/browser-control-coverage-plan.md`
+- `docs/project/browser-full-e2e-qa-plan.md`
+- `tests/browser/test_browser_control_coverage_matrix.py`
+- `tests/browser/test_browser_control_inventory_audit.py`
+
+Forbidden edit surface:
+
+- `src/**`
+- `../predev/**` except by integrator after acceptance
+
+Deliverables:
+
+- truthful proof-class mapping for Stage and Match control families
+- honest weakness ledger
+- required update checklist synchronized with current ownership
 
 Execute:
 
-- [x] Expand `../predev/backend/spec.md` with an explicit route table labeling every route as shared, Stage-facing, Match-facing, or Performance-facing.
-- [x] Expand `../predev/backend/spec.md` with an explicit `/api/state` summary key inventory.
-- [x] Record the owning test files and docs for each route/state family in `../predev/backend/artifacts.md`.
-- [x] Record any hidden ownership ambiguity as a blocker before later backend slices begin.
+1. Classify Stage and Match control families using the proof taxonomy.
+2. Update QA and coverage docs where ownership or claims shifted.
+3. Call out current weaknesses honestly instead of masking them with optimistic wording.
 
-Commands:
+Required validation:
 
-- Route inventory grep: `git --no-pager grep -n '"/api/' -- src/splitshot/browser/server.py src/splitshot/browser/static/app.js src/splitshot/browser/static/views`
-- State inventory grep: `git --no-pager grep -n '/api/state' -- src/splitshot/browser/server.py src/splitshot/browser/static/app.js src/splitshot/browser/static/views`
-- Shared-route contract pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_control.py`
+- `./.venv/bin/python -m pytest tests/browser/test_browser_control_coverage_matrix.py tests/browser/test_browser_control_inventory_audit.py`
 
-Update when done:
+Done when:
 
-- `../predev/backend/spec.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
+- frozen-baseline proof expectations are explicit enough that later proof work does not need to rediscover them
 
-Exit criteria:
+## DEV-301 — Integrator review, devil’s advocate, and handoff lane
 
-- Later backend slices can point at an explicit ownership inventory rather than general prose.
+Owner type:
 
-### DEV-005B — Harden `/api/state` summary contract
+- integrator only
 
 Depends on:
 
-- `DEV-005A`
+- `DEV-201` and all prior worker lanes
 
 Can run in parallel with:
 
-- `DEV-005C`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `src/splitshot/ui/controller.py`
-- `../predev/backend/spec.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Define exactly which summary slices are allowed in `/api/state` and which heavy payloads must stay on dedicated routes.
-- [x] Keep app-local settings and large workflow payloads out of `/api/state` unless the contract explicitly changes.
-- [x] Update source docs if the summary schema changes.
-
-Commands:
-
-- `/api/state` inventory grep: `git --no-pager grep -n '/api/state' -- src/splitshot/browser/server.py src/splitshot/browser/static/app.js src/splitshot/browser/static/views`
-- Summary-state validation pack: `./.venv/bin/python -m pytest tests/browser/test_browser_control.py tests/persistence/test_persistence.py tests/persistence/test_workspace_persistence.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/backend/spec.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- `/api/state` is explicitly summary-oriented and test-backed.
-
-### DEV-005C — Normalize status, error, and activity behavior
-
-Depends on:
-
-- `DEV-005A`
-
-Can run in parallel with:
-
-- `DEV-005B`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `src/splitshot/ui/controller.py`
-- `../predev/backend/spec.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Define consistent success/error payload expectations for shared routes.
-- [x] Keep browser-visible failures recoverable and explicit.
-- [x] Normalize activity/error behavior across import, sync, export, backup, and restore seams.
-
-Commands:
-
-- PractiScore/session error pack: `./.venv/bin/python -m pytest tests/browser/test_practiscore_session_api.py tests/browser/test_practiscore_sync_controller.py`
-- Browser lifecycle error pack: `./.venv/bin/python -m pytest tests/browser/test_project_lifecycle_contracts.py tests/browser/test_workspace_flows.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/backend/spec.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Shared backend error and status behavior is explicit enough for testing to package proof without rediscovering route semantics.
-
-### DEV-005D — Close persistence, reopen, and truth-hash behavior
-
-Depends on:
-
-- `DEV-005B`
-- `DEV-005C`
-
-Can run in parallel with:
-
-- `DEV-005E`
-
-Allowed edit surface:
-
-- `src/splitshot/ui/controller.py`
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `../predev/backend/tasks.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Keep workspace save/load/autosave deterministic.
-- [x] Keep open-stage and return-to-workspace identity stable.
-- [x] Keep workspace-to-library synchronization deterministic and truth-hash behavior stable.
-- [x] Keep shared export/backup/import persistence paths truthful.
-
-Commands:
-
-- Persistence pack: `./.venv/bin/python -m pytest tests/persistence/test_workspace_persistence.py tests/persistence/test_persistence.py tests/persistence/test_project_lifecycle_contracts.py`
-- Cross-app reopen/library sync pack: `./.venv/bin/python -m pytest tests/browser/test_project_lifecycle_contracts.py tests/browser/test_library_backend_contracts.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Persistence and reopen behavior are implementation-complete enough that Work Effort 2 only has proof/signoff left.
-
-### DEV-005E — Protect import and PractiScore contracts
-
-Depends on:
-
-- `DEV-005B`
-- `DEV-005C`
-
-Can run in parallel with:
-
-- `DEV-005D`
-
-Allowed edit surface:
-
-- `src/splitshot/ui/controller.py`
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `src/splitshot/scoring/practiscore.py`
-- `src/splitshot/scoring/practiscore_sync_normalize.py`
-- `src/splitshot/scoring/practiscore_web_extract.py`
-- `../predev/backend/tasks.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Preserve manual PractiScore file fallback and Stage-facing session/sync/options payload contracts.
-- [x] Preserve supported blank-project and saved-project import behavior.
-- [x] Keep recoverable remote-session and remote-import failures explicit.
-
-Commands:
-
-- PractiScore browser route pack: `./.venv/bin/python -m pytest tests/browser/test_practiscore_session_api.py tests/browser/test_practiscore_sync_controller.py`
-- Stage/Project import pack: `./.venv/bin/python -m pytest tests/browser/test_project_lifecycle_contracts.py`
-- Analysis import pack: `./.venv/bin/python -m pytest tests/analysis/test_practiscore_import.py tests/analysis/test_practiscore_sync_normalize.py tests/analysis/test_practiscore_web_extract.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Stage-facing import and PractiScore contracts are implementation-stable and clearly reserved for proof closure in `testing/`.
-
-### DEV-005F — Lock Match and Performance backend support
-
-Depends on:
-
-- `DEV-005D`
-- `DEV-005E`
-
-Must stay serialized before:
-
-- `DEV-007`
-
-Allowed edit surface:
-
-- `src/splitshot/ui/controller.py`
-- `src/splitshot/browser/server.py`
-- `src/splitshot/browser/state.py`
-- `../predev/backend/tasks.md`
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Confirm Match-facing workspace routes remain stable and namespaced.
-- [x] Confirm Performance-facing library routes remain stable and namespaced.
-- [x] Confirm reopen/export/backup support routes remain truthful for both apps.
-- [x] Record any dedicated app-route guarantees in the backend ledgers.
-
-Commands:
-
-- Match/Performance backend smoke pack: `./.venv/bin/python -m pytest tests/browser/test_workspace_flows.py tests/browser/test_browser_interactions.py tests/browser/test_library_backend_contracts.py`
-- Persistence cross-check: `./.venv/bin/python -m pytest tests/persistence/test_workspace_persistence.py tests/persistence/test_persistence.py`
-- Lint after Python changes: `uvx ruff check .`
-
-Update when done:
-
-- `../predev/backend/outcome.md`
-- `../predev/backend/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Backend implementation is explicit enough that `BEK-007` and `BEK-008` can remain pure proof/signoff work.
-
-## DEV-006 — Modularization implementation pass umbrella
-
-Source scope:
-
-- `MOD-001` through `MOD-005`
-
-Parallelization:
-
-- `DEV-006A` must run first.
-- `DEV-006B` must follow `DEV-006A`.
-- `DEV-006C` and `DEV-006D` may run in parallel after `DEV-006B` if one integrator owns merge/sync.
-- `DEV-006E` must run after `DEV-006C` and `DEV-006D`.
+- none
 
 Read first:
 
-- `../predev/modularization/plan.md`
-- `../predev/modularization/spec.md`
-- `../predev/modularization/tasks.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-
-Resolved baseline for this umbrella:
-
-- The source modularization docs now carry the explicit file/module ownership map, interface rules, persistence boundaries, and temporary exceptions needed for downstream slice closure.
-
-Progress note (`2026-05-25`):
-
-- The modularization source bundle is now materially executed through `MOD-005`.
-- `../predev/modularization/spec.md` now carries the explicit file/module ownership map, persistence boundaries, and temporary exceptions required by this umbrella.
-- The aggregate handoff now treats `MOD-006` / `MOD-007` as testing-owned proof/signoff work.
-
-### DEV-006A — Inventory current shell and module ownership
-
-Depends on:
-
-- `DEV-001`
-- `DEV-005F`
-
-Must stay serialized before:
-
-- `DEV-006B`
-- `DEV-006C`
-- `DEV-006D`
-- `DEV-006E`
+- `progress.md`
+- `proof.md`
+- `outcome.md`
+- all worker handoff packets
+- touched source-lane ledgers
 
 Allowed edit surface:
 
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- `src/splitshot/browser/static/views/match-view.js`
-- `src/splitshot/browser/static/views/library-view.js`
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
+- `progress.md`
+- `proof.md`
 - `outcome.md`
 - `artifacts.md`
+- touched `../predev/backend/*` and `../predev/modularization/*` ledgers when status moved
+- `orchestration.prompt.md` if execution rules changed during the wave
+
+Forbidden edit surface:
+
+- new implementation code unless fixing an integrator-only merge error
+
+Deliverables:
+
+- shared ledgers synchronized
+- review-agent findings resolved or recorded
+- explicit residual risks and next actions
 
 Execute:
 
-- [x] Expand `../predev/modularization/spec.md` with a file/module ownership map for `app.js`, shared runtime helpers, Match view, and Performance view.
-- [x] Record cross-app DOM queries, shared state seams, and hidden localStorage dependencies in `../predev/modularization/outcome.md`.
-- [x] Name any unavoidable temporary exceptions explicitly.
+1. Merge worker handoff results into `progress.md`, `proof.md`, and `outcome.md`.
+2. Run a review-agent pass, a devil’s-advocate pass, and a validation pass.
+3. Resolve or record every material finding.
+4. Update touched source-lane ledgers if task status actually moved.
+5. Publish the next-wave or handoff state clearly.
 
-Commands:
+Required validation:
 
-- Root orchestration inventory: `git --no-pager grep -n 'activeSurface' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib/shell-runtime.js src/splitshot/browser/static/views`
-- DOM dependency inventory: `git --no-pager grep -n 'querySelector' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib src/splitshot/browser/static/views`
-- Local persistence inventory: `git --no-pager grep -n 'localStorage' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib src/splitshot/browser/static/views`
-- Shell contract smoke pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py`
+- `./.venv/bin/splitshot --check`
+- `./.venv/bin/python -m pytest tests/browser/test_browser_control_coverage_matrix.py tests/browser/test_browser_control_inventory_audit.py`
+- `./.venv/bin/python scripts/testing/run_test_suite.py --mode all-together --format table` only when the integrator needs a fresh full-suite anchor
 
-Update when done:
+Done when:
 
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Later modularization slices can point at an explicit ownership map rather than inference.
-
-### DEV-006B — Define stable interfaces and dependency rules
-
-Depends on:
-
-- `DEV-006A`
-
-Must stay serialized before:
-
-- `DEV-006C`
-- `DEV-006D`
-- `DEV-006E`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- `src/splitshot/browser/static/views/match-view.js`
-- `src/splitshot/browser/static/views/library-view.js`
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Define which shell services `app.js` may own and which behaviors must move behind app-owned modules or helpers.
-- [x] Define shared-runtime helper boundaries.
-- [x] Define app-local persistence boundaries and any compatibility shims.
-
-Commands:
-
-- Shared-shell dependency inventory: `git --no-pager grep -n 'workspaceShell' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib/shell-runtime.js src/splitshot/browser/static/views`
-- Shared-shell contract pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_rail_layout.py`
-
-Update when done:
-
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- `DEV-006C` through `DEV-006E` can implement against a documented interface contract.
-
-### DEV-006C — Extract and isolate Stage-owned behavior
-
-Depends on:
-
-- `DEV-006B`
-
-Can run in parallel with:
-
-- `DEV-006D`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- Stage-owned pane or helper modules already wired by `app.js`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Move or isolate Stage-specific behavior out of generic shell logic where practical.
-- [x] Remove accidental Match/Performance knowledge from Stage code paths.
-- [x] Record any remaining exception explicitly if the extraction cannot fully land in this slice.
-
-Commands:
-
-- Stage-shell grep pack: `git --no-pager grep -n 'stage' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib/shell-runtime.js src/splitshot/browser/static/views`
-- Shell/static verification pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_static_ui.py tests/browser/test_browser_rail_layout.py`
-
-Update when done:
-
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Stage behavior is explicitly owned and no longer hiding inside generic shell seams.
-
-### DEV-006D — Constrain shared shell behavior
-
-Depends on:
-
-- `DEV-006B`
-
-Can run in parallel with:
-
-- `DEV-006C`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- `src/splitshot/browser/static/views/match-view.js`
-- `src/splitshot/browser/static/views/library-view.js`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Keep `app.js` focused on landing, switching, shared status, and shared settings entry points.
-- [x] Remove accidental Match or Performance feature ownership from root orchestration.
-- [x] Record any temporary shared-shell exception explicitly.
-
-Commands:
-
-- Root orchestration grep: `git --no-pager grep -n 'setActiveSurface\|activeSurface\|refresh' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/views`
-- Shared-shell contract pack: `./.venv/bin/python -m pytest tests/browser/test_automation_ui_shell_contracts.py tests/browser/test_browser_rail_layout.py tests/browser/test_browser_static_ui.py`
-
-Update when done:
-
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- Shared shell scope is explicit enough that testing can prove it without discovering fresh architecture work.
-
-### DEV-006E — Isolate app-local persistence and settings
-
-Depends on:
-
-- `DEV-006C`
-- `DEV-006D`
-
-Must stay serialized before:
-
-- `DEV-007`
-
-Allowed edit surface:
-
-- `src/splitshot/browser/static/app.js`
-- `src/splitshot/browser/static/lib/shell-runtime.js`
-- `src/splitshot/browser/static/views/match-view.js`
-- `src/splitshot/browser/static/views/library-view.js`
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Verify app-local settings and persistence keys remain scoped by app.
-- [x] Prevent one app’s reload path from mutating another app’s local state.
-- [x] Record any migration or compatibility shim in the source and aggregate ledgers.
-
-Commands:
-
-- Local persistence inventory: `git --no-pager grep -n 'localStorage' -- src/splitshot/browser/static/app.js src/splitshot/browser/static/lib src/splitshot/browser/static/views`
-- Settings isolation pack: `./.venv/bin/python -m pytest tests/browser/test_browser_interactions.py::test_match_settings_persist_locally_and_control_match_return_selection tests/browser/test_browser_interactions.py::test_performance_library_settings_persist_and_manual_refresh_loads_records tests/browser/test_browser_interactions.py::test_performance_library_settings_remain_isolated_from_match_settings`
-
-Update when done:
-
-- `../predev/modularization/spec.md`
-- `../predev/modularization/outcome.md`
-- `../predev/modularization/artifacts.md`
-- `outcome.md`
-- `artifacts.md`
-
-Exit criteria:
-
-- App-local persistence and settings are isolated enough that Work Effort 2 can verify them without finding fresh architecture work.
-
-## DEV-007 — Development integration and handoff gate
-
-Parallelization:
-
-- Single-owner integrator only.
-
-Read first:
-
-- `../MASTER_STATUS.md`
-- `../RECOVERY_NEXT_STEPS.md`
-- `../predev/stage/outcome.md`
-- `../predev/match/outcome.md`
-- `../predev/performance/outcome.md`
-- `../predev/backend/outcome.md`
-- `../predev/modularization/outcome.md`
-- `outcome.md`
-- `artifacts.md`
-
-Execute:
-
-- [x] Confirm all mapped implementation slices are complete or explicitly deferred.
-- [x] Confirm only testing, proof, artifact, QA/doc sync, suite closure, and signoff work remain for Work Effort 2.
-- [x] Confirm the aggregate `development/` bundle and all touched source bundles describe the same implementation truth.
-- [x] Publish the Work Effort 2 handoff matrix by lane, including any residual implementation blockers or approved deferrals.
-
-Progress note (`2026-05-25`):
-
-- Work Effort 1 now hands off Backend and Modularization as implementation-advanced source bundles rather than planning baselines.
-- The current pass also resolved the Performance library stale/error recovery implementation blocker discovered during shell validation.
-- After ledger sync, only testing-owned proof/signoff work remains unless a new first-order implementation blocker is discovered.
-
-Commands:
-
-- Runtime health: `uv run splitshot --check`
-- Cross-doc audit pack: `./.venv/bin/python -m pytest tests/browser/test_browser_control_coverage_matrix.py tests/browser/test_browser_control_inventory_audit.py`
-- Broad owner-suite pack when shared shell or backend changed: `uv run python scripts/testing/run_test_suite.py --suite browser --suite persistence --suite analysis --mode all-together --format table --json-output artifacts/test-suite-development-handoff.json`
-- Canonical repo-health anchor when the integrator needs a fresh full-suite baseline: `uv run python scripts/testing/run_test_suite.py --mode all-together --format table --json-output artifacts/current-all-together.json`
-
-Update when done:
-
-- `outcome.md`
-- `artifacts.md`
-- every touched `../predev/*/outcome.md`
-- every touched `../predev/*/artifacts.md`
-
-Exit criteria:
-
-- Work Effort 1 is implementation-complete or has named, approved deferrals.
-- `testing/` inherits only proof/signoff work plus any explicitly reopened implementation blockers.
-- The development handoff matrix is explicit enough that parallel testing subagents do not need to rediscover scope.
+- shared docs agree, review findings are resolved or logged, and the next execution state is explicit

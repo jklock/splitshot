@@ -17,38 +17,13 @@ from splitshot.scoring.logic import (
 from splitshot.timeline.model import compute_split_rows
 
 
-def _build_workspace_context(
-    controller: Any | None,
-    *,
-    media_cache_token: str | None = None,
-) -> dict[str, Any]:
-    """Build workspace/scope context from controller state."""
-    if controller is None:
-        return {
-            "editor_scope": "single",
-            "active_match_id": None,
-            "active_stage_id": None,
-            "workspace_path": None,
-            "return_to_match_available": False,
-            "match_workspace_summary": None,
-            "workspace_stage_entries": [],
-            "workspace_shared_defaults": {},
-            "workspace_override_summary": {},
-            "output_profiles": [],
-            "inherited_setting_status": {},
-            "opened_from_match": None,
-            "stage_workspace_status": {},
-            "output_profile_summary": [],
-            "returned_stage_id": None,
-        }
-
-    workspace = getattr(controller, "workspace", None)
-    context: dict[str, Any] = {
-        "editor_scope": getattr(controller, "editor_scope", "single"),
-        "active_match_id": workspace.match_id if workspace else None,
-        "active_stage_id": getattr(controller, "active_stage_id", None),
-        "workspace_path": str(getattr(controller, "workspace_path", "") or "") or None,
-        "return_to_match_available": getattr(controller, "_return_to_workspace_available", False),
+def _default_workspace_context() -> dict[str, Any]:
+    return {
+        "editor_scope": "single",
+        "active_match_id": None,
+        "active_stage_id": None,
+        "workspace_path": None,
+        "return_to_match_available": False,
         "workspace": None,
         "match_workspace_summary": None,
         "workspace_stage_entries": [],
@@ -56,6 +31,31 @@ def _build_workspace_context(
         "workspace_override_summary": {},
         "output_profiles": [],
         "inherited_setting_status": {},
+        "opened_from_match": None,
+        "stage_workspace_status": {},
+        "output_profile_summary": [],
+        "returned_stage_id": None,
+    }
+
+
+def _build_workspace_context(
+    controller: Any | None,
+    *,
+    media_cache_token: str | None = None,
+) -> dict[str, Any]:
+    """Build workspace/scope context from controller state."""
+    context = _default_workspace_context()
+    if controller is None:
+        return context
+
+    workspace = getattr(controller, "workspace", None)
+    context.update(
+        {
+        "editor_scope": getattr(controller, "editor_scope", "single"),
+        "active_match_id": workspace.match_id if workspace else None,
+        "active_stage_id": getattr(controller, "active_stage_id", None),
+        "workspace_path": str(getattr(controller, "workspace_path", "") or "") or None,
+        "return_to_match_available": getattr(controller, "_return_to_workspace_available", False),
         "opened_from_match": (
             workspace.match_id
             if workspace
@@ -63,12 +63,11 @@ def _build_workspace_context(
             and getattr(controller, "_return_to_workspace_available", False)
             else None
         ),
-        "stage_workspace_status": {},
-        "output_profile_summary": [],
         "returned_stage_id": getattr(controller, "_last_returned_stage_id", None)
         if controller
         else None,
-    }
+        }
+    )
 
     if workspace is not None:
         context["match_workspace_summary"] = {
@@ -248,6 +247,23 @@ def _build_proxy_summary(controller: Any | None) -> dict[str, Any]:
     }
 
 
+def _build_performance_summary_slice(controller: Any | None) -> dict[str, Any]:
+    return {
+        "library_summary": deepcopy(_build_library_summary(controller)),
+        "proxy_summary": deepcopy(_build_proxy_summary(controller)),
+        "library_filters": [
+            "discipline",
+            "competitor",
+            "match_id",
+            "stage_id",
+            "sort_by",
+            "sort_order",
+        ],
+        "library_selection": None,
+        "library_reopen_targets": [],
+    }
+
+
 def _normalize_serialized_score(
     ruleset: str,
     score: dict[str, Any] | None,
@@ -367,18 +383,127 @@ def _normalize_practiscore_sync_payload(payload: object) -> dict[str, Any]:
     return normalized
 
 
-def browser_state(
-    project: Project,
-    status_message: str,
-    settings: dict[str, Any] | None = None,
-    settings_layers: dict[str, Any] | None = None,
-    practiscore_options: dict[str, Any] | None = None,
-    media_cache_token: str | None = None,
-    controller: Any | None = None,
-) -> dict[str, Any]:
-    # Extract workspace context when controller is available
-    workspace_context = _build_workspace_context(controller, media_cache_token=media_cache_token)
+def _default_practiscore_options_payload() -> dict[str, Any]:
+    return {
+        "has_source": False,
+        "source_name": "",
+        "detected_match_type": "",
+        "stage_numbers": [],
+        "competitors": [],
+    }
 
+
+def _build_practiscore_summary_slice(
+    practiscore_options: dict[str, Any] | None,
+) -> dict[str, Any]:
+    practiscore_payload = deepcopy(practiscore_options or {})
+    practiscore_session_payload = _normalize_practiscore_session_payload(
+        practiscore_payload.pop("_session_payload", None)
+    )
+    practiscore_sync_payload = _normalize_practiscore_sync_payload(
+        practiscore_payload.pop("_sync_payload", None)
+    )
+    return {
+        "practiscore_session": practiscore_session_payload,
+        "practiscore_sync": practiscore_sync_payload,
+        "practiscore_options": practiscore_payload or _default_practiscore_options_payload(),
+    }
+
+
+def _build_stage_media_summary(
+    project: Project,
+    *,
+    media_cache_token: str | None = None,
+) -> dict[str, Any]:
+    primary_path = Path(project.primary_video.path) if project.primary_video.path else None
+    secondary_path = (
+        Path(project.secondary_video.path)
+        if project.secondary_video is not None and project.secondary_video.path
+        else None
+    )
+    primary_available = bool(primary_path and primary_path.exists() and primary_path.is_file())
+    secondary_available = bool(
+        secondary_path and secondary_path.exists() and secondary_path.is_file()
+    )
+    return {
+        "primary_available": primary_available,
+        "secondary_available": secondary_available,
+        "primary_url": "/media/primary" if primary_available else None,
+        "secondary_url": "/media/secondary" if secondary_available else None,
+        "secondary_source_id": project.analysis.analyzed_secondary_source_id,
+        "cache_token": media_cache_token or "",
+    }
+
+
+def _augment_merge_source_summary(project_payload: dict[str, Any]) -> None:
+    merge_sources_payload = project_payload.get("merge_sources")
+    analysis_payload = project_payload.get("analysis")
+    if not isinstance(merge_sources_payload, list) or not isinstance(analysis_payload, dict):
+        return
+
+    analyzed_source_id = analysis_payload.get("analyzed_secondary_source_id")
+    first_analyzable_source_id = next(
+        (
+            item.get("id")
+            for item in merge_sources_payload
+            if isinstance(item, dict)
+            and isinstance(item.get("asset"), dict)
+            and not bool(item["asset"].get("is_still_image"))
+            and str(item["asset"].get("media_kind") or "video") != "animated_gif"
+        ),
+        None,
+    )
+    for item in merge_sources_payload:
+        if not isinstance(item, dict):
+            continue
+        asset_payload = item.get("asset")
+        if isinstance(asset_payload, dict):
+            item["media_kind"] = str(
+                asset_payload.get("media_kind")
+                or ("still_image" if asset_payload.get("is_still_image") else "video")
+            )
+        source_id = item.get("id")
+        supports_sync_analysis = bool(source_id and source_id == first_analyzable_source_id)
+        is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
+        item["is_analyzed_sync_source"] = is_analyzed_sync_source
+        item["supports_sync_analysis"] = supports_sync_analysis
+        item["can_rerun_sync_analysis"] = supports_sync_analysis
+        item["sync_analysis_status"] = (
+            str(analysis_payload.get("secondary_analysis_status") or "idle")
+            if is_analyzed_sync_source or supports_sync_analysis
+            else "idle"
+        )
+        item["sync_analysis_message"] = (
+            str(analysis_payload.get("secondary_analysis_message") or "")
+            if is_analyzed_sync_source or supports_sync_analysis
+            else ""
+        )
+        item["secondary_beep_time_ms"] = (
+            analysis_payload.get("beep_time_ms_secondary") if is_analyzed_sync_source else None
+        )
+        item["sync_offset_source"] = (
+            str(analysis_payload.get("secondary_sync_source") or "manual")
+            if is_analyzed_sync_source
+            or (
+                supports_sync_analysis and analysis_payload.get("beep_time_ms_secondary") is not None
+            )
+            else "manual"
+        )
+
+
+def _build_stage_project_payload(project: Project, ruleset: str) -> dict[str, Any]:
+    project_payload = project_to_dict(project)
+    _normalize_scoring_project_payload(project_payload, ruleset)
+    _normalize_timing_project_payload(project_payload, project)
+    _augment_merge_source_summary(project_payload)
+    return project_payload
+
+
+def _build_stage_summary_slice(
+    project: Project,
+    *,
+    media_cache_token: str | None = None,
+) -> dict[str, Any]:
     rows = compute_split_rows(project)
     shotml_project = deepcopy(project)
     for shot in shotml_project.analysis.shots:
@@ -392,68 +517,8 @@ def browser_state(
     presentation = build_stage_presentation(project)
     scoring_summary = dict(presentation.metrics.scoring_summary)
     ruleset = str(scoring_summary.get("ruleset") or project.scoring.ruleset)
-    practiscore_payload = deepcopy(practiscore_options or {})
-    practiscore_session_payload = _normalize_practiscore_session_payload(
-        practiscore_payload.pop("_session_payload", None)
-    )
-    practiscore_sync_payload = _normalize_practiscore_sync_payload(
-        practiscore_payload.pop("_sync_payload", None)
-    )
-    project_payload = project_to_dict(project)
-    _normalize_scoring_project_payload(project_payload, ruleset)
-    _normalize_timing_project_payload(project_payload, project)
-    merge_sources_payload = project_payload.get("merge_sources")
-    analysis_payload = project_payload.get("analysis")
-    if isinstance(merge_sources_payload, list) and isinstance(analysis_payload, dict):
-        analyzed_source_id = analysis_payload.get("analyzed_secondary_source_id")
-        first_analyzable_source_id = next(
-            (
-                item.get("id")
-                for item in merge_sources_payload
-                if isinstance(item, dict)
-                and isinstance(item.get("asset"), dict)
-                and not bool(item["asset"].get("is_still_image"))
-                and str(item["asset"].get("media_kind") or "video") != "animated_gif"
-            ),
-            None,
-        )
-        for item in merge_sources_payload:
-            if not isinstance(item, dict):
-                continue
-            asset_payload = item.get("asset")
-            if isinstance(asset_payload, dict):
-                item["media_kind"] = str(
-                    asset_payload.get("media_kind")
-                    or ("still_image" if asset_payload.get("is_still_image") else "video")
-                )
-            source_id = item.get("id")
-            supports_sync_analysis = bool(source_id and source_id == first_analyzable_source_id)
-            is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
-            item["is_analyzed_sync_source"] = is_analyzed_sync_source
-            item["supports_sync_analysis"] = supports_sync_analysis
-            item["can_rerun_sync_analysis"] = supports_sync_analysis
-            item["sync_analysis_status"] = (
-                str(analysis_payload.get("secondary_analysis_status") or "idle")
-                if is_analyzed_sync_source or supports_sync_analysis
-                else "idle"
-            )
-            item["sync_analysis_message"] = (
-                str(analysis_payload.get("secondary_analysis_message") or "")
-                if is_analyzed_sync_source or supports_sync_analysis
-                else ""
-            )
-            item["secondary_beep_time_ms"] = (
-                analysis_payload.get("beep_time_ms_secondary") if is_analyzed_sync_source else None
-            )
-            item["sync_offset_source"] = (
-                str(analysis_payload.get("secondary_sync_source") or "manual")
-                if is_analyzed_sync_source
-                or (
-                    supports_sync_analysis
-                    and analysis_payload.get("beep_time_ms_secondary") is not None
-                )
-                else "manual"
-            )
+    project_payload = _build_stage_project_payload(project, ruleset)
+
     split_rows_payload = []
     for row in rows:
         row_payload = _normalize_scoring_row_payload(asdict(row), ruleset)
@@ -470,61 +535,73 @@ def browser_state(
             )
             row_payload["final_time_ms"] = row.cumulative_ms
         split_rows_payload.append(row_payload)
+
     timing_segments_payload = [
         _normalize_scoring_row_payload(asdict(segment), ruleset)
         for segment in presentation.timing_segments
     ]
-    primary_path = Path(project.primary_video.path) if project.primary_video.path else None
-    secondary_path = (
-        Path(project.secondary_video.path)
-        if project.secondary_video is not None and project.secondary_video.path
-        else None
-    )
-    primary_available = bool(primary_path and primary_path.exists() and primary_path.is_file())
-    secondary_available = bool(
-        secondary_path and secondary_path.exists() and secondary_path.is_file()
-    )
+
     return {
-        "status": status_message,
         "project": project_payload,
-        "settings": settings or {},
-        "settings_layers": settings_layers or {},
         "metrics": asdict(presentation.metrics),
         "timing_segments": timing_segments_payload,
         "split_rows": split_rows_payload,
         "scoring_summary": scoring_summary,
         "scoring_presets": scoring_presets_for_api(),
-        "practiscore_session": practiscore_session_payload,
-        "practiscore_sync": practiscore_sync_payload,
-        "practiscore_options": practiscore_payload
-        or {
-            "has_source": False,
-            "source_name": "",
-            "detected_match_type": "",
-            "stage_numbers": [],
-            "competitors": [],
-        },
         "export_presets": export_presets_for_api(),
+        "media": _build_stage_media_summary(project, media_cache_token=media_cache_token),
+    }
+
+
+def _build_shared_summary_slice(
+    status_message: str,
+    *,
+    settings: dict[str, Any] | None = None,
+    settings_layers: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": status_message,
+        "settings": settings or {},
+        "settings_layers": settings_layers or {},
         "default_project_path": str(Path.home() / "splitshot"),
-        "media": {
-            "primary_available": primary_available,
-            "secondary_available": secondary_available,
-            "primary_url": "/media/primary" if primary_available else None,
-            "secondary_url": ("/media/secondary" if secondary_available else None),
-            "secondary_source_id": project.analysis.analyzed_secondary_source_id,
-            "cache_token": media_cache_token or "",
-        },
-        **workspace_context,
-        "library_summary": _build_library_summary(controller),
-        "proxy_summary": _build_proxy_summary(controller),
-        "library_filters": [
-            "discipline",
-            "competitor",
-            "match_id",
-            "stage_id",
-            "sort_by",
-            "sort_order",
-        ],
-        "library_selection": None,
-        "library_reopen_targets": [],
+    }
+
+
+def browser_state(
+    project: Project,
+    status_message: str,
+    settings: dict[str, Any] | None = None,
+    settings_layers: dict[str, Any] | None = None,
+    practiscore_options: dict[str, Any] | None = None,
+    media_cache_token: str | None = None,
+    controller: Any | None = None,
+) -> dict[str, Any]:
+    shared_summary = _build_shared_summary_slice(
+        status_message,
+        settings=settings,
+        settings_layers=settings_layers,
+    )
+    stage_summary = _build_stage_summary_slice(project, media_cache_token=media_cache_token)
+    practiscore_summary = _build_practiscore_summary_slice(practiscore_options)
+    workspace_summary = _build_workspace_context(controller, media_cache_token=media_cache_token)
+    performance_summary = _build_performance_summary_slice(controller)
+
+    return {
+        "status": shared_summary["status"],
+        "project": stage_summary["project"],
+        "settings": shared_summary["settings"],
+        "settings_layers": shared_summary["settings_layers"],
+        "metrics": stage_summary["metrics"],
+        "timing_segments": stage_summary["timing_segments"],
+        "split_rows": stage_summary["split_rows"],
+        "scoring_summary": stage_summary["scoring_summary"],
+        "scoring_presets": stage_summary["scoring_presets"],
+        "practiscore_session": practiscore_summary["practiscore_session"],
+        "practiscore_sync": practiscore_summary["practiscore_sync"],
+        "practiscore_options": practiscore_summary["practiscore_options"],
+        "export_presets": stage_summary["export_presets"],
+        "default_project_path": shared_summary["default_project_path"],
+        "media": stage_summary["media"],
+        **workspace_summary,
+        **performance_summary,
     }

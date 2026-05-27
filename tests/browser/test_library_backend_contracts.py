@@ -166,3 +166,277 @@ def test_backup_manifest_serializes() -> None:
     assert data["total_records"] == 100
     assert data["total_archives"] == 5
     assert data["record_ids"] == ["a", "b", "c"]
+
+
+def test_browser_state_keeps_summary_slices_explicit_and_lightweight(monkeypatch) -> None:
+    """/api/state should expose summary slices only and strip internal PractiScore payloads."""
+    from splitshot.browser import state as browser_state_module
+    from splitshot.domain.models import Project
+
+    library_summary = {
+        "stage_count": 7,
+        "match_count": 3,
+        "last_updated": "2026-05-25T12:00:00+00:00",
+        "filters_available": ["discipline", "competitor", "match_id", "stage_id", "sort_by"],
+        "selection": None,
+    }
+    proxy_summary = {
+        "active_proxy_id": "stage-7",
+        "proxy_stale": False,
+        "proxy_available": True,
+        "proxy_path": "/tmp/proxy.mp4",
+        "last_generated": "2026-05-25T12:05:00+00:00",
+    }
+
+    monkeypatch.setattr(browser_state_module, "_build_library_summary", lambda controller: library_summary)
+    monkeypatch.setattr(browser_state_module, "_build_proxy_summary", lambda controller: proxy_summary)
+
+    payload = browser_state_module.browser_state(
+        Project(),
+        "Ready.",
+        practiscore_options={
+            "has_source": True,
+            "source_name": "report.txt",
+            "detected_match_type": "uspsa",
+            "stage_numbers": [1],
+            "competitors": [{"name": "Ada Lovelace", "place": 1}],
+            "_session_payload": {
+                "state": "authenticated_ready",
+                "message": "Connected.",
+                "details": {"browser": "shared"},
+            },
+            "_sync_payload": {
+                "state": "match_list_ready",
+                "message": "Found 1 remote PractiScore match.",
+                "matches": [
+                    {
+                        "remote_id": "remote-1",
+                        "label": "Classifier",
+                        "match_type": "uspsa",
+                        "event_name": "Classifier",
+                        "event_date": "2026-05-25",
+                    }
+                ],
+                "selected_remote_id": "remote-1",
+                "details": {"match_count": 1},
+            },
+        },
+    )
+
+    assert payload["workspace"] is None
+    assert payload["match_workspace_summary"] is None
+    assert payload["workspace_stage_entries"] == []
+    assert payload["workspace_shared_defaults"] == {}
+    assert payload["workspace_override_summary"] == {}
+    assert payload["output_profiles"] == []
+    assert payload["output_profile_summary"] == []
+    assert payload["inherited_setting_status"] == {}
+    assert payload["library_summary"] == library_summary
+    assert payload["proxy_summary"] == proxy_summary
+    assert payload["library_filters"] == [
+        "discipline",
+        "competitor",
+        "match_id",
+        "stage_id",
+        "sort_by",
+        "sort_order",
+    ]
+    assert payload["library_selection"] is None
+    assert payload["library_reopen_targets"] == []
+
+    assert payload["practiscore_session"] == {
+        "state": "authenticated_ready",
+        "message": "Connected.",
+        "details": {"browser": "shared"},
+    }
+    assert payload["practiscore_sync"] == {
+        "state": "match_list_ready",
+        "message": "Found 1 remote PractiScore match.",
+        "matches": [
+            {
+                "remote_id": "remote-1",
+                "label": "Classifier",
+                "match_type": "uspsa",
+                "event_name": "Classifier",
+                "event_date": "2026-05-25",
+            }
+        ],
+        "selected_remote_id": "remote-1",
+        "error_category": "",
+        "details": {"match_count": 1},
+    }
+    assert payload["practiscore_options"] == {
+        "has_source": True,
+        "source_name": "report.txt",
+        "detected_match_type": "uspsa",
+        "stage_numbers": [1],
+        "competitors": [{"name": "Ada Lovelace", "place": 1}],
+    }
+
+    for forbidden_key in (
+        "library_records",
+        "library_results",
+        "library_analytics",
+        "workspace_stage_clips",
+        "workspace_export_payload",
+        "workspace_recap_payload",
+    ):
+        assert forbidden_key not in payload
+
+
+def test_browser_state_workspace_summary_stays_alias_only_without_heavy_stage_payloads(
+    monkeypatch,
+) -> None:
+    """Workspace slices should stay summary-sized and avoid stage workflow payloads."""
+    from splitshot.browser import state as browser_state_module
+    from splitshot.ui.controller import ProjectController
+
+    monkeypatch.setattr(
+        browser_state_module,
+        "_build_library_summary",
+        lambda controller: {
+            "stage_count": 0,
+            "match_count": 0,
+            "last_updated": None,
+            "filters_available": ["discipline", "competitor", "match_id", "stage_id", "sort_by"],
+            "selection": None,
+        },
+    )
+    monkeypatch.setattr(
+        browser_state_module,
+        "_build_proxy_summary",
+        lambda controller: {
+            "active_proxy_id": None,
+            "proxy_stale": False,
+            "proxy_available": False,
+            "proxy_path": None,
+            "last_generated": None,
+        },
+    )
+
+    controller = ProjectController()
+    controller.new_workspace()
+    controller.workspace.name = "Summary Contract Match"
+    controller.workspace.description = "Alias-only payload"
+    controller.workspace_add_stage("stage_1", "Bay 1")
+    controller.workspace.stage_entries["stage_1"].override_values = {"frame_profile": "16:9"}
+
+    payload = browser_state_module.browser_state(
+        controller.project,
+        controller.status_message,
+        controller=controller,
+    )
+
+    assert payload["workspace"] == payload["match_workspace_summary"]
+    assert payload["workspace"]["name"] == "Summary Contract Match"
+    assert payload["workspace"]["stage_count"] == 1
+
+    entry = payload["workspace_stage_entries"][0]
+    assert entry["stage_id"] == "stage_1"
+    assert entry["name"] == "Bay 1"
+    assert entry["override_count"] == 1
+    assert entry["override_values"] == {"frame_profile": "16:9"}
+    assert payload["workspace_override_summary"] == {"stage_1": {"frame_profile": "16:9"}}
+
+    for forbidden_key in ("clip_sources", "clips", "recap", "project"):
+        assert forbidden_key not in entry
+
+
+def test_proxy_controller_methods_delegate_to_shared_backend_service(monkeypatch) -> None:
+    """Proxy helpers should stay thin controller delegations to the shared service."""
+    import splitshot.ui.services.shared_backend as shared_backend_service
+    from splitshot.ui.controller import ProjectController
+
+    controller = ProjectController()
+    calls: list[tuple[str, object, str, str | None]] = []
+    status_result = {"exists": True, "scope_id": "stage-proxy"}
+    plan_result = {"steps": ["proxy_encode"]}
+    refresh_result = {"status": "scheduled", "scope_id": "match-1"}
+    open_result = {"success": True, "proxy_path": "/tmp/proxy.mp4"}
+
+    def fake_proxy_status(
+        passed_controller: ProjectController,
+        scope_type: str = "stage",
+        scope_id: str | None = None,
+    ) -> dict[str, object]:
+        calls.append(("status", passed_controller, scope_type, scope_id))
+        return status_result
+
+    def fake_generate_default_render_plan(scope_type: str = "stage") -> dict[str, object]:
+        calls.append(("plan", controller, scope_type, None))
+        return plan_result
+
+    def fake_proxy_refresh(
+        passed_controller: ProjectController,
+        scope_type: str = "stage",
+        scope_id: str | None = None,
+    ) -> dict[str, object]:
+        calls.append(("refresh", passed_controller, scope_type, scope_id))
+        return refresh_result
+
+    def fake_proxy_open_target(
+        passed_controller: ProjectController,
+        scope_type: str = "stage",
+        scope_id: str | None = None,
+    ) -> dict[str, object]:
+        calls.append(("open", passed_controller, scope_type, scope_id))
+        return open_result
+
+    monkeypatch.setattr(shared_backend_service, "proxy_status", fake_proxy_status)
+    monkeypatch.setattr(
+        shared_backend_service,
+        "generate_default_render_plan",
+        fake_generate_default_render_plan,
+    )
+    monkeypatch.setattr(shared_backend_service, "proxy_refresh", fake_proxy_refresh)
+    monkeypatch.setattr(shared_backend_service, "proxy_open_target", fake_proxy_open_target)
+
+    assert controller.proxy_status() == status_result
+    assert controller._generate_default_render_plan("match") == plan_result
+    assert controller.proxy_refresh("match", "match-1") == refresh_result
+    assert controller.proxy_open_target("stage", "stage-proxy") == open_result
+    assert calls == [
+        ("status", controller, "stage", None),
+        ("plan", controller, "match", None),
+        ("refresh", controller, "match", "match-1"),
+        ("open", controller, "stage", "stage-proxy"),
+    ]
+
+
+def test_library_backup_controller_methods_delegate_to_shared_backend_service(
+    monkeypatch,
+) -> None:
+    """Library backup endpoints should preserve controller wrappers over the shared service."""
+    import splitshot.ui.services.shared_backend as shared_backend_service
+    from splitshot.ui.controller import ProjectController
+
+    controller = ProjectController()
+    manifest = {"schema_version": 1, "stage_records": [], "match_records": []}
+    create_result = {"manifest": {"backup_id": "backup-1"}, "total_stages": 0, "total_matches": 0}
+    restore_result = {"restored": True, "stages_restored": 0, "matches_restored": 0, "errors": []}
+    calls: list[tuple[str, object]] = []
+
+    def fake_library_backup_create() -> dict[str, object]:
+        calls.append(("create", None))
+        return create_result
+
+    def fake_library_backup_restore(
+        passed_manifest: dict[str, object],
+    ) -> dict[str, object]:
+        calls.append(("restore", passed_manifest))
+        return restore_result
+
+    monkeypatch.setattr(
+        shared_backend_service,
+        "library_backup_create",
+        fake_library_backup_create,
+    )
+    monkeypatch.setattr(
+        shared_backend_service,
+        "library_backup_restore",
+        fake_library_backup_restore,
+    )
+
+    assert controller.library_backup_create() == create_result
+    assert controller.library_backup_restore(manifest) == restore_result
+    assert calls == [("create", None), ("restore", manifest)]

@@ -10,6 +10,8 @@ Cross-lane summary authority: `../../MASTER_STATUS.md`
 
 Work Effort 1 now owns accepted implementation evidence for `BEK-001` through `BEK-006`. Work Effort 2 still owns the final proof package, artifact closeout, and approval for `BEK-007` and `BEK-008`.
 
+Development wave 1 later added corroborating `DEV-102`/`DEV-103`/`DEV-104` validation evidence plus a post-integration guardrail pack; `DEV-105` then added shared-controller integration evidence, expanded frozen guardrail results, and a repo-wide lint anchor; `DEV-106` then added accepted landing-recent backend evidence showing stage/single rows are preserved before truncation in `/api/landing/recent`. Those artifacts strengthen the recorded implementation evidence but do not change the normalized lane status or promote the lane to final proof closure.
+
 ## Required evidence categories
 
 ### 1. Test evidence
@@ -66,6 +68,30 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
   - Notes: include PR or commit reference when available
 
 ## Artifact ledger
+
+- Artifact: Development wave 1 backend and persistence validation trio
+  - Path: `src/splitshot/browser/server.py`, `tests/browser/test_landing_backend_routes.py`, `tests/browser/test_automation_ui_shell_contracts.py`; `src/splitshot/browser/state.py`, `tests/browser/test_library_backend_contracts.py`; `src/splitshot/persistence/library.py`, `src/splitshot/persistence/projects.py`, `tests/persistence`
+  - Produced by: focused `ruff` and `.venv` pytest runs during development wave 1 integration
+  - Date: `2026-05-26`
+  - Notes: `DEV-102`, `DEV-103`, and `DEV-104` all closed green; results were `ruff` clean plus targeted pytest passes for landing-route contracts, `/api/state` library-contract coverage, and persistence helpers.
+
+- Artifact: Development wave 1 post-integration browser guardrail pack
+  - Path: `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_interactions.py`, `tests/browser/test_workspace_flows.py`, `tests/browser/test_workspace_export_and_recap.py`, `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`
+  - Produced by: targeted `.venv` pytest run after wave 1 integration
+  - Date: `2026-05-26`
+  - Notes: `177 passed`; confirms the integrated wave remained valid within the current allowlists after the backend/state/persistence changes landed.
+
+- Artifact: Development DEV-105 shared-controller integration validation
+  - Path: `src/splitshot/ui/controller.py`, `src/splitshot/ui/services/shared_backend.py`, `src/splitshot/ui/services/practiscore_sync.py`, `tests/browser/test_landing_backend_routes.py`, `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`, `tests/browser/test_library_backend_contracts.py`, `tests/browser/test_browser_interactions.py`, `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_workspace_flows.py`, `tests/browser/test_workspace_export_and_recap.py`
+  - Produced by: targeted `.venv` pytest runs plus repo-wide `ruff` during DEV-105 integration close
+  - Date: `2026-05-26`
+  - Notes: shared backend/practiscore controller extraction landed; results were `48 passed` for the lane-local backend/practiscore pack, `77 passed` for `tests/browser/test_browser_interactions.py`, `108 passed` for the complementary frozen guardrail group, and a clean `uvx ruff check .`.
+
+- Artifact: Development DEV-106 landing recent backend truth hardening
+  - Path: `src/splitshot/ui/services/shared_backend.py`, `tests/browser/test_landing_backend_routes.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open`, `docs/project/browser-proof-seams.json`
+  - Produced by: targeted `.venv` pytest runs plus focused `ruff` during DEV-106 close
+  - Date: `2026-05-26`
+  - Notes: `/api/landing/recent` now preserves stage/single rows before sort/truncate so newer match/library recents cannot crowd them out; results were `19 passed` for the landing backend-route pack, `27 passed` for the landing static contract pack, the dedicated recent-row interaction proof was added under seam ID `DEV-106.landing_recent`, and the reopened close finished with a green `691 passed` all-together anchor. This is now backend-route plus static-render-contract plus interaction evidence for Work Effort 1.
 
 - Artifact: Route and `/api/state` ownership inventory
   - Path: `spec.md`, `tasks.md`, `outcome.md`, `artifacts.md`

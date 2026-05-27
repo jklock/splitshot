@@ -637,6 +637,17 @@
               <div class="style-grid" id="badge-style-grid"></div>
               <h3>Score Colors</h3>
               <div class="score-color-grid" id="score-color-grid"></div>
+              <section class="settings-section">
+                <div class="section-header sub-section-header">
+                  <h3>Export</h3>
+                  <span>Choose which overlay badges the selected output profile carries into export.</span>
+                </div>
+                <div class="hook-grid">
+                  <button data-output-hook="metric-captions" type="button">Export Badges</button>
+                </div>
+                <p class="hint">After selecting an output profile in Export, save which timing and score badges should render into the finished video. Overlay styling and placement still stay here.</p>
+                <div id="output-hook-host-overlay"></div>
+              </section>
             </section>
 
             <section class="tool-pane" data-tool-pane="markers">
@@ -708,6 +719,17 @@
                   </label>
                 </div>
               </section>
+              <section class="pip-defaults-section" data-inspector-section="run-window">
+                <div class="section-header sub-section-header">
+                  <h3>Run Window</h3>
+                  <span>Trim dead time once the beep and last shot are reviewed.</span>
+                </div>
+                <div class="hook-grid">
+                  <button data-output-hook="run-window" type="button">Trim Dead Time</button>
+                </div>
+                <p class="hint">After selecting an output profile in Export, save the lead-in and tail padding here so stage output and stage composite exports share the same trimmed range.</p>
+                <div id="output-hook-host-merge"></div>
+              </section>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
             </section>
 
@@ -735,31 +757,35 @@
                   <button id="output-profile-create" type="button">Create</button>
                 </div>
                 <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
+                <p class="hint">Select the output profile here first. Then set <code>Trim Dead Time</code> in <code>Compose</code>, <code>Export Badges</code> in <code>Overlay</code>, and framing/title/watermark here in <code>Export</code>.</p>
               </section>
               <section class="settings-section export-hook-section">
                 <div class="section-header sub-section-header">
-                  <h3>Video &amp; Data</h3>
+                  <h3>Framing</h3>
+                  <span>Keep the output profile's aspect ratio choice with the rest of its render settings.</span>
                 </div>
                 <div class="hook-grid">
-                  <button data-output-hook="run-window" type="button">Run Padding</button>
-                  <button data-output-hook="metric-captions" type="button">Overlay Data</button>
                   <button data-output-hook="frame-profiles" type="button">Aspect Ratio / Framing</button>
                 </div>
+                <div id="output-hook-host-export-frame"></div>
                 <div class="section-header sub-section-header">
-                  <h3>Titles &amp; Branding</h3>
+                  <h3>Finishing</h3>
+                  <span>Keep intro-card and watermark settings with the selected output profile.</span>
                 </div>
                 <div class="hook-grid">
                   <button data-output-hook="lead-in-card" type="button">Opening Title</button>
                   <button data-output-hook="brand-mark" type="button">Your Logo</button>
                 </div>
-                <div id="output-hook-editor" class="output-hook-editor" hidden>
-                  <div class="section-header sub-section-header">
-                    <h4 id="output-hook-title">Hook Editor</h4>
-                    <button id="output-hook-close" type="button">Close</button>
-                  </div>
-                  <div id="output-hook-fields" class="output-hook-fields"></div>
-                  <div class="button-grid two-up">
-                    <button id="output-hook-save" class="primary-button" type="button">Save Hook</button>
+                <div id="output-hook-host-export-finishing">
+                  <div id="output-hook-editor" class="output-hook-editor" hidden>
+                    <div class="section-header sub-section-header">
+                      <h4 id="output-hook-title">Hook Editor</h4>
+                      <button id="output-hook-close" type="button">Close</button>
+                    </div>
+                    <div id="output-hook-fields" class="output-hook-fields"></div>
+                    <div class="button-grid two-up">
+                      <button id="output-hook-save" class="primary-button" type="button">Save Hook</button>
+                    </div>
                   </div>
                 </div>
                 <pre id="output-profile-detail" class="automation-detail" hidden></pre>
@@ -1447,7 +1473,7 @@
                 </div>
                 <div class="automation-card">
                   <div id="shared-defaults-editor" class="automation-detail">
-                    <p class="hint">Set the default output behavior applied across every stage in the match.</p>
+                    <p class="hint">Set the shared export starting point applied across every stage in the match.</p>
                     <div class="control-grid">
                       <label>Aspect Ratio / Framing
                         <select id="shared-frame-profile" aria-label="Shared Aspect Ratio / Framing">
@@ -1457,8 +1483,8 @@
                           <option value="1:1">1:1</option>
                         </select>
                       </label>
-                      <label>Overlay Data
-                        <select id="shared-metric-captions" aria-label="Shared Overlay Data">
+                      <label>Export Badges
+                        <select id="shared-metric-captions" aria-label="Shared Export Badges">
                           <option value="none">None</option>
                           <option value="splits">Splits</option>
                           <option value="score">Score</option>
@@ -1503,8 +1529,8 @@
                           <option value="9:16">9:16</option>
                         </select>
                       </label>
-                      <label>Override Overlay Data
-                        <select id="override-metric-captions" aria-label="Override Overlay Data">
+                      <label>Override Export Badges
+                        <select id="override-metric-captions" aria-label="Override Export Badges">
                           <option value="">Inherit</option>
                           <option value="none">None</option>
                           <option value="splits">Splits</option>

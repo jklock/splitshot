@@ -13,10 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from playwright.async_api import Page, async_playwright
+from playwright.async_api import async_playwright
 from splitshot.browser.server import BrowserControlServer
-from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
-from splitshot.persistence.library import append_match_metric, append_stage_metric, save_match_record, save_stage_record
 from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

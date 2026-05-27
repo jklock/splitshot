@@ -1,43 +1,53 @@
 ---
-description: "End-to-end Work Effort 1 development orchestration across Stage, Match, Performance, Backend, and Modularization."
-name: "Development Work Effort Orchestrator"
-argument-hint: "Optional source lane, implementation seam, or dependency to prioritize"
+description: "Execute the active development bundle as a frozen-baseline, builder-agent orchestration set."
+name: "Development Builder Orchestrator"
+argument-hint: "Optional task ID, lane, or dependency to prioritize"
 agent: "agent"
 ---
 
-Use this prompt to execute the aggregate `development/` bundle end to end.
+Use this prompt to execute the active `development/` bundle end to end.
 
 Primary bundle references:
 
+- [spec](./spec.md)
 - [plan](./plan.md)
 - [tasks](./tasks.md)
-- [spec](./spec.md)
+- [progress](./progress.md)
+- [proof](./proof.md)
 - [outcome](./outcome.md)
-- [artifacts](./artifacts.md)
+
+Frozen baseline references:
+
+- [stage reference](./stage-reference.md)
+- [match reference](./match-reference.md)
+
+Compatibility reference:
+
+- [artifacts compatibility note](./artifacts.md)
 
 Status and prompt-source references:
 
-- [master status](../MASTER_STATUS.md)
+- [master status](../MASTER_STATUS.md) — cross-bundle reference only until the integrator records a real status move there
 - this unnumbered `orchestration.prompt.md` file is the canonical prompt source for the `development/` bundle
 - source bundles under `../predev/` remain the detailed task truth and must be updated alongside this aggregate bundle when real implementation status moves
 
 You must orchestrate five role-isolated subagent passes for this bundle:
 
 1. Research agent
-   - Gather the exact source-bundle tasks, code, routes, docs, and dependencies that own the requested implementation seam.
-   - Return: affected files, source task IDs, hidden blockers, and recommended implementation order.
+   - Gather the exact code, routes, docs, tests, and dependencies that own the requested task.
+   - Return: affected files, hidden blockers, freeze risks, and recommended implementation order.
 
 2. Build agent
-   - Produce the implementation plan for the requested Work Effort 1 change.
-   - If only one named subagent is available, run a separate role-specific pass and instruct it to act as the build agent.
+   - Produce the implementation plan for the requested task using the task allowlist exactly.
    - Return: target files, expected changes, migration notes, and likely regressions.
 
-3. Style enforcement agent
-   - Review work-effort boundary discipline, shell/app ownership, route/state ownership, naming consistency, and source-bundle sync.
-   - Return: structure violations, coupling concerns, and required cleanup.
+3. Devil’s-advocate agent
+   - Try to break the plan before code does.
+   - Review freeze risks, overlap risks, hidden coupling, stale assumptions, and test gaps.
+   - Return: what could still go wrong, what is under-specified, and what must be tightened before merge.
 
 4. Validation agent
-   - Compare the work against `spec.md`, `tasks.md`, the touched source bundles, and the `development/` versus `testing/` split.
+   - Compare the work against `spec.md`, `tasks.md`, `progress.md`, `proof.md`, the frozen references, and the touched source bundles.
    - Return: unmet requirements, stale docs, source/aggregate drift, and boundary violations.
 
 5. Tester agent
@@ -47,43 +57,44 @@ You must orchestrate five role-isolated subagent passes for this bundle:
 Execution rules:
 
 - Run the five agent roles in order unless a blocker requires another research pass.
-- Execute one atomic `DEV-*` slice per subagent unless `tasks.md` explicitly marks a safe parallel bundle.
-- Treat each slice block in `tasks.md` as authoritative for dependencies, parallelization, allowed edit surface, and exact commands.
-- When `tasks.md` marks slices as parallel-safe, use separate subagents for those slices and a single integrator pass to merge ledger updates afterward.
-- Keep each role output isolated; summarize the findings from one role before acting on the next.
-- The main agent remains responsible for edits, limited validation, and final synthesis.
-- If only one named subagent is available, execute five separate `runSubagent` calls with role-specific prompts.
-- Do not let implementation decisions override `spec.md` or the touched source bundles without updating those docs in the same change.
-- Update the touched source bundles and this aggregate bundle in the same change whenever implementation status actually moves.
-- Prefer narrow validation that unblocks implementation; leave proof packaging, screenshots, and final gate closure to `testing/`.
+- Execute only the task or wave listed under `Released now` in `progress.md`.
+- Follow the allowlist and forbidden-edit rules in `tasks.md` exactly.
+- Workers do not improvise scope and do not edit shared ledgers.
+- Only the integrator merges updates into `progress.md`, `proof.md`, `outcome.md`, or shared source-lane ledgers.
+- If a task is marked parallel-safe, use separate subagents for those worker tasks and a single integrator pass to merge results afterward.
+- If only one named subagent is available, execute separate `runSubagent` calls for each role.
+- Prefer narrow validation that unblocks implementation; leave final proof/signoff packaging to `testing/`.
 
 Bundle-specific guardrails:
 
-- `development/` is implementation-only.
-- `testing/` owns proof packages, screenshots, artifact capture, QA/coverage closeout, final suite closure, and signoff.
-- source `predev/tests/` is a detailed source lane, not the same thing as aggregate `testing/`.
-- Do not silently claim `TST-*` work, final artifacts, or visual approval inside `development/`.
-- If testing discovers a real implementation blocker, reopen the relevant source bundle explicitly instead of smuggling that blocker into Work Effort 2.
+- Stage and Match are frozen behavior baselines.
+- Do not change Stage or Match semantics unless the reopen protocol in `spec.md` is triggered.
+- Preserve manual PractiScore fallback and the `practiscore_session`, `practiscore_sync`, and `practiscore_options` contract.
+- `development/` owns proof readiness, not final proof closure.
+- `testing/` owns final screenshot packages, acceptance artifacts, broad QA closeout, and signoff.
 
 Required work sequence:
 
-1. Read `plan.md`, `spec.md`, and `tasks.md`.
-2. Pick the exact `DEV-*` slice or slice bundle from `tasks.md` before delegating any subagent work.
-3. Read the touched source bundle `tasks.md`, `spec.md`, `outcome.md`, and `artifacts.md` files under `../predev/`.
-4. Run the research agent pass.
-5. Run the build agent pass.
-6. Implement the agreed development changes incrementally.
-7. Run the style enforcement pass and apply cleanup.
-8. Run the validation pass and close source/aggregate drift.
-9. Run the tester pass and execute the narrowest useful implementation validation.
-10. Update the touched source ledgers and the aggregate `development/` ledgers with handoff notes and residual risks.
+1. Read `spec.md`, `plan.md`, `tasks.md`, `progress.md`, `proof.md`, and `outcome.md`.
+2. Use the command policy in `tasks.md` over generic repo-level example commands while executing this bundle.
+3. Read `stage-reference.md` and `match-reference.md` before touching shared shell, route, or state seams.
+4. Pick the exact `DEV-*` task from `tasks.md` before delegating any subagent work.
+5. Read the touched source bundle `tasks.md`, `spec.md`, `outcome.md`, and `artifacts.md` files under `../predev/` only if the current task actually moves that source lane.
+6. Run the research agent pass.
+7. Run the build agent pass.
+8. Implement the agreed task incrementally.
+9. Run the devil’s-advocate pass and tighten anything under-specified.
+10. Run the validation pass and close source/aggregate drift.
+11. Run the tester pass and execute the narrowest useful implementation validation.
+12. If you are the integrator, update `progress.md`, `proof.md`, `outcome.md`, and any touched source ledgers.
+13. Publish the next-wave or handoff state explicitly.
 
 Expected final output:
 
 - Research findings
 - Implementation summary
-- Style enforcement findings and fixes
+- Devil’s-advocate findings and fixes
 - Validation findings and source/aggregate alignment updates
 - Narrow validation plan and results
-- Handoff notes for `testing/`
+- Handoff notes for the next integrator or for `testing/`
 - Remaining risks and next actions

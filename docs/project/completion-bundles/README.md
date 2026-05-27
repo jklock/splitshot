@@ -100,13 +100,13 @@ For the new aggregate bundles:
 - Stage, Match, and Performance remain separate apps on a shared backend.
 - Shared backend and modularization work may support those apps, but must not blur ownership back into one mixed surface.
 
-## Current execution reality (`2026-05-25`)
+## Current execution reality (`2026-05-26`)
 
-- Work Effort 1 / `development/` already contains materially advanced Stage, Match, and Performance implementation scope.
-- Backend and Modularization implementation scope still block Work Effort 1 closure.
-- Work Effort 2 / `testing/` already contains Stage docs/test/proof sync and focused proof baselines for Match and Performance, but the remaining proof packages, the source `predev/tests/` bundle modularization work, and the final gates are still open.
+- Work Effort 1 / `development/` is now complete: DEV-301 closed with the added DEV-106/DEV-107 interaction and compat-consumer proof, seam-registry-backed audits, runtime health, and a fresh all-together suite anchor.
+- Backend and Modularization implementation scope no longer block Work Effort 1; their source bundles remain `implementation advanced / proof pending` only because final proof/signoff work is reserved for `testing/`.
+- Work Effort 2 / `testing/` already contains Stage docs/test/proof sync and focused proof baselines for Match and Performance, but the remaining Performance proof package, Backend/Modularization signoff, the source `predev/tests/` bundle modularization work, and the final gates are still open.
 - The source `predev/tests/` bundle remains `planning baseline` even though the repo-wide suite has a passing baseline.
-- Canonical repo-wide proof anchor: `../../../artifacts/current-all-together.json` records `649 passed` on `2026-05-24`, but that repo-health baseline does not by itself close either aggregate work effort.
+- Canonical repo-wide proof anchor: `../../../artifacts/all-together.json` records `691 passed` on `2026-05-26`, but that repo-health baseline does not by itself close Work Effort 2.
 
 ## Related repo docs
 

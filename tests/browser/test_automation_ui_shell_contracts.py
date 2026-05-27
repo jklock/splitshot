@@ -46,11 +46,11 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert "Performance Library" in html
     assert "Match Recap" in html
     assert "Stage Composite" in html
-    assert "Video &amp; Data" in html
-    assert "Run Padding" in html
-    assert "Overlay Data" in html
+    assert "Trim Dead Time" in html
+    assert "Export Badges" in html
     assert "Aspect Ratio / Framing" in html
     assert "Stage Recipe" not in html
+    assert "Titles & Branding" not in html
     assert 'window.localStorage.getItem("splitshot.activeSurface")' in source
     assert 'callApi("/api/output-profiles/list",' in source
     assert 'callApi("/api/workspace/stage/clip/list", { stage_id: stageId })' in source

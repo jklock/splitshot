@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import errno
 import json
 import mimetypes
@@ -840,6 +839,160 @@ class BrowserControlServer:
                     return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
+            def _mutating_post_route_groups(
+                self,
+            ) -> dict[str, dict[str, Callable[[dict[str, Any]], None]]]:
+                return {
+                    "project": {
+                        "/api/project/details": self._set_project_details,
+                        "/api/project/practiscore": self._set_practiscore_context,
+                        "/api/project/ui-state": self._set_project_ui_state,
+                        "/api/project/new": self._new_project,
+                        "/api/project/open": self._open_project,
+                        "/api/project/save": self._save_project,
+                        "/api/project/delete": self._delete_project,
+                    },
+                    "workspace": {
+                        "/api/workspace/new": self._new_workspace,
+                        "/api/workspace/open": self._open_workspace,
+                        "/api/workspace/save": self._save_workspace,
+                        "/api/workspace/stage/add": self._workspace_add_stage,
+                        "/api/workspace/stage/remove": self._workspace_remove_stage,
+                        "/api/workspace/stage/open": self._workspace_open_stage,
+                        "/api/workspace/stage/return": self._workspace_return_to_workspace,
+                        "/api/workspace/defaults": self._workspace_set_defaults,
+                        "/api/workspace/stage/override": self._workspace_set_stage_override,
+                        "/api/workspace/stage/override/reset": self._workspace_reset_stage_override,
+                    },
+                    "imports": {
+                        "/api/import/primary": self._import_primary,
+                        "/api/import/secondary": self._import_merge,
+                        "/api/import/merge": self._import_merge,
+                    },
+                    "analysis": {
+                        "/api/analysis/threshold": self._set_threshold,
+                        "/api/analysis/shotml-settings": self._set_shotml_settings,
+                        "/api/analysis/shotml/proposals": self._generate_shotml_proposals,
+                        "/api/analysis/shotml/apply-proposal": self._apply_shotml_proposal,
+                        "/api/analysis/shotml/discard-proposal": self._discard_shotml_proposal,
+                        "/api/analysis/shotml/reset-defaults": self._reset_shotml_defaults,
+                        "/api/beep": self._set_beep,
+                        "/api/shots/add": self._add_shot,
+                        "/api/shots/move": self._move_shot,
+                        "/api/shots/restore": self._restore_shot,
+                        "/api/shots/delete": self._delete_shot,
+                        "/api/shots/select": self._select_shot,
+                        "/api/events/add": self._add_event,
+                        "/api/events/delete": self._delete_event,
+                    },
+                    "scoring": {
+                        "/api/scoring": self._set_scoring,
+                        "/api/scoring/profile": self._set_scoring_profile,
+                        "/api/scoring/score": self._assign_score,
+                        "/api/scoring/restore": self._restore_score,
+                        "/api/scoring/position": self._set_score_position,
+                    },
+                    "shell_and_export": {
+                        "/api/settings": self._set_settings_defaults,
+                        "/api/settings/reset-defaults": self._reset_settings_defaults,
+                        "/api/merge/remove": self._remove_merge_source,
+                        "/api/merge/reset-defaults": self._reset_merge_defaults,
+                        "/api/merge/source": self._set_merge_source,
+                        "/api/merge/source/analyze": self._analyze_merge_source,
+                        "/api/overlay": self._set_overlay,
+                        "/api/popups": self._set_popups,
+                        "/api/merge": self._set_merge,
+                        "/api/sync": self._set_sync,
+                        "/api/swap": self._swap_videos,
+                        "/api/export/settings": self._set_export_settings,
+                        "/api/export/preset": self._set_export_preset,
+                        "/api/export": self._export_project,
+                    },
+                }
+
+            def _structured_post_route_groups(
+                self,
+            ) -> dict[str, dict[str, tuple[str, tuple[str, ...]]]]:
+                return {
+                    "library_records": {
+                        "/api/library/list": ("_handle_library_list", ("_no_body",)),
+                        "/api/library/filter": ("_handle_library_filter", ()),
+                        "/api/library/stage/open": ("_handle_library_stage_open", ()),
+                        "/api/library/match/open": ("_handle_library_match_open", ()),
+                        "/api/proxy/status": ("_handle_proxy_status", ()),
+                        "/api/library/proxy/refresh": ("_handle_proxy_refresh", ()),
+                        "/api/proxy/refresh": ("_handle_proxy_refresh", ()),
+                        "/api/library/proxy/open": ("_handle_library_proxy_open", ()),
+                    },
+                    "output_profiles": {
+                        "/api/output-profiles/list": ("_handle_output_profile_list", ()),
+                        "/api/output-profiles/create": ("_handle_output_profile_create", ()),
+                        "/api/output-profiles/update": ("_handle_output_profile_update", ()),
+                        "/api/output-profiles/delete": ("_handle_output_profile_delete", ()),
+                        "/api/output-profiles/render": ("_handle_output_profile_render", ()),
+                    },
+                    "workspace_stage_support": {
+                        "/api/workspace/stage/clip/list": ("_handle_workspace_stage_clip_list", ()),
+                        "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", ()),
+                        "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", ()),
+                        "/api/workspace/stage/clip/reorder": ("_handle_workspace_stage_clip_reorder", ()),
+                        "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", ()),
+                        "/api/angle/align": ("_handle_angle_align", ()),
+                        "/api/angle/director/plan": ("_handle_angle_director_plan", ()),
+                        "/api/angle/director/generate": ("_handle_angle_director_generate", ()),
+                        "/api/angle/director/override": ("_handle_angle_director_override", ()),
+                        "/api/angle/director/override/clear": ("_handle_angle_director_override_clear", ()),
+                        "/api/audio/mix": ("_handle_audio_mix", ()),
+                        "/api/result-cards/resolve": ("_handle_result_cards_resolve", ()),
+                    },
+                    "landing_and_workspace": {
+                        "/api/landing/recent": ("_handle_landing_recent", ("_no_body",)),
+                        "/api/workspace/apply-from-first": ("_handle_workspace_apply_from_first", ()),
+                        "/api/workspace/apply-from-first/preview": (
+                            "_handle_workspace_apply_from_first_preview",
+                            (),
+                        ),
+                        "/api/workspace/export": ("_handle_workspace_export", ()),
+                        "/api/workspace/recap/render": ("_handle_workspace_recap_render", ()),
+                        "/api/workspace/defaults/reset": ("_handle_workspace_defaults_reset", ()),
+                    },
+                    "library_management": {
+                        "/api/library/analytics/trend": ("_handle_library_analytics_trend", ()),
+                        "/api/library/analytics/compare": ("_handle_library_analytics_compare", ()),
+                        "/api/library/archive/create": ("_handle_library_archive_create", ()),
+                        "/api/library/backup/create": ("_handle_library_backup_create", ("_no_body",)),
+                        "/api/library/backup/restore": ("_handle_library_backup_restore", ()),
+                        "/api/library/export/json": ("_handle_library_export_json", ("_no_body",)),
+                        "/api/library/export/csv": ("_handle_library_export_csv", ("_no_body",)),
+                        "/api/library/notes/update": ("_handle_library_notes_update", ()),
+                        "/api/library/tags/update": ("_handle_library_tags_update", ()),
+                    },
+                }
+
+            def _dispatch_structured_post_route(
+                self,
+                method_name: str,
+                flags: tuple[str, ...],
+            ) -> None:
+                handler = getattr(self, method_name)
+                payload = {}
+                if "_no_body" not in flags:
+                    payload = self._read_json()
+                activity.log("api.start", path=self.path, payload=payload)
+                try:
+                    response = handler(
+                        **{
+                            k: v
+                            for k, v in [("body", payload)]
+                            if "body" in handler.__code__.co_varnames
+                        }
+                    )
+                    activity.log("api.success", path=self.path)
+                    self._send_json(response)
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.error", path=self.path, error=str(exc))
+                    self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+
             def do_POST(self) -> None:  # noqa: N802
                 activity.log("http.post", path=self.path, client=self.client_address[0])
                 if self.path == "/api/activity":
@@ -875,125 +1028,19 @@ class BrowserControlServer:
                 if self.path == "/api/project/probe":
                     self._probe_project()
                     return
-                routes: dict[str, Callable[[dict[str, Any]], None]] = {
-                    "/api/project/details": self._set_project_details,
-                    "/api/project/practiscore": self._set_practiscore_context,
-                    "/api/project/ui-state": self._set_project_ui_state,
-                    "/api/project/new": self._new_project,
-                    "/api/project/open": self._open_project,
-                    "/api/project/save": self._save_project,
-                    "/api/project/delete": self._delete_project,
-                    "/api/workspace/new": self._new_workspace,
-                    "/api/workspace/open": self._open_workspace,
-                    "/api/workspace/save": self._save_workspace,
-                    "/api/workspace/stage/add": self._workspace_add_stage,
-                    "/api/workspace/stage/remove": self._workspace_remove_stage,
-                    "/api/workspace/stage/open": self._workspace_open_stage,
-                    "/api/workspace/stage/return": self._workspace_return_to_workspace,
-                    "/api/workspace/defaults": self._workspace_set_defaults,
-                    "/api/workspace/stage/override": self._workspace_set_stage_override,
-                    "/api/workspace/stage/override/reset": self._workspace_reset_stage_override,
-                    "/api/import/primary": self._import_primary,
-                    "/api/import/secondary": self._import_merge,
-                    "/api/import/merge": self._import_merge,
-                    "/api/analysis/threshold": self._set_threshold,
-                    "/api/analysis/shotml-settings": self._set_shotml_settings,
-                    "/api/analysis/shotml/proposals": self._generate_shotml_proposals,
-                    "/api/analysis/shotml/apply-proposal": self._apply_shotml_proposal,
-                    "/api/analysis/shotml/discard-proposal": self._discard_shotml_proposal,
-                    "/api/analysis/shotml/reset-defaults": self._reset_shotml_defaults,
-                    "/api/settings": self._set_settings_defaults,
-                    "/api/settings/reset-defaults": self._reset_settings_defaults,
-                    "/api/beep": self._set_beep,
-                    "/api/shots/add": self._add_shot,
-                    "/api/shots/move": self._move_shot,
-                    "/api/shots/restore": self._restore_shot,
-                    "/api/shots/delete": self._delete_shot,
-                    "/api/shots/select": self._select_shot,
-                    "/api/scoring": self._set_scoring,
-                    "/api/scoring/profile": self._set_scoring_profile,
-                    "/api/scoring/score": self._assign_score,
-                    "/api/scoring/restore": self._restore_score,
-                    "/api/scoring/position": self._set_score_position,
-                    "/api/events/add": self._add_event,
-                    "/api/events/delete": self._delete_event,
-                    "/api/merge/remove": self._remove_merge_source,
-                    "/api/merge/reset-defaults": self._reset_merge_defaults,
-                    "/api/merge/source": self._set_merge_source,
-                    "/api/merge/source/analyze": self._analyze_merge_source,
-                    "/api/overlay": self._set_overlay,
-                    "/api/popups": self._set_popups,
-                    "/api/merge": self._set_merge,
-                    "/api/sync": self._set_sync,
-                    "/api/swap": self._swap_videos,
-                    "/api/export/settings": self._set_export_settings,
-                    "/api/export/preset": self._set_export_preset,
-                    "/api/export": self._export_project,
-                    "/api/library/list": ("_handle_library_list", ["_no_body"]),
-                    "/api/library/filter": ("_handle_library_filter", []),
-                    "/api/library/stage/open": ("_handle_library_stage_open", []),
-                    "/api/library/match/open": ("_handle_library_match_open", []),
-                    "/api/proxy/status": ("_handle_proxy_status", []),
-                    "/api/library/proxy/refresh": ("_handle_proxy_refresh", []),
-                    "/api/proxy/refresh": ("_handle_proxy_refresh", []),
-                    "/api/library/proxy/open": ("_handle_library_proxy_open", []),
-                    "/api/output-profiles/list": ("_handle_output_profile_list", []),
-                    "/api/output-profiles/create": ("_handle_output_profile_create", []),
-                    "/api/output-profiles/update": ("_handle_output_profile_update", []),
-                    "/api/output-profiles/delete": ("_handle_output_profile_delete", []),
-                    "/api/output-profiles/render": ("_handle_output_profile_render", []),
-                    "/api/workspace/stage/clip/list": ("_handle_workspace_stage_clip_list", []),
-                    "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", []),
-                    "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", []),
-                    "/api/workspace/stage/clip/reorder": ("_handle_workspace_stage_clip_reorder", []),
-                    "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", []),
-                    "/api/angle/align": ("_handle_angle_align", []),
-                    "/api/angle/director/plan": ("_handle_angle_director_plan", []),
-                    "/api/angle/director/generate": ("_handle_angle_director_generate", []),
-                    "/api/angle/director/override": ("_handle_angle_director_override", []),
-                    "/api/angle/director/override/clear": ("_handle_angle_director_override_clear", []),
-                    "/api/audio/mix": ("_handle_audio_mix", []),
-                    "/api/result-cards/resolve": ("_handle_result_cards_resolve", []),
-                    "/api/landing/recent": ("_handle_landing_recent", ["_no_body"]),
-                    "/api/library/analytics/trend": ("_handle_library_analytics_trend", []),
-                    "/api/library/analytics/compare": ("_handle_library_analytics_compare", []),
-                    "/api/library/archive/create": ("_handle_library_archive_create", []),
-                    "/api/library/backup/create": ("_handle_library_backup_create", ["_no_body"]),
-                    "/api/library/backup/restore": ("_handle_library_backup_restore", []),
-                    "/api/library/export/json": ("_handle_library_export_json", ["_no_body"]),
-                    "/api/library/export/csv": ("_handle_library_export_csv", ["_no_body"]),
-                    "/api/library/notes/update": ("_handle_library_notes_update", []),
-                    "/api/library/tags/update": ("_handle_library_tags_update", []),
-                    "/api/workspace/apply-from-first": ("_handle_workspace_apply_from_first", []),
-                    "/api/workspace/apply-from-first/preview": ("_handle_workspace_apply_from_first_preview", []),
-                    "/api/workspace/export": ("_handle_workspace_export", []),
-                    "/api/workspace/recap/render": ("_handle_workspace_recap_render", []),
-                    "/api/workspace/defaults/reset": ("_handle_workspace_defaults_reset", []),
-                }
-                entry = routes.get(self.path)
+                mutating_routes: dict[str, Callable[[dict[str, Any]], None]] = {}
+                for owner_family_routes in self._mutating_post_route_groups().values():
+                    mutating_routes.update(owner_family_routes)
+                entry = mutating_routes.get(self.path)
                 if entry is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                if isinstance(entry, tuple):
-                    method_name, flags = entry
-                    handler = getattr(self, method_name)
-                    payload = {}
-                    if "_no_body" not in flags:
-                        payload = self._read_json()
-                    activity.log("api.start", path=self.path, payload=payload)
-                    try:
-                        response = handler(
-                            **{
-                                k: v
-                                for k, v in [("body", payload)]
-                                if "body" in handler.__code__.co_varnames
-                            }
-                        )
-                        activity.log("api.success", path=self.path)
-                        self._send_json(response)
-                    except Exception as exc:  # noqa: BLE001
-                        activity.log("api.error", path=self.path, error=str(exc))
-                        self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                    structured_routes: dict[str, tuple[str, tuple[str, ...]]] = {}
+                    for owner_family_routes in self._structured_post_route_groups().values():
+                        structured_routes.update(owner_family_routes)
+                    structured_entry = structured_routes.get(self.path)
+                    if structured_entry is None:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._dispatch_structured_post_route(*structured_entry)
                     return
                 try:
                     payload = self._read_json()
@@ -2605,70 +2652,8 @@ class BrowserControlServer:
 
             def _handle_landing_recent(self) -> dict[str, Any]:
                 """Return recent activity for the landing page."""
-                from pathlib import Path as _Path
-
-                recent: list[dict[str, Any]] = []
-                try:
-                    library_root = _Path.home() / ".splitshot" / "projects"
-                    project_dirs: list[_Path] = []
-                    if library_root.is_dir():
-                        for candidate in library_root.iterdir():
-                            if candidate.is_dir():
-                                meta_path = candidate / "project.json"
-                                if meta_path.is_file():
-                                    project_dirs.append(candidate)
-
-                    project_dirs.sort(
-                        key=lambda p: p.stat().st_mtime if p.exists() else 0,
-                        reverse=True,
-                    )
-
-                    for proj_dir in project_dirs[:10]:
-                        meta_file = proj_dir / "project.json"
-                        name = proj_dir.name
-                        last_opened = ""
-                        if meta_file.is_file():
-                            try:
-                                import json as _json
-
-                                data = _json.loads(meta_file.read_text())
-                                name = data.get("name", name)
-                                last_opened = data.get("last_opened", "") or data.get(
-                                    "modified_at", ""
-                                )
-                            except Exception:
-                                pass
-                        recent.append(
-                            {
-                                "name": name,
-                                "path": str(proj_dir),
-                                "date": last_opened,
-                                "type": "stage",
-                                "surface": "single",
-                            }
-                        )
-                except Exception:
-                    pass
-
-                try:
-                    from splitshot.persistence.library import read_match_metrics
-
-                    match_metrics = read_match_metrics()
-                    for match in match_metrics[-5:]:
-                        recent.append({
-                            "name": match.get("display_name") or match.get("match_id", "Untitled Match"),
-                            "type": "match",
-                            "surface": "multi",
-                            "date": match.get("last_modified") or match.get("event_date", ""),
-                            "path": match.get("match_id", ""),
-                            "match_id": match.get("match_id", ""),
-                            "stage_count": match.get("stage_count", 0),
-                        })
-                except Exception:
-                    pass
-
-                recent.sort(key=lambda r: r.get("date", ""), reverse=True)
-                return {"recent": recent}
+                with controller_lock:
+                    return controller.landing_recent()
 
             # === Workspace: Setup Once, Apply Everywhere ===
 

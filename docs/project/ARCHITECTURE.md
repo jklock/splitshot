@@ -62,6 +62,13 @@ The static shell is split across:
 
 Use [../../src/splitshot/browser/static/README.md](../../src/splitshot/browser/static/README.md) for the browser-shell map.
 
+## Pane Reference Maps
+
+When you need a control-to-route-to-controller map instead of the broader architecture view, use these developer-facing pane dossiers:
+
+- [match-reference.md](match-reference.md) — Match workspace controls, workflow routes, persistence, and test crosswalk.
+- [stage-reference.md](stage-reference.md) — Stage pane controls, UI-state ownership, persistence, and test crosswalk.
+
 ## Project Model
 
 `Project` is the shared contract across the app. The main state groups are:

@@ -225,6 +225,9 @@ let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project
 let activeSurface = window.localStorage.getItem("splitshot.activeSurface") || "landing";
 let automationPanelOpen = false;
 let landingPageVisible = false;
+let landingRecentItems = [];
+let landingRecentLoaded = false;
+let landingRecentRequestSequence = 0;
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
@@ -5036,7 +5039,10 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
     else landingPage.setAttribute("hidden", "");
   }
   if (persist) window.localStorage.setItem("splitshot.activeSurface", activeSurface);
-  if (isLanding) renderRecentActivity();
+  if (isLanding) {
+    renderRecentActivity();
+    void refreshLandingRecentActivity();
+  }
   automationPanelOpen = Boolean(openPanel);
   const surfaceToView = { landing: "landing", single: "stage", multi: "match", library: "library" };
   setActiveView(surfaceToView[activeSurface] || "stage");
@@ -5054,27 +5060,99 @@ function setActiveSurface(surface, { persist = true, openPanel = true } = {}) {
 
 function renderRecentActivity() {
   const list = $("landing-recent-list");
-  if (!list) return;
-  const recentItems = JSON.parse(window.localStorage.getItem("splitshot.recentActivity") || "[]");
-  if (recentItems.length === 0) {
-    list.innerHTML = '<p class="landing-empty-hint">No recent activity. Start by editing a stage!</p>';
+  if (!list || !landingRecentLoaded) return;
+  if (landingRecentItems.length === 0) {
+    list.innerHTML = '<p class="landing-empty-hint">No recent stages. Create a new stage or open an existing project.</p>';
     return;
   }
-  list.innerHTML = recentItems.slice(0, 10).map(item => `
+  list.innerHTML = landingRecentItems.map((item) => {
+    const meta = [item.date, item.type].filter(Boolean).join(" · ");
+    return `
     <div class="landing-recent-item" data-recent-surface="${item.surface || ''}" data-recent-path="${item.path || ''}">
       <div class="landing-recent-thumb">${item.surface === 'single' ? '🎬' : item.surface === 'multi' ? '🏆' : '📊'}</div>
       <div class="landing-recent-info">
         <div class="landing-recent-name">${escapeHtml(item.name || 'Untitled')}</div>
-        <div class="landing-recent-meta">${escapeHtml(item.date || '')} · ${escapeHtml(item.type || '')}</div>
+        <div class="landing-recent-meta">${escapeHtml(meta)}</div>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 function escapeHtml(str) {
   const div = document.createElement("div");
   div.textContent = str;
   return div.innerHTML;
+}
+
+function normalizeLandingRecentSurface(surface, type) {
+  const normalizedSurface = String(surface || "").trim().toLowerCase();
+  if (["single", "multi", "library"].includes(normalizedSurface)) return normalizedSurface;
+  const normalizedType = String(type || "").trim().toLowerCase();
+  if (normalizedType === "stage" || normalizedType === "single") return "single";
+  if (normalizedType === "match" || normalizedType === "multi") return "multi";
+  if (normalizedType === "library") return "library";
+  return "";
+}
+
+function landingRecentTypeLabel(type, surface = "") {
+  const normalizedType = String(type || "").trim().toLowerCase();
+  if (normalizedType === "stage" || normalizedType === "single") return "Stage";
+  if (normalizedType === "match" || normalizedType === "multi") return "Match";
+  if (normalizedType === "library") return "Performance Library";
+  if (surface === "single") return "Stage";
+  if (surface === "multi") return "Match";
+  if (surface === "library") return "Performance Library";
+  return "";
+}
+
+function formatLandingRecentDate(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return normalized;
+  return parsed.toLocaleDateString();
+}
+
+function landingRecentItemKey(item = {}) {
+  const path = String(item.path || "").trim();
+  if (path) return path;
+  return `${item.surface || ""}:${item.type || ""}:${item.name || ""}`;
+}
+
+function normalizeLandingRecentItems(items = []) {
+  const seenKeys = new Set();
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const surface = normalizeLandingRecentSurface(item?.surface, item?.type);
+      const typeLabel = landingRecentTypeLabel(item?.type, surface);
+      if (surface !== "single" && typeLabel !== "Stage") return null;
+      const normalizedItem = {
+        name: String(item?.name || "").trim() || "Untitled",
+        path: String(item?.path || item?.project_path || item?.workspace_path || "").trim(),
+        surface: surface || "single",
+        type: typeLabel || "Stage",
+        date: formatLandingRecentDate(item?.date || item?.last_opened || item?.updated_at || ""),
+      };
+      const itemKey = landingRecentItemKey(normalizedItem);
+      if (seenKeys.has(itemKey)) return null;
+      seenKeys.add(itemKey);
+      return normalizedItem;
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+async function refreshLandingRecentActivity() {
+  const list = $("landing-recent-list");
+  if (!list) return;
+  const requestId = ++landingRecentRequestSequence;
+  const result = await callApi("/api/landing/recent", {});
+  if (requestId !== landingRecentRequestSequence) return;
+  if (!result || !Array.isArray(result.recent)) return;
+  landingRecentItems = normalizeLandingRecentItems(result.recent);
+  landingRecentLoaded = true;
+  renderRecentActivity();
 }
 
 function recordRecentActivity(name, surface, type, path) {
@@ -5130,8 +5208,7 @@ libraryView = createLibraryView({
   getLibrary: () => automationLibrary,
   getSelectedLibraryRecord: () => selectedLibraryRecord,
   setSelectedLibraryRecord: (value) => {
-    selectedLibraryRecord = value;
-    window.selectedLibraryRecord = value;
+    syncSelectedLibraryRecord(value);
   },
   callApi,
   renderJsonDetail,
@@ -6243,7 +6320,6 @@ function findLibraryRecordById(recordId) {
 
 function syncSelectedLibraryRecord(record) {
   selectedLibraryRecord = record || null;
-  window.selectedLibraryRecord = selectedLibraryRecord;
   return selectedLibraryRecord;
 }
 
@@ -11225,17 +11301,30 @@ function wireEvents() {
     next.tail_padding_ms = Math.max(0, Math.round((Number(tailSeconds) || 0) * 1000));
     return next;
   };
-  const outputHookDisplayLabel = (hook) => {
-    const hookLabels = {
-      "run-window": "Run Padding",
-      "metric-captions": "Overlay Data",
-      "frame-profiles": "Aspect Ratio / Framing",
-      "lead-in-card": "Opening Title",
-      "brand-mark": "Your Logo",
-      "subject-track-crop": "Subject Tracking (inactive)",
-    };
-    return hookLabels[hook] || String(hook || "").replace(/-/g, " ");
-  };
+  const outputHookLabels = Object.freeze({
+    "run-window": "Trim Dead Time",
+    "metric-captions": "Export Badges",
+    "frame-profiles": "Aspect Ratio / Framing",
+    "lead-in-card": "Opening Title",
+    "brand-mark": "Your Logo",
+    "subject-track-crop": "Subject Tracking (inactive)",
+  });
+  const outputHookEditorHosts = Object.freeze({
+    "run-window": "output-hook-host-merge",
+    "metric-captions": "output-hook-host-overlay",
+    "frame-profiles": "output-hook-host-export-frame",
+    "lead-in-card": "output-hook-host-export-finishing",
+    "brand-mark": "output-hook-host-export-finishing",
+    "subject-track-crop": "output-hook-host-export-finishing",
+  });
+  const outputHookLabel = (hook) => outputHookLabels[hook] || hook.replace(/-/g, " ");
+  function mountOutputHookEditor(hook) {
+    const editor = $("output-hook-editor");
+    if (!editor) return;
+    const hostId = outputHookEditorHosts[hook] || "output-hook-host-export-finishing";
+    const host = $(hostId) || $("output-hook-host-export-finishing");
+    if (host && editor.parentElement !== host) host.appendChild(editor);
+  }
   async function saveActiveOutputHookEditor() {
     const profile = activeAutomationProfile();
     if (!profile || !activeOutputHookEditor) {
@@ -11286,12 +11375,12 @@ function wireEvents() {
       renderJsonDetail("output-profile-detail", plan || updatedProfile);
       renderOutputHookEditor(activeOutputHookEditor, updatedProfile);
     }
-    setStatus(`Saved ${outputHookDisplayLabel(activeOutputHookEditor)} for ${profile.profile_name || "output profile"}.`);
+    setStatus(`Saved ${outputHookLabel(activeOutputHookEditor)} for ${profile.profile_name || "output profile"}.`);
   }
   document.querySelectorAll("[data-output-hook]").forEach((button) => {
     button.addEventListener("click", () => {
       if (!activeAutomationProfile()) {
-        setStatus("Create or select an output profile before editing saved output settings.");
+        setStatus("Create or select an output profile in Export before editing reusable trim, overlay, or finishing settings.");
         return;
       }
       const hook = button.dataset.outputHook;
@@ -11314,17 +11403,18 @@ function wireEvents() {
     const title = $("output-hook-title");
     const fields = $("output-hook-fields");
     if (!editor || !title || !fields) return;
+    mountOutputHookEditor(hook);
     editor.hidden = false;
-    title.textContent = outputHookDisplayLabel(hook);
+    title.textContent = outputHookLabel(hook);
     const profile = activeProfile || {};
-    const inherited = state?.opened_from_match ? state?.workspace_shared_defaults || {} : {};
+    const openedFromMatch = Boolean(state?.opened_from_match);
     fields.innerHTML = "";
     if (hook === "run-window") {
       fields.innerHTML = `<div class="control-grid">
         <label>Lead-in padding (s) <input id="hook-run-window-lead-in" type="number" min="0" step="0.1" value="${runWindowLeadInSeconds(profile)}" /></label>
         <label>Tail padding (s) <input id="hook-run-window-tail" type="number" min="0" step="0.1" value="${runWindowTailSeconds(profile)}" /></label>
       </div>
-      <p class="hint">${inherited.metric_caption_preset ? "Inherited defaults stay visible in Match; these padding values save on the selected output profile." : "Stage timing is reviewed earlier in Splits/Review. Save only the extra lead-in and tail padding for this output profile here."}</p>`;
+      <p class="hint">Set the lead-in and tail padding after the beep and last shot look right. The saved run window stays on the selected output profile so stage output and stage composite exports match.</p>`;
     } else if (hook === "metric-captions") {
       fields.innerHTML = `<div class="control-grid">
         <label>Preset
@@ -11342,7 +11432,7 @@ function wireEvents() {
           </select>
         </label>
       </div>
-      <p class="hint">${inherited.metric_caption_preset ? "Stage defaults come from Match workspace settings until you override them here." : "Uses the current overlay styling, but lets this output profile choose which overlay data badges render into export."}</p>`;
+      <p class="hint">${openedFromMatch ? "Match defaults set the starting export badge set; save here when this output profile needs something different." : "Uses the current overlay styling, but lets this output profile decide which timing and score badges render into export."}</p>`;
     } else if (hook === "frame-profiles") {
       fields.innerHTML = `<div class="control-grid">
         <label>Profile
@@ -11355,7 +11445,7 @@ function wireEvents() {
           </select>
         </label>
       </div>
-      <p class="hint">Stores the profile-specific aspect ratio / framing for export. Width and height still stay in the main Frame section below.</p>`;
+      <p class="hint">Stores the profile-specific aspect ratio and framing choice. Width and height still stay in the main Frame section below.</p>`;
     } else if (hook === "lead-in-card") {
       fields.innerHTML = `<div class="control-grid">
         <label>Style
@@ -12768,6 +12858,7 @@ const legacyGlobalMutableBindings = {
   pickPathForElement: [() => pickPathForElement, (value) => { pickPathForElement = value; }],
   openHiddenFileInput: [() => openHiddenFileInput, (value) => { openHiddenFileInput = value; }],
   postFiles: [() => postFiles, (value) => { postFiles = value; }],
+  selectedLibraryRecord: [() => selectedLibraryRecord, (value) => { selectedLibraryRecord = value; }],
   createNewProject: [() => createNewProject, (value) => { createNewProject = value; }],
   useProjectFolder: [() => useProjectFolder, (value) => { useProjectFolder = value; }],
   openPractiScoreDashboard: [() => openPractiScoreDashboard, (value) => { openPractiScoreDashboard = value; }],
@@ -12863,7 +12954,7 @@ installLegacyGlobalCompat({
     readPopupTemplatePayload, renderPopupTimeline, setPopupFilterMode, setPopupEditorVisible,
     setPopupEditorCollapsed, openSelectedPopupEditor, toggleSelectedPopupEditor, renderMarkersWorkbench,
     selectAdjacentPopupBubble, stepShotLinkedPopupBubble, renderPopupEditors, syncTimingEventLabelState,
-    alignToEdge, capturePointer, releasePointer, setActiveTool,
+    alignToEdge, capturePointer, releasePointer, setActiveTool, setActiveSurface,
     postFile, pickPath, pickPathForElement, resetLocalProjectView,
     resetMediaElement, restoreVideoElementFrame, handleStageFullscreenChange, handleWindowVisibilityRestore,
     primaryVideoStateSnapshot, logPrimaryVideoState, ensurePrimaryVideoAudio, renderWaveformNavigator,
@@ -12881,7 +12972,7 @@ installLegacyGlobalCompat({
     overlayDisplayScale, scaledOverlayPixelValue, positionOverlayContainer, pinCustomOverlayAnchor,
     resolveNormalizedPointFromRect, placeOverlayBadge, cancelOverlayDragInteractions, beginMergePreviewDrag,
     moveMergePreviewDrag, endMergePreviewDrag, overlayRenderPositionMs, popupOverlayPixelPoint,
-    render, renderViewportLayout, setWaveformMode, setWaveformExpanded,
+    render, renderAutomationSurface, renderViewportLayout, setWaveformMode, setWaveformExpanded,
     setWaveformZoom, panWaveform, handleWaveformWheel, setWaveformAmplitude,
     resetWaveformView, openHiddenFileInput, postFiles, buildExportPayload,
     cancelPendingExportDrafts, flushPendingSettingsDefaults, applySettingsDefaults, applySettingsShotMLDefaults,
@@ -12949,7 +13040,3 @@ Object.defineProperties(window, {
     configurable: true,
   },
 });
-window.createNewProject = createNewProject;
-window.setActiveTool = setActiveTool;
-window.setActiveSurface = setActiveSurface;
-window.renderAutomationSurface = renderAutomationSurface;

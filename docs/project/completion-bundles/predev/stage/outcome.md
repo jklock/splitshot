@@ -5,7 +5,7 @@
 - Lane: `Stage`
 - Status: `done`
 - Bundle owner: `GitHub Copilot`
-- Last updated: `2026-05-25`
+- Last updated: `2026-05-26`
 - Cross-lane status authority: `../../MASTER_STATUS.md`
 
 ## Deliverable status
@@ -35,6 +35,7 @@
 - Focused browser interaction slice: `6 passed, 69 deselected in 129.82s (0:02:09)` in `tests/browser/test_browser_interactions.py`, covering richer output-hook save flows, Match recap render behavior, Match composite reorder/cut actions, batch export queue behavior, and live Compose preview updates.
 - Development handoff re-audit: runtime health passed via `./.venv/bin/splitshot --check`, and the current closeout audit stayed green with `44 passed` across the shared shell/static pack, `13 passed` across the project/defaults/import pack, `37 passed` across the waveform/review/overlay pack, and `16 passed` across the PractiScore browser/session guardrail pack; no Stage reopen was required.
 - Stage done-gate closeout: `./.venv/bin/splitshot --check` passed, and a targeted browser closeout slice exited `0` with `42 passed in 99.04s (0:01:39)` across the shared-shell contracts, static UI contract, inventory/coverage audits, the updated Compose selector flows, and the Match composite interaction checks.
+- Stage full proof rerun after workflow relocation: `./.venv/bin/splitshot --check` passed, the shell/static/inventory/coverage pack exited `0` with `49 passed in 169.86s (0:02:49)`, the lifecycle/import and PractiScore browser+analysis pack exited `0` with `47 passed in 18.86s`, the timing/waveform/review/control pack exited `0` with `37 passed in 155.80s (0:02:35)`, the export/output-hook pack exited `0` with `59 passed in 72.74s (0:01:12)`, and both Stage screenshot scripts exited `0` with refreshed screenshots plus a passing `docs/screenshots/automate3/responsive-proof-results.json` proof bundle.
 
 ## Required signoff checklist
 
@@ -51,7 +52,7 @@
 
 ## Open items before visual signoff
 
-- None. `STG-008` closed on `2026-05-25` after runtime health verification, a targeted 42-test browser closeout slice, screenshot-package existence verification, and live browser validation of the final Compose/Settings/Review wording.
+- None. `STG-008` closed on `2026-05-25`, and the `2026-05-26` full Stage rerun preserved that closure with refreshed screenshots, responsive proof, and no reopened implementation blocker.
 
 ## Waivers / deferrals
 

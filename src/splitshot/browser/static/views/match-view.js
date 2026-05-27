@@ -216,7 +216,7 @@ export function createMatchView({
       {
         id: "match-section-defaults",
         label: "Defaults",
-        description: "Shared framing, overlay data, title, and logo.",
+        description: "Shared framing, export badges, title, and logo.",
       },
       {
         id: "match-section-overrides",

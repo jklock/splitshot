@@ -237,6 +237,16 @@ Progress note (`2026-05-25`):
 - Live browser validation on `http://127.0.0.1:8765/` confirmed the Compose rail label plus the final Stage wording for Settings (`Landing pane` -> `Compose`, `Picture in picture`, `No saved added-media defaults.`) and Review (`Show added media`).
 - No new Stage-visible regressions were found during diagnostics, the targeted browser slice, or the live visual pass.
 
+Re-verification note (`2026-05-26`):
+
+- `./.venv/bin/splitshot --check` exited `0` again before the full Stage rerun.
+- The shared shell/static/inventory/coverage pack exited `0` with `49 passed in 169.86s (0:02:49)` across `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_rail_layout.py`, `tests/browser/test_browser_control_inventory_audit.py`, and `tests/browser/test_browser_control_coverage_matrix.py`.
+- The Stage lifecycle/import and PractiScore browser+analysis pack exited `0` with `47 passed in 18.86s` across `tests/browser/test_project_lifecycle_contracts.py`, `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`, `tests/analysis/test_practiscore_import.py`, `tests/analysis/test_practiscore_sync_normalize.py`, and `tests/analysis/test_practiscore_web_extract.py`.
+- The Stage timing/waveform/review/control pack exited `0` with `37 passed in 155.80s (0:02:35)` across `tests/browser/test_timing_waveform_contracts.py`, `tests/browser/test_overlay_review_contracts.py`, and `tests/browser/test_browser_remaining_controls_e2e.py`.
+- The Stage export/output-hook rerun exited `0` with `59 passed in 72.74s (0:01:12)` across `tests/export/test_export.py`, `tests/browser/test_merge_export_contracts.py`, and the focused output-hook interaction tests in `tests/browser/test_browser_interactions.py`.
+- `./.venv/bin/python scripts/docs/capture_browser_screenshots.py` and `./.venv/bin/python scripts/docs/capture_stage_responsive_views.py` both exited `0`, refreshed the repo-owned Stage screenshots, and rewrote `docs/screenshots/automate3/responsive-proof-results.json` with passing responsive assertions at `1280px` and `900px`.
+- No Stage regression or reopened development blocker was found during the rerun, so the Stage done gate remains closed.
+
 Depends on:
 
 - STG-007

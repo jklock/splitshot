@@ -6,6 +6,8 @@ It is not a claim that every button or field has its own direct behavior test. S
 
 If a control is missing from this matrix, it does not have an explicit owner yet.
 
+Coverage ownership in this matrix is **not** a proof-taxonomy class. Inventory presence, surface ownership, or companion-plan status does **not** by itself establish meaningful closure; some entries are still compat/static or `RUNTIME_EPHEMERAL` guardrails unless the underlying workflow mutates durable truth or yields an output artifact.
+
 ## Coverage Mapping
 
 | Surface | Coverage Description |
@@ -14,13 +16,13 @@ If a control is missing from this matrix, it does not have an explicit owner yet
 | Project / import | project details, create/select project, project-folder display, gated PractiScore dashboard opener, gated manual PractiScore file import, gated primary import, metadata-only delete |
 | Match workspace | shared-shell main/lower/right Match layout, media-backed stage tiles, workspace create/open/save/add-stage/remove-stage plus loading/error states, stage card selection/open/return, setup-once preview/apply/dismiss flow, selected-stage lower-pane truth stays pinned while Composite/Export swap beneath it, shared defaults apply/reset, stage overrides apply/reset, stage clip add plus composite reorder/per-clip role-sync-audio editing/plan refresh/apply-clear cut overrides, recap stage selection plus transition/result-card configuration and render outcomes, batch export recipe selection/select all/none/start, Match settings local persistence |
 | Performance Library | shared-shell main/lower/right Performance layout, loading/empty/stale state affordances, overview summary tiles, records search/sort/filter plus personal-best list, selected-record lower-pane detail, Open Stage/Open Workspace, notes/tags persistence entry points, analytics truth messaging, backup create/restore, CSV/JSON export, Performance settings local persistence |
-| Compose | add media, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, per-item card toggle/remove, per-item angle-role selection, per-item layer size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |
+| Compose | add media, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, reusable Trim Dead Time run-window editor, per-item card toggle/remove, per-item angle-role selection, per-item layer size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |
 | Score | scoring pane enable/disable, preset selection, scoring summary display, PractiScore context import, scoring table render, scoring-specific row edit behavior |
 | Splits / waveform | split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |
-| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/added media/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |
+| Markers / Review / Overlay | compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/added media/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, Export Badges output-profile handoff, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |
 | Settings | scope, landing pane, reopen-last-tool, section save current/reset default actions, layout defaults, Compose defaults, overlay defaults, marker defaults, export defaults, ShotML defaults, section collapse, template fields |
 | Metrics | metrics pane summary grid, expand to workbench, stage story graphs, trend table, scoring context display, timing-event metrics ordering, metrics pane row propagation, CSV/Text export buttons |
-| Export | output path, preset, quality, output-profile list/create/select/delete, output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |
+| Export | output path, preset, quality, output-profile list/create/select/delete, framing/title/logo output-hook save/close controls, show export log modal open/close/backdrop and download, CI Clip1 MP4 proof export |
 | ShotML | average auto-confidence summary, threshold apply/reset, rerun, proposal generation, reset defaults |
 
 ## Test Files
@@ -58,7 +60,7 @@ The interaction suite (`tests/browser/test_browser_interactions.py`) verifies:
 - missing-folder creation notice on new project
 - metadata-only delete safety confirmation and cancel path
 - project-pane keyboard tab order through primary controls
-- output-profile create/select and output-hook save/close flows from the Export pane
+- output-profile create/select plus Compose Trim Dead Time, Overlay Export Badges, and Export framing/title/logo output-hook save/close flows
 - Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states
 - Match workspace stage open and shell return-to-Match behavior
 - Match workspace live preview tiles and selected-stage lower-pane truth across Composite/Export lower-pane swaps
@@ -105,3 +107,6 @@ The interaction suite (`tests/browser/test_browser_interactions.py`) verifies:
 - layout capture/release defaults
 - visible analyze or re-run beep-sync action
 - CI artifact export proof from `docs/Clip1.MP4`
+- `DEV-106.landing_recent` — backend-route/static render plus recent-row interaction proof for `/api/landing/recent`; row clicks intentionally switch surfaces without auto-opening a saved project or workspace
+- `DEV-107.root_shell_compat` — compat/static shell contract plus workflow guardrails for Match open/return, setup-once, and pinned lower-pane truth, plus the retained host open-project and Performance-library rerender/selected-record consumers
+- `project.practiscore_bridge` — manual `Select PractiScore File` fallback and local `Match type` / `Stage #` / `Competitor name` / `Place` selectors remain proof-bearing; remote session/match-list/import coverage is a browser-state bridge rather than proof of every downstream consumer

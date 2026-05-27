@@ -192,6 +192,207 @@ def read_match_records() -> list[dict]:
     return _read_record_directory(library_root() / "records" / "matches")
 
 
+_LIBRARY_FILTERS_AVAILABLE = ["discipline", "competitor", "match_id", "stage_id", "sort_by"]
+
+
+def _parse_record_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        raw_value = value.strip()
+        if not raw_value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw_value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _record_timestamp(row: dict) -> float:
+    parsed = _parse_record_datetime(row.get("event_date"))
+    if parsed is None:
+        return 0.0
+    return parsed.timestamp()
+
+
+def _record_event_date(row: dict) -> str:
+    parsed = _parse_record_datetime(row.get("event_date"))
+    if parsed is not None:
+        return parsed.isoformat()
+    raw_value = row.get("event_date")
+    return "" if raw_value in {None, ""} else str(raw_value)
+
+
+def _support_rows(records: list[dict], metrics: list[dict]) -> list[dict]:
+    return list(records or metrics or [])
+
+
+def _limit_rows(rows: list[dict], limit: int | None) -> list[dict]:
+    if limit is None:
+        return list(rows)
+    return list(rows[: max(0, int(limit))])
+
+
+def _sort_rows_by_recency(rows: list[dict]) -> list[dict]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            _record_timestamp(row),
+            str(row.get("library_record_id") or row.get("stage_id") or row.get("match_id") or ""),
+        ),
+        reverse=True,
+    )
+
+
+def _stage_editor_target(row: dict) -> dict[str, str]:
+    editor_target = row.get("editor_target")
+    normalized_target = dict(editor_target) if isinstance(editor_target, dict) else {}
+    return {
+        "project_path": str(
+            normalized_target.get("project_path") or row.get("project_path") or ""
+        ),
+        "stage_id": str(normalized_target.get("stage_id") or row.get("stage_id") or ""),
+        "type": "single",
+        "workspace_path": str(
+            normalized_target.get("workspace_path") or row.get("workspace_path") or ""
+        ),
+    }
+
+
+def _match_editor_target(row: dict) -> dict[str, str]:
+    editor_target = row.get("editor_target")
+    normalized_target = dict(editor_target) if isinstance(editor_target, dict) else {}
+    return {
+        "workspace_path": str(
+            normalized_target.get("workspace_path") or row.get("workspace_path") or ""
+        ),
+        "match_id": str(normalized_target.get("match_id") or row.get("match_id") or ""),
+        "type": "multi",
+    }
+
+
+def _normalize_stage_activity_row(row: dict) -> dict[str, object]:
+    editor_target = _stage_editor_target(row)
+    return {
+        "library_record_id": str(row.get("library_record_id") or ""),
+        "name": str(row.get("display_name") or "Untitled Stage"),
+        "path": editor_target["project_path"],
+        "date": _record_event_date(row),
+        "type": "stage",
+        "surface": "single",
+        "stage_id": editor_target["stage_id"],
+        "match_id": None if row.get("match_id") in {None, ""} else str(row.get("match_id")),
+        "discipline": str(row.get("discipline") or ""),
+        "project_path": editor_target["project_path"],
+        "workspace_path": editor_target["workspace_path"],
+        "editor_target": editor_target,
+        "timestamp": _record_timestamp(row),
+    }
+
+
+def _normalize_match_activity_row(row: dict) -> dict[str, object]:
+    editor_target = _match_editor_target(row)
+    return {
+        "library_record_id": str(row.get("library_record_id") or ""),
+        "name": str(row.get("display_name") or "Untitled Match"),
+        "path": editor_target["workspace_path"],
+        "date": _record_event_date(row),
+        "type": "match",
+        "surface": "multi",
+        "match_id": editor_target["match_id"],
+        "discipline": str(row.get("discipline") or ""),
+        "workspace_path": editor_target["workspace_path"],
+        "editor_target": editor_target,
+        "timestamp": _record_timestamp(row),
+    }
+
+
+def _normalized_library_activity_rows(
+    *,
+    stage_limit: int | None = None,
+    match_limit: int | None = None,
+) -> list[dict[str, object]]:
+    stage_rows = _support_rows(read_stage_records(), read_stage_metrics())
+    match_rows = _support_rows(read_match_records(), read_match_metrics())
+    normalized_rows = [
+        *[
+            _normalize_stage_activity_row(row)
+            for row in _limit_rows(_sort_rows_by_recency(stage_rows), stage_limit)
+        ],
+        *[
+            _normalize_match_activity_row(row)
+            for row in _limit_rows(_sort_rows_by_recency(match_rows), match_limit)
+        ],
+    ]
+    normalized_rows.sort(
+        key=lambda row: (
+            float(row.get("timestamp") or 0.0),
+            str(row.get("library_record_id") or ""),
+        ),
+        reverse=True,
+    )
+    return normalized_rows
+
+
+def build_library_summary() -> dict[str, object]:
+    """Return summary-only library support data for shared backend state."""
+    stage_rows = _support_rows(read_stage_records(), read_stage_metrics())
+    match_rows = _support_rows(read_match_records(), read_match_metrics())
+    latest_row = max(
+        [*stage_rows, *match_rows],
+        key=_record_timestamp,
+        default=None,
+    )
+    last_updated = None if latest_row is None else (_record_event_date(latest_row) or None)
+    return {
+        "stage_count": len(stage_rows),
+        "match_count": len(match_rows),
+        "last_updated": last_updated,
+        "filters_available": list(_LIBRARY_FILTERS_AVAILABLE),
+        "selection": None,
+    }
+
+
+def list_recent_library_activity(
+    limit: int = 8,
+    *,
+    stage_limit: int = 5,
+    match_limit: int = 3,
+) -> list[dict[str, object]]:
+    """Return normalized recent library items for landing/shared backend support."""
+    recent_rows = _normalized_library_activity_rows(
+        stage_limit=stage_limit,
+        match_limit=match_limit,
+    )
+    return recent_rows[: max(0, int(limit))]
+
+
+def build_library_reopen_targets(limit: int = 10) -> list[dict[str, object]]:
+    """Return deterministic library reopen targets keyed by stable record ids."""
+    targets: list[dict[str, object]] = []
+    for row in _normalized_library_activity_rows(stage_limit=limit, match_limit=limit)[
+        : max(0, int(limit))
+    ]:
+        editor_target = row.get("editor_target")
+        normalized_target = dict(editor_target) if isinstance(editor_target, dict) else {}
+        targets.append(
+            {
+                "library_record_id": str(row.get("library_record_id") or ""),
+                "name": str(row.get("name") or ""),
+                "type": str(row.get("type") or ""),
+                "surface": str(row.get("surface") or ""),
+                "date": str(row.get("date") or ""),
+                "editor_target": normalized_target,
+            }
+        )
+    return targets
+
+
 def save_search_catalog(catalog_data: dict) -> None:
     path = search_catalog_path()
     path.parent.mkdir(parents=True, exist_ok=True)

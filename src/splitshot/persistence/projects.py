@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 from splitshot.domain.models import MergeSource, Project, project_from_dict, project_to_dict
@@ -15,6 +17,75 @@ POPUP_DIRNAME = "Markers"
 REQUIRED_PROJECT_DIRNAMES = (INPUT_DIRNAME, PRACTISCORE_DIRNAME, OUTPUT_DIRNAME)
 
 _BROWSER_UPLOAD_PREFIX = re.compile(r"^[A-Fa-f0-9]{32}_")
+UTC = timezone.utc
+
+
+def _projects_root(root: str | Path | None = None) -> Path:
+    if root is not None:
+        return Path(root).expanduser()
+    env_root = os.environ.get("SPLITSHOT_PROJECTS_ROOT")
+    if env_root:
+        return Path(env_root).expanduser()
+    return Path.home() / ".splitshot" / "projects"
+
+
+def _parse_activity_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        raw_value = value.strip()
+        if not raw_value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw_value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _recent_project_timestamp(metadata: dict[str, object], fallback_timestamp: float) -> tuple[float, str]:
+    for key in ("last_opened", "updated_at", "modified_at", "created_at"):
+        parsed = _parse_activity_datetime(metadata.get(key))
+        if parsed is not None:
+            return parsed.timestamp(), parsed.isoformat()
+    if fallback_timestamp > 0:
+        fallback = datetime.fromtimestamp(fallback_timestamp, UTC)
+        return fallback.timestamp(), fallback.isoformat()
+    return 0.0, ""
+
+
+def _recent_project_entry(project_path: Path) -> dict[str, object] | None:
+    metadata_path = project_metadata_path(project_path)
+    if not metadata_path.is_file():
+        return None
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except Exception:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    try:
+        fallback_timestamp = project_path.stat().st_mtime
+    except OSError:
+        fallback_timestamp = 0.0
+    timestamp, date_value = _recent_project_timestamp(metadata, fallback_timestamp)
+    normalized_path = str(resolve_project_path(project_path).resolve(strict=False))
+    return {
+        "name": str(metadata.get("name") or project_path.name),
+        "path": normalized_path,
+        "date": date_value,
+        "last_opened": date_value,
+        "project_id": str(metadata.get("id") or ""),
+        "description": str(metadata.get("description") or ""),
+        "updated_at": str(metadata.get("updated_at") or ""),
+        "type": "stage",
+        "surface": "single",
+        "timestamp": timestamp,
+    }
 
 
 def resolve_project_path(path: str | Path) -> Path:
@@ -245,32 +316,36 @@ def load_project(bundle_path: str | Path) -> Project:
     return project
 
 
-def list_recent_projects(limit: int = 10) -> list[dict]:
+def list_recent_projects(limit: int = 10, root: str | Path | None = None) -> list[dict]:
     """List recently opened projects from the splitshot datadir."""
-    datadir = Path.home() / ".splitshot" / "projects"
-    if not datadir.exists():
+    return list_recent_project_activity(limit=limit, root=root)
+
+
+def list_recent_project_activity(
+    limit: int = 10,
+    root: str | Path | None = None,
+) -> list[dict[str, object]]:
+    """Return normalized recent Stage project entries for landing/shared backend support."""
+    datadir = _projects_root(root)
+    if not datadir.is_dir():
         return []
 
-    projects = []
-    for entry in sorted(datadir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
-        if entry.is_dir():
-            project_file = entry / "project.json"
-            if project_file.exists():
-                try:
-                    data = json.loads(project_file.read_text())
-                    projects.append(
-                        {
-                            "name": data.get("name", entry.name),
-                            "path": str(entry),
-                            "last_opened": data.get("updated_at", ""),
-                        }
-                    )
-                except Exception:
-                    pass
-        if len(projects) >= limit:
-            break
+    recent_entries: list[dict[str, object]] = []
+    for entry in datadir.iterdir():
+        if not entry.is_dir():
+            continue
+        recent_entry = _recent_project_entry(entry)
+        if recent_entry is not None:
+            recent_entries.append(recent_entry)
 
-    return projects
+    recent_entries.sort(
+        key=lambda item: (
+            float(item.get("timestamp") or 0.0),
+            str(item.get("path") or ""),
+        ),
+        reverse=True,
+    )
+    return recent_entries[: max(0, int(limit))]
 
 
 def delete_project(bundle_path: str | Path) -> None:

@@ -30,7 +30,7 @@ In the current shell, the stage tiles stay in the main area, each saved stage ca
 | `Save Workspace` | Writes the current Match workspace folder and metadata to disk. |
 | `Stages` | Keeps the stage list in the main area and refreshes the lower pane with truthful information for the selected stage. |
 | Preview tile video | Shows live stage media inside a Match tile when the saved stage project can be resolved locally. |
-| `Defaults` | Uses the right-hand inspector to set shared Match defaults such as `Aspect Ratio / Framing`, `Overlay Data`, `Opening Title`, and `Your Logo`. |
+| `Defaults` | Uses the right-hand inspector to set shared Match defaults such as `Aspect Ratio / Framing`, `Export Badges`, `Opening Title`, and `Your Logo`. |
 | `Overrides` | Uses the right-hand inspector to apply stage-specific overrides for the selected stage without changing the shared defaults. |
 | `Recap` | Uses the right-hand inspector to build a `Match Recap` from selected workspace stages, including transition (`Cut`, `Fade`, `Dissolve`) and result-card placement (`None`, `At End`, `Per Stage`). |
 | `Composite` | Switches the lower pane into Stage Composite clip work for the selected stage while keeping the selected-stage summary pinned above it. |
@@ -50,7 +50,7 @@ In the current shell, the stage tiles stay in the main area, each saved stage ca
 3. Add stages in `Stages` until the match list is complete, then click a stage card so the lower pane stays focused on that stage while you move through the rest of the Match workflow. When a stage has a resolvable saved project, its tile can show a live preview video instead of a static placeholder.
 4. Configure Stage 1, then use `Apply to All` when shared defaults and reusable output-profile behavior should flow to the rest of the match.
 5. Open `Defaults` to set the shared cross-stage baseline.
-6. Open `Overrides` after selecting a stage card when one stage needs different framing or overlay-data settings.
+6. Open `Overrides` after selecting a stage card when one stage needs different framing or a different export-badge setup.
 7. Use the stage-card `Open` action when deeper timing, scoring, Compose, Review, or Export work must happen in the Stage editor, then click `Return to Match` in the shell header to come back.
 8. Open `Recap` when you want one stitched highlight reel from selected stages; the recap controls live in the right-hand inspector and let you choose transitions plus per-stage or end-of-recap result cards.
 9. Open `Composite` when a stage needs clip-level angle prep before export; the lower pane keeps the selected-stage truth pinned above the composite clip work so you can reorder clips, edit sync/audio state, and apply or clear cut overrides without losing context.

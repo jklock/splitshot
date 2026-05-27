@@ -10,6 +10,8 @@ Cross-lane summary authority: `../../MASTER_STATUS.md`
 
 Work Effort 1 now owns accepted implementation evidence for `MOD-001` through `MOD-005`. Work Effort 2 still owns final proof coverage, residual-risk closeout, and approval for `MOD-006` and `MOD-007`.
 
+Development `DEV-107` later added accepted compat-seam cleanup evidence: root-shell globals now route through `installLegacyGlobalCompat(...)`, duplicate tail-end `window.*` exposure was trimmed, and the owned shell/static/interaction/workspace guardrail pack reran green. Those artifacts strengthen the recorded implementation evidence but do not change the normalized lane status or promote the lane to exhaustive legacy-consumer proof.
+
 ## Required evidence categories
 
 ### 1. Source-level evidence
@@ -76,6 +78,12 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
   - Produced by: Work Effort 1 modularization implementation pass
   - Date: `2026-05-25`
   - Notes: active Match and Performance render/helper entry points now delegate through the app-owned modules first; remaining fallback blocks stay documented as compatibility shims.
+
+- Artifact: Development DEV-107 root-shell compat cleanup validation
+  - Path: `src/splitshot/browser/static/app.js`, `src/splitshot/browser/static/lib/global-compat.js`, `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_interactions.py::test_shell_compat_host_on_open_project_callback_opens_saved_project`, `tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth`, `tests/browser/test_workspace_flows.py`, `docs/project/browser-proof-seams.json`, `tests/browser/test_browser_control_coverage_matrix.py`, `tests/browser/test_browser_control_inventory_audit.py`
+  - Produced by: targeted `.venv` pytest run plus focused `ruff` during DEV-107 close
+  - Date: `2026-05-26`
+  - Notes: duplicate tail-end `window.*` exposure was trimmed, `setActiveSurface` and `renderAutomationSurface` now ride the compat value surface, and `selectedLibraryRecord` remains compat-bound; the reopened close added explicit proof for the retained host open-project callback and the direct Performance Library compat-consumer path, wired those claims into the seam-registry audits, and finished with a green `691 passed` all-together anchor. This is stronger compat-consumer evidence for Work Effort 1, but it still is not exhaustive proof of every legacy global consumer path.
 
 - Artifact: Shell/static/settings/control inventory validation pack
   - Path: `tests/browser/test_automation_ui_shell_contracts.py`, `tests/browser/test_browser_static_ui.py`, `tests/browser/test_browser_rail_layout.py`, `tests/browser/test_browser_interactions.py::test_match_settings_persist_locally_and_control_match_return_selection`, `tests/browser/test_browser_interactions.py::test_performance_library_settings_persist_and_manual_refresh_loads_records`, `tests/browser/test_browser_interactions.py::test_performance_library_settings_remain_isolated_from_match_settings`, `tests/browser/test_browser_interactions.py::test_performance_library_shows_loading_and_recovers_from_route_failure`, `tests/browser/test_browser_control_inventory_audit.py`

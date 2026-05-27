@@ -15,12 +15,12 @@ Source-bundle files remain the source of detailed execution notes. The aggregate
 
 ## Program snapshot
 
-- Last updated: `2026-05-25`
-- Program state: `two-effort recovery and proof-packaging in progress`
+- Last updated: `2026-05-26`
+- Program state: `Work Effort 1 complete / Work Effort 2 handoff pending`
 - Work Effort 1 / Set 1: `development/`
 - Work Effort 2 / Set 2: `testing/`
-- Canonical repo-health proof anchor: `../../../artifacts/current-all-together.json`
-- Canonical baseline result: `649 passed in 1718.96s (0:28:38)` on `2026-05-24`
+- Canonical repo-health proof anchor: `../../../artifacts/all-together.json`
+- Canonical baseline result: `691 passed in 1821.89s (0:30:21)` on `2026-05-26`
 
 Important distinction:
 
@@ -62,6 +62,9 @@ These two aggregate bundles are the execution overlays that let the program clos
 
 Use these status terms consistently across every bundle:
 
+- `execution-ready / implementation pending`
+  - The bundle contract, backlog, and proof rules have been reset into an executable state.
+  - Active implementation work under that reset has not yet been executed or revalidated.
 - `planning baseline`
   - The lane has a written contract, backlog, and evidence plan, but it has **not** had a dedicated execution pass yet.
   - Broad repo validation does **not** count as completing this lane.
@@ -75,8 +78,17 @@ Use these status terms consistently across every bundle:
 
 | Aggregate bundle | Work effort | Status | Task-state summary | What is firmly done | What still blocks done |
 | --- | --- | --- | --- | --- | --- |
-| `development/` | `Work Effort 1 / Set 1` | `implementation advanced / proof pending` | Stage `STG-001` through `STG-006` complete; Match implementation scope materially advanced through `MCH-006`; Performance implementation scope materially advanced through `PRF-005`; Backend implementation scope materially advanced through `BEK-006`; Modularization implementation scope materially advanced through `MOD-005` | Stage, Match, and Performance implementation baselines are settled enough for testing handoff; Backend and Modularization implementation passes are now materially landed | Testing-owned proof packaging, screenshots/artifacts, QA closeout, and final signoff |
-| `testing/` | `Work Effort 2 / Set 2` | `implementation advanced / proof pending` | `STG-007` and `STG-008` complete; Match and Performance proof/signoff packages partial; Backend `BEK-007` / `BEK-008` future; Modularization `MOD-006` / `MOD-007` future; source `predev/tests/` bundle `TST-001` through `TST-009` future | Stage docs/test/proof/signoff is complete; focused proof slices and the repo-health baseline already exist for Match/Performance | Remaining Match and Performance proof packaging, Backend and Modularization proof/signoff passes, all `TST-*` work, screenshots/artifacts/docs sync, final suite runs, and visual signoff |
+| `development/` | `Work Effort 1 / Set 1` | `done` | `DEV-001` through `DEV-301` complete | execution contract reset, frozen-baseline guardrails, proof taxonomy, backend/state/persistence/controller/landing/shell implementation closure, seam-registry-backed audit sync, and the republished Work Effort 1 handoff are recorded | none inside Work Effort 1; remaining proof/signoff scope belongs to `testing/` |
+| `testing/` | `Work Effort 2 / Set 2` | `implementation advanced / proof pending` | `STG-007` and `STG-008` complete; Match `MCH-002` through `MCH-007` complete; Performance proof/signoff package partial; Backend `BEK-007` / `BEK-008` future; Modularization `MOD-006` / `MOD-007` future; source `predev/tests/` bundle `TST-001` through `TST-009` future | Stage and Match docs/test/proof/signoff are complete; focused proof slices and the repo-health baseline already exist for Performance | Remaining Performance proof packaging, Backend and Modularization proof/signoff passes, all `TST-*` work, screenshots/artifacts/docs sync, final suite runs, and visual signoff |
+
+Important clarification for aggregate status interpretation:
+
+- The `development/` aggregate bundle was reset from a historical retrospective overlay into an active execution contract; that reset is now complete through `DEV-301`, including the reopened proof closure and fresh all-together anchor.
+- Historical implementation notes remain preserved in the source bundles under `predev/` until the reset `DEV-*` lanes actually move those statuses again.
+- For live execution of the reset bundle, use `development/progress.md`, `development/tasks.md`, and `development/outcome.md` as the immediate authority.
+- Historical source-bundle completion notes did **not** authorize skipping reset `DEV-*` lanes in `development/`; that reset Work Effort 1 execution is now closed, and any later implementation issue must use an explicit reopen rather than informal caveat language.
+- When a reset `DEV-*` lane materially moves a source lane, the integrator must update the touched aggregate and `predev/*` ledgers in the same integration pass.
+- When a reset bundle status materially moves, the integrator must update `MASTER_STATUS.md` in that same integration pass.
 
 ## Source-bundle scoreboard
 
@@ -85,7 +97,7 @@ These six source bundles remain the detailed lane truth inside `predev/`.
 | Source bundle | Status | Task-state summary | What is firmly done | What still blocks done |
 | --- | --- | --- | --- | --- |
 | `predev/stage/` | `done` | `STG-001` through `STG-008` complete | Contract reset, Project cleanup, shared-shell hardening, defaults/regression closure, Stage-owned parity closure, docs/test/proof sync, final gate confirmation, artifact recording cleanup, visual signoff | none |
-| `predev/match/` | `implementation advanced / proof pending` | `MCH-001`, `MCH-005`, `MCH-006` complete; `MCH-002`, `MCH-003`, `MCH-004` partial; `MCH-007` open | Contract reset, recap/composite/export/parity implementation, settings isolation, doc sync | Auto-seed proof packaging, lower-pane/right-inspector proof packaging, screenshots, recap/export artifact links, visual signoff |
+| `predev/match/` | `done` | `MCH-001` through `MCH-007` complete | Contract reset, shared-shell convergence, lifecycle/auto-seed proof, lower-pane/right-inspector proof, recap/composite/export/parity closure, settings isolation/doc sync, screenshots/output artifacts, visual signoff | none |
 | `predev/performance/` | `implementation advanced / proof pending` | `PRF-001`, `PRF-005` complete; `PRF-002`, `PRF-003`, `PRF-004`, `PRF-006` partial; `PRF-007` open | Contract reset, shared-shell implementation, reopen/settings isolation, notes/tags and analytics truth already partly proven, visible stale/error manual recovery restored | Lower-pane/right-inspector proof packaging, search/filter/detail proof depth, backup/export artifacts, screenshots, visual signoff |
 | `predev/backend/` | `implementation advanced / proof pending` | `BEK-001` through `BEK-006` complete; `BEK-007` and `BEK-008` open | Route/state inventory, `/api/state` summary contract, status/error recovery, persistence/import/PractiScore support, and Match/Performance backend support are materially landed | Final proof package, route/state artifact packaging, residual-risk closeout, approval |
 | `predev/modularization/` | `implementation advanced / proof pending` | `MOD-001` through `MOD-005` complete; `MOD-006` and `MOD-007` open | Ownership inventory, interface rules, Match/Performance delegation cleanup, and app-local settings isolation are materially landed | Final proof package, temporary-exception closeout, approval |
@@ -112,6 +124,8 @@ Important clarification:
 
 ## Current done ledger
 
+This ledger preserves historical source-lane completion context. It is not a release authorization to skip active reset tasks in `development/`.
+
 ### Completed enough to count as materially advanced
 
 #### Stage
@@ -127,8 +141,12 @@ Important clarification:
 #### Match complete items
 
 - `MCH-001` — contract reset complete
+- `MCH-002` — shared-shell convergence proof complete
+- `MCH-003` — lifecycle and auto-seed proof complete
+- `MCH-004` — lower-pane/right-inspector workflow proof complete
 - `MCH-005` — recap/composite/export/parity closure complete
 - `MCH-006` — Match settings isolation and doc sync complete
+- `MCH-007` — Match done gate complete
 
 #### Performance complete items
 
@@ -154,12 +172,6 @@ Important clarification:
 
 ### Implemented but still proof-pending
 
-#### Match proof-pending items
-
-- `MCH-002` — shared-shell convergence implemented, but shell-grammar proof packaging remains open
-- `MCH-003` — auto-seed/auto-attach behavior implemented, but targeted proof packaging remains open
-- `MCH-004` — lower-pane/right-inspector workflow implemented, but focused proof packaging remains open
-
 #### Performance proof-pending items
 
 - `PRF-002` — shared-shell convergence implemented, but lower-pane/right-inspector proof remains open
@@ -169,8 +181,6 @@ Important clarification:
 
 ### Explicitly not complete yet
 
-- `STG-008`
-- `MCH-007`
 - `PRF-007`
 - `BEK-007`
 - `BEK-008`
@@ -187,7 +197,7 @@ Evidence counts toward source-bundle completion only when it is recorded in the 
 Evidence counts toward aggregate-bundle completion only when:
 
 1. the mapped source-bundle work is accurately reflected,
-2. the aggregate `outcome.md` and `artifacts.md` point at the same truth,
+2. the aggregate bundle’s active ledgers point at the same truth (`development/` may use `progress.md`, `proof.md`, and `outcome.md` while retaining `artifacts.md` only as a compatibility pointer),
 3. the reserved work-effort boundaries are respected, and
 4. final proof/signoff work is closed in `testing/` rather than being silently absorbed into `development/`.
 
@@ -204,7 +214,7 @@ Historical artifact bundles and pre-reset proof remain useful reference material
 
 ### Baseline repo-health evidence
 
-`../../../artifacts/current-all-together.json` is the canonical repo-health anchor.
+`../../../artifacts/all-together.json` is the canonical repo-health anchor.
 
 It proves that the repository reached a passing full-suite baseline after the current Stage/Match/Performance work, but it does **not** by itself close:
 
@@ -218,8 +228,8 @@ It proves that the repository reached a passing full-suite baseline after the cu
 
 | Lane | Focused tests | Screenshots | Output / artifact packaging | Final gate |
 | --- | --- | --- | --- | --- |
-| `predev/stage/` | mostly recorded | recorded | needs final artifact cleanup | open |
-| `predev/match/` | partly recorded | pending | pending for recap/export and auto-seed proof | open |
+| `predev/stage/` | recorded | recorded | recorded | closed |
+| `predev/match/` | recorded | recorded | recorded | closed |
 | `predev/performance/` | partly recorded | pending | pending for backup/export and shell-proof packaging | open |
 | `predev/backend/` | targeted validation recorded | n/a | final proof package pending | open |
 | `predev/modularization/` | targeted validation recorded | n/a | final proof package pending | open |
@@ -249,20 +259,19 @@ Preserve this order inside Work Effort 1 unless a newly discovered blocker force
    - Stage isolation,
    - shared-shell constraint closure,
    - app-local persistence/settings isolation.
-6. Publish the Work Effort 1 handoff in `development/outcome.md` and `development/artifacts.md`.
+6. Publish the Work Effort 1 handoff in the live `development/` ledgers named by the bundle spec (`development/outcome.md`, plus `development/progress.md` and `development/proof.md` when they own execution truth).
 
 ### 2. Work Effort 2 / Set 2 — `testing/`
 
 Preserve this order inside Work Effort 2 unless a newly discovered blocker forces a documented change:
 
-1. Close the remaining Match lifecycle and shell-convergence proof tied to `MCH-002`, `MCH-003`, `MCH-004`, and `MCH-006`.
-2. Close Stage testing/signoff scope through `STG-007` and `STG-008`.
-3. Close the remaining Match recap/composite/export artifact package and `MCH-007`.
-4. Close the remaining Performance shell/detail/search-filter/backup-export package and `PRF-007`.
-5. Close Backend and Modularization testing/signoff scope through `BEK-007`, `BEK-008`, `MOD-006`, and `MOD-007`.
-6. Execute the entire source `predev/tests/` bundle scope (`TST-001` through `TST-009`).
-7. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required.
-8. Run focused proof slices, owned suites, the canonical full suite, and final visual signoff last.
+1. Preserve the closed Stage testing/signoff scope through `STG-007` and `STG-008`, reopening it only if a new first-order blocker appears.
+2. Preserve the closed Match proof/signoff scope through `MCH-007`, reopening it only if a new first-order blocker appears.
+3. Close the remaining Performance shell/detail/search-filter/backup-export package and `PRF-007`.
+4. Close Backend and Modularization testing/signoff scope through `BEK-007`, `BEK-008`, `MOD-006`, and `MOD-007`.
+5. Execute the entire source `predev/tests/` bundle scope (`TST-001` through `TST-009`).
+6. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required.
+7. Run focused proof slices, owned suites, the canonical full suite, and final visual signoff last.
 
 ## Cross-bundle dependencies
 
@@ -285,7 +294,7 @@ Preserve this order inside Work Effort 2 unless a newly discovered blocker force
 - `docs/project/completion-bundles/predev/newfeatures/from-shooting-cut.md` is a parity-input source brief, not completion proof.
 - the unnumbered `orchestration.prompt.md` file in each bundle is the canonical prompt source.
 - the new aggregate bundles do not use numbered duplicate prompt files.
-- Stage should no longer be summarized as only `STG-001` through `STG-005` complete; the normalized state is `STG-001` through `STG-007` complete with `STG-008` open.
+- Stage should no longer be summarized as only `STG-001` through `STG-005` complete; the normalized state is `STG-001` through `STG-008` complete.
 - Backend and Modularization have now received their dedicated Work Effort 1 implementation passes; only the source `predev/tests/` bundle should remain at `planning baseline` until its dedicated execution pass occurs.
 
 ## Per-bundle file mapping
@@ -296,7 +305,7 @@ Use the bundle-local files for detail in either a source or aggregate bundle:
 - `tasks.md` — actionable backlog and task state
 - `spec.md` — normative requirements and non-regression contract
 - `outcome.md` — lane-local ledger, final gate, waivers, and signoff record
-- `artifacts.md` — evidence classes, artifact paths, and proof ledger
+- `artifacts.md` — evidence classes, artifact paths, and proof ledger, unless the bundle spec explicitly retains it as a compatibility pointer while live execution truth moves to other ledgers
 - `orchestration.prompt.md` — canonical lane execution prompt
 
 ## Editorial verification checklist

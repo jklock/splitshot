@@ -88,14 +88,26 @@ Use source-bundle ledgers and repo-owned artifact paths rather than temporary sc
 - Artifact: Stage proof anchor
   - Path: `../predev/stage/outcome.md`, `../predev/stage/artifacts.md`
   - Produced by: Stage source bundle
-  - Date: `2026-05-25`
-  - Notes: Work Effort 2 inherits `STG-007` plus the open `STG-008` final-gate scope.
+  - Date: `2026-05-26`
+  - Notes: Work Effort 2 inherits the closed Stage source bundle, including `STG-007`, the closed `STG-008` final gate, and the refreshed `2026-05-26` rerun evidence.
+
+- Artifact: Stage final-gate rerun evidence
+  - Path: `../predev/stage/outcome.md`, `../predev/stage/artifacts.md`, `../../../docs/screenshots/ProjectPane.png`, `../../../docs/screenshots/ExportPane.png`, `../../../docs/screenshots/ReviewPane.png`, `../../../docs/screenshots/automate3/responsive-stage-1280.png`, `../../../docs/screenshots/automate3/responsive-stage-900.png`, `../../../docs/screenshots/automate3/responsive-proof-results.json`
+  - Produced by: 2026-05-26 Stage rerun pass
+  - Date: `2026-05-26`
+  - Notes: records the full Stage rerun after the Compose/Overlay/Export workflow relocation: runtime health passed, the Stage proof packs stayed green at `49`, `47`, `37`, and `59` passing tests, the repo-owned screenshots were refreshed, and the responsive proof bundle stayed green with no console errors.
 
 - Artifact: Match proof anchor
   - Path: `../predev/match/outcome.md`, `../predev/match/artifacts.md`
   - Produced by: Match source bundle
-  - Date: `2026-05-25`
-  - Notes: Work Effort 2 inherits the remaining proof/signoff work needed to close Match.
+  - Date: `2026-05-26`
+  - Notes: Work Effort 2 inherits the closed Match source bundle, including the current rerun evidence and the recorded Match proof bundle.
+
+- Artifact: Match final-gate rerun evidence
+  - Path: `../predev/match/outcome.md`, `../predev/match/artifacts.md`, `../../../artifacts/match-proof-20260526/summary.txt`, `../../../artifacts/match-proof-20260526/proof-results.json`, `../../../artifacts/match-proof-20260526/screenshots/match-empty.png`, `../../../artifacts/match-proof-20260526/screenshots/match-loaded.png`, `../../../artifacts/match-proof-20260526/screenshots/match-recap.png`, `../../../artifacts/match-proof-20260526/screenshots/match-composite.png`, `../../../artifacts/match-proof-20260526/screenshots/match-export.png`, `../../../artifacts/match-proof-20260526/screenshots/match-settings.png`, `../../../artifacts/match-proof-20260526/workspace/recap.mp4`, `../../../artifacts/match-proof-20260526/workspace/exports/stage_1-stage_composite.mp4`, `../../../artifacts/match-proof-20260526/workspace/exports/stage_2-stage_composite.mp4`, `../../../artifacts/match-proof-20260526/workspace/auto-seed-proof.json`, `../../../artifacts/match-proof-20260526/workspace/composite-plan.json`, `../../../artifacts/match-proof-20260526/workspace/composite-plan-detail.txt`
+  - Produced by: 2026-05-26 Match rerun pass
+  - Date: `2026-05-26`
+  - Notes: records the full Match rerun after Stage closure: the shared shell/static/inventory/coverage pack stayed green at `49 passed`; the lifecycle/lower-pane packs stayed green at `3 passed`, `2 passed`, and `4 passed`; the recap/batch/composite packs stayed green at `2 passed`, `2 passed`, and `4 passed`; the Match settings isolation rerun stayed green at `2 passed`; and the fresh Match proof bundle recorded the accepted screenshots plus recap/export/composite/auto-seed artifacts.
 
 - Artifact: Performance proof anchor
   - Path: `../predev/performance/outcome.md`, `../predev/performance/artifacts.md`
@@ -129,4 +141,4 @@ Use source-bundle ledgers and repo-owned artifact paths rather than temporary sc
 
 ## Completion rule
 
-Testing is not complete until `VAL-007` is closed, the relevant source-bundle final gates are closed, the source `predev/tests/` bundle is complete, and the final closeout chain is fully recorded.
+Testing is not complete until `VAL-006` is closed, the relevant source-bundle final gates are closed, the source `predev/tests/` bundle is complete, and the final closeout chain is fully recorded.

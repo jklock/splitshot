@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -7,6 +8,7 @@ from pathlib import Path
 INDEX_HTML = Path("src/splitshot/browser/static/index.html")
 INVENTORY_PLAN = Path("docs/project/browser-control-coverage-plan.md")
 FULL_E2E_PLAN = Path("docs/project/browser-full-e2e-qa-plan.md")
+SEAM_REGISTRY = json.loads(Path("docs/project/browser-proof-seams.json").read_text(encoding="utf-8"))
 
 EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     line.strip()
@@ -432,12 +434,31 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "A full-app end-to-end QA claim requires satisfying the stricter exit criteria"
         in inventory_plan
     )
+    assert (
+        "These coverage statuses describe browser inventory/testing ownership only."
+        in inventory_plan
+    )
+    assert "They are **not** proof-taxonomy classes" in inventory_plan
     assert "Project/Match/Performance seam" in inventory_plan
     assert (
         "Match-workspace media-backed stage tiles and selected-stage lower-pane truth across lower-pane workflow switches"
         in inventory_plan
     )
     assert "Performance Library loading, empty, stale, and manual-refresh lifecycle proof" in inventory_plan
+    assert "DEV-106.landing_recent" in inventory_plan
+    assert "DEV-107.root_shell_compat" in inventory_plan
+    assert "project.practiscore_bridge" in inventory_plan
+    assert (
+        "manual `Select PractiScore File` fallback plus local `Match type` / `Stage #` / `Competitor name` / `Place` selectors remain required"
+        in inventory_plan
+    )
+    assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-106.landing_recent"]["doc_refs"]
+    assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-107.root_shell_compat"]["doc_refs"]
+
+    assert (
+        "`full-control QA coverage` is an interaction-coverage target, not a proof-taxonomy label."
+        in full_e2e_plan
+    )
 
     for snippet in [
         "Phase 0: Lock The Truth Boundary",
@@ -451,5 +472,9 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "Match live preview tiles plus selected-stage lower-pane persistence across Stage Composite and Batch Export proof",
         "Performance Library loading, empty, stale, and manual-refresh lifecycle proof",
         "Performance Library stage/workspace reopen proof from selected records",
+        "DEV-106.landing_recent",
+        "DEV-107.root_shell_compat",
+        "project.practiscore_bridge",
+        "PractiScore manual-file fallback plus local `Match type` / `Stage #` / `Competitor name` / `Place` selectors",
     ]:
         assert snippet in full_e2e_plan
