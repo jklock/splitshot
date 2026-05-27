@@ -5313,26 +5313,41 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 else:
                     assert after_width < before_width or after_height < before_height
 
-                page.evaluate(
-                    """(selector) => {
-                        const control = document.querySelector(selector);
-                        control.value = '0.25';
-                        control.dispatchEvent(new Event('input', { bubbles: true }));
-                        control.dispatchEvent(new Event('change', { bubbles: true }));
-                    }""",
-                    '[data-merge-source-field="x"]',
+                target_x = page.evaluate(
+                    """() => {
+                        const control = document.querySelector('[data-merge-source-field="x"]');
+                        const current = Number(control?.value || '0');
+                        return current < 0.25 ? 0.25 : 0.1;
+                    }"""
+                )
+                target_y = page.evaluate(
+                    """() => {
+                        const control = document.querySelector('[data-merge-source-field="y"]');
+                        const current = Number(control?.value || '0');
+                        return current < 0.75 ? 0.75 : 0.4;
+                    }"""
                 )
                 page.evaluate(
-                    """(selector) => {
+                    """({ selector, value }) => {
                         const control = document.querySelector(selector);
-                        control.value = '0.75';
+                        control.value = String(value);
                         control.dispatchEvent(new Event('input', { bubbles: true }));
                         control.dispatchEvent(new Event('change', { bubbles: true }));
                     }""",
-                    '[data-merge-source-field="y"]',
+                    {"selector": '[data-merge-source-field="x"]', "value": target_x},
+                )
+                page.evaluate(
+                    """({ selector, value }) => {
+                        const control = document.querySelector(selector);
+                        control.value = String(value);
+                        control.dispatchEvent(new Event('input', { bubbles: true }));
+                        control.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    {"selector": '[data-merge-source-field="y"]', "value": target_y},
                 )
                 page.wait_for_function(
-                    "() => state?.project?.merge_sources?.[0]?.pip_x === 0.25 && state?.project?.merge_sources?.[0]?.pip_y === 0.75"
+                    "({ expectedX, expectedY }) => state?.project?.merge_sources?.[0]?.pip_x === expectedX && state?.project?.merge_sources?.[0]?.pip_y === expectedY",
+                    arg={"expectedX": target_x, "expectedY": target_y},
                 )
                 page.wait_for_function(
                     """({ previousLeft, previousTop }) => {

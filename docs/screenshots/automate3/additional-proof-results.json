@@ -1,61 +1,61 @@
 {
-  "generated_at": "2026-05-24T00:39:25.053584+00:00",
+  "generated_at": "2026-05-27T03:09:47.412570+00:00",
   "kind": "additional",
   "status": "pass",
   "screenshots": [
     {
       "file": "pip-multi-angle-loaded.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/pip-multi-angle-loaded.png",
-      "bytes": 768567,
-      "sha256": "9bf38641df5c7625428741134352c9c36ab4cca8511625330b6bd7be21e65d3d",
+      "bytes": 637905,
+      "sha256": "eb0013cf97ff8f2b7797df36e3afdada615d3f2bc33e486943697e050de2bf56",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 594
+        "text_length": 942
       },
       "status": "pass"
     },
     {
       "file": "export-progress.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-progress.png",
-      "bytes": 804002,
-      "sha256": "ec39044f8d01e5a88bb0af0f481089ad9b9a18ca6873830b41723e324fb3f851",
+      "bytes": 669869,
+      "sha256": "4b967bf534785b9d67a2371ccaafe1c1d7826ffb16c5cd48fa592a9c76f3f0a2",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 978
+        "text_length": 1442
       },
       "status": "pass"
     },
     {
       "file": "export-complete.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/export-complete.png",
-      "bytes": 804345,
-      "sha256": "591519624962c6141fbf241c2345d5ce552997e6c542fbbeaeda5ce3827fc03b",
+      "bytes": 675320,
+      "sha256": "13d67d612d42e9dd3c61d0f3222e640351e56be3079487bb9b71e093a247c95d",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 978
+        "text_length": 1430
       },
       "status": "pass"
     },
     {
       "file": "returning-user-landing.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/returning-user-landing.png",
-      "bytes": 81032,
-      "sha256": "72de34ff1b8d29edadb57e8b8940a25e9f02e7166f0561409e9449b80f5e5dfd",
+      "bytes": 75147,
+      "sha256": "c075c7c760a7000350add2d6e2561ebd607d0bbae71b7867e7c32eeedb143f53",
       "assertions": {
         "activeView": "landing",
         "viewActive": true,
         "width": 1440,
         "height": 900,
-        "text_length": 532
+        "text_length": 485
       },
       "status": "pass"
     }

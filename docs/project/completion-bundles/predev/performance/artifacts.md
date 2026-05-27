@@ -4,7 +4,7 @@
 
 This file tracks the proof package required to call the Performance shared-shell reset complete.
 
-Current normalized lane status: `implementation advanced / proof pending`
+Current normalized lane status: `done`
 
 Cross-lane summary authority: `../../MASTER_STATUS.md`
 
@@ -110,6 +110,24 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
   - Date: `2026-05-24`
   - Notes: user-facing naming truth, shared-shell control ownership, and the cross-surface planning docs are aligned.
 
+- Artifact: Performance Work Effort 2 focused proof rerun
+  - Path: `tests/browser/test_browser_interactions.py`, `tests/browser/test_library_backend_contracts.py`, `tests/export/test_export.py`, `tests/export/test_merge_export_contracts.py`
+  - Produced by: targeted `.venv` pytest reruns
+  - Date: `2026-05-26`
+  - Notes: closes the focused proof side of the Performance gate with `3 passed` across loading/recovery/search/detail/reopen, `4 passed` across notes/tags/analytics/settings isolation, and `72 passed` across the backend/export contract pack.
+
+- Artifact: Performance screenshot proof package
+  - Path: `docs/screenshots/automate3/loaded-library.png`, `docs/screenshots/automate3/loaded-proof-results.json`, `docs/screenshots/automate3/performance-analytics.png`, `docs/screenshots/automate3/performance-backup.png`, `docs/screenshots/automate3/performance-settings.png`, `docs/screenshots/automate3/performance-section-proof-results.json`
+  - Produced by: repo-owned screenshot capture reruns
+  - Date: `2026-05-26`
+  - Notes: loaded-library now anchors the Overview/Records/Detail shell proof, while the new section captures close Analytics, Backup, and Settings visual evidence for the shared-shell Performance contract.
+
+- Artifact: Performance output proof package
+  - Path: `artifacts/performance-proof-20260526/library-export.csv`, `artifacts/performance-proof-20260526/library-export.json`, `artifacts/performance-proof-20260526/backup-manifest.json`, `artifacts/performance-proof-20260526/backup-create-result.json`, `artifacts/performance-proof-20260526/backup-restore-result.json`, `artifacts/performance-proof-20260526/backup_2026-05-26_22-13-50.json`, `artifacts/performance-proof-20260526/performance-output-proof-results.json`
+  - Produced by: Work Effort 2 repo-owned output capture pass
+  - Date: `2026-05-26`
+  - Notes: records concrete CSV/JSON export payloads plus backup create/restore outputs against the current Performance shell contract.
+
 - Artifact: Historical Performance proof bundle
   - Path: `artifacts/performance-bundle-20260524/`
   - Produced by: historical Performance bundle work
@@ -124,4 +142,4 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
 
 ## Completion rule
 
-Performance is not complete until `PRF-007` is closed and the remaining lower-pane grammar proof, backup/export artifacts, screenshot package, and visual signoff are linked alongside the evidence already recorded here.
+Performance closed `PRF-007` on `2026-05-26` once the focused interaction/backend/export packs were green, the repo-owned screenshot package and output artifacts were written, and visual approval was recorded against the refreshed captures.

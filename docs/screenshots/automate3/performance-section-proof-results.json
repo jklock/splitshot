@@ -1,0 +1,32 @@
+{
+  "generated_at": "2026-05-27T03:12:14.630295+00:00",
+  "kind": "performance-sections",
+  "status": "pass",
+  "screenshots": [
+    {
+      "file": "performance-analytics.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/performance-analytics.png",
+      "bytes": 139054,
+      "sha256": "dca83aa4f7d7180010ea5e1df4df46c9d109211d592e37777dbe5e1f7c7b5c24",
+      "text_length": 2093,
+      "status": "pass"
+    },
+    {
+      "file": "performance-backup.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/performance-backup.png",
+      "bytes": 123250,
+      "sha256": "6d33e28a68e61dc3f320360fecae83ea4c2cfb5034b918990c356ece66b699cf",
+      "text_length": 1792,
+      "status": "pass"
+    },
+    {
+      "file": "performance-settings.png",
+      "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/performance-settings.png",
+      "bytes": 126240,
+      "sha256": "9cb91e9652ad36ec2deae0317d2dcdea7450facd50c227f8fd4d1a50b4aac64c",
+      "text_length": 1860,
+      "status": "pass"
+    }
+  ],
+  "library_root": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-performance-library-fti1rmx_"
+}

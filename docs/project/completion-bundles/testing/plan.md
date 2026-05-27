@@ -38,9 +38,11 @@ This bundle does not own:
 
 Current facts that matter:
 
-- Stage already carries a recorded docs/test/proof sync baseline through `STG-007`, but `STG-008` remains open.
-- Match and Performance both have meaningful focused proof anchors, but their remaining proof-packaging, screenshots, artifacts, and final gates are still open.
-- Backend and Modularization still need their dedicated proof/signoff passes after Work Effort 1 settles implementation.
+- Stage source-bundle final-gate scope is closed through `STG-008`, including the refreshed `2026-05-26` rerun evidence.
+- Match source-bundle final-gate scope is closed through `MCH-007`, including the refreshed `2026-05-26` rerun evidence and the repo-owned Match proof bundle.
+- Performance source-bundle final-gate scope is closed through `PRF-007`, including the focused reruns, refreshed screenshot package, repo-owned backup/export artifacts, and recorded visual approval.
+- Backend source-bundle final-gate scope is closed through `BEK-008`, including runtime health, the focused backend reruns, the persistence+analysis owner-suite anchor, and the green browser owner-suite anchor.
+- Modularization still needs its dedicated proof/signoff pass after Work Effort 1 settles implementation.
 - The source `predev/tests/` bundle remains a planning baseline and must be executed in this work effort.
 - `../../../artifacts/current-all-together.json` is a valuable repo-health anchor, but it does not close the open source-bundle gates by itself.
 - The source `predev/tests/` bundle is not the same thing as aggregate `testing/`; it is one source lane inside this larger work effort.
@@ -151,15 +153,15 @@ Exit criteria:
 
 - Stage, Match, and Performance source bundles can close their remaining final-gate items without reopening first-order implementation scope
 
-## Phase 3 — Close Backend and Modularization proof/signoff scope
+## Phase 3 — Preserve Backend closeout and finish Modularization proof/signoff scope
 
-- execute `BEK-007` and `BEK-008`
+- preserve the closed backend proof/signoff package through `BEK-008`
 - execute `MOD-006` and `MOD-007`
-- capture route/state/ownership evidence and record residual risks
+- capture route/state/ownership evidence and record residual risks for the still-open lanes
 
 Exit criteria:
 
-- Backend and Modularization can both close their source final gates on documented proof rather than implied confidence
+- Backend remains closed on documented proof and Modularization can close its source final gate on documented proof rather than implied confidence
 
 ## Phase 4 — Execute the source `predev/tests/` bundle
 

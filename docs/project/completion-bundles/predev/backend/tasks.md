@@ -140,10 +140,10 @@ Progress note (`2026-05-25`):
 
 ## BEK-007 — Sync backend docs and proof package
 
-- [ ] Update architecture or adjacent backend docs where ownership changed.
-- [ ] Update test guide or route-owner docs where validation changed.
-- [ ] Record route, state, persistence, and error-path proof artifacts.
-- [ ] Record residual risks and waivers.
+- [x] Update architecture or adjacent backend docs where ownership changed.
+- [x] Update test guide or route-owner docs where validation changed.
+- [x] Record route, state, persistence, and error-path proof artifacts.
+- [x] Record residual risks and waivers.
 
 Depends on:
 
@@ -157,13 +157,20 @@ Proof:
 - doc diffs linked in `artifacts.md`
 - proof package complete in `outcome.md`
 
+Progress note (`2026-05-26`):
+
+- Focused backend proof reruns stayed green with `114 passed` across `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`, and `tests/browser/test_browser_control.py`; `38 passed` across `tests/persistence/test_workspace_persistence.py`, `tests/persistence/test_persistence.py`, and `tests/persistence/test_project_lifecycle_contracts.py`; `22 passed` across `tests/browser/test_project_lifecycle_contracts.py` and `tests/browser/test_library_backend_contracts.py`; and `22 passed` across the PractiScore analysis import/normalize/extract pack.
+- `./.venv/bin/splitshot --check` passed, and `artifacts/test-suite-backend-signoff.json` now records a green persistence+analysis owner-suite anchor (`125 passed`).
+- `artifacts/test-suite-backend-browser.json` now records a green browser owner-suite anchor (`420 passed`), and the Work Effort 2 source/aggregate/top-level ledgers now point at the same backend proof package.
+- No additional architecture or test-guide contract rewrite was required in the final pass because the route/state ownership docs already matched the backend truth; the closeout work in this task was the proof-package and ledger sync.
+
 ## BEK-008 — Shared backend done gate
 
-- [ ] Confirm shared backend tests are green.
-- [ ] Confirm Stage, Match, and Performance bundles reference the same backend truth.
-- [ ] Confirm required route/state/persistence artifacts exist.
-- [ ] Confirm residual risks are documented.
-- [ ] Confirm approval is recorded.
+- [x] Confirm shared backend tests are green.
+- [x] Confirm Stage, Match, and Performance bundles reference the same backend truth.
+- [x] Confirm required route/state/persistence artifacts exist.
+- [x] Confirm residual risks are documented.
+- [x] Confirm approval is recorded.
 
 Depends on:
 
@@ -172,3 +179,8 @@ Depends on:
 Proof:
 
 - `outcome.md` final gate marked complete
+
+Progress note (`2026-05-26`):
+
+- Runtime health passed, `artifacts/test-suite-backend-signoff.json` recorded `125 passed`, and `artifacts/test-suite-backend-browser.json` recorded `420 passed` across the broader browser owner suite.
+- The backend, Stage, Match, Performance, aggregate testing, and top-level completion ledgers now reference the same backend proof truth, so the shared backend done gate is closed.

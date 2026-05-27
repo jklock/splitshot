@@ -28,7 +28,34 @@ def test_runner_lists_available_suites_as_json() -> None:
     suite_names = [suite["name"] for suite in payload["suites"]]
     assert "analysis" in suite_names
     assert "browser" in suite_names
+    assert "pane-project" in suite_names
+    assert "pane-match" in suite_names
+    assert "pane-performance" in suite_names
+    assert "pane-settings" in suite_names
+    assert "pane-metrics" in suite_names
     assert "scripts" in suite_names
+
+
+def test_runner_dry_run_supports_opt_in_pane_suite_targets_as_json() -> None:
+    result = run_runner(
+        "--suite",
+        "pane-match",
+        "--mode",
+        "all-together",
+        "--format",
+        "json",
+        "--dry-run",
+    )
+
+    assert result.returncode == 0
+    payload = json.loads(result.stdout)
+    assert payload["summary"]["planned"] == 1
+    assert payload["runs"][0]["suite_names"] == ["pane-match"]
+    assert "tests/browser/test_workspace_flows.py" in payload["runs"][0]["targets"]
+    assert (
+        "tests/browser/test_browser_interactions.py::test_match_workspace_open_button_uses_picker_and_loads_saved_workspace"
+        in payload["runs"][0]["targets"]
+    )
 
 
 def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:

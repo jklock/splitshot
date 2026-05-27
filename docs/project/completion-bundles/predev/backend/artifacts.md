@@ -4,11 +4,11 @@
 
 This file tracks the proof package required to call the shared backend complete.
 
-Current normalized lane status: `implementation advanced / proof pending`
+Current normalized lane status: `done`
 
 Cross-lane summary authority: `../../MASTER_STATUS.md`
 
-Work Effort 1 now owns accepted implementation evidence for `BEK-001` through `BEK-006`. Work Effort 2 still owns the final proof package, artifact closeout, and approval for `BEK-007` and `BEK-008`.
+Work Effort 1 owns the accepted implementation evidence for `BEK-001` through `BEK-006`, and Work Effort 2 has now closed the final proof package, artifact closeout, and approval for `BEK-007` and `BEK-008`.
 
 Development wave 1 later added corroborating `DEV-102`/`DEV-103`/`DEV-104` validation evidence plus a post-integration guardrail pack; `DEV-105` then added shared-controller integration evidence, expanded frozen guardrail results, and a repo-wide lint anchor; `DEV-106` then added accepted landing-recent backend evidence showing stage/single rows are preserved before truncation in `/api/landing/recent`. Those artifacts strengthen the recorded implementation evidence but do not change the normalized lane status or promote the lane to final proof closure.
 
@@ -129,6 +129,30 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
   - Date: `2026-05-25`
   - Notes: `50 passed in 232.11s (0:03:52)`; anchors recoverable Performance library stale/error behavior plus the static shell/control inventory contract used by the backend-owned browser summary flows.
 
+- Artifact: Work Effort 2 backend focused proof rerun
+  - Path: `tests/browser/test_practiscore_session_api.py`, `tests/browser/test_practiscore_sync_controller.py`, `tests/browser/test_browser_control.py`, `tests/persistence/test_workspace_persistence.py`, `tests/persistence/test_persistence.py`, `tests/persistence/test_project_lifecycle_contracts.py`, `tests/browser/test_project_lifecycle_contracts.py`, `tests/browser/test_library_backend_contracts.py`, `tests/analysis/test_practiscore_import.py`, `tests/analysis/test_practiscore_sync_normalize.py`, `tests/analysis/test_practiscore_web_extract.py`
+  - Produced by: Work Effort 2 backend preflight rerun
+  - Date: `2026-05-26`
+  - Notes: the focused backend proof packs reran green with `114 passed`, `38 passed`, `22 passed`, and `22 passed`, confirming the route/session/sync, persistence/reopen, cross-app backend, and PractiScore analysis slices remained stable at the start of backend closeout.
+
+- Artifact: Work Effort 2 backend runtime and owner-suite preflight
+  - Path: `artifacts/test-suite-backend-signoff.json`
+  - Produced by: `./.venv/bin/splitshot --check` plus `uv run python scripts/testing/run_test_suite.py --suite persistence --suite analysis --mode all-together --format table --json-output artifacts/test-suite-backend-signoff.json`
+  - Date: `2026-05-26`
+  - Notes: runtime health passed and the owner-suite artifact recorded `125 passed in 11.29s` across `tests/persistence` and `tests/analysis`; this now serves as the persistence/analysis owner-suite anchor inside the closed backend proof package.
+
+- Artifact: Work Effort 2 backend browser owner-suite anchor
+  - Path: `artifacts/test-suite-backend-browser.json`
+  - Produced by: `uv run python scripts/testing/run_test_suite.py --suite browser --mode all-together --format table --json-output artifacts/test-suite-backend-browser.json`
+  - Date: `2026-05-26`
+  - Notes: records `420 passed in 1672.03s` across `tests/browser`, closing the broader browser owner-suite anchor required for final backend signoff.
+
+- Artifact: Work Effort 2 backend closeout ledger sync
+  - Path: `tasks.md`, `outcome.md`, `artifacts.md`, `../../testing/tasks.md`, `../../testing/outcome.md`, `../../testing/artifacts.md`, `../../MASTER_STATUS.md`, `../../README.md`, `../../RECOVERY_NEXT_STEPS.md`
+  - Produced by: Work Effort 2 backend closeout pass
+  - Date: `2026-05-26`
+  - Notes: closes `BEK-007` and `BEK-008`, records the accepted residual risks, and synchronizes the source, aggregate, and top-level ledgers to the same backend truth. No additional architecture or test-guide contract rewrite was required because the existing backend ownership docs already matched the delivered contract.
+
 - Artifact: Cross-bundle handoff references
   - Path: `../../development/outcome.md`, `../../development/artifacts.md`, `../performance/outcome.md`, `../modularization/outcome.md`, `../../MASTER_STATUS.md`
   - Produced by: Work Effort 1 ledger sync
@@ -137,4 +161,4 @@ Use repo artifact locations rather than temporary scratch paths whenever possibl
 
 ## Completion rule
 
-The shared backend is not `done` until `BEK-007` and `BEK-008` close the final proof package and approval. Work Effort 1 now records accepted implementation evidence for `BEK-001` through `BEK-006`; Work Effort 2 must still finish the remaining proof/signoff ledger.
+The shared backend closed `BEK-007` and `BEK-008` on `2026-05-26` once the focused backend proof reruns, runtime health, persistence+analysis owner-suite anchor, broader browser owner-suite anchor, residual-risk record, and synchronized source/aggregate/top-level ledgers were all in place.

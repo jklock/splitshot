@@ -27,6 +27,8 @@ Common commands:
 ```bash
 uv run python scripts/testing/run_test_suite.py --list
 uv run python scripts/testing/run_test_suite.py --suite browser --mode all-together --format table
+uv run python scripts/testing/run_test_suite.py --suite pane-match --mode all-together --format table
+uv run python scripts/testing/run_test_suite.py --suite pane-performance --mode all-together --format table
 uv run python -m pytest tests/browser/test_browser_static_ui.py
 uv run python -m pytest tests/analysis/test_analysis.py
 ```
@@ -45,6 +47,22 @@ uv run python -m pytest tests/analysis/test_analysis.py
 | `scoring` | Rulesets, score math, hit factor, merge/scoring integration | `tests/scoring/` |
 | `benchmarks` | Reference-stage benchmark helpers and CSV output | `tests/benchmarks/` |
 | `scripts` | Runner behavior and analysis-script command contracts | `tests/scripts/` |
+
+## Opt-in pane lanes
+
+The canonical runner now exposes an initial set of **opt-in pane lanes** for browser-facing work.
+
+These lanes do **not** run by default when you omit `--suite`; they are focused validation slices built from the current browser file layout while the broader pane/modularization split is still being carved out.
+
+| Suite | Owns | Current target shape |
+| --- | --- | --- |
+| `pane-project` | Landing, Project pane, and PractiScore browser workflows | Project/landing contract files plus selected Project/Landing interaction node IDs |
+| `pane-match` | Match workspace lifecycle, setup-once, recap, composite, batch export, and settings-return flows | `test_workspace_flows.py`, `test_workspace_export_and_recap.py`, plus selected Match interaction node IDs |
+| `pane-performance` | Performance Library reopen, search/filter, detail, notes/tags, settings, and route-contract flows | `test_library_backend_contracts.py` plus selected Performance interaction node IDs |
+| `pane-settings` | Settings section workflows and defaults truth gates | `test_settings_e2e.py` and `test_settings_defaults_truth_gate.py` |
+| `pane-metrics` | Metrics export/workbench flows and scoring-metrics contracts | `test_metrics_e2e.py` and `test_scoring_metrics_contracts.py` |
+
+Use these lanes when you need a pane-scoped browser run without paying for the full `browser` suite.
 
 ## Contract Hotspots
 

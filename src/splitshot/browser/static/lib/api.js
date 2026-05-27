@@ -24,6 +24,7 @@ export function createApiRuntime({
   resolveSelectedShotId = (_nextState, requestedShotId = null) => requestedShotId,
   mergeProjectDetailsDraft = () => {},
   mergeMergeDraft = () => {},
+  mergePendingMergeSourcePayloads = () => {},
   mergeOverlayPositionDraft = () => {},
   mergeOverlayStyleDraft = () => {},
   mergeOverlayTextBoxesDraft = () => {},
@@ -325,6 +326,7 @@ export function createApiRuntime({
     if (isSameProject) {
       mergeProjectDetailsDraft(nextState.project);
       mergeMergeDraft(nextState.project);
+      mergePendingMergeSourcePayloads(nextState.project);
       mergeOverlayPositionDraft(nextState.project);
       mergeOverlayStyleDraft(nextState.project);
       mergeOverlayTextBoxesDraft(nextState.project);

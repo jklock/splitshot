@@ -278,9 +278,15 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Close the proof side of Performance shell, loading/recovery, search/filter, lower-pane detail truth, and reopen flows.
-- [ ] Capture evidence for the shell/detail/search portions of `PRF-002`, `PRF-003`, and `PRF-004`.
-- [ ] Route any new first-order implementation defect back to `development/` with exact failing output.
+- [x] Close the proof side of Performance shell, loading/recovery, search/filter, lower-pane detail truth, and reopen flows.
+- [x] Capture evidence for the shell/detail/search portions of `PRF-002`, `PRF-003`, and `PRF-004`.
+- [x] Route any new first-order implementation defect back to `development/` with exact failing output.
+
+Progress note (`2026-05-26`):
+
+- The focused Performance shell/detail/reopen proof slice stayed green with `3 passed` across the loading/recovery, reopen, and lower-detail truth interactions.
+- `docs/screenshots/automate3/loaded-library.png` plus `loaded-proof-results.json` now anchor the loaded Overview/Records/Detail grammar without reopening implementation.
+- No first-order Performance implementation defect was uncovered, so nothing routed back to `development/`.
 
 Commands:
 
@@ -323,9 +329,15 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Close the proof side of notes/tags, analytics, settings isolation, backup/export proof, and `PRF-007`.
-- [ ] Capture screenshot and artifact evidence for Performance final closeout.
-- [ ] Record any required visual approval note.
+- [x] Close the proof side of notes/tags, analytics, settings isolation, backup/export proof, and `PRF-007`.
+- [x] Capture screenshot and artifact evidence for Performance final closeout.
+- [x] Record any required visual approval note.
+
+Progress note (`2026-05-26`):
+
+- The focused notes/tags/analytics/settings pack stayed green with `4 passed`, and the backend/export proof pack stayed green with `72 passed`.
+- `scripts/docs/capture_loaded_views.py` refreshed the loaded Performance shell capture, the section capture rerun added `performance-analytics.png`, `performance-backup.png`, and `performance-settings.png`, and `artifacts/performance-proof-20260526/` now records concrete CSV/JSON export plus backup create/restore artifacts.
+- Visual review against the refreshed Performance screenshots passed with no reopened implementation defect, so the Performance final gate is closed.
 
 Commands:
 
@@ -384,9 +396,15 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Package route ownership, `/api/state`, status/error, persistence, import, and PractiScore proof against the now-explicit backend contract.
-- [ ] Confirm browser-visible payloads and recoverable error shapes match the documented contract.
-- [ ] Route any first-order contract failure back to `development/` with exact failing commands.
+- [x] Package route ownership, `/api/state`, status/error, persistence, import, and PractiScore proof against the now-explicit backend contract.
+- [x] Confirm browser-visible payloads and recoverable error shapes match the documented contract.
+- [x] Route any first-order contract failure back to `development/` with exact failing commands.
+
+Progress note (`2026-05-26`):
+
+- The focused backend proof packs stayed green with `114 passed`, `38 passed`, `22 passed`, and `22 passed`, covering the route/session/sync, persistence/reopen, cross-app backend, and PractiScore analysis slices.
+- The backend source ledger now records the route/state contract, `/api/state` summary behavior, persistence truth, and recoverable PractiScore/browser error-shape proof against the same explicit backend contract.
+- No first-order backend contract failure was uncovered, so nothing routed back to `development/`.
 
 Commands:
 
@@ -429,9 +447,15 @@ Allowed edit surface:
 
 Execute:
 
-- [ ] Close `BEK-007` and `BEK-008`.
-- [ ] Record the backend proof artifact paths and any doc-sync updates.
-- [ ] Capture a broader owner-suite anchor if the route/persistence contract changed across multiple suites.
+- [x] Close `BEK-007` and `BEK-008`.
+- [x] Record the backend proof artifact paths and any doc-sync updates.
+- [x] Capture a broader owner-suite anchor if the route/persistence contract changed across multiple suites.
+
+Progress note (`2026-05-26`):
+
+- Runtime health passed, `artifacts/test-suite-backend-signoff.json` recorded `125 passed`, and `artifacts/test-suite-backend-browser.json` recorded `420 passed` across the broader browser owner suite.
+- The backend source, aggregate testing, and top-level completion ledgers now point at the same backend proof package and accepted residual-risk record.
+- Backend no longer has an open final-gate item.
 
 Commands:
 

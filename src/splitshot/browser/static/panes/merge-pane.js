@@ -85,6 +85,48 @@ export function createMergePane({
       });
     }
 
+    function normalizeMergeSourceDraftValue(key, value, source = null) {
+      if (!["angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity"].includes(key)) {
+        return undefined;
+      }
+      if (key === "angle_role") return normalizedAngleRoleValue(value, source);
+      if (key === "pip_size_percent") return clampNumber(Number(value) || 35, 1, 95);
+      if (key === "opacity") return currentSourceOpacity({ opacity: value });
+      return normalizedCoordinateValue(value) ?? 1;
+    }
+
+    function mergePendingMergeSourcePayloads(project) {
+      const mergeSources = Array.isArray(project?.merge_sources) ? project.merge_sources : [];
+      if (mergeSources.length === 0 || currentPendingMergeSourcePayloads().size === 0) return;
+      currentPendingMergeSourcePayloads().forEach((payload, sourceId) => {
+        const source = mergeSources.find((item, index) => sourceIdentifier(item, String(index)) === sourceId);
+        if (!source) {
+          currentPendingMergeSourcePayloads().delete(sourceId);
+          return;
+        }
+        const draftEntries = Object.entries(payload || {})
+          .filter(([key]) => key !== "source_id")
+          .map(([key, value]) => {
+            const draftValue = normalizeMergeSourceDraftValue(key, value, source);
+            const savedValue = normalizeMergeSourceDraftValue(key, source[key], source);
+            return [key, draftValue, savedValue];
+          })
+          .filter((entry) => entry[1] !== undefined);
+        if (draftEntries.length === 0) {
+          currentPendingMergeSourcePayloads().delete(sourceId);
+          return;
+        }
+        const isCommitted = draftEntries.every(([, draftValue, savedValue]) => Object.is(draftValue, savedValue));
+        if (isCommitted) {
+          currentPendingMergeSourcePayloads().delete(sourceId);
+          return;
+        }
+        draftEntries.forEach(([key, draftValue]) => {
+          source[key] = draftValue;
+        });
+      });
+    }
+
     function currentPipSizePercent(source = null, fallback = 35) {
       const sourceSize = Number(source?.pip_size_percent);
       if (Number.isFinite(sourceSize) && sourceSize > 0) return sourceSize;
@@ -710,6 +752,7 @@ export function createMergePane({
     normalizeMergeDraftValue,
     applyMergeDraft,
     mergeMergeDraft,
+    mergePendingMergeSourcePayloads,
     currentPipSizePercent,
     sourceIdentifier,
     currentSourceSyncOffsetMs,

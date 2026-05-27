@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-05-24T00:38:51.293767+00:00",
+  "generated_at": "2026-05-27T03:09:08.445630+00:00",
   "kind": "loaded",
   "status": "pass",
   "setup": {
-    "project_path": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-97pk0ksp/automate3-proof.ssproj",
-    "project_dir": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-97pk0ksp",
-    "library_root": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-library-_gogbg5n"
+    "project_path": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-t_iuimc7/automate3-proof.ssproj",
+    "project_dir": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-proof-t_iuimc7",
+    "library_root": "/var/folders/0y/jpj7p3811q141h46hfpgby400000gp/T/splitshot-automate3-library-8sdgxwmc"
   },
   "screenshots": [
     {
       "file": "loaded-stage.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-stage.png",
-      "bytes": 142455,
-      "sha256": "8ac679ef1c69ab4ed41389eb5114ba0b9ea897dfd41d2741b12d2c7e207d11e5",
+      "bytes": 126262,
+      "sha256": "9962ebe9382fb6cc2817d3341448b9bd9a1905ef0bc4d3533110442a42d77dcf",
       "assertions": {
         "activeView": "stage",
         "viewActive": true,
@@ -26,15 +26,15 @@
         "stageCards": 2,
         "libraryRows": 0,
         "libraryTotal": 4,
-        "text_length": 1461
+        "text_length": 791
       },
       "status": "pass"
     },
     {
       "file": "loaded-match.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-match.png",
-      "bytes": 39367,
-      "sha256": "9019372dd10e52d6f05f2e18ff9ad60c6952c334b59ecf521beb3362dd41d7a0",
+      "bytes": 158281,
+      "sha256": "403920e001f7a8cc5c1e4d3f3d41ae22aba2f52148cb624885328c45051ff84b",
       "assertions": {
         "activeView": "match",
         "viewActive": true,
@@ -48,15 +48,15 @@
         "stageCards": 2,
         "libraryRows": 0,
         "libraryTotal": 4,
-        "text_length": 217
+        "text_length": 1904
       },
       "status": "pass"
     },
     {
       "file": "loaded-library.png",
       "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/loaded-library.png",
-      "bytes": 31259,
-      "sha256": "ba87d8f2dcf1967d03d5d3dc2148cb7afad16ea665409394d40aaa8ffc23e757",
+      "bytes": 126943,
+      "sha256": "836b89cb0ae9688c26778e1c23144744b2e95ff36efa9cc3029ec6beb1fd2690",
       "assertions": {
         "activeView": "library",
         "viewActive": true,
@@ -70,7 +70,7 @@
         "stageCards": 2,
         "libraryRows": 4,
         "libraryTotal": 4,
-        "text_length": 159
+        "text_length": 1826
       },
       "status": "pass"
     }
@@ -78,7 +78,7 @@
   "contact_sheet": {
     "file": "contact-sheet-final.png",
     "path": "/Volumes/Storage/GitHub/splitshot/docs/screenshots/automate3/contact-sheet-final.png",
-    "bytes": 45106,
-    "sha256": "0635555ae2e403cc037002f2caaa7fd1de70b2d55c6c8354623fbe1f42a40a7b"
+    "bytes": 77969,
+    "sha256": "06e3a5d212911e498a8a4dc5b853de71eb0fad536fb3a4e36b051003525765e8"
   }
 }

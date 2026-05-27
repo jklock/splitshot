@@ -79,7 +79,7 @@ Use these status terms consistently across every bundle:
 | Aggregate bundle | Work effort | Status | Task-state summary | What is firmly done | What still blocks done |
 | --- | --- | --- | --- | --- | --- |
 | `development/` | `Work Effort 1 / Set 1` | `done` | `DEV-001` through `DEV-301` complete | execution contract reset, frozen-baseline guardrails, proof taxonomy, backend/state/persistence/controller/landing/shell implementation closure, seam-registry-backed audit sync, and the republished Work Effort 1 handoff are recorded | none inside Work Effort 1; remaining proof/signoff scope belongs to `testing/` |
-| `testing/` | `Work Effort 2 / Set 2` | `implementation advanced / proof pending` | `STG-007` and `STG-008` complete; Match `MCH-002` through `MCH-007` complete; Performance proof/signoff package partial; Backend `BEK-007` / `BEK-008` future; Modularization `MOD-006` / `MOD-007` future; source `predev/tests/` bundle `TST-001` through `TST-009` future | Stage and Match docs/test/proof/signoff are complete; focused proof slices and the repo-health baseline already exist for Performance | Remaining Performance proof packaging, Backend and Modularization proof/signoff passes, all `TST-*` work, screenshots/artifacts/docs sync, final suite runs, and visual signoff |
+| `testing/` | `Work Effort 2 / Set 2` | `implementation advanced / proof pending` | `STG-007` and `STG-008` complete; Match `MCH-002` through `MCH-007` complete; Performance `PRF-002` through `PRF-007` complete; Backend `BEK-007` and `BEK-008` complete; Modularization `MOD-006` / `MOD-007` future; source `predev/tests/` bundle `TST-001` through `TST-009` future | Stage, Match, Performance, and Backend docs/test/proof/signoff are complete; modularization focused proof and the repo-health baseline already exist | Remaining Modularization proof/signoff passes, all `TST-*` work, screenshots/artifacts/docs sync for the still-open lanes, final suite runs, and program signoff |
 
 Important clarification for aggregate status interpretation:
 
@@ -98,8 +98,8 @@ These six source bundles remain the detailed lane truth inside `predev/`.
 | --- | --- | --- | --- | --- |
 | `predev/stage/` | `done` | `STG-001` through `STG-008` complete | Contract reset, Project cleanup, shared-shell hardening, defaults/regression closure, Stage-owned parity closure, docs/test/proof sync, final gate confirmation, artifact recording cleanup, visual signoff | none |
 | `predev/match/` | `done` | `MCH-001` through `MCH-007` complete | Contract reset, shared-shell convergence, lifecycle/auto-seed proof, lower-pane/right-inspector proof, recap/composite/export/parity closure, settings isolation/doc sync, screenshots/output artifacts, visual signoff | none |
-| `predev/performance/` | `implementation advanced / proof pending` | `PRF-001`, `PRF-005` complete; `PRF-002`, `PRF-003`, `PRF-004`, `PRF-006` partial; `PRF-007` open | Contract reset, shared-shell implementation, reopen/settings isolation, notes/tags and analytics truth already partly proven, visible stale/error manual recovery restored | Lower-pane/right-inspector proof packaging, search/filter/detail proof depth, backup/export artifacts, screenshots, visual signoff |
-| `predev/backend/` | `implementation advanced / proof pending` | `BEK-001` through `BEK-006` complete; `BEK-007` and `BEK-008` open | Route/state inventory, `/api/state` summary contract, status/error recovery, persistence/import/PractiScore support, and Match/Performance backend support are materially landed | Final proof package, route/state artifact packaging, residual-risk closeout, approval |
+| `predev/performance/` | `done` | `PRF-001` through `PRF-007` complete | Contract reset, shared-shell convergence, lower-pane/right-inspector proof, search/filter/detail truth, analytics/notes-tags persistence, backup/export artifacts, screenshot package, and visual signoff are all recorded | none |
+| `predev/backend/` | `done` | `BEK-001` through `BEK-008` complete | Route/state inventory, `/api/state` summary contract, status/error recovery, persistence/import/PractiScore support, Match/Performance backend support, final proof package, route/state artifact packaging, residual-risk closeout, and approval are all recorded | none |
 | `predev/modularization/` | `implementation advanced / proof pending` | `MOD-001` through `MOD-005` complete; `MOD-006` and `MOD-007` open | Ownership inventory, interface rules, Match/Performance delegation cleanup, and app-local settings isolation are materially landed | Final proof package, temporary-exception closeout, approval |
 | `predev/tests/` | `planning baseline` | `TST-001` through `TST-009` still future work | Contract, backlog, and artifact expectations exist; repo-wide validation baseline exists | Dedicated test-modularization pass, ownership carve-out, fixture/artifact isolation, runner/doc/CI sync, approval |
 
@@ -151,7 +151,12 @@ This ledger preserves historical source-lane completion context. It is not a rel
 #### Performance complete items
 
 - `PRF-001` — contract reset complete
+- `PRF-002` — shared-shell convergence and lower-pane/right-inspector proof complete
+- `PRF-003` — record/detail workflow proof complete
+- `PRF-004` — analytics, notes/tags, backup, and export truth complete
 - `PRF-005` — Performance settings isolation and naming alignment complete
+- `PRF-006` — docs and proof package complete
+- `PRF-007` — Performance done gate complete
 
 #### Backend complete items
 
@@ -161,6 +166,8 @@ This ledger preserves historical source-lane completion context. It is not a rel
 - `BEK-004` — persistence and truth behavior closure complete for Work Effort 1
 - `BEK-005` — import and PractiScore contract protection complete for Work Effort 1
 - `BEK-006` — Match and Performance backend support closure complete
+- `BEK-007` — backend docs and proof package complete
+- `BEK-008` — shared backend done gate complete
 
 #### Modularization complete items
 
@@ -170,20 +177,8 @@ This ledger preserves historical source-lane completion context. It is not a rel
 - `MOD-004` — shared-shell constraint closure complete with documented temporary exceptions
 - `MOD-005` — app-local persistence and settings isolation complete
 
-### Implemented but still proof-pending
-
-#### Performance proof-pending items
-
-- `PRF-002` — shared-shell convergence implemented, but lower-pane/right-inspector proof remains open
-- `PRF-003` — record/detail workflow rebuild implemented, but search/filter/detail proof depth remains open
-- `PRF-004` — analytics and persistence truth partly proven, but backup/export proof remains open
-- `PRF-006` — docs largely synchronized, but screenshot and remaining proof-package work remains open
-
 ### Explicitly not complete yet
 
-- `PRF-007`
-- `BEK-007`
-- `BEK-008`
 - `MOD-006`
 - `MOD-007`
 - `TST-001` through `TST-009`
@@ -230,8 +225,8 @@ It proves that the repository reached a passing full-suite baseline after the cu
 | --- | --- | --- | --- | --- |
 | `predev/stage/` | recorded | recorded | recorded | closed |
 | `predev/match/` | recorded | recorded | recorded | closed |
-| `predev/performance/` | partly recorded | pending | pending for backup/export and shell-proof packaging | open |
-| `predev/backend/` | targeted validation recorded | n/a | final proof package pending | open |
+| `predev/performance/` | recorded | recorded | recorded | closed |
+| `predev/backend/` | recorded | n/a | recorded | closed |
 | `predev/modularization/` | targeted validation recorded | n/a | final proof package pending | open |
 | `predev/tests/` | baseline only | n/a | pending | open |
 
@@ -267,10 +262,10 @@ Preserve this order inside Work Effort 2 unless a newly discovered blocker force
 
 1. Preserve the closed Stage testing/signoff scope through `STG-007` and `STG-008`, reopening it only if a new first-order blocker appears.
 2. Preserve the closed Match proof/signoff scope through `MCH-007`, reopening it only if a new first-order blocker appears.
-3. Close the remaining Performance shell/detail/search-filter/backup-export package and `PRF-007`.
-4. Close Backend and Modularization testing/signoff scope through `BEK-007`, `BEK-008`, `MOD-006`, and `MOD-007`.
+3. Preserve the closed Performance proof/signoff scope through `PRF-007`, reopening it only if a new first-order blocker appears.
+4. Preserve the closed Backend proof/signoff scope through `BEK-008`, reopening it only if a new first-order blocker appears, and close Modularization through `MOD-006` and `MOD-007`.
 5. Execute the entire source `predev/tests/` bundle scope (`TST-001` through `TST-009`).
-6. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required.
+6. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required for the still-open lanes.
 7. Run focused proof slices, owned suites, the canonical full suite, and final visual signoff last.
 
 ## Cross-bundle dependencies

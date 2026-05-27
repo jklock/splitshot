@@ -20,7 +20,8 @@ class SuiteDefinition:
     name: str
     label: str
     description: str
-    targets: tuple[Path, ...]
+    targets: tuple[str, ...]
+    include_in_default: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,66 +47,168 @@ class RunResult:
     stderr: str
 
 
+PANE_PROJECT_TARGETS: tuple[str, ...] = (
+    "tests/browser/test_landing_page.py",
+    "tests/browser/test_landing_backend_routes.py",
+    "tests/browser/test_project_lifecycle_contracts.py",
+    "tests/browser/test_practiscore_session_api.py",
+    "tests/browser/test_practiscore_sync_controller.py",
+    "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_dashboard_button_opens_system_browser",
+    "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_and_primary_controls_enable_after_project_create",
+    "tests/browser/test_browser_interactions.py::test_project_pane_manual_practiscore_file_import_remains_functional_with_active_project",
+    "tests/browser/test_browser_interactions.py::test_project_pane_steel_challenge_import_uses_formatted_status_label",
+    "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_connect_route_updates_browser_state",
+    "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_remote_match_list_and_import_routes_update_browser_state",
+    "tests/browser/test_browser_interactions.py::test_project_pane_practiscore_expired_match_list_updates_browser_state",
+    "tests/browser/test_browser_interactions.py::test_project_pane_delete_project_confirmation_can_cancel",
+    "tests/browser/test_browser_interactions.py::test_project_pane_keyboard_tab_order_advances_through_primary_controls",
+    "tests/browser/test_browser_interactions.py::test_project_pane_output_hook_save_updates_selected_output_profile",
+    "tests/browser/test_browser_interactions.py::test_project_pane_output_hook_close_hides_editor",
+    "tests/browser/test_browser_interactions.py::test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_missing",
+    "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project",
+    "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open",
+)
+
+PANE_MATCH_TARGETS: tuple[str, ...] = (
+    "tests/browser/test_workspace_flows.py",
+    "tests/browser/test_workspace_export_and_recap.py",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_setup_once_uses_preview_before_apply",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_setup_once_dismiss_hides_banner",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_open_button_uses_picker_and_loads_saved_workspace",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_open_shows_loading_and_error_state_on_failure",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_new_from_empty_and_stage_add_select_remove_flow",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_save_button_uses_picker_for_first_save",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_save_shows_loading_and_error_state_on_failure",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_override_apply_and_reset_update_selected_stage",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_shared_defaults_apply_and_reset",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_shell_keeps_selected_stage_detail_and_workflow_visible",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_preview_tiles_render_live_media_and_export_keeps_selected_stage_detail",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_recap_reports_success_and_error_states",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_batch_export_queue_select_all_none_and_start",
+    "tests/browser/test_browser_interactions.py::test_match_workspace_batch_export_reports_errors_truthfully",
+    "tests/browser/test_browser_interactions.py::test_match_settings_persist_locally_and_control_match_return_selection",
+    "tests/browser/test_browser_interactions.py::test_match_stage_composite_controls_update_composite_state",
+    "tests/browser/test_browser_interactions.py::test_match_stage_composite_cut_override_editor_updates_plan_detail",
+)
+
+PANE_PERFORMANCE_TARGETS: tuple[str, ...] = (
+    "tests/browser/test_library_backend_contracts.py",
+    "tests/browser/test_browser_interactions.py::test_performance_library_can_reopen_stage_and_workspace_from_selected_record",
+    "tests/browser/test_browser_interactions.py::test_performance_library_settings_persist_and_manual_refresh_loads_records",
+    "tests/browser/test_browser_interactions.py::test_performance_library_shows_loading_and_recovers_from_route_failure",
+    "tests/browser/test_browser_interactions.py::test_performance_library_summary_tiles_and_personal_bests_follow_loaded_records",
+    "tests/browser/test_browser_interactions.py::test_performance_library_search_filters_records_and_keeps_lower_detail_truth",
+    "tests/browser/test_browser_interactions.py::test_performance_library_detail_ui_persists_tag_add_remove_and_notes",
+    "tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth",
+    "tests/browser/test_browser_interactions.py::test_performance_library_settings_remain_isolated_from_match_settings",
+)
+
+PANE_SETTINGS_TARGETS: tuple[str, ...] = (
+    "tests/browser/test_settings_e2e.py",
+    "tests/browser/test_settings_defaults_truth_gate.py",
+)
+
+PANE_METRICS_TARGETS: tuple[str, ...] = (
+    "tests/browser/test_metrics_e2e.py",
+    "tests/browser/test_scoring_metrics_contracts.py",
+)
+
 SUITES: tuple[SuiteDefinition, ...] = (
     SuiteDefinition(
         name="analysis",
         label="Analysis",
         description="Shot detection, PractiScore import, and timing analysis tests.",
-        targets=(ROOT / "tests" / "analysis",),
+        targets=("tests/analysis",),
     ),
     SuiteDefinition(
         name="browser",
         label="Browser",
         description="Browser API, static shell, and browser-first workflow tests.",
-        targets=(ROOT / "tests" / "browser",),
+        targets=("tests/browser",),
     ),
     SuiteDefinition(
         name="cli",
         label="CLI",
         description="Runtime entrypoint and command-line behavior tests.",
-        targets=(ROOT / "tests" / "cli",),
+        targets=("tests/cli",),
     ),
     SuiteDefinition(
         name="export",
         label="Export",
         description="Overlay rendering and FFmpeg export pipeline tests.",
-        targets=(ROOT / "tests" / "export",),
+        targets=("tests/export",),
     ),
     SuiteDefinition(
         name="media",
         label="Media",
         description="Media toolchain and FFmpeg resolver tests.",
-        targets=(ROOT / "tests" / "media",),
+        targets=("tests/media",),
     ),
     SuiteDefinition(
         name="persistence",
         label="Persistence",
         description="Project bundle, save, and load tests.",
-        targets=(ROOT / "tests" / "persistence",),
+        targets=("tests/persistence",),
     ),
     SuiteDefinition(
         name="presentation",
         label="Presentation",
         description="Stage presentation and timing display tests.",
-        targets=(ROOT / "tests" / "presentation",),
+        targets=("tests/presentation",),
     ),
     SuiteDefinition(
         name="scoring",
         label="Scoring",
         description="Scoring logic, merge, and overlay-scoring integration tests.",
-        targets=(ROOT / "tests" / "scoring",),
+        targets=("tests/scoring",),
     ),
     SuiteDefinition(
         name="benchmarks",
         label="Benchmarks",
         description="Stage benchmark and CSV export tests.",
-        targets=(ROOT / "tests" / "benchmarks",),
+        targets=("tests/benchmarks",),
     ),
     SuiteDefinition(
         name="scripts",
         label="Scripts",
         description="Helper-script and test-runner coverage tests.",
-        targets=(ROOT / "tests" / "scripts",),
+        targets=("tests/scripts",),
+    ),
+    SuiteDefinition(
+        name="pane-project",
+        label="Pane Project",
+        description="Opt-in browser pane lane for Project, landing, and PractiScore workflows.",
+        targets=PANE_PROJECT_TARGETS,
+        include_in_default=False,
+    ),
+    SuiteDefinition(
+        name="pane-match",
+        label="Pane Match",
+        description="Opt-in browser pane lane for Match workspace, recap, composite, and export workflows.",
+        targets=PANE_MATCH_TARGETS,
+        include_in_default=False,
+    ),
+    SuiteDefinition(
+        name="pane-performance",
+        label="Pane Performance",
+        description="Opt-in browser pane lane for Performance Library workflows and contracts.",
+        targets=PANE_PERFORMANCE_TARGETS,
+        include_in_default=False,
+    ),
+    SuiteDefinition(
+        name="pane-settings",
+        label="Pane Settings",
+        description="Opt-in browser pane lane for Settings defaults and section workflows.",
+        targets=PANE_SETTINGS_TARGETS,
+        include_in_default=False,
+    ),
+    SuiteDefinition(
+        name="pane-metrics",
+        label="Pane Metrics",
+        description="Opt-in browser pane lane for Metrics pane workflows and scoring/metrics contracts.",
+        targets=PANE_METRICS_TARGETS,
+        include_in_default=False,
     ),
 )
 
@@ -175,19 +278,53 @@ def relative_path(path: Path) -> str:
     return path.resolve().relative_to(ROOT).as_posix()
 
 
-def suite_files(suite: SuiteDefinition) -> list[Path]:
-    files: list[Path] = []
+def target_path(target: str) -> Path:
+    file_target, _, _ = target.partition("::")
+    return (ROOT / file_target).resolve()
+
+
+def suite_files(suite: SuiteDefinition) -> list[str]:
+    files: list[str] = []
     for target in suite.targets:
-        if target.is_dir():
-            files.extend(sorted(target.rglob("test_*.py")))
-        elif target.is_file():
+        path = target_path(target)
+        if "::" in target:
             files.append(target)
+        elif path.is_dir():
+            files.extend(relative_path(candidate) for candidate in sorted(path.rglob("test_*.py")))
+        elif path.is_file():
+            files.append(target)
+    return files
+
+
+def suite_catalog_files(suite: SuiteDefinition) -> list[str]:
+    files: list[str] = []
+    seen: set[str] = set()
+    for target in suite.targets:
+        path = target_path(target)
+        if "::" in target:
+            file_target = relative_path(path)
+            if file_target not in seen:
+                files.append(file_target)
+                seen.add(file_target)
+            continue
+        if path.is_dir():
+            for candidate in sorted(path.rglob("test_*.py")):
+                relative_candidate = relative_path(candidate)
+                if relative_candidate not in seen:
+                    files.append(relative_candidate)
+                    seen.add(relative_candidate)
+            continue
+        if path.is_file():
+            file_target = relative_path(path)
+            if file_target not in seen:
+                files.append(file_target)
+                seen.add(file_target)
     return files
 
 
 def selected_suites(names: list[str] | None) -> list[SuiteDefinition]:
     if not names:
-        return list(SUITES)
+        return [suite for suite in SUITES if suite.include_in_default]
     return [SUITE_BY_NAME[name] for name in names]
 
 
@@ -199,7 +336,7 @@ def planned_runs(
     if mode == "all-together":
         combined_targets: list[str] = []
         for suite in suites:
-            combined_targets.extend(relative_path(target) for target in suite.targets)
+            combined_targets.extend(suite.targets)
         runs.append(
             PlannedRun(
                 run_id="run-001",
@@ -213,8 +350,7 @@ def planned_runs(
 
     run_number = 1
     for suite in suites:
-        for file_path in suite_files(suite):
-            target = relative_path(file_path)
+        for target in suite_files(suite):
             runs.append(
                 PlannedRun(
                     run_id=f"run-{run_number:03d}",
@@ -279,15 +415,16 @@ def execute_runs(runs: list[PlannedRun], dry_run: bool, stop_on_failure: bool) -
 def suite_catalog_payload() -> list[dict[str, object]]:
     payload: list[dict[str, object]] = []
     for suite in SUITES:
-        files = suite_files(suite)
+        files = suite_catalog_files(suite)
         payload.append(
             {
                 "name": suite.name,
                 "label": suite.label,
                 "description": suite.description,
-                "targets": [relative_path(target) for target in suite.targets],
+                "targets": list(suite.targets),
+                "default_selected": suite.include_in_default,
                 "file_count": len(files),
-                "files": [relative_path(path) for path in files],
+                "files": files,
             }
         )
     return payload

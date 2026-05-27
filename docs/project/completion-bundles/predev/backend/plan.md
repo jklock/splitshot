@@ -6,8 +6,8 @@ Complete the shared backend as the stable contract layer for landing, global set
 
 ## Current execution status
 
-- Normalized lane status: `implementation advanced / proof pending`
-- Task status: `BEK-001` through `BEK-006` are complete for Work Effort 1; `BEK-007` and `BEK-008` remain open proof/signoff work
+- Normalized lane status: `done`
+- Task status: `BEK-001` through `BEK-008` complete
 - Cross-lane authority: `../../MASTER_STATUS.md`
 
 ## Scope
@@ -49,8 +49,9 @@ The current risk is not missing routes so much as mixed ownership and uneven pro
 Execution reality that matters:
 
 - the supporting backend and route changes are no longer just incidental supporting work,
-- this bundle has now had its dedicated Work Effort 1 implementation pass,
-- and `BEK-001` through `BEK-006` are now counted as closed implementation work while proof/signoff remains for `BEK-007` and `BEK-008`.
+- this bundle had its dedicated Work Effort 1 implementation pass,
+- Work Effort 2 then closed `BEK-007` and `BEK-008` with focused backend proof reruns, runtime health, the persistence+analysis owner-suite anchor, and the green browser owner-suite anchor,
+- and the lane no longer carries an open backend final-gate item.
 
 ## Architecture boundaries
 

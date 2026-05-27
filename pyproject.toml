@@ -24,7 +24,6 @@ splitshot-benchmark-csv = "splitshot.benchmarks.cli:main"
 splitshot-web = "splitshot.browser.cli:main"
 
 [tool.uv]
-python-preference = "system"
 link-mode = "copy"
 
 [build-system]

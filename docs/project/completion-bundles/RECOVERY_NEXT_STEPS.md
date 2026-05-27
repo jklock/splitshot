@@ -11,8 +11,8 @@ Use `MASTER_STATUS.md` for the authoritative cross-bundle status board, normaliz
   - Work Effort 2 / Set 2: `testing/`
 - The detailed source bundles and parity-input reference material now live under `predev/`.
 - Work Effort 1 is now complete: `development/` closed DEV-301, republished its handoff, and passed the fresh all-together suite anchor.
-- Work Effort 2 already inherits closed Stage and Match docs/test/proof/signoff plus partial Performance proof anchors.
-- Work Effort 2 still owns the remaining Performance proof package, Backend and Modularization proof/signoff, the source `predev/tests/` bundle execution, screenshots/artifacts/docs sync, and final gates.
+- Work Effort 2 now inherits closed Stage, Match, Performance, and Backend docs/test/proof/signoff.
+- Work Effort 2 still owns Modularization proof/signoff, the source `predev/tests/` bundle execution, screenshots/artifacts/docs sync for the still-open lanes, and final gates.
 - Canonical repo proof anchor: `../../../artifacts/all-together.json` records `691 passed`, but that repo-health baseline still does not by itself close Work Effort 2.
 
 Important distinction:
@@ -40,11 +40,10 @@ Preserve these handed-off implementation baselines unless a newly discovered blo
 
 Preserve this order unless a newly discovered blocker forces a documented change:
 
-1. Close the remaining Performance shell/detail/search-filter/backup-export package and `PRF-007`.
-2. Close Backend and Modularization signoff scope through `BEK-007`, `BEK-008`, `MOD-006`, and `MOD-007`.
-3. Execute the entire source `predev/tests/` bundle scope (`TST-001` through `TST-009`).
-4. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required.
-5. Run focused proof slices, owned suites, the canonical full suite, and final visual signoff last.
+1. Close Modularization signoff scope through `MOD-006` and `MOD-007`.
+2. Execute the entire source `predev/tests/` bundle scope (`TST-001` through `TST-009`).
+3. Refresh screenshots, artifacts, QA docs, coverage docs, and user-facing docs where required.
+4. Run focused proof slices, owned suites, the canonical full suite, and final visual signoff last.
 
 ## Guardrails
 

@@ -30,14 +30,19 @@ Proof:
 
 - [x] Move Performance onto the same shell family as Stage.
 - [x] Place summary tiles and record data in the main area.
-- [ ] Use the lower pane for selected-record information everywhere the spec expects it.
-- [ ] Keep filters, actions, and settings fully right-inspector centric.
+- [x] Use the lower pane for selected-record information everywhere the spec expects it.
+- [x] Keep filters, actions, and settings fully right-inspector centric.
 
 Progress note (`2026-05-24`):
 
 - Performance/library root markup now advertises the shared `stage-workspace` shell family.
 - Summary tiles, record lists, analytics, lower selected-record detail, and right-inspector filters/actions/settings are now implemented in the shared shell.
 - Proof, screenshots, and final interaction packaging for that grammar are still pending before the checklist can close.
+
+Proof closeout note (`2026-05-26`):
+
+- The focused shell/detail proof slice stayed green with `3 passed` across the loading/recovery, reopen, and lower-detail truth interactions.
+- `docs/screenshots/automate3/loaded-library.png` plus the new section captures (`performance-analytics.png`, `performance-backup.png`, and `performance-settings.png`) now record the lower-pane detail and right-inspector grammar under the loaded Performance shell.
 
 Depends on:
 
@@ -53,8 +58,8 @@ Proof:
 ## PRF-003 — Rebuild the record and detail workflow in the new shell
 
 - [x] Prove loading, refresh, stale, and empty-state behavior.
-- [ ] Fully prove search, sort, and filter behavior.
-- [ ] Fully prove selected-record detail truth in the lower-pane grammar expected by the spec.
+- [x] Fully prove search, sort, and filter behavior.
+- [x] Fully prove selected-record detail truth in the lower-pane grammar expected by the spec.
 - [x] Prove stage/workspace reopen behavior from the current layout.
 
 Progress note (`2026-05-24`):
@@ -67,6 +72,11 @@ Progress note (`2026-05-25`):
 
 - The Performance shell now keeps recovery visible when no records are loaded: stale state exposes a banner-level `Update Library` action and error state exposes a banner-level `Retry` action.
 - This closes the implementation blocker where manual recovery controls were hidden inside the unloaded Records inspector.
+
+Proof closeout note (`2026-05-26`):
+
+- `tests/browser/test_browser_interactions.py::test_performance_library_search_filters_records_and_keeps_lower_detail_truth` now closes the focused search/filter/detail truth gap alongside the existing loading/reopen proofs.
+- The refreshed loaded-library screenshot keeps the selected record visible in the lower pane while the active Performance inspector section changes, closing the remaining record/detail grammar proof for this lane.
 
 Depends on:
 
@@ -83,13 +93,18 @@ Proof:
 
 - [x] Prove note and tag persistence truth through backend routes and the new shell.
 - [x] Prove overview summary tiles and personal-best analytics truth.
-- [ ] Prove backup create/restore behavior.
-- [ ] Prove CSV/JSON export behavior and capture updated output artifacts.
+- [x] Prove backup create/restore behavior.
+- [x] Prove CSV/JSON export behavior and capture updated output artifacts.
 
 Progress note (`2026-05-24`):
 
 - Notes/tags persistence and summary-tile / personal-best analytics truth are covered.
 - Backup create/restore and export artifact proof remain open.
+
+Proof closeout note (`2026-05-26`):
+
+- The focused notes/analytics/settings slice stayed green with `4 passed`, and the backend/export pack stayed green with `72 passed` across `tests/browser/test_library_backend_contracts.py`, `tests/export/test_export.py`, and `tests/export/test_merge_export_contracts.py`.
+- `artifacts/performance-proof-20260526/` now records concrete CSV/JSON export outputs, the backup manifest and copied backup file, and the backup create/restore result payloads for the current shell contract.
 
 Depends on:
 
@@ -133,13 +148,18 @@ Proof:
 
 - [x] Update QA matrix, coverage plan, and full browser E2E plan for Performance-owned controls and workflows.
 - [x] Update user-facing Performance docs.
-- [ ] Capture Overview, Records, Detail, Analytics, Backup, and Settings screenshots for the new shell.
-- [ ] Finish the remaining proof-package notes / deferrals.
+- [x] Capture Overview, Records, Detail, Analytics, Backup, and Settings screenshots for the new shell.
+- [x] Finish the remaining proof-package notes / deferrals.
 
 Progress note (`2026-05-24`):
 
 - QA/control docs, the coverage planning docs, and the user-facing Performance guide are aligned with the shared shell.
 - Screenshot packaging and the remaining proof/deferral notes are still open.
+
+Proof closeout note (`2026-05-26`):
+
+- `scripts/docs/capture_loaded_views.py` refreshed the repo-owned loaded Performance screenshot set, including `loaded-library.png` and `loaded-proof-results.json`.
+- The section capture rerun added `performance-analytics.png`, `performance-backup.png`, `performance-settings.png`, and `performance-section-proof-results.json`, closing the remaining Performance screenshot package.
 
 Depends on:
 
@@ -157,11 +177,11 @@ Proof:
 
 ## PRF-007 — Performance done gate
 
-- [ ] Confirm Performance-owned tests are green for the new contract.
-- [ ] Confirm shared-shell/backend dependencies used by Performance are green.
-- [ ] Confirm reopen, analytics, backup, and export proof artifacts exist for the new shell.
-- [ ] Confirm visual approval is recorded.
-- [ ] Confirm user-facing naming and doc truth are aligned.
+- [x] Confirm Performance-owned tests are green for the new contract.
+- [x] Confirm shared-shell/backend dependencies used by Performance are green.
+- [x] Confirm reopen, analytics, backup, and export proof artifacts exist for the new shell.
+- [x] Confirm visual approval is recorded.
+- [x] Confirm user-facing naming and doc truth are aligned.
 
 Depends on:
 
@@ -170,3 +190,7 @@ Depends on:
 Proof:
 
 - `outcome.md` final gate marked complete
+
+Progress note (`2026-05-26`):
+
+- The Performance gate now closes on the green `3 passed`, `4 passed`, and `72 passed` reruns, the refreshed loaded-library shell screenshot, the new analytics/backup/settings section screenshots, the repo-owned backup/export artifacts under `artifacts/performance-proof-20260526/`, and recorded visual approval against those refreshed captures.

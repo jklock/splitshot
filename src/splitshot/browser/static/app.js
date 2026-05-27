@@ -12074,6 +12074,7 @@ apiRuntime = createApiRuntime({
   resolveSelectedShotId,
   mergeProjectDetailsDraft,
   mergeMergeDraft,
+  mergePendingMergeSourcePayloads: (project) => mergePane?.mergePendingMergeSourcePayloads(project),
   mergeOverlayPositionDraft,
   mergeOverlayStyleDraft,
   mergeOverlayTextBoxesDraft,

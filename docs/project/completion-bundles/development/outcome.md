@@ -106,8 +106,8 @@ The following external review passes informed this reset:
 
 ## Remaining work after Work Effort 1 handoff
 
-- `testing/` now owns the remaining Performance proof/signoff package, Backend and Modularization final proof packages, the source `predev/tests/` execution bundle, screenshots/artifacts/docs sync, and the final acceptance gates.
-- `predev/backend/` and `predev/modularization/` remain `implementation advanced / proof pending`; that is final proof/signoff scope reserved for Work Effort 2, not an open DEV-301 blocker.
+- `testing/` now owns the remaining Modularization final proof package, the source `predev/tests/` execution bundle, screenshots/artifacts/docs sync, and the final acceptance gates.
+- `predev/modularization/` remains `implementation advanced / proof pending`; Backend, Performance, Stage, and Match are now closed in Work Effort 2, and any future issue there must be an explicit reopen rather than an implied DEV-301 blocker.
 - Future implementation regressions discovered during Work Effort 2 must reopen the relevant source lane explicitly rather than being hidden inside acceptance-language edits.
 
 ## Waivers / deferrals

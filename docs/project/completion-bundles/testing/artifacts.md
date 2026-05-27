@@ -112,14 +112,32 @@ Use source-bundle ledgers and repo-owned artifact paths rather than temporary sc
 - Artifact: Performance proof anchor
   - Path: `../predev/performance/outcome.md`, `../predev/performance/artifacts.md`
   - Produced by: Performance source bundle
-  - Date: `2026-05-25`
-  - Notes: Work Effort 2 inherits the remaining proof/signoff work needed to close Performance.
+  - Date: `2026-05-26`
+  - Notes: Work Effort 2 now inherits the closed Performance source bundle, including the focused reruns, screenshot package, output artifacts, and recorded visual approval.
+
+- Artifact: Performance final-gate rerun evidence
+  - Path: `../predev/performance/outcome.md`, `../predev/performance/artifacts.md`, `../../../docs/screenshots/automate3/loaded-library.png`, `../../../docs/screenshots/automate3/loaded-proof-results.json`, `../../../docs/screenshots/automate3/performance-analytics.png`, `../../../docs/screenshots/automate3/performance-backup.png`, `../../../docs/screenshots/automate3/performance-settings.png`, `../../../docs/screenshots/automate3/performance-section-proof-results.json`, `../../../artifacts/performance-proof-20260526/library-export.csv`, `../../../artifacts/performance-proof-20260526/library-export.json`, `../../../artifacts/performance-proof-20260526/backup-manifest.json`, `../../../artifacts/performance-proof-20260526/backup-create-result.json`, `../../../artifacts/performance-proof-20260526/backup-restore-result.json`, `../../../artifacts/performance-proof-20260526/backup_2026-05-26_22-13-50.json`, `../../../artifacts/performance-proof-20260526/performance-output-proof-results.json`
+  - Produced by: 2026-05-26 Performance proof-close pass
+  - Date: `2026-05-26`
+  - Notes: records the full Performance closeout: focused interaction reruns at `3 passed` and `4 passed`, the backend/export pack at `72 passed`, the loaded and section-specific screenshot set, repo-owned output artifacts for CSV/JSON export plus backup create/restore, and visual approval against the refreshed captures.
 
 - Artifact: Backend proof/signoff anchor
   - Path: `../predev/backend/tasks.md`, `../predev/backend/outcome.md`, `../predev/backend/artifacts.md`
   - Produced by: Backend source bundle
-  - Date: `2026-05-25`
-  - Notes: `BEK-007` and `BEK-008` remain fully inside Work Effort 2.
+  - Date: `2026-05-26`
+  - Notes: Work Effort 2 now inherits the closed backend source bundle, including the focused reruns, runtime health, owner-suite anchors, accepted residual risks, and approval.
+
+- Artifact: Backend preflight proof rerun
+  - Path: `../predev/backend/outcome.md`, `../predev/backend/artifacts.md`, `../../../artifacts/test-suite-backend-signoff.json`
+  - Produced by: 2026-05-26 backend preflight validation
+  - Date: `2026-05-26`
+  - Notes: the focused backend proof packs reran green at `114 passed`, `38 passed`, `22 passed`, and `22 passed`, and the persistence+analysis owner-suite artifact recorded `125 passed`; this remains the focused backend closeout anchor inside the final proof package.
+
+- Artifact: Backend final-gate rerun evidence
+  - Path: `../predev/backend/outcome.md`, `../predev/backend/artifacts.md`, `../../../artifacts/test-suite-backend-signoff.json`, `../../../artifacts/test-suite-backend-browser.json`
+  - Produced by: 2026-05-26 backend closeout pass
+  - Date: `2026-05-26`
+  - Notes: records the closed backend gate: focused reruns at `114 passed`, `38 passed`, `22 passed`, and `22 passed`, runtime health, the persistence+analysis owner-suite anchor at `125 passed`, the browser owner-suite anchor at `420 passed`, the accepted residual-risk record, and the synchronized source/aggregate/top-level ledgers.
 
 - Artifact: Modularization proof/signoff anchor
   - Path: `../predev/modularization/tasks.md`, `../predev/modularization/outcome.md`, `../predev/modularization/artifacts.md`

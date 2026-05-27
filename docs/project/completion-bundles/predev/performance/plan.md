@@ -6,8 +6,8 @@ Align Performance to the Stage shell and present it as the history/analytics wor
 
 ## Current execution status
 
-- Normalized lane status: `implementation advanced / proof pending`
-- Task status: `PRF-001` and `PRF-005` complete; `PRF-002`, `PRF-003`, `PRF-004`, and `PRF-006` partial; `PRF-007` open
+- Normalized lane status: `done`
+- Task status: `PRF-001` through `PRF-007` complete
 - Cross-lane authority: `../../MASTER_STATUS.md`
 
 ## Scope
@@ -37,14 +37,14 @@ This bundle does not by itself complete:
 
 ## Current-state summary
 
-Performance already has meaningful backend and interaction proof, and its shared-shell direction is implemented, but the lane is still waiting on focused proof packaging and signoff.
+Performance already has meaningful backend and interaction proof, and the Work Effort 2 closeout pass has now closed the remaining focused proof packaging and signoff.
 
 Current facts that matter:
 
 - The backend exposes list/filter/open/export/analytics/backup/tag/note routes and much of that proof remains valuable.
 - The bundle has been reset around Performance as a Stage-shell variant rather than a standalone shell family.
-- The shared-shell layout, record/detail workflow, reopen behavior, settings isolation, and notes/tags or analytics truth are materially implemented.
-- Existing non-visual proof can be carried forward where the behavior remains unchanged, but the lower-pane grammar, search/filter proof depth, backup/export artifacts, and screenshots still need focused packaging.
+- The shared-shell layout, record/detail workflow, reopen behavior, settings isolation, and notes/tags or analytics truth are all now proven and recorded in the source ledger.
+- The repo-owned screenshot package, backup/export artifacts, and visual approval are all now linked from `outcome.md` and `artifacts.md`, so the lane no longer carries an open final-gate item.
 
 ## Architecture boundaries
 
