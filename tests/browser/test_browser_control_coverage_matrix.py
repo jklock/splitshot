@@ -88,6 +88,14 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
+        "| Landing | Supports `TAX-0` and `TAX-2`; contributes to `TAX-1` and `TAX-5` | Three workflow entry cards, quick-start shortcuts, landing Open File bootstrap, recent-stage list hydration from /api/landing/recent, and surface-only recent-row handoff |"
+        in matrix
+    )
+    assert (
+        "| Shared shell | Supports `TAX-0`, `TAX-1`, and `TAX-2`; contributes to `TAX-5` | Shared `stage-workspace` shell markers across Stage/Match/Performance, home and return controls, tool-rail collapse/minimize, context/status header display, layout lock toggle, resize handles, and compat rerender/open-project consumers |"
+        in matrix
+    )
+    assert (
         "| Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, gated primary import, metadata-only delete |"
         in matrix
     )
@@ -121,14 +129,21 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         "| Metrics | `pane.metrics` | `tax1.metrics.pane` | `metrics.summary_and_workbench`, `metrics.row_propagation`, `metrics.stage_story`, `metrics.scoring_context`, `metrics.export` | `pane-metrics`, `browser` |"
         in matrix
     )
-    assert "## Stage support surface manifests" in matrix
+    assert "## Support surface manifests" in matrix
     assert "support_surface_ids" in matrix
+    assert "surface.landing" in matrix
+    assert "surface.shared_shell" in matrix
     assert "surface.stage.compose" in matrix
     assert "surface.stage.scoring" in matrix
     assert "surface.stage.splits_waveform" in matrix
     assert "surface.stage.markers_review_overlay" in matrix
     assert "surface.stage.export" in matrix
     assert "surface.stage.shotml" in matrix
+    assert "landing.entry_cards_and_quick_start" in matrix
+    assert "landing.recent_activity" in matrix
+    assert "shared_shell.shell_markers_and_surface_routing" in matrix
+    assert "shared_shell.home_and_return_controls" in matrix
+    assert "shared_shell.rail_layout_and_resize" in matrix
     assert "stage.compose.secondary_waveform_sync" in matrix
     assert "stage.scoring.summary_and_editing" in matrix
     assert "stage.splits_waveform.waveform_navigation" in matrix
@@ -136,8 +151,13 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "stage.export.output_profiles_and_hooks" in matrix
     assert "stage.shotml.proposals_and_section_persistence" in matrix
     assert "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
+    assert "Landing support surface only; not a first-class pane or view closure record." in matrix
+    assert "Shared-shell support surface only; not a first-class pane or view closure record." in matrix
     assert "tests/browser/test_browser_interactions.py" in matrix
+    assert "tests/browser/test_landing_page.py" in matrix
     assert "tests/browser/test_landing_backend_routes.py" in matrix
+    assert "tests/browser/test_automation_ui_shell_contracts.py" in matrix
+    assert "tests/browser/test_browser_rail_layout.py" in matrix
     assert "tests/browser/test_library_backend_contracts.py" in matrix
     assert "tests/browser/test_metrics_e2e.py" in matrix
     assert "tests/browser/test_settings_e2e.py" in matrix
@@ -145,6 +165,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert settings_heading in matrix
     assert metrics_heading in matrix
     assert "dashboard-open action" in matrix
+    assert "landing Open File and stage-empty Import Video bootstrap parity without a saved project" in matrix
     assert "manual file import parity" in matrix
     assert "missing-folder creation notice" in matrix
     assert "metadata-only delete safety" in matrix
@@ -222,6 +243,10 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     for test_path in [
         "tests/browser/test_browser_static_ui.py",
         "tests/browser/test_browser_control.py",
+        "tests/browser/test_landing_page.py",
+        "tests/browser/test_landing_backend_routes.py",
+        "tests/browser/test_automation_ui_shell_contracts.py",
+        "tests/browser/test_browser_rail_layout.py",
         "tests/browser/test_browser_control_inventory_audit.py",
         "tests/browser/test_browser_control_coverage_matrix.py",
         "tests/browser/test_browser_interactions.py",
@@ -239,6 +264,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         assert test_path in matrix
 
     for surface in [
+        "Landing",
         "Shared shell",
         "Project / import",
         "Match workspace",
@@ -291,7 +317,7 @@ def test_wave_a_guide_and_browser_matrix_tables_match_the_manifest_rows() -> Non
             "feature_ids": _split_inline_list(row["`TAX-0` feature IDs"]),
             "runner_suites": _split_inline_list(row["Current runner surfaces"]),
         }
-        for row in _parse_markdown_table(guide, "## Current stage support surface extension")
+        for row in _parse_markdown_table(guide, "## Current support surface extension")
     }
     matrix_support_rows = {
         row["Support surface ID"].strip("`").strip(): {
@@ -299,7 +325,7 @@ def test_wave_a_guide_and_browser_matrix_tables_match_the_manifest_rows() -> Non
             "feature_ids": _split_inline_list(row["`TAX-0` feature IDs"]),
             "runner_suites": _split_inline_list(row["Current runner support"]),
         }
-        for row in _parse_markdown_table(matrix, "## Stage support surface manifests")
+        for row in _parse_markdown_table(matrix, "## Support surface manifests")
     }
 
     assert set(guide_rows) == set(manifest_rows)
@@ -327,6 +353,8 @@ def test_browser_proof_seam_registry_tracks_cross_surface_closeout_targets() -> 
     )
     assert "docs/project/development/completion-bundles/development/proof.md" in landing["doc_refs"]
     assert "docs/project/browser-control-qa-matrix.md" in landing["doc_refs"]
+    assert landing["manifest_ref"] == "scripts/testing/pane_feature_manifests.json"
+    assert landing["support_surface_ids"] == ["surface.landing"]
 
     assert compat["status"] == "interaction-proven"
     assert compat["proof_strength"] == "compat-static-contract + guarded interaction consumers"
@@ -341,6 +369,7 @@ def test_browser_proof_seam_registry_tracks_cross_surface_closeout_targets() -> 
     )
     assert compat["manifest_ref"] == "scripts/testing/pane_feature_manifests.json"
     assert compat["pane_ids"] == ["pane.match", "pane.performance"]
+    assert compat["support_surface_ids"] == ["surface.shared_shell"]
     assert (
         "tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth"
         in compat["evidence_tests"]
@@ -383,6 +412,14 @@ def test_development_proof_docs_capture_mixed_family_taxonomy_and_honesty_caveat
     assert "scripts/testing/pane_feature_manifests.json" in matrix
     assert "scripts/testing/pane_feature_manifests.json" in coverage_plan
     assert "scripts/testing/pane_feature_manifests.json" in full_e2e_plan
+    assert "surface.landing" in guide
+    assert "surface.landing" in matrix
+    assert "surface.landing" in coverage_plan
+    assert "surface.landing" in full_e2e_plan
+    assert "surface.shared_shell" in guide
+    assert "surface.shared_shell" in matrix
+    assert "surface.shared_shell" in coverage_plan
+    assert "surface.shared_shell" in full_e2e_plan
     assert "surface.stage.compose" in guide
     assert "surface.stage.compose" in matrix
     assert "surface.stage.compose" in coverage_plan
@@ -395,6 +432,10 @@ def test_development_proof_docs_capture_mixed_family_taxonomy_and_honesty_caveat
     assert "project.practiscore_bridge" in matrix
     assert "support_target_exceptions" in guide
     assert "state-led" in guide
+    assert "Landing support surface only; not a first-class pane or view closure record." in guide
+    assert "Landing support surface only; not a first-class pane or view closure record." in matrix
+    assert "Shared-shell support surface only; not a first-class pane or view closure record." in guide
+    assert "Shared-shell support surface only; not a first-class pane or view closure record." in matrix
     assert "Stage-tool support surface only; not a first-class pane or view closure record." in guide
     assert "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
     assert "`match.recap` is `audit_model: control-led`" in guide

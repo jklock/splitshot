@@ -14,7 +14,7 @@
     {
       "name": "browser",
       "label": "Browser",
-      "description": "Browser API, static shell, and browser-first workflow tests.",
+      "description": "Browser API, landing/shared-shell, and browser-first workflow tests.",
       "group": "core",
       "taxonomy_support": [
         "TAX-0",
@@ -23,6 +23,8 @@
         "TAX-5"
       ],
       "support_surface_ids": [
+        "surface.landing",
+        "surface.shared_shell",
         "surface.stage.compose",
         "surface.stage.scoring",
         "surface.stage.splits_waveform",

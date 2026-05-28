@@ -43,6 +43,8 @@ def test_runner_lists_available_suites_as_json() -> None:
         "TAX-5",
     ]
     assert suites_by_name["browser"]["support_surface_ids"] == [
+        "surface.landing",
+        "surface.shared_shell",
         "surface.stage.compose",
         "surface.stage.scoring",
         "surface.stage.splits_waveform",
@@ -139,36 +141,16 @@ def test_runner_dry_run_expands_browser_suite_one_by_one_as_json() -> None:
 
     assert result.returncode == 0
     payload = json.loads(result.stdout)
-    assert payload["summary"]["dry_run"] is True
-    assert payload["summary"]["planned"] == 24
-    assert payload["summary"]["total_runs"] == 24
-    assert {run["status"] for run in payload["runs"]} == {"planned"}
-    assert {tuple(run["targets"]) for run in payload["runs"]} == {
-        ("tests/browser/test_automation_ui_shell_contracts.py",),
-        ("tests/browser/test_browser_control.py",),
-        ("tests/browser/test_browser_control_coverage_matrix.py",),
-        ("tests/browser/test_browser_control_inventory_audit.py",),
-        ("tests/browser/test_browser_full_app_e2e.py",),
-        ("tests/browser/test_browser_interactions.py",),
-        ("tests/browser/test_landing_backend_routes.py",),
-        ("tests/browser/test_landing_page.py",),
-        ("tests/browser/test_library_backend_contracts.py",),
-        ("tests/browser/test_browser_rail_layout.py",),
-        ("tests/browser/test_browser_remaining_controls_e2e.py",),
-        ("tests/browser/test_browser_static_ui.py",),
-        ("tests/browser/test_metrics_e2e.py",),
-        ("tests/browser/test_merge_export_contracts.py",),
-        ("tests/browser/test_overlay_review_contracts.py",),
-        ("tests/browser/test_practiscore_session_api.py",),
-        ("tests/browser/test_practiscore_sync_controller.py",),
-        ("tests/browser/test_project_lifecycle_contracts.py",),
-        ("tests/browser/test_scoring_metrics_contracts.py",),
-        ("tests/browser/test_settings_defaults_truth_gate.py",),
-        ("tests/browser/test_settings_e2e.py",),
-        ("tests/browser/test_timing_waveform_contracts.py",),
-        ("tests/browser/test_workspace_flows.py",),
-        ("tests/browser/test_workspace_export_and_recap.py",),
+    expected_browser_targets = {
+        (path.relative_to(ROOT).as_posix(),)
+        for path in sorted((ROOT / "tests" / "browser").rglob("test_*.py"))
     }
+
+    assert payload["summary"]["dry_run"] is True
+    assert payload["summary"]["planned"] == len(expected_browser_targets)
+    assert payload["summary"]["total_runs"] == len(expected_browser_targets)
+    assert {run["status"] for run in payload["runs"]} == {"planned"}
+    assert {tuple(run["targets"]) for run in payload["runs"]} == expected_browser_targets
 
 
 def test_runner_dry_run_writes_raw_and_json_output_files(tmp_path: Path) -> None:

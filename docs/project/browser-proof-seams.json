@@ -16,8 +16,12 @@
       "docs/project/development/Testing/spec.md",
       "docs/project/development/Testing/artifacts.md"
     ],
+    "manifest_ref": "scripts/testing/pane_feature_manifests.json",
+    "support_surface_ids": [
+      "surface.landing"
+    ],
     "taxonomy_role": "supporting seam only; never a standalone TAX-0..TAX-5 closeout",
-    "taxonomy_note": "Supports landing-view feature and view planning, but broader pane or full end-to-end closure still requires accepted visual or video evidence records under the canonical Testing contract.",
+    "taxonomy_note": "Supports `surface.landing`, landing-view feature, and view planning, but broader pane or full end-to-end closure still requires accepted visual or video evidence records under the canonical Testing contract.",
     "evidence_requirement": "Any taxonomy class that cites this seam must still provide accepted visual or video evidence; seam labels alone never close a class.",
     "caveat": "Recent-row clicks remain surface-only by design; they do not auto-open a saved project or workspace."
   },
@@ -48,8 +52,11 @@
       "pane.match",
       "pane.performance"
     ],
+    "support_surface_ids": [
+      "surface.shared_shell"
+    ],
     "taxonomy_role": "supporting seam only; never a standalone TAX-0..TAX-5 closeout",
-    "taxonomy_note": "Supports shared-shell feature, pane, and view planning for `pane.match` and `pane.performance`, but compat/static strength must never be mistaken for taxonomy closure without accepted evidence records.",
+    "taxonomy_note": "Supports `surface.shared_shell`, shared-shell feature, pane, and view planning for `pane.match` and `pane.performance`, but compat/static strength must never be mistaken for taxonomy closure without accepted evidence records.",
     "evidence_requirement": "Any taxonomy class that cites this seam must still provide accepted visual or video evidence; seam labels alone never close a class.",
     "compat_consumers": [
       "window.splitshot.onOpenProject",

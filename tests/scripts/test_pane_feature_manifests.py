@@ -33,7 +33,12 @@ def _defined_test_sources(path: Path) -> dict[str, str]:
     lines = source.splitlines()
     tree = ast.parse(source, filename=str(path))
     return {
-        node.name: "\n".join(lines[node.lineno - 1 : node.end_lineno])
+        node.name: "\n".join(
+            lines[
+                min([decorator.lineno for decorator in node.decorator_list], default=node.lineno)
+                - 1 : node.end_lineno
+            ]
+        )
         for node in ast.walk(tree)
         if isinstance(node, (ast.AsyncFunctionDef, ast.FunctionDef))
     }
@@ -71,6 +76,8 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
         "pane.metrics",
     }
     assert set(support_surfaces) == {
+        "surface.landing",
+        "surface.shared_shell",
         "surface.stage.compose",
         "surface.stage.scoring",
         "surface.stage.splits_waveform",
@@ -214,22 +221,55 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
         "metrics.scoring_context",
     }
 
-    for surface_id, feature_prefix in {
-        "surface.stage.compose": "stage.compose.",
-        "surface.stage.scoring": "stage.scoring.",
-        "surface.stage.splits_waveform": "stage.splits_waveform.",
-        "surface.stage.markers_review_overlay": "stage.markers_review_overlay.",
-        "surface.stage.export": "stage.export.",
-        "surface.stage.shotml": "stage.shotml.",
-    }.items():
+    expected_support_surfaces = {
+        "surface.landing": (
+            "landing-support",
+            "Landing support surface only; not a first-class pane or view closure record.",
+            "landing.",
+        ),
+        "surface.shared_shell": (
+            "shared-shell-support",
+            "Shared-shell support surface only; not a first-class pane or view closure record.",
+            "shared_shell.",
+        ),
+        "surface.stage.compose": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.compose.",
+        ),
+        "surface.stage.scoring": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.scoring.",
+        ),
+        "surface.stage.splits_waveform": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.splits_waveform.",
+        ),
+        "surface.stage.markers_review_overlay": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.markers_review_overlay.",
+        ),
+        "surface.stage.export": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.export.",
+        ),
+        "surface.stage.shotml": (
+            "stage-tool-support",
+            "Stage-tool support surface only; not a first-class pane or view closure record.",
+            "stage.shotml.",
+        ),
+    }
+    for surface_id, (support_kind, support_note, feature_prefix) in expected_support_surfaces.items():
         surface = support_surfaces[surface_id]
-        assert surface["support_kind"] == "stage-tool-support"
+        assert surface["support_kind"] == support_kind
         assert surface["support_only"] is True
         assert surface["runner_suites"] == ["browser"]
         assert surface["feature_id_prefix"] == feature_prefix
-        assert surface["support_note"] == (
-            "Stage-tool support surface only; not a first-class pane or view closure record."
-        )
+        assert surface["support_note"] == support_note
         assert surface["owner_targets"]
         assert "scripts/testing/test_suite_taxonomy.json" in surface["taxonomy_surfaces"]
         assert "docs/tests/TEST_SUITE_GUIDE.md" in surface["doc_refs"]
@@ -252,6 +292,11 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
         for surface in support_surfaces.values()
         for feature in surface["features"]
     } == {
+        "landing.entry_cards_and_quick_start",
+        "landing.recent_activity",
+        "shared_shell.shell_markers_and_surface_routing",
+        "shared_shell.home_and_return_controls",
+        "shared_shell.rail_layout_and_resize",
         "stage.compose.defaults_and_media",
         "stage.compose.per_source_authoring",
         "stage.compose.secondary_waveform_sync",
@@ -366,6 +411,72 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
         "threshold",
     ]
 
+    landing_quick_start = next(
+        feature
+        for feature in support_surfaces["surface.landing"]["features"]
+        if feature["feature_id"] == "landing.entry_cards_and_quick_start"
+    )
+    assert landing_quick_start["audit_model"] == "control-led"
+    assert {
+        'button.landing-card[data-surface="single"]',
+        'button.landing-card[data-surface="multi"]',
+        'button.landing-card[data-surface="library"]',
+        "landing-new-stage",
+        "landing-new-match",
+        "landing-open-file",
+    }.issubset(set(landing_quick_start["control_ids"]))
+
+    landing_recent = next(
+        feature
+        for feature in support_surfaces["surface.landing"]["features"]
+        if feature["feature_id"] == "landing.recent_activity"
+    )
+    assert landing_recent["audit_model"] == "control-led"
+    assert landing_recent["control_ids"] == ["#landing-recent-list .landing-recent-item"]
+
+    shared_shell_routing = next(
+        feature
+        for feature in support_surfaces["surface.shared_shell"]["features"]
+        if feature["feature_id"] == "shared_shell.shell_markers_and_surface_routing"
+    )
+    assert shared_shell_routing["audit_model"] == "state-led"
+    assert shared_shell_routing["control_ids"] == []
+    assert {
+        "stage-workspace shell markers across stage, match, and library",
+        "context and status header display across shell views",
+        "compat renderAutomationSurface handoff",
+        "selectedLibraryRecord and host open-project compat consumers",
+    } == set(shared_shell_routing["state_values"])
+
+    shared_shell_home = next(
+        feature
+        for feature in support_surfaces["surface.shared_shell"]["features"]
+        if feature["feature_id"] == "shared_shell.home_and_return_controls"
+    )
+    assert shared_shell_home["audit_model"] == "control-led"
+    assert shared_shell_home["control_ids"] == [
+        "stage-go-home",
+        "match-go-home",
+        "library-go-home",
+        "shell-return-match",
+    ]
+
+    shared_shell_layout = next(
+        feature
+        for feature in support_surfaces["surface.shared_shell"]["features"]
+        if feature["feature_id"] == "shared_shell.rail_layout_and_resize"
+    )
+    assert shared_shell_layout["audit_model"] == "control-led"
+    assert {
+        "toggle-rail",
+        "match-toggle-rail",
+        "library-toggle-rail",
+        "toggle-layout-lock-video",
+        "resize-rail",
+        "resize-sidebar",
+        "resize-waveform",
+    } == set(shared_shell_layout["control_ids"])
+
 
 def test_support_surface_owner_targets_resolve_to_real_files_or_tests() -> None:
     payload = _load_json(PANE_MANIFEST)
@@ -383,12 +494,27 @@ def test_support_surface_owner_targets_resolve_to_real_files_or_tests() -> None:
             )
 
 
-def test_stage_support_owner_targets_cover_repaired_handoffs_and_context_claims() -> None:
+def test_support_surface_owner_targets_cover_repaired_handoffs_and_context_claims() -> None:
     support_surfaces = {
         surface["surface_id"]: set(surface["owner_targets"])
         for surface in _load_json(PANE_MANIFEST)["support_surfaces"]
     }
 
+    assert {
+        "tests/browser/test_landing_page.py::test_landing_page_three_entry_cards",
+        "tests/browser/test_landing_backend_routes.py::test_landing_recent_filters_non_stage_entries_before_15_item_cap",
+        "tests/browser/test_landing_backend_routes.py::test_landing_recent_route_delegates_to_controller_backend_owner",
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state",
+        "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open",
+    }.issubset(support_surfaces["surface.landing"])
+    assert {
+        "tests/browser/test_automation_ui_shell_contracts.py::test_automation_shell_exposes_three_splitshot_surfaces",
+        "tests/browser/test_browser_static_ui.py::test_browser_ui_is_waterfall_cockpit_workflow",
+        "tests/browser/test_browser_rail_layout.py::test_browser_rail_footer_buttons_stay_square_and_stacked",
+        "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes",
+        "tests/browser/test_browser_interactions.py::test_shell_compat_host_on_open_project_callback_opens_saved_project",
+        "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing",
+    }.issubset(support_surfaces["surface.shared_shell"])
     assert {
         "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
         "tests/browser/test_browser_interactions.py::test_compose_pane_trim_dead_time_uses_output_profile_editor",
@@ -406,6 +532,21 @@ def test_stage_support_owner_targets_cover_repaired_handoffs_and_context_claims(
         "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
         "tests/browser/test_browser_interactions.py::test_export_pane_frame_profile_output_hook_persists_selected_profile",
     }.issubset(support_surfaces["surface.stage.export"])
+
+
+def test_landing_and_shared_shell_owner_targets_use_named_tests_for_broad_claims() -> None:
+    support_surfaces = {
+        surface["surface_id"]: set(surface["owner_targets"])
+        for surface in _load_json(PANE_MANIFEST)["support_surfaces"]
+    }
+
+    assert "tests/browser/test_landing_page.py" not in support_surfaces["surface.landing"]
+    assert "tests/browser/test_landing_backend_routes.py" not in support_surfaces["surface.landing"]
+    assert (
+        "tests/browser/test_automation_ui_shell_contracts.py"
+        not in support_surfaces["surface.shared_shell"]
+    )
+    assert "tests/browser/test_browser_static_ui.py" not in support_surfaces["surface.shared_shell"]
 
 
 def test_support_surface_control_owner_targets_resolve_to_real_owner_tests() -> None:
@@ -444,6 +585,69 @@ def test_current_wave_thin_support_controls_have_explicit_owner_targets() -> Non
         surface["surface_id"]: surface for surface in _load_json(PANE_MANIFEST)["support_surfaces"]
     }
 
+    landing_quick_start = next(
+        feature
+        for feature in support_surfaces["surface.landing"]["features"]
+        if feature["feature_id"] == "landing.entry_cards_and_quick_start"
+    )
+    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="single"]'] == [
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+    ]
+    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="multi"]'] == [
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+    ]
+    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="library"]'] == [
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+    ]
+    assert landing_quick_start["control_owner_targets"]["landing-new-stage"] == [
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+    ]
+    assert landing_quick_start["control_owner_targets"]["landing-new-match"] == [
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+    ]
+    assert landing_quick_start["control_owner_targets"]["landing-open-file"] == [
+        "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project"
+    ]
+
+    landing_recent = next(
+        feature
+        for feature in support_surfaces["surface.landing"]["features"]
+        if feature["feature_id"] == "landing.recent_activity"
+    )
+    assert landing_recent["control_owner_targets"]["#landing-recent-list .landing-recent-item"] == [
+        "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
+    ]
+
+    shared_shell_home = next(
+        feature
+        for feature in support_surfaces["surface.shared_shell"]["features"]
+        if feature["feature_id"] == "shared_shell.home_and_return_controls"
+    )
+    assert shared_shell_home["control_owner_targets"]["stage-go-home"] == [
+        "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+    ]
+    assert shared_shell_home["control_owner_targets"]["match-go-home"] == [
+        "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+    ]
+    assert shared_shell_home["control_owner_targets"]["library-go-home"] == [
+        "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+    ]
+    assert shared_shell_home["control_owner_targets"]["shell-return-match"] == [
+        "tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context"
+    ]
+
+    shared_shell_layout = next(
+        feature
+        for feature in support_surfaces["surface.shared_shell"]["features"]
+        if feature["feature_id"] == "shared_shell.rail_layout_and_resize"
+    )
+    assert shared_shell_layout["control_owner_targets"]["toggle-layout-lock-video"] == [
+        "tests/browser/test_browser_rail_layout.py::test_layout_lock_toggle_switches_shell_state_and_persistence"
+    ]
+    assert shared_shell_layout["control_owner_targets"]["resize-waveform"] == [
+        "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes"
+    ]
+
     compose_defaults = next(
         feature
         for feature in support_surfaces["surface.stage.compose"]["features"]
@@ -478,7 +682,7 @@ def test_current_wave_thin_support_controls_have_explicit_owner_targets() -> Non
     ]
 
 
-def test_stage_support_control_led_rows_avoid_known_generic_shared_selectors() -> None:
+def test_support_surface_control_led_rows_avoid_known_generic_shared_selectors() -> None:
     payload = _load_json(PANE_MANIFEST)
     flagged: dict[str, list[str]] = {}
 
@@ -522,6 +726,8 @@ def test_suite_taxonomy_pane_manifest_refs_match_the_pane_manifest_file() -> Non
         assert pane_id in panes
 
     assert suites["browser"]["support_surface_ids"] == [
+        "surface.landing",
+        "surface.shared_shell",
         "surface.stage.compose",
         "surface.stage.scoring",
         "surface.stage.splits_waveform",

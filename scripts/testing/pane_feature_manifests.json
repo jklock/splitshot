@@ -3,7 +3,7 @@
   "wave_id": "tax-0-tax-1-wave-a",
   "wave_label": "TAX-0/TAX-1 Wave A",
   "status": "foundation",
-  "scope_note": "First-class pane feature manifests for Project, Match, Performance, Settings, and Metrics plus browser-owned support-surface manifests for the current Stage tool families: Compose, Score, Splits / waveform, Markers / Review / Overlay, Export, and ShotML. Project/Match/Performance remain the proven Wave A base; Settings and Metrics extend that same pane model; the Stage tool rows stay support-only and do not create first-class TAX-2 view closure. These records bind TAX-0 feature IDs to TAX-1 pane IDs for the pane slice and to current browser support surfaces for the Stage tool slice. They are not evidence closeout records.",
+  "scope_note": "First-class pane feature manifests for Project, Match, Performance, Settings, and Metrics plus browser-owned support-surface manifests for Landing, shared shell, and the current Stage tool families: Compose, Score, Splits / waveform, Markers / Review / Overlay, Export, and ShotML. Project/Match/Performance remain the proven Wave A base; Settings and Metrics extend that same pane model; the landing/shared-shell rows and Stage tool rows stay support-only and do not create first-class TAX-2 view closure. These records bind TAX-0 feature IDs to TAX-1 pane IDs for the pane slice and to current browser support surfaces for the landing/shared-shell plus Stage tool slice. They are not evidence closeout records.",
   "feature_audit_models": {
     "control-led": {
       "description": "Use when a feature has explicit browser control identifiers that must stay mapped to the pane inventory.",
@@ -810,6 +810,264 @@
     }
   ],
   "support_surfaces": [
+    {
+      "surface_id": "surface.landing",
+      "surface_label": "Landing",
+      "support_kind": "landing-support",
+      "support_only": true,
+      "support_note": "Landing support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5"
+      ],
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_landing_page.py::test_landing_page_three_entry_cards",
+        "tests/browser/test_landing_backend_routes.py::test_landing_recent_filters_non_stage_entries_before_15_item_cap",
+        "tests/browser/test_landing_backend_routes.py::test_landing_recent_route_delegates_to_controller_backend_owner",
+        "tests/browser/test_browser_static_ui.py::test_browser_landing_recent_activity_uses_backend_stage_entries_without_auto_opening",
+        "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state",
+        "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project",
+        "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "landing.",
+      "features": [
+        {
+          "feature_id": "landing.entry_cards_and_quick_start",
+          "feature_label": "Workflow cards and quick-start bootstrap actions",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.landing.entry_cards_and_quick_start",
+          "audit_model": "control-led",
+          "control_ids": [
+            "button.landing-card[data-surface=\"single\"]",
+            "button.landing-card[data-surface=\"multi\"]",
+            "button.landing-card[data-surface=\"library\"]",
+            "landing-new-stage",
+            "landing-new-match",
+            "landing-open-file"
+          ],
+          "state_values": [
+            "landing quick-start visibility",
+            "surface handoff from landing shortcuts",
+            "blank-project stage bootstrap state"
+          ],
+          "inventory_terms": [
+            "three workflow entry cards",
+            "quick-start shortcuts",
+            "landing-to-stage bootstrap"
+          ],
+          "control_owner_targets": {
+            "button.landing-card[data-surface=\"single\"]": [
+              "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+            ],
+            "button.landing-card[data-surface=\"multi\"]": [
+              "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+            ],
+            "button.landing-card[data-surface=\"library\"]": [
+              "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+            ],
+            "landing-new-stage": [
+              "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+            ],
+            "landing-new-match": [
+              "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
+            ],
+            "landing-open-file": [
+              "tests/browser/test_browser_interactions.py::test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project"
+            ]
+          }
+        },
+        {
+          "feature_id": "landing.recent_activity",
+          "feature_label": "Recent-stage feed and surface-only handoff",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.landing.recent_activity",
+          "audit_model": "control-led",
+          "control_ids": [
+            "#landing-recent-list .landing-recent-item"
+          ],
+          "state_values": [
+            "backend-sourced recent stage list",
+            "stage-only recent normalization",
+            "surface switch without project or workspace auto-open"
+          ],
+          "inventory_terms": [
+            "Recent Stages list",
+            "recent-stage row clicks stay surface-only"
+          ],
+          "control_owner_targets": {
+            "#landing-recent-list .landing-recent-item": [
+              "tests/browser/test_browser_interactions.py::test_landing_recent_stage_rows_switch_surface_without_auto_open"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "surface_id": "surface.shared_shell",
+      "surface_label": "Shared shell",
+      "support_kind": "shared-shell-support",
+      "support_only": true,
+      "support_note": "Shared-shell support surface only; not a first-class pane or view closure record.",
+      "taxonomy_support": [
+        "TAX-0",
+        "TAX-1",
+        "TAX-2",
+        "TAX-5"
+      ],
+      "runner_suites": [
+        "browser"
+      ],
+      "owner_targets": [
+        "tests/browser/test_automation_ui_shell_contracts.py::test_automation_shell_exposes_three_splitshot_surfaces",
+        "tests/browser/test_browser_static_ui.py::test_browser_ui_is_waterfall_cockpit_workflow",
+        "tests/browser/test_browser_rail_layout.py::test_browser_rail_footer_buttons_stay_square_and_stacked",
+        "tests/browser/test_browser_rail_layout.py::test_layout_lock_toggle_switches_shell_state_and_persistence",
+        "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes",
+        "tests/browser/test_browser_rail_layout.py::test_workspace_rail_toggles_follow_shared_shell_markers",
+        "tests/browser/test_browser_interactions.py::test_shell_compat_host_on_open_project_callback_opens_saved_project",
+        "tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context",
+        "tests/browser/test_browser_interactions.py::test_performance_library_compat_selected_record_and_render_rerender_detail_truth",
+        "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+      ],
+      "taxonomy_surfaces": [
+        "scripts/testing/test_suite_taxonomy.json"
+      ],
+      "doc_refs": [
+        "docs/project/development/Testing/README.md",
+        "docs/project/development/Testing/spec.md",
+        "docs/project/development/Testing/tasks.md",
+        "docs/project/development/Testing/outcome.md",
+        "docs/tests/TEST_SUITE_GUIDE.md",
+        "docs/project/browser-control-qa-matrix.md",
+        "docs/project/browser-control-coverage-plan.md",
+        "docs/project/browser-full-e2e-qa-plan.md"
+      ],
+      "feature_id_prefix": "shared_shell.",
+      "features": [
+        {
+          "feature_id": "shared_shell.shell_markers_and_surface_routing",
+          "feature_label": "Stage/Match/Performance shell markers and compat routing",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.shared_shell.shell_markers_and_surface_routing",
+          "audit_model": "state-led",
+          "control_ids": [],
+          "state_values": [
+            "stage-workspace shell markers across stage, match, and library",
+            "context and status header display across shell views",
+            "compat renderAutomationSurface handoff",
+            "selectedLibraryRecord and host open-project compat consumers"
+          ],
+          "inventory_terms": [
+            "shared stage-workspace shell markers",
+            "context and status headers",
+            "compat shell rerender and retained global consumers"
+          ]
+        },
+        {
+          "feature_id": "shared_shell.home_and_return_controls",
+          "feature_label": "Home routing and return-to-match guardrails",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.shared_shell.home_and_return_controls",
+          "audit_model": "control-led",
+          "control_ids": [
+            "stage-go-home",
+            "match-go-home",
+            "library-go-home",
+            "shell-return-match"
+          ],
+          "state_values": [
+            "landing return affordances across shells",
+            "return-to-match visibility and selection restore"
+          ],
+          "inventory_terms": [
+            "home buttons across stage, match, and performance",
+            "return-to-match action"
+          ],
+          "control_owner_targets": {
+            "stage-go-home": [
+              "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+            ],
+            "match-go-home": [
+              "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+            ],
+            "library-go-home": [
+              "tests/browser/test_browser_interactions.py::test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing"
+            ],
+            "shell-return-match": [
+              "tests/browser/test_browser_interactions.py::test_match_workspace_stage_open_and_shell_return_restore_match_context"
+            ]
+          }
+        },
+        {
+          "feature_id": "shared_shell.rail_layout_and_resize",
+          "feature_label": "Rail collapse, layout lock, and resize persistence",
+          "taxonomy_class": "TAX-0",
+          "test_id": "tax0.shared_shell.rail_layout_and_resize",
+          "audit_model": "control-led",
+          "control_ids": [
+            "toggle-rail",
+            "match-toggle-rail",
+            "library-toggle-rail",
+            "toggle-layout-lock-video",
+            "resize-rail",
+            "resize-sidebar",
+            "resize-waveform"
+          ],
+          "state_values": [
+            "rail collapsed persistence across stage, match, and library",
+            "layout lock persistence",
+            "stage layout size persistence",
+            "temporary markers workbench resize restoration"
+          ],
+          "inventory_terms": [
+            "tool-rail collapse and minimize",
+            "layout lock toggle",
+            "resize handles"
+          ],
+          "control_owner_targets": {
+            "toggle-rail": [
+              "tests/browser/test_browser_rail_layout.py::test_browser_rail_footer_buttons_stay_square_and_stacked"
+            ],
+            "match-toggle-rail": [
+              "tests/browser/test_browser_rail_layout.py::test_workspace_rail_toggles_follow_shared_shell_markers"
+            ],
+            "library-toggle-rail": [
+              "tests/browser/test_browser_rail_layout.py::test_workspace_rail_toggles_follow_shared_shell_markers"
+            ],
+            "toggle-layout-lock-video": [
+              "tests/browser/test_browser_rail_layout.py::test_layout_lock_toggle_switches_shell_state_and_persistence"
+            ],
+            "resize-rail": [
+              "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes"
+            ],
+            "resize-sidebar": [
+              "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes"
+            ],
+            "resize-waveform": [
+              "tests/browser/test_browser_rail_layout.py::test_layout_resize_handles_persist_layout_sizes"
+            ]
+          }
+        }
+      ]
+    },
     {
       "surface_id": "surface.stage.compose",
       "surface_label": "Compose",

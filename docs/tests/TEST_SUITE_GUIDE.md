@@ -55,14 +55,14 @@ Use the canonical definitions in `../project/development/Testing/spec.md`; this 
 
 | Current enforcement surface | Canonical taxonomy support | Important limitation |
 | --- | --- | --- |
-| Core suites such as `analysis`, `browser`, `export`, `persistence`, `presentation`, `scoring`, `scripts` | Mixed support across `TAX-0` through `TAX-5` depending on the scenario | Suite names are not 1:1 with taxonomy classes yet; `browser` now also carries `support_surface_ids` for the current Stage tool support slice |
+| Core suites such as `analysis`, `browser`, `export`, `persistence`, `presentation`, `scoring`, `scripts` | Mixed support across `TAX-0` through `TAX-5` depending on the scenario | Suite names are not 1:1 with taxonomy classes yet; `browser` now also carries `support_surface_ids` for the current landing/shared-shell and Stage tool support slice |
 | `pane-project`, `pane-match`, `pane-performance`, `pane-settings`, `pane-metrics` | Primary support lanes for `TAX-1`, with contributing scenarios for `TAX-0`, `TAX-2`, and `TAX-5` | Pane lanes remain support runners; the implemented Project/Match/Performance/Settings/Metrics closure inventories now live in `../../scripts/testing/pane_feature_manifests.json` |
 | Browser QA docs in `docs/project/` | Control inventory, pane/view support mapping, and browser-slice full-flow planning | They must reference the canonical taxonomy and evidence rules instead of redefining them |
 | Proof-seam metadata in `docs/project/browser-proof-seams.json` | Supporting seam strength descriptors | Seam labels never close a taxonomy class on their own |
 
 ## Current pane manifest foundation
 
-`../../scripts/testing/pane_feature_manifests.json` is the current machine-readable pane inventory support surface for `TAX-0`/`TAX-1`. Project/Match/Performance remain the proven Wave A base, Settings/Metrics extend that same pane model, and the same file now carries support-only Stage tool rows for Compose, Score, Splits / waveform, Markers / Review / Overlay, Export, and ShotML without claiming evidence closure on its own.
+`../../scripts/testing/pane_feature_manifests.json` is the current machine-readable pane inventory support surface for `TAX-0`/`TAX-1`. Project/Match/Performance remain the proven Wave A base, Settings/Metrics extend that same pane model, and the same file now carries support-only Landing/shared-shell rows plus Stage tool rows for Compose, Score, Splits / waveform, Markers / Review / Overlay, Export, and ShotML without claiming evidence closure on its own.
 
 | Pane | Pane ID | `TAX-1` record | `TAX-0` feature IDs | Current runner surfaces |
 | --- | --- | --- | --- | --- |
@@ -74,12 +74,14 @@ Use the canonical definitions in `../project/development/Testing/spec.md`; this 
 
 Zero-control manifest features are explicit, not fuzzy blanks. `scripts/testing/pane_feature_manifests.json` now marks `performance.overview`, `performance.analytics`, `settings.section_visibility`, `metrics.row_propagation`, `metrics.stage_story`, and `metrics.scoring_context` as `audit_model: state-led`, which means they are audited through required state/result assertions rather than pane-owned `control_ids`. `match.recap` is `audit_model: control-led`: the recap surface exposes explicit controls such as `recap-select-all`, `recap-select-none`, `.recap-stage-check`, `recap-transition`, `recap-result-card`, and `recap-render`, while its stage-selection/configuration/render-status assertions remain required proof support.
 
-## Current stage support surface extension
+## Current support surface extension
 
-These rows stay support-only. They help the browser-owned Stage tool families contribute honest `TAX-0` support without pretending the repo now has first-class `TAX-2` view lanes.
+These rows stay support-only. Landing and shared shell capture the remaining browser bootstrap/shell surfaces, and the Stage tool families contribute honest `TAX-0` support without pretending the repo now has first-class `TAX-2` view lanes.
 
 | Surface | Support surface ID | Support role | `TAX-0` feature IDs | Current runner surfaces |
 | --- | --- | --- | --- | --- |
+| Landing | `surface.landing` | Landing support surface only; not a first-class pane or view closure record. | `landing.entry_cards_and_quick_start`, `landing.recent_activity` | `browser` |
+| Shared shell | `surface.shared_shell` | Shared-shell support surface only; not a first-class pane or view closure record. | `shared_shell.shell_markers_and_surface_routing`, `shared_shell.home_and_return_controls`, `shared_shell.rail_layout_and_resize` | `browser` |
 | Compose | `surface.stage.compose` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.compose.defaults_and_media`, `stage.compose.per_source_authoring`, `stage.compose.secondary_waveform_sync` | `browser` |
 | Score | `surface.stage.scoring` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.scoring.enablement_and_preset`, `stage.scoring.summary_and_editing` | `browser` |
 | Splits / waveform | `surface.stage.splits_waveform` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.splits_waveform.summary_and_workbench`, `stage.splits_waveform.waveform_navigation`, `stage.splits_waveform.split_row_editing` | `browser` |
@@ -87,7 +89,7 @@ These rows stay support-only. They help the browser-owned Stage tool families co
 | Export | `surface.stage.export` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.export.render_settings`, `stage.export.output_profiles_and_hooks`, `stage.export.log_and_artifact_output` | `browser` |
 | ShotML | `surface.stage.shotml` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.shotml.threshold_and_defaults`, `stage.shotml.detector_settings`, `stage.shotml.proposals_and_section_persistence` | `browser` |
 
-The `browser` suite now exposes these rows through `support_surface_ids` in `../../scripts/testing/test_suite_taxonomy.json`. That keeps the current runner honest about ownership while the repo still lacks dedicated Stage tool lanes and first-class view manifests.
+The `browser` suite now exposes these rows through `support_surface_ids` in `../../scripts/testing/test_suite_taxonomy.json`. That keeps the current runner honest about ownership while the repo still lacks dedicated landing, shared-shell, or Stage tool lanes plus first-class view manifests.
 
 ## Suite Map
 
@@ -112,7 +114,7 @@ These lanes do **not** run by default when you omit `--suite`; they are focused 
 
 They support `TAX-1` pane work, but they do not replace the canonical pane manifests or the evidence contract.
 
-The current Stage tool support slice remains browser-suite owned. There are no dedicated Compose/Score/Splits-Review/Export/ShotML lanes yet; those surfaces are tracked as support-only rows in `../../scripts/testing/pane_feature_manifests.json` and `../../scripts/testing/test_suite_taxonomy.json`.
+The landing/shared-shell plus current Stage tool support slice remains browser-suite owned. There are no dedicated landing, shared-shell, Compose/Score/Splits-Review/Export/ShotML lanes yet; those surfaces are tracked as support-only rows in `../../scripts/testing/pane_feature_manifests.json` and `../../scripts/testing/test_suite_taxonomy.json`.
 
 | Suite | Owns | Current target shape |
 | --- | --- | --- |
@@ -122,7 +124,7 @@ The current Stage tool support slice remains browser-suite owned. There are no d
 | `pane-settings` | Settings section workflows and defaults truth gates | `test_settings_e2e.py` and `test_settings_defaults_truth_gate.py` |
 | `pane-metrics` | Metrics export/workbench flows and scoring-metrics contracts | `test_metrics_e2e.py` and `test_scoring_metrics_contracts.py` |
 
-`pane-project` now uses an explicit `support_target_exceptions` model for landing-only bootstrap targets. That keeps the lane honest about cross-surface support without pretending the landing surface is itself `pane.project`.
+`pane-project` now uses an explicit `support_target_exceptions` model for landing-only bootstrap targets against `surface.landing`. That keeps the lane honest about cross-surface support without pretending the landing surface is itself `pane.project`.
 
 Use these lanes when you need a pane-scoped browser run without paying for the full `browser` suite.
 
@@ -134,6 +136,10 @@ For Project, Match, Performance, Settings, and Metrics, the runner/taxonomy mirr
 
 - Static string-level shell contracts:
   [../../tests/browser/test_browser_static_ui.py](../../tests/browser/test_browser_static_ui.py)
+- Shared-shell compat/static contracts:
+  [../../tests/browser/test_automation_ui_shell_contracts.py](../../tests/browser/test_automation_ui_shell_contracts.py)
+- Shared-shell rail/layout interactions:
+  [../../tests/browser/test_browser_rail_layout.py](../../tests/browser/test_browser_rail_layout.py)
 - HTTP API and controller contracts:
   [../../tests/browser/test_browser_control.py](../../tests/browser/test_browser_control.py)
 - Playwright interactions:

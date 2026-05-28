@@ -441,6 +441,8 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
     assert "`metrics.row_propagation`" in inventory_plan
     assert "`metrics.stage_story`" in inventory_plan
     assert "`metrics.scoring_context`" in inventory_plan
+    assert "surface.landing" in inventory_plan
+    assert "surface.shared_shell" in inventory_plan
     assert "surface.stage.compose" in inventory_plan
     assert "surface.stage.scoring" in inventory_plan
     assert "surface.stage.splits_waveform" in inventory_plan
@@ -476,6 +478,10 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         in inventory_plan
     )
     for test_path in [
+        "tests/browser/test_landing_page.py",
+        "tests/browser/test_landing_backend_routes.py",
+        "tests/browser/test_automation_ui_shell_contracts.py",
+        "tests/browser/test_browser_rail_layout.py",
         "tests/browser/test_settings_e2e.py",
         "tests/browser/test_settings_defaults_truth_gate.py",
         "tests/browser/test_metrics_e2e.py",
@@ -486,7 +492,10 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
     assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-107.root_shell_compat"]["doc_refs"]
 
     assert "scripts/testing/pane_feature_manifests.json" in full_e2e_plan
+    assert "support_surface_ids" in full_e2e_plan
     assert "support_target_exceptions" in full_e2e_plan
+    assert "surface.landing" in full_e2e_plan
+    assert "surface.shared_shell" in full_e2e_plan
     assert "surface.stage.compose" in full_e2e_plan
     assert "surface.stage.export" in full_e2e_plan
     assert "surface.stage.shotml" in full_e2e_plan

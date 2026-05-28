@@ -16,7 +16,8 @@ If a control is missing from this matrix, it does not have an explicit browser-Q
 
 | Surface | Taxonomy support | Coverage description |
 | --- | --- | --- |
-| Shared shell | Supports `TAX-0`, `TAX-1`, and `TAX-2`; contributes to `TAX-5` | Shared `stage-workspace` shell markers across Stage/Match/Performance, tool-rail collapse/minimize, surface switcher tab selection, context header display, return-to-workspace visibility, resize handles, layout lock toggle |
+| Landing | Supports `TAX-0` and `TAX-2`; contributes to `TAX-1` and `TAX-5` | Three workflow entry cards, quick-start shortcuts, landing Open File bootstrap, recent-stage list hydration from /api/landing/recent, and surface-only recent-row handoff |
+| Shared shell | Supports `TAX-0`, `TAX-1`, and `TAX-2`; contributes to `TAX-5` | Shared `stage-workspace` shell markers across Stage/Match/Performance, home and return controls, tool-rail collapse/minimize, context/status header display, layout lock toggle, resize handles, and compat rerender/open-project consumers |
 | Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, gated primary import, metadata-only delete |
 | Match workspace | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Shared-shell main/lower/right Match layout, media-backed stage tiles, workspace create/open/save/add-stage/remove-stage plus loading/error states, stage card selection/open/return, setup-once preview/apply/dismiss flow, selected-stage lower-pane truth stays pinned while Composite/Export swap beneath it, shared defaults apply/reset, stage overrides apply/reset, stage clip add plus composite reorder/per-clip role-sync-audio editing/plan refresh/apply-clear cut overrides, recap stage selection plus transition/result-card configuration and render outcomes, batch export recipe selection/select all/none/start, Match settings local persistence |
 | Performance Library | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Shared-shell main/lower/right Performance layout, loading/empty/stale state affordances, overview summary tiles, records search/sort/filter plus personal-best list, selected-record lower-pane detail, Open Stage/Open Workspace, notes/tags persistence entry points, analytics truth messaging, backup create/restore, CSV/JSON export, Performance settings local persistence |
@@ -41,16 +42,18 @@ The current `TAX-0`/`TAX-1` Wave A pane manifest foundation lives in `scripts/te
 | Settings | `pane.settings` | `tax1.settings.pane` | `settings.global_template_scope`, `settings.layout_defaults`, `settings.scoring_and_compose_defaults`, `settings.overlay_and_marker_defaults`, `settings.export_and_shotml_defaults`, `settings.section_visibility` | `pane-settings`, `browser` |
 | Metrics | `pane.metrics` | `tax1.metrics.pane` | `metrics.summary_and_workbench`, `metrics.row_propagation`, `metrics.stage_story`, `metrics.scoring_context`, `metrics.export` | `pane-metrics`, `browser` |
 
-These manifest rows are pane-owned only. Landing bootstrap targets that currently support the `pane-project` lane live as explicit `support_target_exceptions` in `scripts/testing/test_suite_taxonomy.json`; they do not become `pane.project` feature rows.
+These manifest rows are pane-owned only. Landing bootstrap targets that currently support the `pane-project` lane live as explicit `support_target_exceptions` in `scripts/testing/test_suite_taxonomy.json` and point at `surface.landing`; they do not become `pane.project` feature rows.
 
 The current manifest also declares explicit `state-led` zero-control features in `scripts/testing/pane_feature_manifests.json`: `performance.overview`, `performance.analytics`, `settings.section_visibility`, `metrics.row_propagation`, `metrics.stage_story`, and `metrics.scoring_context`. `match.recap` is `control-led`: the recap section exposes explicit controls such as `recap-select-all`, `recap-select-none`, `.recap-stage-check`, `recap-transition`, `recap-result-card`, and `recap-render`, while its stage-selection/configuration/render-status assertions remain required.
 
-## Stage support surface manifests
+## Support surface manifests
 
-These rows stay support-only. They map the current Stage tool families to live `TAX-0` feature IDs without pretending the repo now has first-class view lanes.
+These rows stay support-only. They map the current Landing, shared-shell, and Stage tool browser surfaces to live `TAX-0` feature IDs without pretending the repo now has first-class view lanes.
 
 | Surface | Support surface ID | Support role | `TAX-0` feature IDs | Current runner support |
 | --- | --- | --- | --- | --- |
+| Landing | `surface.landing` | Landing support surface only; not a first-class pane or view closure record. | `landing.entry_cards_and_quick_start`, `landing.recent_activity` | `browser` |
+| Shared shell | `surface.shared_shell` | Shared-shell support surface only; not a first-class pane or view closure record. | `shared_shell.shell_markers_and_surface_routing`, `shared_shell.home_and_return_controls`, `shared_shell.rail_layout_and_resize` | `browser` |
 | Compose | `surface.stage.compose` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.compose.defaults_and_media`, `stage.compose.per_source_authoring`, `stage.compose.secondary_waveform_sync` | `browser` |
 | Score | `surface.stage.scoring` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.scoring.enablement_and_preset`, `stage.scoring.summary_and_editing` | `browser` |
 | Splits / waveform | `surface.stage.splits_waveform` | Stage-tool support surface only; not a first-class pane or view closure record. | `stage.splits_waveform.summary_and_workbench`, `stage.splits_waveform.waveform_navigation`, `stage.splits_waveform.split_row_editing` | `browser` |
@@ -70,7 +73,10 @@ The following test files provide browser-side support for the controls listed ab
 
 - `tests/browser/test_browser_static_ui.py`
 - `tests/browser/test_browser_control.py`
+- `tests/browser/test_landing_page.py`
 - `tests/browser/test_landing_backend_routes.py`
+- `tests/browser/test_automation_ui_shell_contracts.py`
+- `tests/browser/test_browser_rail_layout.py`
 - `tests/browser/test_library_backend_contracts.py`
 - `tests/browser/test_browser_control_inventory_audit.py`
 - `tests/browser/test_browser_control_coverage_matrix.py`
@@ -91,6 +97,7 @@ The following test files provide browser-side support for the controls listed ab
 The interaction suite (`tests/browser/test_browser_interactions.py`) contributes browser evidence support for:
 
 - dashboard-open action
+- landing Open File and stage-empty Import Video bootstrap parity without a saved project
 - manual file import parity
 - PractiScore session-start browser-state bridge
 - PractiScore remote match-list and selected-match import browser-state bridge

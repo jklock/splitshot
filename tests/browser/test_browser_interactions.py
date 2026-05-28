@@ -2937,6 +2937,52 @@ def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_proje
         server.shutdown()
 
 
+def test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state() -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                landing_cards = [
+                    ('button.landing-card[data-surface="single"]', "single"),
+                    ('button.landing-card[data-surface="multi"]', "multi"),
+                    ('button.landing-card[data-surface="library"]', "library"),
+                ]
+                for selector, expected_surface in landing_cards:
+                    page.evaluate("() => setActiveSurface('landing')")
+                    page.wait_for_function("() => activeSurface === 'landing'")
+
+                    page.locator(selector).click()
+                    page.wait_for_function(
+                        "(expected) => activeSurface === expected",
+                        arg=expected_surface,
+                    )
+
+                    assert page.evaluate("() => state?.project?.path || ''") == ""
+                    assert page.evaluate("() => state?.workspace_path || ''") == ""
+
+                page.evaluate("() => setActiveSurface('landing')")
+                page.wait_for_function("() => activeSurface === 'landing'")
+                page.locator("#landing-new-stage").click()
+                page.wait_for_function("() => activeSurface === 'single'")
+                page.locator("#stage-empty-import").wait_for(state="visible")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+
+                page.evaluate("() => setActiveSurface('landing')")
+                page.wait_for_function("() => activeSurface === 'landing'")
+                page.locator("#landing-new-match").click()
+                page.wait_for_function("() => activeSurface === 'multi'")
+                page.locator("#workspace-new").wait_for(state="visible")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_landing_recent_stage_rows_switch_surface_without_auto_open(
     monkeypatch,
     tmp_path: Path,
@@ -3004,6 +3050,37 @@ def test_landing_recent_stage_rows_switch_surface_without_auto_open(
                 assert page.evaluate("() => state?.workspace_path || ''") == ""
                 assert open_project_calls == []
                 assert open_workspace_calls == []
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_shared_shell_home_buttons_return_stage_match_and_library_shells_to_landing() -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.evaluate("() => setActiveSurface('single')")
+                page.wait_for_function("() => activeSurface === 'single'")
+                page.locator("#stage-go-home").click(force=True)
+                page.wait_for_function("() => activeSurface === 'landing'")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+
+                _open_match_surface(page)
+                page.locator("#match-go-home").click(force=True)
+                page.wait_for_function("() => activeSurface === 'landing'")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
+
+                _open_library_surface(page)
+                page.locator("#library-go-home").click(force=True)
+                page.wait_for_function("() => activeSurface === 'landing'")
+                assert page.evaluate("() => state?.project?.path || ''") == ""
+                assert page.evaluate("() => state?.workspace_path || ''") == ""
             finally:
                 browser.close()
     finally:

@@ -128,6 +128,21 @@ Keep test output compact:
 - Do not run browser audits unless browser UI/routes/controller behavior changed.
 - Do not run ShotML pipeline scripts unless analysis/timing behavior changed.
 
+## Virtual Environment
+
+The `.venv` symlink in the project root points to `~/.local/share/splitshot/venv`.
+The real venv lives outside the project tree so it survives project-directory
+cleanup by agents or build steps.
+
+- **Do NOT delete or rebuild `.venv` unless you changed dependencies in `pyproject.toml`.**
+- If `.venv` is missing or broken, restore with:
+  `bash scripts/repair-venv.sh`
+- That script will re-sync only if the external venv at
+  `~/.local/share/splitshot/venv` is also missing — otherwise it just
+  recreates the symlink (instant, no rebuild).
+- The first agent to bootstrap the project creates the external venv;
+  subsequent agents reuse it.
+
 ## Verification
 
 Before reporting success, run the narrowest useful check.
