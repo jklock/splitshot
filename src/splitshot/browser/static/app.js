@@ -519,6 +519,7 @@ const SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900;
 const secondaryPreviewLastSeekAt = new WeakMap();
 let previewSeekBoundary = false;
 let previewSyncedSinceBoundary = false;
+let previewSeekBoundaryBatchActive = false;
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -2286,6 +2287,98 @@ function mergePreviewTargetTime(primaryTime, source = null) {
 
 function mergeSourceById(sourceId) {
   return mergePane?.mergeSourceById(sourceId) ?? null;
+}
+
+const MERGE_SOURCE_PREVIEW_PLACEMENT_MODES = new Set([
+  "auto",
+  "base",
+  "side_by_side",
+  "above_below",
+  "pip",
+  "full_screen_portrait",
+  "dual_center_hud",
+  "dual_top_hud",
+]);
+const MERGE_SOURCE_PREVIEW_PLACEMENT_SLOTS = new Set([
+  "auto",
+  "left",
+  "right",
+  "top",
+  "bottom",
+  "center",
+  "overlay",
+]);
+
+function mergeSourcePreviewDefaultMode() {
+  return "side_by_side";
+}
+
+function mergeSourcePreviewSlotValues(mode = mergeSourcePreviewDefaultMode()) {
+  if (["side_by_side", "dual_center_hud", "dual_top_hud"].includes(mode)) return ["left", "right"];
+  if (mode === "above_below") return ["top", "bottom"];
+  if (mode === "pip") return ["overlay", "left", "right", "top", "bottom", "center"];
+  return ["center"];
+}
+
+function mergeSourcePreviewAutoSlot(mode = mergeSourcePreviewDefaultMode()) {
+  if (mode === "above_below") return "bottom";
+  if (["side_by_side", "dual_center_hud", "dual_top_hud"].includes(mode)) return "right";
+  if (mode === "pip") return "overlay";
+  return "center";
+}
+
+function resolvedMergeSourcePreviewPlacement(source = null) {
+  const placement = source?.placement && typeof source.placement === "object" ? source.placement : {};
+  const requestedMode = String(placement.mode ?? "").trim().toLowerCase();
+  const normalizedMode = MERGE_SOURCE_PREVIEW_PLACEMENT_MODES.has(requestedMode) ? requestedMode : "auto";
+  const mode = normalizedMode === "auto" ? mergeSourcePreviewDefaultMode() : normalizedMode;
+  const allowedSlots = mergeSourcePreviewSlotValues(mode);
+  const requestedSlot = String(placement.slot ?? "").trim().toLowerCase();
+  const normalizedSlot = MERGE_SOURCE_PREVIEW_PLACEMENT_SLOTS.has(requestedSlot) ? requestedSlot : "auto";
+  const slot = normalizedSlot === "auto"
+    ? mergeSourcePreviewAutoSlot(mode)
+    : (allowedSlots.includes(normalizedSlot) ? normalizedSlot : mergeSourcePreviewAutoSlot(mode));
+  const requestedTargetSourceId = String(placement.target_source_id ?? "").trim();
+  const targetSourceId = requestedTargetSourceId && mergeSourceById(requestedTargetSourceId)
+    ? requestedTargetSourceId
+    : null;
+  const requestedTargetKind = String(placement.target_kind ?? "").trim().toLowerCase();
+  const targetKind = ["pip", "full_screen_portrait"].includes(mode)
+    && requestedTargetKind === "merge_source"
+    && targetSourceId
+    ? "merge_source"
+    : "primary_video";
+  return {
+    mode,
+    slot,
+    target_kind: targetKind,
+    target_source_id: targetKind === "merge_source" ? targetSourceId : null,
+  };
+}
+
+function mergeSourceUsesFreeformPreviewDrag(source = null) {
+  const placement = resolvedMergeSourcePreviewPlacement(source);
+  return placement.mode === "pip" && placement.slot === "overlay";
+}
+
+function mergePreviewItemElement(sourceId = "") {
+  const layer = $("merge-preview-layer");
+  if (!(layer instanceof HTMLElement) || !sourceId) return null;
+  return [...layer.querySelectorAll(".merge-preview-item[data-source-id]")]
+    .find((item) => item instanceof HTMLElement && item.dataset.sourceId === sourceId) || null;
+}
+
+function mergePreviewTargetFrameRect(source = null, stage = $("video-stage")) {
+  const primaryVideo = $("primary-video");
+  const stageRect = stage instanceof HTMLElement
+    ? (previewFrameClientRect(primaryVideo, stage) || stage.getBoundingClientRect())
+    : null;
+  if (!source || !stageRect) return stageRect;
+  const placement = resolvedMergeSourcePreviewPlacement(source);
+  if (placement.target_kind !== "merge_source" || !placement.target_source_id) return stageRect;
+  const targetItem = mergePreviewItemElement(placement.target_source_id);
+  if (!(targetItem instanceof HTMLElement)) return stageRect;
+  return targetItem.getBoundingClientRect();
 }
 
 function isMergeSourceExpanded(sourceId) {
@@ -6793,11 +6886,11 @@ function currentProjectPath(nextState = state) {
 function dialogPathRequestPayload(kind, currentValue = "", nextState = state) {
   const normalizedKind = String(kind || "").trim();
   const normalizedCurrent = String(currentValue ?? "").trim();
-  const projectHome = normalizedKind === "primary" ? "" : currentProjectPath(nextState);
+  const projectHome = currentProjectPath(nextState);
   return {
     kind: normalizedKind,
     current: normalizedCurrent,
-    home: normalizedCurrent ? "" : projectHome,
+    home: projectHome,
   };
 }
 
@@ -7560,8 +7653,8 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
 }
 
 function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
-  if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return;
-  if (mergePreviewDrag) return;
+  if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return "noop";
+  if (mergePreviewDrag) return "noop";
   const currentTime = Number(preview.currentTime || 0);
   const drift = target - currentTime;
   const absoluteDrift = Math.abs(drift);
@@ -7574,29 +7667,32 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     if (previewSeekBoundary) {
       const now = window.performance?.now?.() ?? Date.now();
       const lastSeekAt = secondaryPreviewLastSeekAt.get(preview) || 0;
-      if (!paused && now - lastSeekAt < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) return;
+      if (!paused && now - lastSeekAt < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) return "boundary-pending";
       try {
         if (typeof preview.fastSeek === "function") preview.fastSeek(target);
         else preview.currentTime = target;
         secondaryPreviewLastSeekAt.set(preview, now);
         preview.dataset.syncCorrectionMode = "reseek";
-        previewSeekBoundary = false;
-        previewSyncedSinceBoundary = true;
+        if (!previewSeekBoundaryBatchActive) {
+          previewSeekBoundary = false;
+          previewSyncedSinceBoundary = true;
+        }
       } catch {
         // Ignore early metadata seek failures.
+        return "boundary-pending";
       }
-      return;
+      return "boundary-reseek";
     }
     const catchUpRate = targetPlaybackRate + (drift > 0 ? SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA : -SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA);
     const clampedCatchUp = clamp(catchUpRate, 0.25, 4.0);
     preview.playbackRate = clampedCatchUp;
     preview.defaultPlaybackRate = clampedCatchUp;
     preview.dataset.syncCorrectionMode = "rate-catchup";
-    return;
+    return "rate-catchup";
   }
   if (paused || absoluteDrift <= SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S) {
     preview.dataset.syncCorrectionMode = paused ? "paused" : "steady";
-    return;
+    return paused ? "paused" : "steady";
   }
   const nextPlaybackRate = clamp(
     targetPlaybackRate + clamp(drift * 0.5, -SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA, SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA),
@@ -7608,6 +7704,7 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     preview.defaultPlaybackRate = nextPlaybackRate;
     preview.dataset.syncCorrectionMode = "rate";
   }
+  return "rate";
 }
 
 function syncMergePreviewElements(primary) {
@@ -7615,25 +7712,37 @@ function syncMergePreviewElements(primary) {
   const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));
   if (previews.length === 0) return;
   const targetPlaybackRate = primary.playbackRate || 1;
-  previews.forEach((preview) => {
-    const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";
-    const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));
-    syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);
-    if (primary.paused && !preview.paused) {
-      preview.pause();
-      return;
-    }
-    if (!primary.paused && preview.paused) {
-      if (preview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-      preview.play().catch((error) => {
-        activity("video.merge_preview.error", {
-          source_id: preview.closest(".merge-preview-item")?.dataset.sourceId || "",
-          name: error?.name || "Error",
-          error: error?.message || String(error || "Unknown error"),
+  const boundaryActive = previewSeekBoundary;
+  let boundaryPending = false;
+  if (boundaryActive) previewSeekBoundaryBatchActive = true;
+  try {
+    previews.forEach((preview) => {
+      const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";
+      const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));
+      const syncStatus = syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);
+      if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;
+      if (primary.paused && !preview.paused) {
+        preview.pause();
+        return;
+      }
+      if (!primary.paused && preview.paused) {
+        if (preview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+        preview.play().catch((error) => {
+          activity("video.merge_preview.error", {
+            source_id: preview.closest(".merge-preview-item")?.dataset.sourceId || "",
+            name: error?.name || "Error",
+            error: error?.message || String(error || "Unknown error"),
+          });
         });
-      });
+      }
+    });
+  } finally {
+    if (boundaryActive) {
+      previewSeekBoundaryBatchActive = false;
+      previewSeekBoundary = boundaryPending;
+      previewSyncedSinceBoundary = !boundaryPending;
     }
-  });
+  }
 }
 
 function renderVideo() {
@@ -7645,17 +7754,18 @@ function syncSecondaryPreview() {
   const primary = $("primary-video");
   const secondary = $("secondary-video");
   if (!primary || !secondary) return;
-  const activeSource = (state.project.merge_sources || [])[0] || null;
+  const mergeSourceCount = (state?.project?.merge_sources || []).length;
   const classicSecondaryActive = Boolean(
     state?.media?.secondary_available
       && state.project.merge.enabled
       && secondary.src
-      && (state.project.merge_sources || []).length <= 1,
+      && mergeSourceCount === 0,
   );
   if (!classicSecondaryActive) {
+    if (!secondary.paused) secondary.pause();
     clearSecondaryPreviewPlayError();
   } else {
-    const target = mergePreviewTargetTime(primary.currentTime, activeSource);
+    const target = mergePreviewTargetTime(primary.currentTime, null);
     const targetPlaybackRate = primary.playbackRate || 1;
     syncPreviewPlaybackToTarget(secondary, target, targetPlaybackRate, primary.paused);
     if (primary.paused && !secondary.paused) {
@@ -10243,14 +10353,16 @@ function endOverlayBadgeDrag(event) {
 
 function beginMergePreviewDrag(event) {
   if (popupEditingActive()) return;
-  if (event.button !== 0 || mergePreviewDrag || state?.project?.merge?.layout !== "pip") return;
+  if (event.button !== 0 || mergePreviewDrag) return;
   const item = event.target instanceof Element ? event.target.closest(".merge-preview-item[data-source-id]") : null;
   if (!(item instanceof HTMLElement)) return;
+  if (item.dataset.dragEnabled === "false") return;
   const sourceId = item.dataset.sourceId || "";
   const source = mergeSourceById(sourceId);
-  if (!source) return;
+  if (!source || !mergeSourceUsesFreeformPreviewDrag(source)) return;
   const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  const frameRect = mergePreviewTargetFrameRect(source, stage);
+  if (!frameRect) return;
   const itemRect = item.getBoundingClientRect();
   mergePreviewDrag = {
     item,
@@ -10275,10 +10387,11 @@ function moveMergePreviewDrag(event) {
   if (!mergePreviewDrag || !state?.project) return;
   if (event.pointerId !== undefined && mergePreviewDrag.pointerId !== undefined && event.pointerId !== mergePreviewDrag.pointerId) return;
   const source = mergeSourceById(mergePreviewDrag.sourceId);
-  if (!source) return;
+  if (!source || !mergeSourceUsesFreeformPreviewDrag(source)) return;
   const stage = $("video-stage");
-  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
-  const rect = mergeSourcePipRect(source, frameRect, currentPipSizePercent());
+  const frameRect = mergePreviewTargetFrameRect(source, stage);
+  if (!frameRect) return;
+  const rect = mergeSourcePipRect(source, frameRect, currentPipSizePercent(source));
   const travelX = Math.max(0, frameRect.width - rect.width);
   const travelY = Math.max(0, frameRect.height - rect.height);
   const nextLeft = clamp(mergePreviewDrag.startLeftPx + (event.clientX - mergePreviewDrag.startClientX), 0, travelX);
@@ -11315,7 +11428,7 @@ function wireEvents() {
     return next;
   };
   const outputHookLabels = Object.freeze({
-    "run-window": "Trim Dead Time",
+    "run-window": "Trim Settings",
     "metric-captions": "Export Badges",
     "frame-profiles": "Aspect Ratio / Framing",
     "lead-in-card": "Opening Title",
@@ -11427,7 +11540,7 @@ function wireEvents() {
         <label>Lead-in padding (s) <input id="hook-run-window-lead-in" type="number" min="0" step="0.1" value="${runWindowLeadInSeconds(profile)}" /></label>
         <label>Tail padding (s) <input id="hook-run-window-tail" type="number" min="0" step="0.1" value="${runWindowTailSeconds(profile)}" /></label>
       </div>
-      <p class="hint">Set the lead-in and tail padding after the beep and last shot look right. The saved run window stays on the selected output profile so stage output and stage composite exports match.</p>`;
+      <p class="hint">Set the lead-in and tail padding after the beep and last shot look right. Save these reusable trim settings on the selected output profile so stage output and stage composite exports stay aligned.</p>`;
     } else if (hook === "metric-captions") {
       fields.innerHTML = `<div class="control-grid">
         <label>Preset
@@ -12126,6 +12239,9 @@ videoPlayerComponent = createVideoPlayerComponent({
   currentPipSizePercent,
   previewFrameGeometry,
   normalizedCoordinateValue,
+  sourceIdentifier,
+  resolvedMergeSourcePreviewPlacement,
+  mergeSourceUsesFreeformPreviewDrag,
   currentSourceOpacity,
   mergeSourcePipRect,
   renderMergePreviewLayer,
@@ -12760,6 +12876,7 @@ shellRuntime = createShellRuntime({
   importTypedPath,
   browseProjectPath,
   pickPath,
+  pickPathForElement,
   scheduleExportSettingsApply,
   requireValue,
   flushPendingProjectDrafts,

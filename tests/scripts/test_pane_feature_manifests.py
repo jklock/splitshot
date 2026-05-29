@@ -517,7 +517,7 @@ def test_support_surface_owner_targets_cover_repaired_handoffs_and_context_claim
     }.issubset(support_surfaces["surface.shared_shell"])
     assert {
         "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
-        "tests/browser/test_browser_interactions.py::test_compose_pane_trim_dead_time_uses_output_profile_editor",
+        "tests/browser/test_browser_interactions.py::test_compose_pane_trim_settings_use_output_profile_editor",
     }.issubset(support_surfaces["surface.stage.compose"])
     assert {
         "tests/browser/test_scoring_metrics_contracts.py::test_browser_state_refreshes_imported_stage_context_for_metrics_consumers",

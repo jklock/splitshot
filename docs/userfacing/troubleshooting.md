@@ -17,7 +17,7 @@ This page covers the most common user-facing problems and where to fix them.
 
 | Problem | Fix |
 | --- | --- |
-| Large file (over 8 GiB) rejected by browser picker | Paste the direct local path into the `Primary Video` input and press Enter. |
+| Large file (over 8 GiB) rejected by browser picker | Use `Import Primary Video` in Project or `Import Video` in the empty stage view to reopen the chooser. `Primary Video` is display-only; if the browser still refuses the file, retry from the packaged app or another local browser. |
 | Video imported but nothing plays | Check the format is supported by your browser (MP4/H.264 is safest). Run `uv run splitshot --check` to validate FFmpeg. |
 | Secondary media sync is wrong | Use the sync nudge buttons in the Compose pane for that media item. |
 | Still image not appearing in Compose | Confirm the file is a common image format (PNG, JPG). Still images are detected by `QImage` probe. |

@@ -76,6 +76,7 @@ export function createShellRuntime({
   importTypedPath = async () => null,
   browseProjectPath = async () => null,
   pickPath = async () => "",
+  pickPathForElement = async () => "",
   scheduleExportSettingsApply = () => {},
   requireValue = () => "",
   flushPendingProjectDrafts = async () => {},
@@ -420,6 +421,21 @@ export function createShellRuntime({
     flushPendingInspectorScrollRestore();
   }
 
+  async function importMergeMediaWithChooser(targetLabel = "add-merge-media") {
+    if (!hasActiveProject()) {
+      setStatus(gatedProjectActionMessage());
+      return "";
+    }
+    const dialogTarget = documentObject.createElement("input");
+    dialogTarget.type = "text";
+    dialogTarget.value = "";
+    return pickPathForElement("secondary", dialogTarget, targetLabel, async (path) => {
+      await flushPendingProjectDrafts();
+      const result = await callApi("/api/import/merge", { path });
+      if (result) setActiveTool("merge");
+    });
+  }
+
   function wireEvents() {
     documentObject.querySelectorAll("[data-tool]").forEach((item) => {
       item.addEventListener("click", () => {
@@ -429,16 +445,6 @@ export function createShellRuntime({
     });
     $("new-project").addEventListener("click", async () => {
       await createNewProject();
-    });
-    $("primary-file-path").addEventListener("keydown", async (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
-      if (result) setActiveTool("project");
     });
     $("browse-project-path").addEventListener("click", browseProjectPath);
     $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
@@ -471,7 +477,9 @@ export function createShellRuntime({
       }));
     });
     documentObject.querySelectorAll("[data-open-merge-media]").forEach((item) => {
-      item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
+      item.addEventListener("click", () => {
+        void importMergeMediaWithChooser(item.id || "add-merge-media");
+      });
     });
     $("primary-file-input").addEventListener("change", async (event) => {
       const selectedFile = event.target.files?.[0] || null;

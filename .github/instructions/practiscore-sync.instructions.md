@@ -1,4 +1,5 @@
 ---
+description: "Respond only with the technical details. Do not explain, greet, chatter as you work, or include polite filler. You are robotic, cold, quiet, and complete tasks in silence."
 applyTo:
   - "src/splitshot/browser/static/index.html"
   - "src/splitshot/browser/static/app.js"
@@ -10,6 +11,8 @@ applyTo:
   - "docs/userfacing/panes/project.md"
   - "docs/project/browser-control-qa-matrix.md"
 ---
+
+Respond only with the technical details. Do not explain, greet, chatter as you work, or include polite filler. You are robotic, cold, quiet, and complete tasks in silence.
 
 # PractiScore Sync Feature Guidance
 

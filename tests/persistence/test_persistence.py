@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -432,6 +433,119 @@ def test_project_from_dict_infers_still_image_merge_sources() -> None:
     assert loaded.analysis.sync_offset_ms == 87
 
 
+def test_save_project_preserves_explicit_non_first_secondary_video_selection(
+    tmp_path: Path,
+) -> None:
+    project = Project(name="Explicit Secondary Selection")
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    project.merge_sources = [
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-a.mp4",
+                duration_ms=1800,
+                width=320,
+                height=180,
+                fps=30.0,
+            )
+        ),
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-b.mp4",
+                duration_ms=1900,
+                width=480,
+                height=270,
+                fps=30.0,
+            )
+        ),
+    ]
+    project.secondary_video = project.merge_sources[1].asset
+
+    bundle = save_project(project, tmp_path / "explicit-secondary-selection.ssproj")
+    saved = json.loads((bundle / "project.json").read_text(encoding="utf-8"))
+    loaded = load_project(bundle)
+
+    assert saved["secondary_video"]["path"] == "/tmp/merge-b.mp4"
+    assert loaded.secondary_video is loaded.merge_sources[1].asset
+    assert loaded.secondary_video is not loaded.merge_sources[0].asset
+    assert loaded.secondary_video.path == "/tmp/merge-b.mp4"
+
+
+def test_save_project_preserves_explicit_null_secondary_video(tmp_path: Path) -> None:
+    project = Project(name="Explicit Null Secondary")
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    project.merge_sources = [
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-a.mp4",
+                duration_ms=1800,
+                width=320,
+                height=180,
+                fps=30.0,
+            )
+        ),
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-b.mp4",
+                duration_ms=1900,
+                width=480,
+                height=270,
+                fps=30.0,
+            )
+        ),
+    ]
+    project.secondary_video = None
+
+    bundle = save_project(project, tmp_path / "explicit-null-secondary.ssproj")
+    saved = json.loads((bundle / "project.json").read_text(encoding="utf-8"))
+    loaded = load_project(bundle)
+
+    assert "secondary_video" in saved
+    assert saved["secondary_video"] is None
+    assert loaded.secondary_video is None
+    assert len(loaded.merge_sources) == 2
+
+
+def test_project_from_dict_omitted_secondary_video_key_falls_back_to_first_merge_source() -> None:
+    project = Project(name="Legacy Omitted Secondary")
+    project.primary_video = VideoAsset(
+        path="/tmp/input.mp4", duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    project.merge_sources = [
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-a.mp4",
+                duration_ms=1800,
+                width=320,
+                height=180,
+                fps=30.0,
+            )
+        ),
+        MergeSource(
+            asset=VideoAsset(
+                path="/tmp/merge-b.mp4",
+                duration_ms=1900,
+                width=480,
+                height=270,
+                fps=30.0,
+            )
+        ),
+    ]
+
+    legacy = project_to_dict(project)
+    assert legacy["secondary_video"] is None
+    legacy.pop("secondary_video", None)
+
+    loaded = project_from_dict(legacy)
+
+    assert loaded.secondary_video is loaded.merge_sources[0].asset
+    assert loaded.secondary_video is not loaded.merge_sources[1].asset
+    assert loaded.secondary_video.path == "/tmp/merge-a.mp4"
+
+
 def test_project_from_dict_migrates_legacy_review_box_stack_lock_to_per_box_state() -> None:
     legacy = project_to_dict(Project(name="Legacy Review Lock"))
     legacy["overlay"]["review_boxes_lock_to_stack"] = True
@@ -472,6 +586,40 @@ def test_project_round_trip_drops_combo_score_color_keys(tmp_path: Path) -> None
     assert loaded.overlay.scoring_colors["PE"] == "#445566"
 
 
+def test_save_project_keeps_ordinary_media_paths_external(tmp_path: Path) -> None:
+    ordinary_media_dir = tmp_path / "ordinary-media"
+    ordinary_media_dir.mkdir()
+    primary_path = ordinary_media_dir / "primary.mp4"
+    merge_path = ordinary_media_dir / "merge.mp4"
+    primary_path.write_bytes(b"primary-video")
+    merge_path.write_bytes(b"merge-video")
+
+    project = Project(name="External Media Round Trip")
+    project.primary_video = VideoAsset(
+        path=str(primary_path), duration_ms=2000, width=640, height=360, fps=30.0
+    )
+    merge_asset = VideoAsset(
+        path=str(merge_path), duration_ms=1800, width=320, height=180, fps=30.0
+    )
+    project.merge_sources = [MergeSource(asset=merge_asset)]
+    project.secondary_video = merge_asset
+
+    bundle = save_project(project, tmp_path / "external-media.ssproj")
+    saved = json.loads((bundle / "project.json").read_text(encoding="utf-8"))
+    loaded = load_project(bundle)
+
+    assert project.primary_video.path == str(primary_path)
+    assert project.merge_sources[0].asset.path == str(merge_path)
+    assert saved["primary_video"]["path"] == str(primary_path)
+    assert saved["merge_sources"][0]["asset"]["path"] == str(merge_path)
+    assert loaded.primary_video.path == str(primary_path)
+    assert loaded.merge_sources[0].asset.path == str(merge_path)
+    assert not (bundle / "Input" / "primary.mp4").exists()
+    assert not (bundle / "Input" / "merge.mp4").exists()
+    assert loaded.secondary_video is not None
+    assert loaded.secondary_video.path == str(merge_path)
+
+
 def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_path: Path) -> None:
     session_dir = tmp_path / "splitshot-browser-session"
     session_dir.mkdir()
@@ -491,10 +639,13 @@ def test_save_project_moves_browser_session_media_into_project_input_folder(tmp_
     project.secondary_video = merge_asset
 
     bundle = save_project(project, tmp_path / "bundled.ssproj")
+    saved = json.loads((bundle / "project.json").read_text(encoding="utf-8"))
     loaded = load_project(bundle)
 
     assert Path(project.primary_video.path).parent == bundle / "Input"
     assert Path(project.merge_sources[0].asset.path).parent == bundle / "Input"
+    assert Path(saved["primary_video"]["path"]) == Path("Input/primary.mp4")
+    assert Path(saved["merge_sources"][0]["asset"]["path"]) == Path("Input/merge.mp4")
     assert loaded.primary_video.path != str(primary_path)
     assert loaded.merge_sources[0].asset.path != str(merge_path)
     assert Path(loaded.primary_video.path).parent == bundle / "Input"

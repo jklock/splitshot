@@ -1,4 +1,6 @@
-# Repository Instructions
+# Respond only with the technical details. Do not explain, greet, chatter as you work, or include polite filler. You are robotic, cold, quiet, and complete tasks in silence&#46;
+
+## Repository Instructions
 
 ## Purpose
 
@@ -28,8 +30,8 @@ Before implementing:
 
 ## Commands
 
-Bootstrap:
-`uv sync --extra dev`
+Bootstrap (first time or after dependency changes):
+`bash scripts/repair-venv.sh`
 
 Build:
 `uv run splitshot --check`
@@ -135,6 +137,8 @@ The real venv lives outside the project tree so it survives project-directory
 cleanup by agents or build steps.
 
 - **Do NOT delete or rebuild `.venv` unless you changed dependencies in `pyproject.toml`.**
+- **This project has `managed = false` in `[tool.uv]`**. `uv sync` is disabled.
+  Use `uv pip install` or the repair script to update the venv instead.
 - If `.venv` is missing or broken, restore with:
   `bash scripts/repair-venv.sh`
 - That script will re-sync only if the external venv at

@@ -1,3 +1,5 @@
+import { readSharedExportPayload } from "./export-pane.js";
+
 export function createMergePane({
   $ = (id) => document.getElementById(id),
   documentObject = document,
@@ -29,6 +31,10 @@ export function createMergePane({
   pipDefaultsSectionId = "pip-defaults",
   sendKeepaliveJson = () => false,
 } = {}) {
+  const mergeSourceTrimDrafts = new Map();
+  const mergeSourceTrimStatus = new Map();
+  const trimmingMergeSources = new Set();
+
   function currentState() {
     return getState() || {};
   }
@@ -50,92 +56,595 @@ export function createMergePane({
     return getMergeSourceCommitTimers() || new Map();
   }
 
-    function normalizeMergeDraftValue(key, value) {
-      if (!["enabled", "layout", "pip_size_percent", "pip_x", "pip_y"].includes(key)) {
-        return undefined;
-      }
-      if (key === "enabled") return Boolean(value);
-      if (key === "layout") return String(value || "side_by_side");
-      if (key === "pip_size_percent") {
-        return clampNumber(Number(value) || 35, 1, 95);
-      }
-      return normalizedCoordinateValue(value) ?? 1;
+  function clearStaleMergeSourceTrimState(validSourceIds = new Set()) {
+    [...mergeSourceTrimDrafts.keys()].forEach((sourceId) => {
+      if (!validSourceIds.has(sourceId)) mergeSourceTrimDrafts.delete(sourceId);
+    });
+    [...mergeSourceTrimStatus.keys()].forEach((sourceId) => {
+      if (!validSourceIds.has(sourceId)) mergeSourceTrimStatus.delete(sourceId);
+    });
+    [...trimmingMergeSources].forEach((sourceId) => {
+      if (!validSourceIds.has(sourceId)) trimmingMergeSources.delete(sourceId);
+    });
+  }
+
+  function mergeSourceTrimDraft(sourceId) {
+    if (!mergeSourceTrimDrafts.has(sourceId)) {
+      mergeSourceTrimDrafts.set(sourceId, { start_seconds: "0.000", end_seconds: "" });
+    }
+    return mergeSourceTrimDrafts.get(sourceId);
+  }
+
+  function updateMergeSourceTrimDraft(sourceId, updates = {}) {
+    const nextDraft = { ...mergeSourceTrimDraft(sourceId), ...updates };
+    mergeSourceTrimDrafts.set(sourceId, nextDraft);
+    return nextDraft;
+  }
+
+  function setMergeSourceTrimStatus(sourceId, message = "", tone = "hint") {
+    if (!sourceId) return;
+    if (!message) {
+      mergeSourceTrimStatus.delete(sourceId);
+      return;
+    }
+    mergeSourceTrimStatus.set(sourceId, { message: String(message), tone });
+  }
+
+  function currentMergeSourceTrimStatus(sourceId) {
+    return mergeSourceTrimStatus.get(sourceId) || null;
+  }
+
+  function normalizedTrimSecondsInputValue(value, { allowEmpty = false, fallback = "" } = {}) {
+    const rawValue = String(value ?? "").trim();
+    if (!rawValue) return allowEmpty ? "" : fallback;
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) return allowEmpty ? "" : fallback;
+    return Math.max(0, numericValue).toFixed(3);
+  }
+
+  function trimSecondsToMs(value, { allowEmpty = false } = {}) {
+    const rawValue = String(value ?? "").trim();
+    if (!rawValue) return allowEmpty ? null : Number.NaN;
+    const numericValue = Number(rawValue);
+    if (!Number.isFinite(numericValue)) return Number.NaN;
+    return Math.max(0, Math.round(numericValue * 1000));
+  }
+
+  function currentMergeSourceTrimCaptureValue(source = null) {
+    const primaryVideo = $("primary-video");
+    const previewSeconds = mergePreviewTargetTime(Number(primaryVideo?.currentTime || 0), source);
+    const durationSeconds = Number(source?.asset?.duration_ms || 0) > 0
+      ? Number(source.asset.duration_ms) / 1000
+      : null;
+    const boundedSeconds = durationSeconds === null
+      ? previewSeconds
+      : Math.min(Math.max(0, previewSeconds), durationSeconds);
+    return boundedSeconds.toFixed(3);
+  }
+
+  function mergeSourceTrimHint(source = null) {
+    if (source?.asset?.is_still_image) {
+      return "Still images do not support trim derivatives.";
+    }
+    if (!String(currentState()?.project?.path || "").trim()) {
+      return "Save or create a project folder before trimming added media.";
+    }
+    const trimDerivative = source?.trim_derivative || {};
+    const derivativePath = String(trimDerivative.derivative_path || "").trim();
+    const activePathKind = String(trimDerivative.active_path_kind || "").trim().toLowerCase();
+    if (activePathKind === "local_derivative" && derivativePath) {
+      return `Using local trim derivative ${fileName(derivativePath)}. Re-trim overwrites that local copy and leaves the original source untouched.`;
+    }
+    if (derivativePath) {
+      return `Local trim derivative ${fileName(derivativePath)} is available. Re-trim overwrites that local copy and leaves the original source untouched.`;
+    }
+    return "Trim creates a local derivative in the project Input folder and leaves the original source untouched.";
+  }
+
+  function openMergeTrimSettingsEditor() {
+    const button = documentObject.querySelector('[data-tool-pane="merge"] [data-output-hook="run-window"]');
+    if (button instanceof HTMLElement) {
+      button.click();
+      return true;
+    }
+    return false;
+  }
+
+  async function trimMergeSource(sourceId) {
+    const source = mergeSourceById(sourceId);
+    if (!source) return;
+    if (source.asset?.is_still_image) {
+      setMergeSourceTrimStatus(sourceId, "Still images do not support trim derivatives.", "error");
+      renderMergeMediaList();
+      return;
+    }
+    if (!String(currentState()?.project?.path || "").trim()) {
+      setMergeSourceTrimStatus(sourceId, "Save or create a project folder before trimming added media.", "error");
+      renderMergeMediaList();
+      return;
+    }
+    const draft = mergeSourceTrimDraft(sourceId);
+    const startMs = trimSecondsToMs(draft.start_seconds);
+    if (!Number.isFinite(startMs)) {
+      setMergeSourceTrimStatus(sourceId, "Enter a valid trim start time in seconds.", "error");
+      renderMergeMediaList();
+      return;
+    }
+    const endMs = trimSecondsToMs(draft.end_seconds, { allowEmpty: true });
+    if (Number.isNaN(endMs)) {
+      setMergeSourceTrimStatus(sourceId, "Enter a valid trim end time in seconds or leave it blank.", "error");
+      renderMergeMediaList();
+      return;
+    }
+    if (endMs !== null && endMs <= startMs) {
+      setMergeSourceTrimStatus(sourceId, "Trim end must be greater than trim start.", "error");
+      renderMergeMediaList();
+      return;
     }
 
-    function applyMergeDraft(payload = {}) {
-      const mergeState = currentState()?.project?.merge;
-      Object.entries(payload).forEach(([key, value]) => {
-        const normalized = normalizeMergeDraftValue(key, value);
-        if (normalized === undefined) return;
-        currentMergeDraft()[key] = normalized;
-        if (mergeState) mergeState[key] = normalized;
+    trimmingMergeSources.add(sourceId);
+    setMergeSourceTrimStatus(sourceId, "Updating local trim derivative...", "working");
+    renderMergeMediaList();
+
+    try {
+      const response = await callApi("/api/merge/source/trim", {
+        source_id: sourceId,
+        trim: {
+          start_ms: startMs,
+          ...(endMs !== null ? { end_ms: endMs } : {}),
+        },
+        export: readSharedExportPayload({
+          $,
+          getState: currentState,
+        }),
       });
-    }
-
-    function mergeMergeDraft(project) {
-      const mergeState = project?.merge;
-      if (!mergeState) return;
-      Object.entries(currentMergeDraft()).forEach(([key, value]) => {
-        const savedValue = normalizeMergeDraftValue(key, mergeState[key]);
-        if (Object.is(value, savedValue)) {
-          delete currentMergeDraft()[key];
-        } else {
-          mergeState[key] = value;
-        }
-      });
-    }
-
-    function normalizeMergeSourceDraftValue(key, value, source = null) {
-      if (!["angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity"].includes(key)) {
-        return undefined;
+      if (response) {
+        setMergeSourceTrimStatus(sourceId, "Local trim derivative updated.", "success");
+      } else {
+        setMergeSourceTrimStatus(sourceId, "Trim failed. Review the status bar and try again.", "error");
       }
-      if (key === "angle_role") return normalizedAngleRoleValue(value, source);
-      if (key === "pip_size_percent") return clampNumber(Number(value) || 35, 1, 95);
-      if (key === "opacity") return currentSourceOpacity({ opacity: value });
-      return normalizedCoordinateValue(value) ?? 1;
-    }
-
-    function mergePendingMergeSourcePayloads(project) {
-      const mergeSources = Array.isArray(project?.merge_sources) ? project.merge_sources : [];
-      if (mergeSources.length === 0 || currentPendingMergeSourcePayloads().size === 0) return;
-      currentPendingMergeSourcePayloads().forEach((payload, sourceId) => {
-        const source = mergeSources.find((item, index) => sourceIdentifier(item, String(index)) === sourceId);
-        if (!source) {
-          currentPendingMergeSourcePayloads().delete(sourceId);
-          return;
-        }
-        const draftEntries = Object.entries(payload || {})
-          .filter(([key]) => key !== "source_id")
-          .map(([key, value]) => {
-            const draftValue = normalizeMergeSourceDraftValue(key, value, source);
-            const savedValue = normalizeMergeSourceDraftValue(key, source[key], source);
-            return [key, draftValue, savedValue];
-          })
-          .filter((entry) => entry[1] !== undefined);
-        if (draftEntries.length === 0) {
-          currentPendingMergeSourcePayloads().delete(sourceId);
-          return;
-        }
-        const isCommitted = draftEntries.every(([, draftValue, savedValue]) => Object.is(draftValue, savedValue));
-        if (isCommitted) {
-          currentPendingMergeSourcePayloads().delete(sourceId);
-          return;
-        }
-        draftEntries.forEach(([key, draftValue]) => {
-          source[key] = draftValue;
-        });
-      });
-    }
-
-    function currentPipSizePercent(source = null, fallback = 35) {
-      const sourceSize = Number(source?.pip_size_percent);
-      if (Number.isFinite(sourceSize) && sourceSize > 0) return sourceSize;
-      return Number(
-        currentState()?.project?.merge?.pip_size_percent
-          ?? Number(String(currentState()?.project?.merge?.pip_size || "35%").replace(/%$/, ""))
-          ?? fallback,
+    } catch (error) {
+      setMergeSourceTrimStatus(
+        sourceId,
+        error?.message || "Trim failed. Review the status bar and try again.",
+        "error",
       );
+    } finally {
+      trimmingMergeSources.delete(sourceId);
+      renderMergeMediaList();
     }
+  }
+
+  function normalizeMergeDraftValue(key, value) {
+    if (!["enabled", "layout", "pip_size_percent", "pip_x", "pip_y"].includes(key)) {
+      return undefined;
+    }
+    if (key === "enabled") return Boolean(value);
+    if (key === "layout") return String(value || "side_by_side");
+    if (key === "pip_size_percent") {
+      return clampNumber(Number(value) || 35, 1, 95);
+    }
+    return normalizedCoordinateValue(value) ?? 1;
+  }
+
+  function applyMergeDraft(payload = {}) {
+    const mergeState = currentState()?.project?.merge;
+    Object.entries(payload).forEach(([key, value]) => {
+      const normalized = normalizeMergeDraftValue(key, value);
+      if (normalized === undefined) return;
+      currentMergeDraft()[key] = normalized;
+      if (mergeState) mergeState[key] = normalized;
+    });
+  }
+
+  function mergeMergeDraft(project) {
+    const mergeState = project?.merge;
+    if (!mergeState) return;
+    Object.entries(currentMergeDraft()).forEach(([key, value]) => {
+      const savedValue = normalizeMergeDraftValue(key, mergeState[key]);
+      if (Object.is(value, savedValue)) {
+        delete currentMergeDraft()[key];
+      } else {
+        mergeState[key] = value;
+      }
+    });
+  }
+
+  const mergeSourcePlacementModes = new Set([
+    "auto",
+    "base",
+    "side_by_side",
+    "above_below",
+    "pip",
+    "full_screen_portrait",
+    "dual_center_hud",
+    "dual_top_hud",
+  ]);
+  const mergeSourcePlacementSlots = new Set([
+    "auto",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "center",
+    "overlay",
+  ]);
+  const mergeSourcePlacementTargetKinds = new Set(["primary_video", "merge_source"]);
+  const mergeSourcePlacementModeOptions = [
+    { value: "auto", label: "Auto (default / fallback)" },
+    { value: "base", label: "Base item" },
+    { value: "side_by_side", label: "Side by side" },
+    { value: "above_below", label: "Above / below" },
+    { value: "pip", label: "PiP overlay" },
+    { value: "full_screen_portrait", label: "Full-screen portrait" },
+    { value: "dual_center_hud", label: "Dual center HUD" },
+    { value: "dual_top_hud", label: "Dual top HUD" },
+  ];
+  const mergeSourcePlacementSlotLabels = {
+    auto: "Auto",
+    left: "Left",
+    right: "Right",
+    top: "Top",
+    bottom: "Bottom",
+    center: "Center",
+    overlay: "Overlay",
+  };
+
+  function currentSourcePlacement(source = null) {
+    const placement = source?.placement;
+    return placement && typeof placement === "object" ? placement : {};
+  }
+
+  function currentMergeSourceSeedDefaults() {
+    const mergeState = currentState()?.project?.merge || {};
+    const normalizedLayout = String(mergeState.layout ?? "").trim().toLowerCase();
+    const pipSizePercent = Number(mergeState.pip_size_percent);
+    const legacyPipSizePercent = Number(String(mergeState.pip_size ?? "").replace(/%$/, ""));
+    return {
+      placement_mode: mergeSourcePlacementModes.has(normalizedLayout) && normalizedLayout !== "auto"
+        ? normalizedLayout
+        : "side_by_side",
+      pip_size_percent: normalizedPipSizePercentValue(
+        Number.isFinite(pipSizePercent) && pipSizePercent > 0 ? pipSizePercent : legacyPipSizePercent,
+      ),
+      pip_x: normalizedCoordinateValue(mergeState.pip_x) ?? 1,
+      pip_y: normalizedCoordinateValue(mergeState.pip_y) ?? 1,
+    };
+  }
+
+  function currentMergePlacementDefaultMode() {
+    return "side_by_side";
+  }
+
+  function resolvedPlacementModeValue(value, source = null) {
+    const normalized = normalizedPlacementModeValue(value, source);
+    return normalized === "auto" ? currentMergePlacementDefaultMode() : normalized;
+  }
+
+  function mergeSourcePlacementModeLabel(value = "auto", source = null) {
+    const resolvedMode = value === "auto" ? currentMergePlacementDefaultMode() : resolvedPlacementModeValue(value, source);
+    return mergeSourcePlacementModeOptions.find((item) => item.value === resolvedMode)?.label || "Side by side";
+  }
+
+  function mergeSourcePlacementSlotValuesForMode(mode = "auto", source = null) {
+    const resolvedMode = resolvedPlacementModeValue(mode, source);
+    if (["side_by_side", "dual_center_hud", "dual_top_hud"].includes(resolvedMode)) {
+      return ["left", "right"];
+    }
+    if (resolvedMode === "above_below") return ["top", "bottom"];
+    if (resolvedMode === "pip") return ["overlay", "left", "right", "top", "bottom", "center"];
+    return ["center"];
+  }
+
+  function mergeSourcePlacementSlotLabel(value = "auto") {
+    return mergeSourcePlacementSlotLabels[String(value || "auto").trim().toLowerCase()] || "Auto";
+  }
+
+  function mergeSourceItemLabel(source = null) {
+    const mergeSources = currentState()?.project?.merge_sources || [];
+    const sourceId = sourceIdentifier(source, "");
+    const sourceIndex = mergeSources.findIndex(
+      (item, index) => sourceIdentifier(item, String(index)) === sourceId,
+    );
+    const asset = source?.asset || source || {};
+    const title = fileName(asset.path || "") || "Added media item";
+    return sourceIndex >= 0 ? `${sourceIndex + 1}. ${title}` : title;
+  }
+
+  function mergeSourcePlacementTargetSourceOptions(source = null) {
+    const currentSourceId = sourceIdentifier(source, "");
+    return (currentState()?.project?.merge_sources || [])
+      .map((item, index) => ({
+        value: sourceIdentifier(item, String(index)),
+        label: mergeSourceItemLabel(item),
+      }))
+      .filter((option) => option.value && option.value !== currentSourceId);
+  }
+
+  function resolvedPlacementTargetSourceIdValue(value, source = null) {
+    const normalized = normalizedPlacementTargetSourceIdValue(value);
+    if (!normalized) return null;
+    return mergeSourcePlacementTargetSourceOptions(source).some((option) => option.value === normalized)
+      ? normalized
+      : null;
+  }
+
+  function mergeSourcePlacementSupportsTargetSelection(mode = "auto", source = null) {
+    return ["pip", "full_screen_portrait"].includes(resolvedPlacementModeValue(mode, source));
+  }
+
+  function currentSourcePlacementTargetLabel(source = null, placement = null) {
+    const placementValue = currentSourcePlacementValue(source, placement);
+    if (placementValue.target_kind !== "merge_source") return "Primary video";
+    const targetSourceId = resolvedPlacementTargetSourceIdValue(placementValue.target_source_id, source);
+    const targetSource = targetSourceId ? mergeSourceById(targetSourceId) : null;
+    return targetSource ? mergeSourceItemLabel(targetSource) : "Primary video";
+  }
+
+  function placementSlotControlValue(value, mode = "auto", source = null) {
+    const normalized = String(value ?? "").trim().toLowerCase();
+    if (!normalized || normalized === "auto") return "auto";
+    return mergeSourcePlacementSlotValuesForMode(mode, source).includes(normalized) ? normalized : "auto";
+  }
+
+  function previewAutoPlacementSlotValue(mode = "auto", source = null) {
+    const resolvedMode = resolvedPlacementModeValue(mode, source);
+    if (resolvedMode === "above_below") return "bottom";
+    if (["side_by_side", "dual_center_hud", "dual_top_hud"].includes(resolvedMode)) return "right";
+    if (resolvedMode === "pip") return "overlay";
+    return "center";
+  }
+
+  function resolvedPreviewPlacementSlotValue(value, { mode = "auto", source = null } = {}) {
+    const controlValue = placementSlotControlValue(value, mode, source);
+    return controlValue === "auto" ? previewAutoPlacementSlotValue(mode, source) : controlValue;
+  }
+
+  function currentSourcePlacementValue(source = null, placement = null) {
+    return normalizedPlacementPayload(placement ?? source?.placement, source);
+  }
+
+  function currentSourcePlacementPreviewMode(source = null, placement = null) {
+    return resolvedPlacementModeValue(currentSourcePlacementValue(source, placement).mode, source);
+  }
+
+  function currentSourcePlacementPreviewSlot(source = null, placement = null) {
+    const placementValue = currentSourcePlacementValue(source, placement);
+    return resolvedPreviewPlacementSlotValue(placementValue.slot, { mode: placementValue.mode, source });
+  }
+
+  function mergeSourcePlacementHint(mode = "auto", source = null, placement = null) {
+    const normalizedMode = normalizedPlacementModeValue(mode, source);
+    const resolvedMode = resolvedPlacementModeValue(mode, source);
+    if (normalizedMode === "auto") {
+      return `Auto keeps this item on its default/fallback placement (${mergeSourcePlacementModeLabel(resolvedMode, source)}). Pick a mode here to override this card.`;
+    }
+    if (resolvedMode === "base") return "Base fills the preview frame for this item.";
+    if (resolvedMode === "side_by_side") return "Side by side docks this item into the left or right half of the preview.";
+    if (resolvedMode === "above_below") return "Above / below docks this item into the top or bottom half of the preview.";
+    if (resolvedMode === "pip") {
+      const targetLabel = currentSourcePlacementTargetLabel(source, placement);
+      if (mergeSourcePlacementUsesPreviewDrag(source, placement)) {
+        return `PiP overlay keeps size, X, and Y active for this item. It currently sits over ${targetLabel}.`;
+      }
+      const previewSlotLabel = mergeSourcePlacementSlotLabel(currentSourcePlacementPreviewSlot(source, placement)).toLowerCase();
+      return `PiP overlay keeps size active for this item and docks it to the ${previewSlotLabel} over ${targetLabel}. Switch the slot to Overlay to re-enable free X/Y positioning and preview dragging.`;
+    }
+    if (resolvedMode === "full_screen_portrait") {
+      return `Full-screen portrait centers this item inside a tall portrait frame over ${currentSourcePlacementTargetLabel(source, placement)}.`;
+    }
+    if (resolvedMode === "dual_center_hud") return "Dual center HUD places this item in the left or right pane around the center band.";
+    if (resolvedMode === "dual_top_hud") return "Dual top HUD places this item in the left or right pane below the top band.";
+    return "Placement is saved on this item.";
+  }
+
+  function mergeSourcePlacementUsesPreviewDrag(source = null, placement = null) {
+    return currentSourcePlacementPreviewMode(source, placement) === "pip"
+      && currentSourcePlacementPreviewSlot(source, placement) === "overlay";
+  }
+
+  function mergeSourceSyncHintText(source = null, placement = null) {
+    return mergeSourcePlacementUsesPreviewDrag(source, placement)
+      ? "Use these nudges or drag the preview to match the primary video exactly."
+      : "These values are saved per item and take effect in this item's placement and export timing.";
+  }
+
+  function syncPlacementSlotControl(control, { mode = "auto", source = null, value = "auto" } = {}) {
+    if (!control) return;
+    const options = [
+      { value: "auto", label: mergeSourcePlacementSlotLabel("auto") },
+      ...mergeSourcePlacementSlotValuesForMode(mode, source).map((slotValue) => ({
+        value: slotValue,
+        label: mergeSourcePlacementSlotLabel(slotValue),
+      })),
+    ];
+    control.innerHTML = "";
+    options.forEach(({ value: optionValue, label }) => {
+      const option = documentObject.createElement("option");
+      option.value = optionValue;
+      option.textContent = label;
+      control.appendChild(option);
+    });
+    syncControlValue(control, placementSlotControlValue(value, mode, source));
+  }
+
+  function syncPlacementTargetSourceControl(control, { source = null, value = null } = {}) {
+    if (!control) return;
+    const options = mergeSourcePlacementTargetSourceOptions(source);
+    control.innerHTML = "";
+    if (options.length === 0) {
+      const option = documentObject.createElement("option");
+      option.value = "";
+      option.textContent = "No other added item available";
+      control.appendChild(option);
+      control.disabled = true;
+      syncControlValue(control, "");
+      return;
+    }
+    control.disabled = false;
+    options.forEach(({ value: optionValue, label }) => {
+      const option = documentObject.createElement("option");
+      option.value = optionValue;
+      option.textContent = label;
+      control.appendChild(option);
+    });
+    syncControlValue(control, resolvedPlacementTargetSourceIdValue(value, source) ?? options[0].value);
+  }
+
+  function defaultPlacementSlotValue(mode = "auto") {
+    if (mode === "pip") return "overlay";
+    if (["base", "full_screen_portrait", "dual_center_hud", "dual_top_hud"].includes(mode)) {
+      return "center";
+    }
+    return "auto";
+  }
+
+  function normalizedPlacementTargetSourceIdValue(value) {
+    const normalized = String(value ?? "").trim();
+    return normalized || null;
+  }
+
+  function normalizedPlacementModeValue(value, source = null) {
+    const currentPlacement = currentSourcePlacement(source);
+    const normalized = String(value ?? currentPlacement.mode ?? "").trim().toLowerCase();
+    return mergeSourcePlacementModes.has(normalized) ? normalized : "auto";
+  }
+
+  function normalizedPlacementSlotValue(value, { mode = "auto", source = null } = {}) {
+    const normalizedMode = normalizedPlacementModeValue(mode, source);
+    const currentPlacement = currentSourcePlacement(source);
+    const normalized = String(value ?? currentPlacement.slot ?? "").trim().toLowerCase();
+    return mergeSourcePlacementSlots.has(normalized)
+      ? normalized
+      : defaultPlacementSlotValue(normalizedMode);
+  }
+
+  function normalizedPlacementTargetKindValue(value, { targetSourceId = null, source = null } = {}) {
+    const currentPlacement = currentSourcePlacement(source);
+    const normalizedTargetSourceId = normalizedPlacementTargetSourceIdValue(
+      targetSourceId ?? currentPlacement.target_source_id,
+    );
+    const normalized = String(value ?? currentPlacement.target_kind ?? "").trim().toLowerCase();
+    if (normalized === "merge_source") {
+      return normalizedTargetSourceId ? "merge_source" : "primary_video";
+    }
+    if (mergeSourcePlacementTargetKinds.has(normalized)) return normalized;
+    return normalizedTargetSourceId ? "merge_source" : "primary_video";
+  }
+
+  function normalizedPlacementPayload(value = null, source = null) {
+    const placement = value && typeof value === "object" ? value : {};
+    const currentPlacement = currentSourcePlacement(source);
+    const targetSourceId = resolvedPlacementTargetSourceIdValue(
+      placement.target_source_id ?? currentPlacement.target_source_id,
+      source,
+    );
+    const mode = normalizedPlacementModeValue(placement.mode ?? currentPlacement.mode, source);
+    const targetKind = normalizedPlacementTargetKindValue(
+      placement.target_kind ?? currentPlacement.target_kind,
+      { targetSourceId, source },
+    );
+    return {
+      mode,
+      slot: normalizedPlacementSlotValue(placement.slot ?? currentPlacement.slot, { mode, source }),
+      target_kind: targetKind,
+      target_source_id: targetKind === "merge_source" ? targetSourceId : null,
+    };
+  }
+
+  function mergeSourcePlacementState(source = null, placement = null) {
+    return { ...currentSourcePlacement(source), ...normalizedPlacementPayload(placement, source) };
+  }
+
+  function mergeSourceDraftValuesEqual(left, right) {
+    if (Object.is(left, right)) return true;
+    if (left && right && typeof left === "object" && typeof right === "object") {
+      return JSON.stringify(left) === JSON.stringify(right);
+    }
+    return false;
+  }
+
+  function readSourcePlacementPayload(root, source = null) {
+    const placement = currentSourcePlacement(source);
+    const modeControl = root?.querySelector('[data-merge-source-field="placement_mode"]');
+    const slotControl = root?.querySelector('[data-merge-source-field="placement_slot"]');
+    const targetKindControl = root?.querySelector('[data-merge-source-field="target_kind"]');
+    const targetSourceControl = root?.querySelector('[data-merge-source-field="target_source_id"]');
+    return normalizedPlacementPayload(
+      {
+        mode: modeControl?.value ?? placement.mode,
+        slot: slotControl?.value ?? placement.slot,
+        target_kind: targetKindControl?.value ?? placement.target_kind,
+        target_source_id: targetSourceControl?.value ?? placement.target_source_id,
+      },
+      source,
+    );
+  }
+
+  function normalizeMergeSourceDraftValue(key, value, source = null) {
+    if (!["angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity", "placement"].includes(key)) {
+      return undefined;
+    }
+    if (key === "placement") return normalizedPlacementPayload(value, source);
+    if (key === "angle_role") return normalizedAngleRoleValue(value, source);
+    if (key === "pip_size_percent") return clampNumber(Number(value) || 35, 1, 95);
+    if (key === "opacity") return currentSourceOpacity({ opacity: value });
+    return normalizedCoordinateValue(value) ?? 1;
+  }
+
+  function mergePendingMergeSourcePayloads(project) {
+    const mergeSources = Array.isArray(project?.merge_sources) ? project.merge_sources : [];
+    if (mergeSources.length === 0 || currentPendingMergeSourcePayloads().size === 0) return;
+    currentPendingMergeSourcePayloads().forEach((payload, sourceId) => {
+      const source = mergeSources.find((item, index) => sourceIdentifier(item, String(index)) === sourceId);
+      if (!source) {
+        currentPendingMergeSourcePayloads().delete(sourceId);
+        return;
+      }
+      const draftEntries = Object.entries(payload || {})
+        .filter(([key]) => key !== "source_id")
+        .map(([key, value]) => {
+          const draftValue = normalizeMergeSourceDraftValue(key, value, source);
+          const savedValue = normalizeMergeSourceDraftValue(key, source[key], source);
+          return [key, draftValue, savedValue];
+        })
+        .filter((entry) => entry[1] !== undefined);
+      if (draftEntries.length === 0) {
+        currentPendingMergeSourcePayloads().delete(sourceId);
+        return;
+      }
+      const isCommitted = draftEntries.every(([, draftValue, savedValue]) => mergeSourceDraftValuesEqual(draftValue, savedValue));
+      if (isCommitted) {
+        currentPendingMergeSourcePayloads().delete(sourceId);
+        return;
+      }
+      draftEntries.forEach(([key, draftValue]) => {
+        if (key === "placement") {
+          source.placement = mergeSourcePlacementState(source, draftValue);
+          return;
+        }
+        source[key] = draftValue;
+      });
+    });
+  }
+
+  function normalizedPipSizePercentValue(value, fallback = 35) {
+    const numericValue = Number(value);
+    if (Number.isFinite(numericValue) && numericValue > 0) {
+      return clampNumber(numericValue, 1, 95);
+    }
+    const numericFallback = Number(fallback);
+    return clampNumber(Number.isFinite(numericFallback) && numericFallback > 0 ? numericFallback : 35, 1, 95);
+  }
+
+  function currentPipSizePercent(source = null, fallback = 35) {
+    return normalizedPipSizePercentValue(source?.pip_size_percent, fallback);
+  }
+
+  function currentSourcePipCoordinate(source = null, axis = "x", fallback = 1) {
+    const key = axis === "y" ? "pip_y" : "pip_x";
+    return normalizedCoordinateValue(source?.[key]) ?? fallback;
+  }
 
     function sourceIdentifier(source, fallback = "") {
       const asset = source?.asset || source || {};
@@ -151,6 +660,7 @@ export function createMergePane({
     }
 
     const mergeSourceAngleRoles = [
+      { value: "primary", label: "Primary" },
       { value: "follow", label: "Follow" },
       { value: "static", label: "Static" },
       { value: "detail", label: "Detail" },
@@ -210,18 +720,27 @@ export function createMergePane({
       scheduleProjectUiStateApply();
     }
 
-    function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null, angleRole = null) {
+    function syncMergeSourceControls(sourceId, pipX, pipY, pipSizePercent = null, syncOffsetMs = null, opacity = null, angleRole = null, placement = null) {
+        const source = mergeSourceById(sourceId);
       const xValue = Number.isFinite(pipX) ? pipX.toFixed(3) : "";
       const yValue = Number.isFinite(pipY) ? pipY.toFixed(3) : "";
       const sizeValue = Number.isFinite(pipSizePercent) ? Math.round(pipSizePercent) : "";
       const offsetValue = Math.round(Number(syncOffsetMs) || 0);
       const opacityValue = String(opacityPercentValue(opacity ?? 1));
-      const roleValue = normalizedAngleRoleValue(angleRole, mergeSourceById(sourceId));
+        const roleValue = normalizedAngleRoleValue(angleRole, source);
+        const placementValue = currentSourcePlacementValue(source, placement);
+      const targetOptions = mergeSourcePlacementTargetSourceOptions(source);
+      const supportsTargetSelection = mergeSourcePlacementSupportsTargetSelection(placementValue.mode, source);
+      const usesPreviewDrag = mergeSourcePlacementUsesPreviewDrag(source, placementValue);
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="x"]`).forEach((input) => {
         syncControlValue(input, xValue);
+        const field = input.closest(".merge-source-field");
+        if (field) field.hidden = !usesPreviewDrag;
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="y"]`).forEach((input) => {
         syncControlValue(input, yValue);
+        const field = input.closest(".merge-source-field");
+        if (field) field.hidden = !usesPreviewDrag;
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="size"]`).forEach((input) => {
         syncControlValue(input, sizeValue);
@@ -235,34 +754,51 @@ export function createMergePane({
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="angle_role"]`).forEach((input) => {
         syncControlValue(input, roleValue);
       });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="placement_mode"]`).forEach((input) => {
+        syncControlValue(input, placementValue.mode);
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="placement_slot"]`).forEach((input) => {
+        syncPlacementSlotControl(input, { mode: placementValue.mode, source, value: placementValue.slot });
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="target_kind"]`).forEach((input) => {
+        syncControlValue(input, placementValue.target_kind);
+        const mergeSourceOption = input.querySelector('option[value="merge_source"]');
+        if (mergeSourceOption) mergeSourceOption.disabled = targetOptions.length === 0;
+        const field = input.closest(".merge-source-field");
+        if (field) field.hidden = !supportsTargetSelection;
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="target_source_id"]`).forEach((input) => {
+        syncPlacementTargetSourceControl(input, { source, value: placementValue.target_source_id });
+        const field = input.closest(".merge-source-field");
+        if (field) field.hidden = !supportsTargetSelection || placementValue.target_kind !== "merge_source";
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-placement-hint]`).forEach((hint) => {
+        hint.textContent = mergeSourcePlacementHint(placementValue.mode, source, placementValue);
+      });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
         label.textContent = formatSyncOffsetLabel(offsetValue);
       });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-hint]`).forEach((hint) => {
+        hint.textContent = mergeSourceSyncHintText(source, placementValue);
+      });
     }
 
-    function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null, angleRole = null) {
+    function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null, angleRole = null, placement = null) {
       const source = mergeSourceById(sourceId);
       if (!source || !currentState()?.project) return;
-      const nextSize = clampNumber(
-        Number(
-          pipSizePercent
-            ?? source.pip_size_percent
-            ?? currentState().project.merge.pip_size_percent
-            ?? 35,
-        ) || 35,
-        1,
-        95,
-      );
+      const nextSize = normalizedPipSizePercentValue(pipSizePercent ?? source.pip_size_percent);
       const nextX = normalizedCoordinateValue(pipX) ?? 1;
       const nextY = normalizedCoordinateValue(pipY) ?? 1;
       const nextOpacity = currentSourceOpacity({ opacity: opacity ?? source.opacity ?? 1 });
       const nextAngleRole = normalizedAngleRoleValue(angleRole ?? source.angle_role, source);
+      const nextPlacement = mergeSourcePlacementState(source, placement);
       source.pip_size_percent = nextSize;
       source.pip_x = nextX;
       source.pip_y = nextY;
       source.opacity = nextOpacity;
       source.angle_role = nextAngleRole;
-      syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity, nextAngleRole);
+      source.placement = nextPlacement;
+      syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity, nextAngleRole, nextPlacement);
     }
 
     function updateLocalMergeSourceSyncOffset(sourceId, syncOffsetMs) {
@@ -280,6 +816,7 @@ export function createMergePane({
         source.sync_offset_ms,
         currentSourceOpacity(source),
         currentSourceAngleRole(source),
+        source.placement,
       );
     }
 
@@ -287,11 +824,71 @@ export function createMergePane({
       return {
         source_id: sourceId,
         angle_role: currentSourceAngleRole(source),
-        pip_size_percent: currentPipSizePercent(source, currentPipSizePercent()),
+        pip_size_percent: currentPipSizePercent(source),
         pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
         pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
         opacity: currentSourceOpacity(source),
+        placement: normalizedPlacementPayload(source?.placement, source),
       };
+    }
+
+    function hydratedMergeSourcePlacement(source = null, seedDefaults = currentMergeSourceSeedDefaults()) {
+      const currentPlacement = normalizedPlacementPayload(source?.placement, source);
+      const mode = currentPlacement.mode === "auto" ? seedDefaults.placement_mode : currentPlacement.mode;
+      const targetSourceId = resolvedPlacementTargetSourceIdValue(currentPlacement.target_source_id, source);
+      const targetKind = normalizedPlacementTargetKindValue(currentPlacement.target_kind, {
+        targetSourceId,
+        source,
+      });
+      return {
+        mode,
+        slot: normalizedPlacementSlotValue(currentPlacement.slot, { mode, source }),
+        target_kind: targetKind,
+        target_source_id: targetKind === "merge_source" ? targetSourceId : null,
+      };
+    }
+
+    function hydrateMergeSourceCompositionTruth(
+      source = null,
+      fallbackSourceId = "",
+      seedDefaults = currentMergeSourceSeedDefaults(),
+    ) {
+      if (!source || typeof source !== "object") return null;
+      const nextPipSize = currentPipSizePercent(source, seedDefaults.pip_size_percent);
+      const nextPipX = currentSourcePipCoordinate(source, "x", seedDefaults.pip_x);
+      const nextPipY = currentSourcePipCoordinate(source, "y", seedDefaults.pip_y);
+      const nextPlacement = hydratedMergeSourcePlacement(source, seedDefaults);
+      let changed = false;
+      if (!mergeSourceDraftValuesEqual(source.pip_size_percent, nextPipSize)) {
+        source.pip_size_percent = nextPipSize;
+        changed = true;
+      }
+      if (!mergeSourceDraftValuesEqual(source.pip_x, nextPipX)) {
+        source.pip_x = nextPipX;
+        changed = true;
+      }
+      if (!mergeSourceDraftValuesEqual(source.pip_y, nextPipY)) {
+        source.pip_y = nextPipY;
+        changed = true;
+      }
+      if (
+        !mergeSourceDraftValuesEqual(normalizedPlacementPayload(source.placement, source), nextPlacement)
+        || !mergeSourceDraftValuesEqual(source.placement, nextPlacement)
+      ) {
+        source.placement = nextPlacement;
+        changed = true;
+      }
+      return changed ? mergeSourcePositionPayload(sourceIdentifier(source, fallbackSourceId), source) : null;
+    }
+
+    function hydrateMergeSourcesFromDefaults({ persist = true } = {}) {
+      const mergeSources = currentState()?.project?.merge_sources || [];
+      const seedDefaults = currentMergeSourceSeedDefaults();
+      const hydrationPayloads = mergeSources
+        .map((source, index) => hydrateMergeSourceCompositionTruth(source, String(index), seedDefaults))
+        .filter(Boolean);
+      if (persist) hydrationPayloads.forEach((payload) => scheduleMergeSourceCommit(payload));
+      return hydrationPayloads;
     }
 
     function syncMergePreviewStateFromControls() {
@@ -318,14 +915,138 @@ export function createMergePane({
     }
     const travelX = Math.max(0, frameRect.width - insetWidth);
     const travelY = Math.max(0, frameRect.height - insetHeight);
-    const pipX = normalizedCoordinateValue(source.pip_x) ?? normalizedCoordinateValue(currentState().project.merge.pip_x) ?? 1;
-    const pipY = normalizedCoordinateValue(source.pip_y) ?? normalizedCoordinateValue(currentState().project.merge.pip_y) ?? 1;
+    const pipX = currentSourcePipCoordinate(source, "x", 1);
+    const pipY = currentSourcePipCoordinate(source, "y", 1);
     return {
       left: frameRect.left + (travelX * pipX),
       top: frameRect.top + (travelY * pipY),
       width: insetWidth,
       height: insetHeight,
     };
+  }
+
+  function mergePreviewFrameRect(video, stage) {
+    const previewRect = previewFrameGeometry(video, stage)?.frameRect;
+    if (
+      previewRect
+      && Number.isFinite(previewRect.left)
+      && Number.isFinite(previewRect.top)
+      && Number.isFinite(previewRect.width)
+      && Number.isFinite(previewRect.height)
+      && previewRect.width > 0
+      && previewRect.height > 0
+    ) {
+      return previewRect;
+    }
+    const fallbackWidth = Math.max(1, stage?.clientWidth || video?.clientWidth || 0);
+    const fallbackHeight = Math.max(1, stage?.clientHeight || video?.clientHeight || 0);
+    if (fallbackWidth <= 0 || fallbackHeight <= 0) return null;
+    return {
+      left: 0,
+      top: 0,
+      width: fallbackWidth,
+      height: fallbackHeight,
+    };
+  }
+
+  function mergeSourcePipPreviewRect(source, frameRect, pipSizeValue = null, slot = "overlay") {
+    if (slot === "overlay") return mergeSourcePipRect(source, frameRect, pipSizeValue);
+    const slotCoordinates = {
+      left: { pip_x: 0, pip_y: 0.5 },
+      right: { pip_x: 1, pip_y: 0.5 },
+      top: { pip_x: 0.5, pip_y: 0 },
+      bottom: { pip_x: 0.5, pip_y: 1 },
+      center: { pip_x: 0.5, pip_y: 0.5 },
+    }[slot] || {
+      pip_x: currentSourcePipCoordinate(source, "x", 1),
+      pip_y: currentSourcePipCoordinate(source, "y", 1),
+    };
+    return mergeSourcePipRect({ ...source, ...slotCoordinates }, frameRect, pipSizeValue);
+  }
+
+  function mergeSourcePreviewRect(source, frameRect, pipSizeValue = null) {
+    const mode = currentSourcePlacementPreviewMode(source);
+    const slot = currentSourcePlacementPreviewSlot(source);
+    if (mode === "base") {
+      return {
+        left: frameRect.left,
+        top: frameRect.top,
+        width: frameRect.width,
+        height: frameRect.height,
+      };
+    }
+    if (mode === "side_by_side") {
+      const leftWidth = Math.max(1, Math.floor(frameRect.width / 2));
+      const rightWidth = Math.max(1, frameRect.width - leftWidth);
+      const useLeft = slot === "left";
+      return {
+        left: useLeft ? frameRect.left : frameRect.left + leftWidth,
+        top: frameRect.top,
+        width: useLeft ? leftWidth : rightWidth,
+        height: frameRect.height,
+      };
+    }
+    if (mode === "above_below") {
+      const topHeight = Math.max(1, Math.floor(frameRect.height / 2));
+      const bottomHeight = Math.max(1, frameRect.height - topHeight);
+      const useTop = slot === "top";
+      return {
+        left: frameRect.left,
+        top: useTop ? frameRect.top : frameRect.top + topHeight,
+        width: frameRect.width,
+        height: useTop ? topHeight : bottomHeight,
+      };
+    }
+    if (mode === "full_screen_portrait") {
+      const portraitWidth = Math.max(1, Math.min(frameRect.width, Math.round(frameRect.height * (9 / 16))));
+      return {
+        left: frameRect.left + Math.max(0, Math.round((frameRect.width - portraitWidth) / 2)),
+        top: frameRect.top,
+        width: portraitWidth,
+        height: frameRect.height,
+      };
+    }
+    if (mode === "dual_center_hud") {
+      const gutterWidth = Math.min(
+        Math.max(24, Math.round(frameRect.height * 0.18)),
+        Math.max(24, frameRect.width - 2),
+      );
+      const leftWidth = Math.max(1, Math.floor((frameRect.width - gutterWidth) / 2));
+      const rightWidth = Math.max(1, frameRect.width - gutterWidth - leftWidth);
+      const useLeft = slot === "left";
+      return {
+        left: useLeft ? frameRect.left : frameRect.left + leftWidth + gutterWidth,
+        top: frameRect.top,
+        width: useLeft ? leftWidth : rightWidth,
+        height: frameRect.height,
+      };
+    }
+    if (mode === "dual_top_hud") {
+      const hudHeight = Math.min(
+        Math.max(24, Math.round(frameRect.height * 0.18)),
+        Math.max(24, frameRect.height - 2),
+      );
+      const leftWidth = Math.max(1, Math.floor(frameRect.width / 2));
+      const rightWidth = Math.max(1, frameRect.width - leftWidth);
+      const useLeft = slot === "left";
+      return {
+        left: useLeft ? frameRect.left : frameRect.left + leftWidth,
+        top: frameRect.top + hudHeight,
+        width: useLeft ? leftWidth : rightWidth,
+        height: Math.max(1, frameRect.height - hudHeight),
+      };
+    }
+    return mergeSourcePipPreviewRect(source, frameRect, pipSizeValue, slot);
+  }
+
+  function mergeSourcePreviewZIndex(source, index = 0) {
+    const mode = currentSourcePlacementPreviewMode(source);
+    if (mode === "base") return String(10 + index);
+    if (["side_by_side", "above_below", "dual_center_hud", "dual_top_hud"].includes(mode)) {
+      return String(20 + index);
+    }
+    if (mode === "full_screen_portrait") return String(30 + index);
+    return String(40 + index);
   }
 
   function ensureMergePreviewItem(layer, source) {
@@ -390,26 +1111,52 @@ export function createMergePane({
       layer.innerHTML = "";
       return;
     }
-    const frameRect = previewFrameGeometry(video, stage)?.frameRect;
+    const frameRect = mergePreviewFrameRect(video, stage);
     if (!frameRect || mergeSources.length === 0) {
       layer.hidden = true;
       layer.innerHTML = "";
       return;
     }
     layer.hidden = false;
+    const previewRects = new Map();
+    const resolveSourcePreviewRect = (source, activeStack = new Set()) => {
+      const sourceId = sourceIdentifier(source, fileName(source?.asset?.path || ""));
+      if (previewRects.has(sourceId)) return previewRects.get(sourceId);
+      if (activeStack.has(sourceId)) return frameRect;
+      activeStack.add(sourceId);
+      const placementValue = currentSourcePlacementValue(source);
+      let targetFrameRect = frameRect;
+      if (
+        mergeSourcePlacementSupportsTargetSelection(placementValue.mode, source)
+        && placementValue.target_kind === "merge_source"
+      ) {
+        const targetSourceId = resolvedPlacementTargetSourceIdValue(placementValue.target_source_id, source);
+        const targetSource = targetSourceId
+          ? mergeSources.find((item, index) => sourceIdentifier(item, String(index)) === targetSourceId)
+          : null;
+        if (targetSource) {
+          targetFrameRect = resolveSourcePreviewRect(targetSource, activeStack);
+        }
+      }
+      const rect = mergeSourcePreviewRect(source, targetFrameRect, pipSizeValue);
+      previewRects.set(sourceId, rect);
+      activeStack.delete(sourceId);
+      return rect;
+    };
     const expectedIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
     layer.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
       if (!expectedIds.has(item.dataset.sourceId)) item.remove();
     });
     mergeSources.forEach((source, index) => {
       const item = ensureMergePreviewItem(layer, source);
-      const rect = mergeSourcePipRect(source, frameRect, pipSizeValue);
+      const rect = resolveSourcePreviewRect(source);
       item.style.left = `${rect.left}px`;
       item.style.top = `${rect.top}px`;
       item.style.width = `${rect.width}px`;
       item.style.height = `${rect.height}px`;
       item.style.maxWidth = `${rect.width}px`;
       item.style.maxHeight = `${rect.height}px`;
+      item.style.zIndex = mergeSourcePreviewZIndex(source, index);
       item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
     });
   }
@@ -453,15 +1200,18 @@ export function createMergePane({
     const video = $("primary-video");
     const stage = $("video-stage");
     if (!video || !stage) return;
+    hydrateMergeSourcesFromDefaults({ persist: true });
     const mergeSources = currentState()?.project?.merge_sources || [];
-    renderMergePreviewLayer(video, stage, mergeSources, currentPipSizePercent());
+    renderMergePreviewLayer(video, stage, mergeSources);
   }
 
   function renderMergeMediaList() {
     const list = $("merge-media-list");
     if (!list) return;
+    hydrateMergeSourcesFromDefaults({ persist: true });
     const mergeSources = currentState()?.project?.merge_sources || [];
     const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
+    clearStaleMergeSourceTrimState(validSourceIds);
     [...currentMergeSourceExpansion().keys()].forEach((sourceId) => {
       if (sourceId !== pipDefaultsSectionId && !validSourceIds.has(sourceId)) currentMergeSourceExpansion().delete(sourceId);
     });
@@ -530,10 +1280,329 @@ export function createMergePane({
         const dimensions = asset.width && asset.height ? ` • ${asset.width}x${asset.height}` : "";
         meta.textContent = `${mediaType}${dimensions}`;
 
+        const trimSection = documentObject.createElement("section");
+        trimSection.className = "settings-section merge-source-trim-section";
+        const trimHeader = documentObject.createElement("div");
+        trimHeader.className = "section-header sub-section-header";
+        const trimHeaderCopy = documentObject.createElement("div");
+        const trimTitle = documentObject.createElement("h3");
+        trimTitle.textContent = "Trim Video";
+        const trimSubtitle = documentObject.createElement("span");
+        trimSubtitle.textContent = "Set clip bounds before later item timing and placement changes.";
+        trimHeaderCopy.append(trimTitle, trimSubtitle);
+        trimHeader.append(trimHeaderCopy);
+        trimSection.append(trimHeader);
+
+        const trimBusy = trimmingMergeSources.has(sourceId);
+        const trimStatusState = currentMergeSourceTrimStatus(sourceId);
+        const trimStatus = documentObject.createElement("p");
+        trimStatus.className = trimStatusState?.tone === "error"
+          ? "automation-error merge-source-trim-status"
+          : "hint merge-source-trim-status";
+        trimStatus.textContent = trimStatusState?.message || mergeSourceTrimHint(source);
+
+        if (asset.is_still_image) {
+          trimSection.append(trimStatus);
+        } else {
+          const trimDraft = mergeSourceTrimDraft(sourceId);
+          const rememberTrimDraft = (field, value) => {
+            updateMergeSourceTrimDraft(sourceId, { [field]: String(value ?? "") });
+            setMergeSourceTrimStatus(sourceId, "");
+          };
+          const normalizeTrimDraftField = (field, value, options = {}) => {
+            const normalized = normalizedTrimSecondsInputValue(value, options);
+            updateMergeSourceTrimDraft(sourceId, { [field]: normalized });
+            setMergeSourceTrimStatus(sourceId, "");
+            return normalized;
+          };
+
+          const trimSettingsGrid = documentObject.createElement("div");
+          trimSettingsGrid.className = "hook-grid";
+          const trimSettingsButton = documentObject.createElement("button");
+          trimSettingsButton.type = "button";
+          trimSettingsButton.textContent = "Trim Settings";
+          trimSettingsButton.title = "Open the shared reusable trim padding editor for the selected output profile.";
+          trimSettingsButton.disabled = trimBusy;
+          trimSettingsButton.addEventListener("click", () => {
+            openMergeTrimSettingsEditor();
+          });
+          trimSettingsGrid.append(trimSettingsButton);
+
+          const trimRangeGrid = documentObject.createElement("div");
+          trimRangeGrid.className = "control-grid";
+
+          const startField = documentObject.createElement("label");
+          const startLabel = documentObject.createElement("span");
+          startLabel.textContent = "Start (s)";
+          const startInput = documentObject.createElement("input");
+          startInput.type = "number";
+          startInput.min = "0";
+          startInput.step = "0.001";
+          startInput.value = trimDraft.start_seconds;
+          startInput.placeholder = "0.000";
+          startInput.dataset.sourceId = sourceId;
+          startInput.dataset.mergeSourceTrimField = "start_seconds";
+          startInput.title = "Trim start time in seconds for this item.";
+          startInput.disabled = trimBusy;
+          startInput.addEventListener("input", () => rememberTrimDraft("start_seconds", startInput.value));
+          startInput.addEventListener("change", () => {
+            startInput.value = normalizeTrimDraftField("start_seconds", startInput.value, { fallback: "0.000" });
+          });
+          startField.append(startLabel, startInput);
+
+          const endField = documentObject.createElement("label");
+          const endLabel = documentObject.createElement("span");
+          endLabel.textContent = "End (s)";
+          const endInput = documentObject.createElement("input");
+          endInput.type = "number";
+          endInput.min = "0";
+          endInput.step = "0.001";
+          endInput.value = trimDraft.end_seconds;
+          endInput.placeholder = "Leave blank";
+          endInput.dataset.sourceId = sourceId;
+          endInput.dataset.mergeSourceTrimField = "end_seconds";
+          endInput.title = "Optional trim end time in seconds. Leave blank to keep the rest of the clip.";
+          endInput.disabled = trimBusy;
+          endInput.addEventListener("input", () => rememberTrimDraft("end_seconds", endInput.value));
+          endInput.addEventListener("change", () => {
+            endInput.value = normalizeTrimDraftField("end_seconds", endInput.value, { allowEmpty: true });
+          });
+          endField.append(endLabel, endInput);
+
+          trimRangeGrid.append(startField, endField);
+
+          const trimCaptureButtons = documentObject.createElement("div");
+          trimCaptureButtons.className = "button-grid compact merge-source-trim-capture-buttons";
+
+          const setStartFromPreview = documentObject.createElement("button");
+          setStartFromPreview.type = "button";
+          setStartFromPreview.textContent = "Use Current Frame As Start";
+          setStartFromPreview.title = "Capture the current synced preview frame as this item's trim start.";
+          setStartFromPreview.disabled = trimBusy;
+          setStartFromPreview.addEventListener("click", () => {
+            const nextValue = currentMergeSourceTrimCaptureValue(source);
+            startInput.value = normalizeTrimDraftField("start_seconds", nextValue, { fallback: "0.000" });
+          });
+
+          const setEndFromPreview = documentObject.createElement("button");
+          setEndFromPreview.type = "button";
+          setEndFromPreview.textContent = "Use Current Frame As End";
+          setEndFromPreview.title = "Capture the current synced preview frame as this item's trim end.";
+          setEndFromPreview.disabled = trimBusy;
+          setEndFromPreview.addEventListener("click", () => {
+            const nextValue = currentMergeSourceTrimCaptureValue(source);
+            endInput.value = normalizeTrimDraftField("end_seconds", nextValue, { allowEmpty: true });
+          });
+
+          const clearTrimEnd = documentObject.createElement("button");
+          clearTrimEnd.type = "button";
+          clearTrimEnd.textContent = "Clear End";
+          clearTrimEnd.title = "Trim from the chosen start through the end of the clip.";
+          clearTrimEnd.disabled = trimBusy;
+          clearTrimEnd.addEventListener("click", () => {
+            endInput.value = normalizeTrimDraftField("end_seconds", "", { allowEmpty: true });
+          });
+
+          trimCaptureButtons.append(setStartFromPreview, setEndFromPreview, clearTrimEnd);
+
+          const trimActionButtons = documentObject.createElement("div");
+          trimActionButtons.className = "button-grid two-up merge-source-trim-actions";
+
+          const trimButton = documentObject.createElement("button");
+          trimButton.type = "button";
+          trimButton.className = "primary-button";
+          trimButton.textContent = trimBusy ? "Trimming..." : "Trim Video";
+          trimButton.title = String(currentState()?.project?.path || "").trim()
+            ? "Create or refresh this item's local trim derivative."
+            : "Save or create a project folder before trimming added media.";
+          trimButton.disabled = trimBusy || !String(currentState()?.project?.path || "").trim();
+          trimButton.addEventListener("click", () => {
+            void trimMergeSource(sourceId);
+          });
+
+          const resetTrimRange = documentObject.createElement("button");
+          resetTrimRange.type = "button";
+          resetTrimRange.textContent = "Reset Range";
+          resetTrimRange.title = "Restore this item's trim inputs to the full source range.";
+          resetTrimRange.disabled = trimBusy;
+          resetTrimRange.addEventListener("click", () => {
+            startInput.value = normalizeTrimDraftField("start_seconds", "0.000", { fallback: "0.000" });
+            endInput.value = normalizeTrimDraftField("end_seconds", "", { allowEmpty: true });
+          });
+
+          trimActionButtons.append(trimButton, resetTrimRange);
+          trimSection.append(trimSettingsGrid, trimRangeGrid, trimCaptureButtons, trimActionButtons, trimStatus);
+        }
+
         const controls = documentObject.createElement("div");
         controls.className = "merge-source-controls";
         const syncRow = documentObject.createElement("div");
         syncRow.className = "merge-source-sync-row";
+
+        const placementValue = currentSourcePlacementValue(source);
+        const placementSection = documentObject.createElement("section");
+        placementSection.className = "settings-section merge-source-placement-section";
+        placementSection.dataset.sourceId = sourceId;
+        const placementHeader = documentObject.createElement("div");
+        placementHeader.className = "section-header sub-section-header";
+        const placementHeaderCopy = documentObject.createElement("div");
+        const placementTitle = documentObject.createElement("h3");
+        placementTitle.textContent = "Placement";
+        const placementSubtitle = documentObject.createElement("span");
+        placementSubtitle.textContent = "Current item placement lives here. Project defaults only seed new cards.";
+        placementHeaderCopy.append(placementTitle, placementSubtitle);
+        placementHeader.append(placementHeaderCopy);
+
+        const placementGrid = documentObject.createElement("div");
+        placementGrid.className = "control-grid";
+
+        const placementModeField = documentObject.createElement("label");
+        placementModeField.className = "merge-source-field";
+        const placementModeText = documentObject.createElement("span");
+        placementModeText.textContent = "Placement mode";
+        const placementModeSelect = documentObject.createElement("select");
+        placementModeSelect.dataset.mergeSourceField = "placement_mode";
+        placementModeSelect.dataset.sourceId = sourceId;
+        placementModeSelect.title = "Choose whether this item acts as a base, panel, or PiP overlay.";
+        mergeSourcePlacementModeOptions.forEach((optionValue) => {
+          const option = documentObject.createElement("option");
+          option.value = optionValue.value;
+          option.textContent = optionValue.label;
+          placementModeSelect.appendChild(option);
+        });
+        syncControlValue(placementModeSelect, placementValue.mode);
+        placementModeField.append(placementModeText, placementModeSelect);
+
+        const placementSlotField = documentObject.createElement("label");
+        placementSlotField.className = "merge-source-field";
+        const placementSlotText = documentObject.createElement("span");
+        placementSlotText.textContent = "Placement slot";
+        const placementSlotSelect = documentObject.createElement("select");
+        placementSlotSelect.dataset.mergeSourceField = "placement_slot";
+        placementSlotSelect.dataset.sourceId = sourceId;
+        placementSlotSelect.title = "Choose the side, band, or overlay position for this item's placement.";
+        syncPlacementSlotControl(placementSlotSelect, {
+          mode: placementValue.mode,
+          source,
+          value: placementValue.slot,
+        });
+        placementSlotField.append(placementSlotText, placementSlotSelect);
+
+        const placementTargetKindField = documentObject.createElement("label");
+        placementTargetKindField.className = "merge-source-field";
+        const placementTargetKindText = documentObject.createElement("span");
+        placementTargetKindText.textContent = "Overlay target";
+        const placementTargetKindSelect = documentObject.createElement("select");
+        placementTargetKindSelect.dataset.mergeSourceField = "target_kind";
+        placementTargetKindSelect.dataset.sourceId = sourceId;
+        placementTargetKindSelect.title = "Choose whether this overlay sits over the primary video or another added item.";
+        [
+          { value: "primary_video", label: "Primary video" },
+          { value: "merge_source", label: "Added media item" },
+        ].forEach((optionValue) => {
+          const option = documentObject.createElement("option");
+          option.value = optionValue.value;
+          option.textContent = optionValue.label;
+          placementTargetKindSelect.appendChild(option);
+        });
+        syncControlValue(placementTargetKindSelect, placementValue.target_kind);
+        placementTargetKindField.append(placementTargetKindText, placementTargetKindSelect);
+
+        const placementTargetSourceField = documentObject.createElement("label");
+        placementTargetSourceField.className = "merge-source-field";
+        const placementTargetSourceText = documentObject.createElement("span");
+        placementTargetSourceText.textContent = "Base item";
+        const placementTargetSourceSelect = documentObject.createElement("select");
+        placementTargetSourceSelect.dataset.mergeSourceField = "target_source_id";
+        placementTargetSourceSelect.dataset.sourceId = sourceId;
+        placementTargetSourceSelect.title = "Choose which added item acts as the visible base for this overlay.";
+        syncPlacementTargetSourceControl(placementTargetSourceSelect, {
+          source,
+          value: placementValue.target_source_id,
+        });
+        placementTargetSourceField.append(placementTargetSourceText, placementTargetSourceSelect);
+
+        const placementHint = documentObject.createElement("small");
+        placementHint.className = "hint";
+        placementHint.dataset.mergeSourcePlacementHint = "true";
+        placementHint.dataset.sourceId = sourceId;
+        placementHint.textContent = mergeSourcePlacementHint(placementValue.mode, source, placementValue);
+
+        let layerXField = null;
+        let layerYField = null;
+
+        const syncFreeformPositionFields = (activeSource = source, placement = null) => {
+          const usesPreviewDrag = mergeSourcePlacementUsesPreviewDrag(activeSource, placement);
+          if (layerXField) layerXField.hidden = !usesPreviewDrag;
+          if (layerYField) layerYField.hidden = !usesPreviewDrag;
+        };
+
+        const refreshPlacementSection = ({ preferredSlot = null } = {}) => {
+          const activeSource = mergeSourceById(sourceId) || source;
+          syncPlacementSlotControl(placementSlotSelect, {
+            mode: placementModeSelect.value,
+            source: activeSource,
+            value: preferredSlot ?? placementSlotSelect.value,
+          });
+          const targetOptions = mergeSourcePlacementTargetSourceOptions(activeSource);
+          const mergeSourceOption = placementTargetKindSelect.querySelector('option[value="merge_source"]');
+          if (mergeSourceOption) mergeSourceOption.disabled = targetOptions.length === 0;
+          syncPlacementTargetSourceControl(placementTargetSourceSelect, {
+            source: activeSource,
+            value: placementTargetSourceSelect.value,
+          });
+          const supportsTargetSelection = mergeSourcePlacementSupportsTargetSelection(
+            placementModeSelect.value,
+            activeSource,
+          );
+          if (
+            supportsTargetSelection
+            && placementTargetKindSelect.value === "merge_source"
+            && !resolvedPlacementTargetSourceIdValue(placementTargetSourceSelect.value, activeSource)
+            && targetOptions.length > 0
+          ) {
+            syncPlacementTargetSourceControl(placementTargetSourceSelect, {
+              source: activeSource,
+              value: targetOptions[0].value,
+            });
+          }
+          if (
+            supportsTargetSelection
+            && placementTargetKindSelect.value === "merge_source"
+            && targetOptions.length === 0
+          ) {
+            syncControlValue(placementTargetKindSelect, "primary_video");
+          }
+          placementTargetKindField.hidden = !supportsTargetSelection;
+          placementTargetSourceField.hidden = !supportsTargetSelection || placementTargetKindSelect.value !== "merge_source";
+          const nextPlacement = {
+            mode: placementModeSelect.value,
+            slot: placementSlotSelect.value,
+            target_kind: placementTargetKindSelect.value,
+            target_source_id: placementTargetSourceSelect.value,
+          };
+          placementHint.textContent = mergeSourcePlacementHint(placementModeSelect.value, activeSource, nextPlacement);
+          syncFreeformPositionFields(activeSource, nextPlacement);
+        };
+
+        placementModeSelect.addEventListener("change", () => {
+          refreshPlacementSection();
+          scheduleMergeSourceCommit(previewSourceUpdate());
+        });
+        placementSlotSelect.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+        placementTargetKindSelect.addEventListener("change", () => {
+          refreshPlacementSection();
+          scheduleMergeSourceCommit(previewSourceUpdate());
+        });
+        placementTargetSourceSelect.addEventListener("change", () => scheduleMergeSourceCommit(previewSourceUpdate()));
+
+        placementGrid.append(
+          placementModeField,
+          placementSlotField,
+          placementTargetKindField,
+          placementTargetSourceField,
+        );
+        placementSection.append(placementHeader, placementGrid, placementHint);
 
         const readSourcePayload = () => {
           const roleControl = controls.querySelector('[data-merge-source-field="angle_role"]');
@@ -549,12 +1618,21 @@ export function createMergePane({
             pip_x: nextX,
             pip_y: nextY,
             opacity: nextOpacity,
+            placement: readSourcePlacementPayload(card, source),
           };
         };
 
         const previewSourceUpdate = () => {
           const payload = readSourcePayload();
-          updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity, payload.angle_role);
+          updateLocalMergeSourcePosition(
+            sourceId,
+            payload.pip_x,
+            payload.pip_y,
+            payload.pip_size_percent,
+            payload.opacity,
+            payload.angle_role,
+            payload.placement,
+          );
           renderLocalMergePreview();
           scheduleInteractionPreviewRender({ video: true });
           return payload;
@@ -564,11 +1642,11 @@ export function createMergePane({
           const label = documentObject.createElement("label");
           label.className = "merge-source-field";
           const text = documentObject.createElement("span");
-          text.textContent = "Angle role";
+          text.textContent = "Camera role";
           const select = documentObject.createElement("select");
           select.dataset.mergeSourceField = "angle_role";
           select.dataset.sourceId = sourceId;
-          select.title = "Track whether this item is a follow angle, static reference, or detail source.";
+          select.title = "Track which camera role this item fills: primary, follow, static, or detail.";
           mergeSourceAngleRoles.forEach((role) => {
             const option = documentObject.createElement("option");
             option.value = role.value;
@@ -613,7 +1691,7 @@ export function createMergePane({
         sizeInput.min = "1";
         sizeInput.max = "95";
         sizeInput.step = "1";
-        sizeInput.value = String(currentPipSizePercent(source, currentPipSizePercent()));
+        sizeInput.value = String(currentPipSizePercent(source));
         sizeInput.dataset.mergeSourceField = "size";
         sizeInput.dataset.sourceId = sourceId;
         sizeInput.title = "1 is smallest, 95 is largest.";
@@ -701,21 +1779,23 @@ export function createMergePane({
           buildSourceRoleSelect(),
           sizeField,
           buildSourceOpacityInput(),
-          buildSourceNumberInput("Layer X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-          buildSourceNumberInput("Layer Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+          (layerXField = buildSourceNumberInput("Layer X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")),
+          (layerYField = buildSourceNumberInput("Layer Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom.")),
         );
+
+        refreshPlacementSection();
 
         const syncHint = documentObject.createElement("small");
         syncHint.className = "merge-source-sync-hint";
-          syncHint.textContent = ["pip", "full_screen_portrait"].includes(currentState().project.merge.layout)
-          ? "Use these nudges or drag the preview to match the primary video exactly."
-            : "These values are saved per item and take effect in composition layouts and export timing.";
+        syncHint.dataset.mergeSourceSyncHint = "true";
+        syncHint.dataset.sourceId = sourceId;
+        syncHint.textContent = mergeSourceSyncHintText(source);
         syncRow.append(syncLabel, syncButtons, syncStatus, syncHint);
 
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
         body.hidden = !expanded;
-        body.append(meta, controls, syncRow);
+        body.append(meta, trimSection, placementSection, controls, syncRow);
         card.append(header, body);
         syncMergeSourceControls(
           sourceId,
@@ -725,6 +1805,7 @@ export function createMergePane({
           currentSourceSyncOffsetMs(source),
           currentSourceOpacity(source),
           currentSourceAngleRole(source),
+          source.placement,
         );
         list.appendChild(card);
       });

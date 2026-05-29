@@ -36,6 +36,10 @@ from splitshot.domain.models import (
     _shot_from_dict,
     _timing_event_from_dict,
 )
+from splitshot.export.presets import (
+    EXPORT_SETTINGS_SYNC_COMPARISON_FIELDS,
+    export_settings_payload_matches,
+)
 from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
 from splitshot.persistence.projects import (
@@ -53,6 +57,7 @@ PathChooser = Callable[[str, str | None], str | None]
 COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
 COMMON_IMAGE_FILE_PATTERNS = "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff"
 COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
+_PROJECT_FOLDER_DIALOG_KINDS = frozenset({"project", "project_save", "project_open", "project_folder"})
 _PCM_BROWSER_PROXY_FORMATS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
 _PCM_BROWSER_PROXY_SUFFIXES = {".mov", ".qt", ".mp4", ".m4v", ".m4a"}
 _BROWSER_COPY_SAFE_VIDEO_CODECS = {"av1", "h264", "vp8", "vp9"}
@@ -295,9 +300,11 @@ def is_expected_disconnect_error(exc: BaseException | None) -> bool:
     return isinstance(exc, OSError) and exc.errno in EXPECTED_DISCONNECT_ERRNOS
 
 
-def _existing_dialog_directory(current: str | None, *, project_path: bool = False) -> Path:
+def _existing_dialog_directory_or_none(
+    current: str | None, *, project_path: bool = False
+) -> Path | None:
     if not current:
-        return Path.home()
+        return None
 
     candidate = resolve_project_path(current) if project_path else Path(current)
     candidate = candidate.expanduser()
@@ -311,7 +318,28 @@ def _existing_dialog_directory(current: str | None, *, project_path: bool = Fals
         if probe.parent == probe:
             break
         probe = probe.parent
-    return Path.home()
+    return None
+
+
+def _existing_dialog_directory(current: str | None, *, project_path: bool = False) -> Path:
+    return _existing_dialog_directory_or_none(current, project_path=project_path) or Path.home()
+
+
+def _dialog_chooser_current(
+    kind: str,
+    current: str | None,
+    home: str | None,
+    active_project_path: str | None,
+) -> str | None:
+    project_path_kind = kind in _PROJECT_FOLDER_DIALOG_KINDS
+    if _existing_dialog_directory_or_none(current, project_path=project_path_kind) is not None:
+        return current
+
+    project_home = home or active_project_path
+    if _existing_dialog_directory_or_none(project_home, project_path=project_path_kind) is not None:
+        return project_home
+
+    return current or project_home
 
 
 def choose_local_path(kind: str, current: str | None = None) -> str | None:
@@ -342,7 +370,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
                 title=(
                     "Choose stage video"
                     if kind == "primary"
-                    else "Choose secondary angle video"
+                    else "Choose added media"
                 ),
                 initialdir=initial_dir,
                 filetypes=[
@@ -388,7 +416,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
         prompt = (
             "Choose stage video"
             if kind == "primary"
-            else "Choose secondary angle video"
+            else "Choose added media"
         )
         script = "\n".join(
             [
@@ -471,41 +499,11 @@ def display_name_for_path(path: str, fallback: str) -> str:
 
 
 def _payload_matches_export_state(project: Project, payload: dict[str, Any]) -> bool:
-    export = project.export
-    current_values: dict[str, object] = {
-        "quality": export.quality.value,
-        "aspect_ratio": export.aspect_ratio.value,
-        "target_width": export.target_width,
-        "target_height": export.target_height,
-        "frame_rate": export.frame_rate.value,
-        "video_codec": export.video_codec.value,
-        "video_bitrate_mbps": export.video_bitrate_mbps,
-        "audio_codec": export.audio_codec.value,
-        "audio_sample_rate": export.audio_sample_rate,
-        "audio_bitrate_kbps": export.audio_bitrate_kbps,
-        "color_space": export.color_space.value,
-        "two_pass": export.two_pass,
-        "ffmpeg_preset": export.ffmpeg_preset,
-    }
-    for key, current in current_values.items():
-        if key not in payload:
-            continue
-        value = payload[key]
-        if key in {"target_width", "target_height"}:
-            normalized = None if value in {"", None} else max(2, int(value))
-        elif key == "video_bitrate_mbps":
-            normalized = max(0.1, float(value))
-        elif key == "audio_sample_rate":
-            normalized = max(8000, int(value))
-        elif key == "audio_bitrate_kbps":
-            normalized = max(32, int(value))
-        elif key == "two_pass":
-            normalized = bool(value)
-        else:
-            normalized = str(value)
-        if normalized != current:
-            return False
-    return True
+    return export_settings_payload_matches(
+        project.export,
+        payload,
+        comparison_fields=EXPORT_SETTINGS_SYNC_COMPARISON_FIELDS,
+    )
 
 
 def _sync_export_payload(controller: ProjectController, payload: dict[str, Any]) -> None:
@@ -515,6 +513,80 @@ def _sync_export_payload(controller: ProjectController, payload: dict[str, Any])
         controller.project, payload
     ):
         controller.set_export_settings(payload)
+
+
+def _trim_export_settings_from_payload(controller: ProjectController, payload: dict[str, Any]):
+    # SC-305 must keep trim requests on the shared export-settings contract:
+    # export preset ids and field names stay identical to the export pane, and
+    # trim-only keys (for example start/end timing) live alongside or around it.
+    return controller.trim_export_settings_from_payload(payload)
+
+
+def _merge_source_payload_from_browser_state(
+    state_payload: dict[str, Any],
+    source_id: str,
+) -> dict[str, Any] | None:
+    project_payload = state_payload.get("project")
+    if not isinstance(project_payload, dict):
+        return None
+    merge_sources_payload = project_payload.get("merge_sources")
+    if not isinstance(merge_sources_payload, list):
+        return None
+    return next(
+        (
+            item
+            for item in merge_sources_payload
+            if isinstance(item, dict) and str(item.get("id") or "") == source_id
+        ),
+        None,
+    )
+
+
+def _payload_alias_value(payload: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return None
+
+
+def _normalize_merge_source_update_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    placement_payload = payload.get("placement")
+    if not isinstance(placement_payload, dict):
+        placement_payload = {}
+
+    def resolve_position_value(*keys: str) -> Any:
+        value = _payload_alias_value(placement_payload, *keys)
+        if value is not None or any(key in placement_payload for key in keys):
+            return value
+        return _payload_alias_value(payload, *keys)
+
+    target_source_id = resolve_position_value("target_source_id", "base_source_id")
+    target_kind = resolve_position_value("target_kind")
+    if target_kind in {None, ""} and target_source_id not in {None, ""}:
+        target_kind = "merge_source"
+
+    return {
+        "angle_role": _payload_alias_value(payload, "angle_role", "camera_role"),
+        "placement_mode": resolve_position_value("mode", "placement_mode", "composition_mode"),
+        "placement_slot": resolve_position_value("slot", "placement_slot"),
+        "target_kind": target_kind,
+        "target_source_id": target_source_id,
+    }
+
+
+def _normalize_merge_source_trim_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized_payload = dict(payload)
+    trim_payload = normalized_payload.get("trim")
+    if not isinstance(trim_payload, dict):
+        return normalized_payload
+
+    normalized_trim_payload = dict(trim_payload)
+    if "start_ms" not in normalized_trim_payload and "trim_start_ms" in normalized_trim_payload:
+        normalized_trim_payload["start_ms"] = normalized_trim_payload["trim_start_ms"]
+    if "end_ms" not in normalized_trim_payload and "trim_end_ms" in normalized_trim_payload:
+        normalized_trim_payload["end_ms"] = normalized_trim_payload["trim_end_ms"]
+    normalized_payload["trim"] = normalized_trim_payload
+    return normalized_payload
 
 
 def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: int = 10) -> int:
@@ -914,6 +986,9 @@ class BrowserControlServer:
                 self,
             ) -> dict[str, dict[str, tuple[str, tuple[str, ...]]]]:
                 return {
+                    "trim_backend": {
+                        "/api/merge/source/trim": ("_handle_merge_source_trim", ()),
+                    },
                     "library_records": {
                         "/api/library/list": ("_handle_library_list", ("_no_body",)),
                         "/api/library/filter": ("_handle_library_filter", ()),
@@ -1124,7 +1199,15 @@ class BrowserControlServer:
                         None if payload.get("current") in {"", None} else str(payload["current"])
                     )
                     home = None if payload.get("home") in {"", None} else str(payload["home"])
-                    chooser_current = requested_current or home
+                    active_project_path = (
+                        None if controller.project_path is None else str(controller.project_path)
+                    )
+                    chooser_current = _dialog_chooser_current(
+                        kind,
+                        requested_current,
+                        home,
+                        active_project_path,
+                    )
                     activity.log(
                         "api.dialog.path.start",
                         kind=kind,
@@ -2019,6 +2102,7 @@ class BrowserControlServer:
                         str(source_id), int(payload["sync_delta_ms"])
                     )
                     return
+                normalized_payload = _normalize_merge_source_update_payload(payload)
                 controller.set_merge_source_position(
                     str(source_id),
                     None
@@ -2028,8 +2112,20 @@ class BrowserControlServer:
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
                     None
-                    if payload.get("angle_role") in {None, ""}
-                    else str(payload["angle_role"]),
+                    if normalized_payload["angle_role"] in {None, ""}
+                    else str(normalized_payload["angle_role"]),
+                    None
+                    if normalized_payload["placement_mode"] in {None, ""}
+                    else str(normalized_payload["placement_mode"]),
+                    None
+                    if normalized_payload["placement_slot"] in {None, ""}
+                    else str(normalized_payload["placement_slot"]),
+                    None
+                    if normalized_payload["target_kind"] in {None, ""}
+                    else str(normalized_payload["target_kind"]),
+                    None
+                    if normalized_payload["target_source_id"] in {None, ""}
+                    else str(normalized_payload["target_source_id"]),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(
@@ -2041,6 +2137,29 @@ class BrowserControlServer:
                 if source_id in {None, ""}:
                     raise ValueError("source_id is required")
                 controller.rerun_merge_source_analysis(str(source_id))
+
+            def _handle_merge_source_trim(self, body: dict[str, Any]) -> dict[str, Any]:
+                normalized_body = _normalize_merge_source_trim_payload(body)
+                requested_source_id = normalized_body.get("source_id") or normalized_body.get("id")
+                if requested_source_id in {None, ""}:
+                    raise ValueError("source_id is required")
+
+                with controller_lock:
+                    trimmed_source = controller.trim_merge_source_from_payload(normalized_body)
+                    server._bump_media_url_token()
+                    controller.autosave_project_if_needed()
+                    state_payload = self._browser_state()
+
+                merge_source_payload = _merge_source_payload_from_browser_state(
+                    state_payload,
+                    str(trimmed_source.id),
+                )
+                if merge_source_payload is None:
+                    raise RuntimeError(
+                        "Updated merge source state is unavailable after trimming."
+                    )
+                state_payload["merge_source"] = merge_source_payload
+                return state_payload
 
             def _reset_merge_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_merge_defaults()

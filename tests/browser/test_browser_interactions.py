@@ -179,6 +179,178 @@ def _ensure_overlay_visible(page) -> None:
     page.wait_for_function("() => document.getElementById('show-overlay').checked === true")
 
 
+def _capture_direct_merge_preview_batch_reseek_phase(
+    page,
+    *,
+    primary_time_s: float,
+    primary_paused: bool,
+    preview_times_s: list[float],
+    preview_paused: bool,
+    playback_rate: float = 1.0,
+) -> list[dict[str, object]]:
+    return page.evaluate(
+        """({ primaryTimeS, primaryPaused, previewTimesS, previewPaused, playbackRate }) => {
+            const layer = document.getElementById('merge-preview-layer');
+            if (!(layer instanceof HTMLElement)) {
+                throw new Error('Merge preview layer is unavailable.');
+            }
+            layer.innerHTML = '';
+            render();
+
+            const primary = document.getElementById('primary-video');
+            if (!(primary instanceof HTMLMediaElement)) {
+                throw new Error('Primary video element is unavailable.');
+            }
+
+            const previewItems = Array.from(
+                document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]')
+            );
+            const previews = previewItems.map((item) => item.querySelector('video'));
+            if (previews.length !== previewTimesS.length || previews.some((preview) => !(preview instanceof HTMLMediaElement))) {
+                throw new Error(`Expected ${previewTimesS.length} merge preview videos, found ${previews.length}.`);
+            }
+
+            const ensureHarness = (video) => {
+                if (video.__splitshotMergePreviewHarness) return video.__splitshotMergePreviewHarness;
+                const state = {
+                    paused: true,
+                    currentTime: Number(video.currentTime || 0),
+                    playbackRate: Number(video.playbackRate || 1) || 1,
+                    readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+                    playCount: 0,
+                    pauseCount: 0,
+                    fastSeekCalls: [],
+                };
+
+                Object.defineProperty(video, 'paused', {
+                    configurable: true,
+                    get: () => state.paused,
+                });
+                Object.defineProperty(video, 'currentTime', {
+                    configurable: true,
+                    get: () => state.currentTime,
+                    set: (value) => {
+                        state.currentTime = Number(value) || 0;
+                    },
+                });
+                Object.defineProperty(video, 'playbackRate', {
+                    configurable: true,
+                    get: () => state.playbackRate,
+                    set: (value) => {
+                        state.playbackRate = Number(value) || 1;
+                    },
+                });
+                Object.defineProperty(video, 'defaultPlaybackRate', {
+                    configurable: true,
+                    get: () => state.playbackRate,
+                    set: (value) => {
+                        state.playbackRate = Number(value) || 1;
+                    },
+                });
+                Object.defineProperty(video, 'readyState', {
+                    configurable: true,
+                    get: () => state.readyState,
+                });
+
+                video.play = () => {
+                    state.paused = false;
+                    state.playCount += 1;
+                    return Promise.resolve();
+                };
+                video.pause = () => {
+                    state.paused = true;
+                    state.pauseCount += 1;
+                };
+                video.fastSeek = (value) => {
+                    const numericValue = Number(value) || 0;
+                    state.currentTime = numericValue;
+                    state.fastSeekCalls.push(numericValue);
+                };
+
+                const harness = {
+                    setState(nextState) {
+                        state.paused = Boolean(nextState.paused);
+                        state.currentTime = Number(nextState.currentTime) || 0;
+                        state.playbackRate = Number(nextState.playbackRate) || 1;
+                        state.readyState = Number(nextState.readyState) || HTMLMediaElement.HAVE_CURRENT_DATA;
+                        state.playCount = 0;
+                        state.pauseCount = 0;
+                        state.fastSeekCalls = [];
+                    },
+                    snapshot() {
+                        return {
+                            paused: state.paused,
+                            currentTime: state.currentTime,
+                            playbackRate: state.playbackRate,
+                            playCount: state.playCount,
+                            pauseCount: state.pauseCount,
+                            fastSeekCalls: [...state.fastSeekCalls],
+                        };
+                    },
+                };
+
+                Object.defineProperty(video, '__splitshotMergePreviewHarness', {
+                    configurable: true,
+                    value: harness,
+                });
+                return harness;
+            };
+
+            ensureHarness(primary).setState({
+                paused: primaryPaused,
+                currentTime: primaryTimeS,
+                playbackRate,
+                readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+            });
+            previews.forEach((preview, index) => {
+                ensureHarness(preview).setState({
+                    paused: previewPaused,
+                    currentTime: previewTimesS[index],
+                    playbackRate,
+                    readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
+                });
+                preview.dataset.syncCorrectionMode = '';
+            });
+
+            // Directly arm the boundary flag and invoke the batch sync helper.
+            // This harness measures batch reseek convergence only; it does not
+            // claim full event wiring coverage.
+            setPreviewSeekBoundary(true);
+            syncMergePreviewElements(primary);
+
+            return previewItems.map((item, index) => {
+                const preview = previews[index];
+                const snapshot = preview.__splitshotMergePreviewHarness.snapshot();
+                const sourceId = item.dataset.sourceId || '';
+                const source = (state?.project?.merge_sources || []).find((mergeSource, mergeIndex) => {
+                    const candidateId = String(mergeSource?.id || mergeSource?.asset?.id || mergeIndex);
+                    return candidateId === sourceId;
+                }) || null;
+                const target = Math.max(0, primary.currentTime + ((source?.sync_offset_ms || 0) / 1000));
+                return {
+                    sourceId,
+                    target,
+                    currentTime: snapshot.currentTime,
+                    delta: Math.abs(snapshot.currentTime - target),
+                    paused: snapshot.paused,
+                    playCount: snapshot.playCount,
+                    pauseCount: snapshot.pauseCount,
+                    fastSeekCalls: snapshot.fastSeekCalls,
+                    playbackRate: snapshot.playbackRate,
+                    correctionMode: preview.dataset.syncCorrectionMode || '',
+                };
+            });
+        }""",
+        {
+            "primaryTimeS": primary_time_s,
+            "primaryPaused": primary_paused,
+            "previewTimesS": preview_times_s,
+            "previewPaused": preview_paused,
+            "playbackRate": playback_rate,
+        },
+    )
+
+
 class _BrowserFakeStatus:
     def __init__(self, state: str, message: str, details: dict[str, object]) -> None:
         self.state = state
@@ -896,7 +1068,7 @@ def test_project_pane_output_hook_close_hides_editor(tmp_path: Path) -> None:
         server.shutdown()
 
 
-def test_compose_pane_trim_dead_time_uses_output_profile_editor(tmp_path: Path) -> None:
+def test_compose_pane_trim_settings_use_output_profile_editor(tmp_path: Path) -> None:
     controller = ProjectController()
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
@@ -916,6 +1088,7 @@ def test_compose_pane_trim_dead_time_uses_output_profile_editor(tmp_path: Path) 
                 page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
 
                 _open_tool(page, "merge")
+                assert page.locator('[data-output-hook="run-window"]').text_content().strip() == "Trim Settings"
                 page.locator('[data-output-hook="run-window"]').click()
                 page.wait_for_function(
                     """() => {
@@ -5569,6 +5742,103 @@ def test_merge_default_pip_controls_commit_to_state_and_label(synthetic_video_fa
                 assert page.locator("#pip-size-label").text_content().strip() == "35%"
                 assert page.locator("#pip-x").input_value() == "1"
                 assert page.locator("#pip-y").input_value() == "1"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_direct_merge_preview_batch_boundary_reseek_converges_all_added_previews_after_play_seek_and_forced_drift(
+    synthetic_video_factory,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="merge-preview-sync-primary-ui"))
+    merge_paths = [
+        Path(synthetic_video_factory(name="merge-preview-sync-secondary-ui")),
+        Path(synthetic_video_factory(name="merge-preview-sync-tertiary-ui")),
+        Path(synthetic_video_factory(name="merge-preview-sync-quaternary-ui")),
+    ]
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "merge")
+
+                for expected_count, merge_path in enumerate(merge_paths, start=1):
+                    page.locator("#merge-media-input").set_input_files(str(merge_path))
+                    page.wait_for_function(
+                        "(expectedCount) => (state?.project?.merge_sources || []).length === expectedCount",
+                        arg=expected_count,
+                    )
+
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item video').length === 3"
+                )
+
+                play_phase = _capture_direct_merge_preview_batch_reseek_phase(
+                    page,
+                    primary_time_s=4.25,
+                    primary_paused=False,
+                    preview_times_s=[0.1, 1.4, 2.6],
+                    preview_paused=True,
+                    playback_rate=1.1,
+                )
+                seek_phase = _capture_direct_merge_preview_batch_reseek_phase(
+                    page,
+                    primary_time_s=8.75,
+                    primary_paused=True,
+                    preview_times_s=[1.0, 3.8, 5.9],
+                    preview_paused=False,
+                    playback_rate=1.0,
+                )
+                forced_drift_phase = _capture_direct_merge_preview_batch_reseek_phase(
+                    page,
+                    primary_time_s=11.5,
+                    primary_paused=True,
+                    preview_times_s=[0.35, 4.25, 9.1],
+                    preview_paused=True,
+                    playback_rate=0.95,
+                )
+
+                assert len(play_phase) == 3
+                assert len({phase["sourceId"] for phase in play_phase}) == 3
+                assert [phase["sourceId"] for phase in play_phase] == [
+                    phase["sourceId"] for phase in seek_phase
+                ] == [phase["sourceId"] for phase in forced_drift_phase]
+
+                assert [len(phase["fastSeekCalls"]) for phase in play_phase] == [1, 1, 1]
+                assert [len(phase["fastSeekCalls"]) for phase in seek_phase] == [1, 1, 1]
+                assert [len(phase["fastSeekCalls"]) for phase in forced_drift_phase] == [1, 1, 1]
+
+                for preview in play_phase:
+                    assert preview["correctionMode"] == "reseek"
+                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
+                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
+                    assert preview["paused"] is False
+                    assert preview["playCount"] == 1
+                    assert preview["pauseCount"] == 0
+
+                for preview in seek_phase:
+                    assert preview["correctionMode"] == "reseek"
+                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
+                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
+                    assert preview["paused"] is True
+                    assert preview["playCount"] == 0
+                    assert preview["pauseCount"] == 1
+
+                for preview in forced_drift_phase:
+                    assert preview["correctionMode"] == "reseek"
+                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
+                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
+                    assert preview["paused"] is True
+                    assert preview["playCount"] == 0
+                    assert preview["pauseCount"] == 0
             finally:
                 browser.close()
     finally:

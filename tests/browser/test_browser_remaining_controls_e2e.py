@@ -772,7 +772,15 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
     primary_path = Path(synthetic_video_factory(name="merge-remaining-primary-ui"))
     secondary_path = Path(synthetic_video_factory(name="merge-remaining-secondary-ui"))
     tertiary_path = Path(synthetic_video_factory(name="merge-remaining-tertiary-ui"))
-    server = BrowserControlServer(port=0)
+    expected_project_home = primary_path.parent / "browser-test.ssproj"
+    chooser_calls: list[tuple[str, str | None]] = []
+    selected_paths = iter((secondary_path, tertiary_path))
+
+    def fake_path_chooser(kind: str, current: str | None) -> str:
+        chooser_calls.append((kind, current))
+        return str(next(selected_paths))
+
+    server = BrowserControlServer(port=0, path_chooser=fake_path_chooser)
     server.start_background(open_browser=False)
     try:
         with sync_playwright() as playwright:
@@ -781,10 +789,21 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 _load_primary_video(page, primary_path)
                 _open_tool(page, "merge")
 
-                with page.expect_file_chooser() as file_chooser_info:
-                    page.locator("#add-merge-media").click()
-                file_chooser_info.value.set_files([str(secondary_path), str(tertiary_path)])
+                page.locator("#add-merge-media").click()
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                page.locator("#add-merge-media").click()
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+                assert chooser_calls == [
+                    ("secondary", str(expected_project_home)),
+                    ("secondary", str(expected_project_home)),
+                ]
+                page.wait_for_function(
+                    """(expectedPaths) => {
+                        const actualPaths = (state?.project?.merge_sources || []).map((item) => item.asset.path);
+                        return JSON.stringify(actualPaths) === JSON.stringify(expectedPaths);
+                    }""",
+                    arg=[str(secondary_path), str(tertiary_path)],
+                )
 
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
@@ -809,6 +828,11 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 first_card = page.locator(".merge-media-card").first
                 first_body = first_card.locator(".merge-media-card-body")
                 source_id = first_card.get_attribute("data-source-id")
+                second_source_id = page.locator(".merge-media-card").nth(1).get_attribute(
+                    "data-source-id"
+                )
+                assert source_id is not None
+                assert second_source_id is not None
                 if first_body.evaluate("body => body.hidden"):
                     first_card.locator('button[aria-label*="composition item controls"]').click()
                     page.wait_for_function(
@@ -831,6 +855,96 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 )
                 first_body.wait_for(state="visible")
 
+                first_card.get_by_role("heading", name="Trim Video").wait_for(state="visible")
+                first_card.get_by_role("heading", name="Placement").wait_for(state="visible")
+                first_card.get_by_role("button", name="Trim Settings").wait_for(state="visible")
+                first_body.get_by_text("Camera role", exact=True).wait_for(state="visible")
+                assert first_card.get_by_role("button", name="Trim Video").is_enabled() is True
+
+                _set_input_value(
+                    first_card.locator('[data-merge-source-trim-field="start_seconds"]'),
+                    "0.500",
+                )
+                _set_input_value(
+                    first_card.locator('[data-merge-source-trim-field="end_seconds"]'),
+                    "1.250",
+                )
+                first_card.get_by_role("button", name="Reset Range").click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const card = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`);
+                        const start = card?.querySelector('[data-merge-source-trim-field="start_seconds"]');
+                        const end = card?.querySelector('[data-merge-source-trim-field="end_seconds"]');
+                        return Number.parseFloat(start?.value || 'NaN') === 0 && end?.value === '';
+                    }""",
+                    arg=source_id,
+                )
+
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option("pip")
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        return Boolean(source) && source.placement?.mode === 'pip';
+                    }""",
+                    arg=source_id,
+                )
+                first_card.locator('[data-merge-source-field="target_kind"]').select_option(
+                    "merge_source"
+                )
+                first_card.locator('[data-merge-source-field="target_source_id"]').select_option(
+                    second_source_id
+                )
+                first_card.locator('[data-merge-source-field="placement_slot"]').select_option("left")
+                page.wait_for_function(
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        return Boolean(source)
+                            && source.placement?.mode === 'pip'
+                            && source.placement?.slot === 'left'
+                            && source.placement?.target_kind === 'merge_source'
+                            && source.placement?.target_source_id === payload.secondSourceId;
+                    }""",
+                    arg={"sourceId": source_id, "secondSourceId": second_source_id},
+                )
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const card = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`);
+                        const xField = card?.querySelector('[data-merge-source-field="x"]')?.closest('.merge-source-field');
+                        const yField = card?.querySelector('[data-merge-source-field="y"]')?.closest('.merge-source-field');
+                        const hint = card?.querySelector('[data-merge-source-sync-hint]');
+                        return Boolean(xField && yField && hint)
+                            && xField.hidden === true
+                            && yField.hidden === true
+                            && hint.textContent === "These values are saved per item and take effect in this item's placement and export timing.";
+                    }""",
+                    arg=source_id,
+                )
+                first_card.locator('[data-merge-source-field="placement_slot"]').select_option(
+                    "overlay"
+                )
+                page.wait_for_function(
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        return Boolean(source)
+                            && source.placement?.slot === 'overlay'
+                            && source.placement?.target_source_id === payload.secondSourceId;
+                    }""",
+                    arg={"sourceId": source_id, "secondSourceId": second_source_id},
+                )
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const card = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`);
+                        const xField = card?.querySelector('[data-merge-source-field="x"]')?.closest('.merge-source-field');
+                        const yField = card?.querySelector('[data-merge-source-field="y"]')?.closest('.merge-source-field');
+                        const hint = card?.querySelector('[data-merge-source-sync-hint]');
+                        return Boolean(xField && yField && hint)
+                            && xField.hidden === false
+                            && yField.hidden === false
+                            && hint.textContent === "Use these nudges or drag the preview to match the primary video exactly.";
+                    }""",
+                    arg=source_id,
+                )
+
                 first_card.locator('[data-merge-source-field="angle_role"]').select_option("static")
                 page.wait_for_function(
                     """(payload) => {
@@ -839,6 +953,15 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     }""",
                     arg={"sourceId": source_id, "expected": "static"},
                 )
+
+                second_card = page.locator(".merge-media-card").nth(1)
+                second_body = second_card.locator(".merge-media-card-body")
+                if second_body.evaluate("body => body.hidden"):
+                    second_card.locator('button[aria-label*="composition item controls"]').click()
+                    page.wait_for_function(
+                        "(sourceId) => document.querySelector('.merge-media-card[data-source-id="' + sourceId + '"] .merge-media-card-body')?.hidden === false",
+                        arg=second_source_id,
+                    )
 
                 _set_input_value(first_card.locator('[data-merge-source-field="size"]'), "60")
                 _set_input_value(first_card.locator('[data-merge-source-field="opacity"]'), "80")
@@ -855,37 +978,46 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         },
                     )
 
-                analyze_button = first_card.locator('button:has-text("beep sync")').first
+                analyze_button = second_card.locator('button:has-text("beep sync")').first
                 analyze_button.wait_for(state="visible")
                 analyze_button.click()
                 page.wait_for_function(
-                    """(sourceId) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
-                        return Boolean(source)
-                            && source.supports_sync_analysis === true
-                            && source.sync_analysis_status === 'ready'
-                            && source.sync_offset_source === 'auto'
-                            && source.secondary_beep_time_ms !== null;
+                    """(payload) => {
+                        const firstSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.firstSourceId);
+                        const secondSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.secondSourceId);
+                        return Boolean(firstSource && secondSource)
+                            && firstSource.supports_sync_analysis === false
+                            && firstSource.can_rerun_sync_analysis === false
+                            && firstSource.is_analyzed_sync_source === false
+                            && firstSource.sync_analysis_status === 'idle'
+                            && firstSource.secondary_beep_time_ms === null
+                            && secondSource.supports_sync_analysis === true
+                            && secondSource.can_rerun_sync_analysis === true
+                            && secondSource.is_analyzed_sync_source === true
+                            && secondSource.sync_analysis_status === 'ready'
+                            && secondSource.sync_offset_source === 'auto'
+                            && secondSource.secondary_beep_time_ms !== null;
                     }""",
-                    arg=first_card.get_attribute("data-source-id"),
+                    arg={"firstSourceId": source_id, "secondSourceId": second_source_id},
                 )
 
                 page.wait_for_function(
-                    """(sourceId) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
                         return Boolean(source)
                             && source.angle_role === 'static'
+                            && source.placement?.mode === 'pip'
+                            && source.placement?.slot === 'overlay'
+                            && source.placement?.target_kind === 'merge_source'
+                            && source.placement?.target_source_id === payload.secondSourceId
                             && source.pip_size_percent === 60
                             && source.opacity === 0.8
                             && source.pip_x === 0.1
                             && source.pip_y === 0.2;
                     }""",
-                    arg=first_card.get_attribute("data-source-id"),
+                    arg={"sourceId": source_id, "secondSourceId": second_source_id},
                 )
 
-                second_source_id = (
-                    page.locator(".merge-media-card").nth(1).get_attribute("data-source-id")
-                )
                 page.locator(".merge-media-card").nth(1).locator(
                     "[data-merge-source-remove]"
                 ).click()

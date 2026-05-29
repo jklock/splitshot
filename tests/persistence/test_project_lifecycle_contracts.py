@@ -90,12 +90,13 @@ def test_save_project_preserves_details_and_primary_after_project_json_path_roun
     )
 
     save_project(project, project_path / "project.json")
+    saved = json.loads((project_path / "project.json").read_text(encoding="utf-8"))
     loaded = load_project(project_path / "project.json")
 
     assert loaded.name == "Classifier Template"
     assert loaded.description == "Carry these settings forward"
-    assert Path(loaded.primary_video.path).parent == (project_path / "Input").resolve()
-    assert Path(loaded.primary_video.path).name == "primary.mp4"
+    assert Path(saved["primary_video"]["path"]).resolve(strict=False) == primary.resolve(strict=False)
+    assert Path(loaded.primary_video.path).resolve(strict=False) == primary.resolve(strict=False)
 
 
 def test_missing_required_project_dirs_reports_only_missing_entries(tmp_path: Path) -> None:

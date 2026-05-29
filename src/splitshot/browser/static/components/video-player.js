@@ -11,6 +11,14 @@ export function createVideoPlayerComponent({
   currentPipSizePercent = () => 35,
   previewFrameGeometry = () => null,
   normalizedCoordinateValue = (value) => value,
+  sourceIdentifier = (source, fallback = "") => source?.id || source?.asset?.id || fallback,
+  resolvedMergeSourcePreviewPlacement = () => ({
+    mode: "side_by_side",
+    slot: "right",
+    target_kind: "primary_video",
+    target_source_id: null,
+  }),
+  mergeSourceUsesFreeformPreviewDrag = () => false,
   currentSourceOpacity = () => 1,
   mergeSourcePipRect = () => ({ left: 0, top: 0, width: 1, height: 1 }),
   renderMergePreviewLayer = () => {},
@@ -69,26 +77,20 @@ export function createVideoPlayerComponent({
     }
 
     const mergePreview = Boolean(merge.enabled && mergeSources.length > 0);
+    const mergeSourceMap = new Map(
+      mergeSources.map((source, index) => [sourceIdentifier(source, String(index)), source]),
+    );
     if (mergePreviewLayer) {
       mergePreviewLayer.hidden = true;
-      if (merge.layout !== "pip") mergePreviewLayer.innerHTML = "";
+      if (!mergePreview) mergePreviewLayer.innerHTML = "";
     }
     stage.classList.toggle("merge-preview", mergePreview);
-    stage.classList.toggle("merge-side-by-side", mergePreview && merge.layout === "side_by_side");
-    stage.classList.toggle("merge-above-below", mergePreview && merge.layout === "above_below");
-    stage.classList.toggle("merge-pip", mergePreview && merge.layout === "pip");
-    stage.classList.toggle(
-      "merge-full-screen-portrait",
-      mergePreview && merge.layout === "full_screen_portrait",
-    );
-    stage.classList.toggle(
-      "merge-dual-center-hud",
-      mergePreview && merge.layout === "dual_center_hud",
-    );
-    stage.classList.toggle(
-      "merge-dual-top-hud",
-      mergePreview && merge.layout === "dual_top_hud",
-    );
+    stage.classList.toggle("merge-side-by-side", false);
+    stage.classList.toggle("merge-above-below", false);
+    stage.classList.toggle("merge-pip", false);
+    stage.classList.toggle("merge-full-screen-portrait", false);
+    stage.classList.toggle("merge-dual-center-hud", false);
+    stage.classList.toggle("merge-dual-top-hud", false);
 
     const frameGeometry = mergePreview ? null : previewFrameGeometry(video, stage);
     const pipSizeValue = currentPipSizePercent();
@@ -137,79 +139,27 @@ export function createVideoPlayerComponent({
       element.style.zIndex = "";
     });
 
-    if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
+    if (mergePreview && mergeSources.length > 0) {
       renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
+      mergePreviewLayer?.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
+        const source = mergeSourceMap.get(item.dataset.sourceId || "") || null;
+        const dragEnabled = Boolean(source && mergeSourceUsesFreeformPreviewDrag(source));
+        item.dataset.dragEnabled = dragEnabled ? "true" : "false";
+        item.style.cursor = dragEnabled ? "" : "default";
+        item.style.touchAction = dragEnabled ? "none" : "auto";
+        item.dataset.placementMode = source ? resolvedMergeSourcePreviewPlacement(source).mode : "";
+      });
       secondary.hidden = true;
       secondary.style.display = "none";
       secondaryImage.hidden = true;
       secondaryImage.style.display = "none";
     } else {
-      const showSecondaryVideo = mergePreview && !imageSecondary;
-      const showSecondaryImage = mergePreview && imageSecondary;
+      const showSecondaryVideo = false;
+      const showSecondaryImage = false;
       secondary.hidden = !showSecondaryVideo;
       secondary.style.display = showSecondaryVideo ? "" : "none";
       secondaryImage.hidden = !showSecondaryImage;
       secondaryImage.style.display = showSecondaryImage ? "block" : "none";
-
-      if (mergePreview) {
-        const activeSecondary = imageSecondary ? secondaryImage : secondary;
-        activeSecondary.style.opacity = String(currentSourceOpacity(mergeSources[0] || null));
-        const frameRect = previewFrameGeometry(video, stage)?.frameRect;
-        const secondaryWidth = Math.max(
-          1,
-          imageSecondary
-            ? (secondaryImage.naturalWidth || state.project.secondary_video?.width || 1)
-            : (secondary.videoWidth || state.project.secondary_video?.width || 1),
-        );
-        const secondaryHeight = Math.max(
-          1,
-          imageSecondary
-            ? (secondaryImage.naturalHeight || state.project.secondary_video?.height || 1)
-            : (secondary.videoHeight || state.project.secondary_video?.height || 1),
-        );
-        if (
-          (merge.layout === "pip" && frameRect)
-          || merge.layout === "full_screen_portrait"
-        ) {
-          const activeSource = mergeSources[0] || null;
-          const previewRect =
-            merge.layout === "full_screen_portrait"
-              ? {
-                  left: 0,
-                  top: 0,
-                  width: Math.max(1, stage.clientWidth || video.clientWidth || 1),
-                  height: Math.max(1, stage.clientHeight || video.clientHeight || 1),
-                }
-              : frameRect;
-          const rect = activeSource
-            ? mergeSourcePipRect(activeSource, previewRect, pipSizeValue)
-            : (() => {
-                let insetWidth = Math.max(1, Math.round(previewRect.width * (pipSizeValue / 100)));
-                let insetHeight = Math.max(1, Math.round((secondaryHeight / secondaryWidth) * insetWidth));
-                if (insetHeight > previewRect.height) {
-                  const fitScale = previewRect.height / insetHeight;
-                  insetWidth = Math.max(1, Math.round(insetWidth * fitScale));
-                  insetHeight = Math.max(1, Math.round(insetHeight * fitScale));
-                }
-                const travelX = Math.max(0, previewRect.width - insetWidth);
-                const travelY = Math.max(0, previewRect.height - insetHeight);
-                return {
-                  left: previewRect.left + (travelX * (normalizedCoordinateValue(merge.pip_x) ?? 1)),
-                  top: previewRect.top + (travelY * (normalizedCoordinateValue(merge.pip_y) ?? 1)),
-                  width: insetWidth,
-                  height: insetHeight,
-                };
-              })();
-          activeSecondary.style.position = "absolute";
-          activeSecondary.style.left = `${rect.left}px`;
-          activeSecondary.style.top = `${rect.top}px`;
-          activeSecondary.style.width = `${rect.width}px`;
-          activeSecondary.style.height = `${rect.height}px`;
-          activeSecondary.style.maxWidth = `${rect.width}px`;
-          activeSecondary.style.maxHeight = `${rect.height}px`;
-          activeSecondary.style.zIndex = "1";
-        }
-      }
     }
 
     const waveformEnabled = Boolean(state.project.analysis?.shots?.length);

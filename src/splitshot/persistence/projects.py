@@ -7,7 +7,14 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from splitshot.domain.models import MergeSource, Project, project_from_dict, project_to_dict
+from splitshot.domain.models import (
+    Project,
+    VideoAsset,
+    _video_from_dict,
+    ensure_merge_source_composition_truth,
+    project_from_dict,
+    project_to_dict,
+)
 
 PROJECT_FILENAME = "project.json"
 INPUT_DIRNAME = "Input"
@@ -17,6 +24,7 @@ POPUP_DIRNAME = "Markers"
 REQUIRED_PROJECT_DIRNAMES = (INPUT_DIRNAME, PRACTISCORE_DIRNAME, OUTPUT_DIRNAME)
 
 _BROWSER_UPLOAD_PREFIX = re.compile(r"^[A-Fa-f0-9]{32}_")
+_BROWSER_SESSION_DIR_PREFIX = "splitshot-browser-"
 UTC = timezone.utc
 
 
@@ -186,6 +194,96 @@ def copy_path_to_project_subdir(
     return str(target.resolve())
 
 
+def _resolve_saved_path_value(path_value: str, project_path: Path) -> str:
+    if not path_value:
+        return path_value
+    path_obj = Path(path_value).expanduser()
+    if path_obj.is_absolute():
+        return str(path_obj)
+    return str((project_path / path_obj).resolve())
+
+
+def _merge_source_id_for_video_asset(project: Project, asset: VideoAsset | None) -> str | None:
+    if asset is None:
+        return None
+    asset_path = str(asset.path or "").strip()
+    for source in project.merge_sources:
+        if source.asset is asset:
+            return source.id
+        if asset_path and str(source.asset.path or "").strip() == asset_path:
+            return source.id
+    return None
+
+
+def _restore_explicit_secondary_video(
+    project: Project,
+    secondary_video: VideoAsset | None,
+    *,
+    source_id: str | None = None,
+) -> None:
+    if secondary_video is None:
+        project.secondary_video = None
+        return
+
+    if source_id:
+        for source in project.merge_sources:
+            if source.id == source_id:
+                project.secondary_video = source.asset
+                return
+
+    secondary_path = str(secondary_video.path or "").strip()
+    if secondary_path:
+        for source in project.merge_sources:
+            if str(source.asset.path or "").strip() == secondary_path:
+                project.secondary_video = source.asset
+                return
+
+    project.secondary_video = secondary_video
+
+
+def _explicit_secondary_video_from_payload(
+    payload: object,
+    project_path: Path,
+) -> VideoAsset | None:
+    if payload is None:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    secondary_video = _video_from_dict(payload)
+    secondary_video.path = _resolve_saved_path_value(secondary_video.path, project_path)
+    return secondary_video
+
+
+def _is_browser_upload_compatibility_path(project_path: Path, source_path: str) -> bool:
+    if not source_path:
+        return False
+    source = Path(source_path).expanduser()
+    if not source.is_absolute() or not source.exists() or not source.is_file():
+        return False
+    if _is_within_project(project_path, source):
+        return False
+    return source.parent.name.startswith(_BROWSER_SESSION_DIR_PREFIX) and bool(
+        _BROWSER_UPLOAD_PREFIX.match(source.name)
+    )
+
+
+def _bundle_browser_upload_compatibility_media(project: Project, project_path: Path) -> None:
+    def bundle_if_needed(path_value: str) -> str:
+        if not _is_browser_upload_compatibility_path(project_path, path_value):
+            return path_value
+        return copy_path_to_project_subdir(project_path, path_value, INPUT_DIRNAME)
+
+    if project.primary_video.path:
+        project.primary_video.path = bundle_if_needed(project.primary_video.path)
+
+    if project.secondary_video is not None and project.secondary_video.path and not project.merge_sources:
+        project.secondary_video.path = bundle_if_needed(project.secondary_video.path)
+
+    for source in project.merge_sources:
+        if source.asset.path:
+            source.asset.path = bundle_if_needed(source.asset.path)
+
+
 def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, object]:
     payload = project_to_dict(project)
 
@@ -208,6 +306,12 @@ def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, obj
         asset = source.get("asset")
         if isinstance(asset, dict):
             asset["path"] = relativize(asset.get("path"))
+        trim_derivative = source.get("trim_derivative")
+        if isinstance(trim_derivative, dict):
+            trim_derivative["original_path"] = relativize(trim_derivative.get("original_path"))
+            trim_derivative["derivative_path"] = relativize(
+                trim_derivative.get("derivative_path")
+            )
     scoring = payload.get("scoring", {})
     if isinstance(scoring, dict):
         scoring["practiscore_source_path"] = relativize(scoring.get("practiscore_source_path"))
@@ -225,18 +329,17 @@ def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, obj
 
 def _resolve_saved_paths(project: Project, project_path: Path) -> None:
     def resolve(path_value: str) -> str:
-        if not path_value:
-            return path_value
-        path_obj = Path(path_value).expanduser()
-        if path_obj.is_absolute():
-            return str(path_obj)
-        return str((project_path / path_obj).resolve())
+        return _resolve_saved_path_value(path_value, project_path)
 
     project.primary_video.path = resolve(project.primary_video.path)
     if project.secondary_video is not None:
         project.secondary_video.path = resolve(project.secondary_video.path)
     for source in project.merge_sources:
         source.asset.path = resolve(source.asset.path)
+        if source.trim_derivative.original_path:
+            source.trim_derivative.original_path = resolve(source.trim_derivative.original_path)
+        if source.trim_derivative.derivative_path:
+            source.trim_derivative.derivative_path = resolve(source.trim_derivative.derivative_path)
     project.scoring.practiscore_source_path = resolve(project.scoring.practiscore_source_path)
     if project.scoring.imported_stage is not None:
         project.scoring.imported_stage.source_path = resolve(
@@ -250,25 +353,7 @@ def _resolve_saved_paths(project: Project, project_path: Path) -> None:
 
 
 def _normalize_project_assets(project: Project, project_path: Path) -> None:
-    project.primary_video.path = copy_path_to_project_subdir(
-        project_path, project.primary_video.path, INPUT_DIRNAME
-    )
-
-    bundled_sources: list[MergeSource] = []
-    for source in project.merge_sources:
-        if source.asset.path:
-            source.asset.path = copy_path_to_project_subdir(
-                project_path, source.asset.path, INPUT_DIRNAME
-            )
-        bundled_sources.append(source)
-    project.merge_sources = bundled_sources
-
-    if project.secondary_video is not None and project.secondary_video.path:
-        project.secondary_video.path = copy_path_to_project_subdir(
-            project_path, project.secondary_video.path, INPUT_DIRNAME
-        )
-    if project.merge_sources:
-        project.secondary_video = project.merge_sources[0].asset
+    _bundle_browser_upload_compatibility_media(project, project_path)
 
     practiscore_source_path = project.scoring.practiscore_source_path
     practiscore_source_name = project.scoring.practiscore_source_name or None
@@ -300,6 +385,7 @@ def _normalize_project_assets(project: Project, project_path: Path) -> None:
 
 def save_project(project: Project, bundle_path: str | Path) -> Path:
     project_path = ensure_project_structure(bundle_path)
+    ensure_merge_source_composition_truth(project)
     _normalize_project_assets(project, project_path)
     metadata_path = project_metadata_path(project_path)
     metadata_path.write_text(json.dumps(_project_to_disk_dict(project, project_path), indent=2))
@@ -311,7 +397,8 @@ def load_project(bundle_path: str | Path) -> Project:
     metadata_path = project_metadata_path(project_path)
     if not metadata_path.exists():
         raise FileNotFoundError(f"No {PROJECT_FILENAME} found in {project_path}.")
-    project = project_from_dict(json.loads(metadata_path.read_text()))
+    raw_payload = json.loads(metadata_path.read_text())
+    project = project_from_dict(raw_payload)
     _resolve_saved_paths(project, project_path)
     return project
 

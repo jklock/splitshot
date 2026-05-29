@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from splitshot.domain.models import Project, project_to_dict
+from splitshot.domain.models import MERGE_SOURCE_ANGLE_ROLE_VALUES, Project, project_to_dict
 from splitshot.export.presets import export_presets_for_api
 from splitshot.presentation.stage import build_stage_presentation
 from splitshot.scoring.logic import (
@@ -180,6 +180,10 @@ _library_summary_cache_time: float = 0.0
 _proxy_summary_cache: dict[str, Any] = {}
 _proxy_summary_cache_time: float = 0.0
 _CACHE_TTL_SECONDS = 5.0
+
+_MERGE_SOURCE_ROLE_PRIORITY = {
+    role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
+}
 
 
 def _build_library_summary(controller: Any | None) -> dict[str, Any]:
@@ -435,47 +439,127 @@ def _build_stage_media_summary(
     }
 
 
+def _merge_source_payload_id(item: object) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    source_id = item.get("id")
+    if source_id in {None, ""}:
+        return None
+    return str(source_id)
+
+
+def _merge_source_asset_payload(item: object) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+    asset_payload = item.get("asset")
+    return asset_payload if isinstance(asset_payload, dict) else {}
+
+
+def _merge_source_media_kind(item: object) -> str:
+    asset_payload = _merge_source_asset_payload(item)
+    return str(
+        asset_payload.get("media_kind")
+        or ("still_image" if asset_payload.get("is_still_image") else "video")
+    )
+
+
+def _merge_source_angle_role(item: object) -> str:
+    asset_payload = _merge_source_asset_payload(item)
+    default_role = "detail" if asset_payload.get("is_still_image") else "follow"
+    if not isinstance(item, dict):
+        return default_role
+    normalized_role = str(item.get("angle_role") or default_role).strip().lower()
+    if normalized_role in _MERGE_SOURCE_ROLE_PRIORITY:
+        return normalized_role
+    return default_role
+
+
+def _merge_source_order_index(item: object, fallback_index: int) -> int:
+    if not isinstance(item, dict):
+        return fallback_index
+    placement_payload = item.get("placement")
+    raw_order_index = None
+    if isinstance(placement_payload, dict):
+        raw_order_index = placement_payload.get("order_index", placement_payload.get("layer_index"))
+    if raw_order_index in {None, ""}:
+        raw_order_index = item.get("order_index", item.get("display_order"))
+    try:
+        return max(0, int(raw_order_index))
+    except (TypeError, ValueError):
+        return fallback_index
+
+
+def _merge_source_supports_secondary_analysis(item: object) -> bool:
+    asset_payload = _merge_source_asset_payload(item)
+    return bool(str(asset_payload.get("path") or "").strip()) and not bool(
+        asset_payload.get("is_still_image")
+    ) and _merge_source_media_kind(item) != "animated_gif"
+
+
+def _first_sync_analysis_source_id(merge_sources_payload: list[object]) -> str | None:
+    analyzable_sources = [
+        (index, item)
+        for index, item in enumerate(merge_sources_payload)
+        if _merge_source_payload_id(item) is not None
+        and _merge_source_supports_secondary_analysis(item)
+    ]
+    if not analyzable_sources:
+        return None
+    _, selected_item = min(
+        analyzable_sources,
+        key=lambda value: (
+            _MERGE_SOURCE_ROLE_PRIORITY.get(
+                _merge_source_angle_role(value[1]),
+                len(_MERGE_SOURCE_ROLE_PRIORITY),
+            ),
+            _merge_source_order_index(value[1], value[0]),
+            value[0],
+        ),
+    )
+    return _merge_source_payload_id(selected_item)
+
+
 def _augment_merge_source_summary(project_payload: dict[str, Any]) -> None:
     merge_sources_payload = project_payload.get("merge_sources")
     analysis_payload = project_payload.get("analysis")
     if not isinstance(merge_sources_payload, list) or not isinstance(analysis_payload, dict):
         return
 
+    available_source_ids = {
+        source_id
+        for item in merge_sources_payload
+        if (source_id := _merge_source_payload_id(item)) is not None
+    }
     analyzed_source_id = analysis_payload.get("analyzed_secondary_source_id")
-    first_analyzable_source_id = next(
-        (
-            item.get("id")
-            for item in merge_sources_payload
-            if isinstance(item, dict)
-            and isinstance(item.get("asset"), dict)
-            and not bool(item["asset"].get("is_still_image"))
-            and str(item["asset"].get("media_kind") or "video") != "animated_gif"
-        ),
-        None,
-    )
+    if analyzed_source_id in {None, ""}:
+        analyzed_source_id = None
+    else:
+        analyzed_source_id = str(analyzed_source_id)
+    if analyzed_source_id not in available_source_ids:
+        analyzed_source_id = None
+
+    eligible_source_id = _first_sync_analysis_source_id(merge_sources_payload)
+    sync_status_source_id = analyzed_source_id or eligible_source_id
+
     for item in merge_sources_payload:
         if not isinstance(item, dict):
             continue
-        asset_payload = item.get("asset")
-        if isinstance(asset_payload, dict):
-            item["media_kind"] = str(
-                asset_payload.get("media_kind")
-                or ("still_image" if asset_payload.get("is_still_image") else "video")
-            )
-        source_id = item.get("id")
-        supports_sync_analysis = bool(source_id and source_id == first_analyzable_source_id)
+        item["media_kind"] = _merge_source_media_kind(item)
+        source_id = _merge_source_payload_id(item)
+        supports_sync_analysis = bool(source_id and source_id == eligible_source_id)
         is_analyzed_sync_source = bool(analyzed_source_id and source_id == analyzed_source_id)
+        owns_sync_status = bool(sync_status_source_id and source_id == sync_status_source_id)
         item["is_analyzed_sync_source"] = is_analyzed_sync_source
         item["supports_sync_analysis"] = supports_sync_analysis
         item["can_rerun_sync_analysis"] = supports_sync_analysis
         item["sync_analysis_status"] = (
             str(analysis_payload.get("secondary_analysis_status") or "idle")
-            if is_analyzed_sync_source or supports_sync_analysis
+            if owns_sync_status
             else "idle"
         )
         item["sync_analysis_message"] = (
             str(analysis_payload.get("secondary_analysis_message") or "")
-            if is_analyzed_sync_source or supports_sync_analysis
+            if owns_sync_status
             else ""
         )
         item["secondary_beep_time_ms"] = (
@@ -483,10 +567,7 @@ def _augment_merge_source_summary(project_payload: dict[str, Any]) -> None:
         )
         item["sync_offset_source"] = (
             str(analysis_payload.get("secondary_sync_source") or "manual")
-            if is_analyzed_sync_source
-            or (
-                supports_sync_analysis and analysis_payload.get("beep_time_ms_secondary") is not None
-            )
+            if owns_sync_status
             else "manual"
         )
 

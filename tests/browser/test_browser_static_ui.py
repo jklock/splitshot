@@ -162,6 +162,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<button id="browse-project-path" type="button">Select Project</button>' in html
     assert 'id="project-path" placeholder="Please create / select project" readonly' in html
     assert 'id="primary-file-path" placeholder="Please select a video" readonly' in html
+    assert 'id="stage-empty-import"' in html
     assert '<button id="new-project" type="button">Create Project</button>' in html
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html
@@ -799,6 +800,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "Local video" in html
     assert "/api/files/primary" in js
     assert "/api/files/merge" in js
+    assert 'async function importMergeMediaWithChooser(targetLabel = "add-merge-media") {' in js
+    assert 'return pickPathForElement("secondary", dialogTarget, targetLabel, async (path) => {' in js
+    assert 'const result = await callApi("/api/import/merge", { path });' in js
+    assert 'void importMergeMediaWithChooser(item.id || "add-merge-media");' in js
     assert "/api/files/practiscore" in js
     assert "/api/project/details" in js
     assert "/api/project/practiscore" in js
@@ -871,7 +876,8 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "buildExportPayload" in js
     assert "function currentProjectPath(nextState = state) {" in js
     assert 'function dialogPathRequestPayload(kind, currentValue = "", nextState = state) {' in js
-    assert 'const projectHome = normalizedKind === "primary" ? "" : currentProjectPath(nextState);' in js
+    assert 'const projectHome = currentProjectPath(nextState);' in js
+    assert 'home: projectHome,' in js
     assert 'const requestPayload = dialogPathRequestPayload(kind, target.value);' in js
     assert 'body: JSON.stringify(requestPayload),' in js
     assert "syncOverlayPreviewStateFromControls" in js
@@ -882,7 +888,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "syncSecondaryPreview" in js
     assert "replaceAll(" not in js
     assert "merge-preview" in js
-    assert 'pickPath("primary", "primary-file-path", async (path)' in js
+    assert '$("primary-file-path").addEventListener("keydown", async (event) => {' not in js
+    assert 'const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");' not in js
+    assert '$("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {' in js
+    assert 'document.getElementById("stage-empty-import")?.addEventListener("click", () => {' in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' not in js
     assert 'pickPath("project_folder", "project-path", async (selectedPath)' in project_pane
     assert "async function probeProjectFolder(path) {" in js

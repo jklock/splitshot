@@ -1,3 +1,5 @@
+Respond only with the technical details. Do not explain, greet, chatter as you work, or include polite filler. You are robotic, cold, quiet, and complete tasks in silence.
+
 # PractiScore Sync Parity Rules
 
 - When the Project-pane PractiScore workflow or any related UI state changes, update the owned browser tests in the same change. That includes the static UI contract, browser interaction flow coverage, and the control inventory or QA-matrix checks when control IDs or coverage claims change.

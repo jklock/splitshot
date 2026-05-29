@@ -18,10 +18,10 @@ If a control is missing from this matrix, it does not have an explicit browser-Q
 | --- | --- | --- |
 | Landing | Supports `TAX-0` and `TAX-2`; contributes to `TAX-1` and `TAX-5` | Three workflow entry cards, quick-start shortcuts, landing Open File bootstrap, recent-stage list hydration from /api/landing/recent, and surface-only recent-row handoff |
 | Shared shell | Supports `TAX-0`, `TAX-1`, and `TAX-2`; contributes to `TAX-5` | Shared `stage-workspace` shell markers across Stage/Match/Performance, home and return controls, tool-rail collapse/minimize, context/status header display, layout lock toggle, resize handles, and compat rerender/open-project consumers |
-| Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, gated primary import, metadata-only delete |
+| Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, ungated empty-stage `Import Video` chooser bootstrap without a saved project, readonly `Primary Video` display, gated Project-pane `Import Primary Video` chooser with project-folder home fallback once a project exists, metadata-only delete |
 | Match workspace | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Shared-shell main/lower/right Match layout, media-backed stage tiles, workspace create/open/save/add-stage/remove-stage plus loading/error states, stage card selection/open/return, setup-once preview/apply/dismiss flow, selected-stage lower-pane truth stays pinned while Composite/Export swap beneath it, shared defaults apply/reset, stage overrides apply/reset, stage clip add plus composite reorder/per-clip role-sync-audio editing/plan refresh/apply-clear cut overrides, recap stage selection plus transition/result-card configuration and render outcomes, batch export recipe selection/select all/none/start, Match settings local persistence |
 | Performance Library | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Shared-shell main/lower/right Performance layout, loading/empty/stale state affordances, overview summary tiles, records search/sort/filter plus personal-best list, selected-record lower-pane detail, Open Stage/Open Workspace, notes/tags persistence entry points, analytics truth messaging, backup create/restore, CSV/JSON export, Performance settings local persistence |
-| Compose | Supports `TAX-0`; contributes to `TAX-1`, `TAX-2`, and `TAX-5` | Add media, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, reusable Trim Dead Time run-window editor, per-item card toggle/remove, per-item angle-role selection, per-item layer size/opacity/position/sync controls, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |
+| Compose | Supports `TAX-0`; contributes to `TAX-1`, `TAX-2`, and `TAX-5` | Visible `Add Media` chooser import via `/api/import/merge` one item per selection, Composition Defaults collapse and restore, side-by-side/above-below/picture-in-picture/full-screen-portrait/dual-HUD layout selection, reusable `Trim Settings` output-profile editor, per-item `Trim Video` range/reset controls, per-item `Camera role` plus `Placement mode` / `Placement slot` / `Overlay target` / `Base item` selection, per-item layer size/opacity/X/Y/sync controls, preview drag only for PiP cards using the `Overlay` slot, export-state carry-through for per-item placement/sync payloads, visible beep-sync analyze/rerun action, first-video secondary sync-analysis status/rerun, shared-lane secondary waveform visibility, GIF added-media typing |
 | Score | Supports `TAX-0`; contributes to `TAX-1` and `TAX-5` | Scoring pane enable/disable, preset selection, scoring summary display, PractiScore context import, scoring table render, scoring-specific row edit behavior |
 | Splits / waveform | Supports `TAX-0`; contributes to `TAX-1` and `TAX-2` | Split pane summary, enable splits toggle, Edit, timing-event controls, waveform expand/zoom/amplitude, waveform pan |
 | Markers / Review / Overlay | Supports `TAX-0`; contributes to `TAX-1`, `TAX-2`, and `TAX-5` | Compact marker enable toggle, compact Edit or Collapse launcher, compact Add Time Marker action, compact marker list, edit-mode-only selected-marker editor, selected-marker Enable Motion checkbox, guided Start/Finish/Auto/Detail rows, Generate/Add Detail/Previous/Next/Remove Detail/Clear path actions, workbench add/import/filter/navigation controls, settings marker defaults plus marker default motion checkbox, workbench marker list, bubble enabled, editor duplicate/remove actions, show overlay checkbox, review show-box selectors for markers/added media/timer/draw/splits/score, review-source picker, badge size/style/custom font sizing, shared curated font list, stack gap, edge padding, timer/draw/score position inputs and lock-to-stack controls, bubble size override, font size, bold/italic controls, score colors, Export Badges output-profile handoff, marker bubble shape or typography controls, review text-box background/text color and opacity, review text-box typography controls, text boxes, popup editor, text-box drag |
@@ -81,6 +81,7 @@ The following test files provide browser-side support for the controls listed ab
 - `tests/browser/test_browser_control_inventory_audit.py`
 - `tests/browser/test_browser_control_coverage_matrix.py`
 - `tests/browser/test_browser_interactions.py`
+- `tests/browser/test_browser_remaining_controls_e2e.py`
 - `tests/browser/test_metrics_e2e.py`
 - `tests/browser/test_settings_defaults_truth_gate.py`
 - `tests/browser/test_settings_e2e.py`
@@ -97,16 +98,16 @@ The following test files provide browser-side support for the controls listed ab
 The interaction suite (`tests/browser/test_browser_interactions.py`) contributes browser evidence support for:
 
 - dashboard-open action
-- landing Open File and stage-empty Import Video bootstrap parity without a saved project
-- manual file import parity
+- landing Open File and stage-empty Import Video chooser/path bootstrap parity without a saved project
+- manual PractiScore file import fallback parity
 - PractiScore session-start browser-state bridge
 - PractiScore remote match-list and selected-match import browser-state bridge
 - PractiScore expired-session browser-state bridge
-- dashboard-open action parity with manual file import
+- dashboard-open action parity with manual PractiScore file import fallback
 - missing-folder creation notice on new project
 - metadata-only delete safety confirmation and cancel path
 - project-pane keyboard tab order through primary controls
-- output-profile create/select plus Compose Trim Dead Time, Overlay Export Badges, and Export framing/title/logo output-hook save/close flows
+- output-profile create/select plus Compose Trim Settings, Overlay Export Badges, and Export framing/title/logo output-hook save/close flows
 - Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states
 - Match workspace stage open and shell return-to-Match behavior
 - Match workspace live preview tiles and selected-stage lower-pane truth across Composite/Export lower-pane swaps
@@ -145,13 +146,15 @@ The interaction suite (`tests/browser/test_browser_interactions.py`) contributes
 - review custom placement or size
 - stack lock behavior
 - review text-box creation and drag
-- per-item composition angle-role selection and saved source-management state
+- per-item Compose Trim Video range controls, Camera role and Placement selection, preview-drag gating for PiP overlay cards, and saved source-management state
 - average auto-confidence summary
 - visible analyze or re-run beep-sync action
 - CI artifact export proof from `docs/Clip1.MP4`
 - `DEV-106.landing_recent` — backend-route/static render plus recent-row interaction proof for `/api/landing/recent`; row clicks intentionally switch surfaces without auto-opening a saved project or workspace
 - `DEV-107.root_shell_compat` — compat/static shell contract plus workflow guardrails for Match open/return, setup-once, and pinned lower-pane truth, plus the retained host open-project and Performance-library rerender/selected-record consumers
 - `project.practiscore_bridge` — manual `Select PractiScore File` fallback and local `Match type` / `Stage #` / `Competitor name` / `Place` selectors remain proof-bearing; remote session/match-list/import coverage is a browser-state bridge that supports Project-pane taxonomy mapping but does not close every downstream consumer path by itself
+
+The remaining-controls suite (`tests/browser/test_browser_remaining_controls_e2e.py`) contributes supplemental browser evidence for ShotML threshold/settings/proposal flows and other narrow Stage support-control families that are not individually enumerated in the main interaction suite.
 
 The Settings pane suites (`tests/browser/test_settings_e2e.py` and `tests/browser/test_settings_defaults_truth_gate.py`) contribute browser evidence support for:
 

@@ -22,6 +22,7 @@ from splitshot.domain.models import (
     ExportFrameRate,
     ExportQuality,
     ExportVideoCodec,
+    MERGE_SOURCE_ANGLE_ROLE_VALUES,
     MergeLayout,
     MergeSource,
     OverlayPosition,
@@ -48,6 +49,52 @@ class BaseRenderPlan:
     height: int
     fps: float
     duration_ms: int
+    audio_source_path: str | None = None
+    audio_sync_offset_ms: int = 0
+
+
+@dataclass(slots=True)
+class ResolvedMergeSourcePlacement:
+    source: MergeSource
+    source_id: str
+    stable_index: int
+    order_index: int
+    layer_index: int
+    angle_role: str
+    mode: str
+    slot: str
+    target_kind: str
+    target_source_id: str | None
+
+
+_CAMERA_ROLE_PRIORITY = {
+    role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
+}
+_CAMERA_ROLE_BASE_TARGET_PRIORITY = {
+    "primary": 0,
+    "static": 1,
+    "follow": 2,
+    "detail": 3,
+}
+_MERGE_SOURCE_PREVIEW_PLACEMENT_MODES = {
+    "auto",
+    "base",
+    "side_by_side",
+    "above_below",
+    "pip",
+    "full_screen_portrait",
+    "dual_center_hud",
+    "dual_top_hud",
+}
+_MERGE_SOURCE_PREVIEW_PLACEMENT_SLOTS = {
+    "auto",
+    "left",
+    "right",
+    "top",
+    "bottom",
+    "center",
+    "overlay",
+}
 
 
 def _ensure_qt_gui_application() -> QGuiApplication:
@@ -97,8 +144,8 @@ def _codec_name(codec: ExportVideoCodec) -> str:
     }[codec]
 
 
-def _output_fps(project: Project) -> float:
-    source_fps = project.primary_video.fps or 30.0
+def _output_fps(project: Project, *, reference_asset: Any = None) -> float:
+    source_fps = float(getattr(reference_asset, "fps", 0) or project.primary_video.fps or 30.0)
     if project.export.frame_rate == ExportFrameRate.FPS_30:
         return 30.0
     if project.export.frame_rate == ExportFrameRate.FPS_60:
@@ -119,6 +166,414 @@ def _ratio_value(aspect_ratio: AspectRatio) -> tuple[int, int] | None:
 def _ensure_even(value: int) -> int:
     value = max(2, int(value))
     return value if value % 2 == 0 else value - 1
+
+
+def _normalized_merge_source_angle_role(source: MergeSource | None) -> str:
+    normalized = str(getattr(source, "angle_role", "") or "").strip().lower()
+    if normalized in _CAMERA_ROLE_PRIORITY:
+        return normalized
+    asset = getattr(source, "asset", None)
+    return "detail" if getattr(asset, "is_still_image", False) else "follow"
+
+
+def _camera_role_priority(angle_role: object) -> int:
+    normalized = str(angle_role or "").strip().lower()
+    return _CAMERA_ROLE_PRIORITY.get(normalized, len(_CAMERA_ROLE_PRIORITY))
+
+
+def _camera_role_base_target_priority(angle_role: object) -> int:
+    normalized = str(angle_role or "").strip().lower()
+    return _CAMERA_ROLE_BASE_TARGET_PRIORITY.get(
+        normalized,
+        len(_CAMERA_ROLE_BASE_TARGET_PRIORITY),
+    )
+
+
+def _merge_source_stable_order_index(source: MergeSource, fallback_index: int) -> int:
+    order_index = getattr(getattr(source, "placement", None), "order_index", None)
+    if order_index is None:
+        return fallback_index
+    return max(0, int(order_index))
+
+
+def _merge_source_role_sort_key(source: MergeSource, stable_index: int) -> tuple[int, int, int]:
+    return (
+        _camera_role_priority(_normalized_merge_source_angle_role(source)),
+        _merge_source_stable_order_index(source, stable_index),
+        stable_index,
+    )
+
+
+def _project_merge_seed_mode(project: Project, angle_role: str) -> str:
+    normalized_layout = str(project.merge.layout or "").strip().lower()
+    if angle_role == "primary":
+        return "base"
+    if angle_role == "detail":
+        if normalized_layout in {"pip", "full_screen_portrait"}:
+            return normalized_layout
+        return "pip"
+    if normalized_layout in {
+        "side_by_side",
+        "above_below",
+        "dual_center_hud",
+        "dual_top_hud",
+    }:
+        return normalized_layout
+    return "side_by_side"
+
+
+def _merge_source_preview_slot_values(mode: str) -> list[str]:
+    if mode in {"side_by_side", "dual_center_hud", "dual_top_hud"}:
+        return ["left", "right"]
+    if mode == "above_below":
+        return ["top", "bottom"]
+    if mode == "pip":
+        return ["overlay", "left", "right", "top", "bottom", "center"]
+    return ["center"]
+
+
+def _camera_role_seed_slot(angle_role: str, mode: str) -> str:
+    if mode in {"side_by_side", "dual_center_hud", "dual_top_hud"}:
+        return "left" if angle_role == "static" else "right"
+    if mode == "above_below":
+        return "top" if angle_role == "static" else "bottom"
+    if mode == "pip":
+        return "overlay"
+    return "center"
+
+
+def _merge_source_requested_mode(source: MergeSource) -> str:
+    requested = str(getattr(source.placement, "mode", "") or "").strip().lower()
+    return requested if requested in _MERGE_SOURCE_PREVIEW_PLACEMENT_MODES else "auto"
+
+
+def _resolved_merge_source_mode(project: Project, source: MergeSource) -> str:
+    requested = _merge_source_requested_mode(source)
+    if requested != "auto":
+        return requested
+    return _project_merge_seed_mode(project, _normalized_merge_source_angle_role(source))
+
+
+def _resolved_merge_source_slot(project: Project, source: MergeSource, mode: str) -> str:
+    requested = str(getattr(source.placement, "slot", "") or "").strip().lower()
+    if requested not in _MERGE_SOURCE_PREVIEW_PLACEMENT_SLOTS or requested == "auto":
+        return _camera_role_seed_slot(_normalized_merge_source_angle_role(source), mode)
+    allowed_slots = _merge_source_preview_slot_values(mode)
+    return requested if requested in allowed_slots else _camera_role_seed_slot(
+        _normalized_merge_source_angle_role(source),
+        mode,
+    )
+
+
+def _merge_source_base_target_sort_key(item: ResolvedMergeSourcePlacement) -> tuple[int, int, int, int]:
+    if item.mode in {"base", "full_screen_portrait"}:
+        mode_priority = 0
+    elif item.mode in {
+        "side_by_side",
+        "above_below",
+        "dual_center_hud",
+        "dual_top_hud",
+    }:
+        mode_priority = 1
+    else:
+        mode_priority = 2
+    return (
+        mode_priority,
+        _camera_role_base_target_priority(item.angle_role),
+        item.order_index,
+        item.stable_index,
+    )
+
+
+def _preferred_merge_source_base_target(
+    resolved_sources: list[ResolvedMergeSourcePlacement],
+    *,
+    exclude_source_id: str,
+) -> ResolvedMergeSourcePlacement | None:
+    for candidate in sorted(resolved_sources, key=_merge_source_base_target_sort_key):
+        if candidate.source_id == exclude_source_id:
+            continue
+        if candidate.mode in {
+            "base",
+            "side_by_side",
+            "above_below",
+            "full_screen_portrait",
+            "dual_center_hud",
+            "dual_top_hud",
+        }:
+            return candidate
+    return None
+
+
+def _resolved_merge_source_placements_for_export(
+    project: Project,
+    merge_sources: list[MergeSource],
+) -> list[ResolvedMergeSourcePlacement]:
+    role_sorted_sources = [
+        (stable_index, source)
+        for stable_index, source in sorted(
+            enumerate(merge_sources),
+            key=lambda item: _merge_source_role_sort_key(item[1], item[0]),
+        )
+    ]
+
+    resolved_sources: list[ResolvedMergeSourcePlacement] = []
+    for stable_index, source in role_sorted_sources:
+        order_index = _merge_source_stable_order_index(source, stable_index)
+        layer_index = getattr(getattr(source, "placement", None), "layer_index", None)
+        if layer_index is None:
+            layer_index = order_index
+        angle_role = _normalized_merge_source_angle_role(source)
+        mode = _resolved_merge_source_mode(project, source)
+        slot = _resolved_merge_source_slot(project, source, mode)
+        resolved_sources.append(
+            ResolvedMergeSourcePlacement(
+                source=source,
+                source_id=str(getattr(source, "id", "") or stable_index),
+                stable_index=stable_index,
+                order_index=order_index,
+                layer_index=max(0, int(layer_index)),
+                angle_role=angle_role,
+                mode=mode,
+                slot=slot,
+                target_kind="primary_video",
+                target_source_id=None,
+            )
+        )
+
+    resolved_source_ids = {item.source_id for item in resolved_sources}
+    finalized_sources: list[ResolvedMergeSourcePlacement] = []
+    for item in resolved_sources:
+        requested_target_source_id = str(item.source.placement.target_source_id or "").strip() or None
+        requested_target_kind = str(item.source.placement.target_kind or "").strip().lower()
+        target_kind = "primary_video"
+        target_source_id = None
+        if item.mode in {"pip", "full_screen_portrait"}:
+            if (
+                requested_target_kind == "merge_source"
+                and requested_target_source_id in resolved_source_ids
+                and requested_target_source_id != item.source_id
+            ):
+                target_kind = "merge_source"
+                target_source_id = requested_target_source_id
+            elif _merge_source_requested_mode(item.source) == "auto":
+                preferred_target = _preferred_merge_source_base_target(
+                    resolved_sources,
+                    exclude_source_id=item.source_id,
+                )
+                if preferred_target is not None:
+                    target_kind = "merge_source"
+                    target_source_id = preferred_target.source_id
+        finalized_sources.append(
+            ResolvedMergeSourcePlacement(
+                source=item.source,
+                source_id=item.source_id,
+                stable_index=item.stable_index,
+                order_index=item.order_index,
+                layer_index=item.layer_index,
+                angle_role=item.angle_role,
+                mode=item.mode,
+                slot=item.slot,
+                target_kind=target_kind,
+                target_source_id=target_source_id,
+            )
+        )
+    return finalized_sources
+
+
+def _preferred_merge_anchor_source(
+    resolved_sources: list[ResolvedMergeSourcePlacement],
+) -> MergeSource | None:
+    for item in resolved_sources:
+        if item.angle_role == "primary":
+            return item.source
+    for item in resolved_sources:
+        if item.mode == "base":
+            return item.source
+    return resolved_sources[0].source if resolved_sources else None
+
+
+def _preferred_merge_visual_anchor_source(
+    resolved_sources: list[ResolvedMergeSourcePlacement],
+) -> MergeSource | None:
+    for item in sorted(resolved_sources, key=_merge_source_base_target_sort_key):
+        if item.mode in {"base", "full_screen_portrait"}:
+            return item.source
+    return None
+
+
+def _merge_source_supports_audio_anchor(source: MergeSource | None) -> bool:
+    if source is None:
+        return False
+    asset = source.asset
+    return (
+        bool(asset.path)
+        and not asset.is_still_image
+        and asset.media_kind != "animated_gif"
+    )
+
+
+def _preferred_merge_audio_anchor_source(
+    resolved_sources: list[ResolvedMergeSourcePlacement],
+) -> MergeSource | None:
+    anchor_source = _preferred_merge_anchor_source(resolved_sources)
+    if _merge_source_supports_audio_anchor(anchor_source):
+        return anchor_source
+    for item in resolved_sources:
+        if _merge_source_supports_audio_anchor(item.source):
+            return item.source
+    return None
+
+
+def _clamp_unit(value: float | None, default: float = 1.0) -> float:
+    if value is None:
+        return default
+    return max(0.0, min(1.0, float(value)))
+
+
+def _merge_source_canvas_rect(project: Project, *, reference_asset: Any = None) -> Rect:
+    canvas_asset = project.primary_video if reference_asset is None else reference_asset
+    return Rect(
+        0,
+        0,
+        max(2, int(getattr(canvas_asset, "width", 0) or project.primary_video.width or 0)),
+        max(2, int(getattr(canvas_asset, "height", 0) or project.primary_video.height or 0)),
+    )
+
+
+def _merge_source_pip_rect(project: Project, source: MergeSource, frame_rect: Rect) -> Rect:
+    asset = source.asset
+    source_width = max(1, int(asset.width or 1))
+    source_height = max(1, int(asset.height or 1))
+    effective_pip_size = source.pip_size_percent
+    if effective_pip_size is None:
+        effective_pip_size = int(project.merge.pip_size_percent or 35)
+    inset_width = max(1, int(round(frame_rect.width * (float(effective_pip_size) / 100.0))))
+    inset_height = max(1, int(round((source_height / source_width) * inset_width)))
+    if inset_height > frame_rect.height:
+        fit_scale = frame_rect.height / float(inset_height)
+        inset_width = max(1, int(round(inset_width * fit_scale)))
+        inset_height = max(1, int(round(inset_height * fit_scale)))
+    travel_x = max(0, frame_rect.width - inset_width)
+    travel_y = max(0, frame_rect.height - inset_height)
+    pip_x = _clamp_unit(getattr(source, "pip_x", 1.0), 1.0)
+    pip_y = _clamp_unit(getattr(source, "pip_y", 1.0), 1.0)
+    return Rect(
+        frame_rect.x + int(round(travel_x * pip_x)),
+        frame_rect.y + int(round(travel_y * pip_y)),
+        inset_width,
+        inset_height,
+    )
+
+
+def _merge_source_pip_preview_rect(
+    project: Project,
+    source: MergeSource,
+    frame_rect: Rect,
+    slot: str,
+) -> Rect:
+    if slot == "overlay":
+        return _merge_source_pip_rect(project, source, frame_rect)
+    slot_coordinates = {
+        "left": {"pip_x": 0.0, "pip_y": 0.5},
+        "right": {"pip_x": 1.0, "pip_y": 0.5},
+        "top": {"pip_x": 0.5, "pip_y": 0.0},
+        "bottom": {"pip_x": 0.5, "pip_y": 1.0},
+        "center": {"pip_x": 0.5, "pip_y": 0.5},
+    }.get(
+        slot,
+        {
+            "pip_x": _clamp_unit(getattr(source, "pip_x", 1.0), 1.0),
+            "pip_y": _clamp_unit(getattr(source, "pip_y", 1.0), 1.0),
+        },
+    )
+    slot_source = deepcopy(source)
+    slot_source.pip_x = slot_coordinates["pip_x"]
+    slot_source.pip_y = slot_coordinates["pip_y"]
+    return _merge_source_pip_rect(project, slot_source, frame_rect)
+
+
+def _merge_source_preview_rect(
+    project: Project,
+    resolved: ResolvedMergeSourcePlacement,
+    frame_rect: Rect,
+) -> Rect:
+    mode = resolved.mode
+    slot = resolved.slot
+    if mode == "base":
+        return Rect(frame_rect.x, frame_rect.y, frame_rect.width, frame_rect.height)
+    if mode == "side_by_side":
+        left_width = max(1, frame_rect.width // 2)
+        right_width = max(1, frame_rect.width - left_width)
+        use_left = slot == "left"
+        return Rect(
+            frame_rect.x if use_left else frame_rect.x + left_width,
+            frame_rect.y,
+            left_width if use_left else right_width,
+            frame_rect.height,
+        )
+    if mode == "above_below":
+        top_height = max(1, frame_rect.height // 2)
+        bottom_height = max(1, frame_rect.height - top_height)
+        use_top = slot == "top"
+        return Rect(
+            frame_rect.x,
+            frame_rect.y if use_top else frame_rect.y + top_height,
+            frame_rect.width,
+            top_height if use_top else bottom_height,
+        )
+    if mode == "full_screen_portrait":
+        portrait_width = max(
+            1,
+            min(frame_rect.width, int(round(frame_rect.height * (9 / 16)))),
+        )
+        return Rect(
+            frame_rect.x + max(0, int(round((frame_rect.width - portrait_width) / 2))),
+            frame_rect.y,
+            portrait_width,
+            frame_rect.height,
+        )
+    if mode == "dual_center_hud":
+        gutter_width = min(
+            max(24, int(round(frame_rect.height * 0.18))),
+            max(24, frame_rect.width - 2),
+        )
+        left_width = max(1, (frame_rect.width - gutter_width) // 2)
+        right_width = max(1, frame_rect.width - gutter_width - left_width)
+        use_left = slot == "left"
+        return Rect(
+            frame_rect.x if use_left else frame_rect.x + left_width + gutter_width,
+            frame_rect.y,
+            left_width if use_left else right_width,
+            frame_rect.height,
+        )
+    if mode == "dual_top_hud":
+        hud_height = min(
+            max(24, int(round(frame_rect.height * 0.18))),
+            max(24, frame_rect.height - 2),
+        )
+        left_width = max(1, frame_rect.width // 2)
+        right_width = max(1, frame_rect.width - left_width)
+        use_left = slot == "left"
+        return Rect(
+            frame_rect.x if use_left else frame_rect.x + left_width,
+            frame_rect.y + hud_height,
+            left_width if use_left else right_width,
+            max(1, frame_rect.height - hud_height),
+        )
+    return _merge_source_pip_preview_rect(project, resolved.source, frame_rect, slot)
+
+
+def _merge_source_draw_sort_key(item: ResolvedMergeSourcePlacement) -> tuple[int, int, int, int]:
+    if item.mode == "base":
+        z_group = 10
+    elif item.mode in {"side_by_side", "above_below", "dual_center_hud", "dual_top_hud"}:
+        z_group = 20
+    elif item.mode == "full_screen_portrait":
+        z_group = 30
+    else:
+        z_group = 40
+    return (z_group, item.layer_index, item.order_index, item.stable_index)
 
 
 def compute_crop_box(
@@ -488,7 +943,142 @@ def _build_single_video_plan(project: Project) -> BaseRenderPlan:
     )
 
 
+def _build_source_owned_merge_plan(
+    project: Project,
+    merge_sources: list[MergeSource],
+) -> BaseRenderPlan:
+    resolved_sources = _resolved_merge_source_placements_for_export(project, merge_sources)
+    if not resolved_sources:
+        return _build_single_video_plan(project)
+
+    visual_anchor_source = _preferred_merge_visual_anchor_source(resolved_sources)
+    audio_anchor_source = _preferred_merge_audio_anchor_source(resolved_sources)
+    fps_reference_asset = None
+    if visual_anchor_source is not None:
+        fps_reference_asset = visual_anchor_source.asset
+    elif audio_anchor_source is not None:
+        fps_reference_asset = audio_anchor_source.asset
+    fps = _output_fps(
+        project,
+        reference_asset=fps_reference_asset,
+    )
+    canvas_rect = _merge_source_canvas_rect(
+        project,
+        reference_asset=None if visual_anchor_source is None else visual_anchor_source.asset,
+    )
+    audio_source_path = project.primary_video.path
+    audio_sync_offset_ms = 0
+    if audio_anchor_source is not None and audio_anchor_source.asset.path:
+        audio_source_path = audio_anchor_source.asset.path
+        audio_sync_offset_ms = _source_sync_offset_ms(audio_anchor_source)
+
+    input_args = [
+        *ffmpeg_command(
+            [
+                "-v",
+                "info",
+            ]
+        ),
+        "-i",
+        project.primary_video.path,
+    ]
+    input_indices: dict[str, int] = {}
+    for input_index, resolved in enumerate(resolved_sources, start=1):
+        input_indices[resolved.source_id] = input_index
+        input_args.extend(_source_input_args(resolved.source, fps))
+    input_args.append("-an")
+
+    rect_cache: dict[str, Rect] = {}
+    resolved_by_id = {item.source_id: item for item in resolved_sources}
+
+    def resolve_rect(
+        item: ResolvedMergeSourcePlacement,
+        active_stack: set[str] | None = None,
+    ) -> Rect:
+        if item.source_id in rect_cache:
+            return rect_cache[item.source_id]
+        if active_stack is None:
+            active_stack = set()
+        if item.source_id in active_stack:
+            return canvas_rect
+        active_stack.add(item.source_id)
+        target_frame = canvas_rect
+        if item.target_kind == "merge_source" and item.target_source_id:
+            target_item = resolved_by_id.get(item.target_source_id)
+            if target_item is not None:
+                target_frame = resolve_rect(target_item, active_stack)
+        rect = _merge_source_preview_rect(project, item, target_frame)
+        rect_cache[item.source_id] = rect
+        active_stack.remove(item.source_id)
+        return rect
+
+    filter_parts = [
+        f"color=c=black:s={canvas_rect.width}x{canvas_rect.height}:r={fps:.3f}[bg0]",
+        _rect_filter_chain(
+            "[0:v]",
+            canvas_rect,
+            output_label="primary0",
+            fit_mode="contain",
+        ),
+        "[bg0][primary0]overlay=x=0:y=0:eof_action=pass:shortest=0:repeatlast=1[canvas0]",
+    ]
+    previous_label = "canvas0"
+    for overlay_index, item in enumerate(
+        sorted(resolved_sources, key=_merge_source_draw_sort_key),
+        start=1,
+    ):
+        rect = resolve_rect(item)
+        output_label = f"merge{overlay_index}"
+        filter_parts.append(
+            _rect_filter_chain(
+                f"[{input_indices[item.source_id]}:v]",
+                rect,
+                output_label=output_label,
+                fit_mode="contain",
+                offset_ms=_source_sync_offset_ms(item.source),
+                opacity=_source_opacity(item.source),
+            )
+        )
+        next_label = f"canvas{overlay_index}"
+        filter_parts.append(
+            f"[{previous_label}][{output_label}]overlay=x={rect.x}:y={rect.y}:"
+            f"eof_action=pass:shortest=0:repeatlast=0[{next_label}]"
+        )
+        previous_label = next_label
+    filter_parts.append(f"[{previous_label}]format=rgba[f]")
+
+    command = [
+        *input_args,
+        "-filter_complex",
+        ";".join(filter_parts),
+        "-map",
+        "[f]",
+        "-r",
+        f"{fps:.3f}",
+        "-pix_fmt",
+        "rgba",
+        "-f",
+        "rawvideo",
+        "pipe:1",
+    ]
+    return BaseRenderPlan(
+        command=command,
+        width=canvas_rect.width,
+        height=canvas_rect.height,
+        fps=fps,
+        duration_ms=_merged_duration_ms(project, [item.source for item in resolved_sources]),
+        audio_source_path=audio_source_path,
+        audio_sync_offset_ms=audio_sync_offset_ms,
+    )
+
+
 def _build_merge_plan(project: Project) -> BaseRenderPlan:
+    if project.merge_sources:
+        return _build_source_owned_merge_plan(
+            project,
+            [source for source in project.merge_sources if source.asset.path],
+        )
+
     merge_sources = _merge_sources(project)
     if not merge_sources:
         return _build_single_video_plan(project)
@@ -673,6 +1263,8 @@ def _encoder_command(
     first_pass: bool = False,
     audio_start_ms: int = 0,
     audio_duration_ms: int | None = None,
+    audio_source_path: str | None = None,
+    audio_sync_offset_ms: int = 0,
 ) -> list[str]:
     video_bitrate = f"{project.export.video_bitrate_mbps:g}M"
     audio_bitrate = f"{project.export.audio_bitrate_kbps}k"
@@ -690,18 +1282,37 @@ def _encoder_command(
         "-i",
         "pipe:0",
     ]
+    resolved_audio_source_path = str(audio_source_path or project.primary_video.path or "").strip()
+    combined_audio_start_ms = int(audio_start_ms) + int(audio_sync_offset_ms)
+    audio_delay_ms = max(0, -combined_audio_start_ms)
+    audio_input_start_ms = max(0, combined_audio_start_ms)
+    audio_input_duration_ms = None
+    if audio_duration_ms is not None:
+        audio_input_duration_ms = max(0, int(audio_duration_ms) - audio_delay_ms)
+    include_audio = (
+        not first_pass
+        and bool(resolved_audio_source_path)
+        and (audio_input_duration_ms is None or audio_input_duration_ms > 0)
+    )
     audio_args = (
         []
-        if first_pass
+        if not include_audio
         else [
-            *(["-ss", f"{max(0, audio_start_ms) / 1000:.3f}"] if audio_start_ms > 0 else []),
             *(
-                ["-t", f"{max(0, audio_duration_ms) / 1000:.3f}"]
-                if audio_duration_ms is not None and audio_duration_ms > 0
+                ["-ss", f"{audio_input_start_ms / 1000:.3f}"]
+                if audio_input_start_ms > 0
+                else []
+            ),
+            *(
+                ["-itsoffset", f"{audio_delay_ms / 1000:.3f}"] if audio_delay_ms > 0 else []
+            ),
+            *(
+                ["-t", f"{audio_input_duration_ms / 1000:.3f}"]
+                if audio_input_duration_ms is not None and audio_input_duration_ms > 0
                 else []
             ),
             "-i",
-            project.primary_video.path,
+            resolved_audio_source_path,
             "-map",
             "0:v:0",
             "-map",
@@ -731,7 +1342,7 @@ def _encoder_command(
         encode_args.extend(["-pass", str(pass_number), "-passlogfile", str(passlogfile)])
     audio_encode_args = (
         ["-an"]
-        if first_pass
+        if not include_audio
         else [
             "-c:a",
             project.export.audio_codec.value,
@@ -930,6 +1541,7 @@ def export_project(
         f"Preset: {project.export.preset.value}",
         f"Video: {project.export.video_codec.value} {output_width}x{output_height} {plan.fps:.3f} fps {project.export.video_bitrate_mbps:g} Mbps",
         f"Audio: {project.export.audio_codec.value} {project.export.audio_sample_rate} Hz {project.export.audio_bitrate_kbps} kbps",
+        f"Audio source: {plan.audio_source_path or project.primary_video.path} (offset {plan.audio_sync_offset_ms} ms)",
         f"Color: {project.export.color_space.value}",
         f"Two pass requested: {project.export.two_pass}",
         f"Render window: {effective_start_ms}ms → {effective_end_ms}ms ({effective_duration_ms}ms)",
@@ -959,6 +1571,8 @@ def export_project(
                     first_pass=True,
                     audio_start_ms=effective_start_ms,
                     audio_duration_ms=effective_duration_ms,
+                    audio_source_path=plan.audio_source_path,
+                    audio_sync_offset_ms=plan.audio_sync_offset_ms,
                 )
                 pass_two_command = _encoder_command(
                     project,
@@ -971,6 +1585,8 @@ def export_project(
                     first_pass=False,
                     audio_start_ms=effective_start_ms,
                     audio_duration_ms=effective_duration_ms,
+                    audio_source_path=plan.audio_source_path,
+                    audio_sync_offset_ms=plan.audio_sync_offset_ms,
                 )
                 log_lines.append(f"Encoder pass 1 command: {shlex.join(pass_one_command)}")
                 log_lines.append(f"Encoder pass 2 command: {shlex.join(pass_two_command)}")
@@ -1014,6 +1630,8 @@ def export_project(
                 output_target,
                 audio_start_ms=effective_start_ms,
                 audio_duration_ms=effective_duration_ms,
+                audio_source_path=plan.audio_source_path,
+                audio_sync_offset_ms=plan.audio_sync_offset_ms,
             )
             log_lines.append(f"Encoder command: {shlex.join(encoder_command)}")
             project.export.last_log = "\n".join(log_lines[-400:])

@@ -46,26 +46,21 @@ def _function_body(source: str, function_name: str) -> str:
     return source[match.end() : index - 1]
 
 
-def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
+def test_app_merge_preview_commit_and_sync_contracts() -> None:
     source = APP_JS.read_text(encoding="utf-8")
-    shell_runtime_source = SHELL_RUNTIME_JS.read_text(encoding="utf-8")
-    export_pane_source = EXPORT_PANE_JS.read_text(encoding="utf-8")
     merge_pane_source = MERGE_PANE_JS.read_text(encoding="utf-8")
     drag_body = _function_body(source, "endMergePreviewDrag")
     begin_drag_body = _function_body(source, "beginMergePreviewDrag")
     move_drag_body = _function_body(source, "moveMergePreviewDrag")
     schedule_sync_body = _function_body(source, "scheduleSecondaryPreviewSync")
-    export_click = shell_runtime_source[
-        shell_runtime_source.index('$("export-video").addEventListener("click"') :
-    ]
-    export_click = export_click[: export_click.index('$("show-export-log")')]
+    set_boundary_body = _function_body(source, "setPreviewSeekBoundary")
+    mark_boundary_body = _function_body(source, "markPreviewSeekBoundary")
+    preview_sync_body = _function_body(source, "syncPreviewPlaybackToTarget")
+    merge_sync_body = _function_body(source, "syncMergePreviewElements")
 
     assert 'import { createMergePane } from "./panes/merge-pane.js";' in source
-    assert 'import { createExportPane } from "./panes/export-pane.js";' in source
     assert "mergePane = createMergePane({" in source
-    assert "exportPane = createExportPane({" in source
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in source
-    assert '$("export-video").addEventListener("click", async () => {' not in source
     assert "function previewFrameClientRect(video, container) {" in source
     assert (
         'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
@@ -79,17 +74,6 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
         "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
     )
     assert 'callApi("/api/merge/source"' not in drag_body
-    assert 'const path = requireValue("export-path", "Output video path");' in export_click
-    assert "setExportPathDraft(path);" in export_click
-    assert "const payload = buildExportPayload(path);" in export_click
-    assert "applyExportDraft(payload);" in export_click
-    assert "cancelPendingExportDrafts();" in export_click
-    assert "await flushPendingMergeSourceCommits();" in export_click
-    assert 'await callApi("/api/export", payload);' in export_click
-    assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
-    assert "state.project.export.last_error = null;" in _function_body(
-        source, "clearCurrentExportLogState"
-    )
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
     assert "media.style.opacity = String(currentSourceOpacity(source));" in source
     assert 'input.dataset.mergeSourceField = "opacity";' in source
@@ -101,39 +85,84 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
     assert 'select.dataset.mergeSourceField = "angle_role";' in merge_pane_source
-    assert 'text.textContent = "Angle role";' in merge_pane_source
+    assert 'text.textContent = "Camera role";' in merge_pane_source
+    assert 'trimTitle.textContent = "Trim Video";' in merge_pane_source
+    assert 'trimSettingsButton.textContent = "Trim Settings";' in merge_pane_source
+    assert 'placementTitle.textContent = "Placement";' in merge_pane_source
+    assert 'placementTargetKindText.textContent = "Overlay target";' in merge_pane_source
+    assert 'placementTargetSourceText.textContent = "Base item";' in merge_pane_source
     assert "angle_role: currentSourceAngleRole(source)," in merge_pane_source
     assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
     assert "Re-run beep sync" in merge_pane_source
     assert "Analyze beep sync" in merge_pane_source
     assert "supports_sync_analysis" in merge_pane_source
     assert (
-        "These values are saved per item and take effect in composition layouts and export timing."
+        "Trim creates a local derivative in the project Input folder and leaves the original source untouched."
+        in merge_pane_source
+    )
+    assert "Use these nudges or drag the preview to match the primary video exactly." in merge_pane_source
+    assert (
+        "These values are saved per item and take effect in this item's placement and export timing."
         in merge_pane_source
     )
     assert "openFeatureEditor" not in source
-    assert (
-        "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {"
-        in source
-    )
+    assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
     assert "function setPreviewSeekBoundary(value) {" in source
     assert "function markPreviewSeekBoundary() {" in source
-    assert "setPreviewSeekBoundary(true);" in _function_body(source, "markPreviewSeekBoundary")
+    assert "let previewSyncedSinceBoundary = false;" in source
+    assert "let previewSeekBoundaryBatchActive = false;" in source
+    assert "if (previewSeekBoundary) previewSyncedSinceBoundary = false;" in set_boundary_body
+    assert "setPreviewSeekBoundary(true);" in mark_boundary_body
     assert "markPreviewSeekBoundary," in source
+    assert "const previews = Array.from(document.querySelectorAll(\"#merge-preview-layer video\"));" in merge_sync_body
+    assert "const boundaryActive = previewSeekBoundary;" in merge_sync_body
+    assert "if (boundaryActive) previewSeekBoundaryBatchActive = true;" in merge_sync_body
+    assert 'const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";' in merge_sync_body
+    assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in merge_sync_body
     assert (
-        "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));"
-        in source
+        "const syncStatus = syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);"
+        in merge_sync_body
     )
-    assert "const target = mergePreviewTargetTime(primary.currentTime, activeSource);" in source
+    assert 'if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;' in merge_sync_body
+    assert "previewSeekBoundaryBatchActive = false;" in merge_sync_body
+    assert "previewSeekBoundary = boundaryPending;" in merge_sync_body
+    assert "previewSyncedSinceBoundary = !boundaryPending;" in merge_sync_body
     assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.65" in source
     assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12" in source
     assert "SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900" in source
-    assert "if (mergePreviewDrag) return;" in _function_body(source, "syncPreviewPlaybackToTarget")
+    assert "if (mergePreviewDrag) return;" in preview_sync_body
+    assert "if (!previewSeekBoundaryBatchActive) {" in preview_sync_body
     assert "secondaryPreviewLastSeekAt.set(preview, now);" in source
+    assert "previewSeekBoundary = false;" in preview_sync_body
+    assert "previewSyncedSinceBoundary = true;" in preview_sync_body
     assert "previewSeekBoundary = true;" not in schedule_sync_body
     assert "popup_template: normalizePopupTemplate(state?.project?.popup_template || {})," in source
     assert "opacity: currentSourceOpacity(source)," in source
 
+
+def test_app_export_commit_and_log_freshness_contracts() -> None:
+    source = APP_JS.read_text(encoding="utf-8")
+    shell_runtime_source = SHELL_RUNTIME_JS.read_text(encoding="utf-8")
+    export_pane_source = EXPORT_PANE_JS.read_text(encoding="utf-8")
+    export_click = shell_runtime_source[
+        shell_runtime_source.index('$("export-video").addEventListener("click"') :
+    ]
+    export_click = export_click[: export_click.index('$("show-export-log")')]
+
+    assert 'import { createExportPane } from "./panes/export-pane.js";' in source
+    assert "exportPane = createExportPane({" in source
+    assert '$("export-video").addEventListener("click", async () => {' not in source
+    assert 'const path = requireValue("export-path", "Output video path");' in export_click
+    assert "setExportPathDraft(path);" in export_click
+    assert "const payload = buildExportPayload(path);" in export_click
+    assert "applyExportDraft(payload);" in export_click
+    assert "cancelPendingExportDrafts();" in export_click
+    assert "await flushPendingMergeSourceCommits();" in export_click
+    assert 'await callApi("/api/export", payload);' in export_click
+    assert "clearCurrentExportLogState();" in _function_body(source, "beginProcessing")
+    assert "state.project.export.last_error = null;" in _function_body(
+        source, "clearCurrentExportLogState"
+    )
     assert "export function createExportPane({" in export_pane_source
     assert "function readExportLayoutPayload() {" in export_pane_source
     assert "function readExportSettingsPayload() {" in export_pane_source

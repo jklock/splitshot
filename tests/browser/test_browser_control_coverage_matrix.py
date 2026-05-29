@@ -96,7 +96,7 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
         in matrix
     )
     assert (
-        "| Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, gated primary import, metadata-only delete |"
+        "| Project / import | Supports `TAX-0` and `TAX-1`; contributes to `TAX-5` | Project details, create/select project, project-folder display, gated PractiScore dashboard opener, manual `Select PractiScore File` fallback, local `Match type` / `Stage #` / `Competitor name` / `Place` selectors, remote PractiScore session and sync state rendering, ungated empty-stage `Import Video` chooser bootstrap without a saved project, readonly `Primary Video` display, gated Project-pane `Import Primary Video` chooser with project-folder home fallback once a project exists, metadata-only delete |"
         in matrix
     )
     assert (
@@ -165,8 +165,8 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert settings_heading in matrix
     assert metrics_heading in matrix
     assert "dashboard-open action" in matrix
-    assert "landing Open File and stage-empty Import Video bootstrap parity without a saved project" in matrix
-    assert "manual file import parity" in matrix
+    assert "landing Open File and stage-empty Import Video chooser/path bootstrap parity without a saved project" in matrix
+    assert "manual PractiScore file import fallback parity" in matrix
     assert "missing-folder creation notice" in matrix
     assert "metadata-only delete safety" in matrix
     assert "Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states" in matrix

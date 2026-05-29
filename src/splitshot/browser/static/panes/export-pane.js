@@ -1,3 +1,33 @@
+export function readSharedExportPayload({
+  $ = (id) => document.getElementById(id),
+  getState = () => null,
+  getExportPathDraft = () => "",
+} = {}) {
+  const state = getState() || {};
+  const projectExport = state?.project?.export || {};
+  const outputPath = $("export-path")?.value.trim()
+    || getExportPathDraft().trim()
+    || projectExport.output_path
+    || "";
+  return {
+    preset: $("export-preset")?.value || projectExport.preset || "custom",
+    quality: $("quality")?.value || projectExport.quality || "high",
+    aspect_ratio: $("aspect-ratio")?.value || projectExport.aspect_ratio || "original",
+    output_path: outputPath,
+    target_width: $("target-width")?.value ? Number($("target-width").value) : "",
+    target_height: $("target-height")?.value ? Number($("target-height").value) : "",
+    frame_rate: $("frame-rate")?.value || projectExport.frame_rate || "source",
+    video_codec: $("video-codec")?.value || projectExport.video_codec || "h264",
+    video_bitrate_mbps: Number($("video-bitrate")?.value || projectExport.video_bitrate_mbps || 15),
+    audio_codec: $("audio-codec")?.value || projectExport.audio_codec || "aac",
+    audio_sample_rate: Number($("audio-sample-rate")?.value || projectExport.audio_sample_rate || 48000),
+    audio_bitrate_kbps: Number($("audio-bitrate")?.value || projectExport.audio_bitrate_kbps || 320),
+    color_space: $("color-space")?.value || projectExport.color_space || "bt709_sdr",
+    two_pass: $("two-pass")?.checked ?? Boolean(projectExport.two_pass),
+    ffmpeg_preset: $("ffmpeg-preset")?.value || projectExport.ffmpeg_preset || "medium",
+  };
+}
+
 export function createExportPane({
   $ = (id) => document.getElementById(id),
   getState = () => null,
@@ -139,27 +169,36 @@ export function createExportPane({
   }
 
   function readExportLayoutPayload() {
+    const payload = readSharedExportPayload({
+      $,
+      getState: currentState,
+      getExportPathDraft,
+    });
     return {
-      quality: $("quality").value,
-      aspect_ratio: $("aspect-ratio").value,
+      quality: payload.quality,
+      aspect_ratio: payload.aspect_ratio,
     };
   }
 
   function readExportSettingsPayload() {
-    const outputPath = $("export-path")?.value.trim() || getExportPathDraft().trim() || currentState()?.project?.export?.output_path || "";
+    const payload = readSharedExportPayload({
+      $,
+      getState: currentState,
+      getExportPathDraft,
+    });
     return {
-      output_path: outputPath,
-      target_width: $("target-width").value ? Number($("target-width").value) : "",
-      target_height: $("target-height").value ? Number($("target-height").value) : "",
-      frame_rate: $("frame-rate").value,
-      video_codec: $("video-codec").value,
-      video_bitrate_mbps: Number($("video-bitrate").value || 15),
-      audio_codec: $("audio-codec").value,
-      audio_sample_rate: Number($("audio-sample-rate").value || 48000),
-      audio_bitrate_kbps: Number($("audio-bitrate").value || 320),
-      color_space: $("color-space").value,
-      two_pass: $("two-pass").checked,
-      ffmpeg_preset: $("ffmpeg-preset").value,
+      output_path: payload.output_path,
+      target_width: payload.target_width,
+      target_height: payload.target_height,
+      frame_rate: payload.frame_rate,
+      video_codec: payload.video_codec,
+      video_bitrate_mbps: payload.video_bitrate_mbps,
+      audio_codec: payload.audio_codec,
+      audio_sample_rate: payload.audio_sample_rate,
+      audio_bitrate_kbps: payload.audio_bitrate_kbps,
+      color_space: payload.color_space,
+      two_pass: payload.two_pass,
+      ffmpeg_preset: payload.ffmpeg_preset,
     };
   }
 

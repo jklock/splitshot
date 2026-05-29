@@ -9,6 +9,7 @@ from inspect import Parameter, signature
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 from uuid import uuid4 as _uuid4
@@ -44,11 +45,18 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     ExportVideoCodec,
+    MergePlacementMode,
+    MergePlacementSlot,
+    MergePlacementTargetKind,
     _merge_source_from_dict,
     _normalize_merge_source_angle_role,
+    _normalize_merge_source_placement_mode,
+    _normalize_merge_source_placement_slot,
+    _normalize_merge_source_placement_target_kind,
     _popup_bubble_from_dict,
     MatchWorkspace,
     MergeLayout,
+    MERGE_SOURCE_ANGLE_ROLE_VALUES,
     OverlayPosition,
     OutputProfile,
     OverlayTextBox,
@@ -57,6 +65,7 @@ from splitshot.domain.models import (
     PipSize,
     Project,
     MergeSource,
+    MergeSourceAssetPathKind,
     ScoreLetter,
     ScoreMark,
     ShotEvent,
@@ -72,9 +81,13 @@ from splitshot.domain.models import (
     project_to_dict,
     sync_overlay_legacy_custom_box_fields,
 )
-from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
+from splitshot.export.presets import (
+    apply_export_preset as apply_export_preset_settings,
+    apply_export_settings_payload,
+    resolved_export_settings,
+)
 from splitshot.export.pipeline import export_output_profile, export_project
-from splitshot.media.ffmpeg import MediaError
+from splitshot.media.ffmpeg import MediaError, generate_trimmed_derivative
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
@@ -157,6 +170,8 @@ _VALID_BROWSER_UI_TOOLS = {
 }
 
 _VALID_WAVEFORM_MODES = {"select", "add"}
+
+_TRIM_DERIVATIVE_CONTAINER_SUFFIXES = frozenset({".m4v", ".mkv", ".mov", ".mp4"})
 
 
 @dataclass(slots=True)
@@ -420,6 +435,301 @@ def _project_media_recovery_score(
     return score
 
 
+# Phase 4 must preserve this as the single controller-side role-priority seam
+# for both Compose merge sources and stage composite clips. Compose keeps
+# within-role stability via `MergeSource.placement.order_index`; stage composite
+# currently preserves the existing clip list order within the same role tier.
+_CAMERA_ROLE_PRIORITY = {
+    role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
+}
+
+
+def _camera_role_priority(angle_role: object) -> int:
+    normalized = str(angle_role or "").strip().lower()
+    return _CAMERA_ROLE_PRIORITY.get(normalized, len(_CAMERA_ROLE_PRIORITY))
+
+
+def _camera_role_priority_sort_key(
+    angle_role: object,
+    stable_index: int,
+    *,
+    order_index: int | None = None,
+) -> tuple[int, int, int]:
+    stable_order = stable_index if order_index is None else max(0, int(order_index))
+    return (_camera_role_priority(angle_role), stable_order, stable_index)
+
+
+def _merge_source_stable_order_index(source: MergeSource, fallback_index: int) -> int:
+    if source.placement.order_index is None:
+        return fallback_index
+    return max(0, int(source.placement.order_index))
+
+
+def _next_merge_source_order_index(project: Project) -> int:
+    return (
+        max(
+            _merge_source_stable_order_index(source, index)
+            for index, source in enumerate(project.merge_sources)
+        )
+        + 1
+        if project.merge_sources
+        else 0
+    )
+
+
+_CAMERA_ROLE_BASE_TARGET_PRIORITY = {
+    "primary": 0,
+    "static": 1,
+    "follow": 2,
+    "detail": 3,
+}
+
+
+def _camera_role_base_target_priority(angle_role: object) -> int:
+    normalized = str(angle_role or "").strip().lower()
+    return _CAMERA_ROLE_BASE_TARGET_PRIORITY.get(
+        normalized,
+        len(_CAMERA_ROLE_BASE_TARGET_PRIORITY),
+    )
+
+
+def _camera_role_seed_placement_mode(
+    project: Project,
+    angle_role: object,
+    asset: VideoAsset | None = None,
+) -> MergePlacementMode:
+    normalized_role = _normalize_merge_source_angle_role(angle_role, asset)
+    project_default_mode = _normalize_merge_source_placement_mode(project.merge.layout)
+    if normalized_role == "primary":
+        return MergePlacementMode.BASE
+    if normalized_role == "detail":
+        if project_default_mode in {
+            MergePlacementMode.PIP,
+            MergePlacementMode.FULL_SCREEN_PORTRAIT,
+        }:
+            return project_default_mode
+        return MergePlacementMode.PIP
+    if project_default_mode in {
+        MergePlacementMode.SIDE_BY_SIDE,
+        MergePlacementMode.ABOVE_BELOW,
+        MergePlacementMode.DUAL_CENTER_HUD,
+        MergePlacementMode.DUAL_TOP_HUD,
+    }:
+        return project_default_mode
+    return MergePlacementMode.SIDE_BY_SIDE
+
+
+def _camera_role_seed_placement_slot(
+    angle_role: object,
+    mode: MergePlacementMode,
+    asset: VideoAsset | None = None,
+) -> MergePlacementSlot:
+    normalized_role = _normalize_merge_source_angle_role(angle_role, asset)
+    if mode in {
+        MergePlacementMode.SIDE_BY_SIDE,
+        MergePlacementMode.DUAL_CENTER_HUD,
+        MergePlacementMode.DUAL_TOP_HUD,
+    }:
+        return MergePlacementSlot.LEFT if normalized_role == "static" else MergePlacementSlot.RIGHT
+    if mode == MergePlacementMode.ABOVE_BELOW:
+        return MergePlacementSlot.TOP if normalized_role == "static" else MergePlacementSlot.BOTTOM
+    if mode == MergePlacementMode.PIP:
+        return MergePlacementSlot.OVERLAY
+    return MergePlacementSlot.CENTER
+
+
+def _merge_source_resolved_placement_mode(
+    project: Project,
+    source: MergeSource,
+) -> MergePlacementMode:
+    current_mode = _normalize_merge_source_placement_mode(source.placement.mode)
+    if current_mode != MergePlacementMode.AUTO:
+        return current_mode
+    return _camera_role_seed_placement_mode(project, source.angle_role, source.asset)
+
+
+def _merge_source_base_target_sort_key(
+    project: Project,
+    source: MergeSource,
+    stable_index: int,
+) -> tuple[int, int, int, int]:
+    mode = _merge_source_resolved_placement_mode(project, source)
+    if mode in {MergePlacementMode.BASE, MergePlacementMode.FULL_SCREEN_PORTRAIT}:
+        mode_priority = 0
+    elif mode in {
+        MergePlacementMode.SIDE_BY_SIDE,
+        MergePlacementMode.ABOVE_BELOW,
+        MergePlacementMode.DUAL_CENTER_HUD,
+        MergePlacementMode.DUAL_TOP_HUD,
+    }:
+        mode_priority = 1
+    else:
+        mode_priority = 2
+    return (
+        mode_priority,
+        _camera_role_base_target_priority(source.angle_role),
+        _merge_source_stable_order_index(source, stable_index),
+        stable_index,
+    )
+
+
+def _preferred_merge_source_base_target(
+    project: Project,
+    source: MergeSource,
+) -> MergeSource | None:
+    candidates = [
+        (index, candidate)
+        for index, candidate in enumerate(project.merge_sources)
+        if candidate.id != source.id and candidate.asset.path
+    ]
+    for stable_index, candidate in sorted(
+        candidates,
+        key=lambda item: _merge_source_base_target_sort_key(project, item[1], item[0]),
+    ):
+        if _merge_source_resolved_placement_mode(project, candidate) in {
+            MergePlacementMode.BASE,
+            MergePlacementMode.SIDE_BY_SIDE,
+            MergePlacementMode.ABOVE_BELOW,
+            MergePlacementMode.FULL_SCREEN_PORTRAIT,
+            MergePlacementMode.DUAL_CENTER_HUD,
+            MergePlacementMode.DUAL_TOP_HUD,
+        }:
+            return candidate
+    return None
+
+
+def _camera_role_seed_target(
+    project: Project,
+    source: MergeSource,
+    mode: MergePlacementMode,
+) -> tuple[MergePlacementTargetKind, str | None]:
+    if mode not in {MergePlacementMode.PIP, MergePlacementMode.FULL_SCREEN_PORTRAIT}:
+        return MergePlacementTargetKind.PRIMARY_VIDEO, None
+    target_source = _preferred_merge_source_base_target(project, source)
+    if target_source is None:
+        return MergePlacementTargetKind.PRIMARY_VIDEO, None
+    return MergePlacementTargetKind.MERGE_SOURCE, target_source.id
+
+
+def _merge_source_matches_role_seed_defaults(
+    project: Project,
+    source: MergeSource,
+    reference_role: object,
+) -> bool:
+    current_mode = _normalize_merge_source_placement_mode(source.placement.mode)
+    if current_mode == MergePlacementMode.AUTO:
+        return True
+
+    expected_mode = _camera_role_seed_placement_mode(project, reference_role, source.asset)
+    if current_mode != expected_mode:
+        return False
+
+    if source.placement.slot not in {None, "", MergePlacementSlot.AUTO}:
+        current_slot = _normalize_merge_source_placement_slot(
+            source.placement.slot,
+            mode=current_mode,
+        )
+        expected_slot = _camera_role_seed_placement_slot(
+            reference_role,
+            current_mode,
+            source.asset,
+        )
+        if current_slot != expected_slot:
+            return False
+
+    if current_mode not in {MergePlacementMode.PIP, MergePlacementMode.FULL_SCREEN_PORTRAIT}:
+        return True
+
+    current_target_source_id = str(source.placement.target_source_id or "").strip() or None
+    current_target_kind = _normalize_merge_source_placement_target_kind(
+        source.placement.target_kind,
+        target_source_id=current_target_source_id,
+    )
+    valid_target_source_ids = {
+        candidate.id
+        for candidate in project.merge_sources
+        if candidate.id != source.id and candidate.asset.path
+    }
+    if current_target_kind == MergePlacementTargetKind.MERGE_SOURCE and (
+        current_target_source_id not in valid_target_source_ids
+    ):
+        return True
+
+    expected_target_kind, expected_target_source_id = _camera_role_seed_target(
+        project,
+        source,
+        current_mode,
+    )
+    if (
+        current_target_kind == expected_target_kind
+        and current_target_source_id == expected_target_source_id
+    ):
+        return True
+    return (
+        current_target_kind == MergePlacementTargetKind.PRIMARY_VIDEO
+        and current_target_source_id is None
+    )
+
+
+def _apply_merge_source_role_seed_defaults(
+    project: Project,
+    source: MergeSource,
+    *,
+    reference_role: object | None = None,
+    force: bool = False,
+) -> bool:
+    role_reference = source.angle_role if reference_role is None else reference_role
+    if not force and not _merge_source_matches_role_seed_defaults(project, source, role_reference):
+        return False
+
+    next_mode = _camera_role_seed_placement_mode(project, source.angle_role, source.asset)
+    next_slot = _camera_role_seed_placement_slot(source.angle_role, next_mode, source.asset)
+    next_target_kind, next_target_source_id = _camera_role_seed_target(
+        project,
+        source,
+        next_mode,
+    )
+
+    changed = False
+    if source.placement.mode != next_mode:
+        source.placement.mode = next_mode
+        changed = True
+    if source.placement.slot != next_slot:
+        source.placement.slot = next_slot
+        changed = True
+    if source.placement.target_kind != next_target_kind:
+        source.placement.target_kind = next_target_kind
+        changed = True
+    if source.placement.target_source_id != next_target_source_id:
+        source.placement.target_source_id = next_target_source_id
+        changed = True
+    return changed
+
+
+def _role_priority_sorted_stage_clips(clips: list[StageClipSource]) -> list[StageClipSource]:
+    return [
+        clip
+        for _, clip in sorted(
+            enumerate(clips),
+            key=lambda item: _camera_role_priority_sort_key(item[1].angle_role, item[0]),
+        )
+    ]
+
+
+def _role_priority_sorted_merge_sources(project: Project) -> list[MergeSource]:
+    return [
+        source
+        for index, source in sorted(
+            enumerate(project.merge_sources),
+            key=lambda item: _camera_role_priority_sort_key(
+                item[1].angle_role,
+                item[0],
+                order_index=_merge_source_stable_order_index(item[1], item[0]),
+            ),
+        )
+    ]
+
+
 def _source_supports_secondary_analysis(source: MergeSource | None) -> bool:
     if source is None:
         return False
@@ -428,15 +738,131 @@ def _source_supports_secondary_analysis(source: MergeSource | None) -> bool:
 
 
 def _first_analyzable_merge_source(project: Project) -> MergeSource | None:
-    for source in project.merge_sources:
+    for source in _role_priority_sorted_merge_sources(project):
         if _source_supports_secondary_analysis(source):
             return source
     return None
 
 
+def _merge_source_by_id(project: Project, source_id: object) -> MergeSource | None:
+    normalized_source_id = str(source_id or "").strip()
+    if not normalized_source_id:
+        return None
+    for source in project.merge_sources:
+        if source.id == normalized_source_id:
+            return source
+    return None
+
+
+def _merge_source_id_for_asset(project: Project, asset: VideoAsset | None) -> str | None:
+    if asset is None:
+        return None
+    asset_path = str(asset.path or "").strip()
+    for source in project.merge_sources:
+        if source.asset is asset:
+            return source.id
+        if asset_path and str(source.asset.path or "").strip() == asset_path:
+            return source.id
+    return None
+
+
+def _project_payload_from_disk(path: str | Path) -> dict[str, object] | None:
+    metadata_path = ensure_project_suffix(path) / "project.json"
+    try:
+        payload = json.loads(metadata_path.read_text())
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _role_priority_merge_reference_source(project: Project) -> MergeSource | None:
+    preferred_source = _first_analyzable_merge_source(project)
+    if preferred_source is not None:
+        return preferred_source
+    for source in _role_priority_sorted_merge_sources(project):
+        if source.asset.path:
+            return source
+    return None
+
+
+def _preferred_merge_reference_source(project: Project) -> MergeSource | None:
+    preferred_source = _role_priority_merge_reference_source(project)
+    if preferred_source is not None:
+        return preferred_source
+    analyzed_source = _merge_source_by_id(project, project.analysis.analyzed_secondary_source_id)
+    if analyzed_source is not None and analyzed_source.asset.path:
+        return analyzed_source
+    return None
+
+
+def _realign_live_merge_reference_state(project: Project) -> MergeSource | None:
+    reference_source = _role_priority_merge_reference_source(project)
+    if reference_source is None:
+        _clear_secondary_analysis_state(project)
+        project.secondary_video = None
+        return None
+
+    analyzed_source = _merge_source_by_id(project, project.analysis.analyzed_secondary_source_id)
+    has_live_secondary_analysis = (
+        analyzed_source is not None
+        and analyzed_source.id == reference_source.id
+        and _source_supports_secondary_analysis(reference_source)
+    )
+    if has_live_secondary_analysis:
+        project.secondary_video = reference_source.asset
+        project.analysis.sync_offset_ms = int(reference_source.sync_offset_ms)
+        return reference_source
+
+    stale_secondary_analysis = (
+        project.analysis.analyzed_secondary_source_id is not None
+        or project.analysis.beep_time_ms_secondary is not None
+        or bool(project.analysis.waveform_secondary)
+        or project.analysis.secondary_analysis_status != "idle"
+        or bool(project.analysis.secondary_analysis_message)
+    )
+    if stale_secondary_analysis:
+        _clear_secondary_analysis_state(project, preserve_sync_offset=True)
+    project.analysis.sync_offset_ms = int(reference_source.sync_offset_ms)
+    project.analysis.secondary_sync_source = "manual"
+    project.secondary_video = (
+        reference_source.asset if _source_supports_secondary_analysis(reference_source) else None
+    )
+    return reference_source
+
+
 def _sync_secondary_video_from_merge_sources(project: Project) -> None:
     source = _first_analyzable_merge_source(project)
     project.secondary_video = None if source is None else source.asset
+
+
+def _merge_source_original_path(source: MergeSource) -> str:
+    original_path = str(source.trim_derivative.original_path or "").strip()
+    if original_path:
+        return original_path
+    asset_path = str(source.asset.path or "").strip()
+    derivative_path = str(source.trim_derivative.derivative_path or "").strip()
+    if asset_path and asset_path != derivative_path:
+        source.trim_derivative.original_path = asset_path
+        return asset_path
+    return ""
+
+
+def _sync_merge_source_trim_provenance(source: MergeSource) -> None:
+    original_path = _merge_source_original_path(source)
+    derivative_path = str(source.trim_derivative.derivative_path or "").strip()
+    asset_path = str(source.asset.path or "").strip()
+    if derivative_path and asset_path == derivative_path:
+        source.trim_derivative.active_path_kind = MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+        return
+    source.trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
+    if not original_path and asset_path:
+        source.trim_derivative.original_path = asset_path
+
+
+def _reset_merge_source_trim_provenance(source: MergeSource) -> None:
+    source.trim_derivative.original_path = str(source.asset.path or "")
+    source.trim_derivative.derivative_path = None
+    source.trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
 
 
 def _clear_secondary_analysis_state(
@@ -3593,8 +4019,7 @@ class ProjectController(QObject):
         if len(clips) < 2:
             return {"success": False, "error": "Need at least 2 clips for angle direction"}
 
-        role_priority = {"primary": 0, "follow": 1, "static": 2, "detail": 3}
-        sorted_clips = sorted(clips, key=lambda c: role_priority.get(c.angle_role, 99))
+        sorted_clips = _role_priority_sorted_stage_clips(clips)
 
         cut_plan = []
         for i, clip in enumerate(sorted_clips):
@@ -3945,12 +4370,12 @@ class ProjectController(QObject):
 
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
-        self.load_primary_video(self._stage_project_input_path(path, source_name=source_name))
+        self.load_primary_video(path)
         self.analyze_primary()
 
     def ingest_secondary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing secondary video...")
-        self.load_secondary_video(self._stage_project_input_path(path, source_name=source_name))
+        self.load_secondary_video(path)
 
     def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
         changed = False
@@ -4522,13 +4947,24 @@ class ProjectController(QObject):
         used_paths.add(best_path)
         return best_asset
 
-    def _restore_media_sources_from_project(self) -> bool:
+    def _restore_media_sources_from_project(
+        self,
+        *,
+        secondary_video_is_explicitly_persisted: bool = False,
+    ) -> bool:
         candidates = self._project_input_candidates()
         if not candidates:
             return False
 
         used_paths: set[Path] = set()
         changed = False
+        explicit_secondary_video = (
+            self.project.secondary_video if secondary_video_is_explicitly_persisted else None
+        )
+        explicit_secondary_source_id = _merge_source_id_for_asset(
+            self.project,
+            explicit_secondary_video,
+        )
 
         recovered_primary = self._recover_media_asset_from_project_folder(
             self.project.primary_video, candidates, used_paths
@@ -4544,10 +4980,31 @@ class ProjectController(QObject):
             if recovered_asset is None:
                 continue
             source.asset = recovered_asset
+            _sync_merge_source_trim_provenance(source)
             changed = True
 
         if self.project.merge_sources:
-            _sync_secondary_video_from_merge_sources(self.project)
+            if secondary_video_is_explicitly_persisted:
+                if explicit_secondary_video is None:
+                    self.project.secondary_video = None
+                elif explicit_secondary_source_id is not None:
+                    explicit_source = _merge_source_by_id(
+                        self.project,
+                        explicit_secondary_source_id,
+                    )
+                    if explicit_source is not None:
+                        self.project.secondary_video = explicit_source.asset
+                else:
+                    recovered_secondary = self._recover_media_asset_from_project_folder(
+                        explicit_secondary_video,
+                        candidates,
+                        used_paths,
+                    )
+                    if recovered_secondary is not None:
+                        self.project.secondary_video = recovered_secondary
+                        changed = True
+            else:
+                _sync_secondary_video_from_merge_sources(self.project)
         elif self.project.secondary_video is not None:
             recovered_secondary = self._recover_media_asset_from_project_folder(
                 self.project.secondary_video,
@@ -4675,18 +5132,28 @@ class ProjectController(QObject):
             self.project_changed.emit()
 
     def add_merge_source(self, path: str, source_name: str | None = None) -> None:
-        path = self._stage_project_input_path(path, source_name=source_name)
         asset = probe_video(path)
-        self.project.merge_sources.append(
-            MergeSource(
-                asset=asset,
-                angle_role=default_merge_source_angle_role(asset),
-                pip_size_percent=self.project.merge.pip_size_percent,
-                pip_x=self.project.merge.pip_x,
-                pip_y=self.project.merge.pip_y,
-                sync_offset_ms=0,
-            )
+        merge_source = MergeSource(
+            asset=asset,
+            angle_role=default_merge_source_angle_role(asset),
+            pip_size_percent=self.project.merge.pip_size_percent,
+            pip_x=self.project.merge.pip_x,
+            pip_y=self.project.merge.pip_y,
+            sync_offset_ms=0,
         )
+        next_order_index = _next_merge_source_order_index(self.project)
+        merge_source.placement.order_index = next_order_index
+        merge_source.placement.layer_index = next_order_index
+        merge_source.trim_derivative.original_path = asset.path
+        merge_source.trim_derivative.derivative_path = None
+        merge_source.trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
+        self.project.merge_sources.append(merge_source)
+        for existing_source in self.project.merge_sources:
+            _apply_merge_source_role_seed_defaults(
+                self.project,
+                existing_source,
+                force=existing_source.id == merge_source.id,
+            )
         self.project.merge.enabled = True
         _sync_secondary_video_from_merge_sources(self.project)
         if _first_analyzable_merge_source(self.project) is not None:
@@ -4729,6 +5196,149 @@ class ProjectController(QObject):
         if analyzed_source is None or analyzed_source.id != source_id:
             raise ValueError("Only the first analyzable PiP video can be reanalyzed")
         self.analyze_secondary()
+
+    def _merge_source_by_id(self, source_id: str) -> MergeSource:
+        source = next((item for item in self.project.merge_sources if item.id == source_id), None)
+        if source is None:
+            raise ValueError("Merge source not found")
+        return source
+
+    def _require_saved_project_for_trim_derivative(self) -> Path:
+        if self.project_path is None:
+            raise ValueError(
+                "Trim derivative generation requires a saved project folder because derivatives live under Input/."
+            )
+        return self.project_path
+
+    def _merge_source_trim_derivative_filename(self, source: MergeSource) -> str:
+        source_path = _merge_source_original_path(source) or str(source.asset.path or "") or source.id
+        base_name = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(source_path).stem).strip("-._")
+        if not base_name:
+            base_name = "merge-source"
+        suffix = Path(source_path).suffix.lower()
+        if suffix not in _TRIM_DERIVATIVE_CONTAINER_SUFFIXES:
+            suffix = ".mp4"
+        return f"{base_name}-{source.id[:8]}-trim{suffix}"
+
+    def _merge_source_trim_derivative_path(self, source: MergeSource) -> Path:
+        existing_path = str(source.trim_derivative.derivative_path or "").strip()
+        if existing_path:
+            return Path(existing_path).expanduser().resolve(strict=False)
+
+        project_path = self._require_saved_project_for_trim_derivative()
+        derivative_path = (
+            project_path / INPUT_DIRNAME / self._merge_source_trim_derivative_filename(source)
+        ).resolve(strict=False)
+        return derivative_path
+
+    def _merge_source_available_original_path(self, source: MergeSource) -> Path | None:
+        original_path = str(source.trim_derivative.original_path or "").strip()
+        if original_path:
+            original_candidate = Path(original_path).expanduser().resolve(strict=False)
+            if original_candidate.is_file():
+                return original_candidate
+
+        asset_path = str(source.asset.path or "").strip()
+        if not asset_path:
+            return None
+
+        asset_candidate = Path(asset_path).expanduser().resolve(strict=False)
+        if not asset_candidate.is_file():
+            return None
+
+        derivative_path = str(source.trim_derivative.derivative_path or "").strip()
+        if derivative_path:
+            derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
+            if asset_candidate == derivative_candidate:
+                return None
+
+        return asset_candidate
+
+    def _refresh_merge_source_trim_derivative_from_original(
+        self,
+        original_source_path: Path,
+        derivative_path: Path,
+    ) -> Path:
+        derivative_path.parent.mkdir(parents=True, exist_ok=True)
+        if original_source_path != derivative_path:
+            shutil.copy2(original_source_path, derivative_path)
+        elif not derivative_path.is_file():
+            raise FileNotFoundError(
+                "Trim derivative source is unavailable. Restore the original media before trimming again."
+            )
+        return derivative_path
+
+    def _merge_source_trim_source_path(self, source: MergeSource) -> Path:
+        original_path = _merge_source_original_path(source)
+        if original_path:
+            original_candidate = Path(original_path).expanduser().resolve(strict=False)
+            if original_candidate.is_file():
+                return original_candidate
+
+        derivative_path = str(source.trim_derivative.derivative_path or "").strip()
+        if derivative_path:
+            derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
+            if derivative_candidate.is_file():
+                return derivative_candidate
+
+        asset_path = str(source.asset.path or "").strip()
+        if asset_path:
+            asset_candidate = Path(asset_path).expanduser().resolve(strict=False)
+            if asset_candidate.is_file():
+                return asset_candidate
+
+        raise FileNotFoundError(
+            "Trim source is unavailable. Restore the original media or keep the local derivative available before trimming again."
+        )
+
+    def trim_merge_source_to_derivative(
+        self,
+        source_id: str,
+        *,
+        start_ms: int,
+        end_ms: int | None = None,
+        export_settings: ExportSettings | None = None,
+    ) -> MergeSource:
+        project_path = self._require_saved_project_for_trim_derivative()
+        source = self._merge_source_by_id(source_id)
+        if source.asset.is_still_image:
+            raise ValueError("Only video merge sources can generate trim derivatives.")
+
+        derivative_path = self._merge_source_trim_derivative_path(source)
+        (project_path / INPUT_DIRNAME).mkdir(parents=True, exist_ok=True)
+        original_source_path = self._merge_source_available_original_path(source)
+        if original_source_path is not None:
+            trim_source_path = self._refresh_merge_source_trim_derivative_from_original(
+                original_source_path,
+                derivative_path,
+            )
+        else:
+            trim_source_path = self._merge_source_trim_source_path(source)
+
+        trim_source_fps = probe_video(trim_source_path).fps
+        generate_trimmed_derivative(
+            trim_source_path,
+            derivative_path,
+            start_ms=start_ms,
+            end_ms=end_ms,
+            source_fps=trim_source_fps,
+            export_settings=export_settings or self.project.export,
+        )
+
+        if (
+            not str(source.trim_derivative.original_path or "").strip()
+            and original_source_path is not None
+        ):
+            source.trim_derivative.original_path = str(original_source_path)
+        source.trim_derivative.derivative_path = str(derivative_path)
+        source.asset = probe_video(derivative_path)
+        _sync_merge_source_trim_provenance(source)
+        _sync_secondary_video_from_merge_sources(self.project)
+        self.project.merge.enabled = bool(self.project.merge_sources)
+        self._set_status("Updated merge trim derivative.")
+        self.project.touch()
+        self.project_changed.emit()
+        return source
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
@@ -5750,10 +6360,24 @@ class ProjectController(QObject):
         pip_y: float | None = None,
         opacity: float | None = None,
         angle_role: str | None = None,
+        placement_mode: str | None = None,
+        placement_slot: str | None = None,
+        target_kind: str | None = None,
+        target_source_id: str | None = None,
     ) -> None:
-        for source in self.project.merge_sources:
+        for index, source in enumerate(self.project.merge_sources):
             if source.id != source_id:
                 continue
+            explicit_placement_requested = any(
+                value is not None
+                for value in (placement_mode, placement_slot, target_kind, target_source_id)
+            )
+            role_changed = False
+            previous_angle_role = source.angle_role
+            if source.placement.order_index is None:
+                source.placement.order_index = _merge_source_stable_order_index(source, index)
+            if source.placement.layer_index is None:
+                source.placement.layer_index = source.placement.order_index
             if pip_size_percent is not None:
                 source.pip_size_percent = max(1, min(95, int(pip_size_percent)))
             if pip_x is not None:
@@ -5763,20 +6387,66 @@ class ProjectController(QObject):
             if opacity is not None:
                 source.opacity = max(0.0, min(1.0, float(opacity)))
             if angle_role is not None:
-                source.angle_role = _normalize_merge_source_angle_role(angle_role, source.asset)
+                next_angle_role = _normalize_merge_source_angle_role(angle_role, source.asset)
+                role_changed = source.angle_role != next_angle_role
+                previous_angle_role = source.angle_role
+                source.angle_role = next_angle_role
+            if explicit_placement_requested:
+                next_mode = (
+                    source.placement.mode
+                    if placement_mode is None
+                    else _normalize_merge_source_placement_mode(placement_mode)
+                )
+                next_target_source_id = (
+                    source.placement.target_source_id
+                    if target_source_id is None
+                    else str(target_source_id).strip() or None
+                )
+                next_target_kind = _normalize_merge_source_placement_target_kind(
+                    source.placement.target_kind if target_kind is None else target_kind,
+                    target_source_id=next_target_source_id,
+                )
+                if next_target_kind != MergePlacementTargetKind.MERGE_SOURCE:
+                    next_target_source_id = None
+                next_slot_input = placement_slot
+                if next_slot_input is None:
+                    next_slot_input = None if placement_mode is not None else source.placement.slot
+                source.placement.mode = next_mode
+                source.placement.slot = _normalize_merge_source_placement_slot(
+                    next_slot_input,
+                    mode=next_mode,
+                )
+                source.placement.target_kind = next_target_kind
+                source.placement.target_source_id = next_target_source_id
+            if role_changed:
+                if not explicit_placement_requested:
+                    _apply_merge_source_role_seed_defaults(
+                        self.project,
+                        source,
+                        reference_role=previous_angle_role,
+                    )
+                for other_source in self.project.merge_sources:
+                    if other_source.id == source_id:
+                        continue
+                    _apply_merge_source_role_seed_defaults(self.project, other_source)
+                _realign_live_merge_reference_state(self.project)
             self.project.touch()
             self.project_changed.emit()
             return
         raise ValueError("Merge source not found")
 
     def set_merge_source_sync_offset(self, source_id: str, offset_ms: int) -> None:
-        for index, source in enumerate(self.project.merge_sources):
+        for source in self.project.merge_sources:
             if source.id != source_id:
                 continue
             source.sync_offset_ms = int(offset_ms)
-            if self.project.analysis.analyzed_secondary_source_id == source_id or index == 0:
+            preferred_source = _preferred_merge_reference_source(self.project)
+            if preferred_source is not None and preferred_source.id == source_id:
                 self.project.analysis.sync_offset_ms = source.sync_offset_ms
                 self.project.analysis.secondary_sync_source = "manual"
+                self.project.secondary_video = (
+                    source.asset if _source_supports_secondary_analysis(source) else None
+                )
             self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
             self.project.touch()
             self.project_changed.emit()
@@ -5853,78 +6523,67 @@ class ProjectController(QObject):
         self.settings_changed.emit()
         self.project_changed.emit()
 
+    # Phase 3/6 must keep trim settings on the same export payload keys/preset ids
+    # used by the existing export pane; trim-specific fields live alongside that
+    # shared contract instead of introducing a parallel trim-only settings dialect.
+    def trim_export_settings_from_payload(
+        self,
+        payload: dict[str, object] | None = None,
+    ) -> ExportSettings:
+        export_payload = payload
+        if isinstance(payload, dict) and isinstance(payload.get("export"), dict):
+            export_payload = payload.get("export")
+        return resolved_export_settings(
+            self.project.export,
+            export_payload if isinstance(export_payload, dict) else {},
+            synchronize_preset=True,
+        )
+
+    def trim_merge_source_from_payload(
+        self,
+        payload: dict[str, object] | None = None,
+    ) -> MergeSource:
+        request_payload = payload if isinstance(payload, dict) else {}
+        source_id = request_payload.get("source_id", request_payload.get("id"))
+        if source_id in {None, ""}:
+            raise ValueError("source_id is required")
+
+        trim_payload = request_payload.get("trim")
+        trim_request = trim_payload if isinstance(trim_payload, dict) else request_payload
+        start_ms_value = trim_request.get(
+            "start_ms",
+            request_payload.get("start_ms", request_payload.get("trim_start_ms")),
+        )
+        if start_ms_value in {None, ""}:
+            raise ValueError("start_ms is required")
+        end_ms_value = trim_request.get(
+            "end_ms",
+            request_payload.get("end_ms", request_payload.get("trim_end_ms")),
+        )
+
+        return self.trim_merge_source_to_derivative(
+            str(source_id),
+            start_ms=int(start_ms_value),
+            end_ms=None if end_ms_value in {None, ""} else int(end_ms_value),
+            export_settings=self.trim_export_settings_from_payload(request_payload),
+        )
+
     def set_export_settings(self, payload: dict[str, object]) -> None:
-        export = self.project.export
-        manual_override_keys = {
-            "quality",
-            "aspect_ratio",
-            "crop_center_x",
-            "crop_center_y",
-            "target_width",
-            "target_height",
-            "frame_rate",
-            "video_codec",
-            "video_bitrate_mbps",
-            "audio_codec",
-            "audio_sample_rate",
-            "audio_bitrate_kbps",
-            "color_space",
-            "two_pass",
-            "ffmpeg_preset",
-        }
-        if "quality" in payload:
-            export.quality = ExportQuality(str(payload["quality"]))
-            self.settings.export_quality = export.quality
+        normalized_payload = apply_export_settings_payload(self.project.export, payload)
+        if "quality" in normalized_payload:
+            self.settings.export_quality = self.project.export.quality
             save_settings(self.settings)
             self.settings_changed.emit()
-        if "aspect_ratio" in payload:
-            export.aspect_ratio = AspectRatio(str(payload["aspect_ratio"]))
-        if "crop_center_x" in payload:
-            export.crop_center_x = float(payload["crop_center_x"])
-        if "crop_center_y" in payload:
-            export.crop_center_y = float(payload["crop_center_y"])
-        if "target_width" in payload:
-            value = payload["target_width"]
-            export.target_width = None if value in {"", None} else max(2, int(value))
-        if "target_height" in payload:
-            value = payload["target_height"]
-            export.target_height = None if value in {"", None} else max(2, int(value))
-        if "frame_rate" in payload:
-            export.frame_rate = ExportFrameRate(str(payload["frame_rate"]))
-        if "video_codec" in payload:
-            export.video_codec = ExportVideoCodec(str(payload["video_codec"]))
-        if "video_bitrate_mbps" in payload:
-            export.video_bitrate_mbps = max(0.1, float(payload["video_bitrate_mbps"]))
-        if "audio_codec" in payload:
-            export.audio_codec = ExportAudioCodec(str(payload["audio_codec"]))
-        if "audio_sample_rate" in payload:
-            export.audio_sample_rate = max(8000, int(payload["audio_sample_rate"]))
-        if "audio_bitrate_kbps" in payload:
-            export.audio_bitrate_kbps = max(32, int(payload["audio_bitrate_kbps"]))
-        if "color_space" in payload:
-            export.color_space = ExportColorSpace(str(payload["color_space"]))
-        if "two_pass" in payload:
-            export.two_pass = bool(payload["two_pass"])
-        if "ffmpeg_preset" in payload:
-            export.ffmpeg_preset = str(payload["ffmpeg_preset"])
-        if "output_path" in payload:
-            next_output_path = str(payload["output_path"]).strip()
-            export.output_path = None if not next_output_path else next_output_path
-        if manual_override_keys.intersection(payload):
-            export.preset = ExportPreset.CUSTOM
         self.project.touch()
         self.project_changed.emit()
 
     def adjust_sync_offset(self, delta_ms: int) -> None:
         self.project.analysis.sync_offset_ms += delta_ms
-        source_id = self.project.analysis.analyzed_secondary_source_id
-        if source_id:
-            for source in self.project.merge_sources:
-                if source.id == source_id:
-                    source.sync_offset_ms = self.project.analysis.sync_offset_ms
-                    break
-        elif self.project.merge_sources:
-            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        source = _preferred_merge_reference_source(self.project)
+        if source is not None:
+            source.sync_offset_ms = self.project.analysis.sync_offset_ms
+            if _source_supports_secondary_analysis(source):
+                self.project.secondary_video = source.asset
         self.project.analysis.secondary_sync_source = "manual"
         self._set_status(f"Adjusted sync offset to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
@@ -5932,25 +6591,26 @@ class ProjectController(QObject):
 
     def set_sync_offset(self, offset_ms: int) -> None:
         self.project.analysis.sync_offset_ms = offset_ms
-        source_id = self.project.analysis.analyzed_secondary_source_id
-        if source_id:
-            for source in self.project.merge_sources:
-                if source.id == source_id:
-                    source.sync_offset_ms = self.project.analysis.sync_offset_ms
-                    break
-        elif self.project.merge_sources:
-            self.project.merge_sources[0].sync_offset_ms = self.project.analysis.sync_offset_ms
+        source = _preferred_merge_reference_source(self.project)
+        if source is not None:
+            source.sync_offset_ms = self.project.analysis.sync_offset_ms
+            if _source_supports_secondary_analysis(source):
+                self.project.secondary_video = source.asset
         self.project.analysis.secondary_sync_source = "manual"
         self._set_status(f"Sync offset set to {self.project.analysis.sync_offset_ms} ms.")
         self.project.touch()
         self.project_changed.emit()
 
     def swap_videos(self) -> None:
+        swapped_merge_source: MergeSource | None = None
         if self.project.merge_sources:
-            first_source = self.project.merge_sources[0].asset
-            self.project.merge_sources[0].asset = self.project.primary_video
+            swapped_merge_source = _preferred_merge_reference_source(self.project)
+            if swapped_merge_source is None:
+                return
+            first_source = swapped_merge_source.asset
+            swapped_merge_source.asset = self.project.primary_video
+            _reset_merge_source_trim_provenance(swapped_merge_source)
             self.project.primary_video = first_source
-            _sync_secondary_video_from_merge_sources(self.project)
         elif self.project.secondary_video is None:
             return
         else:
@@ -5962,10 +6622,13 @@ class ProjectController(QObject):
             self.project.analysis.beep_time_ms_secondary,
             self.project.analysis.beep_time_ms_primary,
         )
-        analyzed_source = _first_analyzable_merge_source(self.project)
-        self.project.analysis.analyzed_secondary_source_id = (
-            None if analyzed_source is None else analyzed_source.id
-        )
+        if swapped_merge_source is not None and _source_supports_secondary_analysis(swapped_merge_source):
+            analyzed_source = swapped_merge_source
+        else:
+            analyzed_source = _first_analyzable_merge_source(self.project)
+        if self.project.merge_sources:
+            self.project.secondary_video = None if analyzed_source is None else analyzed_source.asset
+        self.project.analysis.analyzed_secondary_source_id = None if analyzed_source is None else analyzed_source.id
         self.project.analysis.sync_offset_ms *= -1
         if analyzed_source is not None:
             analyzed_source.sync_offset_ms = self.project.analysis.sync_offset_ms
@@ -5995,12 +6658,20 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def open_project(self, path: str) -> None:
-        self.project = load_project(path)
-        self.project_path = ensure_project_suffix(path)
+        project_path = ensure_project_suffix(path)
+        raw_payload = _project_payload_from_disk(project_path)
+        secondary_video_is_explicitly_persisted = (
+            isinstance(raw_payload, dict) and "secondary_video" in raw_payload
+        )
+
+        self.project = load_project(project_path)
+        self.project_path = project_path
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path()
         loaded_snapshot = project_to_dict(self.project)
-        recovered_media = self._restore_media_sources_from_project()
+        recovered_media = self._restore_media_sources_from_project(
+            secondary_video_is_explicitly_persisted=secondary_video_is_explicitly_persisted,
+        )
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
         if recovered_media or recovered_practiscore:
             self.project.touch()

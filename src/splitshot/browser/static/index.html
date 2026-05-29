@@ -690,11 +690,14 @@
               <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                 <div class="section-header sub-section-header">
-                  <h3>Composition Defaults</h3>
+                  <div>
+                    <h3>Composition Defaults</h3>
+                    <span>Use these when adding media. Existing item cards stay the active placement truth.</span>
+                  </div>
                   <button id="restore-merge-defaults" type="button">Restore</button>
                 </div>
                 <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-                <label>Layout
+                <label>New item layout
                   <select id="merge-layout">
                     <option value="side_by_side">Side by side</option>
                     <option value="above_below">Above / below</option>
@@ -704,30 +707,31 @@
                     <option value="dual_top_hud">Dual top HUD</option>
                   </select>
                 </label>
-                <label>Default layer size
+                <p class="hint">These layout and placement values seed newly added media only. Restore resets this defaults block without rewriting current item cards.</p>
+                <label>New item layer size
                   <div class="pip-size-control">
                     <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
                     <output id="pip-size-label">35%</output>
                   </div>
                 </label>
                 <div class="control-grid pip-position-grid">
-                  <label>Default Layer X (0 left, 1 right)
+                  <label>New item layer X (0 left, 1 right)
                     <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
-                  <label>Default Layer Y (0 top, 1 bottom)
+                  <label>New item layer Y (0 top, 1 bottom)
                     <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
               </section>
               <section class="pip-defaults-section" data-inspector-section="run-window">
                 <div class="section-header sub-section-header">
-                  <h3>Run Window</h3>
-                  <span>Trim dead time once the beep and last shot are reviewed.</span>
+                  <h3>Trim Settings</h3>
+                  <span>Reusable output-profile trim padding for each item's Trim Video workflow.</span>
                 </div>
                 <div class="hook-grid">
-                  <button data-output-hook="run-window" type="button">Trim Dead Time</button>
+                  <button data-output-hook="run-window" type="button">Trim Settings</button>
                 </div>
-                <p class="hint">After selecting an output profile in Export, save the lead-in and tail padding here so stage output and stage composite exports share the same trimmed range.</p>
+                <p class="hint">Trim Video uses the selected output profile's lead-in and tail padding defaults.</p>
                 <div id="output-hook-host-merge"></div>
               </section>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>
@@ -757,7 +761,7 @@
                   <button id="output-profile-create" type="button">Create</button>
                 </div>
                 <div id="output-profile-list" class="automation-list" aria-label="Output profile list"></div>
-                <p class="hint">Select the output profile here first. Then set <code>Trim Dead Time</code> in <code>Compose</code>, <code>Export Badges</code> in <code>Overlay</code>, and framing/title/watermark here in <code>Export</code>.</p>
+                <p class="hint">Select the output profile here first. Then open <code>Trim Settings</code> in <code>Compose</code>, <code>Export Badges</code> in <code>Overlay</code>, and framing/title/watermark here in <code>Export</code>.</p>
               </section>
               <section class="settings-section export-hook-section">
                 <div class="section-header sub-section-header">
@@ -1418,10 +1422,11 @@
                   <div class="automation-card">
                     <div class="profile-toolbar">
                       <input id="stage-clip-path" type="text" placeholder="Clip path" aria-label="Stage clip path" />
-                      <select id="stage-clip-role" aria-label="Angle role">
+                      <select id="stage-clip-role" aria-label="Camera role">
                         <option value="primary">Primary</option>
                         <option value="follow">Follow</option>
                         <option value="static">Static</option>
+                          <option value="detail">Detail</option>
                       </select>
                       <button id="stage-clip-add" type="button">Add Clip</button>
                     </div>

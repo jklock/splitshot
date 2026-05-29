@@ -4,12 +4,12 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 
 Once a project is active, SplitShot keeps later workflow controls in their working panes: reusable output profiles and hooks live in [export.md](export.md), review-source selection lives in [review.md](review.md), and added-media angle-role/source-management controls live in [pip.md](pip.md). The Project pane stays focused on setup.
 
-![Project pane with project name, PractiScore browser opener, import controls, primary video path, and project folder controls](../../screenshots/ProjectPane.png)
+![Project pane with project name, PractiScore browser opener, import controls, primary video display, and project folder controls](../../screenshots/ProjectPane.png)
 
 ## When To Use This Pane
 
 - Start a new run.
-- Establish the project folder that owns the run's `Input`, `CSV`, and `Output` folders.
+- Establish the project folder that owns the run metadata, `CSV`, `Output`, and any local derivatives kept under `Input`.
 - Load or replace the primary stage video.
 - Open PractiScore in your browser when you need to log in or download results.
 - Import official stage context from a local PractiScore CSV or TXT file.
@@ -33,8 +33,8 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 | `Competitor name` | Selects the competitor record from the staged data. |
 | `Place` | Selects the matching place entry when duplicate competitor rows exist. `Competitor name` and `Place` stay synchronized. |
 | Imported summary rows | Show source file, match type, official raw time, SplitShot raw time, raw delta, final value, and official final value. |
-| `Primary Video` | Shows the current imported primary path and accepts a pasted local path. Press Enter after pasting. Disabled until a project is active. |
-| `Import Primary Video` | Opens the file picker for the source video, copies that file into the project's `Input` folder, and re-runs local analysis. Disabled until a project is active. |
+| `Primary Video` | Shows the current imported primary video's filename. Readonly; use `Import Primary Video` to choose or replace the file. Disabled until a project is active. |
+| `Import Primary Video` | Opens the source-video picker, keeps the chosen file at its current path, and re-runs local analysis. Disabled until a project is active. |
 
 ## How To Use It
 
@@ -44,17 +44,17 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 4. Click `Select PractiScore File` and choose the exported CSV/TXT file.
 5. Confirm `Match type`, `Stage #`, `Competitor name`, and `Place`.
 6. When a competitor name is unique, selecting it also selects the matching `Place`. Selecting a duplicate `Place` backfills the matching competitor row.
-7. Click `Import Primary Video`, or paste the absolute path into `Primary Video` and press Enter.
-8. Wait for local analysis to finish. The waveform, shot list, metrics, score rows, and overlays depend on that analysis.
+7. Click `Import Primary Video` and choose the file. When SplitShot has no stronger last-used media path to reuse, the picker opens from the active project folder.
+8. Wait for local analysis to finish. `Primary Video` updates to the imported file name, and the waveform, shot list, metrics, score rows, and overlays depend on that analysis.
 9. Continue into [pip.md](pip.md), [review.md](review.md), and [export.md](export.md) for Compose source roles and sync, review-source selection, reusable output recipes, and export hooks.
 10. Use `Create Project` for a clean session and `Delete Project` when the saved metadata should be removed without deleting the folder contents.
 
 ## Downstream Effects
 
-- Primary video import copies the selected source into the project's `Input` folder, then creates the waveform, detected shots, beep marker, and timing rows.
+- Primary video import keeps the selected source at its original path, then creates the waveform, detected shots, beep marker, and timing rows.
 - PractiScore context from the imported local CSV/TXT file feeds Score, Review summary boxes, Overlay final results, Export, and Metrics.
 - PractiScore file imports are staged inside the project's `CSV` folder.
-- Once a project is active, later browse dialogs start from that project folder by default. Primary-video import stays a source-file picker so you can import from anywhere.
+- Once a project is active, later browse dialogs start from that project folder by default when no stronger existing path is available, including primary-video import.
 - Export defaults point at the project's `Output/output.mp4` path unless you override them.
 - Replacing the primary video resets media-bound state such as timing, added media, and export logs.
 - The project folder is the persistent home for the current bundle.
@@ -63,8 +63,8 @@ Once a project is active, SplitShot keeps later workflow controls in their worki
 
 | Problem | Fix |
 | --- | --- |
-| The video path changed but nothing imported. | Press Enter in `Primary Video`, or use `Import Primary Video`. |
-| A large file imports slowly through the browser picker. | Paste the direct local path instead. |
+| `Primary Video` still shows the old file name. | Use `Import Primary Video` again and choose the replacement file. |
+| You already know where the primary video lives on disk. | Click `Import Primary Video` and select it from that folder. |
 | PractiScore dashboard does not open. | Click `Open PractiScore Dashboard` again. If your browser blocks the launch, open `https://practiscore.com/dashboard/home` manually. |
 | The imported result is for the wrong run. | Click `Select PractiScore File` again with the correct CSV/TXT export. |
 | The imported stage is right but the competitor row is wrong. | Recheck `Match type`, `Stage #`, `Competitor name`, and `Place`. |

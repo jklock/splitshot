@@ -1085,12 +1085,12 @@
         "browser"
       ],
       "owner_targets": [
-        "tests/browser/test_merge_export_contracts.py::test_app_merge_export_commit_and_log_freshness_contracts",
+        "tests/browser/test_merge_export_contracts.py::test_app_export_commit_and_log_freshness_contracts",
         "tests/browser/test_browser_static_ui.py::test_browser_automation_surface_scopes_profiles_and_saves_hooks",
         "tests/browser/test_browser_remaining_controls_e2e.py::test_merge_remaining_controls_commit_default_and_per_source_state",
         "tests/browser/test_browser_interactions.py::test_merge_controls_update_live_preview_layout_and_position",
         "tests/browser/test_browser_interactions.py::test_merge_default_pip_controls_commit_to_state_and_label",
-        "tests/browser/test_browser_interactions.py::test_compose_pane_trim_dead_time_uses_output_profile_editor",
+        "tests/browser/test_browser_interactions.py::test_compose_pane_trim_settings_use_output_profile_editor",
         "tests/browser/test_timing_waveform_contracts.py::test_waveform_canvas_shows_secondary_lane_after_merge_analysis"
       ],
       "taxonomy_surfaces": [
@@ -1110,7 +1110,7 @@
       "features": [
         {
           "feature_id": "stage.compose.defaults_and_media",
-          "feature_label": "Added media defaults, layout selection, and run-window handoff",
+          "feature_label": "Added media defaults, layout seeding, and Trim Settings handoff",
           "taxonomy_class": "TAX-0",
           "test_id": "tax0.stage.compose.defaults_and_media",
           "audit_model": "control-led",
@@ -1129,15 +1129,15 @@
             "added media list",
             "composition defaults collapse state",
             "layout selection",
-            "default layer size",
-            "default layer position",
-            "run-window output-hook host"
+            "defaults-only layer size",
+            "defaults-only layer position",
+            "trim-settings output-hook host"
           ],
           "inventory_terms": [
             "Add media",
             "Composition Defaults collapse and restore",
-            "layout selection",
-            "Trim Dead Time run-window editor"
+            "new item layout and size/position defaults",
+            "Trim Settings output-profile editor"
           ],
           "control_owner_targets": {
             "add-merge-media": [
@@ -1147,12 +1147,18 @@
         },
         {
           "feature_id": "stage.compose.per_source_authoring",
-          "feature_label": "Per-source card controls, role selection, and layer authoring",
+          "feature_label": "Per-source card Trim Video, Camera role, placement, and layer authoring",
           "taxonomy_class": "TAX-0",
           "test_id": "tax0.stage.compose.per_source_authoring",
           "audit_model": "control-led",
           "control_ids": [
+            "[data-merge-source-trim-field=\"start_seconds\"]",
+            "[data-merge-source-trim-field=\"end_seconds\"]",
             "[data-merge-source-field=\"angle_role\"]",
+            "[data-merge-source-field=\"placement_mode\"]",
+            "[data-merge-source-field=\"placement_slot\"]",
+            "[data-merge-source-field=\"target_kind\"]",
+            "[data-merge-source-field=\"target_source_id\"]",
             "[data-merge-source-field=\"size\"]",
             "[data-merge-source-field=\"opacity\"]",
             "[data-merge-source-field=\"x\"]",
@@ -1160,6 +1166,10 @@
             "[data-merge-source-remove]"
           ],
           "state_values": [
+            "per-item trim range draft and reset state",
+            "per-item camera role",
+            "per-item placement mode",
+            "per-item placement slot and target/base selection",
             "per-item layer size",
             "per-item opacity",
             "per-item position",
@@ -1168,8 +1178,11 @@
           ],
           "inventory_terms": [
             "per-item card toggle/remove",
-            "per-item angle-role selection",
-            "per-item layer size/opacity/position/sync controls"
+            "per-item Trim Video controls",
+            "per-item Camera role selection",
+            "per-item Placement mode/slot and Overlay target/Base item controls",
+            "per-item layer size/opacity/X/Y/sync controls",
+            "preview drag only for PiP overlay slot"
           ]
         },
         {
