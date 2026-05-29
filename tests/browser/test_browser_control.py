@@ -23,7 +23,14 @@ from splitshot.browser.server import (
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import OverlayPosition, Project, ShotEvent, ShotSource, VideoAsset
+from splitshot.domain.models import (
+    MergeSource,
+    OverlayPosition,
+    Project,
+    ShotEvent,
+    ShotSource,
+    VideoAsset,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -135,6 +142,9 @@ DIRECT_PROJECT_JSON_ASSERTION_TESTS_BY_ROUTE: dict[str, tuple[str, ...]] = {
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
     "/api/merge/source": (
+        "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
+    ),
+    "/api/merge/source/trim": (
         "test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_project_json",
     ),
     "/api/merge/source/analyze": (
@@ -800,6 +810,46 @@ def test_browser_state_exposes_workspace_path_when_saved(tmp_path) -> None:
     assert payload["workspace"]["path"] == str(workspace_path)
 
 
+def test_browser_state_sync_analysis_support_is_reorder_invariant_without_order_metadata() -> None:
+    def build_merge_source(source_id: str, path: str) -> MergeSource:
+        source = MergeSource(
+            id=source_id,
+            asset=VideoAsset(path=path, duration_ms=2000, width=640, height=360, fps=30.0),
+            angle_role="follow",
+        )
+        source.placement.order_index = None
+        source.placement.layer_index = None
+        return source
+
+    def sync_analysis_owner_ids(*sources: MergeSource) -> tuple[str | None, str | None]:
+        project = Project()
+        project.primary_video = VideoAsset(
+            path="/tmp/primary.mp4",
+            duration_ms=2000,
+            width=640,
+            height=360,
+            fps=30.0,
+        )
+        project.merge_sources = list(sources)
+        payload = browser_state(project, project.name)
+        merge_sources = payload["project"]["merge_sources"]
+        supports_sync_analysis_source_id = next(
+            (item["id"] for item in merge_sources if item["supports_sync_analysis"]),
+            None,
+        )
+        can_rerun_sync_analysis_source_id = next(
+            (item["id"] for item in merge_sources if item["can_rerun_sync_analysis"]),
+            None,
+        )
+        return supports_sync_analysis_source_id, can_rerun_sync_analysis_source_id
+
+    merge_source_b = build_merge_source("merge-b", "/tmp/merge-b.mp4")
+    merge_source_a = build_merge_source("merge-a", "/tmp/merge-a.mp4")
+
+    assert sync_analysis_owner_ids(merge_source_b, merge_source_a) == ("merge-a", "merge-a")
+    assert sync_analysis_owner_ids(merge_source_a, merge_source_b) == ("merge-a", "merge-a")
+
+
 def test_browser_workspace_stage_media_route_serves_saved_stage_primary_video(
     synthetic_video_factory,
     tmp_path: Path,
@@ -1006,7 +1056,7 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
                     "sources": [
                         {
                             "source_id": merge_source_id,
-                            "angle_role": "static",
+                            "camera_role": "static",
                             "pip_size_percent": 44,
                             "pip_x": 0.12,
                             "pip_y": 0.76,
@@ -1034,7 +1084,7 @@ def test_browser_export_route_syncs_scoring_overlay_and_merge_payloads_before_re
         assert state["project"]["overlay"]["custom_box_width"] == 160
         assert state["project"]["overlay"]["custom_box_height"] == 48
         assert state["project"]["merge"]["pip_size_percent"] == 44
-        assert state["project"]["merge_sources"][0]["angle_role"] == "static"
+        assert state["project"]["merge_sources"][0]["camera_role"] == "static"
         assert state["project"]["merge_sources"][0]["pip_size_percent"] == 44
         assert state["project"]["merge_sources"][0]["opacity"] == pytest.approx(0.35)
         assert state["project"]["merge_sources"][0]["sync_offset_ms"] == -25
@@ -2572,7 +2622,12 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         )
         first_shot_id = uploaded_primary["project"]["analysis"]["shots"][0]["id"]
         saved = _read_project_json(project_path)
-        assert saved["primary_video"]["path"] == uploaded_primary["project"]["primary_video"]["path"]
+        bundled_primary = Path(saved["primary_video"]["path"])
+        assert bundled_primary.parent == Path("Input")
+        assert bundled_primary.name == primary_path.name
+        assert (project_path / bundled_primary).resolve() == Path(
+            uploaded_primary["project"]["primary_video"]["path"]
+        ).resolve()
         assert len(saved["analysis"]["shots"]) == len(
             uploaded_primary["project"]["analysis"]["shots"]
         )
@@ -2586,7 +2641,12 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         first_source_id = uploaded_secondary["project"]["merge_sources"][0]["id"]
         saved = _read_project_json(project_path)
         assert len(saved["merge_sources"]) == 1
-        assert saved["secondary_video"]["path"] == uploaded_secondary["project"]["secondary_video"]["path"]
+        bundled_secondary = Path(saved["secondary_video"]["path"])
+        assert bundled_secondary.parent == Path("Input")
+        assert bundled_secondary.name == secondary_one.name
+        assert (project_path / bundled_secondary).resolve() == Path(
+            uploaded_secondary["project"]["secondary_video"]["path"]
+        ).resolve()
 
         uploaded_secondary_two = _post_multipart(
             f"{server.url}api/files/merge",
@@ -2634,7 +2694,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
             f"{server.url}api/merge/source",
             {
                 "source_id": first_source_id,
-                "angle_role": "static",
+                "camera_role": "static",
                 "pip_size_percent": 33,
                 "pip_x": 0.21,
                 "pip_y": 0.68,
@@ -2649,7 +2709,8 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         )
         saved = _read_project_json(project_path)
         first_source = _merge_source_from_project_json(saved, first_source_id)
-        assert first_source["angle_role"] == "static"
+        second_source = _merge_source_from_project_json(saved, second_source_id)
+        assert first_source["camera_role"] == "static"
         assert first_source["pip_size_percent"] == 33
         assert first_source["pip_x"] == pytest.approx(0.21)
         assert first_source["pip_y"] == pytest.approx(0.68)
@@ -2657,31 +2718,52 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert first_source["placement"]["mode"] == "pip"
         assert first_source["placement"]["target_kind"] == "merge_source"
         assert first_source["placement"]["target_source_id"] == second_source_id
-        assert saved["analysis"]["sync_offset_ms"] == -25
+        assert second_source["sync_offset_ms"] == 0
+        assert saved["analysis"]["sync_offset_ms"] == 0
 
         _post_json(
             f"{server.url}api/merge/source", {"source_id": first_source_id, "sync_delta_ms": 5}
         )
         saved = _read_project_json(project_path)
         first_source = _merge_source_from_project_json(saved, first_source_id)
+        second_source = _merge_source_from_project_json(saved, second_source_id)
         assert first_source["sync_offset_ms"] == -20
-        assert saved["analysis"]["sync_offset_ms"] == -20
+        assert second_source["sync_offset_ms"] == 0
+        assert saved["analysis"]["sync_offset_ms"] == 0
 
-        _post_json(f"{server.url}api/merge/source/analyze", {"source_id": first_source_id})
+        _post_json(f"{server.url}api/merge/source/analyze", {"source_id": second_source_id})
         saved = _read_project_json(project_path)
-        assert any(source["id"] == first_source_id for source in saved["merge_sources"])
+        assert any(source["id"] == second_source_id for source in saved["merge_sources"])
+
+        original_first_source_path = _merge_source_from_project_json(saved, first_source_id)["asset"]["path"]
+        _post_json(
+            f"{server.url}api/merge/source/trim",
+            {
+                "source_id": first_source_id,
+                "trim": {"start_ms": 100, "end_ms": 400},
+            },
+        )
+        saved = _read_project_json(project_path)
+        first_source = _merge_source_from_project_json(saved, first_source_id)
+        assert first_source["asset"]["path"] != original_first_source_path
+        assert first_source["trim_derivative"]["derivative_path"] == first_source["asset"]["path"]
+        assert first_source["trim_derivative"]["active_path_kind"] == "local_derivative"
 
         _post_json(f"{server.url}api/sync", {"offset_ms": 35})
         saved = _read_project_json(project_path)
         first_source = _merge_source_from_project_json(saved, first_source_id)
+        second_source = _merge_source_from_project_json(saved, second_source_id)
         assert saved["analysis"]["sync_offset_ms"] == 35
-        assert first_source["sync_offset_ms"] == 35
+        assert first_source["sync_offset_ms"] == -20
+        assert second_source["sync_offset_ms"] == 35
 
         _post_json(f"{server.url}api/sync", {"delta_ms": -10})
         saved = _read_project_json(project_path)
         first_source = _merge_source_from_project_json(saved, first_source_id)
+        second_source = _merge_source_from_project_json(saved, second_source_id)
         assert saved["analysis"]["sync_offset_ms"] == 25
-        assert first_source["sync_offset_ms"] == 25
+        assert first_source["sync_offset_ms"] == -20
+        assert second_source["sync_offset_ms"] == 25
 
         _post_json(
             f"{server.url}api/overlay",
@@ -2826,10 +2908,14 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
 
         before_swap = _read_project_json(project_path)
         old_primary_path = before_swap["primary_video"]["path"]
-        old_first_source_path = before_swap["merge_sources"][0]["asset"]["path"]
+        old_reference_source_path = next(
+            source["asset"]["path"]
+            for source in before_swap["merge_sources"]
+            if source["id"] == second_source_id
+        )
         _post_json(f"{server.url}api/swap", {})
         after_swap = _read_project_json(project_path)
-        assert after_swap["primary_video"]["path"] == old_first_source_path
+        assert after_swap["primary_video"]["path"] == old_reference_source_path
         assert after_swap["secondary_video"]["path"] == old_primary_path
 
         removable_source_id = after_swap["merge_sources"][-1]["id"]
@@ -2872,7 +2958,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
                     "sources": [
                         {
                             "source_id": first_source_id,
-                            "angle_role": "static",
+                            "camera_role": "static",
                             "pip_size_percent": 40,
                             "pip_x": 0.18,
                             "pip_y": 0.72,
@@ -2893,7 +2979,7 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         assert saved["overlay"]["custom_box_text"] == "Export Summary"
         assert saved["merge"]["layout"] == "pip"
         saved_source = _merge_source_from_project_json(saved, first_source_id)
-        assert saved_source["angle_role"] == "static"
+        assert saved_source["camera_role"] == "static"
         assert saved_source["sync_offset_ms"] == 15
         assert saved_source["placement"]["mode"] == "pip"
         assert saved_source["placement"]["target_kind"] == "merge_source"
@@ -3268,7 +3354,7 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
                                 "rotation": 0,
                                 "is_still_image": True,
                             },
-                            "angle_role": "detail",
+                                "camera_role": "detail",
                             "pip_size_percent": 42,
                             "pip_x": 0.25,
                             "pip_y": 0.75,
@@ -3289,7 +3375,7 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
             tmp_path / "reference.png"
         )
         assert created["project"]["merge_sources"][0]["asset"]["is_still_image"] is True
-        assert created["project"]["merge_sources"][0]["angle_role"] == "detail"
+        assert created["project"]["merge_sources"][0]["camera_role"] == "detail"
         assert created["project"]["merge_sources"][0]["pip_size_percent"] == 42
         assert created["project"]["merge_sources"][0]["pip_x"] == 0.25
         assert created["project"]["merge_sources"][0]["pip_y"] == 0.75
@@ -4802,6 +4888,11 @@ def test_server_workspace_apply_from_first_preview_uses_controller_result() -> N
         assert calls == [{"called": True}]
     finally:
         server.shutdown()
+
+
+def test_server_workspace_eligible_keys_exclude_trim_dead_time() -> None:
+    """Workspace/browser server compatibility keys must not keep trim_dead_time alive."""
+    assert "trim_dead_time" not in browser_server_module._WORKSPACE_ELIGIBLE_KEYS
 
 
 def test_server_library_backup_routes_use_controller_contract() -> None:

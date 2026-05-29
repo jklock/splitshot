@@ -1360,7 +1360,7 @@ class ProjectController(QObject):
         return {
             "clip_id": clip.clip_id,
             "source_path": clip.source_path,
-            "angle_role": clip.angle_role,
+            "camera_role": clip.angle_role,
             "sync_offset_ms": clip.sync_offset_ms,
             "audio_gain": clip.audio_gain,
             "audio_muted": clip.audio_muted,
@@ -1378,7 +1378,7 @@ class ProjectController(QObject):
         return {
             "position": cut.position,
             "clip_id": cut.clip_id,
-            "angle_role": cut.angle_role,
+            "camera_role": cut.angle_role,
             "start_ms": cut.start_ms,
             "duration_ms": cut.duration_ms,
             "suggested": cut.suggested,
@@ -1861,7 +1861,7 @@ class ProjectController(QObject):
             "brand_mark": dict(profile.brand_mark),
             "subject_track_crop": dict(profile.subject_track_crop),
             "visibility_recipe": dict(profile.visibility_recipe),
-            "run_window": self._resolve_run_window(profile, project=project),
+            "trim_settings": self._resolve_trim_settings(profile, project=project),
             "source": "output_profile",
         }
 
@@ -3638,7 +3638,7 @@ class ProjectController(QObject):
     def output_profile_render(self, output_id: str) -> dict:
         """Request render of a specific output profile.
 
-        Returns render plan with Trim Dead Time, Shot Data on Screen, Video Shape,
+        Returns render plan with Trim Settings, Shot Data on Screen, Video Shape,
         Opening Title, Your Logo settings resolved.
 
         If profile not found, falls back to legacy Project.export settings.
@@ -3661,7 +3661,7 @@ class ProjectController(QObject):
             "brand_mark": dict(profile.brand_mark),
             "subject_track_crop": dict(profile.subject_track_crop),
             "visibility_recipe": dict(profile.visibility_recipe),
-            "run_window": self._resolve_run_window(profile),
+            "trim_settings": self._resolve_trim_settings(profile),
             "source": "output_profile",
         }
 
@@ -3706,7 +3706,7 @@ class ProjectController(QObject):
             "brand_mark": {},
             "subject_track_crop": {},
             "visibility_recipe": {},
-            "run_window": {
+            "trim_settings": {
                 "start_ms": 0,
                 "end_ms": 0,
                 "duration_ms": 0,
@@ -3741,10 +3741,10 @@ class ProjectController(QObject):
             else None,
         }
 
-    # ── Trim Dead Time ───────────────────────────────────────────────
+    # ── Trim Settings ────────────────────────────────────────────────
 
-    def _resolve_run_window(self, profile, project: Project | None = None) -> dict:
-        """Resolve Trim Dead Time from reviewed timing truth.
+    def _resolve_trim_settings(self, profile, project: Project | None = None) -> dict:
+        """Resolve Trim Settings from reviewed timing truth.
 
         Derives effective stage window from beep time and last shot,
         with configurable lead-in and tail padding from the profile.
@@ -3771,6 +3771,11 @@ class ProjectController(QObject):
             "lead_in_padding_ms": lead_in_pad,
             "tail_padding_ms": tail_pad,
         }
+
+    def _resolve_run_window(self, profile, project: Project | None = None) -> dict:
+        """Legacy helper alias for callers still expecting the retired name."""
+
+        return self._resolve_trim_settings(profile, project=project)
 
     # ── Shot Data on Screen ────────────────────────────────────────
 
@@ -3891,6 +3896,10 @@ class ProjectController(QObject):
         self, stage_id: str, source_path: str = "", angle_role: str = "primary", **kwargs
     ) -> list[dict]:
         """Add a clip source to a stage for composite editing."""
+        if "angle_role" in kwargs:
+            angle_role = str(kwargs.pop("angle_role") or angle_role)
+        if "camera_role" in kwargs:
+            angle_role = str(kwargs.pop("camera_role") or angle_role)
         entry = self._workspace_stage_entry(stage_id)
         if entry is None and self.workspace is not None:
             self.workspace_add_stage(stage_id, f"Stage {len(self.workspace.stage_entries) + 1}")
@@ -3916,6 +3925,9 @@ class ProjectController(QObject):
 
     def workspace_stage_clip_update(self, stage_id: str, clip_id: str, **kwargs) -> dict | None:
         """Update a clip's properties."""
+        if "camera_role" in kwargs:
+            kwargs = {**kwargs}
+            kwargs["angle_role"] = kwargs.pop("camera_role")
         clips = self._workspace_stage_clip_models(stage_id)
         for clip in clips:
             if clip.clip_id == clip_id:
@@ -4027,7 +4039,7 @@ class ProjectController(QObject):
                 {
                     "position": i,
                     "clip_id": clip.clip_id,
-                    "angle_role": clip.angle_role,
+                    "camera_role": clip.angle_role,
                     "start_ms": 0,
                     "duration_ms": 0,
                     "suggested": True,

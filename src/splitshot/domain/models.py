@@ -192,10 +192,9 @@ class VideoAsset:
         return self.width, self.height
 
 
-# Keep the persisted payload key `angle_role` until the later UI wording rename to
-# `Camera role`. The accepted values already match the richer stage-composite role
-# taxonomy so older Compose payloads stay readable while new `primary` payloads
-# round-trip safely.
+# Keep the internal model field name `angle_role` for now. Outward browser and
+# persistence payloads emit `camera_role`, while readers accept legacy
+# `angle_role` as a narrow compatibility alias.
 MERGE_SOURCE_ANGLE_ROLE_VALUES = ("primary", "follow", "static", "detail")
 
 _MERGE_SOURCE_ANGLE_ROLES = frozenset(MERGE_SOURCE_ANGLE_ROLE_VALUES)
@@ -1013,6 +1012,28 @@ def _serialize(value: Any) -> Any:
     return value
 
 
+def _camera_role_payload_value(data: dict[str, Any] | None, default: Any = None) -> Any:
+    if not isinstance(data, dict):
+        return default
+    for key in ("camera_role", "angle_role"):
+        value = data.get(key)
+        if value not in {None, ""}:
+            return value
+    return default
+
+
+def _promote_camera_role_key(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_promote_camera_role_key(item) for item in value]
+    if isinstance(value, dict):
+        promoted: dict[str, Any] = {}
+        for key, item in value.items():
+            promoted_key = "camera_role" if str(key) == "angle_role" else str(key)
+            promoted[promoted_key] = _promote_camera_role_key(item)
+        return promoted
+    return value
+
+
 def project_to_dict(project: Project) -> dict[str, Any]:
     data = _serialize(project)
     overlay = data.get("overlay")
@@ -1061,7 +1082,7 @@ def project_to_dict(project: Project) -> dict[str, Any]:
                     trim_derivative.pop("original_path", None)
                 if not trim_derivative:
                     item.pop("trim_derivative", None)
-    return data
+    return _promote_camera_role_key(data)
 
 
 def _parse_enum(enum_type: type[StrEnum], value: str | None, default: StrEnum) -> StrEnum:
@@ -1732,7 +1753,10 @@ def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
     return MergeSource(
         id=str(payload.get("id", uuid4().hex)),
         asset=asset,
-        angle_role=_normalize_merge_source_angle_role(payload.get("angle_role"), asset),
+        angle_role=_normalize_merge_source_angle_role(
+            _camera_role_payload_value(payload),
+            asset,
+        ),
         pip_size_percent=(
             None
             if payload.get("pip_size_percent") in {None, ""}

@@ -56,9 +56,12 @@ def test_single_video_reviewed_output_flow():
 
     render1 = c.output_profile_render(p1["output_id"])
     assert render1["success"] is True
-    assert "run_window" in render1
+    assert "trim_settings" in render1
+    assert "run_window" not in render1
     assert render1["source"] == "output_profile"
-    print(f"  [5] Run Window render plan OK (start={render1['run_window'].get('start_ms', 'N/A')})")
+    print(
+        f"  [5] Trim Settings render plan OK (start={render1['trim_settings'].get('start_ms', 'N/A')})"
+    )
 
     render2 = c.output_profile_render(p2["output_id"])
     assert render2["success"] is True
@@ -139,7 +142,7 @@ def test_stage_composite_and_angle_align_flow():
     assert len(all_clips) == 3, f"Expected 3 clips, got {len(all_clips)}"
     print(f"  [1] Added {len(all_clips)} clips to stage")
 
-    roles = [cl["angle_role"] for cl in all_clips]
+    roles = [cl["camera_role"] for cl in all_clips]
     assert "primary" in roles
     assert "follow" in roles
     assert "static" in roles

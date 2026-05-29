@@ -5494,14 +5494,24 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 page.wait_for_function(
                     "() => document.getElementById('video-stage')?.classList.contains('merge-side-by-side')"
                 )
-                assert page.locator("#merge-preview-layer").is_hidden() is True
+                page.wait_for_function(
+                    "() => document.getElementById('merge-preview-layer')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]').length === 1"
+                )
 
                 page.locator("#merge-layout").select_option("above_below")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'above_below'")
                 page.wait_for_function(
                     "() => document.getElementById('video-stage')?.classList.contains('merge-above-below')"
                 )
-                assert page.locator("#merge-preview-layer").is_hidden() is True
+                page.wait_for_function(
+                    "() => document.getElementById('merge-preview-layer')?.hidden === false"
+                )
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]').length === 1"
+                )
 
                 page.locator("#merge-layout").select_option("full_screen_portrait")
                 page.wait_for_function(
@@ -5511,9 +5521,11 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                     "() => document.getElementById('video-stage')?.classList.contains('merge-full-screen-portrait')"
                 )
                 page.wait_for_function(
-                    "() => document.getElementById('secondary-video')?.style.position === 'absolute'"
+                    "() => document.getElementById('merge-preview-layer')?.hidden === false"
                 )
-                assert page.locator("#merge-preview-layer").is_hidden() is True
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]').length === 1"
+                )
 
                 page.locator("#merge-layout").select_option("dual_center_hud")
                 page.wait_for_function(
@@ -5535,6 +5547,15 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
                 page.wait_for_function(
                     "() => document.getElementById('video-stage')?.classList.contains('merge-pip')"
+                )
+
+                source_card.locator('[data-merge-source-field="placement_mode"]').select_option("pip")
+                page.wait_for_function(
+                    "() => state?.project?.merge_sources?.[0]?.placement?.mode === 'pip'"
+                )
+                source_card.locator('[data-merge-source-field="placement_slot"]').select_option("overlay")
+                page.wait_for_function(
+                    "() => state?.project?.merge_sources?.[0]?.placement?.mode === 'pip' && state?.project?.merge_sources?.[0]?.placement?.slot === 'overlay'"
                 )
 
                 preview_layer = page.locator("#merge-preview-layer")

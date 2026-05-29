@@ -10,6 +10,8 @@ from splitshot.domain.models import (
     OutputProfile,
     StageClipSource,
     StageEntry,
+    _camera_role_payload_value,
+    _promote_camera_role_key,
     _serialize,
 )
 
@@ -65,7 +67,7 @@ def workspace_stage_path(workspace_path: str | Path, stage_id: str) -> Path:
 
 
 def _workspace_to_dict(workspace: MatchWorkspace) -> dict:
-    data = _serialize(workspace)
+    data = _promote_camera_role_key(_serialize(workspace))
     data["match_output_profiles"] = [
         _output_profile_to_dict(p) for p in workspace.match_output_profiles
     ]
@@ -73,12 +75,12 @@ def _workspace_to_dict(workspace: MatchWorkspace) -> dict:
 
 
 def _stage_entry_to_dict(entry: StageEntry) -> dict:
-    return _serialize(entry)
+    return _promote_camera_role_key(_serialize(entry))
 
 
 def _output_profile_to_dict(profile: OutputProfile) -> dict:
     """Serialize an OutputProfile to a plain dict."""
-    return {
+    return _promote_camera_role_key({
         "output_id": profile.output_id,
         "scope_type": profile.scope_type,
         "scope_id": profile.scope_id,
@@ -95,7 +97,7 @@ def _output_profile_to_dict(profile: OutputProfile) -> dict:
         "last_rendered_at": profile.last_rendered_at.isoformat()
         if profile.last_rendered_at
         else None,
-    }
+    })
 
 
 def _stage_entry_from_dict(data: dict) -> StageEntry:
@@ -110,7 +112,7 @@ def _stage_entry_from_dict(data: dict) -> StageEntry:
                     StageClipSource(
                         clip_id=str(item.get("clip_id", "")),
                         source_path=str(item.get("source_path", "")),
-                        angle_role=str(item.get("angle_role", "primary")),
+                        angle_role=str(_camera_role_payload_value(item, "primary") or "primary"),
                         sync_offset_ms=int(item.get("sync_offset_ms", 0)),
                         audio_gain=float(item.get("audio_gain", 1.0)),
                         audio_muted=bool(item.get("audio_muted", False)),
@@ -150,7 +152,7 @@ def _output_profile_from_dict(data: dict) -> OutputProfile:
                     AngleDirectorCutDecision(
                         position=int(item.get("position", 0)),
                         clip_id=str(item.get("clip_id", "")),
-                        angle_role=str(item.get("angle_role", "")),
+                        angle_role=str(_camera_role_payload_value(item, "") or ""),
                         start_ms=int(item.get("start_ms", 0)),
                         duration_ms=int(item.get("duration_ms", 0)),
                         suggested=bool(item.get("suggested", False)),

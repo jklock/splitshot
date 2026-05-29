@@ -468,15 +468,17 @@ def _merge_source_angle_role(item: object) -> str:
     default_role = "detail" if asset_payload.get("is_still_image") else "follow"
     if not isinstance(item, dict):
         return default_role
-    normalized_role = str(item.get("angle_role") or default_role).strip().lower()
+    normalized_role = str(
+        item.get("camera_role") or item.get("angle_role") or default_role
+    ).strip().lower()
     if normalized_role in _MERGE_SOURCE_ROLE_PRIORITY:
         return normalized_role
     return default_role
 
 
-def _merge_source_order_index(item: object, fallback_index: int) -> int:
+def _merge_source_order_index(item: object) -> int | None:
     if not isinstance(item, dict):
-        return fallback_index
+        return None
     placement_payload = item.get("placement")
     raw_order_index = None
     if isinstance(placement_payload, dict):
@@ -486,7 +488,20 @@ def _merge_source_order_index(item: object, fallback_index: int) -> int:
     try:
         return max(0, int(raw_order_index))
     except (TypeError, ValueError):
-        return fallback_index
+        return None
+
+
+def _merge_source_sync_analysis_sort_key(item: object) -> tuple[int, int, int, str]:
+    order_index = _merge_source_order_index(item)
+    return (
+        _MERGE_SOURCE_ROLE_PRIORITY.get(
+            _merge_source_angle_role(item),
+            len(_MERGE_SOURCE_ROLE_PRIORITY),
+        ),
+        0 if order_index is not None else 1,
+        0 if order_index is None else order_index,
+        _merge_source_payload_id(item) or "",
+    )
 
 
 def _merge_source_supports_secondary_analysis(item: object) -> bool:
@@ -498,28 +513,50 @@ def _merge_source_supports_secondary_analysis(item: object) -> bool:
 
 def _first_sync_analysis_source_id(merge_sources_payload: list[object]) -> str | None:
     analyzable_sources = [
-        (index, item)
-        for index, item in enumerate(merge_sources_payload)
+        item
+        for item in merge_sources_payload
         if _merge_source_payload_id(item) is not None
         and _merge_source_supports_secondary_analysis(item)
     ]
     if not analyzable_sources:
         return None
-    _, selected_item = min(
+    selected_item = min(
         analyzable_sources,
-        key=lambda value: (
-            _MERGE_SOURCE_ROLE_PRIORITY.get(
-                _merge_source_angle_role(value[1]),
-                len(_MERGE_SOURCE_ROLE_PRIORITY),
-            ),
-            _merge_source_order_index(value[1], value[0]),
-            value[0],
-        ),
+        key=_merge_source_sync_analysis_sort_key,
     )
     return _merge_source_payload_id(selected_item)
 
 
-def _augment_merge_source_summary(project_payload: dict[str, Any]) -> None:
+def _inflate_merge_source_placement_truth(
+    item: dict[str, Any],
+    source: Any,
+    index: int,
+) -> None:
+    placement_payload = item.get("placement")
+    if not isinstance(placement_payload, dict):
+        placement_payload = {}
+        item["placement"] = placement_payload
+
+    order_index = source.placement.order_index
+    if order_index is None:
+        order_index = index
+    layer_index = source.placement.layer_index
+    if layer_index is None:
+        layer_index = order_index
+
+    placement_payload["mode"] = str(source.placement.mode.value)
+    placement_payload["slot"] = str(source.placement.slot.value)
+    placement_payload["target_kind"] = str(source.placement.target_kind.value)
+    placement_payload["target_source_id"] = (
+        None
+        if source.placement.target_source_id in {None, ""}
+        else str(source.placement.target_source_id)
+    )
+    placement_payload["order_index"] = order_index
+    placement_payload["layer_index"] = layer_index
+
+
+def _augment_merge_source_summary(project_payload: dict[str, Any], project: Project) -> None:
     merge_sources_payload = project_payload.get("merge_sources")
     analysis_payload = project_payload.get("analysis")
     if not isinstance(merge_sources_payload, list) or not isinstance(analysis_payload, dict):
@@ -541,9 +578,11 @@ def _augment_merge_source_summary(project_payload: dict[str, Any]) -> None:
     eligible_source_id = _first_sync_analysis_source_id(merge_sources_payload)
     sync_status_source_id = analyzed_source_id or eligible_source_id
 
-    for item in merge_sources_payload:
+    for source_index, item in enumerate(merge_sources_payload):
         if not isinstance(item, dict):
             continue
+        if source_index < len(project.merge_sources):
+            _inflate_merge_source_placement_truth(item, project.merge_sources[source_index], source_index)
         item["media_kind"] = _merge_source_media_kind(item)
         source_id = _merge_source_payload_id(item)
         supports_sync_analysis = bool(source_id and source_id == eligible_source_id)
@@ -576,7 +615,7 @@ def _build_stage_project_payload(project: Project, ruleset: str) -> dict[str, An
     project_payload = project_to_dict(project)
     _normalize_scoring_project_payload(project_payload, ruleset)
     _normalize_timing_project_payload(project_payload, project)
-    _augment_merge_source_summary(project_payload)
+    _augment_merge_source_summary(project_payload, project)
     return project_payload
 
 

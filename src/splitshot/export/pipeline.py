@@ -1072,16 +1072,90 @@ def _build_source_owned_merge_plan(
     )
 
 
-def _build_merge_plan(project: Project) -> BaseRenderPlan:
-    if project.merge_sources:
-        return _build_source_owned_merge_plan(
-            project,
-            [source for source in project.merge_sources if source.asset.path],
-        )
+def _project_merge_layout_mode(project: Project) -> str:
+    normalized_layout = str(project.merge.layout or "").strip().lower()
+    if normalized_layout in {
+        MergeLayout.SIDE_BY_SIDE.value,
+        MergeLayout.ABOVE_BELOW.value,
+        MergeLayout.PIP.value,
+        MergeLayout.FULL_SCREEN_PORTRAIT.value,
+        MergeLayout.DUAL_CENTER_HUD.value,
+        MergeLayout.DUAL_TOP_HUD.value,
+    }:
+        return normalized_layout
+    return MergeLayout.SIDE_BY_SIDE.value
 
+
+def _legacy_merge_source_slot(project: Project, mode: str) -> str:
+    if mode == MergeLayout.SIDE_BY_SIDE.value:
+        return "right" if project.merge.primary_is_left_or_top else "left"
+    if mode == MergeLayout.ABOVE_BELOW.value:
+        return "bottom" if project.merge.primary_is_left_or_top else "top"
+    if mode == MergeLayout.PIP.value:
+        return "overlay"
+    if mode in {
+        MergeLayout.FULL_SCREEN_PORTRAIT.value,
+        MergeLayout.DUAL_CENTER_HUD.value,
+        MergeLayout.DUAL_TOP_HUD.value,
+    }:
+        return "center"
+    return "auto"
+
+
+def _merge_source_preserves_legacy_stage_layout(
+    project: Project,
+    source: MergeSource,
+    source_index: int,
+) -> bool:
+    placement = getattr(source, "placement", None)
+    if placement is None:
+        return True
+
+    expected_mode = _project_merge_layout_mode(project)
+    expected_slot = _legacy_merge_source_slot(project, expected_mode)
+    placement_mode = str(getattr(placement, "mode", "") or "").strip().lower()
+    placement_slot = str(getattr(placement, "slot", "") or "").strip().lower()
+    target_kind = str(getattr(placement, "target_kind", "") or "").strip().lower()
+    target_source_id = str(getattr(placement, "target_source_id", "") or "").strip() or None
+    order_index = getattr(placement, "order_index", None)
+    layer_index = getattr(placement, "layer_index", None)
+
+    if placement_mode not in {"", "auto", expected_mode}:
+        return False
+    if placement_slot not in {"", "auto", expected_slot}:
+        return False
+    if target_kind not in {"", "primary_video"}:
+        return False
+    if target_source_id is not None:
+        return False
+    if order_index not in {None, source_index}:
+        return False
+    return layer_index in {None, source_index, order_index}
+
+
+def _project_merge_sources_require_source_owned_export(
+    project: Project,
+    merge_sources: list[MergeSource],
+) -> bool:
+    return any(
+        not _merge_source_preserves_legacy_stage_layout(project, source, source_index)
+        for source_index, source in enumerate(merge_sources)
+    )
+
+
+def _build_merge_plan(project: Project) -> BaseRenderPlan:
     merge_sources = _merge_sources(project)
     if not merge_sources:
         return _build_single_video_plan(project)
+
+    if project.merge_sources and _project_merge_sources_require_source_owned_export(
+        project,
+        merge_sources,
+    ):
+        return _build_source_owned_merge_plan(
+            project,
+            merge_sources,
+        )
     if len(merge_sources) > 1:
         if project.merge.layout == MergeLayout.PIP:
             return _build_multi_pip_merge_plan(project, merge_sources)
@@ -1668,16 +1742,22 @@ def export_output_profile(
     log_callback: Callable[[str], None] | None = None,
 ) -> Path:
     """Export a project using an OutputProfile render plan.
-    Supports Trim Dead Time and Shot Data on Screen overlay from the profile.
+    Supports Trim Settings and Shot Data on Screen overlay from the profile.
+    Legacy `run_window` plans are accepted only as a read-time compatibility alias.
     Delegates to existing export_project for base rendering.
     """
     frame_profile = render_plan.get("frame_profile", "source")
     metric_captions = render_plan.get("metric_caption_preset", {})
     lead_in_card = render_plan.get("lead_in_card", {})
     brand_mark = render_plan.get("brand_mark", {})
-    run_window = render_plan.get("run_window") or {}
-    render_start_ms = int(run_window.get("start_ms") or 0)
-    render_end_ms = run_window.get("end_ms")
+    trim_settings = render_plan.get("trim_settings")
+    if isinstance(trim_settings, dict):
+        resolved_trim_settings = trim_settings
+    else:
+        legacy_run_window = render_plan.get("run_window")
+        resolved_trim_settings = legacy_run_window if isinstance(legacy_run_window, dict) else {}
+    render_start_ms = int(resolved_trim_settings.get("start_ms") or 0)
+    render_end_ms = resolved_trim_settings.get("end_ms")
 
     original_export = deepcopy(project.export)
     original_overlay = deepcopy(project.overlay)

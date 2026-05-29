@@ -521,10 +521,12 @@ class TestInheritanceEligibility:
         controller.workspace_set_defaults(
             {
                 "frame_profile": "16:9",  # eligible
+                "trim_dead_time": {"start_ms": 100, "end_ms": 500},  # retired
                 "detection_threshold": 0.5,  # NOT eligible
             }
         )
         assert "frame_profile" in controller.workspace.shared_defaults
+        assert "trim_dead_time" not in controller.workspace.shared_defaults
         assert "detection_threshold" not in controller.workspace.shared_defaults
 
     def test_ineligible_field_blocked_from_overrides(self, controller):
@@ -535,10 +537,12 @@ class TestInheritanceEligibility:
             "s1",
             {
                 "frame_profile": "9:16",  # eligible
+                "trim_dead_time": {"start_ms": 120, "end_ms": 420},  # retired
                 "detection_threshold": 0.6,  # NOT eligible
             },
         )
         assert "frame_profile" in controller.workspace.stage_entries["s1"].override_values
+        assert "trim_dead_time" not in controller.workspace.stage_entries["s1"].override_values
         assert "detection_threshold" not in controller.workspace.stage_entries["s1"].override_values
 
     def test_resolve_blocks_ineligible_field(self, controller):
@@ -619,7 +623,7 @@ class TestStageClips:
         clips = controller.workspace_stage_clip_add(stage_id, "/tmp/test.mp4", "primary")
 
         assert len(clips) == 1
-        assert clips[0]["angle_role"] == "primary"
+        assert clips[0]["camera_role"] == "primary"
         assert clips[0]["source_path"] == "/tmp/test.mp4"
         assert clips[0]["audio_gain"] == 1.0
         assert clips[0]["audio_muted"] is False
@@ -635,7 +639,7 @@ class TestStageClips:
 
         clips = controller._get_stage_clips(stage_id)
         assert len(clips) == 3
-        roles = [c["angle_role"] for c in clips]
+        roles = [c["camera_role"] for c in clips]
         assert roles == ["primary", "follow", "static"]
 
     def test_update_clip_properties(self, controller):
@@ -646,10 +650,10 @@ class TestStageClips:
         clip_id = clips[0]["clip_id"]
 
         updated = controller.workspace_stage_clip_update(
-            stage_id, clip_id, angle_role="follow", audio_gain=0.5
+            stage_id, clip_id, camera_role="follow", audio_gain=0.5
         )
         assert updated is not None
-        assert updated["angle_role"] == "follow"
+        assert updated["camera_role"] == "follow"
         assert updated["audio_gain"] == 0.5
 
     def test_remove_clip_from_stage(self, controller):
@@ -670,7 +674,7 @@ class TestStageClips:
     def test_update_nonexistent_clip_returns_none(self, controller):
         """Updating a clip that doesn't exist returns None."""
         controller.new_workspace()
-        result = controller.workspace_stage_clip_update("s1", "nonexistent", angle_role="static")
+        result = controller.workspace_stage_clip_update("s1", "nonexistent", camera_role="static")
         assert result is None
 
     def test_remove_nonexistent_clip_returns_false(self, controller):
@@ -746,7 +750,7 @@ class TestStageClips:
         preview = controller.stage_composite_preview(profile["output_id"])
         assert preview["success"] is True
         assert preview["clip_count"] == 2
-        assert [clip["angle_role"] for clip in preview["clips"]] == ["primary", "follow"]
+        assert [clip["camera_role"] for clip in preview["clips"]] == ["primary", "follow"]
 
 
 class TestAngleAlignAndAudioMix:

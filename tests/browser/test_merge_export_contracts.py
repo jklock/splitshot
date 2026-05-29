@@ -62,12 +62,13 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "mergePane = createMergePane({" in source
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in source
     assert "function previewFrameClientRect(video, container) {" in source
+    assert 'function mergePreviewTargetFrameRect(source = null, stage = $("video-stage")) {' in source
     assert (
-        'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
+        'const frameRect = mergePreviewTargetFrameRect(source, stage);'
         in begin_drag_body
     )
     assert (
-        'const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();'
+        'const frameRect = mergePreviewTargetFrameRect(source, stage);'
         in move_drag_body
     )
     assert (
@@ -84,14 +85,14 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     )
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
-    assert 'select.dataset.mergeSourceField = "angle_role";' in merge_pane_source
+    assert 'select.dataset.mergeSourceField = "camera_role";' in merge_pane_source
     assert 'text.textContent = "Camera role";' in merge_pane_source
     assert 'trimTitle.textContent = "Trim Video";' in merge_pane_source
     assert 'trimSettingsButton.textContent = "Trim Settings";' in merge_pane_source
     assert 'placementTitle.textContent = "Placement";' in merge_pane_source
     assert 'placementTargetKindText.textContent = "Overlay target";' in merge_pane_source
     assert 'placementTargetSourceText.textContent = "Base item";' in merge_pane_source
-    assert "angle_role: currentSourceAngleRole(source)," in merge_pane_source
+    assert "camera_role: currentSourceAngleRole(source)," in merge_pane_source
     assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
     assert "Re-run beep sync" in merge_pane_source
     assert "Analyze beep sync" in merge_pane_source
@@ -130,7 +131,7 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.65" in source
     assert "SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.12" in source
     assert "SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 900" in source
-    assert "if (mergePreviewDrag) return;" in preview_sync_body
+    assert 'if (mergePreviewDrag) return "noop";' in preview_sync_body
     assert "if (!previewSeekBoundaryBatchActive) {" in preview_sync_body
     assert "secondaryPreviewLastSeekAt.set(preview, now);" in source
     assert "previewSeekBoundary = false;" in preview_sync_body
@@ -227,7 +228,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
             f"{server.url}api/merge/source",
             {
                 "source_id": first_id,
-                "angle_role": "static",
+                "camera_role": "static",
                 "pip_size_percent": 1,
                 "pip_x": 0.25,
                 "pip_y": 0.75,
@@ -238,7 +239,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
         first = next(
             source for source in state["project"]["merge_sources"] if source["id"] == first_id
         )
-        assert first["angle_role"] == "static"
+        assert first["camera_role"] == "static"
         assert first["pip_size_percent"] == 1
         assert first["pip_x"] == 0.25
         assert first["pip_y"] == 0.75
@@ -249,7 +250,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
             f"{server.url}api/merge/source",
             {
                 "source_id": second_id,
-                "angle_role": "detail",
+                "camera_role": "detail",
                 "pip_size_percent": 55,
                 "pip_x": 0.1,
                 "pip_y": 0.2,
@@ -264,7 +265,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
 
         reopened_sources = reopened["project"]["merge_sources"]
         assert [source["id"] for source in reopened_sources] == [first_id, second_id]
-        assert [source["angle_role"] for source in reopened_sources] == ["static", "detail"]
+        assert [source["camera_role"] for source in reopened_sources] == ["static", "detail"]
         assert [source["sync_offset_ms"] for source in reopened_sources] == [125, -75]
         assert reopened_sources[0]["pip_x"] == 0.25
         assert reopened_sources[0]["opacity"] == 0.45
@@ -283,7 +284,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                     "sources": [
                         {
                             "source_id": first_id,
-                            "angle_role": "follow",
+                            "camera_role": "follow",
                             "pip_size_percent": 46,
                             "pip_x": 0.3,
                             "pip_y": 0.7,
@@ -292,7 +293,7 @@ def test_merge_source_offsets_persist_reopen_and_export_in_order(
                         },
                         {
                             "source_id": second_id,
-                            "angle_role": "static",
+                            "camera_role": "static",
                             "pip_size_percent": 58,
                             "pip_x": 0.12,
                             "pip_y": 0.22,

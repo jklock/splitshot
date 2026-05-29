@@ -131,7 +131,11 @@ export function createSettingsPane({
       .filter((source) => source && typeof source === "object")
       .map((source) => ({
         asset: { ...(source.asset || {}) },
-        angle_role: String(source.angle_role || (source.asset?.is_still_image ? "detail" : "follow")),
+        camera_role: String(
+          source.camera_role
+            || source.angle_role
+            || (source.asset?.is_still_image ? "detail" : "follow")
+        ),
         pip_size_percent: source.pip_size_percent ?? null,
         pip_x: Number(source.pip_x ?? 1.0),
         pip_y: Number(source.pip_y ?? 1.0),

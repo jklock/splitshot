@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 
@@ -109,6 +110,11 @@ class TestWorkspaceSerialization:
         }
 
         ws_path = save_workspace(ws, tmp_path / "clip_roundtrip")
+        raw_payload = json.loads(workspace_metadata_path(ws_path).read_text())
+        raw_clips = raw_payload["stage_entries"]["stage_a"]["clip_sources"]
+        assert raw_clips[0]["camera_role"] == "primary"
+        assert "angle_role" not in raw_clips[0]
+        assert raw_clips[1]["camera_role"] == "follow"
         loaded = load_workspace(ws_path)
 
         clips = loaded.stage_entries["stage_a"].clip_sources
@@ -473,6 +479,11 @@ class TestOutputProfilePersistence:
             ),
         ]
         ws_path = save_workspace(ws, tmp_path / "angle_plan")
+        raw_payload = json.loads(workspace_metadata_path(ws_path).read_text())
+        raw_plan = raw_payload["match_output_profiles"][0]["angle_director_plan"]
+        assert raw_plan[0]["camera_role"] == "primary"
+        assert "angle_role" not in raw_plan[0]
+        assert raw_plan[1]["camera_role"] == "follow"
         loaded = load_workspace(ws_path)
 
         profile = loaded.match_output_profiles[0]

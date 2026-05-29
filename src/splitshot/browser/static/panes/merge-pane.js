@@ -582,11 +582,11 @@ export function createMergePane({
   }
 
   function normalizeMergeSourceDraftValue(key, value, source = null) {
-    if (!["angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity", "placement"].includes(key)) {
+    if (!["camera_role", "angle_role", "pip_size_percent", "pip_x", "pip_y", "opacity", "placement"].includes(key)) {
       return undefined;
     }
     if (key === "placement") return normalizedPlacementPayload(value, source);
-    if (key === "angle_role") return normalizedAngleRoleValue(value, source);
+    if (key === "camera_role" || key === "angle_role") return normalizedAngleRoleValue(value, source);
     if (key === "pip_size_percent") return clampNumber(Number(value) || 35, 1, 95);
     if (key === "opacity") return currentSourceOpacity({ opacity: value });
     return normalizedCoordinateValue(value) ?? 1;
@@ -605,7 +605,13 @@ export function createMergePane({
         .filter(([key]) => key !== "source_id")
         .map(([key, value]) => {
           const draftValue = normalizeMergeSourceDraftValue(key, value, source);
-          const savedValue = normalizeMergeSourceDraftValue(key, source[key], source);
+          const savedValue = normalizeMergeSourceDraftValue(
+            key,
+            key === "camera_role" || key === "angle_role"
+              ? (source.camera_role ?? source.angle_role)
+              : source[key],
+            source,
+          );
           return [key, draftValue, savedValue];
         })
         .filter((entry) => entry[1] !== undefined);
@@ -621,6 +627,11 @@ export function createMergePane({
       draftEntries.forEach(([key, draftValue]) => {
         if (key === "placement") {
           source.placement = mergeSourcePlacementState(source, draftValue);
+          return;
+        }
+        if (key === "camera_role" || key === "angle_role") {
+          source.camera_role = draftValue;
+          delete source.angle_role;
           return;
         }
         source[key] = draftValue;
@@ -673,7 +684,7 @@ export function createMergePane({
     }
 
     function currentSourceAngleRole(source = null) {
-      return normalizedAngleRoleValue(source?.angle_role, source);
+      return normalizedAngleRoleValue(source?.camera_role ?? source?.angle_role, source);
     }
 
     function formatSyncOffsetLabel(offsetMs) {
@@ -751,7 +762,7 @@ export function createMergePane({
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
         syncControlValue(input, opacityValue);
       });
-      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="angle_role"]`).forEach((input) => {
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="camera_role"]`).forEach((input) => {
         syncControlValue(input, roleValue);
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="placement_mode"]`).forEach((input) => {
@@ -790,13 +801,17 @@ export function createMergePane({
       const nextX = normalizedCoordinateValue(pipX) ?? 1;
       const nextY = normalizedCoordinateValue(pipY) ?? 1;
       const nextOpacity = currentSourceOpacity({ opacity: opacity ?? source.opacity ?? 1 });
-      const nextAngleRole = normalizedAngleRoleValue(angleRole ?? source.angle_role, source);
+      const nextAngleRole = normalizedAngleRoleValue(
+        angleRole ?? source.camera_role ?? source.angle_role,
+        source,
+      );
       const nextPlacement = mergeSourcePlacementState(source, placement);
       source.pip_size_percent = nextSize;
       source.pip_x = nextX;
       source.pip_y = nextY;
       source.opacity = nextOpacity;
-      source.angle_role = nextAngleRole;
+      source.camera_role = nextAngleRole;
+      delete source.angle_role;
       source.placement = nextPlacement;
       syncMergeSourceControls(sourceId, nextX, nextY, nextSize, source.sync_offset_ms, nextOpacity, nextAngleRole, nextPlacement);
     }
@@ -823,7 +838,7 @@ export function createMergePane({
     function mergeSourcePositionPayload(sourceId, source) {
       return {
         source_id: sourceId,
-        angle_role: currentSourceAngleRole(source),
+        camera_role: currentSourceAngleRole(source),
         pip_size_percent: currentPipSizePercent(source),
         pip_x: normalizedCoordinateValue(source?.pip_x) ?? 1,
         pip_y: normalizedCoordinateValue(source?.pip_y) ?? 1,
@@ -1196,6 +1211,18 @@ export function createMergePane({
     }
   }
 
+  async function removeMergeSource(sourceId) {
+    if (!sourceId) return;
+    await flushPendingMergeSourceCommits();
+    const pendingTimer = currentMergeSourceCommitTimers().get(sourceId);
+    if (pendingTimer !== undefined) {
+      windowObject.clearTimeout(pendingTimer);
+      currentMergeSourceCommitTimers().delete(sourceId);
+    }
+    currentPendingMergeSourcePayloads().delete(sourceId);
+    await callApi("/api/merge/remove", { source_id: sourceId });
+  }
+
   function renderLocalMergePreview() {
     const video = $("primary-video");
     const stage = $("video-stage");
@@ -1266,7 +1293,7 @@ export function createMergePane({
           event.preventDefault();
           event.stopPropagation();
           activity("merge.media.remove", { source_id: remove.dataset.mergeSourceRemove });
-          callApi("/api/merge/remove", { source_id: remove.dataset.mergeSourceRemove });
+          void removeMergeSource(remove.dataset.mergeSourceRemove);
         });
 
         const headerActions = documentObject.createElement("div");
@@ -1605,7 +1632,7 @@ export function createMergePane({
         placementSection.append(placementHeader, placementGrid, placementHint);
 
         const readSourcePayload = () => {
-          const roleControl = controls.querySelector('[data-merge-source-field="angle_role"]');
+          const roleControl = controls.querySelector('[data-merge-source-field="camera_role"]');
           const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 1, 95);
           const nextX = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="x"]')?.value) ?? 1;
           const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
@@ -1613,7 +1640,7 @@ export function createMergePane({
           const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
           return {
             source_id: sourceId,
-            angle_role: normalizedAngleRoleValue(roleControl?.value, source),
+            camera_role: normalizedAngleRoleValue(roleControl?.value, source),
             pip_size_percent: nextSize,
             pip_x: nextX,
             pip_y: nextY,
@@ -1630,7 +1657,7 @@ export function createMergePane({
             payload.pip_y,
             payload.pip_size_percent,
             payload.opacity,
-            payload.angle_role,
+            payload.camera_role,
             payload.placement,
           );
           renderLocalMergePreview();
@@ -1644,7 +1671,7 @@ export function createMergePane({
           const text = documentObject.createElement("span");
           text.textContent = "Camera role";
           const select = documentObject.createElement("select");
-          select.dataset.mergeSourceField = "angle_role";
+          select.dataset.mergeSourceField = "camera_role";
           select.dataset.sourceId = sourceId;
           select.title = "Track which camera role this item fills: primary, follow, static, or detail.";
           mergeSourceAngleRoles.forEach((role) => {
@@ -1770,7 +1797,10 @@ export function createMergePane({
           analyzeButton.disabled = source.sync_analysis_status === "running";
           analyzeButton.title = "Use ShotML to find this added media clip's start beep and set sync automatically.";
           analyzeButton.addEventListener("click", () => {
-            callApi("/api/merge/source/analyze", { source_id: sourceId });
+            void (async () => {
+              await flushPendingMergeSourceCommits();
+              callApi("/api/merge/source/analyze", { source_id: sourceId });
+            })();
           });
           syncButtons.appendChild(analyzeButton);
         }

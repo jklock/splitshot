@@ -1534,8 +1534,8 @@ def test_export_uses_target_dimensions_and_stores_ffmpeg_log(
 class TestOutputProfileExport:
     """Test export with OutputProfile render plans."""
 
-    def test_export_with_run_window_plan(self, tmp_path):
-        """Export function accepts run window render plan."""
+    def test_export_with_trim_settings_plan(self, tmp_path):
+        """Export function accepts trim settings render plans."""
         from splitshot.domain.models import Project
         from splitshot.export.pipeline import export_output_profile
 
@@ -1544,11 +1544,33 @@ class TestOutputProfileExport:
         output_path = tmp_path / "output.mp4"
 
         plan = {
-            "run_window": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
+            "trim_settings": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
             "frame_profile": "16:9",
             "metric_caption_preset": {"enabled_fields": ["cumulative_time"]},
             "lead_in_card": {"match_name": "Test"},
             "brand_mark": {"text": "Test"},
+        }
+
+        try:
+            export_output_profile(project, output_path, plan)
+        except Exception as e:
+            error_msg = str(e).lower()
+            assert any(
+                term in error_msg
+                for term in ("file", "media", "video", "dev/null", "division", "zero")
+            ), f"Unexpected error: {e}"
+
+    def test_export_with_legacy_run_window_plan(self, tmp_path):
+        """Export function still accepts legacy run_window plans as read-time aliases."""
+        from splitshot.domain.models import Project
+        from splitshot.export.pipeline import export_output_profile
+
+        project = Project()
+        project.primary_video.path = "/dev/null"
+        output_path = tmp_path / "legacy-output.mp4"
+
+        plan = {
+            "run_window": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
         }
 
         try:
@@ -1606,7 +1628,7 @@ class TestOutputProfileExport:
         project.overlay.show_score = False
 
         plan = {
-            "run_window": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
+            "trim_settings": {"start_ms": 1000, "end_ms": 5000, "duration_ms": 4000},
             "frame_profile": "9:16",
             "metric_caption_preset": {
                 "enabled_fields": ["cumulative_time", "split_times"],

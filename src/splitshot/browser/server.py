@@ -566,7 +566,7 @@ def _normalize_merge_source_update_payload(payload: dict[str, Any]) -> dict[str,
         target_kind = "merge_source"
 
     return {
-        "angle_role": _payload_alias_value(payload, "angle_role", "camera_role"),
+        "angle_role": _payload_alias_value(payload, "camera_role", "angle_role"),
         "placement_mode": resolve_position_value("mode", "placement_mode", "composition_mode"),
         "placement_slot": resolve_position_value("slot", "placement_slot"),
         "target_kind": target_kind,
@@ -611,7 +611,6 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
 
 _WORKSPACE_ELIGIBLE_KEYS = frozenset(
     {
-        "trim_dead_time",
         "shot_data_overlay",
         "video_shape",
         "opening_title",
@@ -2655,7 +2654,7 @@ class BrowserControlServer:
                 """Add a clip to a stage for composite editing."""
                 stage_id = str(body.get("stage_id") or "")
                 source_path = str(body.get("source_path") or "")
-                angle_role = str(body.get("angle_role") or "primary")
+                angle_role = str(body.get("camera_role") or body.get("angle_role") or "primary")
                 clips = controller.workspace_stage_clip_add(
                     stage_id,
                     source_path,
@@ -2663,7 +2662,7 @@ class BrowserControlServer:
                     **{
                         k: v
                         for k, v in body.items()
-                        if k not in ("stage_id", "source_path", "angle_role")
+                        if k not in ("stage_id", "source_path", "camera_role", "angle_role")
                     },
                 )
                 return {"success": True, "clips": clips}
@@ -2672,7 +2671,12 @@ class BrowserControlServer:
                 """Update a clip's properties."""
                 stage_id = str(body.get("stage_id") or "")
                 clip_id = str(body.get("clip_id") or "")
-                kwargs = {k: v for k, v in body.items() if k not in ("stage_id", "clip_id")}
+                normalized_body = dict(body)
+                if "camera_role" in normalized_body:
+                    normalized_body["angle_role"] = normalized_body.pop("camera_role")
+                kwargs = {
+                    k: v for k, v in normalized_body.items() if k not in ("stage_id", "clip_id")
+                }
                 result = controller.workspace_stage_clip_update(stage_id, clip_id, **kwargs)
                 if result is None:
                     return {"success": False, "error": "Clip not found"}

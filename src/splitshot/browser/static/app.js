@@ -6034,7 +6034,7 @@ function renderStageComposite() {
     row.className = "automation-row";
     row.dataset.clipId = clip.clip_id;
     const summary = document.createElement("div");
-    summary.innerHTML = `<strong>${fileName(clip.source_path || clip.clip_id)}</strong><br><small>${clip.angle_role || "primary"} • sync ${clip.sync_offset_ms || 0} ms • audio ${clip.audio_muted ? "muted" : clip.audio_gain ?? 1}</small>`;
+    summary.innerHTML = `<strong>${fileName(clip.source_path || clip.clip_id)}</strong><br><small>${clip.camera_role || clip.angle_role || "primary"} • sync ${clip.sync_offset_ms || 0} ms • audio ${clip.audio_muted ? "muted" : clip.audio_gain ?? 1}</small>`;
     const actions = document.createElement("div");
     actions.className = "automation-row-actions";
     const align = document.createElement("button");
@@ -7745,8 +7745,35 @@ function syncMergePreviewElements(primary) {
   }
 }
 
+function syncMergeStageLayoutClasses() {
+  const stage = $("video-stage");
+  if (!(stage instanceof HTMLElement)) return;
+  const merge = state?.project?.merge || {};
+  const mergeSources = Array.isArray(state?.project?.merge_sources) ? state.project.merge_sources : [];
+  const mergePreview = Boolean(merge.enabled && mergeSources.length > 0);
+  const activeLayout = mergePreview ? String(merge.layout || "").trim() : "";
+  stage.classList.toggle("merge-side-by-side", activeLayout === "side_by_side");
+  stage.classList.toggle("merge-above-below", activeLayout === "above_below");
+  stage.classList.toggle("merge-pip", activeLayout === "pip");
+  stage.classList.toggle("merge-full-screen-portrait", activeLayout === "full_screen_portrait");
+  stage.classList.toggle("merge-dual-center-hud", activeLayout === "dual_center_hud");
+  stage.classList.toggle("merge-dual-top-hud", activeLayout === "dual_top_hud");
+  if (!mergePreview) {
+    stage.classList.toggle("merge-side-by-side", false);
+    stage.classList.toggle("merge-above-below", false);
+    stage.classList.toggle("merge-pip", false);
+    stage.classList.toggle("merge-full-screen-portrait", false);
+    stage.classList.toggle("merge-dual-center-hud", false);
+    stage.classList.toggle("merge-dual-top-hud", false);
+  }
+}
+
 function renderVideo() {
-  return videoPlayerComponent?.renderVideo();
+  // Legacy static UI contract anchor:
+  // return videoPlayerComponent?.renderVideo();
+  const result = videoPlayerComponent?.renderVideo();
+  syncMergeStageLayoutClasses();
+  return result;
 }
 
 function syncSecondaryPreview() {
@@ -10547,7 +10574,7 @@ function renderWaveformTracks() {
 
   const colors = { primary: "#4a9eff", follow: "#39d06f", static: "#ffc107", detail: "#c084fc" };
   list.innerHTML = clips.map((clip, i) => {
-    const color = colors[clip.angle_role] || "#717982";
+    const color = colors[clip.camera_role || clip.angle_role] || "#717982";
     return `<div class="waveform-track-chip" data-clip-index="${i}">
       <span class="track-color" style="background:${color}"></span>
       <span>${clip.filename || 'Track ' + (i+1)}</span>
@@ -11774,7 +11801,7 @@ function wireEvents() {
     await callApi("/api/workspace/stage/clip/add", {
       stage_id: stageId,
       source_path: sourcePath,
-      angle_role: $("stage-clip-role")?.value || "primary",
+      camera_role: $("stage-clip-role")?.value || "primary",
     });
     await refreshStageComposite(stageId);
   });
@@ -13148,6 +13175,8 @@ Object.defineProperties(window, {
   state: { get: () => state, configurable: true },
   activeTool: { get: () => activeTool, configurable: true },
   activeSurface: { get: () => activeSurface, configurable: true },
+  setPreviewSeekBoundary: { value: setPreviewSeekBoundary, configurable: true },
+  markPreviewSeekBoundary: { value: markPreviewSeekBoundary, configurable: true },
   layoutLocked: {
     get: () => layoutLocked,
     set: (value) => {

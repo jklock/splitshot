@@ -1043,7 +1043,7 @@ export function createMatchView({
       row.dataset.clipId = clip.clip_id;
       row.draggable = true;
       const summary = documentObject.createElement("div");
-      summary.innerHTML = `<strong>${index + 1}. ${fileName(clip.source_path || clip.clip_id)}</strong><br><small>${clip.angle_role || "primary"} • sync ${clip.sync_offset_ms || 0} ms • audio ${clip.audio_muted ? "muted" : clip.audio_gain ?? 1}${clip.audio_primary ? " • primary" : ""}</small>`;
+      summary.innerHTML = `<strong>${index + 1}. ${fileName(clip.source_path || clip.clip_id)}</strong><br><small>${clip.camera_role || clip.angle_role || "primary"} • sync ${clip.sync_offset_ms || 0} ms • audio ${clip.audio_muted ? "muted" : clip.audio_gain ?? 1}${clip.audio_primary ? " • primary" : ""}</small>`;
       summary.title = "Drag to reorder this stage composite clip.";
       const actions = documentObject.createElement("div");
       actions.className = "automation-row-actions";
@@ -1097,12 +1097,12 @@ export function createMatchView({
           <option value="detail">Detail</option>
         </select>`;
       const roleSelect = roleLabel.querySelector("select");
-      syncControlValue(roleSelect, clip.angle_role || "primary");
+      syncControlValue(roleSelect, clip.camera_role || clip.angle_role || "primary");
       roleSelect?.addEventListener("change", async () => {
         await callApi("/api/workspace/stage/clip/update", {
           stage_id: stageId,
           clip_id: clip.clip_id,
-          angle_role: roleSelect.value,
+          camera_role: roleSelect.value,
         });
         await refreshStageComposite(stageId);
       });

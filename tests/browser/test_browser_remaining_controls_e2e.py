@@ -945,21 +945,23 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     arg=source_id,
                 )
 
-                first_card.locator('[data-merge-source-field="angle_role"]').select_option("static")
+                first_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
                 page.wait_for_function(
                     """(payload) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
-                        return Boolean(source) && source.angle_role === payload.expected;
+                        return Boolean(source) && source.camera_role === payload.expected;
                     }""",
                     arg={"sourceId": source_id, "expected": "static"},
                 )
 
-                second_card = page.locator(".merge-media-card").nth(1)
+                second_card = page.locator(
+                    f'.merge-media-card[data-source-id="{second_source_id}"]'
+                )
                 second_body = second_card.locator(".merge-media-card-body")
                 if second_body.evaluate("body => body.hidden"):
                     second_card.locator('button[aria-label*="composition item controls"]').click()
                     page.wait_for_function(
-                        "(sourceId) => document.querySelector('.merge-media-card[data-source-id="' + sourceId + '"] .merge-media-card-body')?.hidden === false",
+                        "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=second_source_id,
                     )
 
@@ -1005,7 +1007,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     """(payload) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
                         return Boolean(source)
-                            && source.angle_role === 'static'
+                            && source.camera_role === 'static'
                             && source.placement?.mode === 'pip'
                             && source.placement?.slot === 'overlay'
                             && source.placement?.target_kind === 'merge_source'
@@ -1018,9 +1020,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     arg={"sourceId": source_id, "secondSourceId": second_source_id},
                 )
 
-                page.locator(".merge-media-card").nth(1).locator(
-                    "[data-merge-source-remove]"
-                ).click()
+                second_card.locator("[data-merge-source-remove]").click()
                 page.wait_for_function(
                     "(sourceId) => !(state?.project?.merge_sources || []).some((item) => item.id === sourceId)",
                     arg=second_source_id,

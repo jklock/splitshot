@@ -1154,7 +1154,7 @@
           "control_ids": [
             "[data-merge-source-trim-field=\"start_seconds\"]",
             "[data-merge-source-trim-field=\"end_seconds\"]",
-            "[data-merge-source-field=\"angle_role\"]",
+            "[data-merge-source-field=\"camera_role\"]",
             "[data-merge-source-field=\"placement_mode\"]",
             "[data-merge-source-field=\"placement_slot\"]",
             "[data-merge-source-field=\"target_kind\"]",
