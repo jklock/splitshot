@@ -132,20 +132,21 @@ Keep test output compact:
 
 ## Virtual Environment
 
-The `.venv` symlink in the project root points to `~/.local/share/splitshot/venv`.
-The real venv lives outside the project tree so it survives project-directory
-cleanup by agents or build steps.
+The `.venv` directory lives on the network share at the project root.
+It uses Homebrew Python 3.12 at `/opt/homebrew/opt/python@3.12/bin/python3.12`
+— the same path on every macOS machine with Homebrew, so both machines
+accessing the repo over SMB can share this `.venv` without conflict.
 
 - **Do NOT delete or rebuild `.venv` unless you changed dependencies in `pyproject.toml`.**
 - **This project has `managed = false` in `[tool.uv]`**. `uv sync` is disabled.
   Use `uv pip install` or the repair script to update the venv instead.
 - If `.venv` is missing or broken, restore with:
   `bash scripts/repair-venv.sh`
-- That script will re-sync only if the external venv at
-  `~/.local/share/splitshot/venv` is also missing — otherwise it just
-  recreates the symlink (instant, no rebuild).
-- The first agent to bootstrap the project creates the external venv;
-  subsequent agents reuse it.
+- That script creates `.venv` using Homebrew Python 3.12 (installs it via
+  `brew install python@3.12` if missing) and installs all dependencies.
+- The repair script handles both single-machine and cross-machine (SMB)
+  setups — if `.venv` was created by one Mac, the other Mac can use it
+  immediately since the Python binary path is identical.
 
 ## Verification
 

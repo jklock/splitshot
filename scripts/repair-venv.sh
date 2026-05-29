@@ -1,39 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Restore .venv symlink if deleted by an agent or rebuild step.
-# The real venv lives at ~/.local/share/splitshot/venv so it survives
-# project-directory cleanup.
-EXTERNAL="$HOME/.local/share/splitshot/venv"
+# Ensure .venv is a healthy real directory on the network share using
+# Homebrew Python 3.12 (/opt/homebrew/opt/python@3.12/bin/python3.12).
+# The path is identical on every Mac with Homebrew, so both machines
+# sharing this repo over SMB can use the same .venv.
 HOMEBREW_PYTHON="/opt/homebrew/opt/python@3.12/bin/python3.12"
-LINK=".venv"
+VENV=".venv"
 
-# If .venv is a real directory (agent-created), nuke it
-if [ -d "$LINK" ] && [ ! -L "$LINK" ]; then
-  echo "repair-venv: .venv is a real dir — removing and restoring symlink"
-  rm -rf "$LINK"
+# If .venv is a symlink (old approach pointing to user-local path),
+# nuke it — the symlink target won't exist on the other machine.
+if [ -L "$VENV" ]; then
+  echo "repair-venv: .venv is a symlink (broken cross-machine) — creating real dir"
+  rm -f "$VENV"
 fi
 
-if [ ! -L "$LINK" ] || [ ! -e "$LINK/bin/python" ]; then
-  echo "repair-venv: .venv missing or broken — restoring symlink"
-  rm -rf "$LINK"
-  if [ ! -d "$EXTERNAL/bin" ]; then
-    echo "repair-venv: external venv missing at $EXTERNAL — creating"
-    # Use Homebrew Python (path is same for all users) instead of
-    # uv-managed Python (path is user-specific)
-    if [ -x "$HOMEBREW_PYTHON" ]; then
-      uv venv --python "$HOMEBREW_PYTHON" "$EXTERNAL"
-    else
-      uv venv "$EXTERNAL"
-    fi
-    uv pip install --python "$EXTERNAL/bin/python" -e ".[dev]" --no-progress
+# If .venv is missing or its Python binary doesn't resolve, rebuild it.
+if [ ! -d "$VENV/bin" ] || [ ! -x "$VENV/bin/python" ]; then
+  echo "repair-venv: .venv missing or broken — rebuilding"
+  rm -rf "$VENV"
+
+  # Install Homebrew Python 3.12 if missing
+  if [ ! -x "$HOMEBREW_PYTHON" ]; then
+    echo "repair-venv: Homebrew Python 3.12 not found — installing"
+    brew install python@3.12
   fi
-  ln -sf "$EXTERNAL" "$LINK"
-  echo "repair-venv: restored"
-fi
 
-# Ensure .venv is a symlink (uv managed=false might break this)
-if [ -d "$LINK" ] && [ ! -L "$LINK" ]; then
-  echo "repair-venv: .venv was recreated as a directory — fixing"
-  rm -rf "$LINK"
-  ln -sf "$EXTERNAL" "$LINK"
+  uv venv --python "$HOMEBREW_PYTHON" "$VENV"
+  uv pip install --python "$VENV/bin/python" -e ".[dev]" --no-progress
+  echo "repair-venv: rebuilt at $VENV with $(readlink "$VENV/bin/python")"
 fi
