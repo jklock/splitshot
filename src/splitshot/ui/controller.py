@@ -137,8 +137,14 @@ from splitshot.timeline.model import (
     normalized_timing_event_for_shots,
     sort_shots,
 )
+from splitshot.ui.services import analysis_service as analysis_service_module
+from splitshot.ui.services import merge_export_service as merge_export_service_module
 from splitshot.ui.services import practiscore_sync as practiscore_sync_service
+from splitshot.ui.services import project_session as project_session_service_module
+from splitshot.ui.services import scoring_service as scoring_service_module
+from splitshot.ui.services import settings_service as settings_service_module
 from splitshot.ui.services import shared_backend as shared_backend_service
+from splitshot.ui.services import workspace_service as workspace_service_module
 
 
 discover_remote_matches = practiscore_sync_service.discover_remote_matches
@@ -392,6 +398,10 @@ def _project_media_recovery_score(
         score += 900
     elif expected_stem_normalized and candidate_stem_normalized == expected_stem_normalized:
         score += 850
+    elif expected_stem_normalized and candidate_stem_normalized.endswith(expected_stem_normalized):
+        score += 760
+    elif expected_stem_normalized and candidate_stem_normalized.startswith(expected_stem_normalized):
+        score += 700
     elif expected_stem and (expected_stem in candidate_stem or candidate_stem in expected_stem):
         score += 700
     elif expected_stem_normalized and (
@@ -1346,9 +1356,7 @@ class ProjectController(QObject):
         self.project_changed.connect(lambda: _autosave_workspace_if_needed(self))
 
     def _workspace_stage_entry(self, stage_id: str) -> StageEntry | None:
-        if self.workspace is None:
-            return None
-        return self.workspace.stage_entries.get(stage_id)
+        return workspace_service_module.workspace_stage_entry(self, stage_id)
 
     def _workspace_stage_clip_models(self, stage_id: str) -> list[StageClipSource]:
         entry = self._workspace_stage_entry(stage_id)
@@ -1406,33 +1414,12 @@ class ProjectController(QObject):
         workspace_path: str | Path | None = None,
         entry: StageEntry | None = None,
     ) -> Path | None:
-        stage_entry = entry or self._workspace_stage_entry(stage_id)
-        workspace_root = None
-        if workspace_path is not None:
-            workspace_root = normalize_workspace_path(workspace_path)
-        elif self.workspace_path is not None:
-            workspace_root = normalize_workspace_path(self.workspace_path)
-
-        canonical_path = None
-        if workspace_root is not None:
-            canonical_path = workspace_stage_project_path(workspace_root, stage_id)
-            if canonical_path.is_file():
-                return canonical_path
-            if stage_entry and stage_entry.relative_project_path:
-                candidate = (workspace_root / stage_entry.relative_project_path).resolve(strict=False)
-                if candidate.is_dir() or candidate.name != "project.json":
-                    candidate = candidate / "project.json"
-                if candidate.is_file():
-                    return candidate
-
-        if stage_entry and stage_entry.relative_project_path:
-            candidate = Path(stage_entry.relative_project_path).expanduser().resolve(strict=False)
-            if candidate.is_dir() or candidate.name != "project.json":
-                candidate = candidate / "project.json"
-            if candidate.is_file():
-                return candidate
-
-        return canonical_path
+        return workspace_service_module.workspace_stage_project_file(
+            self,
+            stage_id,
+            workspace_path=workspace_path,
+            entry=entry,
+        )
 
     def _find_workspace_stage_for_project_path(
         self,
@@ -1441,203 +1428,52 @@ class ProjectController(QObject):
         workspace: MatchWorkspace | None = None,
         workspace_path: str | Path | None = None,
     ) -> str | None:
-        active_workspace = workspace or self.workspace
-        if active_workspace is None:
-            return None
-        normalized_project_path = normalize_project_path(project_path)
-        for stage_id, entry in active_workspace.stage_entries.items():
-            candidate = self._workspace_stage_project_file(
-                stage_id,
-                workspace_path=workspace_path,
-                entry=entry,
-            )
-            if candidate is None:
-                continue
-            if normalize_project_path(candidate) == normalized_project_path:
-                return stage_id
-        return None
+        return workspace_service_module.find_workspace_stage_for_project_path(
+            self,
+            project_path,
+            workspace=workspace,
+            workspace_path=workspace_path,
+        )
 
     def _seed_workspace_defaults(self, workspace: MatchWorkspace) -> None:
-        effective = self.effective_settings()
-        for field in _INHERITANCE_ELIGIBLE_FIELDS:
-            if hasattr(effective, field):
-                value = getattr(effective, field)
-                if value is not None:
-                    workspace.shared_defaults[field] = value
+        workspace_service_module.seed_workspace_defaults(
+            self,
+            workspace,
+            _INHERITANCE_ELIGIBLE_FIELDS,
+        )
 
     def _ensure_project_workspace_membership(self, project_path: str | Path) -> str | None:
-        normalized_project_path = normalize_project_path(project_path)
-        owner_workspace = None
-        owner_workspace_path: Path | None = None
-        stage_id = self._find_workspace_stage_for_project_path(normalized_project_path)
-
-        if stage_id is not None and self.workspace is not None:
-            owner_workspace = self.workspace
-            if self.workspace_path is not None:
-                owner_workspace_path = normalize_workspace_path(self.workspace_path)
-
-        if owner_workspace is None:
-            for candidate in [normalized_project_path, *normalized_project_path.parents]:
-                if not workspace_has_metadata(candidate):
-                    continue
-                owner_workspace_path = normalize_workspace_path(candidate)
-                owner_workspace = load_workspace(owner_workspace_path)
-                stage_id = self._find_workspace_stage_for_project_path(
-                    normalized_project_path,
-                    workspace=owner_workspace,
-                    workspace_path=owner_workspace_path,
-                )
-                if stage_id is None:
-                    relative_project_path = normalized_project_path.relative_to(owner_workspace_path)
-                    if len(relative_project_path.parts) >= 2 and relative_project_path.parts[0] == "Stages":
-                        stage_id = relative_project_path.parts[1]
-                break
-
-        if owner_workspace is None:
-            if self.workspace is not None and self.workspace_path is None:
-                owner_workspace = self.workspace
-            elif self.workspace is not None and self.workspace_path is not None:
-                return None
-            else:
-                owner_workspace = MatchWorkspace()
-                owner_workspace.name = (
-                    f"{(self.project.name or normalized_project_path.name).strip()} Match"
-                )
-                self._seed_workspace_defaults(owner_workspace)
-
-        resolved_stage_id = stage_id or self.project.id or normalized_project_path.name
-        entry = owner_workspace.stage_entries.get(resolved_stage_id)
-        if entry is None:
-            entry = StageEntry(stage_id=resolved_stage_id)
-            owner_workspace.stage_entries[resolved_stage_id] = entry
-        if resolved_stage_id not in owner_workspace.stage_order:
-            owner_workspace.stage_order.append(resolved_stage_id)
-        if entry.stage_number is None:
-            entry.stage_number = owner_workspace.stage_order.index(resolved_stage_id) + 1
-
-        entry.display_name = self.project.name or entry.display_name or normalized_project_path.name
-        if owner_workspace_path is not None:
-            try:
-                entry.relative_project_path = str(normalized_project_path.relative_to(owner_workspace_path))
-            except ValueError:
-                entry.relative_project_path = str(normalized_project_path)
-        else:
-            entry.relative_project_path = str(normalized_project_path)
-        entry.source_media_present = bool(str(self.project.primary_video.path or "").strip())
-        if not entry.override_values:
-            entry.status = "complete" if entry.source_media_present else "incomplete"
-
-        owner_workspace.updated_at = _utc_now()
-        self.workspace = owner_workspace
-        self.workspace_path = owner_workspace_path
-        self.active_stage_id = resolved_stage_id
-        self._return_to_workspace_available = owner_workspace_path is not None
-
-        if owner_workspace_path is not None:
-            self._load_workspace_stage_profiles()
-            save_workspace(owner_workspace, owner_workspace_path)
-
-        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
-        return resolved_stage_id
+        return workspace_service_module.ensure_project_workspace_membership(
+            self,
+            project_path,
+            _INHERITANCE_ELIGIBLE_FIELDS,
+        )
 
     def _workspace_persistence_snapshot(self) -> dict | None:
-        if self.workspace is None:
-            return None
-        workspace_snapshot = _workspace_to_dict_safe(self.workspace)
-        if workspace_snapshot is None:
-            return None
-        stage_profiles = {}
-        for output_id, profile in self._output_profiles.items():
-            if profile.scope_type == "stage" and profile.scope_id in self.workspace.stage_entries:
-                stage_profiles[output_id] = self._output_profile_to_dict_safe(profile)
-        return {
-            "workspace": workspace_snapshot,
-            "stage_profiles": stage_profiles,
-        }
+        return workspace_service_module.workspace_persistence_snapshot(self)
 
     def _persist_workspace_stage_profiles(self) -> None:
-        if self.workspace is None:
-            return
-        for stage_id in self.workspace.stage_entries:
-            bundle_path = self._workspace_stage_bundle_path(stage_id)
-            if bundle_path is None:
-                continue
-            self._save_stage_profiles(bundle_path, stage_id=stage_id)
+        workspace_service_module.persist_workspace_stage_profiles(self)
 
     def _load_workspace_stage_profiles(self) -> None:
-        if self.workspace is None:
-            return
-        self._output_profiles = {
-            output_id: profile
-            for output_id, profile in self._output_profiles.items()
-            if not (
-                profile.scope_type == "stage" and profile.scope_id in self.workspace.stage_entries
-            )
-        }
-        for stage_id in self.workspace.stage_entries:
-            bundle_path = self._workspace_stage_bundle_path(stage_id)
-            if bundle_path is not None:
-                self._load_stage_profiles(bundle_path)
+        workspace_service_module.load_workspace_stage_profiles(self)
 
     def new_project(self) -> None:
-        self.folder_settings = None
-        self.folder_settings_error = None
-        self.project = self._new_project_with_settings_defaults()
-        self.project_path = None
-        self._clear_practiscore_source()
-        self._practiscore_sync_payload = (
-            practiscore_sync_service.default_practiscore_sync_payload()
-        )
-        self._set_status("Ready.")
-        self._saved_snapshot = project_to_dict(self.project)
-        self._remember_original_shots()
-        self.editor_scope = "single"
-        self.active_stage_id = None
-        self._return_to_workspace_available = False
+        project_session_service_module.new_project(self)
 
     # ── Workspace lifecycle ──────────────────────────────────────────
 
     def new_workspace(self) -> None:
         """Create a new empty match workspace with inherited defaults."""
-        self.workspace = MatchWorkspace()
-        self.workspace_path = None
-        self.editor_scope = "multi"
-        self.active_stage_id = None
-        self._return_to_workspace_available = False
-
-        self._seed_workspace_defaults(self.workspace)
-
-        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
-        self._set_status("New match workspace created.")
-        self.project_changed.emit()
+        workspace_service_module.new_workspace(self, _INHERITANCE_ELIGIBLE_FIELDS)
 
     def save_workspace(self, path: str | None = None) -> None:
         """Persist workspace to disk."""
-        if self.workspace is None:
-            return
-        save_path = Path(path) if path else self.workspace_path
-        if save_path is None:
-            return
-        self.workspace_path = save_workspace(self.workspace, save_path)
-        self._persist_workspace_stage_profiles()
-        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
-        self._sync_workspace_to_library()
-        self._set_status(f"Workspace saved to {self.workspace_path}")
+        workspace_service_module.save_workspace(self, path)
 
     def open_workspace(self, path: str) -> None:
         """Open an existing match workspace from disk."""
-        ws_path = Path(path)
-        if not workspace_has_metadata(ws_path):
-            self._set_status(f"No workspace found at {path}")
-            return
-        self.workspace = load_workspace(ws_path)
-        self.workspace_path = ws_path
-        self.editor_scope = "multi"
-        self.active_stage_id = None
-        self._return_to_workspace_available = False
-        self._load_workspace_stage_profiles()
-        self._workspace_saved_snapshot = self._workspace_persistence_snapshot()
-        self._set_status(f"Opened workspace: {self.workspace.name}")
+        workspace_service_module.open_workspace(self, path)
 
     # ── Stage membership ────────────────────────────────────────────
 
@@ -1645,30 +1481,11 @@ class ProjectController(QObject):
         self, stage_id: str, display_name: str = "", project_path: str = ""
     ) -> None:
         """Add a stage entry to the current workspace."""
-        if self.workspace is None:
-            return
-        entry = StageEntry(
-            stage_id=stage_id,
-            display_name=display_name or f"Stage {len(self.workspace.stage_entries) + 1}",
-            relative_project_path=project_path,
-        )
-        self.workspace.stage_entries[stage_id] = entry
-        if stage_id not in self.workspace.stage_order:
-            self.workspace.stage_order.append(stage_id)
-        self.workspace.updated_at = _utc_now()
-        self._set_status(f"Added stage {stage_id} to workspace.")
-        self.project_changed.emit()
+        workspace_service_module.workspace_add_stage(self, stage_id, display_name, project_path)
 
     def workspace_remove_stage(self, stage_id: str) -> None:
         """Remove a stage entry from the current workspace (does not delete project files)."""
-        if self.workspace is None:
-            return
-        self.workspace.stage_entries.pop(stage_id, None)
-        if stage_id in self.workspace.stage_order:
-            self.workspace.stage_order.remove(stage_id)
-        self.workspace.updated_at = _utc_now()
-        self._set_status(f"Removed stage {stage_id} from workspace.")
-        self.project_changed.emit()
+        workspace_service_module.workspace_remove_stage(self, stage_id)
 
     # ── Stage open / return ─────────────────────────────────────────
 
@@ -1680,99 +1497,42 @@ class ProjectController(QObject):
 
         Returns structured error dict on failure, None on success.
         """
-        if self.workspace is None:
-            return {"match_id": None, "stage_id": stage_id, "reason": "No workspace is open"}
-        if stage_id not in self.workspace.stage_entries:
-            return {
-                "match_id": self.workspace.match_id,
-                "stage_id": stage_id,
-                "reason": "Stage not found in workspace",
-            }
-        if self.workspace_path is not None:
-            self.save_workspace()
-        if self.workspace_path is not None:
-            stage_project = self._workspace_stage_project_file(stage_id)
-            if stage_project is not None and stage_project.exists():
-                self.open_project(str(stage_project.parent))
-                self._load_stage_profiles(Path(self.project_path))
-        self.active_stage_id = stage_id
-        self.editor_scope = "multi"
-        self._return_to_workspace_available = True
-        self._set_status(f"Editing stage: {self.workspace.stage_entries[stage_id].display_name}")
-        return None
+        return workspace_service_module.workspace_open_stage(self, stage_id)
 
     def workspace_return_to_workspace(self) -> None:
         """Return from stage editor back to workspace context."""
-        previous_stage_id = self.active_stage_id
-        self.active_stage_id = None
-        self._return_to_workspace_available = False
-        if self.workspace_path is not None and workspace_has_metadata(self.workspace_path):
-            self.workspace = load_workspace(self.workspace_path)
-        self._last_returned_stage_id = previous_stage_id
-        self._set_status(
-            f"Returned to workspace: {self.workspace.name if self.workspace else 'Unknown'}"
-        )
+        workspace_service_module.workspace_return_to_workspace(self)
 
     # ── Shared defaults and overrides ───────────────────────────────
 
     def workspace_set_defaults(self, payload: dict) -> None:
         """Set match-level shared defaults (inheritance-eligible fields only)."""
-        if self.workspace is None:
-            return
-        filtered = {k: v for k, v in payload.items() if k in _INHERITANCE_ELIGIBLE_FIELDS}
-        self.workspace.shared_defaults.update(filtered)
-        self.workspace.updated_at = _utc_now()
-        self._set_status("Updated workspace shared defaults.")
-        self.project_changed.emit()
+        workspace_service_module.workspace_set_defaults(
+            self,
+            payload,
+            _INHERITANCE_ELIGIBLE_FIELDS,
+        )
 
     def workspace_set_stage_override(self, stage_id: str, payload: dict) -> None:
         """Set a stage-local override value (inheritance-eligible fields only)."""
-        if self.workspace is None or stage_id not in self.workspace.stage_entries:
-            return
-        filtered = {k: v for k, v in payload.items() if k in _INHERITANCE_ELIGIBLE_FIELDS}
-        if not filtered:
-            return
-        entry = self.workspace.stage_entries[stage_id]
-        entry.override_values.update(filtered)
-        entry.status = "overridden"
-        self.workspace.updated_at = _utc_now()
-        self._set_status(f"Set override for stage {stage_id}.")
-        self.project_changed.emit()
+        workspace_service_module.workspace_set_stage_override(
+            self,
+            stage_id,
+            payload,
+            _INHERITANCE_ELIGIBLE_FIELDS,
+        )
 
     def workspace_reset_stage_override(self, stage_id: str, keys: list[str] | None = None) -> None:
         """Remove stage-local overrides, reverting to inherited values."""
-        if self.workspace is None or stage_id not in self.workspace.stage_entries:
-            return
-        entry = self.workspace.stage_entries[stage_id]
-        if keys is None:
-            entry.override_values.clear()
-        else:
-            for key in keys:
-                entry.override_values.pop(key, None)
-        if not entry.override_values:
-            entry.status = "complete" if entry.source_media_present else "incomplete"
-        self.workspace.updated_at = _utc_now()
-        self._set_status(f"Reset overrides for stage {stage_id}.")
-        self.project_changed.emit()
+        workspace_service_module.workspace_reset_stage_override(self, stage_id, keys)
 
     def workspace_reset_defaults(self) -> dict:
         """Clear workspace shared defaults and update timestamp."""
-        if not self.workspace:
-            return {"error": "No workspace open"}
-        self.workspace.shared_defaults.clear()
-        self.workspace.updated_at = _utc_now()
-        self.autosave_project_if_needed()
-        self.project_changed.emit()
-        return {"reset": True}
+        return workspace_service_module.workspace_reset_defaults(self)
 
     @staticmethod
     def _workspace_export_recipe(value: str | None) -> tuple[str, bool]:
-        raw_value = "" if value is None else str(value).strip().lower()
-        if not raw_value:
-            return "stage_output", True
-        if raw_value in {"stage_output", "stage_composite"}:
-            return raw_value, False
-        raise ValueError(f"Unsupported workspace export recipe: {value}")
+        return merge_export_service_module.workspace_export_recipe(value)
 
     @staticmethod
     def _workspace_export_output_path(
@@ -1782,17 +1542,16 @@ class ProjectController(QObject):
         *,
         legacy_default: bool = False,
     ) -> Path:
-        if legacy_default and recipe == "stage_output":
-            return workspace_path / f"{stage_id}.mp4"
-        exports_dir = workspace_path / "exports"
-        exports_dir.mkdir(parents=True, exist_ok=True)
-        return exports_dir / f"{stage_id}-{recipe}.mp4"
+        return merge_export_service_module.workspace_export_output_path(
+            workspace_path,
+            stage_id,
+            recipe,
+            legacy_default=legacy_default,
+        )
 
     @staticmethod
     def _target_even_dimensions(width: int, height: int) -> tuple[int, int]:
-        safe_width = max(2, int(width) - (int(width) % 2))
-        safe_height = max(2, int(height) - (int(height) % 2))
-        return safe_width, safe_height
+        return merge_export_service_module.target_even_dimensions(width, height)
 
     def _workspace_export_dimensions(
         self,
@@ -1801,26 +1560,13 @@ class ProjectController(QObject):
         base_width: int,
         base_height: int,
     ) -> tuple[int, int]:
-        if (
-            project is not None
-            and project.export.target_width
-            and project.export.target_height
-            and int(project.export.target_width) > 0
-            and int(project.export.target_height) > 0
-        ):
-            return self._target_even_dimensions(
-                int(project.export.target_width),
-                int(project.export.target_height),
-            )
-        profile_dimensions = {
-            "16:9": (640, 360),
-            "9:16": (360, 640),
-            "1:1": (360, 360),
-            "4:5": (360, 450),
-        }
-        if frame_profile in profile_dimensions:
-            return profile_dimensions[frame_profile]
-        return self._target_even_dimensions(base_width, base_height)
+        return merge_export_service_module.workspace_export_dimensions(
+            self,
+            project,
+            frame_profile,
+            base_width,
+            base_height,
+        )
 
     @staticmethod
     def _run_media_command(
@@ -1829,41 +1575,29 @@ class ProjectController(QObject):
         timeout: int = 600,
         error_message: str,
     ) -> None:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or error_message)
+        merge_export_service_module.run_media_command(
+            command,
+            timeout=timeout,
+            error_message=error_message,
+        )
 
     def _stage_profile_for_kind(self, stage_id: str, profile_kind: str) -> OutputProfile | None:
-        for candidate in self._output_profiles.values():
-            if (
-                candidate.scope_type == "stage"
-                and candidate.scope_id == stage_id
-                and candidate.profile_kind == profile_kind
-            ):
-                return candidate
-        return None
+        return merge_export_service_module.stage_profile_for_kind(
+            self,
+            stage_id,
+            profile_kind,
+        )
 
     def _output_profile_render_plan_for_project(
         self,
         project: Project,
         profile: OutputProfile,
     ) -> dict[str, object]:
-        return {
-            "success": True,
-            "output_id": profile.output_id,
-            "profile_name": profile.profile_name,
-            "profile_kind": profile.profile_kind,
-            "scope_type": profile.scope_type,
-            "scope_id": profile.scope_id,
-            "frame_profile": profile.frame_profile,
-            "metric_caption_preset": dict(profile.metric_caption_preset),
-            "lead_in_card": dict(profile.lead_in_card),
-            "brand_mark": dict(profile.brand_mark),
-            "subject_track_crop": dict(profile.subject_track_crop),
-            "visibility_recipe": dict(profile.visibility_recipe),
-            "trim_settings": self._resolve_trim_settings(profile, project=project),
-            "source": "output_profile",
-        }
+        return merge_export_service_module.output_profile_render_plan_for_project(
+            self,
+            project,
+            profile,
+        )
 
     def _workspace_export_stage_output_item(
         self,
@@ -1872,380 +1606,57 @@ class ProjectController(QObject):
         *,
         legacy_default: bool = False,
     ) -> dict[str, object]:
-        entry = self.workspace.stage_entries.get(stage_id) if self.workspace is not None else None
-        if entry is None:
-            raise ValueError("Stage entry not found")
-
-        project = self._load_stage_project(stage_id)
-        if not project:
-            raise ValueError("Cannot load stage project")
-        if not project.primary_video or not project.primary_video.path:
-            raise ValueError("No video imported for this stage")
-
-        output_path = self._workspace_export_output_path(
-            workspace_path,
+        return merge_export_service_module.workspace_export_stage_output_item(
+            self,
             stage_id,
-            "stage_output",
+            workspace_path,
             legacy_default=legacy_default,
         )
-        display_name = entry.display_name or f"Stage {entry.stage_number}"
-        profile = self._stage_profile_for_kind(stage_id, "stage_output")
-
-        self._set_status(f"Exporting {display_name}...")
-        if profile is None:
-            exported_path = export_project(
-                project,
-                str(output_path),
-                progress_callback=lambda _value: None,
-                log_callback=lambda _line: None,
-            )
-        else:
-            render_plan = self._output_profile_render_plan_for_project(project, profile)
-            exported_path = export_output_profile(
-                project,
-                output_path,
-                render_plan,
-                progress_callback=lambda _value: None,
-                log_callback=lambda _line: None,
-            )
-            profile.last_rendered_at = _utc_now()
-
-        size_bytes = exported_path.stat().st_size if exported_path.exists() else 0
-        return {
-            "stage_id": stage_id,
-            "display_name": display_name,
-            "output_path": str(exported_path),
-            "size_bytes": size_bytes,
-            "status": "completed",
-            "recipe": "stage_output",
-        }
 
     def _workspace_stage_composite_segments(
         self,
         stage_id: str,
         output_id: str | None = None,
     ) -> tuple[OutputProfile, list[dict[str, object]]]:
-        entry = self._workspace_stage_entry(stage_id)
-        if entry is None:
-            raise ValueError("Stage not found in workspace")
-
-        profile = self._stage_composite_profile(stage_id, output_id)
-        if profile is None:
-            raise ValueError("Stage composite output profile not found")
-
-        clips = [
-            clip
-            for clip in self._workspace_stage_clip_models(stage_id)
-            if clip.source_path and Path(clip.source_path).exists()
-        ]
-        if not clips:
-            raise ValueError("No clip sources available for Stage Composite export")
-
-        clip_by_id = {clip.clip_id: clip for clip in clips}
-        segments: list[dict[str, object]] = []
-        persisted_plan = [
-            self._angle_director_cut_to_dict(cut)
-            for cut in profile.angle_director_plan
-            if int(cut.duration_ms) > 0
-        ]
-
-        if persisted_plan:
-            for plan_item in sorted(
-                persisted_plan,
-                key=lambda item: (int(item.get("position") or 0), int(item.get("start_ms") or 0)),
-            ):
-                clip = clip_by_id.get(str(plan_item.get("clip_id") or ""))
-                if clip is None:
-                    continue
-                asset = probe_video(Path(clip.source_path))
-                asset_duration_ms = max(1, int(asset.duration_ms or 0))
-                start_ms = max(0, int(plan_item.get("start_ms") or 0))
-                if start_ms >= asset_duration_ms:
-                    continue
-                duration_ms = max(0, int(plan_item.get("duration_ms") or 0))
-                if duration_ms <= 0:
-                    continue
-                duration_ms = min(duration_ms, asset_duration_ms - start_ms)
-                if duration_ms <= 0:
-                    continue
-                segments.append(
-                    {
-                        "clip": clip,
-                        "asset": asset,
-                        "start_ms": start_ms,
-                        "duration_ms": duration_ms,
-                        "position": int(plan_item.get("position") or 0),
-                    }
-                )
-
-        if not segments:
-            for index, clip in enumerate(clips):
-                asset = probe_video(Path(clip.source_path))
-                asset_duration_ms = max(1, int(asset.duration_ms or 0))
-                start_ms = max(0, int(clip.sync_offset_ms) if int(clip.sync_offset_ms) > 0 else 0)
-                if start_ms >= asset_duration_ms:
-                    continue
-                duration_ms = min(asset_duration_ms - start_ms, 1500)
-                if duration_ms <= 0:
-                    continue
-                segments.append(
-                    {
-                        "clip": clip,
-                        "asset": asset,
-                        "start_ms": start_ms,
-                        "duration_ms": duration_ms,
-                        "position": index,
-                    }
-                )
-
-        if not segments:
-            raise ValueError("Stage composite export has no renderable clip segments")
-
-        return profile, segments
+        return merge_export_service_module.workspace_stage_composite_segments(
+            self,
+            stage_id,
+            output_id,
+        )
 
     def _workspace_export_stage_composite_item(
         self,
         stage_id: str,
         workspace_path: Path,
     ) -> dict[str, object]:
-        entry = self.workspace.stage_entries.get(stage_id) if self.workspace is not None else None
-        if entry is None:
-            raise ValueError("Stage entry not found")
-
-        stage_project = self._load_stage_project(stage_id)
-        profile, segments = self._workspace_stage_composite_segments(stage_id)
-        display_name = entry.display_name or f"Stage {entry.stage_number}"
-        first_asset = segments[0]["asset"]
-        target_width, target_height = self._workspace_export_dimensions(
-            stage_project,
-            profile.frame_profile,
-            int(first_asset.width or 640),
-            int(first_asset.height or 360),
+        return merge_export_service_module.workspace_export_stage_composite_item(
+            self,
+            stage_id,
+            workspace_path,
         )
-        output_path = self._workspace_export_output_path(workspace_path, stage_id, "stage_composite")
-
-        self._set_status(f"Exporting {display_name} composite...")
-        with TemporaryDirectory(prefix="splitshot-stage-composite-") as temp_dir_name:
-            temp_dir = Path(temp_dir_name)
-            rendered_segments: list[Path] = []
-            for index, segment in enumerate(segments):
-                clip = segment["clip"]
-                source_path = Path(clip.source_path)
-                segment_path = temp_dir / f"segment-{index:02d}.mp4"
-                segment_seconds = max(0.05, float(segment["duration_ms"]) / 1000.0)
-                command = [
-                    "ffmpeg",
-                    "-y",
-                    "-ss",
-                    f"{float(segment['start_ms']) / 1000.0:.3f}",
-                    "-i",
-                    str(source_path),
-                    "-t",
-                    f"{segment_seconds:.3f}",
-                    "-vf",
-                    (
-                        f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
-                        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                        "setsar=1"
-                    ),
-                    "-map",
-                    "0:v:0",
-                    "-map",
-                    "0:a:0?",
-                ]
-                if clip.audio_muted:
-                    command.extend(["-af", "volume=0.000"])
-                elif abs(float(clip.audio_gain) - 1.0) > 0.001:
-                    command.extend(["-af", f"volume={max(0.0, min(2.0, float(clip.audio_gain))):.3f}"])
-                command.extend(
-                    [
-                        "-c:v",
-                        "libx264",
-                        "-preset",
-                        "veryfast",
-                        "-crf",
-                        "18",
-                        "-c:a",
-                        "aac",
-                        "-ar",
-                        "48000",
-                        "-ac",
-                        "2",
-                        "-b:a",
-                        "192k",
-                        str(segment_path),
-                    ]
-                )
-                self._run_media_command(
-                    command,
-                    error_message=f"Stage composite segment export failed for {source_path.name}",
-                )
-                rendered_segments.append(segment_path)
-
-            concat_path = temp_dir / "segments.txt"
-            concat_path.write_text(
-                "\n".join(
-                    f"file '{str(path).replace("'", "'\\''")}'" for path in rendered_segments
-                )
-                + "\n",
-                encoding="utf-8",
-            )
-            self._run_media_command(
-                [
-                    "ffmpeg",
-                    "-y",
-                    "-f",
-                    "concat",
-                    "-safe",
-                    "0",
-                    "-i",
-                    str(concat_path),
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "veryfast",
-                    "-crf",
-                    "18",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "192k",
-                    str(output_path),
-                ],
-                error_message="Stage composite export failed",
-            )
-
-        profile.last_rendered_at = _utc_now()
-        size_bytes = output_path.stat().st_size if output_path.exists() else 0
-        return {
-            "stage_id": stage_id,
-            "display_name": display_name,
-            "output_path": str(output_path),
-            "size_bytes": size_bytes,
-            "status": "completed",
-            "recipe": "stage_composite",
-            "segment_count": len(segments),
-        }
 
     def workspace_export(self, stage_id: str | None = None, recipe: str | None = None) -> dict:
-        """Export workspace stage(s) to actual video files.
-        
-        For each stage in the workspace, loads the stage project and runs
-        the export pipeline to produce an MP4 file in the workspace directory.
-        Returns output paths and file sizes for completed exports.
-        """
-        if not self.workspace:
-            return {"success": False, "error": "No workspace open", "outputs": [], "errors": []}
-
-        if not self.workspace_path:
-            return {"success": False, "error": "Workspace has not been saved", "outputs": [], "errors": []}
-
-        if stage_id and stage_id not in self.workspace.stage_entries:
-            return {"success": False, "error": f"Stage {stage_id} not in workspace", "outputs": [], "errors": [{"stage_id": stage_id, "error": "Not found in workspace"}]}
-
-        try:
-            resolved_recipe, legacy_default = self._workspace_export_recipe(recipe)
-        except ValueError as exc:
-            return {
-                "success": False,
-                "error": str(exc),
-                "outputs": [],
-                "errors": [{"stage_id": stage_id or "", "error": str(exc)}],
-            }
-
-        stages_to_export = [stage_id] if stage_id else list(self.workspace.stage_entries.keys())
-        outputs = []
-        errors = []
-        ws_path = Path(self.workspace_path)
-
-        for sid in stages_to_export:
-            entry = self.workspace.stage_entries.get(sid)
-            if not entry:
-                errors.append({"stage_id": sid, "error": "Stage entry not found"})
-                continue
-
-            try:
-                if resolved_recipe == "stage_composite":
-                    outputs.append(self._workspace_export_stage_composite_item(sid, ws_path))
-                else:
-                    outputs.append(
-                        self._workspace_export_stage_output_item(
-                            sid,
-                            ws_path,
-                            legacy_default=legacy_default,
-                        )
-                    )
-            except Exception as exc:
-                errors.append({"stage_id": sid, "error": str(exc)})
-
-        if errors:
-            self._set_status(f"Export completed with {len(errors)} error(s).")
-        else:
-            self._set_status(f"Exported {len(outputs)} stage(s).")
-
-        return {
-            "success": len(errors) == 0,
-            "outputs": outputs,
-            "errors": errors,
-            "total": len(stages_to_export),
-            "completed": len(outputs),
-            "failed": len(errors),
-        }
+        return merge_export_service_module.workspace_export(self, stage_id, recipe)
 
     @staticmethod
     def _recap_transition(value: str | None) -> str:
-        transition = str(value or "cut").strip().lower()
-        return transition if transition in {"cut", "fade", "dissolve"} else "cut"
+        return merge_export_service_module.recap_transition(value)
 
     @staticmethod
     def _recap_result_card_mode(value: str | None) -> str:
-        mode = str(value or "none").strip().lower()
-        return mode if mode in {"none", "end", "each"} else "none"
+        return merge_export_service_module.recap_result_card_mode(value)
 
     @staticmethod
     def _recap_status_label(value: str | None) -> str:
-        return str(value or "incomplete").replace("_", " ").strip().title() or "Incomplete"
+        return merge_export_service_module.recap_status_label(value)
 
     @staticmethod
     def _recap_stage_options(value: object) -> dict[str, dict[str, object]]:
-        raw_items: list[object] = []
-        if isinstance(value, dict):
-            raw_items = [
-                {"stage_id": stage_id, **(raw if isinstance(raw, dict) else {})}
-                for stage_id, raw in value.items()
-            ]
-        elif isinstance(value, list):
-            raw_items = value
-
-        options_by_stage: dict[str, dict[str, object]] = {}
-        for raw_item in raw_items:
-            if not isinstance(raw_item, dict):
-                continue
-            stage_id = str(raw_item.get("stage_id") or "").strip()
-            if not stage_id:
-                continue
-            subtitle = " ".join(str(raw_item.get("subtitle") or "").split()).strip()[:120]
-            try:
-                audio_gain = float(raw_item.get("audio_gain", 1.0))
-            except (TypeError, ValueError):
-                audio_gain = 1.0
-            options_by_stage[stage_id] = {
-                "subtitle": subtitle,
-                "audio_gain": max(0.0, min(2.0, audio_gain)),
-                "audio_muted": bool(raw_item.get("audio_muted", False)),
-            }
-        return options_by_stage
+        return merge_export_service_module.recap_stage_options(value)
 
     @staticmethod
     def _recap_stage_option_requested(stage_option: dict[str, object] | None) -> bool:
-        if not isinstance(stage_option, dict):
-            return False
-        subtitle = str(stage_option.get("subtitle") or "").strip()
-        try:
-            audio_gain = float(stage_option.get("audio_gain", 1.0))
-        except (TypeError, ValueError):
-            audio_gain = 1.0
-        return bool(subtitle) or bool(stage_option.get("audio_muted", False)) or abs(audio_gain - 1.0) > 0.001
+        return merge_export_service_module.recap_stage_option_requested(stage_option)
 
     def _render_recap_card_image(
         self,
@@ -2256,48 +1667,14 @@ class ProjectController(QObject):
         width: int,
         height: int,
     ) -> Path:
-        image = QImage(width, height, QImage.Format.Format_ARGB32)
-        image.fill(QColor("#0b0f14"))
-
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-        painter.fillRect(0, 0, width, height, QColor("#0b0f14"))
-        painter.fillRect(0, 0, width, max(8, height // 48), QColor("#ff7b22"))
-        painter.fillRect(width // 12, height // 6, width // 18, (height * 2) // 3, QColor("#141c27"))
-
-        title_font = QFont("Helvetica Neue")
-        title_font.setBold(True)
-        title_font.setPixelSize(max(32, min(68, height // 11)))
-        painter.setFont(title_font)
-        painter.setPen(QColor("#ffffff"))
-        title_rect = QRectF(width * 0.14, height * 0.18, width * 0.72, height * 0.24)
-        painter.drawText(title_rect, Qt.AlignCenter | Qt.TextWordWrap, title)
-
-        detail_font = QFont("Helvetica Neue")
-        detail_font.setPixelSize(max(18, min(34, height // 26)))
-        painter.setFont(detail_font)
-        painter.setPen(QColor("#d7dee8"))
-        detail_rect = QRectF(width * 0.18, height * 0.46, width * 0.64, height * 0.28)
-        painter.drawText(
-            detail_rect,
-            Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap,
-            "\n".join(detail_lines),
+        return merge_export_service_module.render_recap_card_image(
+            self,
+            title,
+            detail_lines,
+            output_path,
+            width=width,
+            height=height,
         )
-
-        footer_font = QFont("Helvetica Neue")
-        footer_font.setPixelSize(max(14, min(22, height // 36)))
-        painter.setFont(footer_font)
-        painter.setPen(QColor("#8ca0b7"))
-        painter.drawText(
-            QRectF(width * 0.12, height * 0.82, width * 0.76, height * 0.08),
-            Qt.AlignCenter | Qt.AlignVCenter,
-            "Rendered by SplitShot Match Recap",
-        )
-        painter.end()
-
-        image.save(str(output_path))
-        return output_path
 
     def _render_recap_card_video(
         self,
@@ -2310,41 +1687,16 @@ class ProjectController(QObject):
         fps: float,
         duration_ms: int,
     ) -> Path:
-        image_path = output_path.with_suffix(".png")
-        self._render_recap_card_image(title, detail_lines, image_path, width=width, height=height)
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            "-loop",
-            "1",
-            "-i",
-            str(image_path),
-            "-f",
-            "lavfi",
-            "-i",
-            "anullsrc=channel_layout=stereo:sample_rate=48000",
-            "-t",
-            f"{max(0.5, duration_ms / 1000):.3f}",
-            "-vf",
-            (
-                f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
-                f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                f"fps={fps:.3f}"
-            ),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            "-c:a",
-            "aac",
-            "-shortest",
-            str(output_path),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Result card render failed")
-        return output_path
+        return merge_export_service_module.render_recap_card_video(
+            self,
+            title,
+            detail_lines,
+            output_path,
+            width=width,
+            height=height,
+            fps=fps,
+            duration_ms=duration_ms,
+        )
 
     def _render_recap_subtitle_overlay_image(
         self,
@@ -2354,33 +1706,13 @@ class ProjectController(QObject):
         width: int,
         height: int,
     ) -> Path:
-        image = QImage(width, height, QImage.Format.Format_ARGB32)
-        image.fill(QColor(0, 0, 0, 0))
-
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-
-        band_height = max(72, min(132, height // 6 if height else 96))
-        top_accent_height = max(4, band_height // 18)
-        band_y = max(0, height - band_height)
-        painter.fillRect(QRectF(0, band_y, width, band_height), QColor(0, 0, 0, 176))
-        painter.fillRect(QRectF(0, band_y, width, top_accent_height), QColor("#ff7b22"))
-
-        text_font = QFont("Helvetica Neue")
-        text_font.setBold(True)
-        text_font.setPixelSize(max(22, min(38, band_height // 2)))
-        painter.setFont(text_font)
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(
-            QRectF(width * 0.08, band_y + max(8, band_height * 0.18), width * 0.84, band_height * 0.62),
-            Qt.AlignCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+        return merge_export_service_module.render_recap_subtitle_overlay_image(
+            self,
             subtitle,
+            output_path,
+            width=width,
+            height=height,
         )
-        painter.end()
-
-        image.save(str(output_path))
-        return output_path
 
     def _render_recap_stage_variant(
         self,
@@ -2393,64 +1725,16 @@ class ProjectController(QObject):
         width: int,
         height: int,
     ) -> Path:
-        normalized_subtitle = " ".join(str(subtitle or "").split()).strip()
-        normalized_audio_gain = max(0.0, min(2.0, float(audio_gain)))
-        apply_subtitle = bool(normalized_subtitle)
-        apply_audio_filter = audio_muted or abs(normalized_audio_gain - 1.0) > 0.001
-
-        if not apply_subtitle and not apply_audio_filter:
-            import shutil
-
-            shutil.copy2(str(source_path), str(output_path))
-            return output_path
-
-        input_args = ["-i", str(source_path)]
-        filter_parts: list[str] = []
-        video_label = "0:v:0"
-        audio_label = "0:a:0?"
-
-        if apply_subtitle:
-            overlay_path = output_path.with_suffix(".subtitle.png")
-            self._render_recap_subtitle_overlay_image(
-                normalized_subtitle,
-                overlay_path,
-                width=width,
-                height=height,
-            )
-            input_args.extend(["-i", str(overlay_path)])
-            filter_parts.append("[1:v]format=rgba[subtitle_overlay]")
-            filter_parts.append("[0:v][subtitle_overlay]overlay=0:0[vout]")
-            video_label = "[vout]"
-
-        if apply_audio_filter:
-            volume_level = 0.0 if audio_muted else normalized_audio_gain
-            filter_parts.append(f"[0:a]volume={volume_level:.3f}[aout]")
-            audio_label = "[aout]"
-
-        cmd = ["ffmpeg", "-y", *input_args]
-        if filter_parts:
-            cmd.extend(["-filter_complex", ";".join(filter_parts), "-map", video_label, "-map", audio_label])
-        else:
-            cmd.extend(["-map", "0:v:0", "-map", "0:a:0?"])
-        cmd.extend(
-            [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "veryfast",
-                "-crf",
-                "18",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                str(output_path),
-            ]
+        return merge_export_service_module.render_recap_stage_variant(
+            self,
+            source_path,
+            output_path,
+            subtitle=subtitle,
+            audio_gain=audio_gain,
+            audio_muted=audio_muted,
+            width=width,
+            height=height,
         )
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Recap stage render failed")
-        return output_path
 
     def _render_recap_sequence(
         self,
@@ -2462,317 +1746,18 @@ class ProjectController(QObject):
         target_height: int,
         target_fps: float,
     ) -> dict:
-        if not sequence_paths:
-            return {"success": False, "error": "No recap media to render"}
-
-        if len(sequence_paths) == 1 and transition == "cut":
-            import shutil
-
-            shutil.copy2(str(sequence_paths[0]), str(recap_path))
-            return {"success": True, "sequence_count": 1, "transition": transition}
-
-        sequence_assets = [probe_video(path) for path in sequence_paths]
-        filter_parts: list[str] = []
-        input_args: list[str] = []
-        for index, path in enumerate(sequence_paths):
-            input_args.extend(["-i", str(path)])
-            filter_parts.append(
-                (
-                    f"[{index}:v]scale={target_width}:{target_height}:"
-                    "force_original_aspect_ratio=decrease,"
-                    f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
-                    f"setsar=1,fps={target_fps:.3f},format=yuv420p[v{index}]"
-                )
-            )
-            filter_parts.append(
-                f"[{index}:a]aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo[a{index}]"
-            )
-
-        if transition == "cut" or len(sequence_paths) == 1:
-            concat_inputs = "".join(f"[v{index}][a{index}]" for index in range(len(sequence_paths)))
-            filter_parts.append(
-                f"{concat_inputs}concat=n={len(sequence_paths)}:v=1:a=1[vout][aout]"
-            )
-            video_label = "[vout]"
-            audio_label = "[aout]"
-        else:
-            fade_duration_s = 0.35
-            xfade_transition = "dissolve" if transition == "dissolve" else "fade"
-            video_label = "[v0]"
-            audio_label = "[a0]"
-            elapsed_s = max(0.0, sequence_assets[0].duration_ms / 1000)
-            for index in range(1, len(sequence_paths)):
-                next_video = f"[v{index}]"
-                next_audio = f"[a{index}]"
-                out_video = f"[vx{index}]"
-                out_audio = f"[ax{index}]"
-                offset_s = max(0.0, elapsed_s - fade_duration_s)
-                filter_parts.append(
-                    (
-                        f"{video_label}{next_video}xfade=transition={xfade_transition}:"
-                        f"duration={fade_duration_s:.3f}:offset={offset_s:.3f}{out_video}"
-                    )
-                )
-                filter_parts.append(
-                    f"{audio_label}{next_audio}acrossfade=d={fade_duration_s:.3f}{out_audio}"
-                )
-                video_label = out_video
-                audio_label = out_audio
-                elapsed_s = max(
-                    fade_duration_s,
-                    elapsed_s + (sequence_assets[index].duration_ms / 1000) - fade_duration_s,
-                )
-
-        cmd = [
-            "ffmpeg",
-            "-y",
-            *input_args,
-            "-filter_complex",
-            ";".join(filter_parts),
-            "-map",
-            video_label,
-            "-map",
-            audio_label,
-            "-c:v",
-            "libx264",
-            "-preset",
-            "veryfast",
-            "-crf",
-            "18",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            str(recap_path),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode != 0:
-            return {
-                "success": False,
-                "error": f"Recap render failed: {result.stderr[:500]}",
-            }
-        return {
-            "success": True,
-            "sequence_count": len(sequence_paths),
-            "transition": transition,
-        }
+        return merge_export_service_module.render_recap_sequence(
+            self,
+            sequence_paths,
+            recap_path,
+            transition=transition,
+            target_width=target_width,
+            target_height=target_height,
+            target_fps=target_fps,
+        )
 
     def workspace_recap_render(self, **kwargs) -> dict:
-        """Render a recap composite video from workspace stages.
-        
-        Exports each selected stage to a temporary file, then concatenates
-        them into a single MP4 using the ffmpeg concat demuxer.
-        Accepts: stage_ids (list[str]), transition (str), result_card (str),
-        and stage_options (list[dict]) for ordered subtitle/audio overrides.
-        Returns the path to the rendered recap file.
-        """
-        if not self.workspace:
-            return {"success": False, "error": "No workspace open"}
-
-        if not self.workspace_path:
-            return {"success": False, "error": "Workspace has not been saved"}
-
-        raw_stage_ids = kwargs.get("stage_ids") or list(self.workspace.stage_order or self.workspace.stage_entries.keys())
-        if isinstance(raw_stage_ids, (str, bytes)):
-            stage_ids = [str(raw_stage_ids).strip()] if str(raw_stage_ids).strip() else []
-        else:
-            stage_ids = [str(stage_id).strip() for stage_id in raw_stage_ids if str(stage_id).strip()]
-        transition = self._recap_transition(kwargs.get("transition"))
-        result_card_mode = self._recap_result_card_mode(kwargs.get("result_card"))
-        stage_options = self._recap_stage_options(kwargs.get("stage_options"))
-
-        ws_path = Path(self.workspace_path)
-        recap_path = ws_path / "recap.mp4"
-        temp_dir = ws_path / ".recap-tmp"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-
-        exported_segments: list[dict] = []
-        errors: list[dict] = []
-
-        try:
-            for sid in stage_ids:
-                entry = self.workspace.stage_entries.get(sid)
-                if not entry:
-                    errors.append({"stage_id": sid, "error": "Stage entry not found"})
-                    continue
-
-                project = self._load_stage_project(sid)
-                if not project:
-                    errors.append({"stage_id": sid, "error": "Cannot load stage project"})
-                    continue
-                if not project.primary_video or not project.primary_video.path:
-                    errors.append({"stage_id": sid, "error": "No video imported for this stage"})
-                    continue
-
-                seg_path = temp_dir / f"{sid}.mp4"
-                self._set_status(f"Exporting {sid} for recap...")
-                export_project(
-                    project,
-                    str(seg_path),
-                    progress_callback=lambda v: None,
-                    log_callback=lambda line: None,
-                )
-                if seg_path.exists() and seg_path.stat().st_size > 0:
-                    segment_path = seg_path
-                    segment_asset = probe_video(seg_path)
-                    stage_option = stage_options.get(str(sid), {})
-                    if self._recap_stage_option_requested(stage_option):
-                        processed_path = temp_dir / f"{sid}-recap-variant.mp4"
-                        try:
-                            self._set_status(f"Applying recap options to {sid}...")
-                            self._render_recap_stage_variant(
-                                seg_path,
-                                processed_path,
-                                subtitle=str(stage_option.get("subtitle") or ""),
-                                audio_gain=float(stage_option.get("audio_gain", 1.0)),
-                                audio_muted=bool(stage_option.get("audio_muted", False)),
-                                width=max(2, int(segment_asset.width or 0)),
-                                height=max(2, int(segment_asset.height or 0)),
-                            )
-                            if processed_path.exists() and processed_path.stat().st_size > 0:
-                                segment_path = processed_path
-                                segment_asset = probe_video(segment_path)
-                            else:
-                                errors.append({
-                                    "stage_id": sid,
-                                    "error": "Recap stage overrides produced an empty file",
-                                })
-                        except Exception as exc:
-                            errors.append({
-                                "stage_id": sid,
-                                "error": f"Recap stage overrides failed: {exc}",
-                            })
-                    exported_segments.append(
-                        {
-                            "stage_id": sid,
-                            "entry": entry,
-                            "path": segment_path,
-                            "asset": segment_asset,
-                            "recap_options": stage_option,
-                        }
-                    )
-                else:
-                    errors.append({"stage_id": sid, "error": "Export produced empty file"})
-
-            if not exported_segments:
-                return {
-                    "success": False,
-                    "error": "No stages could be exported for recap",
-                    "errors": errors,
-                }
-
-            reference_asset = exported_segments[0]["asset"]
-            target_width = max(2, int(reference_asset.width) - (int(reference_asset.width) % 2))
-            target_height = max(2, int(reference_asset.height) - (int(reference_asset.height) % 2))
-            target_fps = max(1.0, float(reference_asset.fps or 30.0))
-
-            sequence_paths = [segment["path"] for segment in exported_segments]
-            if result_card_mode != "none":
-                cards_result = self.resolve_result_cards("recap")
-                if not cards_result.get("success"):
-                    errors.append({"error": cards_result.get("error", "Result cards unavailable")})
-                else:
-                    cards_by_stage = {
-                        str(card.get("stage_id") or ""): card
-                        for card in cards_result.get("cards", [])
-                    }
-                    if result_card_mode == "each":
-                        sequence_paths = []
-                        for segment in exported_segments:
-                            sequence_paths.append(segment["path"])
-                            card = cards_by_stage.get(segment["stage_id"])
-                            if not card or not card.get("enabled", True):
-                                continue
-                            card_path = temp_dir / f"{segment['stage_id']}-result-card.mp4"
-                            try:
-                                self._render_recap_card_video(
-                                    card.get("stage_name") or f"Stage {card.get('stage_number') or ''}".strip(),
-                                    [
-                                        f"Stage {card.get('stage_number') or '--'}",
-                                        f"Status: {self._recap_status_label(card.get('status'))}",
-                                    ],
-                                    card_path,
-                                    width=target_width,
-                                    height=target_height,
-                                    fps=target_fps,
-                                    duration_ms=int(card.get("duration_ms", 3000)),
-                                )
-                                sequence_paths.append(card_path)
-                            except Exception as exc:
-                                errors.append(
-                                    {
-                                        "stage_id": segment["stage_id"],
-                                        "error": f"Result card render failed: {exc}",
-                                    }
-                                )
-                    elif result_card_mode == "end":
-                        summary_lines = []
-                        for segment in exported_segments:
-                            card = cards_by_stage.get(segment["stage_id"])
-                            if not card or not card.get("enabled", True):
-                                continue
-                            summary_lines.append(
-                                f"Stage {card.get('stage_number') or '--'} • {card.get('stage_name') or segment['stage_id']} • {self._recap_status_label(card.get('status'))}"
-                            )
-                        if summary_lines:
-                            summary_path = temp_dir / "recap-summary-card.mp4"
-                            try:
-                                self._render_recap_card_video(
-                                    self.workspace.name or "Match Recap",
-                                    summary_lines[:8],
-                                    summary_path,
-                                    width=target_width,
-                                    height=target_height,
-                                    fps=target_fps,
-                                    duration_ms=3500,
-                                )
-                                sequence_paths.append(summary_path)
-                            except Exception as exc:
-                                errors.append({"error": f"Result card render failed: {exc}"})
-
-            render_result = self._render_recap_sequence(
-                sequence_paths,
-                recap_path,
-                transition=transition,
-                target_width=target_width,
-                target_height=target_height,
-                target_fps=target_fps,
-            )
-            if not render_result.get("success"):
-                return {
-                    "success": False,
-                    "error": render_result.get("error", "Recap render failed"),
-                    "errors": errors,
-                }
-
-            if not recap_path.exists() or recap_path.stat().st_size <= 0:
-                return {
-                    "success": False,
-                    "error": "Recap file was not produced",
-                    "errors": errors,
-                }
-
-            self._set_status(f"Recap rendered to {recap_path}")
-            return {
-                "success": True,
-                "output_path": str(recap_path),
-                "size_bytes": recap_path.stat().st_size,
-                "stage_count": len(exported_segments),
-                "transition": transition,
-                "result_card": result_card_mode,
-                "sequence_count": len(sequence_paths),
-                "stage_options_applied": [
-                    segment["stage_id"]
-                    for segment in exported_segments
-                    if self._recap_stage_option_requested(segment.get("recap_options"))
-                ],
-                "errors": errors,
-            }
-
-        finally:
-            import shutil
-            if temp_dir.exists():
-                shutil.rmtree(temp_dir, ignore_errors=True)
+        return merge_export_service_module.workspace_recap_render(self, **kwargs)
 
     def workspace_apply_from_first(self, settings: dict | None = None) -> dict:
         """Apply Stage 1 settings to all sibling stages.
@@ -4268,7 +3253,7 @@ class ProjectController(QObject):
         return default
 
     def has_unsaved_changes(self) -> bool:
-        return project_to_dict(self.project) != self._saved_snapshot
+        return project_session_service_module.has_unsaved_changes(self)
 
     def load_primary_video(self, path: str) -> None:
         _reset_media_dependent_state_for_primary_video(self.project)
@@ -4282,103 +3267,10 @@ class ProjectController(QObject):
         self.add_merge_source(path)
 
     def analyze_primary(self) -> None:
-        if not self.project.primary_video.path:
-            return
-        selection_context = _shot_selection_context(
-            self.project,
-            self.project.ui_state.selected_shot_id,
-            fallback_mode="time",
-        )
-        previous_shots = [deepcopy(shot) for shot in self.project.analysis.shots]
-        previous_events = [deepcopy(event) for event in self.project.analysis.events]
-        self._set_status("Analyzing primary video for beep and shot detections...")
-        result = _run_analyze_video_audio(
-            self.project.primary_video.path,
-            self.project.analysis.shotml_settings.detection_threshold,
-            self.project.analysis.shotml_settings,
-        )
-        self.project.analysis.beep_time_ms_primary = result.beep_time_ms
-        self.project.analysis.waveform_primary = result.waveform
-        self.project.analysis.shots = _merge_reanalyzed_shots(
-            previous_shots,
-            result.shots,
-            self.project.analysis.shotml_settings,
-        )
-        self.project.analysis.events = _reanchor_timing_events_for_shots(
-            previous_events,
-            previous_shots,
-            self.project.analysis.shots,
-        )
-        self.project.analysis.detection_review_suggestions = [
-            asdict(suggestion) for suggestion in result.review_suggestions
-        ]
-        self.project.analysis.detection_threshold = (
-            self.project.analysis.shotml_settings.detection_threshold
-        )
-        self.project.analysis.timing_change_proposals = []
-        self.project.analysis.last_shotml_run_summary = {
-            "video_path": self.project.primary_video.path,
-            "threshold": self.project.analysis.shotml_settings.detection_threshold,
-            "sample_rate": result.sample_rate,
-            "beep_time_ms": result.beep_time_ms,
-            "shot_count": len(result.shots),
-            "review_suggestion_count": len(result.review_suggestions),
-        }
-        ensure_default_shot_scores(self.project)
-        normalize_project_timing_events(self.project)
-        _revalidate_timing_ui_state(self.project, selection_context)
-        self._remember_original_shots()
-        self.update_hit_factor()
-        self._set_status(
-            f"Primary analysis complete. Detected {len(result.shots)} shots"
-            + ("" if result.beep_time_ms is None else f" and beep at {result.beep_time_ms} ms")
-            + "."
-        )
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.analyze_primary(self)
 
     def analyze_secondary(self) -> None:
-        source = _first_analyzable_merge_source(self.project)
-        if source is None or not source.asset.path:
-            _clear_secondary_analysis_state(self.project, preserve_sync_offset=True)
-            self.project.secondary_video = None
-            return
-        self.project.secondary_video = source.asset
-        self.project.analysis.analyzed_secondary_source_id = source.id
-        self.project.analysis.secondary_analysis_status = "running"
-        self.project.analysis.secondary_analysis_message = "Analyzing PiP sync source."
-        self._set_status("Analyzing secondary video and computing sync offset...")
-        result = _run_analyze_video_audio(
-            source.asset.path,
-            self.project.analysis.shotml_settings.detection_threshold,
-            self.project.analysis.shotml_settings,
-        )
-        self.project.analysis.beep_time_ms_secondary = result.beep_time_ms
-        self.project.analysis.waveform_secondary = result.waveform
-        self.project.analysis.sync_offset_ms = compute_sync_offset(
-            self.project.analysis.beep_time_ms_primary,
-            self.project.analysis.beep_time_ms_secondary,
-        )
-        self.project.analysis.secondary_sync_source = "auto"
-        self.project.analysis.secondary_analysis_status = (
-            "ready" if result.beep_time_ms is not None else "no_beep"
-        )
-        self.project.analysis.secondary_analysis_message = (
-            "Secondary beep detected."
-            if result.beep_time_ms is not None
-            else "No secondary beep detected. Manual sync is still available."
-        )
-        source.sync_offset_ms = self.project.analysis.sync_offset_ms
-        self._set_status(
-            "Secondary analysis complete."
-            + (
-                ""
-                if result.beep_time_ms is None
-                else f" Sync offset: {self.project.analysis.sync_offset_ms} ms."
-            )
-        )
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.analyze_secondary(self)
 
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
@@ -4749,59 +3641,16 @@ class ProjectController(QObject):
         return next_snapshot
 
     def select_settings_template(self, template_name: str) -> None:
-        template_name = str(template_name or "").strip()
-        if not template_name:
-            raise ValueError("Template name is required.")
-        snapshot = self._settings_template_snapshot(template_name)
-        self._apply_settings_template_snapshot(template_name, snapshot)
-        self._save_settings_and_emit()
-        self._set_status(f"Selected settings template {template_name}.")
+        settings_service_module.select_settings_template(self, template_name)
 
     def save_settings_template(self, template_name: str, *, section: str | None = None) -> None:
-        template_name = (
-            str(template_name or "").strip() or self.settings.active_template_name or "Default"
-        )
-        snapshot = self._settings_template_snapshot(template_name)
-        snapshot = self._template_snapshot_from_current_project(snapshot, section=section)
-        self._apply_settings_template_snapshot(template_name, snapshot)
-        self._save_settings_and_emit()
-        if section:
-            self._set_status(f"Saved {section} defaults to template {template_name}.")
-        else:
-            self._set_status(f"Saved current project defaults to template {template_name}.")
+        settings_service_module.save_settings_template(self, template_name, section=section)
 
     def duplicate_settings_template(self, template_name: str, duplicate_name: str) -> None:
-        source_name = str(template_name or "").strip() or self.settings.active_template_name
-        duplicate_name = str(duplicate_name or "").strip()
-        if not duplicate_name:
-            raise ValueError("Duplicate template name is required.")
-        snapshot = self._settings_template_snapshot(source_name)
-        self._apply_settings_template_snapshot(duplicate_name, snapshot)
-        self._save_settings_and_emit()
-        self._set_status(f"Duplicated settings template {source_name} to {duplicate_name}.")
+        settings_service_module.duplicate_settings_template(self, template_name, duplicate_name)
 
     def delete_settings_template(self, template_name: str) -> None:
-        template_name = str(template_name or "").strip()
-        if not template_name:
-            return
-        templates = deepcopy(self.settings.settings_templates)
-        if template_name not in templates:
-            return
-        if len(templates) <= 1:
-            templates = {"Default": self.settings.template_snapshot()}
-            template_name = "Default"
-        else:
-            templates.pop(template_name, None)
-        next_template_name = (
-            self.settings.active_template_name
-            if template_name != self.settings.active_template_name
-            else next(iter(templates.keys()))
-        )
-        snapshot = templates.get(next_template_name) or next(iter(templates.values()))
-        self._apply_settings_template_snapshot(next_template_name, snapshot)
-        self.settings.settings_templates = templates
-        self._save_settings_and_emit()
-        self._set_status(f"Deleted settings template {template_name}.")
+        settings_service_module.delete_settings_template(self, template_name)
 
     def _recover_practiscore_path_from_project_folder(
         self,
@@ -4838,62 +3687,10 @@ class ProjectController(QObject):
         return candidates[0], stored_name or candidates[0].name, True
 
     def _restore_practiscore_source_from_project(self, *, emit_change: bool = True) -> bool:
-        stored_path = self.project.scoring.practiscore_source_path.strip()
-        stored_name = self.project.scoring.practiscore_source_name.strip() or None
-        resolved_path = Path(stored_path) if stored_path else None
-        recovered_from_folder = False
-
-        if resolved_path is None or not resolved_path.exists():
-            recovered_path, recovered_name, recovered_from_folder = (
-                self._recover_practiscore_path_from_project_folder(
-                    stored_path,
-                    stored_name,
-                )
-            )
-            if recovered_path is not None:
-                resolved_path = recovered_path
-                stored_name = recovered_name or resolved_path.name
-
-        if resolved_path is None:
-            self._clear_practiscore_source()
-            return False
-
-        display_name = stored_name or resolved_path.name
-        changed = False
-        if self.project.scoring.practiscore_source_path != str(resolved_path):
-            self.project.scoring.practiscore_source_path = str(resolved_path)
-            changed = True
-        if self.project.scoring.practiscore_source_name != display_name:
-            self.project.scoring.practiscore_source_name = display_name
-            changed = True
-        if self.project.scoring.imported_stage is not None:
-            if self.project.scoring.imported_stage.source_path != str(resolved_path):
-                self.project.scoring.imported_stage.source_path = str(resolved_path)
-                changed = True
-            if self.project.scoring.imported_stage.source_name != display_name:
-                self.project.scoring.imported_stage.source_name = display_name
-                changed = True
-
-        try:
-            options = describe_practiscore_file(resolved_path, source_name=display_name)
-        except (OSError, ValueError):
-            self._practiscore_source_path = resolved_path
-            self._practiscore_source_name = display_name
-            self._practiscore_options = None
-            return changed or recovered_from_folder
-
-        self._practiscore_source_path = resolved_path
-        self._practiscore_source_name = display_name
-        self._practiscore_options = options
-        if self.project.scoring.imported_stage is None:
-            try:
-                self._import_practiscore_source(
-                    str(resolved_path), display_name, emit_change=emit_change
-                )
-                return True
-            except ValueError:
-                return changed or recovered_from_folder
-        return changed or recovered_from_folder
+        return project_session_service_module.restore_practiscore_source_from_project(
+            self,
+            emit_change=emit_change,
+        )
 
     def _project_input_candidates(self) -> list[tuple[Path, VideoAsset]]:
         if self.project_path is None:
@@ -4905,6 +3702,9 @@ class ProjectController(QObject):
         input_dir = self.project_path / INPUT_DIRNAME
         if input_dir.is_dir():
             candidate_dirs.insert(0, input_dir)
+        parent_dir = self.project_path.parent
+        if parent_dir not in candidate_dirs:
+            candidate_dirs.append(parent_dir)
 
         for directory in candidate_dirs:
             for path in directory.iterdir():
@@ -4964,70 +3764,10 @@ class ProjectController(QObject):
         *,
         secondary_video_is_explicitly_persisted: bool = False,
     ) -> bool:
-        candidates = self._project_input_candidates()
-        if not candidates:
-            return False
-
-        used_paths: set[Path] = set()
-        changed = False
-        explicit_secondary_video = (
-            self.project.secondary_video if secondary_video_is_explicitly_persisted else None
+        return project_session_service_module.restore_media_sources_from_project(
+            self,
+            secondary_video_is_explicitly_persisted=secondary_video_is_explicitly_persisted,
         )
-        explicit_secondary_source_id = _merge_source_id_for_asset(
-            self.project,
-            explicit_secondary_video,
-        )
-
-        recovered_primary = self._recover_media_asset_from_project_folder(
-            self.project.primary_video, candidates, used_paths
-        )
-        if recovered_primary is not None:
-            self.project.primary_video = recovered_primary
-            changed = True
-
-        for source in self.project.merge_sources:
-            recovered_asset = self._recover_media_asset_from_project_folder(
-                source.asset, candidates, used_paths
-            )
-            if recovered_asset is None:
-                continue
-            source.asset = recovered_asset
-            _sync_merge_source_trim_provenance(source)
-            changed = True
-
-        if self.project.merge_sources:
-            if secondary_video_is_explicitly_persisted:
-                if explicit_secondary_video is None:
-                    self.project.secondary_video = None
-                elif explicit_secondary_source_id is not None:
-                    explicit_source = _merge_source_by_id(
-                        self.project,
-                        explicit_secondary_source_id,
-                    )
-                    if explicit_source is not None:
-                        self.project.secondary_video = explicit_source.asset
-                else:
-                    recovered_secondary = self._recover_media_asset_from_project_folder(
-                        explicit_secondary_video,
-                        candidates,
-                        used_paths,
-                    )
-                    if recovered_secondary is not None:
-                        self.project.secondary_video = recovered_secondary
-                        changed = True
-            else:
-                _sync_secondary_video_from_merge_sources(self.project)
-        elif self.project.secondary_video is not None:
-            recovered_secondary = self._recover_media_asset_from_project_folder(
-                self.project.secondary_video,
-                candidates,
-                used_paths,
-            )
-            if recovered_secondary is not None:
-                self.project.secondary_video = recovered_secondary
-                changed = True
-
-        return changed
 
     def _current_practiscore_selection_matches_source(self) -> bool:
         scoring = self.project.scoring
@@ -5144,164 +3884,46 @@ class ProjectController(QObject):
             self.project_changed.emit()
 
     def add_merge_source(self, path: str, source_name: str | None = None) -> None:
-        asset = probe_video(path)
-        merge_source = MergeSource(
-            asset=asset,
-            angle_role=default_merge_source_angle_role(asset),
-            pip_size_percent=self.project.merge.pip_size_percent,
-            pip_x=self.project.merge.pip_x,
-            pip_y=self.project.merge.pip_y,
-            sync_offset_ms=0,
+        merge_export_service_module.add_merge_source(
+            self,
+            path,
+            source_name=source_name,
         )
-        next_order_index = _next_merge_source_order_index(self.project)
-        merge_source.placement.order_index = next_order_index
-        merge_source.placement.layer_index = next_order_index
-        merge_source.trim_derivative.original_path = asset.path
-        merge_source.trim_derivative.derivative_path = None
-        merge_source.trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
-        self.project.merge_sources.append(merge_source)
-        for existing_source in self.project.merge_sources:
-            _apply_merge_source_role_seed_defaults(
-                self.project,
-                existing_source,
-                force=existing_source.id == merge_source.id,
-            )
-        self.project.merge.enabled = True
-        _sync_secondary_video_from_merge_sources(self.project)
-        if _first_analyzable_merge_source(self.project) is not None:
-            self._set_status("Imported merge media.")
-            self.analyze_secondary()
-            return
-        self._set_status("Imported merge media.")
-        self.project.touch()
-        self.project_changed.emit()
 
     def remove_merge_source(self, source_id: str) -> None:
-        before_sources = list(self.project.merge_sources)
-        before_count = len(before_sources)
-        self.project.merge_sources = [
-            source for source in self.project.merge_sources if source.id != source_id
-        ]
-        if len(self.project.merge_sources) == before_count:
-            return
-        if not self.project.merge_sources:
-            self.project.merge.enabled = False
-        removed_analyzed = self.project.analysis.analyzed_secondary_source_id == source_id
-        _sync_secondary_video_from_merge_sources(self.project)
-        if removed_analyzed:
-            _clear_secondary_analysis_state(
-                self.project, preserve_sync_offset=bool(self.project.merge_sources)
-            )
-            if _first_analyzable_merge_source(self.project) is not None:
-                self.analyze_secondary()
-                return
-            self.project.analysis.sync_offset_ms = 0
-        self._set_status("Removed merge media.")
-        self.project.touch()
-        self.project_changed.emit()
+        merge_export_service_module.remove_merge_source(self, source_id)
 
     def rerun_merge_source_analysis(self, source_id: str) -> None:
-        source = next((item for item in self.project.merge_sources if item.id == source_id), None)
-        if source is None:
-            raise ValueError("Merge source not found")
-        analyzed_source = _first_analyzable_merge_source(self.project)
-        if analyzed_source is None or analyzed_source.id != source_id:
-            raise ValueError("Only the first analyzable PiP video can be reanalyzed")
-        self.analyze_secondary()
+        merge_export_service_module.rerun_merge_source_analysis(self, source_id)
 
     def _merge_source_by_id(self, source_id: str) -> MergeSource:
-        source = next((item for item in self.project.merge_sources if item.id == source_id), None)
-        if source is None:
-            raise ValueError("Merge source not found")
-        return source
+        return merge_export_service_module.merge_source_by_id(self, source_id)
 
     def _require_saved_project_for_trim_derivative(self) -> Path:
-        if self.project_path is None:
-            raise ValueError(
-                "Trim derivative generation requires a saved project folder because derivatives live under Input/."
-            )
-        return self.project_path
+        return merge_export_service_module.require_saved_project_for_trim_derivative(self)
 
     def _merge_source_trim_derivative_filename(self, source: MergeSource) -> str:
-        source_path = _merge_source_original_path(source) or str(source.asset.path or "") or source.id
-        base_name = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(source_path).stem).strip("-._")
-        if not base_name:
-            base_name = "merge-source"
-        suffix = Path(source_path).suffix.lower()
-        if suffix not in _TRIM_DERIVATIVE_CONTAINER_SUFFIXES:
-            suffix = ".mp4"
-        return f"{base_name}-{source.id[:8]}-trim{suffix}"
+        return merge_export_service_module.merge_source_trim_derivative_filename(self, source)
 
     def _merge_source_trim_derivative_path(self, source: MergeSource) -> Path:
-        existing_path = str(source.trim_derivative.derivative_path or "").strip()
-        if existing_path:
-            return Path(existing_path).expanduser().resolve(strict=False)
-
-        project_path = self._require_saved_project_for_trim_derivative()
-        derivative_path = (
-            project_path / INPUT_DIRNAME / self._merge_source_trim_derivative_filename(source)
-        ).resolve(strict=False)
-        return derivative_path
+        return merge_export_service_module.merge_source_trim_derivative_path(self, source)
 
     def _merge_source_available_original_path(self, source: MergeSource) -> Path | None:
-        original_path = str(source.trim_derivative.original_path or "").strip()
-        if original_path:
-            original_candidate = Path(original_path).expanduser().resolve(strict=False)
-            if original_candidate.is_file():
-                return original_candidate
-
-        asset_path = str(source.asset.path or "").strip()
-        if not asset_path:
-            return None
-
-        asset_candidate = Path(asset_path).expanduser().resolve(strict=False)
-        if not asset_candidate.is_file():
-            return None
-
-        derivative_path = str(source.trim_derivative.derivative_path or "").strip()
-        if derivative_path:
-            derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
-            if asset_candidate == derivative_candidate:
-                return None
-
-        return asset_candidate
+        return merge_export_service_module.merge_source_available_original_path(self, source)
 
     def _refresh_merge_source_trim_derivative_from_original(
         self,
         original_source_path: Path,
         derivative_path: Path,
     ) -> Path:
-        derivative_path.parent.mkdir(parents=True, exist_ok=True)
-        if original_source_path != derivative_path:
-            shutil.copy2(original_source_path, derivative_path)
-        elif not derivative_path.is_file():
-            raise FileNotFoundError(
-                "Trim derivative source is unavailable. Restore the original media before trimming again."
-            )
-        return derivative_path
+        return merge_export_service_module.refresh_merge_source_trim_derivative_from_original(
+            self,
+            original_source_path,
+            derivative_path,
+        )
 
     def _merge_source_trim_source_path(self, source: MergeSource) -> Path:
-        original_path = _merge_source_original_path(source)
-        if original_path:
-            original_candidate = Path(original_path).expanduser().resolve(strict=False)
-            if original_candidate.is_file():
-                return original_candidate
-
-        derivative_path = str(source.trim_derivative.derivative_path or "").strip()
-        if derivative_path:
-            derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
-            if derivative_candidate.is_file():
-                return derivative_candidate
-
-        asset_path = str(source.asset.path or "").strip()
-        if asset_path:
-            asset_candidate = Path(asset_path).expanduser().resolve(strict=False)
-            if asset_candidate.is_file():
-                return asset_candidate
-
-        raise FileNotFoundError(
-            "Trim source is unavailable. Restore the original media or keep the local derivative available before trimming again."
-        )
+        return merge_export_service_module.merge_source_trim_source_path(self, source)
 
     def trim_merge_source_to_derivative(
         self,
@@ -5311,49 +3933,16 @@ class ProjectController(QObject):
         end_ms: int | None = None,
         export_settings: ExportSettings | None = None,
     ) -> MergeSource:
-        project_path = self._require_saved_project_for_trim_derivative()
-        source = self._merge_source_by_id(source_id)
-        if source.asset.is_still_image:
-            raise ValueError("Only video merge sources can generate trim derivatives.")
-
-        derivative_path = self._merge_source_trim_derivative_path(source)
-        (project_path / INPUT_DIRNAME).mkdir(parents=True, exist_ok=True)
-        original_source_path = self._merge_source_available_original_path(source)
-        if original_source_path is not None:
-            trim_source_path = self._refresh_merge_source_trim_derivative_from_original(
-                original_source_path,
-                derivative_path,
-            )
-        else:
-            trim_source_path = self._merge_source_trim_source_path(source)
-
-        trim_source_fps = probe_video(trim_source_path).fps
-        generate_trimmed_derivative(
-            trim_source_path,
-            derivative_path,
+        return merge_export_service_module.trim_merge_source_to_derivative(
+            self,
+            source_id,
             start_ms=start_ms,
             end_ms=end_ms,
-            source_fps=trim_source_fps,
-            export_settings=export_settings or self.project.export,
+            export_settings=export_settings,
         )
 
-        if (
-            not str(source.trim_derivative.original_path or "").strip()
-            and original_source_path is not None
-        ):
-            source.trim_derivative.original_path = str(original_source_path)
-        source.trim_derivative.derivative_path = str(derivative_path)
-        source.asset = probe_video(derivative_path)
-        _sync_merge_source_trim_provenance(source)
-        _sync_secondary_video_from_merge_sources(self.project)
-        self.project.merge.enabled = bool(self.project.merge_sources)
-        self._set_status("Updated merge trim derivative.")
-        self.project.touch()
-        self.project_changed.emit()
-        return source
-
     def set_detection_threshold(self, value: float) -> None:
-        self.set_shotml_settings({"detection_threshold": value}, rerun=True)
+        analysis_service_module.set_detection_threshold(self, value)
 
     def set_shotml_settings(
         self,
@@ -5362,198 +3951,33 @@ class ProjectController(QObject):
         rerun: bool = False,
         update_app_defaults: bool = False,
     ) -> None:
-        settings = self.project.analysis.shotml_settings
-        changed = False
-        valid_fields = {item.name: item for item in fields(ShotMLSettings)}
-        for key, raw_value in updates.items():
-            field_info = valid_fields.get(str(key))
-            if field_info is None:
-                continue
-            current_value = getattr(settings, field_info.name)
-            try:
-                if isinstance(current_value, bool):
-                    next_value = bool(raw_value)
-                elif isinstance(current_value, int) and not isinstance(current_value, bool):
-                    next_value = int(raw_value)
-                elif isinstance(current_value, float):
-                    next_value = float(raw_value)
-                else:
-                    next_value = str(raw_value)
-            except (TypeError, ValueError):
-                continue
-            if current_value != next_value:
-                setattr(settings, field_info.name, next_value)
-                changed = True
-
-        self.project.analysis.detection_threshold = settings.detection_threshold
-        if update_app_defaults:
-            persisted_defaults = ShotMLSettings(**asdict(settings))
-            persisted_defaults.detection_threshold = ShotMLSettings().detection_threshold
-            self.settings.detection_threshold = persisted_defaults.detection_threshold
-            self.settings.shotml_defaults = persisted_defaults
-            save_settings(self.settings)
-            self.settings_changed.emit()
-        if rerun and self.project.primary_video.path:
-            if changed:
-                self.project.analysis.timing_change_proposals = []
-            self.analyze_primary()
-            if _first_analyzable_merge_source(self.project) is not None:
-                self.analyze_secondary()
-            return
-        if changed:
-            self.project.analysis.timing_change_proposals = []
-            self._set_status("Updated ShotML settings.")
-        else:
-            self._set_status("ShotML settings unchanged.")
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.set_shotml_settings(
+            self,
+            updates,
+            rerun=rerun,
+            update_app_defaults=update_app_defaults,
+        )
 
     def reset_shotml_settings(self) -> None:
-        self.project.analysis.shotml_settings = ShotMLSettings()
-        self.project.analysis.detection_threshold = (
-            self.project.analysis.shotml_settings.detection_threshold
-        )
-        self.project.analysis.timing_change_proposals = []
-        self.settings.detection_threshold = (
-            self.project.analysis.shotml_settings.detection_threshold
-        )
-        self.settings.shotml_defaults = ShotMLSettings()
-        save_settings(self.settings)
-        self.settings_changed.emit()
-        self._set_status("Reset ShotML settings to factory defaults.")
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.reset_shotml_settings(self)
 
     def rerun_shotml(self) -> None:
-        if self.project.primary_video.path:
-            self.analyze_primary()
-        if _first_analyzable_merge_source(self.project) is not None:
-            self.analyze_secondary()
-            return
-        self.project.touch()
-        self._set_status("ShotML settings saved.")
-        self.project_changed.emit()
+        analysis_service_module.rerun_shotml(self)
 
     def _review_suggestion_objects(self) -> list[TimingReviewSuggestion]:
-        suggestions: list[TimingReviewSuggestion] = []
-        for item in self.project.analysis.detection_review_suggestions:
-            if not isinstance(item, dict):
-                continue
-            suggestions.append(
-                TimingReviewSuggestion(
-                    kind=str(item.get("kind", "")),
-                    severity=str(item.get("severity", "review")),
-                    message=str(item.get("message", "")),
-                    suggested_action=str(item.get("suggested_action", "")),
-                    shot_number=None
-                    if item.get("shot_number") in {None, ""}
-                    else int(item["shot_number"]),
-                    shot_time_ms=None
-                    if item.get("shot_time_ms") in {None, ""}
-                    else int(item["shot_time_ms"]),
-                    confidence=None
-                    if item.get("confidence") in {None, ""}
-                    else float(item["confidence"]),
-                    support_confidence=None
-                    if item.get("support_confidence") in {None, ""}
-                    else float(item["support_confidence"]),
-                    interval_ms=None
-                    if item.get("interval_ms") in {None, ""}
-                    else int(item["interval_ms"]),
-                )
-            )
-        return suggestions
+        return analysis_service_module.review_suggestion_objects(self)
 
     def generate_timing_change_proposals(self) -> None:
-        proposals = timing_change_proposals_from_review_suggestions(
-            self.project.analysis.shots,
-            self.project.analysis.beep_time_ms_primary,
-            self._review_suggestion_objects(),
-        )
-        existing_restore_ids = {
-            proposal.shot_id
-            for proposal in self.project.analysis.timing_change_proposals
-            if proposal.proposal_type == "restore_shot" and proposal.status == "pending"
-        }
-        for shot in self.project.analysis.shots:
-            original = self._original_shot_state_by_id.get(shot.id)
-            if (
-                original is None
-                or original.time_ms == shot.time_ms
-                or shot.id in existing_restore_ids
-            ):
-                continue
-            proposals.append(
-                TimingChangeProposal(
-                    proposal_type="restore_shot",
-                    shot_id=shot.id,
-                    shot_number=next(
-                        (
-                            index + 1
-                            for index, candidate in enumerate(
-                                sort_shots(self.project.analysis.shots)
-                            )
-                            if candidate.id == shot.id
-                        ),
-                        None,
-                    ),
-                    source_time_ms=shot.time_ms,
-                    target_time_ms=original.time_ms,
-                    message=f"Restore ShotML's original timestamp for this edited shot ({original.time_ms} ms).",
-                    evidence={"original_source": original.source.value},
-                )
-            )
-        self.project.analysis.timing_change_proposals = proposals
-        self._set_status(
-            f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}."
-        )
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.generate_timing_change_proposals(self)
 
     def _pending_proposal(self, proposal_id: str) -> TimingChangeProposal:
-        for proposal in self.project.analysis.timing_change_proposals:
-            if proposal.id == proposal_id and proposal.status == "pending":
-                return proposal
-        raise ValueError("Pending proposal not found")
+        return analysis_service_module.pending_proposal(self, proposal_id)
 
     def apply_timing_change_proposal(self, proposal_id: str) -> None:
-        proposal = self._pending_proposal(proposal_id)
-        proposal.status = "applied"
-        if proposal.proposal_type == "move_beep":
-            if proposal.target_time_ms is None:
-                raise ValueError("Proposal target time is required")
-            self.project.analysis.beep_time_ms_primary = max(0, int(proposal.target_time_ms))
-        elif proposal.proposal_type == "move_shot":
-            if proposal.shot_id is None or proposal.target_time_ms is None:
-                raise ValueError("Proposal shot and target time are required")
-            self.move_shot(proposal.shot_id, int(proposal.target_time_ms))
-            return
-        elif proposal.proposal_type in {"suppress_shot", "choose_close_pair_survivor"}:
-            if proposal.shot_id is None:
-                raise ValueError("Proposal shot is required")
-            self.delete_shot(proposal.shot_id)
-            return
-        elif proposal.proposal_type == "restore_shot":
-            if proposal.shot_id is None:
-                raise ValueError("Proposal shot is required")
-            self.restore_original_shot_timing(proposal.shot_id)
-            proposal.status = "applied"
-            return
-        else:
-            raise ValueError(f"Unsupported proposal type: {proposal.proposal_type}")
-        normalize_project_timing_events(self.project)
-        _revalidate_timing_ui_state(self.project)
-        self.update_hit_factor()
-        self._set_status("Applied ShotML timing proposal.")
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.apply_timing_change_proposal(self, proposal_id)
 
     def discard_timing_change_proposal(self, proposal_id: str) -> None:
-        proposal = self._pending_proposal(proposal_id)
-        proposal.status = "discarded"
-        self._set_status("Discarded ShotML timing proposal.")
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.discard_timing_change_proposal(self, proposal_id)
 
     def set_beep_time(self, time_ms: int | None) -> None:
         self.project.analysis.beep_time_ms_primary = time_ms
@@ -5579,75 +4003,15 @@ class ProjectController(QObject):
     def move_shot(
         self, shot_id: str, time_ms: int, *, preserve_following_splits: bool = False
     ) -> None:
-        if preserve_following_splits:
-            shots = sort_shots(self.project.analysis.shots)
-            shot_index = next(
-                (index for index, shot in enumerate(shots) if shot.id == shot_id), None
-            )
-            if shot_index is None:
-                raise ValueError("Shot not found")
-            shot = shots[shot_index]
-            if shot.shotml_time_ms is None:
-                shot.shotml_time_ms = shot.time_ms
-            if shot.shotml_confidence is None:
-                original = self._original_shot_state_by_id.get(shot.id)
-                shot.shotml_confidence = (
-                    original.confidence if original is not None else shot.confidence
-                )
-            lower_bound_ms = (
-                self.project.analysis.beep_time_ms_primary
-                if shot_index == 0 and self.project.analysis.beep_time_ms_primary is not None
-                else (shots[shot_index - 1].time_ms if shot_index > 0 else 0)
-            )
-            target_time_ms = max(lower_bound_ms, time_ms)
-            delta_ms = target_time_ms - shot.time_ms
-            if delta_ms:
-                for shifted_shot in shots[shot_index:]:
-                    if shifted_shot.shotml_time_ms is None:
-                        shifted_shot.shotml_time_ms = shifted_shot.time_ms
-                    if shifted_shot.shotml_confidence is None:
-                        original = self._original_shot_state_by_id.get(shifted_shot.id)
-                        shifted_shot.shotml_confidence = (
-                            original.confidence if original is not None else shifted_shot.confidence
-                        )
-                    shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
-        else:
-            for shot in self.project.analysis.shots:
-                if shot.id == shot_id:
-                    if shot.shotml_time_ms is None:
-                        shot.shotml_time_ms = shot.time_ms
-                    if shot.shotml_confidence is None:
-                        original = self._original_shot_state_by_id.get(shot.id)
-                        shot.shotml_confidence = (
-                            original.confidence if original is not None else shot.confidence
-                        )
-                    shot.time_ms = max(0, time_ms)
-                    if shot.source == ShotSource.AUTO:
-                        shot.source = ShotSource.MANUAL
-                        shot.confidence = None
-                    break
-        self.project.sort_shots()
-        normalize_project_timing_events(self.project)
-        _revalidate_timing_ui_state(self.project)
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.move_shot(
+            self,
+            shot_id,
+            time_ms,
+            preserve_following_splits=preserve_following_splits,
+        )
 
     def delete_shot(self, shot_id: str) -> None:
-        selection_context = (
-            _shot_selection_context(self.project, shot_id, fallback_mode="index")
-            if self.project.ui_state.selected_shot_id == shot_id
-            else None
-        )
-        self.project.analysis.shots = [
-            shot for shot in self.project.analysis.shots if shot.id != shot_id
-        ]
-        self._forget_original_shot(shot_id)
-        normalize_project_timing_events(self.project)
-        _revalidate_timing_ui_state(self.project, selection_context)
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        analysis_service_module.delete_shot(self, shot_id)
 
     def nudge_shot(self, shot_id: str, delta_ms: int) -> None:
         for shot in self.project.analysis.shots:
@@ -5963,95 +4327,27 @@ class ProjectController(QObject):
         letter: ScoreLetter | None = None,
         penalty_counts: dict[str, float] | None = None,
     ) -> None:
-        normalized_penalty_counts = (
-            None
-            if penalty_counts is None
-            else {
-                str(key): max(0.0, float(value))
-                for key, value in penalty_counts.items()
-                if max(0.0, float(value)) > 0
-            }
+        scoring_service_module.assign_score(
+            self,
+            shot_id,
+            letter=letter,
+            penalty_counts=penalty_counts,
         )
-        for shot in self.project.analysis.shots:
-            if shot.id == shot_id:
-                if shot.score is None:
-                    shot.score = default_score_mark_for_ruleset(self.project.scoring.ruleset)
-                elif letter is not None:
-                    shot.score.letter = letter
-                if normalized_penalty_counts is not None:
-                    shot.score.penalty_counts = normalized_penalty_counts
-                break
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
 
     def restore_original_shot_timing(
         self, shot_id: str, *, preserve_following_splits: bool = False
     ) -> None:
-        original = self._original_shot_state_by_id.get(shot_id)
-        if original is None:
-            raise ValueError("Original split not found")
-        shots = sort_shots(self.project.analysis.shots)
-        for shot_index, shot in enumerate(shots):
-            if shot.id != shot_id:
-                continue
-            restored_time_ms = max(
-                0, shot.shotml_time_ms if shot.shotml_time_ms is not None else original.time_ms
-            )
-            if preserve_following_splits:
-                delta_ms = restored_time_ms - shot.time_ms
-                if delta_ms:
-                    for shifted_shot in shots[shot_index:]:
-                        if shifted_shot.shotml_time_ms is None:
-                            shifted_shot.shotml_time_ms = shifted_shot.time_ms
-                        if shifted_shot.shotml_confidence is None:
-                            original_shifted = self._original_shot_state_by_id.get(shifted_shot.id)
-                            shifted_shot.shotml_confidence = (
-                                original_shifted.confidence
-                                if original_shifted is not None
-                                else shifted_shot.confidence
-                            )
-                        shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
-            else:
-                shot.time_ms = restored_time_ms
-            shot.source = original.source
-            shot.confidence = (
-                shot.shotml_confidence
-                if shot.shotml_confidence is not None
-                else original.confidence
-            )
-            self.project.sort_shots()
-            self.update_hit_factor()
-            self._set_status("Restored original split.")
-            self.project.touch()
-            self.project_changed.emit()
-            return
-        raise ValueError("Shot not found")
+        analysis_service_module.restore_original_shot_timing(
+            self,
+            shot_id,
+            preserve_following_splits=preserve_following_splits,
+        )
 
     def restore_original_shot_score(self, shot_id: str) -> None:
-        original = self._original_shot_state_by_id.get(shot_id)
-        if original is None:
-            raise ValueError("Original score not found")
-        for shot in self.project.analysis.shots:
-            if shot.id != shot_id:
-                continue
-            shot.score = (
-                default_score_mark_for_ruleset(self.project.scoring.ruleset)
-                if original.score is None
-                else deepcopy(original.score)
-            )
-            self.update_hit_factor()
-            self._set_status("Restored original score.")
-            self.project.touch()
-            self.project_changed.emit()
-            return
-        raise ValueError("Shot not found")
+        scoring_service_module.restore_original_shot_score(self, shot_id)
 
     def set_scoring_preset(self, ruleset: str) -> None:
-        apply_scoring_preset(self.project, ruleset)
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        scoring_service_module.set_scoring_preset(self, ruleset)
 
     def set_score_position(self, shot_id: str, x_norm: float, y_norm: float) -> None:
         for shot in self.project.analysis.shots:
@@ -6065,24 +4361,13 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def set_penalties(self, penalties: float) -> None:
-        self.project.scoring.penalties = max(0.0, float(penalties))
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        scoring_service_module.set_penalties(self, penalties)
 
     def set_penalty_counts(self, penalty_counts: dict[str, float]) -> None:
-        self.project.scoring.penalty_counts = {
-            str(key): max(0.0, float(value)) for key, value in penalty_counts.items()
-        }
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        scoring_service_module.set_penalty_counts(self, penalty_counts)
 
     def set_scoring_enabled(self, enabled: bool) -> None:
-        self.project.scoring.enabled = enabled
-        self.update_hit_factor()
-        self.project.touch()
-        self.project_changed.emit()
+        scoring_service_module.set_scoring_enabled(self, enabled)
 
     def set_overlay_position(self, position: OverlayPosition) -> None:
         self.project.overlay.position = position
@@ -6377,107 +4662,32 @@ class ProjectController(QObject):
         target_kind: str | None = None,
         target_source_id: str | None = None,
     ) -> None:
-        for index, source in enumerate(self.project.merge_sources):
-            if source.id != source_id:
-                continue
-            explicit_placement_requested = any(
-                value is not None
-                for value in (placement_mode, placement_slot, target_kind, target_source_id)
-            )
-            role_changed = False
-            previous_angle_role = source.angle_role
-            if source.placement.order_index is None:
-                source.placement.order_index = _merge_source_stable_order_index(source, index)
-            if source.placement.layer_index is None:
-                source.placement.layer_index = source.placement.order_index
-            if pip_size_percent is not None:
-                source.pip_size_percent = max(1, min(95, int(pip_size_percent)))
-            if pip_x is not None:
-                source.pip_x = max(0.0, min(1.0, float(pip_x)))
-            if pip_y is not None:
-                source.pip_y = max(0.0, min(1.0, float(pip_y)))
-            if opacity is not None:
-                source.opacity = max(0.0, min(1.0, float(opacity)))
-            if angle_role is not None:
-                next_angle_role = _normalize_merge_source_angle_role(angle_role, source.asset)
-                role_changed = source.angle_role != next_angle_role
-                previous_angle_role = source.angle_role
-                source.angle_role = next_angle_role
-            if explicit_placement_requested:
-                next_mode = (
-                    source.placement.mode
-                    if placement_mode is None
-                    else _normalize_merge_source_placement_mode(placement_mode)
-                )
-                next_target_source_id = (
-                    source.placement.target_source_id
-                    if target_source_id is None
-                    else str(target_source_id).strip() or None
-                )
-                next_target_kind = _normalize_merge_source_placement_target_kind(
-                    source.placement.target_kind if target_kind is None else target_kind,
-                    target_source_id=next_target_source_id,
-                )
-                if next_target_kind != MergePlacementTargetKind.MERGE_SOURCE:
-                    next_target_source_id = None
-                next_slot_input = placement_slot
-                if next_slot_input is None:
-                    next_slot_input = None if placement_mode is not None else source.placement.slot
-                source.placement.mode = next_mode
-                source.placement.slot = _normalize_merge_source_placement_slot(
-                    next_slot_input,
-                    mode=next_mode,
-                )
-                source.placement.target_kind = next_target_kind
-                source.placement.target_source_id = next_target_source_id
-            if role_changed:
-                if not explicit_placement_requested:
-                    _apply_merge_source_role_seed_defaults(
-                        self.project,
-                        source,
-                        reference_role=previous_angle_role,
-                    )
-                for other_source in self.project.merge_sources:
-                    if other_source.id == source_id:
-                        continue
-                    _apply_merge_source_role_seed_defaults(self.project, other_source)
-                _realign_live_merge_reference_state(self.project)
-            self.project.touch()
-            self.project_changed.emit()
-            return
-        raise ValueError("Merge source not found")
+        merge_export_service_module.set_merge_source_position(
+            self,
+            source_id,
+            pip_size_percent=pip_size_percent,
+            pip_x=pip_x,
+            pip_y=pip_y,
+            opacity=opacity,
+            angle_role=angle_role,
+            placement_mode=placement_mode,
+            placement_slot=placement_slot,
+            target_kind=target_kind,
+            target_source_id=target_source_id,
+        )
 
     def set_merge_source_sync_offset(self, source_id: str, offset_ms: int) -> None:
-        for source in self.project.merge_sources:
-            if source.id != source_id:
-                continue
-            source.sync_offset_ms = int(offset_ms)
-            preferred_source = _preferred_merge_reference_source(self.project)
-            if preferred_source is not None and preferred_source.id == source_id:
-                self.project.analysis.sync_offset_ms = source.sync_offset_ms
-                self.project.analysis.secondary_sync_source = "manual"
-                self.project.secondary_video = (
-                    source.asset if _source_supports_secondary_analysis(source) else None
-                )
-            self._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
-            self.project.touch()
-            self.project_changed.emit()
-            return
-        raise ValueError("Merge source not found")
+        merge_export_service_module.set_merge_source_sync_offset(self, source_id, offset_ms)
 
     def reset_merge_defaults(self) -> None:
-        self.project.merge.enabled = False
-        _reset_project_merge_defaults(self.project)
-        self.project.touch()
-        self._set_status("Restored PiP defaults.")
-        self.project_changed.emit()
+        merge_export_service_module.reset_merge_defaults(self)
 
     def adjust_merge_source_sync_offset(self, source_id: str, delta_ms: int) -> None:
-        for source in self.project.merge_sources:
-            if source.id == source_id:
-                self.set_merge_source_sync_offset(source_id, source.sync_offset_ms + int(delta_ms))
-                return
-        raise ValueError("Merge source not found")
+        merge_export_service_module.adjust_merge_source_sync_offset(
+            self,
+            source_id,
+            delta_ms,
+        )
 
     def add_timing_event(
         self,
@@ -6542,43 +4752,13 @@ class ProjectController(QObject):
         self,
         payload: dict[str, object] | None = None,
     ) -> ExportSettings:
-        export_payload = payload
-        if isinstance(payload, dict) and isinstance(payload.get("export"), dict):
-            export_payload = payload.get("export")
-        return resolved_export_settings(
-            self.project.export,
-            export_payload if isinstance(export_payload, dict) else {},
-            synchronize_preset=True,
-        )
+        return merge_export_service_module.trim_export_settings_from_payload(self, payload)
 
     def trim_merge_source_from_payload(
         self,
         payload: dict[str, object] | None = None,
     ) -> MergeSource:
-        request_payload = payload if isinstance(payload, dict) else {}
-        source_id = request_payload.get("source_id", request_payload.get("id"))
-        if source_id in {None, ""}:
-            raise ValueError("source_id is required")
-
-        trim_payload = request_payload.get("trim")
-        trim_request = trim_payload if isinstance(trim_payload, dict) else request_payload
-        start_ms_value = trim_request.get(
-            "start_ms",
-            request_payload.get("start_ms", request_payload.get("trim_start_ms")),
-        )
-        if start_ms_value in {None, ""}:
-            raise ValueError("start_ms is required")
-        end_ms_value = trim_request.get(
-            "end_ms",
-            request_payload.get("end_ms", request_payload.get("trim_end_ms")),
-        )
-
-        return self.trim_merge_source_to_derivative(
-            str(source_id),
-            start_ms=int(start_ms_value),
-            end_ms=None if end_ms_value in {None, ""} else int(end_ms_value),
-            export_settings=self.trim_export_settings_from_payload(request_payload),
-        )
+        return merge_export_service_module.trim_merge_source_from_payload(self, payload)
 
     def set_export_settings(self, payload: dict[str, object]) -> None:
         normalized_payload = apply_export_settings_payload(self.project.export, payload)
@@ -6590,531 +4770,37 @@ class ProjectController(QObject):
         self.project_changed.emit()
 
     def adjust_sync_offset(self, delta_ms: int) -> None:
-        self.project.analysis.sync_offset_ms += delta_ms
-        source = _preferred_merge_reference_source(self.project)
-        if source is not None:
-            source.sync_offset_ms = self.project.analysis.sync_offset_ms
-            if _source_supports_secondary_analysis(source):
-                self.project.secondary_video = source.asset
-        self.project.analysis.secondary_sync_source = "manual"
-        self._set_status(f"Adjusted sync offset to {self.project.analysis.sync_offset_ms} ms.")
-        self.project.touch()
-        self.project_changed.emit()
+        merge_export_service_module.adjust_sync_offset(self, delta_ms)
 
     def set_sync_offset(self, offset_ms: int) -> None:
-        self.project.analysis.sync_offset_ms = offset_ms
-        source = _preferred_merge_reference_source(self.project)
-        if source is not None:
-            source.sync_offset_ms = self.project.analysis.sync_offset_ms
-            if _source_supports_secondary_analysis(source):
-                self.project.secondary_video = source.asset
-        self.project.analysis.secondary_sync_source = "manual"
-        self._set_status(f"Sync offset set to {self.project.analysis.sync_offset_ms} ms.")
-        self.project.touch()
-        self.project_changed.emit()
+        merge_export_service_module.set_sync_offset(self, offset_ms)
 
     def swap_videos(self) -> None:
-        swapped_merge_source: MergeSource | None = None
-        if self.project.merge_sources:
-            swapped_merge_source = _preferred_merge_reference_source(self.project)
-            if swapped_merge_source is None:
-                return
-            first_source = swapped_merge_source.asset
-            swapped_merge_source.asset = self.project.primary_video
-            _reset_merge_source_trim_provenance(swapped_merge_source)
-            self.project.primary_video = first_source
-        elif self.project.secondary_video is None:
-            return
-        else:
-            self.project.primary_video, self.project.secondary_video = (
-                self.project.secondary_video,
-                self.project.primary_video,
-            )
-        self.project.analysis.beep_time_ms_primary, self.project.analysis.beep_time_ms_secondary = (
-            self.project.analysis.beep_time_ms_secondary,
-            self.project.analysis.beep_time_ms_primary,
-        )
-        if swapped_merge_source is not None and _source_supports_secondary_analysis(swapped_merge_source):
-            analyzed_source = swapped_merge_source
-        else:
-            analyzed_source = _first_analyzable_merge_source(self.project)
-        if self.project.merge_sources:
-            self.project.secondary_video = None if analyzed_source is None else analyzed_source.asset
-        self.project.analysis.analyzed_secondary_source_id = None if analyzed_source is None else analyzed_source.id
-        self.project.analysis.sync_offset_ms *= -1
-        if analyzed_source is not None:
-            analyzed_source.sync_offset_ms = self.project.analysis.sync_offset_ms
-        self._set_status("Swapped primary and secondary videos.")
-        self.project.touch()
-        self.project_changed.emit()
+        merge_export_service_module.swap_videos(self)
 
     def save_project(self, path: str | None = None) -> None:
-        previous_project_path = self.project_path
-        target_path = Path(path) if path else self.project_path
-        if target_path is None:
-            raise ValueError("Project path is required")
-        self.project.touch()
-        self.project_path = ensure_project_suffix(target_path)
-        self.folder_settings = self._load_folder_settings_safe(self.project_path)
-        self._ensure_project_output_path(previous_project_path=previous_project_path)
-        save_project(self.project, self.project_path)
-        self._save_stage_profiles(self.project_path)
-        self._sync_project_to_library()
-        self._restore_practiscore_source_from_project()
-        self._saved_snapshot = project_to_dict(self.project)
-        self._remember_original_shots()
-        self._remember_project(self.project_path)
-        self._ensure_project_workspace_membership(self.project_path)
-        self._set_status(f"Project folder ready at {self.project_path}.")
-        self.project_path_changed.emit(str(self.project_path))
-        self.project_changed.emit()
+        project_session_service_module.save_project(self, path)
 
     def open_project(self, path: str) -> None:
-        project_path = ensure_project_suffix(path)
-        raw_payload = _project_payload_from_disk(project_path)
-        secondary_video_is_explicitly_persisted = (
-            isinstance(raw_payload, dict) and "secondary_video" in raw_payload
-        )
-
-        self.project = load_project(project_path)
-        self.project_path = project_path
-        self.folder_settings = self._load_folder_settings_safe(self.project_path)
-        self._ensure_project_output_path()
-        loaded_snapshot = project_to_dict(self.project)
-        recovered_media = self._restore_media_sources_from_project(
-            secondary_video_is_explicitly_persisted=secondary_video_is_explicitly_persisted,
-        )
-        recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
-        if recovered_media or recovered_practiscore:
-            self.project.touch()
-        self._saved_snapshot = (
-            loaded_snapshot
-            if (recovered_media or recovered_practiscore)
-            else project_to_dict(self.project)
-        )
-        self._remember_original_shots()
-        self._remember_project(self.project_path)
-        self._ensure_project_workspace_membership(self.project_path)
-        if recovered_media and recovered_practiscore and self._practiscore_source_name:
-            self._set_status(
-                f"Opened project folder {self.project_path} and restored renamed project media and PractiScore from {self._practiscore_source_name}."
-            )
-        elif recovered_media:
-            self._set_status(
-                f"Opened project folder {self.project_path} and restored renamed project media."
-            )
-        elif recovered_practiscore and self._practiscore_source_name:
-            self._set_status(
-                f"Opened project folder {self.project_path} and restored PractiScore from {self._practiscore_source_name}."
-            )
-        else:
-            self._set_status(f"Opened project folder {self.project_path}.")
-        self._load_stage_profiles(self.project_path)
-        self.project_path_changed.emit(str(self.project_path))
-        self.project_changed.emit()
+        project_session_service_module.open_project(self, path)
 
     def delete_current_project(self) -> None:
-        if self.project_path is None:
-            return
-        delete_project(self.project_path)
-        self.new_project()
-        self._set_status("Deleted the saved project metadata file.")
+        project_session_service_module.delete_current_project(self)
 
     def effective_settings(self) -> AppSettings:
-        if self.folder_settings is None:
-            return AppSettings.from_dict(self.settings.to_dict())
-        merged = self.settings.config_dict()
-        folder_payload = self.folder_settings.config_dict()
-        for key, value in folder_payload.items():
-            merged[key] = value
-        merged["recent_projects"] = self.settings.recent_projects
-        merged["active_template_name"] = self.settings.active_template_name
-        merged["settings_templates"] = deepcopy(self.settings.settings_templates)
-        return AppSettings.from_dict(merged)
+        return settings_service_module.effective_settings(self)
 
     def settings_layers(self) -> dict[str, object]:
-        return {
-            "app": self.settings.config_dict(),
-            "folder": {} if self.folder_settings is None else self.folder_settings.config_dict(),
-            "effective": self.effective_settings().config_dict(),
-            "project": {
-                "path": "" if self.project_path is None else str(self.project_path),
-                "folder_settings_error": self.folder_settings_error or "",
-                "popup_template": {
-                    "enabled": self.project.popup_template.enabled,
-                    "content_type": self.project.popup_template.content_type,
-                    "text_source": self.project.popup_template.text_source,
-                    "duration_ms": self.project.popup_template.duration_ms,
-                    "use_shot_split_duration": self.project.popup_template.use_shot_split_duration,
-                    "quadrant": self.project.popup_template.quadrant,
-                    "width": self.project.popup_template.width,
-                    "height": self.project.popup_template.height,
-                    "motion_mode": self.project.popup_template.motion_mode,
-                    "follow_motion": self.project.popup_template.follow_motion,
-                    "background_color": self.project.popup_template.background_color,
-                    "text_color": self.project.popup_template.text_color,
-                    "opacity": self.project.popup_template.opacity,
-                    "style_type": self.project.popup_template.style_type,
-                    "font_family": self.project.popup_template.font_family,
-                    "font_size": self.project.popup_template.font_size,
-                    "font_bold": self.project.popup_template.font_bold,
-                    "font_italic": self.project.popup_template.font_italic,
-                },
-                "review_text_boxes": _overlay_text_boxes_to_payload(
-                    self.project.overlay.text_boxes
-                ),
-            },
-        }
+        return settings_service_module.settings_layers(self)
 
     def set_settings_defaults(self, payload: dict[str, object], *, scope: str = "app") -> None:
-        template_action = str(payload.get("template_action") or "").strip().lower()
-        if template_action:
-            template_name = (
-                str(
-                    payload.get("template_name") or self.settings.active_template_name or "Default"
-                ).strip()
-                or "Default"
-            )
-            if template_action == "select":
-                self.select_settings_template(template_name)
-                return
-            if template_action == "save":
-                self.save_settings_template(template_name)
-                return
-            if template_action == "save_section":
-                section = str(payload.get("section") or "").strip().lower()
-                if not section:
-                    raise ValueError("section is required")
-                self.save_settings_template(template_name, section=section)
-                return
-            if template_action == "duplicate":
-                duplicate_name = str(payload.get("duplicate_name") or "").strip()
-                if not duplicate_name:
-                    raise ValueError("duplicate_name is required")
-                self.duplicate_settings_template(template_name, duplicate_name)
-                return
-            if template_action == "delete":
-                self.delete_settings_template(template_name)
-                return
-        base = (
-            self.folder_settings
-            if scope == "folder" and self.folder_settings is not None
-            else self.settings
-        )
-        target = AppSettings.from_dict(base.to_dict())
-        if "default_match_type" in payload:
-            default_match_type = str(payload["default_match_type"] or "").strip().lower()
-            if default_match_type:
-                try:
-                    target.default_match_type = normalize_match_type(default_match_type)
-                except ValueError:
-                    pass
-        if "default_stage_number" in payload:
-            raw_stage_number = payload.get("default_stage_number")
-            if raw_stage_number in {None, ""}:
-                target.default_stage_number = None
-            else:
-                target.default_stage_number = max(1, int(raw_stage_number))
-        if "default_competitor_name" in payload:
-            target.default_competitor_name = str(
-                payload.get("default_competitor_name", target.default_competitor_name)
-                or target.default_competitor_name
-            )
-        if "default_competitor_place" in payload:
-            raw_competitor_place = payload.get("default_competitor_place")
-            if raw_competitor_place in {None, ""}:
-                target.default_competitor_place = None
-            else:
-                target.default_competitor_place = int(raw_competitor_place)
-        if "overlay_position" in payload:
-            target.overlay_position = OverlayPosition(str(payload["overlay_position"]))
-        if "timer_badge" in payload:
-            _badge_style_from_payload(target.timer_badge, payload.get("timer_badge"))
-        if "shot_badge" in payload:
-            _badge_style_from_payload(target.shot_badge, payload.get("shot_badge"))
-        if "current_shot_badge" in payload:
-            _badge_style_from_payload(target.current_shot_badge, payload.get("current_shot_badge"))
-        if "hit_factor_badge" in payload:
-            _badge_style_from_payload(target.hit_factor_badge, payload.get("hit_factor_badge"))
-        if "overlay_custom_box_background_color" in payload:
-            target.overlay_custom_box_background_color = str(
-                payload.get(
-                    "overlay_custom_box_background_color",
-                    target.overlay_custom_box_background_color,
-                )
-                or target.overlay_custom_box_background_color
-            )
-        if "overlay_custom_box_text_color" in payload:
-            target.overlay_custom_box_text_color = str(
-                payload.get("overlay_custom_box_text_color", target.overlay_custom_box_text_color)
-                or target.overlay_custom_box_text_color
-            )
-        if "overlay_custom_box_opacity" in payload:
-            raw_opacity = payload.get("overlay_custom_box_opacity")
-            if raw_opacity not in {None, ""}:
-                target.overlay_custom_box_opacity = max(0.0, min(1.0, float(raw_opacity)))
-        if "badge_size" in payload:
-            target.badge_size = BadgeSize(str(payload["badge_size"]))
-        if "merge_layout" in payload:
-            target.merge_layout = MergeLayout(str(payload["merge_layout"]))
-        if "merge_pip_x" in payload:
-            raw_pip_x = payload.get("merge_pip_x")
-            if raw_pip_x not in {None, ""}:
-                target.merge_pip_x = float(raw_pip_x)
-        if "merge_pip_y" in payload:
-            raw_pip_y = payload.get("merge_pip_y")
-            if raw_pip_y not in {None, ""}:
-                target.merge_pip_y = float(raw_pip_y)
-        if "pip_size" in payload:
-            target.pip_size = PipSize(str(payload["pip_size"]))
-        if "merge_source_defaults" in payload:
-            target.merge_source_defaults = [
-                deepcopy(item)
-                for item in payload.get("merge_source_defaults", [])
-                if isinstance(item, dict)
-            ]
-        if "export_quality" in payload:
-            target.export_quality = ExportQuality(str(payload["export_quality"]))
-        if "export_preset" in payload:
-            target.export_preset = ExportPreset(str(payload["export_preset"]))
-        if "export_frame_rate" in payload:
-            target.export_frame_rate = ExportFrameRate(str(payload["export_frame_rate"]))
-        if "export_video_codec" in payload:
-            target.export_video_codec = ExportVideoCodec(str(payload["export_video_codec"]))
-        if "export_audio_codec" in payload:
-            target.export_audio_codec = ExportAudioCodec(str(payload["export_audio_codec"]))
-        if "export_color_space" in payload:
-            target.export_color_space = ExportColorSpace(str(payload["export_color_space"]))
-        if "export_two_pass" in payload:
-            target.export_two_pass = bool(payload["export_two_pass"])
-        if "export_ffmpeg_preset" in payload:
-            target.export_ffmpeg_preset = str(payload["export_ffmpeg_preset"] or "medium")
-        if "default_tool" in payload:
-            target.default_tool = str(payload["default_tool"] or "project")
-        if "reopen_last_tool" in payload:
-            target.reopen_last_tool = bool(payload["reopen_last_tool"])
-        if bool(payload.get("clear_layout_defaults", False)):
-            target.layout_locked = None
-            target.layout_rail_width = None
-            target.layout_inspector_width = None
-            target.layout_waveform_height = None
-        else:
-            if "layout_locked" in payload:
-                target.layout_locked = _optional_payload_bool(payload.get("layout_locked"))
-            if "layout_rail_width" in payload:
-                target.layout_rail_width = _optional_layout_dimension(
-                    payload.get("layout_rail_width"), 84, 104
-                )
-            if "layout_inspector_width" in payload:
-                target.layout_inspector_width = _optional_layout_dimension(
-                    payload.get("layout_inspector_width"), 320, 4096
-                )
-            if "layout_waveform_height" in payload:
-                target.layout_waveform_height = _optional_layout_dimension(
-                    payload.get("layout_waveform_height"), 112, 4096
-                )
-        if "detection_threshold" in payload:
-            threshold = float(payload["detection_threshold"])
-            target.detection_threshold = threshold
-            target.shotml_defaults.detection_threshold = threshold
-        marker_template_payload = payload.get("marker_template")
-        if isinstance(marker_template_payload, dict):
-            _popup_template_from_payload(target.marker_template, marker_template_payload)
-        if scope == "folder":
-            if self.project_path is None:
-                raise ValueError("Save the project before writing folder defaults.")
-            self.folder_settings = target
-            self.folder_settings_error = None
-            save_folder_settings(self.project_path, target)
-        else:
-            target.recent_projects = self.settings.recent_projects
-            target.active_template_name = self.settings.active_template_name
-            target.settings_templates = deepcopy(self.settings.settings_templates)
-            self.settings = target
-            self._sync_active_settings_template()
-            save_settings(self.settings)
-        self.settings_changed.emit()
-        self._set_status(f"Updated {'folder' if scope == 'folder' else 'app'} defaults.")
+        settings_service_module.set_settings_defaults(self, payload, scope=scope)
 
     def reset_settings_defaults(self, *, scope: str = "app", section: str | None = None) -> None:
-        if not section:
-            self.restore_defaults()
-            return
-
-        section_name = str(section or "").strip().lower()
-        base = (
-            self.folder_settings
-            if scope == "folder" and self.folder_settings is not None
-            else self.settings
-        )
-        target = AppSettings.from_dict(base.to_dict())
-        fallback = self.settings if scope == "folder" else AppSettings()
-
-        def rebuild_with_updates(updates: dict[str, object]) -> None:
-            nonlocal target
-            payload = target.to_dict()
-            payload.update({key: deepcopy(value) for key, value in updates.items()})
-            refreshed = AppSettings.from_dict(payload)
-            refreshed.active_template_name = target.active_template_name
-            refreshed.settings_templates = deepcopy(target.settings_templates)
-            refreshed.recent_projects = target.recent_projects
-            target = refreshed
-
-        fallback_config = fallback.config_dict()
-        section_keys = {
-            "global-template": ("default_tool", "reopen_last_tool"),
-            "layout": (
-                "layout_locked",
-                "layout_rail_width",
-                "layout_inspector_width",
-                "layout_waveform_height",
-            ),
-            "scoring": (
-                "default_match_type",
-                "default_stage_number",
-                "default_competitor_name",
-                "default_competitor_place",
-            ),
-            "pip": (
-                "merge_layout",
-                "pip_size",
-                "merge_pip_x",
-                "merge_pip_y",
-                "merge_source_defaults",
-            ),
-            "overlay": (
-                "overlay_position",
-                "badge_size",
-                "overlay_custom_box_background_color",
-                "overlay_custom_box_text_color",
-                "overlay_custom_box_opacity",
-                "timer_badge",
-                "shot_badge",
-                "current_shot_badge",
-                "hit_factor_badge",
-                "review_text_boxes",
-            ),
-            "markers": ("marker_template",),
-            "export": (
-                "export_quality",
-                "export_preset",
-                "export_frame_rate",
-                "export_video_codec",
-                "export_audio_codec",
-                "export_color_space",
-                "export_two_pass",
-                "export_ffmpeg_preset",
-            ),
-            "shotml": ("detection_threshold", "shotml_defaults"),
-        }
-        keys = section_keys.get(section_name)
-        if keys is None:
-            raise ValueError("Unknown settings section.")
-        rebuild_with_updates({key: fallback_config.get(key) for key in keys})
-
-        if scope == "folder":
-            if self.project_path is None:
-                raise ValueError("Save the project before writing folder defaults.")
-            if target.config_dict() == self.settings.config_dict():
-                delete_folder_settings(self.project_path)
-                self.folder_settings = None
-            else:
-                self.folder_settings = target
-                save_folder_settings(self.project_path, target)
-            self.folder_settings_error = None
-        else:
-            target.recent_projects = self.settings.recent_projects
-            target.active_template_name = self.settings.active_template_name
-            target.settings_templates = deepcopy(self.settings.settings_templates)
-            self.settings = target
-            self._sync_active_settings_template()
-            save_settings(self.settings)
-        self.settings_changed.emit()
-        self._set_status(
-            f"Reset {section_name} defaults for {'folder' if scope == 'folder' else 'app'} scope."
-        )
+        settings_service_module.reset_settings_defaults(self, scope=scope, section=section)
 
     def restore_defaults(self) -> None:
-        self.settings = AppSettings()
-        self.settings.settings_templates = {
-            self.settings.active_template_name: self.settings.template_snapshot()
-        }
-        save_settings(self.settings)
-        delete_folder_settings(self.project_path)
-        self.folder_settings = None
-        self.folder_settings_error = None
-        self._apply_effective_settings_to_project(
-            self.project, self.effective_settings(), reset_tool=False
-        )
-        self.project.touch()
-        self._set_status("Restored SplitShot defaults.")
-        self.settings_changed.emit()
-        self.project_changed.emit()
-
-    def update_hit_factor(self) -> None:
-        self.project.sort_shots()
-        self.project.scoring.hit_factor = calculate_hit_factor(self.project)
-
-    def _remember_original_shots(self) -> None:
-        self._original_shot_state_by_id = {
-            shot.id: _OriginalShotState(
-                time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
-                source=shot.source,
-                confidence=shot.shotml_confidence
-                if shot.shotml_confidence is not None
-                else shot.confidence,
-                score=None if shot.score is None else deepcopy(shot.score),
-            )
-            for shot in self.project.analysis.shots
-        }
-
-    def _remember_original_shot(self, shot: ShotEvent) -> None:
-        self._original_shot_state_by_id[shot.id] = _OriginalShotState(
-            time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
-            source=shot.source,
-            confidence=shot.shotml_confidence
-            if shot.shotml_confidence is not None
-            else shot.confidence,
-            score=None if shot.score is None else deepcopy(shot.score),
-        )
-
-    def _forget_original_shot(self, shot_id: str) -> None:
-        self._original_shot_state_by_id.pop(shot_id, None)
-
-    def _remember_project(self, path: Path) -> None:
-        entries = [
-            str(path),
-            *[item for item in self.settings.recent_projects if item != str(path)],
-        ]
-        next_entries = entries[:10]
-        if self.settings.recent_projects == next_entries:
-            return
-        self.settings.recent_projects = next_entries
-        save_settings(self.settings)
-        self.settings_changed.emit()
-
-    def _autosave_project_if_needed(self) -> None:
-        if self._autosave_in_progress or self.project_path is None:
-            return
-        current_snapshot = project_to_dict(self.project)
-        if current_snapshot == self._saved_snapshot:
-            return
-        try:
-            self._autosave_in_progress = True
-            save_project(self.project, self.project_path)
-            self._save_stage_profiles(self.project_path)
-            self._sync_project_to_library()
-            if self.project.scoring.practiscore_source_path:
-                self._restore_practiscore_source_from_project()
-            self._saved_snapshot = project_to_dict(self.project)
-            self._remember_project(self.project_path)
-        except Exception as exc:  # noqa: BLE001
-            self._set_status(f"Project autosave failed: {exc}")
-        finally:
-            self._autosave_in_progress = False
-
-    def autosave_project_if_needed(self) -> None:
-        self._autosave_project_if_needed()
+        settings_service_module.restore_defaults(self)
 
     def _stage_project_input_path(self, path: str, source_name: str | None = None) -> str:
         if self.project_path is None:
@@ -7143,81 +4829,17 @@ class ProjectController(QObject):
         return normalize_project_path(path)
 
     def _new_project_with_settings_defaults(self) -> Project:
-        effective = self.effective_settings()
-        project = Project()
-        self._apply_effective_settings_to_project(project, effective, reset_tool=True)
-        return project
+        return project_session_service_module.new_project_with_settings_defaults(self)
 
     def _apply_effective_settings_to_project(
         self, project: Project, effective: AppSettings, *, reset_tool: bool
     ) -> None:
-        project.analysis.shotml_settings = ShotMLSettings(**asdict(effective.shotml_defaults))
-        project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
-        project.scoring.match_type = ""
-        try:
-            normalized_match_type = normalize_match_type(effective.default_match_type)
-        except ValueError:
-            normalized_match_type = ""
-        if normalized_match_type:
-            project.scoring.match_type = normalized_match_type
-            apply_scoring_preset(project, default_ruleset_for_match_type(normalized_match_type))
-        project.scoring.stage_number = effective.default_stage_number
-        project.scoring.competitor_name = effective.default_competitor_name
-        project.scoring.competitor_place = effective.default_competitor_place
-        project.overlay.position = effective.overlay_position
-        project.overlay.badge_size = effective.badge_size
-        if effective.badge_size != BadgeSize.CUSTOM:
-            project.overlay.font_size = _badge_font_size_from_enum(effective.badge_size)
-        project.overlay.timer_badge = deepcopy(effective.timer_badge)
-        project.overlay.shot_badge = deepcopy(effective.shot_badge)
-        project.overlay.current_shot_badge = deepcopy(effective.current_shot_badge)
-        project.overlay.hit_factor_badge = deepcopy(effective.hit_factor_badge)
-        project.overlay.custom_box_background_color = effective.overlay_custom_box_background_color
-        project.overlay.custom_box_text_color = effective.overlay_custom_box_text_color
-        project.overlay.custom_box_opacity = effective.overlay_custom_box_opacity
-        project.merge.layout = effective.merge_layout
-        project.merge.pip_size = effective.pip_size
-        project.merge.pip_size_percent = _pip_size_percent_from_enum(effective.pip_size)
-        project.merge.pip_x = effective.merge_pip_x
-        project.merge.pip_y = effective.merge_pip_y
-        project.merge_sources = [
-            _merge_source_from_dict(item)
-            for item in effective.merge_source_defaults
-            if isinstance(item, dict)
-        ]
-        _sync_secondary_video_from_merge_sources(project)
-        analyzed_source = _first_analyzable_merge_source(project)
-        if analyzed_source is not None:
-            project.analysis.analyzed_secondary_source_id = analyzed_source.id
-            project.analysis.sync_offset_ms = int(analyzed_source.sync_offset_ms)
-        project.export.quality = effective.export_quality
-        project.export.preset = effective.export_preset
-        project.export.frame_rate = effective.export_frame_rate
-        project.export.video_codec = effective.export_video_codec
-        project.export.audio_codec = effective.export_audio_codec
-        project.export.color_space = effective.export_color_space
-        project.export.two_pass = effective.export_two_pass
-        project.export.ffmpeg_preset = effective.export_ffmpeg_preset
-        project.popup_template = deepcopy(effective.marker_template)
-        project.overlay.text_boxes = [
-            OverlayTextBox(**box) for box in effective.review_text_boxes if isinstance(box, dict)
-        ]
-        if effective.layout_locked is not None:
-            project.ui_state.layout_locked = bool(effective.layout_locked)
-        if effective.layout_rail_width is not None:
-            project.ui_state.rail_width = max(84, min(104, int(effective.layout_rail_width)))
-        if effective.layout_inspector_width is not None:
-            project.ui_state.inspector_width = max(
-                320, min(4096, int(effective.layout_inspector_width))
-            )
-        if effective.layout_waveform_height is not None:
-            project.ui_state.waveform_height = max(
-                112, min(4096, int(effective.layout_waveform_height))
-            )
-        if reset_tool:
-            project.ui_state.active_tool = (
-                effective.default_tool if effective.reopen_last_tool else "project"
-            )
+        project_session_service_module.apply_effective_settings_to_project(
+            self,
+            project,
+            effective,
+            reset_tool=reset_tool,
+        )
 
     def _load_folder_settings_safe(self, project_path: str | Path | None) -> AppSettings | None:
         self.folder_settings_error = None
@@ -7228,19 +4850,10 @@ class ProjectController(QObject):
             return None
 
     def _ensure_project_output_path(self, previous_project_path: Path | None = None) -> None:
-        if self.project_path is None:
-            return
-        current_output_path = str(self.project.export.output_path or "").strip()
-        project_output_path = str(default_project_output_path(self.project_path))
-        previous_output_path = (
-            str(default_project_output_path(previous_project_path))
-            if previous_project_path is not None
-            else ""
+        project_session_service_module.ensure_project_output_path(
+            self,
+            previous_project_path=previous_project_path,
         )
-        if not current_output_path or (
-            previous_output_path and current_output_path == previous_output_path
-        ):
-            self.project.export.output_path = project_output_path
 
     def _set_status(self, message: str) -> None:
         self.status_message = message
@@ -7254,3 +4867,41 @@ class ProjectController(QObject):
     
     def library_backup_restore(self, manifest: dict) -> dict:
         return shared_backend_service.library_backup_restore(manifest)
+
+    def update_hit_factor(self) -> None:
+        scoring_service_module.update_hit_factor(self)
+
+    def _remember_original_shots(self) -> None:
+        self._original_shot_state_by_id = {
+            shot.id: _OriginalShotState(
+                time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
+                source=shot.source,
+                confidence=shot.shotml_confidence
+                if shot.shotml_confidence is not None
+                else shot.confidence,
+                score=None if shot.score is None else deepcopy(shot.score),
+            )
+            for shot in self.project.analysis.shots
+        }
+
+    def _remember_original_shot(self, shot: ShotEvent) -> None:
+        self._original_shot_state_by_id[shot.id] = _OriginalShotState(
+            time_ms=shot.shotml_time_ms if shot.shotml_time_ms is not None else shot.time_ms,
+            source=shot.source,
+            confidence=shot.shotml_confidence
+            if shot.shotml_confidence is not None
+            else shot.confidence,
+            score=None if shot.score is None else deepcopy(shot.score),
+        )
+
+    def _forget_original_shot(self, shot_id: str) -> None:
+        self._original_shot_state_by_id.pop(shot_id, None)
+
+    def _remember_project(self, path: Path) -> None:
+        project_session_service_module.remember_project(self, path)
+
+    def _autosave_project_if_needed(self) -> None:
+        project_session_service_module.autosave_project_if_needed(self)
+
+    def autosave_project_if_needed(self) -> None:
+        self._autosave_project_if_needed()

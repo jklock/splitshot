@@ -16,8 +16,22 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from packaged_support import (  # noqa: E402
+    RUNTIME_MANIFEST_ARTIFACT,
+    SUPPORT_EVIDENCE_ARTIFACT,
+    export_runtime_manifest,
+    guess_bundle_root,
+    update_support_evidence,
+)
+
 REPO = Path(__file__).resolve().parents[2]
 TIMEOUT = 60
+BACKEND_CERT_DIR = REPO / "artifacts" / "backend-certification"
+PACKAGED_SMOKE_DIR = BACKEND_CERT_DIR / "packaged-smoke"
 
 
 def _find_free_port() -> int:
@@ -60,6 +74,118 @@ def _default_executable() -> Path:
     if not candidates:
         raise FileNotFoundError("No packaged Electron executable found in electron/build/")
     return candidates[0]
+
+
+def _resolve_bundle_root(executable: Path) -> Path | None:
+    raw_bundle_root = str(os.environ.get("SPLITSHOT_PACKAGED_BUNDLE_ROOT", "")).strip()
+    if raw_bundle_root:
+        return Path(raw_bundle_root).resolve()
+    guessed = guess_bundle_root(executable)
+    return guessed.resolve() if guessed else None
+
+
+def _artifact_kind() -> str:
+    raw_kind = str(os.environ.get("SPLITSHOT_PACKAGED_ARTIFACT_KIND", "")).strip()
+    if raw_kind:
+        return raw_kind
+    if sys.platform == "darwin":
+        return "app"
+    if sys.platform == "win32":
+        return "dir"
+    return "dir"
+
+
+def _runtime_manifest_record(executable: Path, bundle_root: Path | None) -> dict | None:
+    existing_artifact = Path(
+        str(os.environ.get("SPLITSHOT_RUNTIME_MANIFEST_ARTIFACT", RUNTIME_MANIFEST_ARTIFACT))
+    )
+    if existing_artifact.is_file():
+        return json.loads(existing_artifact.read_text(encoding="utf-8"))
+    if bundle_root is None:
+        return None
+    return export_runtime_manifest(
+        bundle_root=bundle_root,
+        installed_executable=executable,
+        artifact_kind=_artifact_kind(),
+        destination=existing_artifact,
+    )
+
+
+def _prepare_support_paths() -> tuple[Path, Path, Path]:
+    PACKAGED_SMOKE_DIR.mkdir(parents=True, exist_ok=True)
+    ready_file = PACKAGED_SMOKE_DIR / "ready-events.jsonl"
+    stdout_path = PACKAGED_SMOKE_DIR / "stdout.log"
+    stderr_path = PACKAGED_SMOKE_DIR / "stderr.log"
+    for artifact in (ready_file, stdout_path, stderr_path):
+        artifact.unlink(missing_ok=True)
+    return ready_file, stdout_path, stderr_path
+
+
+def _event_record(events: list[dict], event_name: str) -> dict:
+    for event in reversed(events):
+        if event.get("event") == event_name:
+            return event
+    return {}
+
+
+def _write_support_summary(
+    *,
+    executable: Path,
+    bundle_root: Path | None,
+    runtime_manifest: dict | None,
+    ready_file: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+    ready_events: list[dict],
+    port: int,
+    state: dict | None,
+    result: str,
+    error_message: str | None = None,
+    child_exit_code: int | None = None,
+) -> None:
+    backend_ready = _event_record(ready_events, "backend-ready")
+    app_ready_start = _event_record(ready_events, "app-ready-start")
+    update_support_evidence(
+        "packaged_smoke",
+        {
+            "result": result,
+            "error": error_message,
+            "artifact_path": str(os.environ.get("SPLITSHOT_PACKAGED_ARTIFACT", "")).strip() or None,
+            "artifact_kind": _artifact_kind(),
+            "installed_executable": str(executable),
+            "bundle_root": str(bundle_root) if bundle_root else None,
+            "runtime_manifest_artifact": str(
+                Path(
+                    str(
+                        os.environ.get(
+                            "SPLITSHOT_RUNTIME_MANIFEST_ARTIFACT", RUNTIME_MANIFEST_ARTIFACT
+                        )
+                    )
+                )
+            ),
+            "bundle_manifest_path": runtime_manifest.get("bundle_manifest_path")
+            if isinstance(runtime_manifest, dict)
+            else None,
+            "ready_file": str(ready_file),
+            "stdout_log": str(stdout_path),
+            "stderr_log": str(stderr_path),
+            "port": port,
+            "child_exit_code": child_exit_code,
+            "state_project_path": (state or {}).get("project", {}).get("path"),
+            "event_names": [event.get("event") for event in ready_events],
+            "backend_base_url": backend_ready.get("url"),
+            "backend_session_id": backend_ready.get("sessionId"),
+            "backend_health_path": backend_ready.get("healthPath"),
+            "backend_events_path": backend_ready.get("eventsPath"),
+            "backend_log_root": backend_ready.get("logRoot"),
+            "backend_cache_root": backend_ready.get("cacheRoot"),
+            "backend_app_data_root": backend_ready.get("appDataRoot"),
+            "electron_log_root": app_ready_start.get("electronLogRoot"),
+            "electron_user_data_root": app_ready_start.get("electronUserDataRoot"),
+            "electron_crash_dumps_root": app_ready_start.get("electronCrashDumpsRoot"),
+        },
+        destination=SUPPORT_EVIDENCE_ARTIFACT,
+    )
 
 
 def _spawn_app(
@@ -170,12 +296,12 @@ def main() -> int:
         print(f"FAIL: executable not found at {executable}", file=sys.stderr)
         return 1
 
+    bundle_root = _resolve_bundle_root(executable)
+    runtime_manifest = _runtime_manifest_record(executable, bundle_root)
     project_path = _create_project_bundle("packaged-launch")
-    ready_file = Path(tempfile.mkdtemp(prefix="splitshot-ready-file-")) / "events.jsonl"
-    log_dir = Path(tempfile.mkdtemp(prefix="splitshot-packaged-logs-"))
-    stdout_path = log_dir / "stdout.log"
-    stderr_path = log_dir / "stderr.log"
+    ready_file, stdout_path, stderr_path = _prepare_support_paths()
     port = _find_free_port()
+    ready_events: list[dict] = []
     print(f"PACKAGED_SMOKE executable={executable}")
     print(f"PACKAGED_SMOKE project={project_path}")
     print(f"PACKAGED_SMOKE ready_file={ready_file}")
@@ -185,16 +311,41 @@ def main() -> int:
     proc = _spawn_app(executable, project_path, ready_file, port, stdout_path, stderr_path)
 
     try:
-        _wait_for_ready_file(proc, ready_file)
+        ready_events = _wait_for_ready_file(proc, ready_file)
         state = _wait_for_state(port, project_path)
+        _write_support_summary(
+            executable=executable,
+            bundle_root=bundle_root,
+            runtime_manifest=runtime_manifest,
+            ready_file=ready_file,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            ready_events=ready_events,
+            port=port,
+            state=state,
+            result="passed",
+            child_exit_code=proc.poll(),
+        )
         print(f"PASS: packaged app launched from {executable}")
         print(f"PASS: backend responded on port {port}")
         print(f"PASS: loaded project {state.get('project', {}).get('path')}")
         shutil.rmtree(project_path.parent, ignore_errors=True)
-        shutil.rmtree(ready_file.parent, ignore_errors=True)
-        shutil.rmtree(log_dir, ignore_errors=True)
         return 0
     except Exception as exc:  # noqa: BLE001
+        _write_support_summary(
+            executable=executable,
+            bundle_root=bundle_root,
+            runtime_manifest=runtime_manifest,
+            ready_file=ready_file,
+            stdout_path=stdout_path,
+            stderr_path=stderr_path,
+            ready_events=ready_events,
+            port=port,
+            state=None,
+            result="failed",
+            error_message=str(exc),
+            child_exit_code=proc.returncode,
+        )
         print(f"FAIL: {exc}", file=sys.stderr)
         print(f"FAIL: ready file path {ready_file}", file=sys.stderr)
         print(f"FAIL: stdout log {stdout_path}", file=sys.stderr)

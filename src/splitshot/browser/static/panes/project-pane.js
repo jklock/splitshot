@@ -302,10 +302,8 @@ export function createProjectPane({
     if (!primaryImport || shouldSyncShotMLSettingsBeforePrimaryImport()) {
       await callApi("/api/analysis/shotml-settings", { settings: readShotMLSettingsPayload(), rerun: false });
     }
-    if (primaryImport) {
-      if (hasPendingPrimaryImportKeepaliveDrafts()) {
-        queueNonBlockingProjectDraftFlush();
-      }
+    const shouldFlushProjectDrafts = !primaryImport || hasPendingPrimaryImportKeepaliveDrafts();
+    if (!shouldFlushProjectDrafts) {
       return;
     }
     await callApi("/api/project/details", readProjectDetailsPayload());

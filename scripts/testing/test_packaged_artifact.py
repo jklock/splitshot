@@ -13,6 +13,17 @@ import tempfile
 from pathlib import Path
 
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from packaged_support import (  # noqa: E402
+    RUNTIME_MANIFEST_ARTIFACT,
+    export_runtime_manifest,
+    update_support_evidence,
+)
+
+
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_VALIDATION_SCRIPT = REPO / "scripts" / "testing" / "test_electron_app.py"
 
@@ -21,10 +32,14 @@ class InstalledArtifact:
     def __init__(
         self,
         executable: Path,
+        bundle_root: Path,
+        artifact_kind: str,
         cleanup_paths: list[Path] | None = None,
         env: dict[str, str] | None = None,
     ):
         self.executable = executable
+        self.bundle_root = bundle_root
+        self.artifact_kind = artifact_kind
         self.cleanup_paths = cleanup_paths or []
         self.env = env or {}
 
@@ -148,7 +163,12 @@ def _install_windows_artifact(artifact: Path) -> InstalledArtifact:
     env = {"PATH": _media_tool_free_path(ffmpeg_dir)}
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg.exe")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe.exe")
-    return InstalledArtifact(executable=executable, env=env)
+    return InstalledArtifact(
+        executable=executable,
+        bundle_root=executable.parent / "resources" / "bundle",
+        artifact_kind="nsis",
+        env=env,
+    )
 
 
 def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
@@ -198,6 +218,9 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
     return InstalledArtifact(
         executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env
+        ,
+        bundle_root=copied_app / "Contents" / "Resources" / "bundle",
+        artifact_kind="dmg",
     )
 
 
@@ -223,7 +246,11 @@ def _install_linux_artifact(artifact: Path) -> InstalledArtifact:
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
     return InstalledArtifact(
-        executable=copied_artifact, cleanup_paths=[copied_artifact.parent, extracted_root], env=env
+        executable=copied_artifact,
+        bundle_root=squashfs_root / "resources" / "bundle",
+        artifact_kind="appimage",
+        cleanup_paths=[copied_artifact.parent, extracted_root],
+        env=env,
     )
 
 
@@ -264,7 +291,35 @@ def main() -> int:
     installed: InstalledArtifact | None = None
     try:
         installed = _install_artifact(artifact)
-        env = {**os.environ, **installed.env}
+        runtime_manifest = export_runtime_manifest(
+            bundle_root=installed.bundle_root,
+            installed_executable=installed.executable,
+            artifact_path=artifact,
+            artifact_kind=installed.artifact_kind,
+        )
+        update_support_evidence(
+            "installation",
+            {
+                "result": "prepared",
+                "artifact_kind": installed.artifact_kind,
+                "artifact_path": str(artifact),
+                "installed_executable": str(installed.executable),
+                "bundle_root": str(installed.bundle_root),
+                "runtime_manifest_artifact": str(RUNTIME_MANIFEST_ARTIFACT),
+                "bundle_manifest_path": runtime_manifest["bundle_manifest_path"],
+                "bundle_manifest_sha256": runtime_manifest["bundle_manifest_sha256"],
+                "ffmpeg_path": installed.env.get("SPLITSHOT_PACKAGED_FFMPEG"),
+                "ffprobe_path": installed.env.get("SPLITSHOT_PACKAGED_FFPROBE"),
+            },
+        )
+        env = {
+            **os.environ,
+            **installed.env,
+            "SPLITSHOT_PACKAGED_ARTIFACT": str(artifact),
+            "SPLITSHOT_PACKAGED_ARTIFACT_KIND": installed.artifact_kind,
+            "SPLITSHOT_PACKAGED_BUNDLE_ROOT": str(installed.bundle_root),
+            "SPLITSHOT_RUNTIME_MANIFEST_ARTIFACT": str(RUNTIME_MANIFEST_ARTIFACT),
+        }
         command = [sys.executable, str(validation_script), "--app", str(installed.executable)]
         result = subprocess.run(command, cwd=REPO, env=env, check=False)
         return int(result.returncode)

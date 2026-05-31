@@ -1,4 +1,5 @@
 const { execFileSync, execSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -9,6 +10,11 @@ const VENV_DIR = path.join(BUNDLE_DIR, '.venv');
 const WINDOWS_PYTHON_DIR = path.join(BUNDLE_DIR, 'python');
 const SRC_DIR = path.join(ROOT, 'src');
 const BUNDLE_SRC_DIR = path.join(BUNDLE_DIR, 'src');
+const BUNDLE_MANIFEST_PATH = path.join(BUNDLE_DIR, 'runtime-manifest.json');
+const ELECTRON_PACKAGE_PATH = path.join(ROOT, 'electron', 'package.json');
+const ELECTRON_PACKAGE_LOCK_PATH = path.join(ROOT, 'electron', 'package-lock.json');
+const UV_LOCK_PATH = path.join(ROOT, 'uv.lock');
+const PYPROJECT_PATH = path.join(ROOT, 'pyproject.toml');
 
 function run(cmd, opts = {}) {
   console.log(`[bundle] ${cmd}`);
@@ -24,9 +30,50 @@ function repoPythonCommand(args, opts = {}) {
   runFile('uv', ['run', 'python', ...args], opts);
 }
 
+function sleepSync(milliseconds) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
 function rmrf(target) {
-  if (fs.existsSync(target)) {
-    fs.rmSync(target, { recursive: true, force: true });
+  if (!fs.existsSync(target)) {
+    return;
+  }
+
+  let lastError = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      fs.rmSync(target, {
+        recursive: true,
+        force: true,
+        maxRetries: 20,
+        retryDelay: 100,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(error?.code || '')) {
+        throw error;
+      }
+      if (fs.existsSync(target)) {
+        try {
+          const stats = fs.lstatSync(target);
+          if (stats.isDirectory()) {
+            for (const entry of fs.readdirSync(target)) {
+              rmrf(path.join(target, entry));
+            }
+          }
+        } catch {
+          // Best-effort cleanup; allow the next retry to re-check the path.
+        }
+      }
+      if (attempt < 5) {
+        sleepSync(attempt * 200);
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 }
 
@@ -137,6 +184,58 @@ function walkFiles(rootDir) {
   return files;
 }
 
+function readJsonFile(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
+function sha256File(filePath) {
+  const digest = crypto.createHash('sha256');
+  const data = fs.readFileSync(filePath);
+  digest.update(data);
+  return digest.digest('hex');
+}
+
+function normalizeRelativePath(value) {
+  return String(value || '').replace(/\\/g, '/');
+}
+
+function relativeRepoPath(filePath) {
+  return normalizeRelativePath(path.relative(ROOT, filePath));
+}
+
+function relativeBundlePath(filePath) {
+  return normalizeRelativePath(path.relative(BUNDLE_DIR, filePath));
+}
+
+function fileDigestRecord(filePath, relativePath) {
+  const stats = fs.statSync(filePath);
+  return {
+    path: normalizeRelativePath(relativePath),
+    size: stats.size,
+    sha256: sha256File(filePath),
+  };
+}
+
+function hashStrings(values) {
+  const digest = crypto.createHash('sha256');
+  for (const value of values) {
+    digest.update(String(value));
+    digest.update('\n');
+  }
+  return digest.digest('hex');
+}
+
+function directoryFingerprint(rootDir) {
+  const files = walkFiles(rootDir).sort((left, right) => left.localeCompare(right));
+  const entries = files.map((filePath) => fileDigestRecord(filePath, path.relative(rootDir, filePath)));
+  return {
+    path: relativeBundlePath(rootDir),
+    file_count: entries.length,
+    total_bytes: entries.reduce((sum, entry) => sum + entry.size, 0),
+    sha256: hashStrings(entries.map((entry) => `${entry.path}\t${entry.size}\t${entry.sha256}`)),
+  };
+}
+
 function findExtractedTool(rootDir, toolName) {
   const matches = walkFiles(rootDir).filter((file) => path.basename(file) === toolName);
   if (matches.length === 0) {
@@ -237,6 +336,202 @@ function prependPathEntries(env, entries) {
   env.PATH = [...entries.filter(Boolean), ...existing].join(separator);
 }
 
+function buildBundledPythonEnv(pythonVersion) {
+  const env = {
+    ...process.env,
+    PYTHONPATH: BUNDLE_SRC_DIR,
+    PYTHONNOUSERSITE: '1',
+    PYTHONDONTWRITEBYTECODE: '1',
+  };
+  prependPathEntries(env, [bundledFfmpegDir()]);
+  if (process.platform === 'win32') {
+    env.PYTHONHOME = WINDOWS_PYTHON_DIR;
+    env.PYTHONPATH += ';' + bundledSitePackagesDir(pythonVersion);
+    prependPathEntries(env, [WINDOWS_PYTHON_DIR, path.join(WINDOWS_PYTHON_DIR, 'Scripts')]);
+  } else {
+    const venvHome = bundledPosixPythonHome();
+    env.PYTHONHOME = venvHome;
+    env.PYTHONPATH += ':' + bundledSitePackagesDir(pythonVersion);
+  }
+  return env;
+}
+
+function createBundledPosixVenv(pythonVersion) {
+  // Keep the bundle venv unseeded. The bundle flow installs project deps via
+  // `uv pip --python ...` immediately afterward, and `--seed` has been
+  // failing on shared-volume worktrees while resolving the bundled pip entry
+  // points.
+  run(`uv venv "${VENV_DIR}" --python ${pythonVersion}`);
+  return bundledPythonExecutable(pythonVersion);
+}
+
+function installBundledPosixProject(pythonVersion) {
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    rmrf(VENV_DIR);
+    const pythonExe = createBundledPosixVenv(pythonVersion);
+    try {
+      run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+      return pythonExe;
+    } catch (error) {
+      if (attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(
+        `[bundle] uv pip install failed on attempt ${attempt}/${maxAttempts}; recreating ${VENV_DIR} and retrying once`,
+      );
+    }
+  }
+  throw new Error('Bundled POSIX dependency installation did not complete.');
+}
+
+function resolvedNodeToolVersions() {
+  const packageJson = readJsonFile(ELECTRON_PACKAGE_PATH);
+  const packageLock = readJsonFile(ELECTRON_PACKAGE_LOCK_PATH);
+  const toolNames = ['electron', 'electron-builder', 'playwright'];
+  return Object.fromEntries(toolNames.map((toolName) => {
+    const lockEntry = packageLock.packages?.[`node_modules/${toolName}`] || {};
+    return [toolName, {
+      requested_version: packageJson.devDependencies?.[toolName] || '',
+      resolved_version: lockEntry.version || '',
+      integrity: lockEntry.integrity || '',
+    }];
+  }));
+}
+
+function collectBundledPythonDistributions(pythonBin, pythonVersion) {
+  const code = `
+import hashlib
+import importlib.metadata as md
+import json
+import sys
+
+distributions = []
+for dist in md.distributions():
+    name = dist.metadata.get('Name') or dist.name or ''
+    distributions.append({'name': str(name), 'version': str(dist.version)})
+distributions.sort(key=lambda item: (item['name'].lower(), item['version']))
+fingerprint = hashlib.sha256(
+    '\\n'.join(f"{item['name']}=={item['version']}" for item in distributions).encode('utf-8')
+).hexdigest()
+print(json.dumps({
+    'python_version': sys.version.split()[0],
+    'implementation': sys.implementation.name,
+    'distribution_count': len(distributions),
+    'distribution_fingerprint': fingerprint,
+    'distributions': distributions,
+}, sort_keys=True))
+`.trim();
+  const output = execFileSync(pythonBin, ['-c', code], {
+    cwd: BUNDLE_DIR,
+    encoding: 'utf8',
+    env: buildBundledPythonEnv(pythonVersion),
+  });
+  return JSON.parse(output);
+}
+
+function mediaToolMetadata(toolPath) {
+  const versionLine = execFileSync(toolPath, ['-version'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  }).split(/\r?\n/).find((line) => line.trim()) || '';
+  return {
+    path: relativeBundlePath(toolPath),
+    version_line: versionLine.trim(),
+    size: fs.statSync(toolPath).size,
+    sha256: sha256File(toolPath),
+  };
+}
+
+function buildRuntimeManifest(pythonBin, pythonVersion) {
+  const electronPackage = readJsonFile(ELECTRON_PACKAGE_PATH);
+  const pythonInfo = collectBundledPythonDistributions(pythonBin, pythonVersion);
+  const ffmpegExecutable = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const ffprobeExecutable = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const ffmpegPath = path.join(bundledFfmpegDir(), ffmpegExecutable);
+  const ffprobePath = path.join(bundledFfmpegDir(), ffprobeExecutable);
+  const criticalPaths = [
+    path.join(BUNDLE_DIR, 'pyproject.toml'),
+    pythonBin,
+    ffmpegPath,
+    ffprobePath,
+    path.join(BUNDLE_SRC_DIR, 'splitshot', 'browser', 'server.py'),
+    path.join(BUNDLE_SRC_DIR, 'splitshot', 'browser', 'state.py'),
+    path.join(BUNDLE_SRC_DIR, 'splitshot', 'browser', 'static', 'index.html'),
+    path.join(BUNDLE_SRC_DIR, 'splitshot', 'browser', 'static', 'app.js'),
+    path.join(BUNDLE_SRC_DIR, 'splitshot', 'browser', 'static', 'styles.css'),
+  ].filter((filePath) => fs.existsSync(filePath)).map((filePath) => fileDigestRecord(filePath, relativeBundlePath(filePath)));
+  const sourceInputs = [
+    PYPROJECT_PATH,
+    UV_LOCK_PATH,
+    ELECTRON_PACKAGE_PATH,
+    ELECTRON_PACKAGE_LOCK_PATH,
+  ].filter((filePath) => fs.existsSync(filePath));
+  return {
+    manifest_schema_version: 1,
+    generated_at: new Date().toISOString(),
+    application: {
+      name: electronPackage.name,
+      version: electronPackage.version,
+    },
+    bundle: {
+      platform: process.platform,
+      arch: process.arch,
+      python_executable: relativeBundlePath(pythonBin),
+      site_packages: relativeBundlePath(bundledSitePackagesDir(pythonVersion)),
+      source_root: relativeBundlePath(BUNDLE_SRC_DIR),
+      ffmpeg_root: relativeBundlePath(bundledFfmpegDir()),
+    },
+    source_inputs: Object.fromEntries(sourceInputs.map((filePath) => [
+      relativeRepoPath(filePath),
+      fileDigestRecord(filePath, relativeRepoPath(filePath)),
+    ])),
+    tool_versions: {
+      node: { version: process.version },
+      ...resolvedNodeToolVersions(),
+      python: {
+        version: pythonInfo.python_version,
+        implementation: pythonInfo.implementation,
+        distribution_count: pythonInfo.distribution_count,
+        distribution_fingerprint: pythonInfo.distribution_fingerprint,
+      },
+      ffmpeg: mediaToolMetadata(ffmpegPath),
+      ffprobe: mediaToolMetadata(ffprobePath),
+    },
+    python_distributions: pythonInfo.distributions,
+    bundle_inventory: {
+      critical_paths: criticalPaths,
+      source_tree: directoryFingerprint(BUNDLE_SRC_DIR),
+    },
+  };
+}
+
+function normalizeManifestForComparison(manifest) {
+  return JSON.stringify({
+    ...manifest,
+    generated_at: null,
+  });
+}
+
+function writeRuntimeManifest(pythonBin, pythonVersion) {
+  const manifest = buildRuntimeManifest(pythonBin, pythonVersion);
+  fs.writeFileSync(BUNDLE_MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  console.log(`[bundle] wrote runtime manifest: ${BUNDLE_MANIFEST_PATH}`);
+  return manifest;
+}
+
+function verifyRuntimeManifest(pythonBin, pythonVersion) {
+  if (!fs.existsSync(BUNDLE_MANIFEST_PATH)) {
+    throw new Error(`Bundled runtime manifest not found at ${BUNDLE_MANIFEST_PATH}`);
+  }
+  const manifest = readJsonFile(BUNDLE_MANIFEST_PATH);
+  const expected = buildRuntimeManifest(pythonBin, pythonVersion);
+  if (normalizeManifestForComparison(manifest) !== normalizeManifestForComparison(expected)) {
+    throw new Error('Bundled runtime manifest no longer matches the current bundle contents and pinned source inputs.');
+  }
+  console.log('[bundle] runtime manifest: OK');
+}
+
 function bundleFfmpeg() {
   const platformDir = bundledFfmpegDir();
   fs.mkdirSync(platformDir, { recursive: true });
@@ -299,7 +594,7 @@ function generateIcons() {
   }
 }
 
-function verifyBundle(pythonBin) {
+function verifyBundle(pythonBin, pythonVersion) {
   console.log('[bundle] Verifying bundle...');
   const verifyScript = path.join(ROOT, 'electron', 'verify_bundle.py');
   const verifyCode = `import sys, os
@@ -336,19 +631,13 @@ print("- bundle verification: OK" if ok else "- bundle verification: WARN (non-c
 exit(0 if ok else 1)
 	`;
   fs.writeFileSync(verifyScript, verifyCode, 'utf8');
-  const env = { ...process.env, PYTHONPATH: BUNDLE_SRC_DIR, PYTHONNOUSERSITE: '1' };
-  prependPathEntries(env, [bundledFfmpegDir()]);
-  if (process.platform === 'win32') {
-    env.PYTHONHOME = WINDOWS_PYTHON_DIR;
-    env.PYTHONPATH += ';' + bundledSitePackagesDir(getPythonVersion());
-    prependPathEntries(env, [WINDOWS_PYTHON_DIR, path.join(WINDOWS_PYTHON_DIR, 'Scripts')]);
-  } else {
-    const venvHome = bundledPosixPythonHome();
-    env.PYTHONHOME = venvHome;
-    env.PYTHONPATH += ':' + bundledSitePackagesDir(getPythonVersion());
-  }
+  const env = buildBundledPythonEnv(pythonVersion);
   run(`"${pythonBin}" "${verifyScript}"`, { env, cwd: BUNDLE_DIR });
   fs.rmSync(verifyScript);
+  // Verification imports can recreate transient caches under the bundled source
+  // tree; re-prune before re-hashing the runtime manifest.
+  pruneBundle();
+  verifyRuntimeManifest(pythonBin, pythonVersion);
 }
 
 function buildWindowsPythonRuntime() {
@@ -399,20 +688,14 @@ function main() {
   const pythonVersion = getPythonVersion();
   console.log(`[bundle] Python version: ${pythonVersion}`);
 
-  if (!isCheck && process.platform !== 'win32') {
-    run(`uv venv "${VENV_DIR}" --python ${pythonVersion} --seed`);
-  }
-
   const pythonBin = isCheck ? bundledPythonExecutable(pythonVersion) : null;
 
   if (!isCheck) {
     const pythonExe = process.platform === 'win32'
       ? buildWindowsPythonRuntime()
-      : bundledPythonExecutable(pythonVersion);
+      : installBundledPosixProject(pythonVersion);
 
     if (process.platform !== 'win32') {
-      // Install deps BEFORE symlink resolution (venv python is a working symlink here)
-      run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
       bundlePosixStdlib(pythonVersion);
     }
 
@@ -442,9 +725,10 @@ function main() {
     generateIcons();
 
     pruneBundle();
-    verifyBundle(pythonExe);
+    writeRuntimeManifest(pythonExe, pythonVersion);
+    verifyBundle(pythonExe, pythonVersion);
   } else {
-    verifyBundle(pythonBin);
+    verifyBundle(pythonBin, pythonVersion);
   }
 
   if (!isCheck) {

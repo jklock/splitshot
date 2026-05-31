@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import cgi
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 import errno
+from http.cookies import SimpleCookie
 import json
 import mimetypes
 import re
+from secrets import token_urlsafe
+import shutil
 import socket
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from contextlib import closing
 from http import HTTPStatus
@@ -25,7 +32,9 @@ from uuid import uuid4
 
 from splitshot.browser.activity import ActivityLogger
 from splitshot.browser.practiscore_session import PractiScoreSessionManager
-from splitshot.browser.state import browser_state
+from splitshot.browser.state import browser_state, reset_browser_state_caches
+from splitshot import __version__ as SPLITSHOT_VERSION
+from splitshot.analysis.detection import prewarm_analysis_runtime
 from splitshot.domain.models import (
     BadgeSize,
     MergeLayout,
@@ -49,6 +58,7 @@ from splitshot.persistence.projects import (
     resolve_project_path,
 )
 from splitshot.ui.controller import ProjectController
+from splitshot.ui.services import practiscore_sync as practiscore_sync_service
 
 
 EXPECTED_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
@@ -77,6 +87,9 @@ _BROWSER_CONTENT_SECURITY_POLICY = "; ".join(
         "object-src 'none'",
     ]
 )
+_PRACTISCORE_ELECTRON_HOST_HEADER = "X-SplitShot-PractiScore-Electron-Host"
+_PRACTISCORE_ELECTRON_SESSION_HEADER = "X-SplitShot-PractiScore-Session-Payload"
+_PRACTISCORE_ELECTRON_MATCHES_HEADER = "X-SplitShot-PractiScore-Matches"
 
 
 @dataclass(slots=True)
@@ -590,6 +603,10 @@ def _normalize_merge_source_trim_payload(payload: dict[str, Any]) -> dict[str, A
 
 
 def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: int = 10) -> int:
+    if desired == 0:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock.bind((host, 0))
+            return int(sock.getsockname()[1])
     for attempt in range(max_attempts):
         port = desired + attempt
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
@@ -645,9 +662,441 @@ def _stage_effective_settings(entry, shared_defaults, eligible_keys):
     return effective
 
 
+def _runtime_timestamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
+
+
+def _normalize_scope_id(value: object) -> str | None:
+    if value in {None, ""}:
+        return None
+    return str(value)
+
+
+def _clamp_progress_percent(value: object | None) -> int | None:
+    if value in {None, ""}:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(100, int(round(numeric))))
+
+
+@dataclass(slots=True)
+class BackgroundJobRecord:
+    job_id: str
+    job_type: str
+    scope_type: str
+    scope_id: str | None
+    status: str
+    submitted_at: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    progress_percent: int | None = None
+    message: str = ""
+    detail: dict[str, Any] = field(default_factory=dict)
+    result: dict[str, Any] | None = None
+    error: dict[str, Any] | None = None
+    cancel_supported: bool = False
+    cancel_requested: bool = False
+    created_from_route: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "job_type": self.job_type,
+            "scope_type": self.scope_type,
+            "scope_id": self.scope_id,
+            "status": self.status,
+            "submitted_at": self.submitted_at,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "progress_percent": self.progress_percent,
+            "message": self.message,
+            "detail": dict(self.detail),
+            "result": self.result,
+            "error": self.error,
+            "cancel_supported": self.cancel_supported,
+            "created_from_route": self.created_from_route,
+        }
+
+
+class JobCanceledError(RuntimeError):
+    """Raised when a cancelable background job is canceled."""
+
+
+class BackgroundJobHandle:
+    def __init__(self, registry: "BackgroundJobRegistry", job_id: str) -> None:
+        self._registry = registry
+        self.job_id = job_id
+
+    def snapshot(self) -> dict[str, Any] | None:
+        return self._registry.get_job(self.job_id)
+
+    def started(self, message: str, *, detail: dict[str, Any] | None = None) -> None:
+        self._registry.mark_started(self.job_id, message=message, detail=detail)
+
+    def progress(
+        self,
+        progress_percent: object | None,
+        *,
+        message: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self._registry.mark_progress(
+            self.job_id,
+            progress_percent=progress_percent,
+            message=message,
+            detail=detail,
+        )
+
+    def log(self, line: str, *, detail: dict[str, Any] | None = None) -> None:
+        self._registry.append_log(self.job_id, line=line, detail=detail)
+
+    def completed(
+        self,
+        *,
+        result: dict[str, Any] | None = None,
+        message: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self._registry.mark_completed(
+            self.job_id,
+            result=result,
+            message=message,
+            detail=detail,
+        )
+
+    def failed(
+        self,
+        message: str,
+        *,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        self._registry.mark_failed(self.job_id, message=message, detail=detail)
+
+    def ensure_not_canceled(self) -> None:
+        self._registry.ensure_not_canceled(self.job_id)
+
+
+class BackgroundJobRegistry:
+    def __init__(
+        self,
+        activity: ActivityLogger,
+        *,
+        on_job_failed: Callable[[str, dict[str, Any]], None] | None = None,
+    ) -> None:
+        self._activity = activity
+        self._on_job_failed = on_job_failed
+        self._lock = threading.RLock()
+        self._jobs: dict[str, BackgroundJobRecord] = {}
+        self._threads: dict[str, threading.Thread] = {}
+
+    def create_job(
+        self,
+        *,
+        job_type: str,
+        scope_type: str,
+        scope_id: str | None,
+        message: str,
+        detail: dict[str, Any] | None = None,
+        cancel_supported: bool = False,
+        created_from_route: str | None = None,
+    ) -> BackgroundJobHandle:
+        with self._lock:
+            record = BackgroundJobRecord(
+                job_id=uuid4().hex,
+                job_type=str(job_type),
+                scope_type=str(scope_type),
+                scope_id=_normalize_scope_id(scope_id),
+                status="queued",
+                submitted_at=_runtime_timestamp(),
+                progress_percent=0,
+                message=str(message),
+                detail=dict(detail or {}),
+                cancel_supported=bool(cancel_supported),
+                created_from_route=created_from_route,
+            )
+            self._jobs[record.job_id] = record
+            self._emit_locked(record, "job.queued", payload=record.detail)
+            return BackgroundJobHandle(self, record.job_id)
+
+    def run_inline(
+        self,
+        *,
+        job_type: str,
+        scope_type: str,
+        scope_id: str | None,
+        queued_message: str,
+        started_message: str,
+        completed_message: str,
+        runner: Callable[[BackgroundJobHandle], dict[str, Any] | None],
+        detail: dict[str, Any] | None = None,
+        created_from_route: str | None = None,
+    ) -> dict[str, Any] | None:
+        handle = self.create_job(
+            job_type=job_type,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            message=queued_message,
+            detail=detail,
+            created_from_route=created_from_route,
+        )
+        handle.started(started_message, detail=detail)
+        try:
+            result = runner(handle)
+        except JobCanceledError:
+            self.mark_canceled(handle.job_id, message="Job canceled.")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self.mark_failed(
+                handle.job_id,
+                message=str(exc),
+                detail={"exception_type": exc.__class__.__name__},
+            )
+            raise
+        handle.completed(result=result, message=completed_message, detail=detail)
+        return result
+
+    def submit_background(
+        self,
+        *,
+        job_type: str,
+        scope_type: str,
+        scope_id: str | None,
+        queued_message: str,
+        started_message: str,
+        completed_message: str,
+        runner: Callable[[BackgroundJobHandle], dict[str, Any] | None],
+        detail: dict[str, Any] | None = None,
+        cancel_supported: bool = False,
+        created_from_route: str | None = None,
+    ) -> dict[str, Any]:
+        handle = self.create_job(
+            job_type=job_type,
+            scope_type=scope_type,
+            scope_id=scope_id,
+            message=queued_message,
+            detail=detail,
+            cancel_supported=cancel_supported,
+            created_from_route=created_from_route,
+        )
+
+        def _run() -> None:
+            handle.started(started_message, detail=detail)
+            try:
+                result = runner(handle)
+            except JobCanceledError:
+                self.mark_canceled(handle.job_id, message="Job canceled.")
+                return
+            except Exception as exc:  # noqa: BLE001
+                self.mark_failed(
+                    handle.job_id,
+                    message=str(exc),
+                    detail={"exception_type": exc.__class__.__name__},
+                )
+                return
+            handle.completed(result=result, message=completed_message, detail=detail)
+
+        thread = threading.Thread(target=_run, daemon=True)
+        with self._lock:
+            self._threads[handle.job_id] = thread
+        thread.start()
+        snapshot = handle.snapshot()
+        if snapshot is None:
+            raise RuntimeError("Background job snapshot is unavailable.")
+        return snapshot
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            record = self._jobs.get(str(job_id))
+            return None if record is None else record.to_dict()
+
+    def list_jobs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [record.to_dict() for record in self._jobs.values()]
+
+    def request_cancel(self, job_id: str) -> tuple[dict[str, Any] | None, bool]:
+        with self._lock:
+            record = self._jobs.get(str(job_id))
+            if record is None:
+                return None, False
+            if not record.cancel_supported:
+                return record.to_dict(), False
+            record.cancel_requested = True
+            if record.status == "queued":
+                record.status = "canceled"
+                record.finished_at = _runtime_timestamp()
+                record.message = "Job canceled before start."
+                self._emit_locked(record, "job.canceled", payload={"reason": "cancel_requested"})
+            return record.to_dict(), True
+
+    def ensure_not_canceled(self, job_id: str) -> None:
+        with self._lock:
+            record = self._jobs.get(str(job_id))
+            if record is not None and record.cancel_requested:
+                raise JobCanceledError("Job canceled.")
+
+    def mark_started(
+        self,
+        job_id: str,
+        *,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            if record.status == "canceled":
+                raise JobCanceledError("Job canceled.")
+            record.status = "running"
+            record.started_at = _runtime_timestamp()
+            record.message = str(message)
+            if detail is not None:
+                record.detail = dict(detail)
+            self._emit_locked(record, "job.started", payload=record.detail)
+
+    def mark_progress(
+        self,
+        job_id: str,
+        *,
+        progress_percent: object | None,
+        message: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            record.status = "running"
+            normalized_progress = _clamp_progress_percent(progress_percent)
+            if normalized_progress is not None:
+                record.progress_percent = normalized_progress
+            if message is not None:
+                record.message = str(message)
+            payload = dict(detail or record.detail)
+            self._emit_locked(record, "job.progress", payload=payload)
+
+    def append_log(
+        self,
+        job_id: str,
+        *,
+        line: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            payload = dict(detail or {})
+            payload["line"] = str(line)
+            self._emit_locked(record, "job.log", payload=payload, message=str(line))
+
+    def mark_completed(
+        self,
+        job_id: str,
+        *,
+        result: dict[str, Any] | None = None,
+        message: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            record.status = "completed"
+            record.finished_at = _runtime_timestamp()
+            record.progress_percent = 100
+            if message is not None:
+                record.message = str(message)
+            record.result = result
+            payload = dict(detail or record.detail)
+            if result is not None:
+                payload.setdefault("result", result)
+            self._emit_locked(record, "job.completed", payload=payload)
+
+    def mark_failed(
+        self,
+        job_id: str,
+        *,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            record.status = "failed"
+            record.finished_at = _runtime_timestamp()
+            record.message = str(message)
+            record.error = {
+                "message": str(message),
+                "detail": dict(detail or {}),
+            }
+            payload = dict(detail or {})
+            payload.setdefault("error", record.error)
+            self._emit_locked(record, "job.failed", payload=payload)
+            if callable(self._on_job_failed):
+                self._on_job_failed(record.message, payload)
+
+    def mark_canceled(
+        self,
+        job_id: str,
+        *,
+        message: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            record = self._jobs[str(job_id)]
+            record.status = "canceled"
+            record.finished_at = _runtime_timestamp()
+            record.message = str(message)
+            self._emit_locked(record, "job.canceled", payload=dict(detail or {}))
+
+    def summary(self) -> dict[str, Any]:
+        with self._lock:
+            counts = {
+                "queued": 0,
+                "running": 0,
+                "completed": 0,
+                "failed": 0,
+                "canceled": 0,
+            }
+            active_job_ids: list[str] = []
+            for record in self._jobs.values():
+                counts.setdefault(record.status, 0)
+                counts[record.status] += 1
+                if record.status in {"queued", "running"}:
+                    active_job_ids.append(record.job_id)
+            return {
+                "total": len(self._jobs),
+                "by_status": counts,
+                "active_job_ids": active_job_ids,
+            }
+
+    def _emit_locked(
+        self,
+        record: BackgroundJobRecord,
+        event_type: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        message: str | None = None,
+    ) -> None:
+        event_payload = dict(payload or {})
+        self._activity.log(
+            event_type,
+            event_type=event_type,
+            event_id=uuid4().hex,
+            job_id=record.job_id,
+            job_type=record.job_type,
+            scope_type=record.scope_type,
+            scope_id=record.scope_id,
+            status=record.status,
+            message=str(message if message is not None else record.message),
+            progress_percent=record.progress_percent,
+            payload=event_payload,
+        )
+
+
 
 
 class BrowserControlServer:
+    _thread_fairness_lock = threading.Lock()
+    _thread_fairness_users = 0
+    _thread_fairness_previous_interval: float | None = None
+    _thread_fairness_interval = 0.001
+
     def __init__(
         self,
         controller: ProjectController | None = None,
@@ -657,27 +1106,77 @@ class BrowserControlServer:
         log_level: str = "off",
         path_chooser: PathChooser | None = None,
         browser_media_proxy_enabled: bool = True,
+        require_session_claim: bool = False,
     ) -> None:
         self.controller = controller or ProjectController()
+        reset_browser_state_caches()
         self.host = host
         self.port = port
         self.activity = ActivityLogger(log_dir, console_level=log_level)
         self.path_chooser = path_chooser or choose_local_path
         self.browser_media_proxy_enabled = browser_media_proxy_enabled
+        self.require_session_claim = require_session_claim
         self._httpd: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
-        self._controller_lock = threading.Lock()
+        self._controller_lock = threading.RLock()
+        self._shutdown_event = threading.Event()
         self._session_dir = TemporaryDirectory(prefix="splitshot-browser-")
         self._session_path = Path(self._session_dir.name)
+        self._app_data_root = self._session_path / "app-data"
+        self._cache_root = self._session_path / "cache"
+        self._app_data_root.mkdir(parents=True, exist_ok=True)
+        self._cache_root.mkdir(parents=True, exist_ok=True)
         self._display_names: dict[str, str] = {}
         self._browser_media_cache: dict[str, BrowserMediaCacheEntry] = {}
         self._browser_media_lock = threading.Lock()
         self._media_url_token = uuid4().hex
+        self._startup_protocol_version = "1"
+        self._session_cookie_name = "splitshot_session"
+        self._session_id = uuid4().hex
+        self._bootstrap_token = token_urlsafe(32)
+        self._bootstrap_token_claimed = False
+        self._session_cookie_value: str | None = None
+        self._started_at_monotonic = time.monotonic()
+        self._runtime_state = "starting"
+        self._runtime_detail = "Binding local backend."
+        self._fatal_error: str | None = None
+        self._last_error: dict[str, Any] | None = None
+        self._jobs = BackgroundJobRegistry(self.activity, on_job_failed=self._record_runtime_error)
         self.practiscore_session = PractiScoreSessionManager()
         prepare_export_runtime()
+        try:
+            prewarm_analysis_runtime()
+        except Exception as exc:  # noqa: BLE001
+            self.activity.log("analysis.prewarm.error", error=str(exc))
         self.activity.log(
-            "server.initialized", host=host, port=port, log_path=str(self.activity.path)
+            "server.initialized",
+            host=host,
+            port=port,
+            log_path=str(self.activity.path),
+            require_session_claim=require_session_claim,
         )
+
+    @classmethod
+    def _acquire_thread_fairness_override(cls) -> None:
+        with cls._thread_fairness_lock:
+            if cls._thread_fairness_users == 0:
+                cls._thread_fairness_previous_interval = sys.getswitchinterval()
+                if cls._thread_fairness_previous_interval > cls._thread_fairness_interval:
+                    sys.setswitchinterval(cls._thread_fairness_interval)
+            cls._thread_fairness_users += 1
+
+    @classmethod
+    def _release_thread_fairness_override(cls) -> None:
+        with cls._thread_fairness_lock:
+            if cls._thread_fairness_users <= 0:
+                return
+            cls._thread_fairness_users -= 1
+            if cls._thread_fairness_users != 0:
+                return
+            previous_interval = cls._thread_fairness_previous_interval
+            cls._thread_fairness_previous_interval = None
+            if previous_interval is not None:
+                sys.setswitchinterval(previous_interval)
 
     @property
     def url(self) -> str:
@@ -703,11 +1202,18 @@ class BrowserControlServer:
         try:
             self._httpd = self._build_httpd()
         except OSError as exc:
+            self._set_runtime_state(
+                "fatal",
+                detail=f"Failed to bind local backend on {self.host}:{self.port}.",
+                fatal_error=str(exc),
+            )
             self.activity.log("server.bind.error", host=self.host, port=self.port, error=str(exc))
             print(f"SplitShot could not bind to {self.host}:{self.port}: {exc}")
             print("Use --port to select a different port, or stop the process using this port.")
             raise
 
+        self._acquire_thread_fairness_override()
+        self._set_runtime_state("ready", detail=f"Listening on {self.url}")
         self.activity.log("server.serve_forever", url=self.url, open_browser=open_browser)
         try:
             if open_browser:
@@ -725,27 +1231,39 @@ class BrowserControlServer:
                 except KeyboardInterrupt:
                     print("\nSplitShot browser control stopped.")
         finally:
+            self._set_runtime_state("shutting_down", detail="Shutting down local backend.")
+            self._shutdown_event.set()
             self.activity.log("server.stopping", url=self.url)
             self.practiscore_session.shutdown()
             self._httpd.server_close()
             self._session_dir.cleanup()
+            self._release_thread_fairness_override()
 
     def start_background(self, open_browser: bool = False) -> None:
         try:
             self._httpd = self._build_httpd()
         except OSError as exc:
+            self._set_runtime_state(
+                "fatal",
+                detail=f"Failed to bind local backend on {self.host}:{self.port}.",
+                fatal_error=str(exc),
+            )
             self.activity.log("server.bind.error", host=self.host, port=self.port, error=str(exc))
             print(f"SplitShot could not bind to {self.host}:{self.port}: {exc}")
             print("Use --port to select a different port, or stop the process using this port.")
             raise
 
+        self._acquire_thread_fairness_override()
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
+        self._set_runtime_state("ready", detail=f"Listening on {self.url}")
         self.activity.log("server.start_background", url=self.url, open_browser=open_browser)
         if open_browser:
             self._attempt_open_browser()
 
     def shutdown(self) -> None:
+        self._set_runtime_state("shutting_down", detail="Shutting down local backend.")
+        self._shutdown_event.set()
         self.activity.log("server.shutdown", url=self.url)
         self.practiscore_session.shutdown()
         if self._httpd is not None:
@@ -754,9 +1272,192 @@ class BrowserControlServer:
         if self._thread is not None:
             self._thread.join(timeout=2)
         self._session_dir.cleanup()
+        self._release_thread_fairness_override()
 
     def _build_httpd(self) -> ThreadingHTTPServer:
         return QuietThreadingHTTPServer((self.host, self.port), self._handler())
+
+    def ready_line_payload(self) -> dict[str, Any]:
+        payload = self._session_metadata_payload(include_secret=True)
+        payload["startup_status_path"] = "/api/startup/status"
+        payload["claim_path"] = "/api/startup/claim"
+        return payload
+
+    def session_metadata(self) -> dict[str, Any] | None:
+        if self.require_session_claim and self._session_cookie_value is None:
+            return None
+        payload = self._session_metadata_payload(include_secret=False)
+        payload["startup_status_path"] = "/api/startup/status"
+        payload["claim_path"] = "/api/startup/claim"
+        return payload
+
+    def startup_status_payload(self) -> dict[str, Any]:
+        return {
+            "state": self._runtime_state,
+            "backend_version": SPLITSHOT_VERSION,
+            "project_schema_version": str(self.controller.project.schema_version),
+            "fatal_error": self._fatal_error,
+            "detail": {
+                "base_url": self.url.rstrip("/"),
+                "require_session_claim": self.require_session_claim,
+                "log_root": str(self.activity.path.parent),
+            },
+            "timestamp": _runtime_timestamp(),
+        }
+
+    def health_payload(self) -> dict[str, Any]:
+        state = self._runtime_state
+        if state == "ready" and self._last_error is not None:
+            state = "degraded"
+        return {
+            "state": state,
+            "session_id": self._session_id,
+            "uptime_seconds": max(0.0, round(time.monotonic() - self._started_at_monotonic, 3)),
+            "job_summary": self._jobs.summary(),
+            "last_error": self._last_error,
+            "timestamp": _runtime_timestamp(),
+        }
+
+    def structured_events_after(self, after_seq: int = 0, *, limit: int = 1000) -> list[dict[str, Any]]:
+        records = self.activity.records_after(
+            after_seq,
+            limit=limit,
+            predicate=lambda record: bool(record.get("event_type")),
+        )
+        return [self._structured_event_payload(record) for record in records]
+
+    def wait_for_structured_events(self, after_seq: int = 0, timeout: float | None = None) -> bool:
+        return self.activity.wait_for_records(after_seq, timeout=timeout)
+
+    def claim_session(self, bootstrap_token: str) -> tuple[dict[str, Any], str]:
+        expected = str(self._bootstrap_token)
+        if str(bootstrap_token or "") != expected:
+            raise PermissionError("The startup bootstrap token is invalid.")
+        if self._bootstrap_token_claimed:
+            raise PermissionError("The startup bootstrap token has already been used.")
+        self._bootstrap_token_claimed = True
+        self._session_cookie_value = token_urlsafe(32)
+        return (
+            self._session_metadata_payload(include_secret=False),
+            self._session_cookie_header(self._session_cookie_value),
+        )
+
+    def request_is_authorized(self, headers: dict[str, str] | Any) -> bool:
+        if not self.require_session_claim:
+            return True
+        if self._session_cookie_value is None:
+            return False
+        raw_cookie = str(headers.get("Cookie", "") or "")
+        if not raw_cookie:
+            return False
+        cookies = SimpleCookie()
+        try:
+            cookies.load(raw_cookie)
+        except Exception:  # noqa: BLE001
+            return False
+        morsel = cookies.get(self._session_cookie_name)
+        if morsel is None:
+            return False
+        return morsel.value == self._session_cookie_value
+
+    def route_requires_claim(self, path: str) -> bool:
+        normalized_path = str(path or "")
+        if not self.require_session_claim:
+            return False
+        if normalized_path in {"/", "/index.html", "/api/startup/status", "/api/startup/claim"}:
+            return False
+        if normalized_path.startswith("/static/"):
+            return False
+        return normalized_path.startswith("/api/") or normalized_path.startswith("/media/")
+
+    def _session_metadata_payload(self, *, include_secret: bool) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "protocol_version": self._startup_protocol_version,
+            "session_id": self._session_id,
+            "host": str(self.host),
+            "port": int(self._httpd.server_address[1] if self._httpd is not None else self.port),
+            "base_url": self.url.rstrip("/"),
+            "health_path": "/api/health",
+            "events_path": "/api/events",
+            "backend_version": SPLITSHOT_VERSION,
+            "project_schema_version": str(self.controller.project.schema_version),
+            "app_data_root": str(self._app_data_root),
+            "cache_root": str(self._cache_root),
+            "log_root": str(self.activity.path.parent),
+        }
+        launch_intent = self._launch_intent_payload()
+        if launch_intent is not None:
+            payload["launch_intent"] = launch_intent
+        if include_secret:
+            payload["bootstrap_token"] = self._bootstrap_token
+        return payload
+
+    def _launch_intent_payload(self) -> dict[str, Any] | None:
+        if self.controller.project_path is None:
+            return None
+        return {
+            "kind": "open-project",
+            "project_path": str(self.controller.project_path),
+            "source": "startup-project",
+        }
+
+    def _session_cookie_header(self, cookie_value: str) -> str:
+        return (
+            f"{self._session_cookie_name}={cookie_value}; HttpOnly; Path=/; SameSite=Strict"
+        )
+
+    def _structured_event_payload(self, record: dict[str, object]) -> dict[str, Any]:
+        detail_payload = record.get("payload")
+        detail = dict(detail_payload) if isinstance(detail_payload, dict) else {}
+        return {
+            "event_id": str(record.get("event_id") or record.get("seq") or uuid4().hex),
+            "seq": int(record.get("seq", 0) or 0),
+            "event_type": str(record.get("event_type") or record.get("event") or ""),
+            "job_id": _normalize_scope_id(record.get("job_id")),
+            "timestamp": str(record.get("ts") or _runtime_timestamp()),
+            "scope_type": _normalize_scope_id(record.get("scope_type")),
+            "scope_id": _normalize_scope_id(record.get("scope_id")),
+            "status": _normalize_scope_id(record.get("status")),
+            "message": _normalize_scope_id(record.get("message")),
+            "progress_percent": _clamp_progress_percent(record.get("progress_percent")),
+            "detail": detail,
+            "payload": detail,
+        }
+
+    def _set_runtime_state(
+        self,
+        state: str,
+        *,
+        detail: str,
+        fatal_error: str | None = None,
+    ) -> None:
+        self._runtime_state = str(state)
+        self._runtime_detail = str(detail)
+        self._fatal_error = fatal_error
+        payload = {
+            "state": self._runtime_state,
+            "detail": self._runtime_detail,
+            "fatal_error": self._fatal_error,
+        }
+        self.activity.log(
+            "runtime.health",
+            event_type="runtime.health",
+            event_id=uuid4().hex,
+            scope_type="runtime",
+            scope_id=self._session_id,
+            status=self._runtime_state,
+            message=self._runtime_detail,
+            payload=payload,
+        )
+
+    def _record_runtime_error(self, message: str, detail: dict[str, Any]) -> None:
+        self._last_error = {
+            "message": str(message),
+            "detail": dict(detail),
+            "timestamp": _runtime_timestamp(),
+        }
+        if self._runtime_state == "ready":
+            self._set_runtime_state("degraded", detail=str(message))
 
     def _bump_media_url_token(self) -> None:
         self._media_url_token = uuid4().hex
@@ -875,6 +1576,35 @@ class BrowserControlServer:
                     return
                 if request_path.startswith("/static/"):
                     self._send_static(request_path.removeprefix("/static/"))
+                    return
+                if request_path == "/api/startup/status":
+                    self._send_json(server.startup_status_payload())
+                    return
+                if request_path == "/api/health":
+                    if not self._ensure_authorized(request_path):
+                        return
+                    self._send_json(server.health_payload())
+                    return
+                if request_path == "/api/jobs":
+                    if not self._ensure_authorized(request_path):
+                        return
+                    self._send_jobs_list()
+                    return
+                if request_path.startswith("/api/jobs/"):
+                    if not self._ensure_authorized(request_path):
+                        return
+                    job_id = self._job_id_from_path()
+                    if job_id is None:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._send_job_detail(job_id)
+                    return
+                if request_path == "/api/events":
+                    if not self._ensure_authorized(request_path):
+                        return
+                    self._stream_events(parsed_url.query)
+                    return
+                if not self._ensure_authorized(request_path):
                     return
                 if request_path == "/api/activity/poll":
                     self._poll_activity(parsed_url.query)
@@ -1069,6 +1799,25 @@ class BrowserControlServer:
 
             def do_POST(self) -> None:  # noqa: N802
                 activity.log("http.post", path=self.path, client=self.client_address[0])
+                if self.path == "/api/startup/claim":
+                    self._claim_backend_session()
+                    return
+                if self.path == "/api/jobs":
+                    if not self._ensure_authorized(self.path):
+                        return
+                    self._submit_job()
+                    return
+                if self.path.startswith("/api/jobs/") and self.path.endswith("/cancel"):
+                    if not self._ensure_authorized(self.path):
+                        return
+                    job_id = self._job_id_from_path(suffix="/cancel")
+                    if job_id is None:
+                        self.send_error(HTTPStatus.NOT_FOUND)
+                        return
+                    self._cancel_job(job_id)
+                    return
+                if not self._ensure_authorized(self.path):
+                    return
                 if self.path == "/api/activity":
                     self._record_browser_activity()
                     return
@@ -1135,6 +1884,14 @@ class BrowserControlServer:
                 body = self.rfile.read(length).decode("utf-8")
                 return json.loads(body)
 
+            def _read_json_header(self, header_name: str) -> object | None:
+                encoded_value = str(self.headers.get(header_name, "") or "").strip()
+                if not encoded_value:
+                    return None
+                padded_value = encoded_value + "=" * (-len(encoded_value) % 4)
+                decoded = base64.urlsafe_b64decode(padded_value.encode("ascii"))
+                return json.loads(decoded.decode("utf-8"))
+
             def _send_security_headers(self, *, include_csp: bool = False) -> None:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
@@ -1148,7 +1905,10 @@ class BrowserControlServer:
                 self.send_header("Expires", "0")
 
             def _send_json(
-                self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK
+                self,
+                payload: dict[str, Any],
+                status: HTTPStatus = HTTPStatus.OK,
+                extra_headers: dict[str, str] | None = None,
             ) -> None:
                 data = json.dumps(payload).encode("utf-8")
                 self.send_response(status)
@@ -1156,6 +1916,8 @@ class BrowserControlServer:
                 self.send_header("Content-Length", str(len(data)))
                 self._send_security_headers(include_csp=True)
                 self._send_no_cache_headers()
+                for header_name, header_value in (extra_headers or {}).items():
+                    self.send_header(header_name, header_value)
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -1189,6 +1951,335 @@ class BrowserControlServer:
                         "required_hook": hook_name,
                     },
                 )
+
+            def _ensure_authorized(self, route: str) -> bool:
+                if not server.route_requires_claim(route):
+                    return True
+                if server.request_is_authorized(self.headers):
+                    return True
+                self._send_structured_error(
+                    code="backend_session_required",
+                    message="Claim the backend session before calling this route.",
+                    status=HTTPStatus.UNAUTHORIZED,
+                    details={"route": route},
+                )
+                return False
+
+            def _job_id_from_path(self, *, suffix: str = "") -> str | None:
+                route = str(self.path or "")
+                prefix = "/api/jobs/"
+                if not route.startswith(prefix):
+                    return None
+                tail = route[len(prefix) :]
+                if suffix:
+                    if not tail.endswith(suffix):
+                        return None
+                    tail = tail[: -len(suffix)]
+                job_id = tail.strip("/")
+                return job_id or None
+
+            def _claim_backend_session(self) -> None:
+                try:
+                    payload, cookie_header = server.claim_session(
+                        str(self.headers.get("X-SplitShot-Bootstrap-Token", "") or "")
+                    )
+                    activity.log(
+                        "api.startup.claim",
+                        session_id=payload.get("session_id"),
+                        require_session_claim=server.require_session_claim,
+                    )
+                    self._send_json(
+                        payload,
+                        extra_headers={"Set-Cookie": cookie_header},
+                    )
+                except PermissionError as exc:
+                    activity.log("api.startup.claim.error", error=str(exc))
+                    self._send_structured_error(
+                        code="backend_startup_claim_failed",
+                        message=str(exc),
+                        status=HTTPStatus.UNAUTHORIZED,
+                        details={"route": "/api/startup/claim"},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.startup.claim.error", error=str(exc))
+                    self._send_structured_error(
+                        code="backend_startup_claim_failed",
+                        message="Unable to establish the local backend session.",
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                        details={"route": "/api/startup/claim", "reason": str(exc)},
+                    )
+
+            def _send_jobs_list(self) -> None:
+                self._send_json({"jobs": server._jobs.list_jobs()})
+
+            def _send_job_detail(self, job_id: str) -> None:
+                payload = server._jobs.get_job(job_id)
+                if payload is None:
+                    self._send_structured_error(
+                        code="job_not_found",
+                        message=f"Unknown job id: {job_id}",
+                        status=HTTPStatus.NOT_FOUND,
+                        details={"job_id": job_id},
+                    )
+                    return
+                self._send_json({"job": payload})
+
+            def _cancel_job(self, job_id: str) -> None:
+                payload, supported = server._jobs.request_cancel(job_id)
+                if payload is None:
+                    self._send_structured_error(
+                        code="job_not_found",
+                        message=f"Unknown job id: {job_id}",
+                        status=HTTPStatus.NOT_FOUND,
+                        details={"job_id": job_id},
+                    )
+                    return
+                if not supported:
+                    self._send_structured_error(
+                        code="job_cancel_unsupported",
+                        message="This job does not support cancellation.",
+                        status=HTTPStatus.CONFLICT,
+                        details={"job": payload},
+                    )
+                    return
+                self._send_json({"job": payload})
+
+            def _perform_analysis_job(self, body: dict[str, Any]) -> dict[str, Any]:
+                action = str(body.get("action") or "set_threshold").strip().lower()
+                with controller_lock:
+                    if action != "set_threshold":
+                        raise ValueError(f"Unsupported analysis job action: {action}")
+                    threshold = float(body["threshold"])
+                    controller.set_detection_threshold(threshold)
+                    return {
+                        "action": action,
+                        "threshold": controller.project.analysis.detection_threshold,
+                        "status": controller.status_message,
+                    }
+
+            def _perform_export(self, payload: dict[str, Any], job_handle: BackgroundJobHandle) -> dict[str, Any]:
+                with controller_lock:
+                    scoring_payload = payload.get("scoring")
+                    if isinstance(scoring_payload, dict):
+                        if "ruleset" in scoring_payload:
+                            self._set_scoring_profile(scoring_payload)
+                        self._set_scoring(scoring_payload)
+                    overlay_payload = payload.get("overlay")
+                    if isinstance(overlay_payload, dict):
+                        self._set_overlay(overlay_payload)
+                    popups_payload = payload.get("popups")
+                    popup_template_payload = payload.get("popup_template")
+                    if isinstance(popups_payload, list) or isinstance(popup_template_payload, dict):
+                        next_popups_payload: dict[str, Any] = {}
+                        if isinstance(popups_payload, list):
+                            next_popups_payload["popups"] = popups_payload
+                        if isinstance(popup_template_payload, dict):
+                            next_popups_payload["popup_template"] = popup_template_payload
+                        self._set_popups(next_popups_payload)
+                    merge_payload = payload.get("merge")
+                    if isinstance(merge_payload, dict):
+                        self._set_merge(merge_payload)
+                        for source_payload in merge_payload.get("sources", []):
+                            if isinstance(source_payload, dict):
+                                self._set_merge_source(source_payload)
+                    analysis_payload = payload.get("analysis")
+                    if isinstance(analysis_payload, dict):
+                        shots_payload = analysis_payload.get("shots")
+                        if isinstance(shots_payload, list):
+                            controller.project.analysis.shots = [
+                                _shot_from_dict(item)
+                                for item in shots_payload
+                                if isinstance(item, dict)
+                            ]
+                        events_payload = analysis_payload.get("events")
+                        if isinstance(events_payload, list):
+                            controller.project.analysis.events = [
+                                _timing_event_from_dict(item)
+                                for item in events_payload
+                                if isinstance(item, dict)
+                            ]
+                        beep_ms = analysis_payload.get("beep_time_ms_primary")
+                        if beep_ms is not None:
+                            controller.project.analysis.beep_time_ms_primary = int(beep_ms)
+                    _sync_export_payload(controller, payload)
+                    output_path = Path(str(payload["path"]))
+                    activity.log("api.export.start", path=str(output_path))
+                    exported_path = export_project(
+                        controller.project,
+                        output_path,
+                        progress_callback=lambda value: (
+                            activity.log("api.export.progress", progress=value),
+                            job_handle.progress(
+                                max(0.0, min(100.0, float(value) * 100.0)),
+                                message=f"Export progress {int(round(float(value) * 100.0))}%.",
+                                detail={"legacy_event": "api.export.progress", "progress": value},
+                            ),
+                        ),
+                        log_callback=lambda line: (
+                            activity.log("api.export.log", line=line),
+                            job_handle.log(
+                                str(line),
+                                detail={"legacy_event": "api.export.log"},
+                            ),
+                        ),
+                    )
+                    if not exported_path.exists() or exported_path.stat().st_size <= 0:
+                        raise RuntimeError("Export did not produce an output file.")
+                    controller.project.export.output_path = str(exported_path)
+                    activity.log(
+                        "api.export.complete",
+                        path=str(exported_path),
+                        bytes=exported_path.stat().st_size if exported_path.exists() else 0,
+                    )
+                    controller.project.touch()
+                    controller.status_message = f"Exported video to {exported_path}."
+                    return {
+                        "output_path": str(exported_path),
+                        "bytes": exported_path.stat().st_size,
+                        "status": controller.status_message,
+                        "legacy_event": "api.export.complete",
+                    }
+
+            def _submit_job(self) -> None:
+                try:
+                    request_payload = self._read_json()
+                    job_type = str(request_payload.get("job_type") or "").strip().lower()
+                    body = request_payload.get("payload")
+                    if not isinstance(body, dict):
+                        body = {}
+                    scope_type = str(request_payload.get("scope_type") or "project")
+                    scope_id = _normalize_scope_id(
+                        request_payload.get("scope_id") or getattr(controller.project, "id", None)
+                    )
+                    detail = {
+                        "route": "/api/jobs",
+                        "job_type": job_type,
+                    }
+                    if job_type == "export":
+                        output_path = Path(str(body["path"]))
+
+                        def _run_export_job(handle: BackgroundJobHandle) -> dict[str, Any]:
+                            result = self._perform_export(body, handle)
+                            with controller_lock:
+                                controller.autosave_project_if_needed()
+                            return result
+
+                        job_payload = server._jobs.submit_background(
+                            job_type="export",
+                            scope_type=scope_type,
+                            scope_id=scope_id,
+                            queued_message=f"Queued export to {output_path}.",
+                            started_message=f"Exporting video to {output_path}.",
+                            completed_message=f"Exported video to {output_path}.",
+                            runner=_run_export_job,
+                            detail=detail,
+                            created_from_route="/api/jobs",
+                        )
+                    elif job_type == "analysis":
+                        action = str(body.get("action") or "set_threshold").strip().lower()
+
+                        def _run_analysis_job(handle: BackgroundJobHandle) -> dict[str, Any]:
+                            handle.progress(5, message="Preparing analysis job.", detail={"action": action})
+                            result = self._perform_analysis_job(body)
+                            handle.progress(100, message=result.get("status") or "Analysis complete.", detail={"action": action})
+                            with controller_lock:
+                                controller.autosave_project_if_needed()
+                            return result
+
+                        job_payload = server._jobs.submit_background(
+                            job_type="analysis",
+                            scope_type=scope_type,
+                            scope_id=scope_id,
+                            queued_message=f"Queued analysis action {action}.",
+                            started_message=f"Running analysis action {action}.",
+                            completed_message=f"Completed analysis action {action}.",
+                            runner=_run_analysis_job,
+                            detail={**detail, "action": action},
+                            created_from_route="/api/jobs",
+                        )
+                    else:
+                        raise ValueError(f"Unsupported job type: {job_type}")
+                    self._send_json({"job": job_payload}, status=HTTPStatus.ACCEPTED)
+                except Exception as exc:  # noqa: BLE001
+                    activity.log("api.jobs.error", error=str(exc))
+                    self._send_structured_error(
+                        code="job_submission_failed",
+                        message=str(exc),
+                        status=HTTPStatus.BAD_REQUEST,
+                        details={"route": "/api/jobs"},
+                    )
+
+            def _stream_events(self, query_string: str) -> None:
+                params = parse_qs(query_string or "", keep_blank_values=False)
+                raw_after = params.get("after", ["0"])[0]
+                raw_limit = params.get("limit", ["400"])[0]
+                raw_once = params.get("once", ["0"])[0]
+                raw_timeout = params.get("timeout", ["15"])[0]
+                try:
+                    after_seq = max(0, int(raw_after))
+                except ValueError:
+                    after_seq = 0
+                try:
+                    limit = max(1, int(raw_limit))
+                except ValueError:
+                    limit = 400
+                once = str(raw_once).strip().lower() in {"1", "true", "yes"}
+                try:
+                    wait_timeout = max(0.25, float(raw_timeout))
+                except ValueError:
+                    wait_timeout = 15.0
+
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Connection", "close" if once else "keep-alive")
+                self._send_security_headers()
+                self.end_headers()
+                if once:
+                    self.close_connection = True
+
+                def _write_event(event_payload: dict[str, Any]) -> None:
+                    payload_text = json.dumps(event_payload)
+                    message = (
+                        f"id: {event_payload['seq']}\n"
+                        f"event: {event_payload['event_type']}\n"
+                        f"data: {payload_text}\n\n"
+                    )
+                    self.wfile.write(message.encode("utf-8"))
+                    self.wfile.flush()
+
+                try:
+                    current_after = after_seq
+                    if server._shutdown_event.is_set():
+                        return
+                    initial_events = server.structured_events_after(current_after, limit=limit)
+                    for event_payload in initial_events:
+                        if server._shutdown_event.is_set():
+                            return
+                        _write_event(event_payload)
+                        current_after = int(event_payload["seq"])
+                    if once:
+                        return
+                    while True:
+                        if server._shutdown_event.is_set():
+                            return
+                        if not server.wait_for_structured_events(current_after, timeout=wait_timeout):
+                            if server._shutdown_event.is_set():
+                                return
+                            self.wfile.write(b": keepalive\n\n")
+                            self.wfile.flush()
+                            continue
+                        if server._shutdown_event.is_set():
+                            return
+                        next_events = server.structured_events_after(current_after, limit=limit)
+                        for event_payload in next_events:
+                            if server._shutdown_event.is_set():
+                                return
+                            _write_event(event_payload)
+                            current_after = int(event_payload["seq"])
+                except OSError as exc:
+                    if not is_expected_disconnect_error(exc):
+                        raise
 
             def _choose_dialog_path(self) -> None:
                 try:
@@ -1304,9 +2395,17 @@ class BrowserControlServer:
 
             def _start_practiscore_session(self) -> None:
                 try:
+                    payload = self._read_json()
+                    defer_external_open = bool(payload.get("defer_external_open"))
                     with controller_lock:
-                        status = practiscore_session.start_login_flow()
-                    activity.log("api.practiscore.session.start", state=status.state)
+                        status = practiscore_session.start_login_flow(
+                            external_open=not defer_external_open
+                        )
+                    activity.log(
+                        "api.practiscore.session.start",
+                        state=status.state,
+                        defer_external_open=defer_external_open,
+                    )
                     self._send_json(status.to_dict())
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.practiscore.session.start.error", error=str(exc))
@@ -1372,8 +2471,27 @@ class BrowserControlServer:
                     self._send_task_b_unavailable("/api/practiscore/matches", hook_name)
                     return
                 try:
-                    with controller_lock:
-                        payload = hook(practiscore_session)
+                    electron_host_enabled = (
+                        self.headers.get(_PRACTISCORE_ELECTRON_HOST_HEADER) == "1"
+                    )
+                    if electron_host_enabled:
+                        session_payload = self._read_json_header(
+                            _PRACTISCORE_ELECTRON_SESSION_HEADER
+                        )
+                        matches_payload = self._read_json_header(
+                            _PRACTISCORE_ELECTRON_MATCHES_HEADER
+                        )
+                        with controller_lock:
+                            payload = (
+                                practiscore_sync_service.list_practiscore_matches_from_host_payload(
+                                    controller,
+                                    session_payload,
+                                    matches_payload,
+                                )
+                            )
+                    else:
+                        with controller_lock:
+                            payload = hook(practiscore_session)
                     self._send_json(payload if isinstance(payload, dict) else {"matches": payload})
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.practiscore.matches.error", error=str(exc))
@@ -1396,9 +2514,30 @@ class BrowserControlServer:
                 try:
                     payload = self._read_json()
                     activity.log("api.practiscore.sync.start", payload=payload)
-                    with controller_lock:
-                        result = hook(payload, practiscore_session)
-                        controller.autosave_project_if_needed()
+                    electron_host_enabled = (
+                        self.headers.get(_PRACTISCORE_ELECTRON_HOST_HEADER) == "1"
+                    )
+                    if electron_host_enabled and isinstance(
+                        payload.get("__electron_host_download"),
+                        dict,
+                    ):
+                        session_payload = self._read_json_header(
+                            _PRACTISCORE_ELECTRON_SESSION_HEADER
+                        )
+                        with controller_lock:
+                            result = (
+                                practiscore_sync_service.start_practiscore_sync_from_host_payload(
+                                    controller,
+                                    payload,
+                                    session_payload,
+                                    app_dir=practiscore_session.profile_paths.app_dir,
+                                )
+                            )
+                            controller.autosave_project_if_needed()
+                    else:
+                        with controller_lock:
+                            result = hook(payload, practiscore_session)
+                            controller.autosave_project_if_needed()
                     self._send_json(result if isinstance(result, dict) else {"sync": result})
                 except Exception as exc:  # noqa: BLE001
                     activity.log("api.practiscore.sync.start.error", error=str(exc))
@@ -1685,7 +2824,6 @@ class BrowserControlServer:
                 match = re.search(r"boundary=(?P<boundary>[^;]+)", content_type)
                 if match is None:
                     raise ValueError("Multipart boundary is required")
-                boundary = match.group("boundary").strip().strip('"').encode("utf-8")
                 length = int(self.headers.get("Content-Length", "0") or 0)
                 if length <= 0:
                     raise ValueError("Video file is required")
@@ -1695,91 +2833,38 @@ class BrowserControlServer:
                         f"Browser upload exceeds the {max_gib} GiB limit. Use the path import field for larger local media files."
                     )
 
-                remaining = length
-
-                def read_line() -> bytes:
-                    nonlocal remaining
-                    if remaining <= 0:
-                        return b""
-                    line = self.rfile.readline(remaining + 1)
-                    remaining -= len(line)
-                    return line
-
-                def drain_remaining() -> None:
-                    nonlocal remaining
-                    if remaining > 0:
-                        self.rfile.read(remaining)
-                        remaining = 0
-
-                part_boundary = b"--" + boundary
-                opening_boundary = read_line()
-                if not opening_boundary.startswith(part_boundary):
-                    drain_remaining()
-                    raise ValueError("Malformed multipart body: starting boundary not found")
-
-                disposition = ""
-                while True:
-                    header_line = read_line()
-                    if header_line in {b"", b"\r\n", b"\n"}:
-                        break
-                    decoded = header_line.decode("utf-8", errors="replace")
-                    if decoded.lower().startswith("content-disposition:"):
-                        disposition = decoded
-
-                if 'name="file"' not in disposition or "filename=" not in disposition:
-                    drain_remaining()
+                form = cgi.FieldStorage(
+                    fp=self.rfile,
+                    headers=self.headers,
+                    environ={
+                        "REQUEST_METHOD": "POST",
+                        "CONTENT_TYPE": content_type,
+                        "CONTENT_LENGTH": str(length),
+                    },
+                    keep_blank_values=True,
+                )
+                if "file" not in form:
                     raise ValueError("Multipart request must contain a file field named 'file'")
-
-                filename_match = re.search(r'filename="(?P<filename>[^"]*)"', disposition)
-                filename = filename_match.group("filename") if filename_match else "video.mp4"
+                file_field = form["file"]
+                if isinstance(file_field, list):
+                    file_field = file_field[0]
+                uploaded_file = getattr(file_field, "file", None)
+                filename = getattr(file_field, "filename", None) or "video.mp4"
+                if uploaded_file is None:
+                    raise ValueError("Video file is required")
                 safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(filename).name).strip("._")
                 if not safe_name:
                     safe_name = "video.mp4"
 
                 target = session_path / f"{uuid4().hex}_{safe_name}"
-                boundary_marker = b"\r\n" + part_boundary
-                lookbehind = len(boundary_marker) + 4
-                buffer = b""
-                bytes_written = 0
-
                 with target.open("wb") as output_file:
-                    while remaining > 0:
-                        chunk = self.rfile.read(min(64 * 1024, remaining))
-                        if not chunk:
-                            break
-                        remaining -= len(chunk)
-                        buffer += chunk
-                        while True:
-                            marker_index = buffer.find(boundary_marker)
-                            if marker_index < 0:
-                                break
-                            marker_end = marker_index + len(boundary_marker)
-                            suffix = buffer[marker_end : marker_end + 2]
-                            if suffix in {b"--", b"\r\n"}:
-                                output_file.write(buffer[:marker_index])
-                                bytes_written += marker_index
-                                if remaining > 0:
-                                    drain_remaining()
-                                if bytes_written == 0:
-                                    raise ValueError("Video file is required")
-                                display_names[str(target)] = Path(filename).name
-                                return target
-                            if remaining <= 0:
-                                break
-                            next_chunk = self.rfile.read(min(64 * 1024, remaining))
-                            if not next_chunk:
-                                break
-                            remaining -= len(next_chunk)
-                            buffer += next_chunk
-                        if len(buffer) > lookbehind:
-                            output_file.write(buffer[:-lookbehind])
-                            bytes_written += len(buffer[:-lookbehind])
-                            buffer = buffer[-lookbehind:]
+                    shutil.copyfileobj(uploaded_file, output_file, length=64 * 1024)
 
-                drain_remaining()
-                if target.exists():
+                if not target.exists() or target.stat().st_size <= 0:
                     target.unlink(missing_ok=True)
-                raise ValueError("Malformed multipart body: closing boundary not found")
+                    raise ValueError("Video file is required")
+                display_names[str(target)] = Path(filename).name
+                return target
 
             def _import_primary_file(self) -> None:
                 try:
@@ -2198,69 +3283,18 @@ class BrowserControlServer:
                 controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
-                scoring_payload = payload.get("scoring")
-                if isinstance(scoring_payload, dict):
-                    if "ruleset" in scoring_payload:
-                        self._set_scoring_profile(scoring_payload)
-                    self._set_scoring(scoring_payload)
-                overlay_payload = payload.get("overlay")
-                if isinstance(overlay_payload, dict):
-                    self._set_overlay(overlay_payload)
-                popups_payload = payload.get("popups")
-                popup_template_payload = payload.get("popup_template")
-                if isinstance(popups_payload, list) or isinstance(popup_template_payload, dict):
-                    next_popups_payload: dict[str, Any] = {}
-                    if isinstance(popups_payload, list):
-                        next_popups_payload["popups"] = popups_payload
-                    if isinstance(popup_template_payload, dict):
-                        next_popups_payload["popup_template"] = popup_template_payload
-                    self._set_popups(next_popups_payload)
-                merge_payload = payload.get("merge")
-                if isinstance(merge_payload, dict):
-                    self._set_merge(merge_payload)
-                    for source_payload in merge_payload.get("sources", []):
-                        if isinstance(source_payload, dict):
-                            self._set_merge_source(source_payload)
-                analysis_payload = payload.get("analysis")
-                if isinstance(analysis_payload, dict):
-                    shots_payload = analysis_payload.get("shots")
-                    if isinstance(shots_payload, list):
-                        controller.project.analysis.shots = [
-                            _shot_from_dict(item)
-                            for item in shots_payload
-                            if isinstance(item, dict)
-                        ]
-                    events_payload = analysis_payload.get("events")
-                    if isinstance(events_payload, list):
-                        controller.project.analysis.events = [
-                            _timing_event_from_dict(item)
-                            for item in events_payload
-                            if isinstance(item, dict)
-                        ]
-                    beep_ms = analysis_payload.get("beep_time_ms_primary")
-                    if beep_ms is not None:
-                        controller.project.analysis.beep_time_ms_primary = int(beep_ms)
-                _sync_export_payload(controller, payload)
                 output_path = Path(str(payload["path"]))
-                activity.log("api.export.start", path=str(output_path))
-                exported_path = export_project(
-                    controller.project,
-                    output_path,
-                    progress_callback=lambda value: activity.log(
-                        "api.export.progress", progress=value
-                    ),
-                    log_callback=lambda line: activity.log("api.export.log", line=line),
+                server._jobs.run_inline(
+                    job_type="export",
+                    scope_type="project",
+                    scope_id=_normalize_scope_id(getattr(controller.project, "id", None)),
+                    queued_message=f"Queued export to {output_path}.",
+                    started_message=f"Exporting video to {output_path}.",
+                    completed_message=f"Exported video to {output_path}.",
+                    runner=lambda handle: self._perform_export(payload, handle),
+                    detail={"route": "/api/export", "output_path": str(output_path)},
+                    created_from_route="/api/export",
                 )
-                if not exported_path.exists() or exported_path.stat().st_size <= 0:
-                    raise RuntimeError("Export did not produce an output file.")
-                controller.project.export.output_path = str(exported_path)
-                activity.log(
-                    "api.export.complete",
-                    path=str(exported_path),
-                    bytes=exported_path.stat().st_size if exported_path.exists() else 0,
-                )
-                controller.project.touch()
-                controller.status_message = f"Exported video to {exported_path}."
 
             def _library_record_score(self, record: dict[str, Any]) -> float | None:
                 metric_summary = record.get("metric_summary")

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import shutil
 import signal
 import subprocess
@@ -90,6 +92,18 @@ def _platform_label() -> str:
     return "linux"
 
 
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name, "") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _emit_ready_line(server) -> None:
+    payload = server.ready_line_payload()
+    print(
+        f"SPLITSHOT_READY {json.dumps(payload, sort_keys=True, separators=(',', ':'))}",
+        flush=True,
+    )
+
+
 def _check_media_tool(tool: str) -> str:
     resolved = resolve_media_binary(tool)
     process = subprocess.run(
@@ -150,7 +164,14 @@ def run_headless(
     controller = ProjectController()
     if project_path is not None:
         controller.open_project(str(project_path))
-    server = BrowserControlServer(controller=controller, host=host, port=port, log_level=log_level)
+    require_session_claim = _env_flag("SPLITSHOT_REQUIRE_SESSION_CLAIM")
+    server = BrowserControlServer(
+        controller=controller,
+        host=host,
+        port=port,
+        log_level=log_level,
+        require_session_claim=require_session_claim,
+    )
 
     shutdown = threading.Event()
 
@@ -167,16 +188,22 @@ def run_headless(
         return 1
 
     if actual_port != port:
-        print(f"Port {port} in use; using {actual_port} instead")
+        if port != 0:
+            print(f"Port {port} in use; using {actual_port} instead")
         server = BrowserControlServer(
-            controller=controller, host=host, port=actual_port, log_level=log_level
+            controller=controller,
+            host=host,
+            port=actual_port,
+            log_level=log_level,
+            require_session_claim=require_session_claim,
         )
 
     server.start_background(open_browser=False)
 
-    print(f"Open SplitShot at {server.url}")
+    _emit_ready_line(server)
+    print(f"Open SplitShot at {server.url}", flush=True)
     if log_level != "off":
-        print(f"SplitShot activity log: {server.activity.path}")
+        print(f"SplitShot activity log: {server.activity.path}", flush=True)
 
     try:
         shutdown.wait()

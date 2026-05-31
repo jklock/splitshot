@@ -11,6 +11,7 @@ import urllib.request
 from pathlib import Path
 
 import pytest
+import splitshot.browser.practiscore_session as practiscore_session_module
 import splitshot.browser.server as browser_server_module
 import splitshot.ui.controller as controller_module
 
@@ -177,6 +178,9 @@ PROJECT_LIFECYCLE_POST_ROUTES = {
 NON_PROJECT_JSON_POST_ROUTES = {
     "/api/activity",
     "/api/dialog/path",
+    "/api/startup/claim",
+    "/api/jobs",
+    "/api/jobs/<job_id>/cancel",
     "/api/project/probe",
     "/api/settings",
     "/api/practiscore/dashboard/open",
@@ -247,6 +251,17 @@ def _post_json(url: str, payload: dict) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _post_json_with_headers(url: str, payload: dict, headers: dict[str, str]) -> dict:
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", **headers},
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) -> dict:
     boundary = "----splitshot-test-boundary"
     body = (
@@ -271,6 +286,50 @@ def _post_multipart(url: str, field_name: str, filename: str, payload: bytes) ->
 def _get_json(url: str) -> dict:
     with urllib.request.urlopen(url, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _get_json_with_headers(url: str, headers: dict[str, str]) -> dict:
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _claim_backend_session(server: BrowserControlServer) -> tuple[dict[str, object], dict[str, str]]:
+    ready_payload = server.ready_line_payload()
+    request = urllib.request.Request(
+        f"{server.url}api/startup/claim",
+        data=b"{}",
+        headers={
+            "Content-Type": "application/json",
+            "X-SplitShot-Bootstrap-Token": str(ready_payload["bootstrap_token"]),
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+        cookie = str(response.headers["Set-Cookie"]).split(";", 1)[0]
+    return payload, {"Cookie": cookie}
+
+
+def _read_sse_events(url: str, headers: dict[str, str] | None = None) -> list[dict[str, object]]:
+    request = urllib.request.Request(url, headers=headers or {})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw_text = response.read().decode("utf-8")
+    events: list[dict[str, object]] = []
+    for block in raw_text.strip().split("\n\n"):
+        if not block.strip() or block.lstrip().startswith(":"):
+            continue
+        record: dict[str, object] = {}
+        for line in block.splitlines():
+            if line.startswith("id: "):
+                record["id"] = line[4:]
+            elif line.startswith("event: "):
+                record["event"] = line[7:]
+            elif line.startswith("data: "):
+                record["data"] = json.loads(line[6:])
+        if record:
+            events.append(record)
+    return events
 
 
 def _read_project_json(project_path: Path) -> dict:
@@ -299,12 +358,17 @@ def _merge_source_from_project_json(project_payload: dict, source_id: str) -> di
 def _extract_browser_post_routes_from_server_source() -> set[str]:
     server_source = Path(browser_server_module.__file__).read_text(encoding="utf-8")
     direct_routes = set(re.findall(r'if self\.path == "([^"]+)"', server_source))
+    if 'self.path.startswith("/api/jobs/") and self.path.endswith("/cancel")' in server_source:
+        direct_routes.add("/api/jobs/<job_id>/cancel")
     mapped_routes = set(re.findall(r'"(/api/[^"]+)":\s*self\._[A-Za-z0-9_]+', server_source))
     mapped_routes |= set(
         re.findall(r'"(/api/[^"]+)":\s*\(\s*"_[A-Za-z0-9_]+"', server_source)
     )
     get_only_routes = {
         "/api/activity/poll",
+        "/api/events",
+        "/api/health",
+        "/api/startup/status",
         "/api/practiscore/matches",
         "/api/practiscore/session/status",
         "/api/state",
@@ -505,6 +569,190 @@ def test_browser_activity_poll_returns_recent_entries(tmp_path) -> None:
         assert "api.export.log" in events
         assert any(
             entry.get("line") == "Encoder command: ffmpeg ..." for entry in payload["entries"]
+        )
+    finally:
+        server.shutdown()
+
+
+def test_browser_startup_claim_route_sets_cookie_and_health_requires_auth(tmp_path) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(
+        controller=controller,
+        port=0,
+        log_dir=tmp_path,
+        require_session_claim=True,
+    )
+    server.start_background(open_browser=False)
+    try:
+        ready_payload = server.ready_line_payload()
+        startup_payload = _get_json(f"{server.url}api/startup/status")
+
+        assert startup_payload["state"] == "ready"
+        assert startup_payload["detail"]["require_session_claim"] is True
+        assert startup_payload["detail"]["base_url"] == ready_payload["base_url"]
+
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            _get_json(f"{server.url}api/health")
+
+        assert exc_info.value.code == 401
+        error_payload = json.loads(exc_info.value.read().decode("utf-8"))
+        assert error_payload["error"]["code"] == "backend_session_required"
+
+        claim_payload, auth_headers = _claim_backend_session(server)
+        health_payload = _get_json_with_headers(f"{server.url}api/health", auth_headers)
+
+        assert claim_payload["session_id"] == ready_payload["session_id"]
+        assert claim_payload["health_path"] == "/api/health"
+        assert claim_payload["events_path"] == "/api/events"
+        assert health_payload["session_id"] == claim_payload["session_id"]
+        assert health_payload["state"] == "ready"
+    finally:
+        server.shutdown()
+def test_browser_jobs_and_events_routes_capture_export_lifecycle(
+    synthetic_video_factory,
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    controller = ProjectController()
+    server = BrowserControlServer(
+        controller=controller,
+        port=0,
+        log_dir=tmp_path,
+        require_session_claim=True,
+    )
+    server.start_background(open_browser=False)
+    try:
+        claim_payload, auth_headers = _claim_backend_session(server)
+        primary_path = Path(synthetic_video_factory(name="jobs-export-primary"))
+        _post_json_with_headers(
+            f"{server.url}api/import/primary",
+            {"path": str(primary_path)},
+            auth_headers,
+        )
+        output_path = tmp_path / "job-export.mp4"
+
+        def fake_export_project(project, output_target, progress_callback=None, log_callback=None):
+            if callable(progress_callback):
+                progress_callback(0.25)
+            if callable(log_callback):
+                log_callback("Encoder command: ffmpeg ...")
+            if callable(progress_callback):
+                progress_callback(1.0)
+            export_target = Path(output_target)
+            export_target.write_bytes(b"ok")
+            return export_target
+
+        monkeypatch.setattr(browser_server_module, "export_project", fake_export_project)
+
+        state = _post_json_with_headers(
+            f"{server.url}api/export",
+            {"path": str(output_path), "preset": "source"},
+            auth_headers,
+        )
+        analysis_job = _post_json_with_headers(
+            f"{server.url}api/jobs",
+            {
+                "job_type": "analysis",
+                "payload": {"action": "set_threshold", "threshold": 0.42},
+            },
+            auth_headers,
+        )["job"]
+
+        for _ in range(20):
+            detail_payload = _get_json_with_headers(
+                f"{server.url}api/jobs/{analysis_job['job_id']}",
+                auth_headers,
+            )["job"]
+            if detail_payload["status"] == "completed":
+                break
+            threading.Event().wait(0.1)
+        else:
+            raise AssertionError("Timed out waiting for analysis job completion")
+
+        jobs_payload = _get_json_with_headers(f"{server.url}api/jobs", auth_headers)
+        export_job = next(job for job in jobs_payload["jobs"] if job["job_type"] == "export")
+        export_job_detail = _get_json_with_headers(
+            f"{server.url}api/jobs/{export_job['job_id']}",
+            auth_headers,
+        )["job"]
+        events = _read_sse_events(f"{server.url}api/events?after=0&once=1", auth_headers)
+        replay_after_seq = max(0, int(events[-3]["data"]["seq"]))
+        replayed_events = _read_sse_events(
+            f"{server.url}api/events?after={replay_after_seq}&once=1",
+            auth_headers,
+        )
+
+        cancel_request = urllib.request.Request(
+            f"{server.url}api/jobs/{export_job['job_id']}/cancel",
+            data=json.dumps({}).encode("utf-8"),
+            headers={"Content-Type": "application/json", **auth_headers},
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as cancel_error:
+            urllib.request.urlopen(cancel_request, timeout=30)
+        cancel_payload = json.loads(cancel_error.value.read().decode("utf-8"))
+
+        artifact_dir = REPO_ROOT / "artifacts" / "backend-jobs"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        (artifact_dir / "job-event-trace.json").write_text(
+            json.dumps(
+                {
+                    "claim": claim_payload,
+                    "jobs": jobs_payload["jobs"],
+                    "job_details": {
+                        "export": export_job_detail,
+                        "analysis": detail_payload,
+                    },
+                    "cancel_payload": cancel_payload,
+                    "replay_after_seq": replay_after_seq,
+                    "replayed_events": [event["data"] for event in replayed_events],
+                    "events": [event["data"] for event in events],
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+
+        assert output_path.exists()
+        assert state["project"]["export"]["output_path"] == str(output_path)
+        assert export_job_detail["status"] == "completed"
+        assert export_job_detail["result"]["legacy_event"] == "api.export.complete"
+        assert detail_payload["status"] == "completed"
+        assert detail_payload["result"]["action"] == "set_threshold"
+        assert detail_payload["result"]["threshold"] == pytest.approx(0.42)
+        assert cancel_error.value.code == 409
+        assert cancel_payload["error"]["code"] == "job_cancel_unsupported"
+        assert any(event["event"] == "job.queued" for event in events)
+        assert any(event["event"] == "job.started" for event in events)
+        assert any(event["event"] == "job.progress" for event in events)
+        assert any(event["event"] == "job.log" for event in events)
+        assert any(event["event"] == "job.completed" for event in events)
+        assert [event["data"]["seq"] for event in events] == sorted(
+            event["data"]["seq"] for event in events
+        )
+        assert replayed_events
+        assert all(event["data"]["seq"] > replay_after_seq for event in replayed_events)
+        assert any(
+            event["data"]["detail"].get("action") == "set_threshold"
+            for event in events
+            if event["event"] == "job.progress"
+        )
+        assert any(
+            event["data"]["detail"].get("legacy_event") == "api.export.progress"
+            for event in events
+            if event["event"] == "job.progress"
+        )
+        assert any(
+            event["data"]["detail"].get("legacy_event") == "api.export.log"
+            for event in events
+            if event["event"] == "job.log"
+        )
+        assert any(
+            event["data"]["detail"].get("result", {}).get("legacy_event")
+            == "api.export.complete"
+            for event in events
+            if event["event"] == "job.completed"
         )
     finally:
         server.shutdown()
@@ -1899,6 +2147,53 @@ def test_browser_file_picker_endpoint_preserves_secondary_display_name(
         assert Path(state["project"]["secondary_video"]["path"]).exists()
     finally:
         server.shutdown()
+
+
+def test_browser_practiscore_session_start_route_supports_deferred_external_open() -> None:
+    class _DeferredSessionManager:
+        def __init__(self) -> None:
+            self.external_open_values: list[bool] = []
+
+        def start_login_flow(self, *, external_open: bool = True):
+            self.external_open_values.append(external_open)
+            return practiscore_session_module.PractiScoreSessionStatus(
+                state="authenticating",
+                message="Complete PractiScore login in your browser. SplitShot will continue in the background.",
+                details={"profile_path": "/tmp/practiscore/browser-profile"},
+            )
+
+        def serialize_status(self) -> dict[str, object]:
+            return {
+                "state": "not_authenticated",
+                "message": "Connect PractiScore to use your browser session for background sync.",
+                "details": {"profile_path": "/tmp/practiscore/browser-profile"},
+            }
+
+        def clear_session(self):
+            return practiscore_session_module.PractiScoreSessionStatus(
+                state="not_authenticated",
+                message="PractiScore background session cleared.",
+                details={"profile_path": "/tmp/practiscore/browser-profile"},
+            )
+
+        def shutdown(self) -> None:
+            return
+
+    controller = ProjectController()
+    server = BrowserControlServer(controller=controller, port=0)
+    deferred_session_manager = _DeferredSessionManager()
+    server.practiscore_session = deferred_session_manager
+    server.start_background(open_browser=False)
+    try:
+        payload = _post_json(
+            f"{server.url}api/practiscore/session/start",
+            {"defer_external_open": True},
+        )
+    finally:
+        server.shutdown()
+
+    assert payload["state"] == "authenticating"
+    assert deferred_session_manager.external_open_values == [False]
 
 
 def test_browser_path_dialog_endpoint_uses_local_path_chooser(tmp_path) -> None:

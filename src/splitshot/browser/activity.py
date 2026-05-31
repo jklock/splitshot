@@ -4,6 +4,7 @@ import json
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Callable
 from uuid import uuid4
 
 
@@ -44,6 +45,7 @@ class ActivityLogger:
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
         self.path = root / f"splitshot-browser-{stamp}-{uuid4().hex[:8]}.log"
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
         self._console_level = self.normalize_level(console_level)
         self._sequence = 0
         self._recent_records: list[dict[str, object]] = []
@@ -82,7 +84,7 @@ class ActivityLogger:
 
     def log(self, event: str, *, level: str | None = None, **fields: object) -> None:
         record_level = self.normalize_level(level or self.level_for_event(event))
-        with self._lock:
+        with self._condition:
             self._sequence += 1
             record = {
                 "seq": self._sequence,
@@ -97,6 +99,7 @@ class ActivityLogger:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(f"{line}\n")
+            self._condition.notify_all()
         if self._should_echo(record_level):
             print(f"[splitshot:{record_level}] {line}", flush=True)
 
@@ -111,3 +114,31 @@ class ActivityLogger:
                 "cursor": self._sequence,
                 "entries": entries,
             }
+
+    def records_after(
+        self,
+        after_seq: int = 0,
+        *,
+        limit: int = 1000,
+        predicate: Callable[[dict[str, object]], bool] | None = None,
+    ) -> list[dict[str, object]]:
+        with self._lock:
+            entries = [
+                record for record in self._recent_records if int(record.get("seq", 0)) > after_seq
+            ]
+            if predicate is not None:
+                entries = [record for record in entries if predicate(record)]
+            if limit > 0:
+                entries = entries[-limit:]
+            return [dict(record) for record in entries]
+
+    def cursor(self) -> int:
+        with self._lock:
+            return self._sequence
+
+    def wait_for_records(self, after_seq: int = 0, timeout: float | None = None) -> bool:
+        with self._condition:
+            if self._sequence > after_seq:
+                return True
+            self._condition.wait(timeout=timeout)
+            return self._sequence > after_seq

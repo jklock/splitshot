@@ -181,6 +181,16 @@ _proxy_summary_cache: dict[str, Any] = {}
 _proxy_summary_cache_time: float = 0.0
 _CACHE_TTL_SECONDS = 5.0
 
+
+def reset_browser_state_caches() -> None:
+    global _library_summary_cache, _library_summary_cache_time
+    global _proxy_summary_cache, _proxy_summary_cache_time
+
+    _library_summary_cache = {}
+    _library_summary_cache_time = 0.0
+    _proxy_summary_cache = {}
+    _proxy_summary_cache_time = 0.0
+
 _MERGE_SOURCE_ROLE_PRIORITY = {
     role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
 }

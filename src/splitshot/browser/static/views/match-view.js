@@ -4,6 +4,9 @@ export function createMatchView({
   windowObject = window,
   getState = () => ({}),
   getCurrentWorkspaceStageId = () => "",
+  getWorkspaceSharedDefaultsValue = (_key, fallback = "") => fallback,
+  getWorkspaceOverrideValue = (_stageId, _key, fallback = "") => fallback,
+  clearWorkspaceOverrideDraft = () => {},
   getStageCompositeClips = () => [],
   setSelectedStageCompositeStageId = () => {},
   syncControlValue = () => {},
@@ -293,7 +296,8 @@ export function createMatchView({
         await refresh();
       });
       detailPanel.querySelector('[data-selected-stage-action="reset"]')?.addEventListener("click", async () => {
-        await callApi("/api/workspace/stage/override/reset", { stage_id: selectedEntry.stage_id });
+        const result = await callApi("/api/workspace/stage/override/reset", { stage_id: selectedEntry.stage_id });
+        if (result) clearWorkspaceOverrideDraft(selectedEntry.stage_id);
         await refresh();
       });
     }
@@ -361,7 +365,8 @@ export function createMatchView({
         windowObject.setActiveSurface?.("single");
       });
       workflowPanel.querySelector('[data-workflow-action="reset"]')?.addEventListener("click", async () => {
-        await callApi("/api/workspace/stage/override/reset", { stage_id: selectedEntry.stage_id });
+        const result = await callApi("/api/workspace/stage/override/reset", { stage_id: selectedEntry.stage_id });
+        if (result) clearWorkspaceOverrideDraft(selectedEntry.stage_id);
         await refresh();
       });
     }
@@ -912,7 +917,8 @@ export function createMatchView({
       resetBtn.disabled = !overrideCount;
       resetBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
-        await callApi("/api/workspace/stage/override/reset", { stage_id: entry.stage_id });
+        const result = await callApi("/api/workspace/stage/override/reset", { stage_id: entry.stage_id });
+        if (result) clearWorkspaceOverrideDraft(entry.stage_id);
         await refresh();
       });
 
@@ -943,29 +949,21 @@ export function createMatchView({
     renderRecapPanel(entries);
     renderBatchExportQueue(entries);
 
-    const sharedDefaults = state?.workspace_shared_defaults || {};
-    syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
-    syncControlValue(
-      $("shared-metric-captions"),
-      sharedDefaults.metric_caption_preset || sharedDefaults.metric_captions || "none",
-    );
-    syncControlValue($("shared-lead-in"), sharedDefaults.lead_in_card || "none");
-    syncControlValue($("shared-brand-mark"), sharedDefaults.brand_mark || "none");
+    syncControlValue($("shared-frame-profile"), getWorkspaceSharedDefaultsValue("frame_profile", "source"));
+    syncControlValue($("shared-metric-captions"), getWorkspaceSharedDefaultsValue("metric_caption_preset", "none"));
+    syncControlValue($("shared-lead-in"), getWorkspaceSharedDefaultsValue("lead_in_card", "none"));
+    syncControlValue($("shared-brand-mark"), getWorkspaceSharedDefaultsValue("brand_mark", "none"));
 
     const overrideEditor = $("stage-override-editor");
     const overrideGrids = overrideEditor?.querySelectorAll(".control-grid");
     const overrideButton = $("override-apply");
-    if (overrideEditor && entries.length && getCurrentWorkspaceStageId()) {
-      const activeEntry = entries.find((candidate) => candidate.stage_id === getCurrentWorkspaceStageId());
-      const overrides = activeEntry?.override_values || state?.workspace_override_summary?.[getCurrentWorkspaceStageId()] || {};
+    const currentStageId = getCurrentWorkspaceStageId();
+    if (overrideEditor && entries.length && currentStageId) {
       overrideEditor.querySelector("p")?.setAttribute("hidden", "");
       overrideGrids?.forEach((grid) => grid.removeAttribute("hidden"));
       if (overrideButton) overrideButton.removeAttribute("hidden");
-      syncControlValue($("override-frame-profile"), overrides.frame_profile || "");
-      syncControlValue(
-        $("override-metric-captions"),
-        overrides.metric_caption_preset || overrides.metric_captions || "",
-      );
+      syncControlValue($("override-frame-profile"), getWorkspaceOverrideValue(currentStageId, "frame_profile", ""));
+      syncControlValue($("override-metric-captions"), getWorkspaceOverrideValue(currentStageId, "metric_caption_preset", ""));
     } else if (overrideEditor) {
       const hint = overrideEditor.querySelector("p");
       if (hint) hint.removeAttribute("hidden");

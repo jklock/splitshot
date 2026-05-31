@@ -88,12 +88,19 @@ That script is the source-of-truth gate for:
 
 - runtime check
 - Python bundle generation and verification
+- bundled runtime manifest generation and verification
 - Electron launch-intent unit tests
 - headless backend tests
 - parity audit
 - source Electron smoke
 - current-platform smoke packaging
-- packaged-app launch verification
+- actual packaged-artifact launch verification
+
+When the preflight runs, it should refresh these backend-certification artifacts from the real packaged lane under test:
+
+- `artifacts/backend-certification/runtime-manifest.json`
+- `artifacts/backend-certification/support-evidence-summary.json`
+- `artifacts/backend-certification/release-gate-summary.json`
 
 Do not use GitHub Actions as the first place to discover source-level or parity failures.
 
@@ -163,14 +170,14 @@ Use the semver tag flow when you want a coordinated three-platform release. The 
 uv run python scripts/release/extract_release_notes.py v1.0.1 --output artifacts/release-notes.md
 ```
 
-5. Create and push the release tag:
+1. Create and push the release tag:
 
 ```bash
 git tag -a v1.0.1 -m "SplitShot v1.0.1"
 git push origin v1.0.1
 ```
 
-6. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
+1. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
 
 ## Troubleshooting
 

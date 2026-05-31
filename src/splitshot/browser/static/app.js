@@ -297,6 +297,8 @@ let projectDetailsDraft = { name: null, description: null };
 let overlayTextBoxesDraft = null;
 let popupBubblesDraft = null;
 let popupTemplateDraft = null;
+let workspaceSharedDefaultsDraft = {};
+let workspaceOverrideDrafts = new Map();
 let projectFolderProbeRequestId = 0;
 let secondaryPreviewSyncFrame = null;
 let secondaryPreviewPlayErrorKey = null;
@@ -334,6 +336,7 @@ let lastInspectorUserScrollTs = 0;
 let renderDeferredForInteraction = false;
 let pendingProjectUiStatePayload = null;
 let lastSubmittedProjectUiStatePayloadKey = null;
+let projectDraftKeepaliveFlushed = false;
 let pendingMergeSourcePayloads = new Map();
 let mergeSourceCommitTimers = new Map();
 let interactionPreviewFrame = null;
@@ -997,6 +1000,79 @@ function mergePopupDraft(project) {
       project.popup_template = { ...popupTemplateDraft };
     }
   }
+}
+
+function workspaceSharedDefaultsSavedValue(key, fallback = "") {
+  const sharedDefaults = state?.workspace_shared_defaults || {};
+  if (key === "metric_caption_preset") {
+    return String(sharedDefaults.metric_caption_preset || sharedDefaults.metric_captions || fallback);
+  }
+  return String(sharedDefaults[key] ?? fallback);
+}
+
+function workspaceSharedDefaultsControlValue(key, fallback = "") {
+  const draftValue = workspaceSharedDefaultsDraft[key];
+  if (draftValue !== undefined && draftValue !== null) return String(draftValue);
+  return workspaceSharedDefaultsSavedValue(key, fallback);
+}
+
+function applyWorkspaceSharedDefaultsDraft(payload = {}) {
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    workspaceSharedDefaultsDraft[key] = value === undefined || value === null ? null : String(value);
+  });
+}
+
+function clearWorkspaceSharedDefaultsDraft() {
+  workspaceSharedDefaultsDraft = {};
+}
+
+function workspaceStageOverrideSavedValue(stageId, key, fallback = "") {
+  const normalizedStageId = String(stageId || "").trim();
+  if (!normalizedStageId) return String(fallback);
+  const stageEntry = (state?.workspace_stage_entries || []).find(
+    (entry) => String(entry?.stage_id || "").trim() === normalizedStageId,
+  );
+  const overrides = stageEntry?.override_values || state?.workspace_override_summary?.[normalizedStageId] || {};
+  if (key === "metric_caption_preset") {
+    return String(overrides.metric_caption_preset || overrides.metric_captions || fallback);
+  }
+  return String(overrides[key] ?? fallback);
+}
+
+function workspaceStageOverrideControlValue(stageId, key, fallback = "") {
+  const normalizedStageId = String(stageId || "").trim();
+  if (!normalizedStageId) return String(fallback);
+  const draftValue = workspaceOverrideDrafts.get(normalizedStageId)?.[key];
+  if (draftValue !== undefined && draftValue !== null) return String(draftValue);
+  return workspaceStageOverrideSavedValue(normalizedStageId, key, fallback);
+}
+
+function applyWorkspaceStageOverrideDraft(stageId, payload = {}) {
+  const normalizedStageId = String(stageId || "").trim();
+  if (!normalizedStageId) return;
+  const draft = { ...(workspaceOverrideDrafts.get(normalizedStageId) || {}) };
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    draft[key] = value === undefined || value === null ? "" : String(value);
+  });
+  workspaceOverrideDrafts.set(normalizedStageId, draft);
+}
+
+function clearWorkspaceStageOverrideDraft(stageId = "") {
+  const normalizedStageId = String(stageId || "").trim();
+  if (!normalizedStageId) {
+    workspaceOverrideDrafts = new Map();
+    return;
+  }
+  workspaceOverrideDrafts.delete(normalizedStageId);
+}
+
+function workspaceDraftScopeKey(nextState = state) {
+  return String(
+    nextState?.workspace?.match_id
+      || nextState?.workspace_path
+      || nextState?.workspace?.path
+      || "",
+  ).trim();
 }
 
 function normalizeExportDraftValue(key, value) {
@@ -2371,7 +2447,7 @@ function mergePreviewItemElement(sourceId = "") {
 function mergePreviewTargetFrameRect(source = null, stage = $("video-stage")) {
   const primaryVideo = $("primary-video");
   const stageRect = stage instanceof HTMLElement
-    ? (previewFrameClientRect(primaryVideo, stage) || stage.getBoundingClientRect())
+    ? previewFrameRectForStage(stage)
     : null;
   if (!source || !stageRect) return stageRect;
   const placement = resolvedMergeSourcePreviewPlacement(source);
@@ -5280,6 +5356,9 @@ matchView = createMatchView({
   windowObject: window,
   getState: () => state,
   getCurrentWorkspaceStageId: () => currentWorkspaceStageId(),
+  getWorkspaceSharedDefaultsValue: (key, fallback = "") => workspaceSharedDefaultsControlValue(key, fallback),
+  getWorkspaceOverrideValue: (stageId, key, fallback = "") => workspaceStageOverrideControlValue(stageId, key, fallback),
+  clearWorkspaceOverrideDraft: clearWorkspaceStageOverrideDraft,
   getStageCompositeClips: () => stageCompositeClips,
   setSelectedStageCompositeStageId: (value) => {
     selectedStageCompositeStageId = value;
@@ -5777,7 +5856,8 @@ function renderWorkspaceStages() {
     resetBtn.textContent = "Reset";
     resetBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      await callApi("/api/workspace/stage/override/reset", { stage_id: entry.stage_id });
+      const result = await callApi("/api/workspace/stage/override/reset", { stage_id: entry.stage_id });
+      if (result) clearWorkspaceStageOverrideDraft(entry.stage_id);
       await refresh();
     });
 
@@ -5966,22 +6046,20 @@ function renderWorkspaceStages() {
     matchRecapResultsText = "";
     matchRecapResultsHidden = true;
   }
-  const sharedDefaults = state?.workspace_shared_defaults || {};
-  syncControlValue($("shared-frame-profile"), sharedDefaults.frame_profile || "source");
-  syncControlValue($("shared-metric-captions"), sharedDefaults.metric_captions || "none");
-  syncControlValue($("shared-lead-in"), sharedDefaults.lead_in_card || "none");
-  syncControlValue($("shared-brand-mark"), sharedDefaults.brand_mark || "none");
+  syncControlValue($("shared-frame-profile"), workspaceSharedDefaultsControlValue("frame_profile", "source"));
+  syncControlValue($("shared-metric-captions"), workspaceSharedDefaultsControlValue("metric_caption_preset", "none"));
+  syncControlValue($("shared-lead-in"), workspaceSharedDefaultsControlValue("lead_in_card", "none"));
+  syncControlValue($("shared-brand-mark"), workspaceSharedDefaultsControlValue("brand_mark", "none"));
   const overrideEditor = $("stage-override-editor");
   const overrideGrids = overrideEditor?.querySelectorAll(".control-grid");
   const overrideButton = $("override-apply");
-  if (overrideEditor && entries.length && currentWorkspaceStageId()) {
-    const activeEntry = entries.find((e) => e.stage_id === currentWorkspaceStageId());
-    const overrides = activeEntry?.override_values || {};
+  const activeWorkspaceStageId = currentWorkspaceStageId();
+  if (overrideEditor && entries.length && activeWorkspaceStageId) {
     overrideEditor.querySelector("p")?.setAttribute("hidden", "");
     overrideGrids?.forEach((grid) => grid.removeAttribute("hidden"));
     if (overrideButton) overrideButton.removeAttribute("hidden");
-    syncControlValue($("override-frame-profile"), overrides.frame_profile || "");
-    syncControlValue($("override-metric-captions"), overrides.metric_captions || "");
+    syncControlValue($("override-frame-profile"), workspaceStageOverrideControlValue(activeWorkspaceStageId, "frame_profile", ""));
+    syncControlValue($("override-metric-captions"), workspaceStageOverrideControlValue(activeWorkspaceStageId, "metric_caption_preset", ""));
   } else if (overrideEditor) {
     const hint = overrideEditor.querySelector("p");
     if (hint) hint.removeAttribute("hidden");
@@ -7112,6 +7190,7 @@ async function refresh() {
 }
 
 function applyRemoteState(nextState) {
+  const previousWorkspaceScopeKey = workspaceDraftScopeKey(state);
   const shouldApplyBootstrapLandingTool = !initialProjectUiStateApplied
     && !pendingBootstrapProjectUiStateOverride
     && Boolean(String(nextState?.project?.path || "").trim());
@@ -7130,6 +7209,11 @@ function applyRemoteState(nextState) {
         }),
       },
     };
+  }
+  const nextWorkspaceScopeKey = workspaceDraftScopeKey(nextState);
+  if (previousWorkspaceScopeKey !== nextWorkspaceScopeKey) {
+    clearWorkspaceSharedDefaultsDraft();
+    clearWorkspaceStageOverrideDraft();
   }
   return apiRuntime.applyRemoteState(nextState);
 }
@@ -7159,6 +7243,8 @@ function resetLocalProjectView() {
   overlayTextBoxesDraft = null;
   popupBubblesDraft = null;
   popupTemplateDraft = null;
+  workspaceSharedDefaultsDraft = {};
+  workspaceOverrideDrafts = new Map();
   exportLogLines = [];
   popupGeneratedMotionOffsetsByBubbleId = new Map();
   popupMotionGenerationSummaryByBubbleId = new Map();
@@ -7570,7 +7656,7 @@ const SETTINGS_LAYER_FIELDS = [
   { label: "Overlay position", path: ["overlay_position"] },
   { label: "Badge size", path: ["badge_size"] },
   { label: "Composition layout", path: ["merge_layout"] },
-  { label: "Layer size", path: ["pip_size"] },
+  { label: "Default layer size", path: ["pip_size"] },
   { label: "Export quality", path: ["export_quality"] },
   { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
   {
@@ -10112,6 +10198,12 @@ function previewFrameClientRect(video, container) {
   };
 }
 
+function previewFrameRectForStage(stage = $("video-stage")) {
+  if (!(stage instanceof HTMLElement)) return null;
+  const frameRect = previewFrameClientRect($("primary-video"), stage) || stage.getBoundingClientRect();
+  return frameRect;
+}
+
 function overlayDisplayScale(video, frameRect, outputWidth = null) {
   if (!video || !frameRect) return 1;
   const sourceWidth = Number(outputWidth) || Number(video.videoWidth) || 0;
@@ -10910,7 +11002,10 @@ function sendProjectUiStateKeepalive(payload = readProjectUiStatePayload()) {
 }
 
 function flushPendingProjectDraftsKeepalive() {
-  return projectPane?.flushPendingProjectDraftsKeepalive();
+  if (projectDraftKeepaliveFlushed) return false;
+  if (activeSurface !== "single") return false;
+  projectDraftKeepaliveFlushed = true;
+  return projectPane?.flushPendingProjectDraftsKeepalive() ?? false;
 }
 
 async function importTypedPath(targetId, apiPath, label) {
@@ -11719,30 +11814,55 @@ function wireEvents() {
       callApi("/api/output-profiles/render", { output_id: profileId || fallbackProfileId });
     }
   });
+  $("shared-frame-profile")?.addEventListener("change", (event) => {
+    applyWorkspaceSharedDefaultsDraft({ frame_profile: event.target?.value || "source" });
+  });
+  $("shared-metric-captions")?.addEventListener("change", (event) => {
+    applyWorkspaceSharedDefaultsDraft({ metric_caption_preset: event.target?.value || "none" });
+  });
+  $("shared-lead-in")?.addEventListener("change", (event) => {
+    applyWorkspaceSharedDefaultsDraft({ lead_in_card: event.target?.value || "none" });
+  });
+  $("shared-brand-mark")?.addEventListener("change", (event) => {
+    applyWorkspaceSharedDefaultsDraft({ brand_mark: event.target?.value || "none" });
+  });
   $("shared-defaults-apply")?.addEventListener("click", async () => {
     const payload = {
-      frame_profile: $("shared-frame-profile")?.value || "source",
+      frame_profile: workspaceSharedDefaultsControlValue("frame_profile", "source"),
       metric_caption_preset: $("shared-metric-captions")?.value || "none",
-      lead_in_card: $("shared-lead-in")?.value || "none",
-      brand_mark: $("shared-brand-mark")?.value || "none",
+      lead_in_card: workspaceSharedDefaultsControlValue("lead_in_card", "none"),
+      brand_mark: workspaceSharedDefaultsControlValue("brand_mark", "none"),
     };
-    await callApi("/api/workspace/defaults", payload);
+    const result = await callApi("/api/workspace/defaults", payload);
+    if (result) clearWorkspaceSharedDefaultsDraft();
     await refresh();
   });
   $("shared-defaults-reset")?.addEventListener("click", async () => {
-    await callApi("/api/workspace/defaults/reset", {});
+    const result = await callApi("/api/workspace/defaults/reset", {});
+    if (result) clearWorkspaceSharedDefaultsDraft();
     await refresh();
+  });
+  $("override-frame-profile")?.addEventListener("change", (event) => {
+    const stageId = currentWorkspaceStageId();
+    if (!stageId) return;
+    applyWorkspaceStageOverrideDraft(stageId, { frame_profile: event.target?.value ?? "" });
+  });
+  $("override-metric-captions")?.addEventListener("change", (event) => {
+    const stageId = currentWorkspaceStageId();
+    if (!stageId) return;
+    applyWorkspaceStageOverrideDraft(stageId, { metric_caption_preset: event.target?.value ?? "" });
   });
   $("override-apply")?.addEventListener("click", async () => {
     const stageId = currentWorkspaceStageId();
     if (!stageId) return;
     const overrides = {};
-    const frameProfile = $("override-frame-profile")?.value;
-    const metricCaptions = $("override-metric-captions")?.value;
+    const frameProfile = workspaceStageOverrideControlValue(stageId, "frame_profile", "");
+    const metricCaptions = workspaceStageOverrideControlValue(stageId, "metric_caption_preset", "");
     if (frameProfile) overrides.frame_profile = frameProfile;
     if (metricCaptions) overrides.metric_caption_preset = metricCaptions;
     if (Object.keys(overrides).length) {
-      await callApi("/api/workspace/stage/override", { stage_id: stageId, ...overrides });
+      const result = await callApi("/api/workspace/stage/override", { stage_id: stageId, ...overrides });
+      if (result) clearWorkspaceStageOverrideDraft(stageId);
       await refresh();
     }
   });

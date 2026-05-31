@@ -1,7 +1,10 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const { createDesktopRouteBridgeSource } = require('./desktop-route-bridge-source');
+const { createPractiScoreHost } = require('./practiscore-host');
 const {
   createLaunchIntentRouter,
   createProjectIntent,
@@ -15,12 +18,38 @@ let backendStarted = false;
 let initialLaunchIntent = launchIntentFromArgv(process.argv);
 let windowLoaded = false;
 let windowReadyToShow = false;
-const PORT = Number.parseInt(process.env.SPLITSHOT_TEST_PORT || '8765', 10);
-const PYTHON_URL = `http://127.0.0.1:${PORT}`;
+const REQUESTED_PORT = Number.parseInt(process.env.SPLITSHOT_TEST_PORT || '0', 10);
+const BACKEND_READY_PREFIX = 'SPLITSHOT_READY ';
+const BACKEND_START_TIMEOUT_MS = Number.parseInt(process.env.SPLITSHOT_ELECTRON_BACKEND_TIMEOUT_MS || '30000', 10) || 30000;
+const PRACTISCORE_DASHBOARD_URL = 'https://practiscore.com/dashboard/home';
+const VIDEO_EXTENSIONS = ['mp4', 'm4v', 'mov', 'avi', 'webm', 'mkv', 'wmv', 'mpg', 'mpeg', 'mts', 'm2ts'];
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff'];
+const EXPORT_EXTENSIONS = ['mp4', 'm4v', 'mov', 'mkv'];
+const PROJECT_DIALOG_KINDS = new Set(['project', 'project_save', 'project_open', 'project_folder']);
 const launchIntentRouter = createLaunchIntentRouter(dispatchLaunchIntent);
 const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
+const TEST_DIALOG_PATH = process.env.SPLITSHOT_ELECTRON_TEST_DIALOG_PATH || '';
+const TEST_CAPTURE_EXTERNAL_OPEN = process.env.SPLITSHOT_ELECTRON_TEST_OPEN_EXTERNAL_CAPTURE === '1';
+const PRACTISCORE_HOST_ENABLED = process.env.SPLITSHOT_ELECTRON_PRACTISCORE_HOST_V1 === '1';
 let appReadyRecorded = false;
+let lastExternalOpenUrl = null;
+let backendReadyPayload = null;
+let backendSessionMetadata = null;
+let backendBaseUrl = null;
+let practiScoreHost = null;
+
+function getPractiScoreHost() {
+  if (!practiScoreHost) {
+    practiScoreHost = createPractiScoreHost({
+      enabled: PRACTISCORE_HOST_ENABLED,
+      BrowserWindow,
+      session,
+      getParentWindow: () => mainWindow,
+    });
+  }
+  return practiScoreHost;
+}
 
 // On Windows, requestSingleInstanceLock() silently fails when elevated (admin/SYSTEM).
 // GitHub Actions runners run elevated, causing app.quit() immediately.
@@ -49,13 +78,29 @@ function appendTestEvent(event, payload = {}) {
   fs.appendFileSync(TEST_READY_FILE, `${JSON.stringify(record)}\n`, 'utf8');
 }
 
+function getElectronSupportRoots() {
+  try {
+    return {
+      electronLogRoot: app.getPath('logs'),
+      electronUserDataRoot: app.getPath('userData'),
+      electronCrashDumpsRoot: app.getPath('crashDumps'),
+    };
+  } catch {
+    return {
+      electronLogRoot: null,
+      electronUserDataRoot: null,
+      electronCrashDumpsRoot: null,
+    };
+  }
+}
+
 function maybeRecordAppReady() {
   if (appReadyRecorded || !launchIntentRouter.isBackendReady() || !windowLoaded || !windowReadyToShow) {
     return;
   }
   appReadyRecorded = true;
   appendTestEvent('app-ready', {
-    url: PYTHON_URL,
+    url: backendBaseUrl,
     initialProjectPath: initialLaunchIntent?.projectPath || null,
   });
   if (TEST_EXIT_AFTER_READY) {
@@ -65,10 +110,290 @@ function maybeRecordAppReady() {
   }
 }
 
+function parseBackendReadyLine(line) {
+  if (typeof line !== 'string' || !line.startsWith(BACKEND_READY_PREFIX)) {
+    return null;
+  }
+  const rawPayload = line.slice(BACKEND_READY_PREFIX.length).trim();
+  let payload;
+  try {
+    payload = JSON.parse(rawPayload);
+  } catch (error) {
+    throw new Error(`Invalid SplitShot ready line payload: ${error?.message || error}`);
+  }
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid SplitShot ready line payload.');
+  }
+  if (typeof payload.base_url !== 'string' || !payload.base_url.trim()) {
+    throw new Error('SplitShot ready line did not include a base_url.');
+  }
+  if (typeof payload.claim_path !== 'string' || !payload.claim_path.trim()) {
+    throw new Error('SplitShot ready line did not include a claim_path.');
+  }
+  if (typeof payload.bootstrap_token !== 'string' || !payload.bootstrap_token.trim()) {
+    throw new Error('SplitShot ready line did not include a bootstrap_token.');
+  }
+  return payload;
+}
+
+function parseSetCookieHeader(setCookieHeader) {
+  if (typeof setCookieHeader !== 'string' || !setCookieHeader.trim()) {
+    throw new Error('SplitShot backend did not return a session cookie.');
+  }
+  const [cookiePair] = setCookieHeader.split(';');
+  const separatorIndex = cookiePair.indexOf('=');
+  if (separatorIndex <= 0) {
+    throw new Error('SplitShot backend returned an invalid session cookie.');
+  }
+  return {
+    name: cookiePair.slice(0, separatorIndex).trim(),
+    value: cookiePair.slice(separatorIndex + 1).trim(),
+  };
+}
+
+async function applyBackendSessionCookie(setCookieHeader, baseUrl) {
+  const cookie = parseSetCookieHeader(setCookieHeader);
+  await session.defaultSession.cookies.set({
+    url: baseUrl,
+    name: cookie.name,
+    value: cookie.value,
+    path: '/',
+    httpOnly: true,
+    sameSite: 'strict',
+  });
+}
+
+async function establishBackendSession(readyPayload) {
+  const claimUrl = new URL(readyPayload.claim_path, readyPayload.base_url).toString();
+  const response = await fetch(claimUrl, {
+    method: 'POST',
+    headers: {
+      'X-SplitShot-Bootstrap-Token': readyPayload.bootstrap_token,
+    },
+  });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`SplitShot backend claim failed (${response.status}): ${responseText}`);
+  }
+  const setCookieHeader = response.headers.getSetCookie?.()[0] || response.headers.get('set-cookie');
+  await applyBackendSessionCookie(setCookieHeader, readyPayload.base_url);
+  const claimPayload = await response.json();
+  backendReadyPayload = readyPayload;
+  backendBaseUrl = readyPayload.base_url;
+  backendSessionMetadata = {
+    ...claimPayload,
+    base_url: readyPayload.base_url,
+    startup_status_path: readyPayload.startup_status_path,
+    claim_path: readyPayload.claim_path,
+  };
+  return backendSessionMetadata;
+}
+
+function processPythonStdoutChunk(chunk, onReadyLine) {
+  const text = String(chunk || '');
+  const lines = text.split(/\r?\n/);
+  return lines.reduce((remainder, line, index) => {
+    const isLast = index === lines.length - 1;
+    if (isLast && !text.endsWith('\n') && !text.endsWith('\r')) {
+      return line;
+    }
+    if (line) {
+      console.log(`[python] ${line}`);
+      const payload = parseBackendReadyLine(line);
+      if (payload) {
+        onReadyLine(payload);
+      }
+    }
+    return '';
+  }, '');
+}
+
+function expandUserPath(value) {
+  if (typeof value !== 'string') return '';
+  if (value === '~') return os.homedir();
+  if (value.startsWith(`~${path.sep}`)) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  if (path.sep === '\\' && value.startsWith('~/')) {
+    return path.join(os.homedir(), value.slice(2).replace(/\//g, '\\'));
+  }
+  return value;
+}
+
+function resolveProjectDialogTarget(candidatePath) {
+  if (typeof candidatePath !== 'string' || !candidatePath.trim()) return '';
+  const expanded = expandUserPath(candidatePath.trim());
+  const resolved = path.resolve(expanded);
+  return path.basename(resolved).toLowerCase() === 'project.json'
+    ? path.dirname(resolved)
+    : resolved;
+}
+
+function resolveExistingDialogDirectory(candidatePath, { projectPath = false } = {}) {
+  if (typeof candidatePath !== 'string' || !candidatePath.trim()) return null;
+  const resolvedTarget = projectPath
+    ? resolveProjectDialogTarget(candidatePath)
+    : path.resolve(expandUserPath(candidatePath.trim()));
+  if (!resolvedTarget) return null;
+  try {
+    const stats = fs.statSync(resolvedTarget);
+    return stats.isDirectory() ? resolvedTarget : path.dirname(resolvedTarget);
+  } catch {}
+
+  let probe = path.dirname(resolvedTarget);
+  while (probe) {
+    try {
+      if (fs.statSync(probe).isDirectory()) {
+        return probe;
+      }
+    } catch {}
+    const nextProbe = path.dirname(probe);
+    if (nextProbe === probe) break;
+    probe = nextProbe;
+  }
+  return null;
+}
+
+function dialogDefaultPath(kind, current, home) {
+  const projectPath = PROJECT_DIALOG_KINDS.has(String(kind || '').trim());
+  return (
+    resolveExistingDialogDirectory(current, { projectPath })
+    || resolveExistingDialogDirectory(home, { projectPath })
+    || app.getPath('home')
+  );
+}
+
+async function showPathDialog(request = {}) {
+  const kind = String(request?.kind || '').trim();
+  const current = String(request?.current || '').trim();
+  const home = String(request?.home || '').trim();
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && TEST_DIALOG_PATH) {
+    return TEST_DIALOG_PATH;
+  }
+
+  const browserWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const defaultPath = dialogDefaultPath(kind, current, home);
+  if (kind === 'primary' || kind === 'secondary') {
+    const result = await dialog.showOpenDialog(browserWindow, {
+      defaultPath,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Image files', extensions: IMAGE_EXTENSIONS },
+        { name: 'Video files', extensions: VIDEO_EXTENSIONS },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? null : result.filePaths[0] || null;
+  }
+  if (kind === 'popup_image') {
+    const result = await dialog.showOpenDialog(browserWindow, {
+      defaultPath,
+      properties: ['openFile'],
+      filters: [
+        { name: 'Image files', extensions: IMAGE_EXTENSIONS },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? null : result.filePaths[0] || null;
+  }
+  if (PROJECT_DIALOG_KINDS.has(kind)) {
+    const properties = ['openDirectory'];
+    if (process.platform === 'darwin') properties.push('treatPackageAsDirectory');
+    const result = await dialog.showOpenDialog(browserWindow, {
+      defaultPath,
+      properties,
+    });
+    return result.canceled ? null : result.filePaths[0] || null;
+  }
+  if (kind === 'export') {
+    const defaultName = current ? path.basename(current) : 'output.mp4';
+    const result = await dialog.showSaveDialog(browserWindow, {
+      defaultPath: path.join(defaultPath, defaultName),
+      filters: [
+        { name: 'Video files', extensions: EXPORT_EXTENSIONS },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    return result.canceled ? null : result.filePath || null;
+  }
+  throw new Error(`Unsupported path chooser kind: ${kind}`);
+}
+
+async function openExternalUrl(targetUrl) {
+  if (typeof targetUrl !== 'string' || !targetUrl.trim()) {
+    return false;
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return false;
+  }
+  const normalizedUrl = parsedUrl.toString();
+  lastExternalOpenUrl = normalizedUrl;
+  if (process.env.SPLITSHOT_ELECTRON_TEST === '1' && TEST_CAPTURE_EXTERNAL_OPEN) {
+    return true;
+  }
+  try {
+    await shell.openExternal(normalizedUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createDesktopRouteBridgeScript() {
+  return createDesktopRouteBridgeSource({ dashboardUrl: PRACTISCORE_DASHBOARD_URL });
+}
+
+async function installDesktopRouteBridge(browserWindow, attemptsRemaining = 20) {
+  if (!browserWindow || browserWindow.isDestroyed()) {
+    return false;
+  }
+  try {
+    await browserWindow.webContents.executeJavaScript(createDesktopRouteBridgeScript(), true);
+    const bridgeDiagnostics = await browserWindow.webContents.executeJavaScript(`(() => ({
+      splitshot: Boolean(window.splitshot),
+      installed: window.__splitshotDesktopRouteBridgeInstalled === true,
+      installing: window.__splitshotDesktopRouteBridgeInstalling === true,
+    }))()`, true);
+    if (bridgeDiagnostics.installed) {
+      return true;
+    }
+    if (attemptsRemaining > 0) {
+      setTimeout(() => {
+        void installDesktopRouteBridge(browserWindow, attemptsRemaining - 1);
+      }, 100);
+    }
+    return false;
+  } catch (error) {
+    appendTestEvent('desktop-route-bridge-error', { error: String(error) });
+    console.error(`Failed to install desktop route bridge: ${error}`);
+    if (attemptsRemaining > 0) {
+      setTimeout(() => {
+        void installDesktopRouteBridge(browserWindow, attemptsRemaining - 1);
+      }, 100);
+    }
+    return false;
+  }
+}
+
 function getPythonBinary() {
+  if (!app.isPackaged && process.env.SPLITSHOT_PYTHON_EXECUTABLE) {
+    return process.env.SPLITSHOT_PYTHON_EXECUTABLE;
+  }
   const bundle = getBundlePath();
   if (app.isPackaged && process.platform === 'win32') {
     return path.join(bundle, 'python', 'python.exe');
+  }
+  if (!app.isPackaged) {
+    const root = path.resolve(__dirname, '..');
+    const binDir = process.platform === 'win32' ? 'Scripts' : 'bin';
+    const ext = process.platform === 'win32' ? '.exe' : '';
+    return path.join(root, '.venv', binDir, `python${ext}`);
   }
   const binDir = process.platform === 'win32' ? 'Scripts' : 'bin';
   const ext = process.platform === 'win32' ? '.exe' : '';
@@ -76,13 +401,9 @@ function getPythonBinary() {
 }
 
 function getPythonArgs(initialProjectPath = null) {
-  const portArgs = ['--port', String(PORT)];
+  const portArgs = ['--port', String(Number.isFinite(REQUESTED_PORT) ? REQUESTED_PORT : 0)];
   const projectArgs = initialProjectPath ? ['--project', initialProjectPath] : [];
-  if (app.isPackaged) {
-    return ['-m', 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
-  }
-  const root = path.resolve(__dirname, '..');
-  return ['run', '--directory', root, 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
+  return ['-m', 'splitshot', '--headless', '--no-open', ...portArgs, ...projectArgs];
 }
 
 function prependPathEntries(env, entries) {
@@ -111,11 +432,29 @@ function getBundledSitePackagesDir(bundlePath) {
 }
 
 function startPythonBackend(initialProjectPath = null) {
+  return new Promise((resolve, reject) => {
   const args = getPythonArgs(initialProjectPath);
   const python = getPythonBinary();
   const bundlePath = getBundlePath();
+  const projectRoot = path.resolve(__dirname, '..');
   const env = { ...process.env };
+  let settled = false;
+  let stdoutBuffer = '';
+  let readyTimer = null;
   backendStarted = true;
+  env.SPLITSHOT_REQUIRE_SESSION_CLAIM = '1';
+
+  const settleOnce = (callback) => (value) => {
+    if (settled) return;
+    settled = true;
+    if (readyTimer) {
+      clearTimeout(readyTimer);
+      readyTimer = null;
+    }
+    callback(value);
+  };
+  const resolveOnce = settleOnce(resolve);
+  const rejectOnce = settleOnce(reject);
 
   if (app.isPackaged) {
     env.PYTHONPATH = path.join(bundlePath, 'src');
@@ -137,24 +476,43 @@ function startPythonBackend(initialProjectPath = null) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   } else {
-    pythonProcess = spawn('uv', args, {
-      cwd: path.resolve(__dirname, '..'),
+    pythonProcess = spawn(python, args, {
+      cwd: projectRoot,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
   }
 
+  readyTimer = setTimeout(() => {
+    rejectOnce(new Error('Python backend failed to emit a ready line.'));
+  }, BACKEND_START_TIMEOUT_MS);
+
   pythonProcess.stdout.on('data', (data) => {
-    console.log(`[python] ${data}`);
+    try {
+      stdoutBuffer = processPythonStdoutChunk(stdoutBuffer + data.toString(), (payload) => {
+        void establishBackendSession(payload)
+          .then(resolveOnce)
+          .catch(rejectOnce);
+      });
+    } catch (error) {
+      rejectOnce(error);
+    }
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    console.error(`[python] ${data}`);
+    for (const line of String(data || '').split(/\r?\n/)) {
+      if (line) {
+        console.error(`[python] ${line}`);
+      }
+    }
   });
 
   pythonProcess.on('exit', (code) => {
     appendTestEvent('backend-exit', { code });
     console.log(`Python backend exited with code ${code}`);
+    if (!settled) {
+      rejectOnce(new Error(`Python backend exited with code ${code}`));
+    }
     if (!app.isQuitting) {
       app.quit();
     }
@@ -163,34 +521,15 @@ function startPythonBackend(initialProjectPath = null) {
   pythonProcess.on('error', (error) => {
     appendTestEvent('backend-spawn-error', { error: String(error) });
     console.error(`Python backend spawn failed: ${error}`);
+    rejectOnce(error);
   });
-}
-
-function waitForServer(retries = 30) {
-  return new Promise((resolve, reject) => {
-    const tryConnect = (attempt) => {
-      if (attempt >= retries) {
-        reject(new Error('Python backend failed to start'));
-        return;
-      }
-      const http = require('http');
-      const req = http.get(`${PYTHON_URL}/api/state`, (res) => {
-        if (res.statusCode === 200) {
-          resolve();
-        } else {
-          setTimeout(() => tryConnect(attempt + 1), 500);
-        }
-      });
-      req.on('error', () => {
-        setTimeout(() => tryConnect(attempt + 1), 500);
-      });
-      req.end();
-    };
-    tryConnect(0);
   });
 }
 
 function createWindow() {
+  if (!backendBaseUrl) {
+    throw new Error('SplitShot backend URL is unavailable.');
+  }
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -201,16 +540,20 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
     show: false,
   });
 
-  mainWindow.loadURL(PYTHON_URL);
+  mainWindow.webContents.on('dom-ready', () => {
+    void installDesktopRouteBridge(mainWindow);
+  });
 
   mainWindow.webContents.once('did-finish-load', () => {
+    void installDesktopRouteBridge(mainWindow);
     windowLoaded = true;
     launchIntentRouter.setWindowReady(true);
-    appendTestEvent('window-loaded', { url: PYTHON_URL });
+    appendTestEvent('window-loaded', { url: backendBaseUrl });
     maybeRecordAppReady();
   });
 
@@ -228,6 +571,8 @@ function createWindow() {
     appendTestEvent('window-closed');
     mainWindow = null;
   });
+
+  mainWindow.loadURL(backendBaseUrl);
 }
 
 function dispatchLaunchIntent(intent) {
@@ -294,12 +639,9 @@ function buildAppMenu() {
           label: 'Open Project...',
           accelerator: 'CmdOrCtrl+O',
           click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openFile'],
-              filters: [{ name: 'SplitShot Projects', extensions: ['ssproj'] }],
-            });
-            if (!result.canceled && result.filePaths[0] && mainWindow) {
-              handleFileOpenPath(result.filePaths[0], { source: 'dialog' });
+            const selectedPath = await showPathDialog({ kind: 'project_folder' });
+            if (selectedPath && mainWindow) {
+              handleFileOpenPath(selectedPath, { source: 'dialog' });
             }
           },
         },
@@ -351,11 +693,11 @@ function buildAppMenu() {
       submenu: [
         {
           label: 'SplitShot Website',
-          click: () => shell.openExternal('https://splitshot.studio'),
+          click: () => openExternalUrl('https://splitshot.studio'),
         },
         {
           label: 'Report Issue',
-          click: () => shell.openExternal('https://github.com/anomalyco/splitshot/issues'),
+          click: () => openExternalUrl('https://github.com/anomalyco/splitshot/issues'),
         },
       ],
     },
@@ -380,12 +722,44 @@ ipcMain.handle('open-file', async () => {
 });
 
 ipcMain.handle('open-project-dialog', async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ['openFile'],
-    filters: [{ name: 'SplitShot Projects', extensions: ['ssproj'] }],
-  });
-  return result.canceled ? null : result.filePaths[0];
+  return showPathDialog({ kind: 'project_folder' });
 });
+
+ipcMain.handle('open-path-dialog', async (_event, request) => showPathDialog(request));
+
+ipcMain.handle('open-external', async (_event, targetUrl) => openExternalUrl(targetUrl));
+
+ipcMain.handle('install-desktop-route-bridge', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return false;
+  }
+  return installDesktopRouteBridge(mainWindow);
+});
+
+ipcMain.handle('get-practiscore-host-feature', async () => getPractiScoreHost().getFeatureState());
+
+ipcMain.handle('get-practiscore-state-overlay', async () => getPractiScoreHost().getStateOverlay());
+
+ipcMain.handle('start-practiscore-session-host', async () => getPractiScoreHost().startSession());
+
+ipcMain.handle('get-practiscore-session-status-host', async () => getPractiScoreHost().currentStatus());
+
+ipcMain.handle('clear-practiscore-session-host', async () => getPractiScoreHost().clearSession());
+
+ipcMain.handle('list-practiscore-matches-host', async () => getPractiScoreHost().listMatches());
+
+ipcMain.handle('download-practiscore-selected-match-host', async (_event, remoteId) => getPractiScoreHost().downloadSelectedMatch(remoteId));
+
+ipcMain.handle('update-practiscore-host-overlay', async (_event, routePayload) => getPractiScoreHost().updateOverlay(routePayload));
+
+ipcMain.handle('claim-backend-session', async () => {
+  if (!backendSessionMetadata) {
+    throw new Error('SplitShot backend session is not ready.');
+  }
+  return backendSessionMetadata;
+});
+
+ipcMain.handle('get-backend-session-metadata', async () => backendSessionMetadata);
 
 if (process.platform === 'darwin') {
   app.on('open-file', (event, filePath) => {
@@ -422,20 +796,31 @@ if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
     queueLaunchIntent(argvIntent);
     return true;
   });
+  ipcMain.handle('test-get-last-open-external', async () => lastExternalOpenUrl);
 }
 
 app.on('ready', async () => {
+  app.setAppLogsPath();
   appendTestEvent('app-ready-start', {
     argv: process.argv,
-    port: PORT,
+    requestedPort: REQUESTED_PORT,
+    ...getElectronSupportRoots(),
   });
   buildAppMenu();
-  startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
   try {
-    await waitForServer();
+    const metadata = await startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
     console.log('Python backend is ready');
     launchIntentRouter.setBackendReady(true);
-    appendTestEvent('backend-ready', { url: PYTHON_URL });
+    appendTestEvent('backend-ready', {
+      url: backendBaseUrl,
+      sessionId: metadata?.session_id || null,
+      healthPath: metadata?.health_path || null,
+      eventsPath: metadata?.events_path || null,
+      logRoot: metadata?.log_root || null,
+      cacheRoot: metadata?.cache_root || null,
+      appDataRoot: metadata?.app_data_root || null,
+      ...getElectronSupportRoots(),
+    });
     maybeRecordAppReady();
     createWindow();
   } catch (err) {

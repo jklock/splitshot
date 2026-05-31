@@ -7,7 +7,9 @@ from splitshot.domain.models import (
     AspectRatio,
     ExportPreset,
     ExportQuality,
+    MatchWorkspace,
     OverlayPosition,
+    StageEntry,
     VideoAsset,
 )
 import splitshot.ui.controller as controller_module
@@ -95,6 +97,232 @@ def _build_workspace_with_stage_profiles(controller: ProjectController, workspac
         },
     )
     controller.save_workspace()
+
+
+def test_workspace_controller_methods_delegate_to_workspace_service(monkeypatch, tmp_path) -> None:
+    import splitshot.ui.services.workspace_service as workspace_service_module
+
+    controller = ProjectController()
+    expected_open_error = {"reason": "delegated"}
+    expected_reset_result = {"reset": True}
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        workspace_service_module,
+        "new_workspace",
+        lambda passed_controller, eligible_fields: calls.append(
+            ("new_workspace", passed_controller, eligible_fields)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "save_workspace",
+        lambda passed_controller, path=None: calls.append(("save_workspace", passed_controller, path)),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "open_workspace",
+        lambda passed_controller, path: calls.append(("open_workspace", passed_controller, path)),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_add_stage",
+        lambda passed_controller, stage_id, display_name="", project_path="": calls.append(
+            ("workspace_add_stage", passed_controller, stage_id, display_name, project_path)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_remove_stage",
+        lambda passed_controller, stage_id: calls.append(
+            ("workspace_remove_stage", passed_controller, stage_id)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_open_stage",
+        lambda passed_controller, stage_id: calls.append(
+            ("workspace_open_stage", passed_controller, stage_id)
+        ) or expected_open_error,
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_return_to_workspace",
+        lambda passed_controller: calls.append(("workspace_return_to_workspace", passed_controller)),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_set_defaults",
+        lambda passed_controller, payload, eligible_fields: calls.append(
+            ("workspace_set_defaults", passed_controller, payload, eligible_fields)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_set_stage_override",
+        lambda passed_controller, stage_id, payload, eligible_fields: calls.append(
+            ("workspace_set_stage_override", passed_controller, stage_id, payload, eligible_fields)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_reset_stage_override",
+        lambda passed_controller, stage_id, keys=None: calls.append(
+            ("workspace_reset_stage_override", passed_controller, stage_id, keys)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_reset_defaults",
+        lambda passed_controller: calls.append(("workspace_reset_defaults", passed_controller))
+        or expected_reset_result,
+    )
+
+    controller.new_workspace()
+    controller.save_workspace(str(tmp_path / "delegated-workspace"))
+    controller.open_workspace(str(tmp_path / "delegated-workspace"))
+    controller.workspace_add_stage("stage_1", "Stage 1", "")
+    controller.workspace_remove_stage("stage_1")
+    assert controller.workspace_open_stage("stage_1") == expected_open_error
+    controller.workspace_return_to_workspace()
+    controller.workspace_set_defaults({"frame_profile": "16:9"})
+    controller.workspace_set_stage_override("stage_1", {"frame_profile": "9:16"})
+    controller.workspace_reset_stage_override("stage_1", ["frame_profile"])
+    assert controller.workspace_reset_defaults() == expected_reset_result
+
+    assert calls[0][0] == "new_workspace"
+    assert calls[0][1] is controller
+    assert "frame_profile" in calls[0][2]
+    assert calls[1] == ("save_workspace", controller, str(tmp_path / "delegated-workspace"))
+    assert calls[2] == ("open_workspace", controller, str(tmp_path / "delegated-workspace"))
+    assert calls[3] == ("workspace_add_stage", controller, "stage_1", "Stage 1", "")
+    assert calls[4] == ("workspace_remove_stage", controller, "stage_1")
+    assert calls[5] == ("workspace_open_stage", controller, "stage_1")
+    assert calls[6] == ("workspace_return_to_workspace", controller)
+    assert calls[7][0] == "workspace_set_defaults"
+    assert calls[7][1] is controller
+    assert calls[7][2] == {"frame_profile": "16:9"}
+    assert "frame_profile" in calls[7][3]
+    assert calls[8][0] == "workspace_set_stage_override"
+    assert calls[8][1] is controller
+    assert calls[8][2] == "stage_1"
+    assert calls[8][3] == {"frame_profile": "9:16"}
+    assert "frame_profile" in calls[8][4]
+    assert calls[9] == ("workspace_reset_stage_override", controller, "stage_1", ["frame_profile"])
+    assert calls[10] == ("workspace_reset_defaults", controller)
+
+
+def test_workspace_controller_helpers_delegate_to_workspace_service(monkeypatch, tmp_path) -> None:
+    import splitshot.ui.services.workspace_service as workspace_service_module
+
+    controller = ProjectController()
+    workspace = MatchWorkspace()
+    stage_entry = StageEntry(stage_id="stage_1")
+    project_file = tmp_path / "Stages" / "stage_1" / "project.json"
+    expected_snapshot = {"workspace": {"name": "Delegated Workspace"}, "stage_profiles": {}}
+    calls: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        workspace_service_module,
+        "seed_workspace_defaults",
+        lambda passed_controller, passed_workspace, eligible_fields: calls.append(
+            ("seed_workspace_defaults", passed_controller, passed_workspace, eligible_fields)
+        ),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_stage_entry",
+        lambda passed_controller, stage_id: calls.append(
+            ("workspace_stage_entry", passed_controller, stage_id)
+        ) or stage_entry,
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_stage_project_file",
+        lambda passed_controller, stage_id, workspace_path=None, entry=None: calls.append(
+            (
+                "workspace_stage_project_file",
+                passed_controller,
+                stage_id,
+                workspace_path,
+                entry,
+            )
+        ) or project_file,
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "find_workspace_stage_for_project_path",
+        lambda passed_controller, project_path, workspace=None, workspace_path=None: calls.append(
+            (
+                "find_workspace_stage_for_project_path",
+                passed_controller,
+                project_path,
+                workspace,
+                workspace_path,
+            )
+        ) or "stage_1",
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "ensure_project_workspace_membership",
+        lambda passed_controller, project_path, eligible_fields: calls.append(
+            (
+                "ensure_project_workspace_membership",
+                passed_controller,
+                project_path,
+                eligible_fields,
+            )
+        ) or "stage_1",
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "workspace_persistence_snapshot",
+        lambda passed_controller: calls.append(("workspace_persistence_snapshot", passed_controller))
+        or expected_snapshot,
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "persist_workspace_stage_profiles",
+        lambda passed_controller: calls.append(("persist_workspace_stage_profiles", passed_controller)),
+    )
+    monkeypatch.setattr(
+        workspace_service_module,
+        "load_workspace_stage_profiles",
+        lambda passed_controller: calls.append(("load_workspace_stage_profiles", passed_controller)),
+    )
+
+    controller._seed_workspace_defaults(workspace)
+    assert controller._workspace_stage_entry("stage_1") is stage_entry
+    assert controller._workspace_stage_project_file(
+        "stage_1",
+        workspace_path=tmp_path / "delegated-workspace",
+        entry=stage_entry,
+    ) == project_file
+    assert controller._find_workspace_stage_for_project_path(
+        tmp_path / "delegated-workspace" / "Stages" / "stage_1" / "project.json"
+    ) == "stage_1"
+    assert controller._ensure_project_workspace_membership(tmp_path / "delegated-project.ssproj") == "stage_1"
+    assert controller._workspace_persistence_snapshot() == expected_snapshot
+    controller._persist_workspace_stage_profiles()
+    controller._load_workspace_stage_profiles()
+
+    assert calls[0][0] == "seed_workspace_defaults"
+    assert calls[0][1] is controller
+    assert calls[0][2] is workspace
+    assert "frame_profile" in calls[0][3]
+    assert calls[1] == ("workspace_stage_entry", controller, "stage_1")
+    assert calls[2][0] == "workspace_stage_project_file"
+    assert calls[2][1] is controller
+    assert calls[2][2] == "stage_1"
+    assert calls[2][4] is stage_entry
+    assert calls[3][0] == "find_workspace_stage_for_project_path"
+    assert calls[3][1] is controller
+    assert calls[4][0] == "ensure_project_workspace_membership"
+    assert calls[4][1] is controller
+    assert "frame_profile" in calls[4][3]
+    assert calls[5] == ("workspace_persistence_snapshot", controller)
+    assert calls[6] == ("persist_workspace_stage_profiles", controller)
+    assert calls[7] == ("load_workspace_stage_profiles", controller)
 
 
 class TestWorkspaceLifecycle:

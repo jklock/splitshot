@@ -218,7 +218,7 @@ class PractiScoreSessionManager:
     def profile_paths(self) -> PractiScoreProfilePaths:
         return self._profile_paths
 
-    def start_login_flow(self) -> PractiScoreSessionStatus:
+    def start_login_flow(self, *, external_open: bool = True) -> PractiScoreSessionStatus:
         with self._lock:
             profile_dir = ensure_practiscore_profile_dir(self._profile_paths.app_dir)
             if self._runtime is not None:
@@ -226,6 +226,12 @@ class PractiScoreSessionManager:
                 status = self._refresh_status_locked()
                 if status.state == "authenticated_ready":
                     self._external_login_requested = False
+                    return status
+                if (
+                    external_open
+                    and status.state in {"authenticating", "challenge_required"}
+                    and self._external_login_requested
+                ):
                     return status
                 if status.state == "error":
                     self._close_runtime_locked()
@@ -245,6 +251,26 @@ class PractiScoreSessionManager:
             if status.state == "authenticated_ready":
                 self._external_login_requested = False
                 return status
+            if (
+                external_open
+                and status.state in {"authenticating", "challenge_required"}
+                and self._external_login_requested
+            ):
+                return status
+            current_url = ""
+            if isinstance(status.details, dict):
+                current_url = str(status.details.get("current_url") or "")
+            if not external_open:
+                self._status = PractiScoreSessionStatus(
+                    state="challenge_required"
+                    if status.state == "challenge_required"
+                    else "authenticating",
+                    message=_CHALLENGE_MESSAGE
+                    if status.state == "challenge_required"
+                    else _AUTHENTICATING_MESSAGE,
+                    details=self._details(profile_path=profile_dir, current_url=current_url),
+                )
+                return self._status
             if (
                 status.state in {"authenticating", "challenge_required"}
                 and self._external_login_requested
@@ -268,9 +294,6 @@ class PractiScoreSessionManager:
                 )
                 raise RuntimeError(self._status.message)
             self._external_login_requested = True
-            current_url = ""
-            if isinstance(status.details, dict):
-                current_url = str(status.details.get("current_url") or "")
             self._status = PractiScoreSessionStatus(
                 state="challenge_required"
                 if status.state == "challenge_required"

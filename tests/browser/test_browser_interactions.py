@@ -394,8 +394,9 @@ class _BrowserFakeSessionManager:
     def current_status(self) -> _BrowserFakeStatus:
         return _BrowserFakeStatus(self._state, self._message(), self._details)
 
-    def start_login_flow(self) -> _BrowserFakeStatus:
+    def start_login_flow(self, *, external_open: bool = False) -> _BrowserFakeStatus:
         self._state = self._start_state
+        self._details["external_open"] = bool(external_open)
         return self.current_status()
 
     def serialize_status(self) -> dict[str, object]:

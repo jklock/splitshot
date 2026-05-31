@@ -74,6 +74,15 @@ export function createActivityRuntime({
     runtime.activityPollTimer = null;
   }
 
+  function clearActivityEventSource() {
+    const eventSource = runtime.activityEventSource;
+    if (!eventSource) return;
+    try {
+      eventSource.close();
+    } catch {}
+    runtime.activityEventSource = null;
+  }
+
   function appendExportLogLine(line) {
     const nextLine = String(line || "").trimEnd();
     if (!nextLine) return;
@@ -98,13 +107,19 @@ export function createActivityRuntime({
       if (!entry || typeof entry !== "object") return;
       const seq = Number(entry.seq || 0);
       if (seq > runtime.activityCursor) runtime.activityCursor = seq;
-      if (entry.event === "/api/activity/poll") return;
-      if (entry.event === "api.export.log") {
+      const eventName = String(entry.event_type || entry.event || "");
+      const detail = entry.detail && typeof entry.detail === "object"
+        ? entry.detail
+        : entry.payload && typeof entry.payload === "object"
+          ? entry.payload
+          : {};
+      if (eventName === "/api/activity/poll") return;
+      if (eventName === "api.export.log") {
         appendExportLogLine(entry.line);
         exportLogChanged = true;
         return;
       }
-      if (entry.event === "api.export.progress") {
+      if (eventName === "api.export.progress") {
         const nextProgress = Number(entry.progress);
         if (Number.isFinite(nextProgress)) {
           setProcessingProgress(nextProgress * 100);
@@ -112,7 +127,25 @@ export function createActivityRuntime({
         }
         return;
       }
-      if (entry.event === "api.export.complete") {
+      if (eventName === "api.export.complete") {
+        setProcessingProgress(100);
+        exportLogChanged = true;
+        return;
+      }
+      if (eventName === "job.log" && detail.legacy_event === "api.export.log") {
+        appendExportLogLine(detail.line || entry.message || "");
+        exportLogChanged = true;
+        return;
+      }
+      if (eventName === "job.progress" && detail.legacy_event === "api.export.progress") {
+        const nextProgress = Number(entry.progress_percent);
+        if (Number.isFinite(nextProgress)) {
+          setProcessingProgress(nextProgress);
+          exportLogChanged = true;
+        }
+        return;
+      }
+      if (eventName === "job.completed" && detail.result?.legacy_event === "api.export.complete") {
         setProcessingProgress(100);
         exportLogChanged = true;
       }
@@ -141,13 +174,56 @@ export function createActivityRuntime({
     }
   }
 
+  function startActivityStream() {
+    if (runtime.activityEventSource) return true;
+    if (typeof window.EventSource !== "function") return false;
+    try {
+      const eventSource = new window.EventSource(`/api/events?after=${runtime.activityCursor}`);
+      runtime.activityEventSource = eventSource;
+      const handleEvent = (event) => {
+        try {
+          const payload = JSON.parse(event.data || "{}");
+          consumeActivityEntries([payload]);
+        } catch (error) {
+          console.warn("[splitshot] activity stream payload failed", error);
+        }
+      };
+      [
+        "message",
+        "job.queued",
+        "job.started",
+        "job.progress",
+        "job.log",
+        "job.completed",
+        "job.failed",
+        "job.canceled",
+        "runtime.health",
+      ].forEach((eventName) => {
+        eventSource.addEventListener(eventName, handleEvent);
+      });
+      eventSource.onerror = () => {
+        emitBackbone(backbone, "activity.stream.error", { cursor: runtime.activityCursor });
+        clearActivityEventSource();
+        runtime.activityPollTimer = window.setTimeout(runActivityPoll, ACTIVITY_POLL_INTERVAL_MS);
+      };
+      emitBackbone(backbone, "activity.stream.start", { cursor: runtime.activityCursor });
+      return true;
+    } catch (error) {
+      console.warn("[splitshot] activity stream failed", error);
+      clearActivityEventSource();
+      return false;
+    }
+  }
+
   function startActivityPolling() {
-    if (runtime.activityPollTimer !== null) return;
+    if (runtime.activityPollTimer !== null || runtime.activityEventSource) return;
+    if (startActivityStream()) return;
     runtime.activityPollTimer = window.setTimeout(runActivityPoll, 0);
   }
 
   function stopActivityPolling() {
     clearActivityPollTimer();
+    clearActivityEventSource();
   }
 
   function buttonDescriptor(button) {
@@ -201,10 +277,12 @@ export function createActivityRuntime({
     queueActivity,
     activity,
     clearActivityPollTimer,
+    clearActivityEventSource,
     appendExportLogLine,
     clearCurrentExportLogState,
     consumeActivityEntries,
     runActivityPoll,
+    startActivityStream,
     startActivityPolling,
     stopActivityPolling,
     buttonDescriptor,

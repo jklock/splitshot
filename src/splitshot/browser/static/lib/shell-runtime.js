@@ -1080,7 +1080,6 @@ export function createShellRuntime({
     windowObject.addEventListener("beforeunload", () => {
       stopActivityPolling();
       flushPendingProjectDraftsKeepalive();
-      flushActivityQueue();
     });
     windowObject.addEventListener("pagehide", () => {
       flushPendingProjectDraftsKeepalive();

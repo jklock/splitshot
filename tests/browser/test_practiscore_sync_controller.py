@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import urllib.request
@@ -20,20 +21,48 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
 
 
-def _get_json(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=30) as response:
+def _get_json(url: str, headers: dict[str, str] | None = None) -> dict:
+    request = urllib.request.Request(
+        url,
+        headers=headers or {},
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _post_json(url: str, payload: dict) -> dict:
+def _post_json(url: str, payload: dict, headers: dict[str, str] | None = None) -> dict:
     request = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=30) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def _encode_header_payload(payload: object) -> str:
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("ascii")
+    return encoded.rstrip("=")
+
+
+def _electron_host_headers(
+    *,
+    session_payload: dict[str, object],
+    matches_payload: list[dict[str, object]] | None = None,
+) -> dict[str, str]:
+    headers = {
+        "X-SplitShot-PractiScore-Electron-Host": "1",
+        "X-SplitShot-PractiScore-Session-Payload": _encode_header_payload(
+            session_payload
+        ),
+    }
+    if matches_payload is not None:
+        headers["X-SplitShot-PractiScore-Matches"] = _encode_header_payload(
+            matches_payload
+        )
+    return headers
 
 
 class _FakeStatus:
@@ -230,6 +259,113 @@ def test_practiscore_selected_match_import_route_exposes_success_payload_shape(
     assert state_payload["practiscore_options"]["has_source"] is True
     assert "_session_payload" not in state_payload["practiscore_options"]
     assert "_sync_payload" not in state_payload["practiscore_options"]
+
+
+def test_practiscore_match_list_route_accepts_electron_host_payload_shape() -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+
+    try:
+        payload = _get_json(
+            f"{server.url}api/practiscore/matches",
+            headers=_electron_host_headers(
+                session_payload={
+                    "state": "authenticated_ready",
+                    "message": "PractiScore session is authenticated and ready.",
+                    "details": {"host": "electron_practiscore_host_v1"},
+                },
+                matches_payload=[
+                    {
+                        "remote_id": "match-electron-100",
+                        "label": "Electron USPSA Match",
+                        "match_type": "uspsa",
+                        "event_name": "Electron USPSA Match",
+                        "event_date": "2026-05-29",
+                    }
+                ],
+            ),
+        )
+        state_payload = _get_json(f"{server.url}api/state")
+    finally:
+        server.shutdown()
+
+    assert payload["matches"] == [
+        {
+            "remote_id": "match-electron-100",
+            "label": "Electron USPSA Match",
+            "match_type": "uspsa",
+            "event_name": "Electron USPSA Match",
+            "event_date": "2026-05-29",
+        }
+    ]
+    assert payload["practiscore_session"]["state"] == "authenticated_ready"
+    assert payload["practiscore_sync"]["state"] == "match_list_ready"
+    assert payload["practiscore_options"]["comparison_competitors"] == []
+    assert state_payload["practiscore_session"]["state"] == "authenticated_ready"
+    assert state_payload["practiscore_sync"]["state"] == "match_list_ready"
+    assert "_session_payload" not in state_payload["practiscore_options"]
+    assert "_sync_payload" not in state_payload["practiscore_options"]
+
+
+def test_practiscore_selected_match_import_route_accepts_electron_host_download_payload(
+    tmp_path: Path,
+) -> None:
+    server = BrowserControlServer(controller=ProjectController(), port=0)
+    server.start_background(open_browser=False)
+
+    session_payload = {
+        "state": "authenticated_ready",
+        "message": "PractiScore session is authenticated and ready.",
+        "details": {"host": "electron_practiscore_host_v1"},
+    }
+    matches_payload = [
+        {
+            "remote_id": "match-electron-200",
+            "label": "Electron IDPA Match",
+            "match_type": "idpa",
+            "event_name": "Electron IDPA Match",
+            "event_date": "2026-05-29",
+        }
+    ]
+
+    try:
+        _get_json(
+            f"{server.url}api/practiscore/matches",
+            headers=_electron_host_headers(
+                session_payload=session_payload,
+                matches_payload=matches_payload,
+            ),
+        )
+        payload = _post_json(
+            f"{server.url}api/practiscore/sync/start",
+            {
+                "remote_id": "match-electron-200",
+                "__electron_host_download": {
+                    "source_name": "remote-idpa.csv",
+                    "artifact_text": (EXAMPLES_DIR / "IDPA" / "IDPA.csv").read_text(
+                        encoding="utf-8"
+                    ),
+                    "html": "<html><body><h1>Electron IDPA Match</h1></body></html>",
+                    "match": matches_payload[0],
+                    "summary_snapshot": {
+                        "remote_match": matches_payload[0],
+                    },
+                },
+            },
+            headers=_electron_host_headers(session_payload=session_payload),
+        )
+        state_payload = _get_json(f"{server.url}api/state")
+    finally:
+        server.shutdown()
+
+    assert payload["practiscore_sync"]["state"] == "success"
+    assert payload["practiscore_sync"]["selected_remote_id"] == "match-electron-200"
+    assert payload["practiscore_sync"]["details"]["summary_path"].endswith("summary.json")
+    assert payload["practiscore_options"]["has_source"] is True
+    assert payload["practiscore_options"]["source_name"] == "remote-idpa.csv"
+    assert payload["practiscore_options"]["stage_numbers"] == [1, 2, 3, 4]
+    assert state_payload["practiscore_sync"]["state"] == "success"
+    assert state_payload["practiscore_options"]["has_source"] is True
 
 
 def test_practiscore_match_list_route_reports_expired_session_error(

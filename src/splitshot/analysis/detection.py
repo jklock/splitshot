@@ -86,6 +86,23 @@ def _predict_audio_events(
     )
 
 
+@lru_cache(maxsize=1)
+def prewarm_analysis_runtime() -> None:
+    settings = ShotMLSettings()
+    sample_rate = 22050
+    sample_count = max(sample_rate // 2, settings.window_size * 2)
+    warmup_samples = np.zeros(sample_count, dtype=np.float32)
+    predictions = _predict_audio_events(warmup_samples, sample_rate, settings)
+    _analyze_predictions(
+        warmup_samples,
+        sample_rate,
+        settings.detection_threshold,
+        predictions,
+        waveform_envelope(warmup_samples),
+        settings,
+    )
+
+
 def _shot_detection_cutoff(threshold: float, settings: ShotMLSettings | None = None) -> float:
     active_settings = _settings(settings)
     return sensitivity_to_cutoff(

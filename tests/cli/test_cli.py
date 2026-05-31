@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -143,6 +144,75 @@ def test_run_browser_prints_log_path_when_terminal_logging_is_enabled(monkeypatc
     output = capsys.readouterr().out
     assert "SplitShot activity log:" in output
     assert "splitshot.log" in output
+
+
+def test_run_headless_emits_ready_line_and_respects_claim_env(monkeypatch, capsys) -> None:
+    import splitshot.browser.server as browser_server_module
+    import splitshot.ui.controller as controller_module
+
+    calls: dict[str, object] = {}
+
+    class FakeServer:
+        def __init__(self, controller, host, port, log_level, require_session_claim) -> None:
+            calls["host"] = host
+            calls["port"] = port
+            calls["log_level"] = log_level
+            calls["require_session_claim"] = require_session_claim
+            self.url = "http://127.0.0.1:9900/"
+            self.activity = SimpleNamespace(path=Path("/tmp/splitshot.log"))
+
+        def start_background(self, open_browser: bool) -> None:
+            calls["open_browser"] = open_browser
+
+        def shutdown(self) -> None:
+            calls["shutdown"] = True
+
+        def ready_line_payload(self) -> dict[str, object]:
+            return {
+                "protocol_version": "1",
+                "session_id": "session-123",
+                "base_url": "http://127.0.0.1:9900",
+                "port": 9900,
+                "claim_path": "/api/startup/claim",
+                "startup_status_path": "/api/startup/status",
+                "health_path": "/api/health",
+                "events_path": "/api/events",
+                "bootstrap_token": "bootstrap-token",
+            }
+
+    class FakeController:
+        def open_project(self, path: str) -> None:
+            calls["project_path"] = path
+
+    class FakeEvent:
+        def set(self) -> None:
+            return
+
+        def wait(self) -> bool:
+            return True
+
+    monkeypatch.setattr(browser_server_module, "BrowserControlServer", FakeServer)
+    monkeypatch.setattr(browser_server_module, "find_free_port", lambda host, port: 9900)
+    monkeypatch.setattr(controller_module, "ProjectController", FakeController)
+    monkeypatch.setattr(cli.signal, "signal", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli.threading, "Event", FakeEvent)
+    monkeypatch.setenv("SPLITSHOT_REQUIRE_SESSION_CLAIM", "1")
+
+    assert cli.run_headless(port=0) == 0
+
+    output_lines = capsys.readouterr().out.strip().splitlines()
+    assert output_lines[0].startswith("SPLITSHOT_READY ")
+    ready_payload = json.loads(output_lines[0].removeprefix("SPLITSHOT_READY "))
+    assert ready_payload["session_id"] == "session-123"
+    assert output_lines[1] == "Open SplitShot at http://127.0.0.1:9900/"
+    assert calls == {
+        "host": "127.0.0.1",
+        "port": 9900,
+        "log_level": "off",
+        "require_session_claim": True,
+        "open_browser": False,
+        "shutdown": True,
+    }
 
 
 def test_cli_alias_entrypoints_preserve_parser_behavior(monkeypatch, tmp_path: Path) -> None:
