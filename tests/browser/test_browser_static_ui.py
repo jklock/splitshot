@@ -721,6 +721,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="pip-y"' in html
     assert "Composition Defaults" in html
     assert 'id="restore-merge-defaults"' in html
+    assert html.count('data-output-hook="run-window"') == 1
+    assert "Use these when adding media. Existing item cards stay the active placement truth." not in html
+    assert "Reusable output-profile trim padding for each item's Trim Video workflow." not in html
+    assert "Trim Video uses the selected output profile's lead-in and tail padding defaults." not in html
     assert (
         "Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync."
         not in html

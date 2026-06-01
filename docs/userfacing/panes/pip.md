@@ -28,11 +28,11 @@ The Compose pane manages added media on a per-item basis. The defaults at the to
 | `New item layout` | Seeds new cards with `Side by side`, `Above / below`, `Picture in picture`, `Full-screen portrait`, `Dual center HUD`, or `Dual top HUD`. Existing cards keep their own placement state. |
 | `New item layer size` | Sets the starting layer size for newly added media. |
 | `New item layer X` / `New item layer Y` | Set the starting normalized X/Y position for newly added cards when free placement is active. |
-| `Trim Settings` | Opens the selected output profile's reusable lead-in and tail padding defaults. Each card's `Trim Video` flow uses these values. |
+| `Trim Settings` | Opens the selected output profile's reusable lead-in and tail padding defaults for the whole Compose pane. |
 | Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
 | Per-item `Trim Video` | Sets start/end bounds for that item, can capture from the current frame, and creates or refreshes a project-local derivative in `Input/`. The original source stays untouched. |
-| Per-item `Camera role` | Tags that item as `Primary`, `Follow`, `Static`, or `Detail` so cards stay organized. |
+| Per-item `Camera role` | Sets that item's default composition job: `Primary` prefers base/reference use, `Static` prefers the base third-person slot, `Follow` stays the alternate action angle, and `Detail` prefers PiP/detail placement. |
 | Per-item `Placement mode` | Chooses whether that item behaves as a base, docked panel, or overlay. |
 | Per-item `Placement slot` | Chooses the side, band, center, or overlay slot for the current placement mode. |
 | Per-item `Overlay target` / `Base item` | For `Picture in picture` and `Full-screen portrait`, choose whether the item sits over the primary video or another added media card. |
@@ -60,7 +60,7 @@ The Compose pane manages added media on a per-item basis. The defaults at the to
 - `Picture in picture` with slot `Overlay` keeps `Layer size`, `Layer X`, and `Layer Y` active and allows preview dragging.
 - `Picture in picture` with `Left`, `Right`, `Top`, `Bottom`, or `Center` stays docked. Those slots use size, not free drag.
 - `Full-screen portrait` centers the item inside a tall portrait frame over the primary video or the selected base item.
-- `Trim Settings` changes reusable output-profile padding defaults. The real clip trim still lives inside each card's `Trim Video` section.
+- `Trim Settings` is shared for the Compose pane. The real clip trim still lives inside each card's `Trim Video` section.
 - `Trim Video` stores derivatives in the project `Input/` folder. Re-trimming overwrites the local derivative only.
 - Preview placement and export rendering come from the same per-item card state; Compose is not limited to a single stage-wide layout switch.
 
@@ -82,4 +82,3 @@ The Compose pane manages added media on a per-item basis. The defaults at the to
 
 Previous: [score.md](score.md)
 Next: [overlay.md](overlay.md) <!-- pip-pane-guide-eof -->
-

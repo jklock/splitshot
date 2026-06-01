@@ -857,7 +857,10 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
 
                 first_card.get_by_role("heading", name="Trim Video").wait_for(state="visible")
                 first_card.get_by_role("heading", name="Placement").wait_for(state="visible")
-                first_card.get_by_role("button", name="Trim Settings").wait_for(state="visible")
+                page.locator('[data-inspector-section="pip-defaults"]').get_by_role(
+                    "button", name="Trim Settings"
+                ).wait_for(state="visible")
+                assert first_card.get_by_role("button", name="Trim Settings").count() == 0
                 first_body.get_by_text("Camera role", exact=True).wait_for(state="visible")
                 assert first_card.get_by_role("button", name="Trim Video").is_enabled() is True
 
@@ -911,11 +914,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         const card = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`);
                         const xField = card?.querySelector('[data-merge-source-field="x"]')?.closest('.merge-source-field');
                         const yField = card?.querySelector('[data-merge-source-field="y"]')?.closest('.merge-source-field');
-                        const hint = card?.querySelector('[data-merge-source-sync-hint]');
-                        return Boolean(xField && yField && hint)
+                        return Boolean(xField && yField)
                             && xField.hidden === true
-                            && yField.hidden === true
-                            && hint.textContent === "These values are saved per item and take effect in this item's placement and export timing.";
+                            && yField.hidden === true;
                     }""",
                     arg=source_id,
                 )
@@ -936,22 +937,11 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         const card = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"]`);
                         const xField = card?.querySelector('[data-merge-source-field="x"]')?.closest('.merge-source-field');
                         const yField = card?.querySelector('[data-merge-source-field="y"]')?.closest('.merge-source-field');
-                        const hint = card?.querySelector('[data-merge-source-sync-hint]');
-                        return Boolean(xField && yField && hint)
+                        return Boolean(xField && yField)
                             && xField.hidden === false
-                            && yField.hidden === false
-                            && hint.textContent === "Use these nudges or drag the preview to match the primary video exactly.";
+                            && yField.hidden === false;
                     }""",
                     arg=source_id,
-                )
-
-                first_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
-                page.wait_for_function(
-                    """(payload) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
-                        return Boolean(source) && source.camera_role === payload.expected;
-                    }""",
-                    arg={"sourceId": source_id, "expected": "static"},
                 )
 
                 second_card = page.locator(
@@ -964,6 +954,30 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=second_source_id,
                     )
+                second_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        return Boolean(source)
+                            && source.camera_role === "static"
+                            && source.placement?.mode === "side_by_side"
+                            && source.placement?.slot === "left";
+                    }""",
+                    arg=second_source_id,
+                )
+
+                first_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
+                page.wait_for_function(
+                    """(payload) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
+                        return Boolean(source)
+                            && source.camera_role === payload.expected
+                            && source.placement?.mode === "pip"
+                            && source.placement?.slot === "overlay"
+                            && source.placement?.target_source_id === payload.secondSourceId;
+                    }""",
+                    arg={"sourceId": source_id, "expected": "static", "secondSourceId": second_source_id},
+                )
 
                 _set_input_value(first_card.locator('[data-merge-source-field="size"]'), "60")
                 _set_input_value(first_card.locator('[data-merge-source-field="opacity"]'), "80")

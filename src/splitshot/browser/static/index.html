@@ -690,11 +690,11 @@
               <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                 <div class="section-header sub-section-header">
-                  <div>
-                    <h3>Composition Defaults</h3>
-                    <span>Use these when adding media. Existing item cards stay the active placement truth.</span>
+                  <h3>Composition Defaults</h3>
+                  <div class="section-header-actions">
+                    <button data-output-hook="run-window" type="button">Trim Settings</button>
+                    <button id="restore-merge-defaults" type="button">Restore</button>
                   </div>
-                  <button id="restore-merge-defaults" type="button">Restore</button>
                 </div>
                 <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
                 <label>New item layout
@@ -707,7 +707,6 @@
                     <option value="dual_top_hud">Dual top HUD</option>
                   </select>
                 </label>
-                <p class="hint">These layout and placement values seed newly added media only. Restore resets this defaults block without rewriting current item cards.</p>
                 <label>New item layer size
                   <div class="pip-size-control">
                     <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
@@ -722,16 +721,6 @@
                     <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
-              </section>
-              <section class="pip-defaults-section" data-inspector-section="run-window">
-                <div class="section-header sub-section-header">
-                  <h3>Trim Settings</h3>
-                  <span>Reusable output-profile trim padding for each item's Trim Video workflow.</span>
-                </div>
-                <div class="hook-grid">
-                  <button data-output-hook="run-window" type="button">Trim Settings</button>
-                </div>
-                <p class="hint">Trim Video uses the selected output profile's lead-in and tail padding defaults.</p>
                 <div id="output-hook-host-merge"></div>
               </section>
               <div id="merge-media-list" class="merge-media-list" aria-label="Added media list"></div>

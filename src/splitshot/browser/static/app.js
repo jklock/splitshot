@@ -2594,6 +2594,10 @@ function syncMergePreviewStateFromControls() {
   return mergePane?.syncMergePreviewStateFromControls();
 }
 
+function renderLocalMergePreview() {
+  return mergePane?.renderLocalMergePreview();
+}
+
 function usesCustomQuadrant(quadrant) {
   return quadrant === CUSTOM_QUADRANT_VALUE;
 }
@@ -9751,8 +9755,6 @@ async function flushPendingMergeSourceCommits(options = {}) {
 }
 
 function renderMergeMediaList() {
-  // input.dataset.mergeSourceField = "opacity";
-  // These values are saved per item and take effect in PiP layout and export timing.
   return mergePane?.renderMergeMediaList();
 }
 
@@ -13069,6 +13071,7 @@ shellRuntime = createShellRuntime({
   scheduleShotMLSettingsApply,
   cancelMergeAutoApply: () => autoApplyMerge.cancel?.(),
   syncMergePreviewStateFromControls,
+  renderLocalMergePreview,
   scheduleInteractionPreviewRender,
   scheduleMergeApply,
   addTimingEvent,

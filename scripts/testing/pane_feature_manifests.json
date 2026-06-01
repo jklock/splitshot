@@ -1110,7 +1110,7 @@
       "features": [
         {
           "feature_id": "stage.compose.defaults_and_media",
-          "feature_label": "Added media defaults, layout seeding, and Trim Settings handoff",
+          "feature_label": "Added media defaults, layout seeding, and shared Trim Settings",
           "taxonomy_class": "TAX-0",
           "test_id": "tax0.stage.compose.defaults_and_media",
           "audit_model": "control-led",
@@ -1137,7 +1137,7 @@
             "Add media",
             "Composition Defaults collapse and restore",
             "new item layout and size/position defaults",
-            "Trim Settings output-profile editor"
+            "shared Trim Settings output-profile editor"
           ],
           "control_owner_targets": {
             "add-merge-media": [

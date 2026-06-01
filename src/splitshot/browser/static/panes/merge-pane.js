@@ -413,40 +413,111 @@ export function createMergePane({
     return resolvedPreviewPlacementSlotValue(placementValue.slot, { mode: placementValue.mode, source });
   }
 
-  function mergeSourcePlacementHint(mode = "auto", source = null, placement = null) {
-    const normalizedMode = normalizedPlacementModeValue(mode, source);
-    const resolvedMode = resolvedPlacementModeValue(mode, source);
-    if (normalizedMode === "auto") {
-      return `Auto keeps this item on its default/fallback placement (${mergeSourcePlacementModeLabel(resolvedMode, source)}). Pick a mode here to override this card.`;
-    }
-    if (resolvedMode === "base") return "Base fills the preview frame for this item.";
-    if (resolvedMode === "side_by_side") return "Side by side docks this item into the left or right half of the preview.";
-    if (resolvedMode === "above_below") return "Above / below docks this item into the top or bottom half of the preview.";
-    if (resolvedMode === "pip") {
-      const targetLabel = currentSourcePlacementTargetLabel(source, placement);
-      if (mergeSourcePlacementUsesPreviewDrag(source, placement)) {
-        return `PiP overlay keeps size, X, and Y active for this item. It currently sits over ${targetLabel}.`;
-      }
-      const previewSlotLabel = mergeSourcePlacementSlotLabel(currentSourcePlacementPreviewSlot(source, placement)).toLowerCase();
-      return `PiP overlay keeps size active for this item and docks it to the ${previewSlotLabel} over ${targetLabel}. Switch the slot to Overlay to re-enable free X/Y positioning and preview dragging.`;
-    }
-    if (resolvedMode === "full_screen_portrait") {
-      return `Full-screen portrait centers this item inside a tall portrait frame over ${currentSourcePlacementTargetLabel(source, placement)}.`;
-    }
-    if (resolvedMode === "dual_center_hud") return "Dual center HUD places this item in the left or right pane around the center band.";
-    if (resolvedMode === "dual_top_hud") return "Dual top HUD places this item in the left or right pane below the top band.";
-    return "Placement is saved on this item.";
-  }
-
   function mergeSourcePlacementUsesPreviewDrag(source = null, placement = null) {
     return currentSourcePlacementPreviewMode(source, placement) === "pip"
       && currentSourcePlacementPreviewSlot(source, placement) === "overlay";
   }
 
-  function mergeSourceSyncHintText(source = null, placement = null) {
-    return mergeSourcePlacementUsesPreviewDrag(source, placement)
-      ? "Use these nudges or drag the preview to match the primary video exactly."
-      : "These values are saved per item and take effect in this item's placement and export timing.";
+  function cameraRolePriorityValue(role = "") {
+    return {
+      primary: 0,
+      static: 1,
+      follow: 2,
+      detail: 3,
+    }[normalizedAngleRoleValue(role)] ?? 4;
+  }
+
+  function mergeSourceSeedPlacementModeForRole(angleRole, source = null) {
+    const normalizedRole = normalizedAngleRoleValue(angleRole, source);
+    const projectDefaultMode = currentMergeSourceSeedDefaults().placement_mode;
+    if (normalizedRole === "primary") return "base";
+    if (normalizedRole === "detail") {
+      return ["pip", "full_screen_portrait"].includes(projectDefaultMode) ? projectDefaultMode : "pip";
+    }
+    if (["side_by_side", "above_below", "dual_center_hud", "dual_top_hud"].includes(projectDefaultMode)) {
+      return projectDefaultMode;
+    }
+    return "side_by_side";
+  }
+
+  function mergeSourceSeedPlacementSlotForRole(angleRole, mode, source = null) {
+    const normalizedRole = normalizedAngleRoleValue(angleRole, source);
+    if (["side_by_side", "dual_center_hud", "dual_top_hud"].includes(mode)) {
+      return normalizedRole === "static" ? "left" : "right";
+    }
+    if (mode === "above_below") return normalizedRole === "static" ? "top" : "bottom";
+    if (mode === "pip") return "overlay";
+    return "center";
+  }
+
+  function mergeSourceBaseTargetSortKey(source = null) {
+    const mode = currentSourcePlacementPreviewMode(source);
+    const sourceId = sourceIdentifier(source, "");
+    const mergeSources = currentState()?.project?.merge_sources || [];
+    const sourceIndex = Math.max(
+      0,
+      mergeSources.findIndex((item, index) => sourceIdentifier(item, String(index)) === sourceId),
+    );
+    const modePriority = ["base", "full_screen_portrait"].includes(mode)
+      ? 0
+      : ["side_by_side", "above_below", "dual_center_hud", "dual_top_hud"].includes(mode)
+        ? 1
+        : 2;
+    return [modePriority, cameraRolePriorityValue(currentSourceAngleRole(source)), sourceIndex];
+  }
+
+  function preferredMergeSourceBaseTarget(source = null) {
+    const currentSourceId = sourceIdentifier(source, "");
+    const mergeSources = (currentState()?.project?.merge_sources || [])
+      .filter((item, index) => {
+        const candidateId = sourceIdentifier(item, String(index));
+        return candidateId && candidateId !== currentSourceId && item?.asset?.path;
+      })
+      .sort((left, right) => {
+        const leftKey = mergeSourceBaseTargetSortKey(left);
+        const rightKey = mergeSourceBaseTargetSortKey(right);
+        return leftKey[0] - rightKey[0] || leftKey[1] - rightKey[1] || leftKey[2] - rightKey[2];
+      });
+    return mergeSources.find((candidate) => {
+      const mode = currentSourcePlacementPreviewMode(candidate);
+      return ["base", "side_by_side", "above_below", "full_screen_portrait", "dual_center_hud", "dual_top_hud"].includes(mode);
+    }) || null;
+  }
+
+  function mergeSourceSeedTargetForRole(angleRole, source = null, mode = "side_by_side") {
+    if (!["pip", "full_screen_portrait"].includes(mode)) {
+      return { target_kind: "primary_video", target_source_id: null };
+    }
+    const targetSource = preferredMergeSourceBaseTarget(source);
+    if (!targetSource) return { target_kind: "primary_video", target_source_id: null };
+    return {
+      target_kind: "merge_source",
+      target_source_id: sourceIdentifier(targetSource, ""),
+    };
+  }
+
+  function mergeSourceSeedPlacementForRole(angleRole, source = null) {
+    const mode = mergeSourceSeedPlacementModeForRole(angleRole, source);
+    const slot = mergeSourceSeedPlacementSlotForRole(angleRole, mode, source);
+    return {
+      mode,
+      slot,
+      ...mergeSourceSeedTargetForRole(angleRole, source, mode),
+    };
+  }
+
+  function mergeSourceMatchesRoleSeedDefaults(source = null, referenceRole = null) {
+    if (!source) return false;
+    const expectedPlacement = mergeSourceSeedPlacementForRole(
+      referenceRole ?? currentSourceAngleRole(source),
+      source,
+    );
+    const currentPlacement = currentSourcePlacementValue(source);
+    if (currentPlacement.mode !== expectedPlacement.mode) return false;
+    if (currentSourcePlacementPreviewSlot(source) !== expectedPlacement.slot) return false;
+    const currentTargetSourceId = resolvedPlacementTargetSourceIdValue(currentPlacement.target_source_id, source);
+    return currentPlacement.target_kind === expectedPlacement.target_kind
+      && currentTargetSourceId === expectedPlacement.target_source_id;
   }
 
   function syncPlacementSlotControl(control, { mode = "auto", source = null, value = "auto" } = {}) {
@@ -783,18 +854,21 @@ export function createMergePane({
         const field = input.closest(".merge-source-field");
         if (field) field.hidden = !supportsTargetSelection || placementValue.target_kind !== "merge_source";
       });
-      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-placement-hint]`).forEach((hint) => {
-        hint.textContent = mergeSourcePlacementHint(placementValue.mode, source, placementValue);
-      });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
         label.textContent = formatSyncOffsetLabel(offsetValue);
       });
-      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-hint]`).forEach((hint) => {
-        hint.textContent = mergeSourceSyncHintText(source, placementValue);
-      });
     }
 
-    function updateLocalMergeSourcePosition(sourceId, pipX, pipY, pipSizePercent = null, opacity = null, angleRole = null, placement = null) {
+    function updateLocalMergeSourcePosition(
+      sourceId,
+      pipX,
+      pipY,
+      pipSizePercent = null,
+      opacity = null,
+      angleRole = null,
+      placement = null,
+      { reseedRolePlacement = false } = {},
+    ) {
       const source = mergeSourceById(sourceId);
       if (!source || !currentState()?.project) return;
       const nextSize = normalizedPipSizePercentValue(pipSizePercent ?? source.pip_size_percent);
@@ -805,7 +879,14 @@ export function createMergePane({
         angleRole ?? source.camera_role ?? source.angle_role,
         source,
       );
-      const nextPlacement = mergeSourcePlacementState(source, placement);
+      let nextPlacement = mergeSourcePlacementState(source, placement);
+      if (
+        reseedRolePlacement
+        && nextAngleRole !== currentSourceAngleRole(source)
+        && mergeSourceMatchesRoleSeedDefaults(source, currentSourceAngleRole(source))
+      ) {
+        nextPlacement = mergeSourcePlacementState(source, mergeSourceSeedPlacementForRole(nextAngleRole, source));
+      }
       source.pip_size_percent = nextSize;
       source.pip_x = nextX;
       source.pip_y = nextY;
@@ -1227,7 +1308,6 @@ export function createMergePane({
     const video = $("primary-video");
     const stage = $("video-stage");
     if (!video || !stage) return;
-    hydrateMergeSourcesFromDefaults({ persist: true });
     const mergeSources = currentState()?.project?.merge_sources || [];
     renderMergePreviewLayer(video, stage, mergeSources);
   }
@@ -1235,7 +1315,6 @@ export function createMergePane({
   function renderMergeMediaList() {
     const list = $("merge-media-list");
     if (!list) return;
-    hydrateMergeSourcesFromDefaults({ persist: true });
     const mergeSources = currentState()?.project?.merge_sources || [];
     const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
     clearStaleMergeSourceTrimState(validSourceIds);
@@ -1311,13 +1390,9 @@ export function createMergePane({
         trimSection.className = "settings-section merge-source-trim-section";
         const trimHeader = documentObject.createElement("div");
         trimHeader.className = "section-header sub-section-header";
-        const trimHeaderCopy = documentObject.createElement("div");
         const trimTitle = documentObject.createElement("h3");
         trimTitle.textContent = "Trim Video";
-        const trimSubtitle = documentObject.createElement("span");
-        trimSubtitle.textContent = "Set clip bounds before later item timing and placement changes.";
-        trimHeaderCopy.append(trimTitle, trimSubtitle);
-        trimHeader.append(trimHeaderCopy);
+        trimHeader.append(trimTitle);
         trimSection.append(trimHeader);
 
         const trimBusy = trimmingMergeSources.has(sourceId);
@@ -1342,18 +1417,6 @@ export function createMergePane({
             setMergeSourceTrimStatus(sourceId, "");
             return normalized;
           };
-
-          const trimSettingsGrid = documentObject.createElement("div");
-          trimSettingsGrid.className = "hook-grid";
-          const trimSettingsButton = documentObject.createElement("button");
-          trimSettingsButton.type = "button";
-          trimSettingsButton.textContent = "Trim Settings";
-          trimSettingsButton.title = "Open the shared reusable trim padding editor for the selected output profile.";
-          trimSettingsButton.disabled = trimBusy;
-          trimSettingsButton.addEventListener("click", () => {
-            openMergeTrimSettingsEditor();
-          });
-          trimSettingsGrid.append(trimSettingsButton);
 
           const trimRangeGrid = documentObject.createElement("div");
           trimRangeGrid.className = "control-grid";
@@ -1458,7 +1521,7 @@ export function createMergePane({
           });
 
           trimActionButtons.append(trimButton, resetTrimRange);
-          trimSection.append(trimSettingsGrid, trimRangeGrid, trimCaptureButtons, trimActionButtons, trimStatus);
+          trimSection.append(trimRangeGrid, trimCaptureButtons, trimActionButtons, trimStatus);
         }
 
         const controls = documentObject.createElement("div");
@@ -1472,13 +1535,9 @@ export function createMergePane({
         placementSection.dataset.sourceId = sourceId;
         const placementHeader = documentObject.createElement("div");
         placementHeader.className = "section-header sub-section-header";
-        const placementHeaderCopy = documentObject.createElement("div");
         const placementTitle = documentObject.createElement("h3");
         placementTitle.textContent = "Placement";
-        const placementSubtitle = documentObject.createElement("span");
-        placementSubtitle.textContent = "Current item placement lives here. Project defaults only seed new cards.";
-        placementHeaderCopy.append(placementTitle, placementSubtitle);
-        placementHeader.append(placementHeaderCopy);
+        placementHeader.append(placementTitle);
 
         const placementGrid = documentObject.createElement("div");
         placementGrid.className = "control-grid";
@@ -1549,12 +1608,6 @@ export function createMergePane({
         });
         placementTargetSourceField.append(placementTargetSourceText, placementTargetSourceSelect);
 
-        const placementHint = documentObject.createElement("small");
-        placementHint.className = "hint";
-        placementHint.dataset.mergeSourcePlacementHint = "true";
-        placementHint.dataset.sourceId = sourceId;
-        placementHint.textContent = mergeSourcePlacementHint(placementValue.mode, source, placementValue);
-
         let layerXField = null;
         let layerYField = null;
 
@@ -1608,7 +1661,6 @@ export function createMergePane({
             target_kind: placementTargetKindSelect.value,
             target_source_id: placementTargetSourceSelect.value,
           };
-          placementHint.textContent = mergeSourcePlacementHint(placementModeSelect.value, activeSource, nextPlacement);
           syncFreeformPositionFields(activeSource, nextPlacement);
         };
 
@@ -1629,7 +1681,7 @@ export function createMergePane({
           placementTargetKindField,
           placementTargetSourceField,
         );
-        placementSection.append(placementHeader, placementGrid, placementHint);
+        placementSection.append(placementHeader, placementGrid);
 
         const readSourcePayload = () => {
           const roleControl = controls.querySelector('[data-merge-source-field="camera_role"]');
@@ -1659,10 +1711,10 @@ export function createMergePane({
             payload.opacity,
             payload.camera_role,
             payload.placement,
+            { reseedRolePlacement: true },
           );
           renderLocalMergePreview();
-          scheduleInteractionPreviewRender({ video: true });
-          return payload;
+          return mergeSourcePositionPayload(sourceId, mergeSourceById(sourceId));
         };
 
         const buildSourceRoleSelect = () => {
@@ -1815,12 +1867,7 @@ export function createMergePane({
 
         refreshPlacementSection();
 
-        const syncHint = documentObject.createElement("small");
-        syncHint.className = "merge-source-sync-hint";
-        syncHint.dataset.mergeSourceSyncHint = "true";
-        syncHint.dataset.sourceId = sourceId;
-        syncHint.textContent = mergeSourceSyncHintText(source);
-        syncRow.append(syncLabel, syncButtons, syncStatus, syncHint);
+        syncRow.append(syncLabel, syncButtons, syncStatus);
 
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
@@ -1884,6 +1931,7 @@ export function createMergePane({
     clearMergeSourceCommitTimers,
     scheduleMergeSourceCommit,
     flushPendingMergeSourceCommits,
+    hydrateMergeSourcesFromDefaults,
     renderMergeMediaList,
     renderLocalMergePreview,
     readMergePayload,

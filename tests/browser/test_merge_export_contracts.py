@@ -77,7 +77,7 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert 'callApi("/api/merge/source"' not in drag_body
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
     assert "media.style.opacity = String(currentSourceOpacity(source));" in source
-    assert 'input.dataset.mergeSourceField = "opacity";' in source
+    assert 'input.dataset.mergeSourceField = "opacity";' in merge_pane_source
     assert "export function createMergePane({" in merge_pane_source
     assert (
         "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {"
@@ -85,10 +85,11 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     )
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
+    assert "hydrateMergeSourcesFromDefaults({ persist: true });" not in merge_pane_source
     assert 'select.dataset.mergeSourceField = "camera_role";' in merge_pane_source
     assert 'text.textContent = "Camera role";' in merge_pane_source
     assert 'trimTitle.textContent = "Trim Video";' in merge_pane_source
-    assert 'trimSettingsButton.textContent = "Trim Settings";' in merge_pane_source
+    assert 'trimSettingsButton.textContent = "Trim Settings";' not in merge_pane_source
     assert 'placementTitle.textContent = "Placement";' in merge_pane_source
     assert 'placementTargetKindText.textContent = "Overlay target";' in merge_pane_source
     assert 'placementTargetSourceText.textContent = "Base item";' in merge_pane_source
@@ -101,11 +102,10 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
         "Trim creates a local derivative in the project Input folder and leaves the original source untouched."
         in merge_pane_source
     )
-    assert "Use these nudges or drag the preview to match the primary video exactly." in merge_pane_source
-    assert (
-        "These values are saved per item and take effect in this item's placement and export timing."
-        in merge_pane_source
-    )
+    assert "Use these nudges or drag the preview to match the primary video exactly." not in source
+    assert "These values are saved per item and take effect in PiP layout and export timing." not in source
+    assert "Current item placement lives here. Project defaults only seed new cards." not in merge_pane_source
+    assert "Set clip bounds before later item timing and placement changes." not in merge_pane_source
     assert "openFeatureEditor" not in source
     assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
     assert "function setPreviewSeekBoundary(value) {" in source

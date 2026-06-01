@@ -122,6 +122,7 @@ export function createShellRuntime({
   scheduleShotMLSettingsApply = () => {},
   cancelMergeAutoApply = () => {},
   syncMergePreviewStateFromControls = () => {},
+  renderLocalMergePreview = () => {},
   scheduleInteractionPreviewRender = () => {},
   scheduleMergeApply = () => {},
   addTimingEvent = () => {},
@@ -702,13 +703,13 @@ export function createShellRuntime({
     $("pip-size").addEventListener("input", () => {
       $("pip-size-label").textContent = `${$("pip-size").value}%`;
       syncMergePreviewStateFromControls();
-      scheduleInteractionPreviewRender({ video: true });
+      renderLocalMergePreview();
       scheduleMergeApply();
     });
     ["pip-x", "pip-y"].forEach((id) => {
       $(id).addEventListener("input", () => {
         syncMergePreviewStateFromControls();
-        scheduleInteractionPreviewRender({ video: true });
+        renderLocalMergePreview();
         scheduleMergeApply();
       });
     });
