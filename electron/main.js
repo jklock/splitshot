@@ -31,7 +31,7 @@ const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
 const TEST_DIALOG_PATH = process.env.SPLITSHOT_ELECTRON_TEST_DIALOG_PATH || '';
 const TEST_CAPTURE_EXTERNAL_OPEN = process.env.SPLITSHOT_ELECTRON_TEST_OPEN_EXTERNAL_CAPTURE === '1';
-const PRACTISCORE_HOST_ENABLED = process.env.SPLITSHOT_ELECTRON_PRACTISCORE_HOST_V1 === '1';
+const PRACTISCORE_HOST_ENABLED = app.isPackaged || process.env.SPLITSHOT_ELECTRON_PRACTISCORE_HOST_V1 === '1';
 let appReadyRecorded = false;
 let lastExternalOpenUrl = null;
 let backendReadyPayload = null;
@@ -354,7 +354,13 @@ async function installDesktopRouteBridge(browserWindow, attemptsRemaining = 20) 
     return false;
   }
   try {
-    await browserWindow.webContents.executeJavaScript(createDesktopRouteBridgeScript(), true);
+    const bridgeScript = [
+      `globalThis.__splitshotBridgeLog = globalThis.__splitshotBridgeLog || function(tag, data) {
+  try { console.log('[BRIDGE]', tag, JSON.stringify(data)); } catch(e) { console.log('[BRIDGE]', tag, String(data)); }
+};`,
+      createDesktopRouteBridgeScript(),
+    ].join('\n');
+    await browserWindow.webContents.executeJavaScript(bridgeScript, true);
     const bridgeDiagnostics = await browserWindow.webContents.executeJavaScript(`(() => ({
       splitshot: Boolean(window.splitshot),
       installed: window.__splitshotDesktopRouteBridgeInstalled === true,

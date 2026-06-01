@@ -1,7 +1,4 @@
 const { contextBridge, ipcRenderer } = require('electron');
-const { installDesktopRouteBridgeInMainWorld } = require('./desktop-route-bridge-source');
-
-const PRACTISCORE_DASHBOARD_URL = 'https://practiscore.com/dashboard/home';
 
 let _pendingProjectPath = null;
 
@@ -38,20 +35,6 @@ const splitshotBridge = {
   },
 };
 
-function installDesktopRouteBridge() {
-  if (typeof contextBridge.executeInMainWorld !== 'function') {
-    return false;
-  }
-  try {
-    return contextBridge.executeInMainWorld({
-      func: installDesktopRouteBridgeInMainWorld,
-      args: [PRACTISCORE_DASHBOARD_URL],
-    }) === true;
-  } catch {
-    return false;
-  }
-}
-
 if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
   splitshotBridge.testOpenProject = (targetPath) => ipcRenderer.invoke('test-open-project', targetPath);
   splitshotBridge.testOpenUrl = (targetUrl) => ipcRenderer.invoke('test-open-url', targetUrl);
@@ -61,9 +44,6 @@ if (process.env.SPLITSHOT_ELECTRON_TEST === '1') {
 
 contextBridge.exposeInMainWorld('splitshot', splitshotBridge);
 
-installDesktopRouteBridge();
-
 window.addEventListener('DOMContentLoaded', () => {
-  installDesktopRouteBridge();
   void ipcRenderer.invoke('install-desktop-route-bridge');
 });

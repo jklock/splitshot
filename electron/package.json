@@ -36,7 +36,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "launch-intent.js"
+      "launch-intent.js",
+      "desktop-route-bridge-source.js",
+      "practiscore-host.js"
     ],
     "extraResources": [
       {

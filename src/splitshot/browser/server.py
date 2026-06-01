@@ -621,6 +621,14 @@ def find_free_port(host: str = "127.0.0.1", desired: int = 8765, max_attempts: i
 class QuietThreadingHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
+    def server_bind(self) -> None:
+        if self.allow_reuse_address and hasattr(self.socket, "setsockopt"):
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.bind(self.server_address)
+        host, port = self.socket.getsockname()[:2]
+        self.server_name = host
+        self.server_port = port
+
     def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
         if is_expected_disconnect_error(sys.exc_info()[1]):
             return

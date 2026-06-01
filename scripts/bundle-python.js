@@ -99,13 +99,17 @@ function getPythonBinDir(venvDir, pythonVersion) {
   return path.dirname(pythonBin);
 }
 
+function pythonExecutableForVenv(venvDir) {
+  const binDir = getPythonBinDir(venvDir);
+  if (!binDir) throw new Error(`Python binary not found in venv at ${venvDir}`);
+  return path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
+}
+
 function bundledPythonExecutable(pythonVersion) {
   if (process.platform === 'win32') {
     return path.join(WINDOWS_PYTHON_DIR, 'python.exe');
   }
-  const binDir = getPythonBinDir(VENV_DIR, pythonVersion);
-  if (!binDir) throw new Error(`Python binary not found in venv at ${VENV_DIR}`);
-  return path.join(binDir, `python${process.platform === 'win32' ? '.exe' : ''}`);
+  return pythonExecutableForVenv(VENV_DIR);
 }
 
 function bundledSitePackagesDir(pythonVersion) {
@@ -292,6 +296,15 @@ function copyTool(sourcePath, destinationPath) {
   verifyBundledMediaTool(destinationPath);
 }
 
+function copyDirectory(sourcePath, destinationPath) {
+  rmrf(destinationPath);
+  if (process.platform === 'darwin') {
+    runFile('ditto', [sourcePath, destinationPath]);
+    return;
+  }
+  fs.cpSync(sourcePath, destinationPath, { recursive: true, force: true });
+}
+
 function fetchPortableMediaTools(platformDir) {
   const cacheDir = path.join(os.tmpdir(), 'splitshot-vendored-ffmpeg', `${process.platform}-${process.arch}`);
   rmrf(cacheDir);
@@ -356,12 +369,28 @@ function buildBundledPythonEnv(pythonVersion) {
   return env;
 }
 
-function createBundledPosixVenv(pythonVersion) {
+function createBundledPosixVenv(venvDir, pythonVersion) {
   // Keep the bundle venv unseeded. The bundle flow installs project deps via
   // `uv pip --python ...` immediately afterward, and `--seed` has been
   // failing on shared-volume worktrees while resolving the bundled pip entry
   // points.
-  run(`uv venv "${VENV_DIR}" --python ${pythonVersion}`);
+  run(`uv venv "${venvDir}" --python ${pythonVersion}`);
+  return pythonExecutableForVenv(venvDir);
+}
+
+function stageBundledPosixVenv(pythonVersion) {
+  const stageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'splitshot-bundle-venv-'));
+  const stageVenvDir = path.join(stageRoot, '.venv');
+  console.log(`[bundle] staging POSIX venv in local temp dir: ${stageVenvDir}`);
+  try {
+    const pythonExe = createBundledPosixVenv(stageVenvDir, pythonVersion);
+    run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
+    console.log(`[bundle] copying staged POSIX venv into bundle: ${stageVenvDir} -> ${VENV_DIR}`);
+    copyDirectory(stageVenvDir, VENV_DIR);
+    console.log(`[bundle] copied staged POSIX venv into bundle: ${VENV_DIR}`);
+  } finally {
+    rmrf(stageRoot);
+  }
   return bundledPythonExecutable(pythonVersion);
 }
 
@@ -369,10 +398,8 @@ function installBundledPosixProject(pythonVersion) {
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     rmrf(VENV_DIR);
-    const pythonExe = createBundledPosixVenv(pythonVersion);
     try {
-      run(`uv pip install --python "${pythonExe}" --link-mode copy "."`);
-      return pythonExe;
+      return stageBundledPosixVenv(pythonVersion);
     } catch (error) {
       if (attempt >= maxAttempts) {
         throw error;

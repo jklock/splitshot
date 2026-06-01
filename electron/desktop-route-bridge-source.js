@@ -149,12 +149,26 @@ function installDesktopRouteBridgeInMainWorld(dashboardUrl) {
     globalThis.fetch = async (input, init) => {
       const method = requestMethod(input, init);
       const path = requestPath(input);
+
+      if (typeof globalThis.__splitshotBridgeLog === 'function') {
+        globalThis.__splitshotBridgeLog('fetch', { method, path, hasInit: Boolean(init), hasBody: Boolean(init?.body) });
+      }
+
       if (method === 'POST' && path === '/api/dialog/path') {
         try {
           const payload = await requestBody(input, init);
+          if (typeof globalThis.__splitshotBridgeLog === 'function') {
+            globalThis.__splitshotBridgeLog('dialog.path.request', { kind: payload?.kind });
+          }
           const selectedPath = await splitshot.openPathDialog(payload || {});
+          if (typeof globalThis.__splitshotBridgeLog === 'function') {
+            globalThis.__splitshotBridgeLog('dialog.path.result', { selectedPath });
+          }
           return jsonResponse({ path: typeof selectedPath === 'string' ? selectedPath : '' });
         } catch (error) {
+          if (typeof globalThis.__splitshotBridgeLog === 'function') {
+            globalThis.__splitshotBridgeLog('dialog.path.error', { error: String(error?.message || error) });
+          }
           return jsonResponse({ error: error?.message || 'Unable to open the native path chooser.' }, 400);
         }
       }
