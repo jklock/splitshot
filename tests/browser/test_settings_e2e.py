@@ -123,7 +123,9 @@ def _open_test_page(playwright, server: BrowserControlServer):
 
 def _open_settings(page) -> None:
     page.locator("#settings-rail-button").click(force=True)
-    _wait_for_page_predicate(page, "() => activeTool === 'settings'", description="settings tool active")
+    _wait_for_page_predicate(
+        page, "() => activeTool === 'settings'", description="settings tool active"
+    )
     page.locator('[data-tool-pane="settings"]').wait_for(
         state="visible", timeout=SETTINGS_WAIT_TIMEOUT_MS
     )
@@ -185,7 +187,9 @@ def _set_settings_control(page, control_id: str, value: str | bool) -> None:
 
 
 def _apply_settings_defaults_and_wait(page, predicate: str, arg=None) -> None:
-    _wait_for_page_predicate(page, "() => state?.settings !== undefined", description="settings state ready")
+    _wait_for_page_predicate(
+        page, "() => state?.settings !== undefined", description="settings state ready"
+    )
     page.evaluate("() => applySettingsDefaults()")
     _wait_for_page_predicate(
         page,
@@ -303,7 +307,9 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                     )
 
                 page.locator('button[data-tool="project"]').click(force=True)
-                _wait_for_page_predicate(page, "() => activeTool === 'project'", description="project tool active")
+                _wait_for_page_predicate(
+                    page, "() => activeTool === 'project'", description="project tool active"
+                )
 
                 _open_settings(page)
                 for section_id in SETTINGS_SECTION_IDS:
@@ -325,7 +331,9 @@ def test_settings_section_toggles_survive_tool_route_changes() -> None:
                 )
 
                 page.locator('button[data-tool="timing"]').click(force=True)
-                _wait_for_page_predicate(page, "() => activeTool === 'timing'", description="timing tool active")
+                _wait_for_page_predicate(
+                    page, "() => activeTool === 'timing'", description="timing tool active"
+                )
 
                 _open_settings(page)
                 assert (
@@ -355,7 +363,9 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
             browser, page = _open_test_page(playwright, server)
             try:
                 page.locator('button[data-tool="merge"]').click(force=True)
-                _wait_for_page_predicate(page, "() => activeTool === 'merge'", description="merge tool active")
+                _wait_for_page_predicate(
+                    page, "() => activeTool === 'merge'", description="merge tool active"
+                )
                 page.locator("#merge-layout").select_option("pip")
                 _wait_for_page_predicate(
                     page,
@@ -364,7 +374,9 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 )
 
                 page.locator('button[data-tool="export"]').click(force=True)
-                _wait_for_page_predicate(page, "() => activeTool === 'export'", description="export tool active")
+                _wait_for_page_predicate(
+                    page, "() => activeTool === 'export'", description="export tool active"
+                )
                 page.locator("#quality").select_option("low")
                 _wait_for_page_predicate(
                     page,
@@ -381,7 +393,7 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 page.locator("#settings-import-current").click()
                 _wait_for_page_predicate(
                     page,
-                    """() => state?.settings?.merge_layout === 'pip' && state?.settings?.export_quality === 'low'"""
+                    """() => state?.settings?.merge_layout === 'pip' && state?.settings?.export_quality === 'low'""",
                 )
                 assert page.locator("#settings-merge-layout").input_value() == "pip"
                 assert page.locator("#settings-export-quality").input_value() == "low"
@@ -389,7 +401,7 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 page.locator("#settings-reset-defaults").click(force=True)
                 _wait_for_page_predicate(
                     page,
-                    """() => state?.settings?.merge_layout === 'side_by_side' && state?.settings?.export_quality === 'high'"""
+                    """() => state?.settings?.merge_layout === 'side_by_side' && state?.settings?.export_quality === 'high'""",
                 )
                 assert page.locator("#settings-merge-layout").input_value() == "side_by_side"
                 assert page.locator("#settings-export-quality").input_value() == "high"
@@ -426,7 +438,7 @@ def test_settings_global_template_fields_update_defaults_state_and_reset() -> No
                 _wait_for_page_predicate(
                     page,
                     """() => document.querySelector('#settings-default-tool')?.value === 'project'
-                      && document.querySelector('#settings-reopen-last-tool')?.checked === true"""
+                      && document.querySelector('#settings-reopen-last-tool')?.checked === true""",
                 )
                 assert page.locator("#settings-default-tool").input_value() == "project"
                 assert page.locator("#settings-reopen-last-tool").is_checked() is True
@@ -475,7 +487,7 @@ def test_settings_default_controls_commit_to_settings_state_and_reset() -> None:
                     """() => document.querySelector('#settings-default-match-type')?.value === 'uspsa'
                                             && document.querySelector('#settings-pip-size')?.value === '35%'
                                             && document.querySelector('#settings-export-quality')?.value === 'high'
-                                            && document.querySelector('#settings-export-two-pass')?.checked === false"""
+                                            && document.querySelector('#settings-export-two-pass')?.checked === false""",
                 )
 
                 assert page.locator("#settings-default-match-type").input_value() == "uspsa"
@@ -589,7 +601,7 @@ def test_settings_layout_section_captures_current_layout_and_resets() -> None:
                     """() => state?.settings?.layout_locked === false
                       && state?.settings?.layout_rail_width === 96
                       && state?.settings?.layout_inspector_width === 620
-                      && state?.settings?.layout_waveform_height === 240"""
+                      && state?.settings?.layout_waveform_height === 240""",
                 )
 
                 page.locator("#settings-release-layout").click()
@@ -598,7 +610,7 @@ def test_settings_layout_section_captures_current_layout_and_resets() -> None:
                     """() => state?.settings?.layout_locked === null
                       && state?.settings?.layout_rail_width === null
                       && state?.settings?.layout_inspector_width === null
-                      && state?.settings?.layout_waveform_height === null"""
+                      && state?.settings?.layout_waveform_height === null""",
                 )
             finally:
                 browser.close()
@@ -628,7 +640,7 @@ def test_settings_section_reset_preserves_other_sections() -> None:
                 _wait_for_page_predicate(
                     page,
                     """() => state?.settings?.pip_size === '50%'
-                      && state?.settings?.export_quality === 'high'"""
+                      && state?.settings?.export_quality === 'high'""",
                 )
             finally:
                 browser.close()
@@ -650,14 +662,16 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                 _seed_project_state_for_settings_save_current_buttons(page)
 
                 page.locator("#settings-save-current-scoring").click()
-                _wait_for_page_predicate(page, "() => state?.settings?.default_match_type === 'idpa'")
+                _wait_for_page_predicate(
+                    page, "() => state?.settings?.default_match_type === 'idpa'"
+                )
 
                 _seed_project_state_for_settings_save_current_buttons(page)
                 page.locator("#settings-save-current-pip").click()
                 _wait_for_page_predicate(
                     page,
                     """() => state?.settings?.merge_layout === 'pip'
-                        && state?.settings?.pip_size === '50%'"""
+                        && state?.settings?.pip_size === '50%'""",
                 )
 
                 _seed_project_state_for_settings_save_current_buttons(page)
@@ -666,7 +680,7 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.overlay_position === 'left'
                       && state?.settings?.badge_size === 'L'
-                      && state?.settings?.overlay_custom_box_background_color === '#123456'"""
+                      && state?.settings?.overlay_custom_box_background_color === '#123456'""",
                 )
 
                 _seed_project_state_for_settings_save_current_buttons(page)
@@ -675,7 +689,7 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.marker_template?.content_type === 'text_image'
                       && state?.settings?.marker_template?.use_shot_split_duration === true
-                      && state?.settings?.marker_template?.follow_motion === true"""
+                      && state?.settings?.marker_template?.follow_motion === true""",
                 )
 
                 _seed_project_state_for_settings_save_current_buttons(page)
@@ -684,7 +698,7 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.export_quality === 'low'
                       && state?.settings?.export_video_codec === 'hevc'
-                      && state?.settings?.export_two_pass === true"""
+                      && state?.settings?.export_two_pass === true""",
                 )
 
                 _seed_project_state_for_settings_save_current_buttons(page)
@@ -692,17 +706,19 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                 _wait_for_page_predicate(
                     page,
                     """() => state?.settings?.shotml_defaults?.detection_threshold === 0.5
-                        && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.5"""
+                        && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.5""",
                 )
 
                 page.locator("#settings-reset-section-scoring").click()
-                _wait_for_page_predicate(page, "() => state?.settings?.default_match_type === 'uspsa'")
+                _wait_for_page_predicate(
+                    page, "() => state?.settings?.default_match_type === 'uspsa'"
+                )
 
                 page.locator("#settings-reset-section-pip").click()
                 _wait_for_page_predicate(
                     page,
                     """() => state?.settings?.merge_layout === 'side_by_side'
-                        && state?.settings?.pip_size === '35%'"""
+                        && state?.settings?.pip_size === '35%'""",
                 )
 
                 page.locator("#settings-reset-section-overlay").click()
@@ -710,7 +726,7 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.overlay_position === 'bottom'
                       && state?.settings?.badge_size === 'M'
-                      && state?.settings?.overlay_custom_box_background_color === '#000000'"""
+                      && state?.settings?.overlay_custom_box_background_color === '#000000'""",
                 )
 
                 page.locator("#settings-reset-section-markers").click()
@@ -718,7 +734,7 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.marker_template?.enabled === true
                       && state?.settings?.marker_template?.content_type === 'text'
-                      && state?.settings?.marker_template?.follow_motion === false"""
+                      && state?.settings?.marker_template?.follow_motion === false""",
                 )
 
                 page.locator("#settings-reset-section-export").click()
@@ -726,14 +742,14 @@ def test_settings_save_current_and_section_reset_buttons_apply_owned_sections() 
                     page,
                     """() => state?.settings?.export_quality === 'high'
                       && state?.settings?.export_video_codec === 'h264'
-                      && state?.settings?.export_two_pass === false"""
+                      && state?.settings?.export_two_pass === false""",
                 )
 
                 page.locator("#settings-reset-section-shotml").click()
                 _wait_for_page_predicate(
                     page,
                     """() => state?.settings?.shotml_defaults?.detection_threshold === 0.35
-                        && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.35"""
+                        && Number(document.querySelector('#settings-shotml-threshold')?.value || 0) === 0.35""",
                 )
             finally:
                 browser.close()

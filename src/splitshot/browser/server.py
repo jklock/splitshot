@@ -67,7 +67,9 @@ PathChooser = Callable[[str, str | None], str | None]
 COMMON_VIDEO_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.avi *.wmv *.webm *.mkv *.mpg *.mpeg *.mts *.m2ts"
 COMMON_IMAGE_FILE_PATTERNS = "*.png *.jpg *.jpeg *.gif *.webp *.bmp *.tif *.tiff"
 COMMON_EXPORT_FILE_PATTERNS = "*.mp4 *.m4v *.mov *.mkv"
-_PROJECT_FOLDER_DIALOG_KINDS = frozenset({"project", "project_save", "project_open", "project_folder"})
+_PROJECT_FOLDER_DIALOG_KINDS = frozenset(
+    {"project", "project_save", "project_open", "project_folder"}
+)
 _PCM_BROWSER_PROXY_FORMATS = {"mov", "mp4", "m4a", "3gp", "3g2", "mj2"}
 _PCM_BROWSER_PROXY_SUFFIXES = {".mov", ".qt", ".mp4", ".m4v", ".m4a"}
 _BROWSER_COPY_SAFE_VIDEO_CODECS = {"av1", "h264", "vp8", "vp9"}
@@ -225,8 +227,8 @@ def _browser_preview_matches_source_timeline(
         "avg_frame_rate",
         "r_frame_rate",
     )
-    for field in required_fields:
-        if source_timeline.get(field) != preview_timeline.get(field):
+    for required_field in required_fields:
+        if source_timeline.get(required_field) != preview_timeline.get(required_field):
             return False
 
     start_pts_source = _int_metadata_value(source_timeline.get("start_pts"))
@@ -380,11 +382,7 @@ def choose_local_path(kind: str, current: str | None = None) -> str | None:
             pass
         if kind in {"primary", "secondary"}:
             return filedialog.askopenfilename(
-                title=(
-                    "Choose stage video"
-                    if kind == "primary"
-                    else "Choose added media"
-                ),
+                title=("Choose stage video" if kind == "primary" else "Choose added media"),
                 initialdir=initial_dir,
                 filetypes=[
                     ("Image files", COMMON_IMAGE_FILE_PATTERNS),
@@ -426,11 +424,7 @@ def choose_local_path_macos(kind: str, current: str | None = None) -> str | None
     )
     default_name = "output.mp4"
     if kind in {"primary", "secondary"}:
-        prompt = (
-            "Choose stage video"
-            if kind == "primary"
-            else "Choose added media"
-        )
+        prompt = "Choose stage video" if kind == "primary" else "Choose added media"
         script = "\n".join(
             [
                 f"set chosenFile to choose file with prompt {_applescript_string(prompt)} "
@@ -628,11 +622,13 @@ class QuietThreadingHTTPServer(ThreadingHTTPServer):
         host, port = self.socket.getsockname()[:2]
         self.server_name = host
         self.server_port = port
+        self.server_address = (host, port)
 
     def handle_error(self, request: Any, client_address: tuple[str, int]) -> None:
         if is_expected_disconnect_error(sys.exc_info()[1]):
             return
         super().handle_error(request, client_address)
+
 
 _WORKSPACE_ELIGIBLE_KEYS = frozenset(
     {
@@ -1097,8 +1093,6 @@ class BackgroundJobRegistry:
         )
 
 
-
-
 class BrowserControlServer:
     _thread_fairness_lock = threading.Lock()
     _thread_fairness_users = 0
@@ -1326,7 +1320,9 @@ class BrowserControlServer:
             "timestamp": _runtime_timestamp(),
         }
 
-    def structured_events_after(self, after_seq: int = 0, *, limit: int = 1000) -> list[dict[str, Any]]:
+    def structured_events_after(
+        self, after_seq: int = 0, *, limit: int = 1000
+    ) -> list[dict[str, Any]]:
         records = self.activity.records_after(
             after_seq,
             limit=limit,
@@ -1410,9 +1406,7 @@ class BrowserControlServer:
         }
 
     def _session_cookie_header(self, cookie_value: str) -> str:
-        return (
-            f"{self._session_cookie_name}={cookie_value}; HttpOnly; Path=/; SameSite=Strict"
-        )
+        return f"{self._session_cookie_name}={cookie_value}; HttpOnly; Path=/; SameSite=Strict"
 
     def _structured_event_payload(self, record: dict[str, object]) -> dict[str, Any]:
         detail_payload = record.get("payload")
@@ -1746,20 +1740,35 @@ class BrowserControlServer:
                     "workspace_stage_support": {
                         "/api/workspace/stage/clip/list": ("_handle_workspace_stage_clip_list", ()),
                         "/api/workspace/stage/clip/add": ("_handle_workspace_stage_clip_add", ()),
-                        "/api/workspace/stage/clip/update": ("_handle_workspace_stage_clip_update", ()),
-                        "/api/workspace/stage/clip/reorder": ("_handle_workspace_stage_clip_reorder", ()),
-                        "/api/workspace/stage/clip/remove": ("_handle_workspace_stage_clip_remove", ()),
+                        "/api/workspace/stage/clip/update": (
+                            "_handle_workspace_stage_clip_update",
+                            (),
+                        ),
+                        "/api/workspace/stage/clip/reorder": (
+                            "_handle_workspace_stage_clip_reorder",
+                            (),
+                        ),
+                        "/api/workspace/stage/clip/remove": (
+                            "_handle_workspace_stage_clip_remove",
+                            (),
+                        ),
                         "/api/angle/align": ("_handle_angle_align", ()),
                         "/api/angle/director/plan": ("_handle_angle_director_plan", ()),
                         "/api/angle/director/generate": ("_handle_angle_director_generate", ()),
                         "/api/angle/director/override": ("_handle_angle_director_override", ()),
-                        "/api/angle/director/override/clear": ("_handle_angle_director_override_clear", ()),
+                        "/api/angle/director/override/clear": (
+                            "_handle_angle_director_override_clear",
+                            (),
+                        ),
                         "/api/audio/mix": ("_handle_audio_mix", ()),
                         "/api/result-cards/resolve": ("_handle_result_cards_resolve", ()),
                     },
                     "landing_and_workspace": {
                         "/api/landing/recent": ("_handle_landing_recent", ("_no_body",)),
-                        "/api/workspace/apply-from-first": ("_handle_workspace_apply_from_first", ()),
+                        "/api/workspace/apply-from-first": (
+                            "_handle_workspace_apply_from_first",
+                            (),
+                        ),
                         "/api/workspace/apply-from-first/preview": (
                             "_handle_workspace_apply_from_first_preview",
                             (),
@@ -1772,7 +1781,10 @@ class BrowserControlServer:
                         "/api/library/analytics/trend": ("_handle_library_analytics_trend", ()),
                         "/api/library/analytics/compare": ("_handle_library_analytics_compare", ()),
                         "/api/library/archive/create": ("_handle_library_archive_create", ()),
-                        "/api/library/backup/create": ("_handle_library_backup_create", ("_no_body",)),
+                        "/api/library/backup/create": (
+                            "_handle_library_backup_create",
+                            ("_no_body",),
+                        ),
                         "/api/library/backup/restore": ("_handle_library_backup_restore", ()),
                         "/api/library/export/json": ("_handle_library_export_json", ("_no_body",)),
                         "/api/library/export/csv": ("_handle_library_export_csv", ("_no_body",)),
@@ -2065,7 +2077,9 @@ class BrowserControlServer:
                         "status": controller.status_message,
                     }
 
-            def _perform_export(self, payload: dict[str, Any], job_handle: BackgroundJobHandle) -> dict[str, Any]:
+            def _perform_export(
+                self, payload: dict[str, Any], job_handle: BackgroundJobHandle
+            ) -> dict[str, Any]:
                 with controller_lock:
                     scoring_payload = payload.get("scoring")
                     if isinstance(scoring_payload, dict):
@@ -2187,9 +2201,15 @@ class BrowserControlServer:
                         action = str(body.get("action") or "set_threshold").strip().lower()
 
                         def _run_analysis_job(handle: BackgroundJobHandle) -> dict[str, Any]:
-                            handle.progress(5, message="Preparing analysis job.", detail={"action": action})
+                            handle.progress(
+                                5, message="Preparing analysis job.", detail={"action": action}
+                            )
                             result = self._perform_analysis_job(body)
-                            handle.progress(100, message=result.get("status") or "Analysis complete.", detail={"action": action})
+                            handle.progress(
+                                100,
+                                message=result.get("status") or "Analysis complete.",
+                                detail={"action": action},
+                            )
                             with controller_lock:
                                 controller.autosave_project_if_needed()
                             return result
@@ -2271,7 +2291,9 @@ class BrowserControlServer:
                     while True:
                         if server._shutdown_event.is_set():
                             return
-                        if not server.wait_for_structured_events(current_after, timeout=wait_timeout):
+                        if not server.wait_for_structured_events(
+                            current_after, timeout=wait_timeout
+                        ):
                             if server._shutdown_event.is_set():
                                 return
                             self.wfile.write(b": keepalive\n\n")
@@ -2779,7 +2801,9 @@ class BrowserControlServer:
                     )
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
-                primary_video_path_value = str(getattr(stage_project.primary_video, "path", "") or "").strip()
+                primary_video_path_value = str(
+                    getattr(stage_project.primary_video, "path", "") or ""
+                ).strip()
                 if not primary_video_path_value:
                     activity.log("workspace_stage_media.missing", stage_id=normalized_stage_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
@@ -3247,9 +3271,7 @@ class BrowserControlServer:
                     str(trimmed_source.id),
                 )
                 if merge_source_payload is None:
-                    raise RuntimeError(
-                        "Updated merge source state is unavailable after trimming."
-                    )
+                    raise RuntimeError("Updated merge source state is unavailable after trimming.")
                 state_payload["merge_source"] = merge_source_payload
                 return state_payload
 
@@ -3344,12 +3366,20 @@ class BrowserControlServer:
                         summary["score_total"] = normalized.get("score_total")
                 editor_target = normalized.get("editor_target")
                 normalized["metric_summary"] = summary
-                normalized["editor_target"] = dict(editor_target) if isinstance(editor_target, dict) else {}
+                normalized["editor_target"] = (
+                    dict(editor_target) if isinstance(editor_target, dict) else {}
+                )
                 normalized["tags"] = [str(tag) for tag in (normalized.get("tags") or [])]
                 normalized["notes"] = str(normalized.get("notes") or "")
-                normalized["score"] = self._library_record_score({**normalized, "metric_summary": summary})
-                normalized["project_path"] = normalized.get("project_path") or normalized["editor_target"].get("project_path", "")
-                normalized["workspace_path"] = normalized.get("workspace_path") or normalized["editor_target"].get("workspace_path", "")
+                normalized["score"] = self._library_record_score(
+                    {**normalized, "metric_summary": summary}
+                )
+                normalized["project_path"] = normalized.get("project_path") or normalized[
+                    "editor_target"
+                ].get("project_path", "")
+                normalized["workspace_path"] = normalized.get("workspace_path") or normalized[
+                    "editor_target"
+                ].get("workspace_path", "")
                 return normalized
 
             def _normalize_match_library_record(self, record: dict[str, Any]) -> dict[str, Any]:
@@ -3359,13 +3389,23 @@ class BrowserControlServer:
                 editor_target = normalized.get("editor_target")
                 stage_ids = normalized.get("stage_ids") or summary.get("stages") or []
                 normalized["aggregate_metric_summary"] = summary
-                normalized["editor_target"] = dict(editor_target) if isinstance(editor_target, dict) else {}
+                normalized["editor_target"] = (
+                    dict(editor_target) if isinstance(editor_target, dict) else {}
+                )
                 normalized["stage_ids"] = [str(stage_id) for stage_id in stage_ids]
-                normalized["stage_count"] = normalized.get("stage_count") or summary.get("stage_count") or len(normalized["stage_ids"])
+                normalized["stage_count"] = (
+                    normalized.get("stage_count")
+                    or summary.get("stage_count")
+                    or len(normalized["stage_ids"])
+                )
                 normalized["tags"] = [str(tag) for tag in (normalized.get("tags") or [])]
                 normalized["notes"] = str(normalized.get("notes") or "")
-                normalized["workspace_path"] = normalized.get("workspace_path") or normalized["editor_target"].get("workspace_path", "")
-                normalized["score"] = self._library_record_score({**normalized, "aggregate_metric_summary": summary})
+                normalized["workspace_path"] = normalized.get("workspace_path") or normalized[
+                    "editor_target"
+                ].get("workspace_path", "")
+                normalized["score"] = self._library_record_score(
+                    {**normalized, "aggregate_metric_summary": summary}
+                )
                 return normalized
 
             def _library_stage_rows(self) -> list[dict[str, Any]]:
@@ -3380,12 +3420,17 @@ class BrowserControlServer:
                 records = read_match_records() or read_match_metrics()
                 return [self._normalize_match_library_record(record) for record in records]
 
-            def _library_sort_key(self, record: dict[str, Any], sort_by: str) -> tuple[int, float | str]:
+            def _library_sort_key(
+                self, record: dict[str, Any], sort_by: str
+            ) -> tuple[int, float | str]:
                 if sort_by == "score":
                     score = self._library_record_score(record)
                     return (0 if score is not None else 1, score if score is not None else 0.0)
                 if sort_by == "display_name":
-                    return (0, str(record.get("display_name") or record.get("competitor_name") or ""))
+                    return (
+                        0,
+                        str(record.get("display_name") or record.get("competitor_name") or ""),
+                    )
                 if sort_by == "discipline":
                     return (0, str(record.get("discipline") or ""))
                 return (0, str(record.get(sort_by) or record.get("event_date") or ""))
@@ -3443,9 +3488,7 @@ class BrowserControlServer:
                 query_text = str(query.get("search") or query.get("competitor") or "").strip()
                 if query_text:
                     filtered_stages = [
-                        s
-                        for s in filtered_stages
-                        if self._library_matches_search(s, query_text)
+                        s for s in filtered_stages if self._library_matches_search(s, query_text)
                     ]
                     filtered_matches = [
                         m for m in match_metrics if self._library_matches_search(m, query_text)
@@ -3468,12 +3511,34 @@ class BrowserControlServer:
                 sort_order = query.get("sort_order", "desc")
                 reverse = sort_order == "desc"
                 if sort_by == "score":
-                    scored_stages = [record for record in filtered_stages if self._library_record_score(record) is not None]
-                    unscored_stages = [record for record in filtered_stages if self._library_record_score(record) is None]
-                    scored_matches = [record for record in filtered_matches if self._library_record_score(record) is not None]
-                    unscored_matches = [record for record in filtered_matches if self._library_record_score(record) is None]
-                    scored_stages.sort(key=lambda record: self._library_record_score(record) or 0.0, reverse=reverse)
-                    scored_matches.sort(key=lambda record: self._library_record_score(record) or 0.0, reverse=reverse)
+                    scored_stages = [
+                        record
+                        for record in filtered_stages
+                        if self._library_record_score(record) is not None
+                    ]
+                    unscored_stages = [
+                        record
+                        for record in filtered_stages
+                        if self._library_record_score(record) is None
+                    ]
+                    scored_matches = [
+                        record
+                        for record in filtered_matches
+                        if self._library_record_score(record) is not None
+                    ]
+                    unscored_matches = [
+                        record
+                        for record in filtered_matches
+                        if self._library_record_score(record) is None
+                    ]
+                    scored_stages.sort(
+                        key=lambda record: self._library_record_score(record) or 0.0,
+                        reverse=reverse,
+                    )
+                    scored_matches.sort(
+                        key=lambda record: self._library_record_score(record) or 0.0,
+                        reverse=reverse,
+                    )
                     filtered_stages = [*scored_stages, *unscored_stages]
                     filtered_matches = [*scored_matches, *unscored_matches]
                 else:
@@ -3510,7 +3575,9 @@ class BrowserControlServer:
                             "stage_id": record.stage_id,
                             "match_id": record.match_id,
                             "display_name": record.display_name,
-                            "event_date": record.event_date.isoformat() if record.event_date else None,
+                            "event_date": record.event_date.isoformat()
+                            if record.event_date
+                            else None,
                             "discipline": record.discipline,
                             "competitor_name": record.competitor_name,
                             "metric_summary": dict(record.metric_summary),
@@ -3525,7 +3592,8 @@ class BrowserControlServer:
                         (
                             row
                             for row in self._library_stage_rows()
-                            if row.get("library_record_id") == record_id or row.get("stage_id") == record_id
+                            if row.get("library_record_id") == record_id
+                            or row.get("stage_id") == record_id
                         ),
                         None,
                     )
@@ -3540,7 +3608,9 @@ class BrowserControlServer:
                 editor_target.setdefault("type", "single")
                 editor_target.setdefault("stage_id", normalized_record.get("stage_id", ""))
                 editor_target.setdefault("project_path", normalized_record.get("project_path", ""))
-                editor_target.setdefault("workspace_path", normalized_record.get("workspace_path", ""))
+                editor_target.setdefault(
+                    "workspace_path", normalized_record.get("workspace_path", "")
+                )
 
                 return {
                     "success": True,
@@ -3564,7 +3634,9 @@ class BrowserControlServer:
                             "library_record_id": record.library_record_id,
                             "match_id": record.match_id,
                             "display_name": record.display_name,
-                            "event_date": record.event_date.isoformat() if record.event_date else None,
+                            "event_date": record.event_date.isoformat()
+                            if record.event_date
+                            else None,
                             "discipline": record.discipline,
                             "stage_ids": list(record.stage_ids),
                             "aggregate_metric_summary": dict(record.aggregate_metric_summary),
@@ -3579,7 +3651,8 @@ class BrowserControlServer:
                         (
                             row
                             for row in self._library_match_rows()
-                            if row.get("library_record_id") == record_id or row.get("match_id") == record_id
+                            if row.get("library_record_id") == record_id
+                            or row.get("match_id") == record_id
                         ),
                         None,
                     )
@@ -3593,7 +3666,9 @@ class BrowserControlServer:
                 editor_target = dict(normalized_record.get("editor_target") or {})
                 editor_target.setdefault("type", "multi")
                 editor_target.setdefault("match_id", normalized_record.get("match_id", ""))
-                editor_target.setdefault("workspace_path", normalized_record.get("workspace_path", ""))
+                editor_target.setdefault(
+                    "workspace_path", normalized_record.get("workspace_path", "")
+                )
 
                 return {
                     "success": True,

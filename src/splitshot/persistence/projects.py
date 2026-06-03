@@ -55,7 +55,9 @@ def _parse_activity_datetime(value: object) -> datetime | None:
     return parsed
 
 
-def _recent_project_timestamp(metadata: dict[str, object], fallback_timestamp: float) -> tuple[float, str]:
+def _recent_project_timestamp(
+    metadata: dict[str, object], fallback_timestamp: float
+) -> tuple[float, str]:
     for key in ("last_opened", "updated_at", "modified_at", "created_at"):
         parsed = _parse_activity_datetime(metadata.get(key))
         if parsed is not None:
@@ -276,7 +278,11 @@ def _bundle_browser_upload_compatibility_media(project: Project, project_path: P
     if project.primary_video.path:
         project.primary_video.path = bundle_if_needed(project.primary_video.path)
 
-    if project.secondary_video is not None and project.secondary_video.path and not project.merge_sources:
+    if (
+        project.secondary_video is not None
+        and project.secondary_video.path
+        and not project.merge_sources
+    ):
         project.secondary_video.path = bundle_if_needed(project.secondary_video.path)
 
     for source in project.merge_sources:
@@ -309,9 +315,7 @@ def _project_to_disk_dict(project: Project, project_path: Path) -> dict[str, obj
         trim_derivative = source.get("trim_derivative")
         if isinstance(trim_derivative, dict):
             trim_derivative["original_path"] = relativize(trim_derivative.get("original_path"))
-            trim_derivative["derivative_path"] = relativize(
-                trim_derivative.get("derivative_path")
-            )
+            trim_derivative["derivative_path"] = relativize(trim_derivative.get("derivative_path"))
     scoring = payload.get("scoring", {})
     if isinstance(scoring, dict):
         scoring["practiscore_source_path"] = relativize(scoring.get("practiscore_source_path"))

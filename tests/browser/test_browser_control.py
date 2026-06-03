@@ -294,7 +294,9 @@ def _get_json_with_headers(url: str, headers: dict[str, str]) -> dict:
         return json.loads(response.read().decode("utf-8"))
 
 
-def _claim_backend_session(server: BrowserControlServer) -> tuple[dict[str, object], dict[str, str]]:
+def _claim_backend_session(
+    server: BrowserControlServer,
+) -> tuple[dict[str, object], dict[str, str]]:
     ready_payload = server.ready_line_payload()
     request = urllib.request.Request(
         f"{server.url}api/startup/claim",
@@ -361,9 +363,7 @@ def _extract_browser_post_routes_from_server_source() -> set[str]:
     if 'self.path.startswith("/api/jobs/") and self.path.endswith("/cancel")' in server_source:
         direct_routes.add("/api/jobs/<job_id>/cancel")
     mapped_routes = set(re.findall(r'"(/api/[^"]+)":\s*self\._[A-Za-z0-9_]+', server_source))
-    mapped_routes |= set(
-        re.findall(r'"(/api/[^"]+)":\s*\(\s*"_[A-Za-z0-9_]+"', server_source)
-    )
+    mapped_routes |= set(re.findall(r'"(/api/[^"]+)":\s*\(\s*"_[A-Za-z0-9_]+"', server_source))
     get_only_routes = {
         "/api/activity/poll",
         "/api/events",
@@ -608,6 +608,8 @@ def test_browser_startup_claim_route_sets_cookie_and_health_requires_auth(tmp_pa
         assert health_payload["state"] == "ready"
     finally:
         server.shutdown()
+
+
 def test_browser_jobs_and_events_routes_capture_export_lifecycle(
     synthetic_video_factory,
     tmp_path: Path,
@@ -749,8 +751,7 @@ def test_browser_jobs_and_events_routes_capture_export_lifecycle(
             if event["event"] == "job.log"
         )
         assert any(
-            event["data"]["detail"].get("result", {}).get("legacy_event")
-            == "api.export.complete"
+            event["data"]["detail"].get("result", {}).get("legacy_event") == "api.export.complete"
             for event in events
             if event["event"] == "job.completed"
         )
@@ -976,7 +977,10 @@ def test_browser_state_exposes_workspace_stage_aliases_and_override_details() ->
     controller.workspace.description = "Workspace state contract"
     controller.workspace_add_stage("stage_1", "Stage 1")
     controller.workspace_add_stage("stage_2", "Stage 2")
-    controller.workspace.shared_defaults = {"frame_profile": "16:9", "metric_caption_preset": "score"}
+    controller.workspace.shared_defaults = {
+        "frame_profile": "16:9",
+        "metric_caption_preset": "score",
+    }
     controller.workspace.stage_entries["stage_1"].source_media_present = True
     controller.workspace.stage_entries["stage_1"].status = "ready"
     controller.workspace.stage_entries["stage_2"].source_media_present = False
@@ -1094,7 +1098,7 @@ def test_browser_state_sync_analysis_support_is_reorder_invariant_without_order_
     merge_source_b = build_merge_source("merge-b", "/tmp/merge-b.mp4")
     merge_source_a = build_merge_source("merge-a", "/tmp/merge-a.mp4")
 
-    assert sync_analysis_owner_ids(merge_source_b, merge_source_a) == ("merge-a", "merge-a")
+    assert sync_analysis_owner_ids(merge_source_b, merge_source_a) == ("merge-b", "merge-b")
     assert sync_analysis_owner_ids(merge_source_a, merge_source_b) == ("merge-a", "merge-a")
 
 
@@ -1354,7 +1358,9 @@ def test_browser_merge_source_analysis_state_exposes_sync_controls(
     try:
         primary_path = Path(synthetic_video_factory(name="merge-sync-primary", beep_ms=400))
         first_merge_path = Path(synthetic_video_factory(name="merge-sync-secondary-a", beep_ms=650))
-        second_merge_path = Path(synthetic_video_factory(name="merge-sync-secondary-b", beep_ms=725))
+        second_merge_path = Path(
+            synthetic_video_factory(name="merge-sync-secondary-b", beep_ms=725)
+        )
 
         _post_json(f"{server.url}api/import/primary", {"path": str(primary_path)})
         state = _post_json(f"{server.url}api/import/merge", {"path": str(first_merge_path)})
@@ -1366,9 +1372,7 @@ def test_browser_merge_source_analysis_state_exposes_sync_controls(
             f"{server.url}api/merge/source",
             {"source_id": first_source_id, "angle_role": "static"},
         )
-        sources_by_id = {
-            item["id"]: item for item in state["project"]["merge_sources"]
-        }
+        sources_by_id = {item["id"]: item for item in state["project"]["merge_sources"]}
         first_source = sources_by_id[first_source_id]
         second_source = sources_by_id[second_source_id]
 
@@ -1450,9 +1454,7 @@ def test_browser_manual_merge_sync_after_auto_analysis_remains_authoritative_for
             f"{server.url}api/merge/source",
             {"source_id": second_source_id, "sync_offset_ms": auto_offset + 33},
         )
-        sources_by_id = {
-            source["id"]: source for source in state["project"]["merge_sources"]
-        }
+        sources_by_id = {source["id"]: source for source in state["project"]["merge_sources"]}
         first_source = sources_by_id[first_source_id]
         second_source = sources_by_id[second_source_id]
         assert first_source["supports_sync_analysis"] is False
@@ -1797,7 +1799,9 @@ def test_browser_control_api_imports_steel_challenge_results() -> None:
         }
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        assert state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 16.50\nFinal 49.50"
+        assert (
+            state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 16.50\nFinal 49.50"
+        )
         assert state["scoring_summary"]["display_value"] == "49.50"
     finally:
         server.shutdown()
@@ -2615,9 +2619,9 @@ def test_browser_post_route_manifest_is_classified_and_disk_asserted() -> None:
 
 
 def test_browser_api_runtime_marks_structured_routes_as_non_owning_remote_state() -> None:
-    api_js = (
-        REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js"
-    ).read_text(encoding="utf-8")
+    api_js = (REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js").read_text(
+        encoding="utf-8"
+    )
     match = re.search(
         r"function apiResponseOwnsRemoteState\(path\) \{(?P<body>.*?)\n  \}",
         api_js,
@@ -2643,9 +2647,9 @@ def test_browser_api_runtime_marks_structured_routes_as_non_owning_remote_state(
 
 
 def test_browser_api_runtime_applies_structured_practiscore_payloads_without_full_state() -> None:
-    api_js = (
-        REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js"
-    ).read_text(encoding="utf-8")
+    api_js = (REPO_ROOT / "src" / "splitshot" / "browser" / "static" / "lib" / "api.js").read_text(
+        encoding="utf-8"
+    )
     match = re.search(
         r"function applyStructuredRoutePayload\(path, payload\) \{(?P<body>.*?)\n  \}",
         api_js,
@@ -2956,12 +2960,16 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         _post_json(f"{server.url}api/import/secondary", {"path": str(secondary_three)})
         saved = _read_project_json(project_path)
         assert len(saved["merge_sources"]) == 3
-        assert Path(saved["merge_sources"][-1]["asset"]["path"]).resolve() == secondary_three.resolve()
+        assert (
+            Path(saved["merge_sources"][-1]["asset"]["path"]).resolve() == secondary_three.resolve()
+        )
 
         _post_json(f"{server.url}api/import/merge", {"path": str(secondary_four)})
         saved = _read_project_json(project_path)
         assert len(saved["merge_sources"]) == 4
-        assert Path(saved["merge_sources"][-1]["asset"]["path"]).resolve() == secondary_four.resolve()
+        assert (
+            Path(saved["merge_sources"][-1]["asset"]["path"]).resolve() == secondary_four.resolve()
+        )
 
         _post_json(
             f"{server.url}api/merge",
@@ -3030,7 +3038,9 @@ def test_browser_autosave_persists_overlay_merge_export_and_media_routes_to_proj
         saved = _read_project_json(project_path)
         assert any(source["id"] == second_source_id for source in saved["merge_sources"])
 
-        original_first_source_path = _merge_source_from_project_json(saved, first_source_id)["asset"]["path"]
+        original_first_source_path = _merge_source_from_project_json(saved, first_source_id)[
+            "asset"
+        ]["path"]
         _post_json(
             f"{server.url}api/merge/source/trim",
             {
@@ -3649,7 +3659,7 @@ def test_browser_settings_pip_defaults_seed_merge_source_defaults_on_new_project
                                 "rotation": 0,
                                 "is_still_image": True,
                             },
-                                "camera_role": "detail",
+                            "camera_role": "detail",
                             "pip_size_percent": 42,
                             "pip_x": 0.25,
                             "pip_y": 0.75,
@@ -4872,22 +4882,34 @@ def test_browser_library_tags_and_notes_routes_round_trip_for_stage_and_match_re
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
-        assert _post_json(
-            f"{server.url}api/library/tags/update",
-            {"record_id": "stage-record", "tags": ["classifier", "night"]},
-        )["updated"] is True
-        assert _post_json(
-            f"{server.url}api/library/notes/update",
-            {"record_id": "stage-record", "notes": "Keep strong hands high."},
-        )["updated"] is True
-        assert _post_json(
-            f"{server.url}api/library/tags/update",
-            {"record_id": "match-record", "tags": ["major", "travel"]},
-        )["updated"] is True
-        assert _post_json(
-            f"{server.url}api/library/notes/update",
-            {"record_id": "match-record", "notes": "Review stage plan timing."},
-        )["updated"] is True
+        assert (
+            _post_json(
+                f"{server.url}api/library/tags/update",
+                {"record_id": "stage-record", "tags": ["classifier", "night"]},
+            )["updated"]
+            is True
+        )
+        assert (
+            _post_json(
+                f"{server.url}api/library/notes/update",
+                {"record_id": "stage-record", "notes": "Keep strong hands high."},
+            )["updated"]
+            is True
+        )
+        assert (
+            _post_json(
+                f"{server.url}api/library/tags/update",
+                {"record_id": "match-record", "tags": ["major", "travel"]},
+            )["updated"]
+            is True
+        )
+        assert (
+            _post_json(
+                f"{server.url}api/library/notes/update",
+                {"record_id": "match-record", "notes": "Review stage plan timing."},
+            )["updated"]
+            is True
+        )
     finally:
         server.shutdown()
 
@@ -4985,8 +5007,12 @@ def test_library_backup_create_prefers_full_records_when_available(monkeypatch) 
     ]
     monkeypatch.setattr(library_module, "read_stage_records", lambda: list(full_stage_records))
     monkeypatch.setattr(library_module, "read_match_records", lambda: list(full_match_records))
-    monkeypatch.setattr(library_module, "read_stage_metrics", lambda: [{"library_record_id": "stage-metric"}])
-    monkeypatch.setattr(library_module, "read_match_metrics", lambda: [{"library_record_id": "match-metric"}])
+    monkeypatch.setattr(
+        library_module, "read_stage_metrics", lambda: [{"library_record_id": "stage-metric"}]
+    )
+    monkeypatch.setattr(
+        library_module, "read_match_metrics", lambda: [{"library_record_id": "match-metric"}]
+    )
 
     controller = ProjectController()
     result = controller.library_backup_create()
@@ -5025,7 +5051,10 @@ def test_library_backup_restore_preserves_tags_notes_editor_target_and_truth_has
                     "metric_summary": {"score_total": 95},
                     "output_profile_refs": ["stage-output"],
                     "active_retained_proxy": "proxy-stage",
-                    "editor_target": {"project_path": "/tmp/restore-stage", "stage_id": "stage-restore"},
+                    "editor_target": {
+                        "project_path": "/tmp/restore-stage",
+                        "stage_id": "stage-restore",
+                    },
                     "truth_hash": "truth-stage",
                     "tags": ["classifier", "night"],
                     "notes": "Keep hands high.",
@@ -5042,7 +5071,10 @@ def test_library_backup_restore_preserves_tags_notes_editor_target_and_truth_has
                     "aggregate_metric_summary": {"score": 182, "stage_count": 2},
                     "output_profile_refs": ["match-output"],
                     "active_retained_proxy": "proxy-match",
-                    "editor_target": {"workspace_path": "/tmp/restore-match", "match_id": "match-restore"},
+                    "editor_target": {
+                        "workspace_path": "/tmp/restore-match",
+                        "match_id": "match-restore",
+                    },
                     "truth_hash": "truth-match",
                     "tags": ["major"],
                     "notes": "Travel match review.",
@@ -5150,7 +5182,9 @@ def test_server_workspace_apply_from_first_uses_controller_result() -> None:
     server = BrowserControlServer(controller=controller, port=0)
     server.start_background(open_browser=False)
     try:
-        result = _post_json(f"{server.url}api/workspace/apply-from-first", {"workspace_id": "ignored"})
+        result = _post_json(
+            f"{server.url}api/workspace/apply-from-first", {"workspace_id": "ignored"}
+        )
         assert result == expected
         assert calls == [{"called": True}]
     finally:

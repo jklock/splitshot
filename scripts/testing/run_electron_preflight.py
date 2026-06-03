@@ -44,11 +44,21 @@ def main() -> int:
     if sys.platform == "darwin":
         build_command = ["npm", "--prefix", "electron", "run", "build:smoke:mac"]
         source_smoke_command = ["npm", "--prefix", "electron", "run", "test:electron-smoke"]
-        packaged_smoke_command = ["uv", "run", "python", "scripts/testing/test_packaged_artifact.py"]
+        packaged_smoke_command = [
+            "uv",
+            "run",
+            "python",
+            "scripts/testing/test_packaged_artifact.py",
+        ]
     elif sys.platform == "win32":
         build_command = ["npm", "--prefix", "electron", "run", "build:smoke:win"]
         source_smoke_command = ["npm", "--prefix", "electron", "run", "test:electron-smoke"]
-        packaged_smoke_command = ["uv", "run", "python", "scripts/testing/test_packaged_artifact.py"]
+        packaged_smoke_command = [
+            "uv",
+            "run",
+            "python",
+            "scripts/testing/test_packaged_artifact.py",
+        ]
     else:
         build_command = ["npm", "--prefix", "electron", "run", "build:smoke:linux"]
         source_smoke_command = [
@@ -91,7 +101,14 @@ def main() -> int:
         },
         {
             "name": "electron-parity-audit",
-            "command": ["uv", "run", "python", "scripts/audits/electron_parity_audit.py", "--mode", "parity"],
+            "command": [
+                "uv",
+                "run",
+                "python",
+                "scripts/audits/electron_parity_audit.py",
+                "--mode",
+                "parity",
+            ],
         },
         {"name": "source-smoke", "command": source_smoke_command},
         {"name": "packaged-build", "command": build_command},

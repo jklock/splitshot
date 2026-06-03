@@ -154,7 +154,6 @@ document.getElementById("stage-empty-open")?.addEventListener("click", () => {
   document.getElementById("browse-project-path")?.click();
 });
 
-
 // === GLOBAL ERROR BANNER ===
 function showGlobalError(message, { duration = 8000, action = null, actionLabel = "Retry" } = {}) {
   let banner = document.getElementById("global-error-banner");

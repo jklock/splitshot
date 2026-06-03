@@ -68,21 +68,18 @@ def _support_surface_rows() -> dict[str, dict[str, list[str] | str]]:
 
 def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     matrix = Path("docs/project/browser-control-qa-matrix.md").read_text(encoding="utf-8")
-    interaction_heading = (
-        "The interaction suite (`tests/browser/test_browser_interactions.py`) contributes browser evidence support for:"
-    )
-    settings_heading = (
-        "The Settings pane suites (`tests/browser/test_settings_e2e.py` and `tests/browser/test_settings_defaults_truth_gate.py`) contribute browser evidence support for:"
-    )
-    metrics_heading = (
-        "The Metrics pane suites (`tests/browser/test_metrics_e2e.py` and `tests/browser/test_scoring_metrics_contracts.py`) contribute browser evidence support for:"
-    )
+    interaction_heading = "The interaction suite (`tests/browser/test_browser_interactions.py`) contributes browser evidence support for:"
+    settings_heading = "The Settings pane suites (`tests/browser/test_settings_e2e.py` and `tests/browser/test_settings_defaults_truth_gate.py`) contribute browser evidence support for:"
+    metrics_heading = "The Metrics pane suites (`tests/browser/test_metrics_e2e.py` and `tests/browser/test_scoring_metrics_contracts.py`) contribute browser evidence support for:"
 
     assert (
         "This matrix maps SplitShot’s browser-visible control surfaces to the tests that exercise them and to the canonical taxonomy IDs they support."
         in matrix
     )
-    assert "This matrix is a browser inventory and support map. It is **not** a closure ledger." in matrix
+    assert (
+        "This matrix is a browser inventory and support map. It is **not** a closure ledger."
+        in matrix
+    )
     assert (
         "If a control is missing from this matrix, it does not have an explicit browser-QA owner yet."
         in matrix
@@ -150,9 +147,14 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert "stage.markers_review_overlay.overlay_styling_and_positioning" in matrix
     assert "stage.export.output_profiles_and_hooks" in matrix
     assert "stage.shotml.proposals_and_section_persistence" in matrix
-    assert "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
+    assert (
+        "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
+    )
     assert "Landing support surface only; not a first-class pane or view closure record." in matrix
-    assert "Shared-shell support surface only; not a first-class pane or view closure record." in matrix
+    assert (
+        "Shared-shell support surface only; not a first-class pane or view closure record."
+        in matrix
+    )
     assert "tests/browser/test_browser_interactions.py" in matrix
     assert "tests/browser/test_landing_page.py" in matrix
     assert "tests/browser/test_landing_backend_routes.py" in matrix
@@ -165,29 +167,55 @@ def test_browser_control_qa_matrix_documents_current_browser_suites() -> None:
     assert settings_heading in matrix
     assert metrics_heading in matrix
     assert "dashboard-open action" in matrix
-    assert "landing Open File and stage-empty Import Video chooser/path bootstrap parity without a saved project" in matrix
+    assert (
+        "landing Open File and stage-empty Import Video chooser/path bootstrap parity without a saved project"
+        in matrix
+    )
     assert "manual PractiScore file import fallback parity" in matrix
     assert "missing-folder creation notice" in matrix
     assert "metadata-only delete safety" in matrix
-    assert "Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states" in matrix
+    assert (
+        "Match workspace new/open/save lifecycle plus stage add/select/remove and loading/error states"
+        in matrix
+    )
     assert "Match workspace stage open and shell return-to-Match behavior" in matrix
-    assert "Match workspace live preview tiles and selected-stage lower-pane truth across Composite/Export lower-pane swaps" in matrix
+    assert (
+        "Match workspace live preview tiles and selected-stage lower-pane truth across Composite/Export lower-pane swaps"
+        in matrix
+    )
     assert (
         "Match shared defaults apply/reset, stage override apply/reset, and selected-stage lower-pane / workflow-inspector routing"
         in matrix
     )
     assert "setup-once preview/apply confirmation and dismiss" in matrix
-    assert "Match Stage Composite reorder, per-clip role/sync/audio editing, plan refresh, and apply/clear cut override actions plus refreshed state" in matrix
-    assert "Match recap stage selection plus transition/result-card configuration and success/error status" in matrix
-    assert "Match batch export recipe selection, queue select all/none, and truthful success/error reporting" in matrix
+    assert (
+        "Match Stage Composite reorder, per-clip role/sync/audio editing, plan refresh, and apply/clear cut override actions plus refreshed state"
+        in matrix
+    )
+    assert (
+        "Match recap stage selection plus transition/result-card configuration and success/error status"
+        in matrix
+    )
+    assert (
+        "Match batch export recipe selection, queue select all/none, and truthful success/error reporting"
+        in matrix
+    )
     assert "Match settings local persistence and remember-stage behavior" in matrix
     assert "Performance Library selected-record reopen to Stage and Match workspace" in matrix
-    assert "Performance Library settings local persistence, stale banner, and manual refresh load behavior" in matrix
+    assert (
+        "Performance Library settings local persistence, stale banner, and manual refresh load behavior"
+        in matrix
+    )
     assert "average auto-confidence summary" in matrix
     assert "metrics pane row propagation" in matrix
     assert "timing-event metrics ordering" in matrix
-    assert "settings defaults seeding overlay/marker/export/pip/shotml state into fresh projects" in matrix
-    assert "landing pane and reopen-last-tool defaults across reload and project switching" in matrix
+    assert (
+        "settings defaults seeding overlay/marker/export/pip/shotml state into fresh projects"
+        in matrix
+    )
+    assert (
+        "landing pane and reopen-last-tool defaults across reload and project switching" in matrix
+    )
     assert "app-vs-folder settings scope separation without cross-scope rewrites" in matrix
     assert "metrics stage story graphs and scoring-context truth" in matrix
     assert "metrics CSV/Text export downloads for the current context" in matrix
@@ -404,9 +432,7 @@ def test_development_proof_docs_capture_mixed_family_taxonomy_and_honesty_caveat
     coverage_plan = Path("docs/project/browser-control-coverage-plan.md").read_text(
         encoding="utf-8"
     )
-    full_e2e_plan = Path("docs/project/browser-full-e2e-qa-plan.md").read_text(
-        encoding="utf-8"
-    )
+    full_e2e_plan = Path("docs/project/browser-full-e2e-qa-plan.md").read_text(encoding="utf-8")
 
     assert "scripts/testing/pane_feature_manifests.json" in guide
     assert "scripts/testing/pane_feature_manifests.json" in matrix
@@ -434,17 +460,29 @@ def test_development_proof_docs_capture_mixed_family_taxonomy_and_honesty_caveat
     assert "state-led" in guide
     assert "Landing support surface only; not a first-class pane or view closure record." in guide
     assert "Landing support surface only; not a first-class pane or view closure record." in matrix
-    assert "Shared-shell support surface only; not a first-class pane or view closure record." in guide
-    assert "Shared-shell support surface only; not a first-class pane or view closure record." in matrix
-    assert "Stage-tool support surface only; not a first-class pane or view closure record." in guide
-    assert "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
+    assert (
+        "Shared-shell support surface only; not a first-class pane or view closure record." in guide
+    )
+    assert (
+        "Shared-shell support surface only; not a first-class pane or view closure record."
+        in matrix
+    )
+    assert (
+        "Stage-tool support surface only; not a first-class pane or view closure record." in guide
+    )
+    assert (
+        "Stage-tool support surface only; not a first-class pane or view closure record." in matrix
+    )
     assert "`match.recap` is `audit_model: control-led`" in guide
     assert "`settings.section_visibility`" in guide
     assert "`metrics.row_propagation`" in guide
     assert "`metrics.stage_story`" in guide
     assert "`metrics.scoring_context`" in guide
     assert "`match.recap` is `control-led`" in coverage_plan
-    assert "Project, Match, Performance, Settings, and Metrics now have first-class machine-readable manifests" in spec
+    assert (
+        "Project, Match, Performance, Settings, and Metrics now have first-class machine-readable manifests"
+        in spec
+    )
     assert "supporting seam only; never a standalone TAX-0..TAX-5 closeout" in json.dumps(
         SEAM_REGISTRY,
         sort_keys=True,

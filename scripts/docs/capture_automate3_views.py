@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Capture Automate3 empty-state screenshots with DOM assertions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -101,12 +102,14 @@ async def capture_view(page: Page, view_name: str, filename: str) -> dict[str, o
     }
 
 
-async def build_contact_sheet(page: Page, images: list[dict[str, object]], filename: str) -> dict[str, object]:
+async def build_contact_sheet(
+    page: Page, images: list[dict[str, object]], filename: str
+) -> dict[str, object]:
     cards = "\n".join(
         f"""
         <figure>
-          <figcaption>{item['file']}</figcaption>
-          <img src="data:image/png;base64,{base64.b64encode(Path(str(item['path'])).read_bytes()).decode('ascii')}" />
+          <figcaption>{item["file"]}</figcaption>
+          <img src="data:image/png;base64,{base64.b64encode(Path(str(item["path"])).read_bytes()).decode("ascii")}" />
         </figure>
         """
         for item in images
@@ -132,7 +135,12 @@ async def build_contact_sheet(page: Page, images: list[dict[str, object]], filen
     path = OUTPUT_DIR / filename
     await page.screenshot(path=path, full_page=False)
     data = path.read_bytes()
-    return {"file": filename, "path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    return {
+        "file": filename,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
 
 
 async def run() -> dict[str, object]:
@@ -144,7 +152,10 @@ async def run() -> dict[str, object]:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)
@@ -165,7 +176,9 @@ async def run() -> dict[str, object]:
             "screenshots": results,
             "contact_sheet": contact,
         }
-        (OUTPUT_DIR / "proof-results.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
+        (OUTPUT_DIR / "proof-results.json").write_text(
+            json.dumps(proof, indent=2), encoding="utf-8"
+        )
         return proof
     finally:
         server.shutdown()

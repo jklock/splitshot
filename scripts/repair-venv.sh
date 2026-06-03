@@ -25,7 +25,7 @@ if [ ! -d "$VENV/bin" ] || [ ! -x "$VENV/bin/python" ]; then
     brew install python@3.12
   fi
 
-  uv venv --python "$HOMEBREW_PYTHON" "$VENV"
+  uv venv --python "$HOMEBREW_PYTHON" --prompt splitshot "$VENV"
   uv pip install --python "$VENV/bin/python" -e ".[dev]" --no-progress
   echo "repair-venv: rebuilt at $VENV with $(readlink "$VENV/bin/python")"
 fi

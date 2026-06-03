@@ -114,16 +114,12 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
         'const savedResult = await callApi("/api/project/save", { path: projectPath });'
         in project_pane_js
     )
-    assert (
-        "setForcedProjectLandingPersistedTool(configuredTool);" in project_pane_js
-    )
+    assert "setForcedProjectLandingPersistedTool(configuredTool);" in project_pane_js
     assert (
         'setActiveTool("project", { collapseExpandedLayout: true, persistUiState: false });'
         in project_pane_js
     )
-    assert (
-        "setForcedProjectLandingPersistedTool(null);" in project_pane_js
-    )
+    assert "setForcedProjectLandingPersistedTool(null);" in project_pane_js
     assert (
         "setActiveTool(configuredTool, { collapseExpandedLayout: false, persistUiState: false });"
         in project_pane_js

@@ -224,7 +224,10 @@ def _remote_match_from_host_payload(
             match = RemotePractiScoreMatch.from_dict(summary_snapshot.get("remote_match"))
     if match is not None:
         return match
-    label = str(host_payload.get("label") or host_payload.get("source_name") or remote_id).strip() or remote_id
+    label = (
+        str(host_payload.get("label") or host_payload.get("source_name") or remote_id).strip()
+        or remote_id
+    )
     event_name = str(host_payload.get("event_name") or label).strip() or label
     event_date = str(host_payload.get("event_date") or "").strip()
     match_type = str(host_payload.get("match_type") or "").strip()
@@ -364,8 +367,7 @@ def list_practiscore_matches(
         controller._set_practiscore_session_payload(session_payload)
         category = (
             EXPIRED_AUTHENTICATION_ERROR
-            if controller._practiscore_session_payload.get("state")
-            != "authenticated_ready"
+            if controller._practiscore_session_payload.get("state") != "authenticated_ready"
             else practiscore_error_category_from_exception(exc)
         )
         message = str(exc) or "Unable to list remote PractiScore matches."
@@ -380,14 +382,11 @@ def list_practiscore_matches(
         return controller._practiscore_route_payload()
 
     match_payloads = serialize_practiscore_remote_matches(matches)
-    previous_selected_remote_id = controller._practiscore_sync_payload.get(
-        "selected_remote_id"
-    )
+    previous_selected_remote_id = controller._practiscore_sync_payload.get("selected_remote_id")
     selected_remote_id = (
         previous_selected_remote_id
         if any(
-            payload.get("remote_id") == previous_selected_remote_id
-            for payload in match_payloads
+            payload.get("remote_id") == previous_selected_remote_id for payload in match_payloads
         )
         else None
     )
@@ -416,7 +415,9 @@ def list_practiscore_matches_from_host_payload(
     matches_payload: list[dict[str, object]] | list[RemotePractiScoreMatch] | object,
 ) -> dict[str, object]:
     controller._set_practiscore_session_payload(
-        session_payload if isinstance(session_payload, dict) else default_practiscore_session_payload()
+        session_payload
+        if isinstance(session_payload, dict)
+        else default_practiscore_session_payload()
     )
     if controller._practiscore_session_payload.get("state") != "authenticated_ready":
         message = str(
@@ -434,14 +435,11 @@ def list_practiscore_matches_from_host_payload(
         return controller._practiscore_route_payload()
 
     match_payloads = serialize_practiscore_remote_matches(matches_payload)
-    previous_selected_remote_id = controller._practiscore_sync_payload.get(
-        "selected_remote_id"
-    )
+    previous_selected_remote_id = controller._practiscore_sync_payload.get("selected_remote_id")
     selected_remote_id = (
         previous_selected_remote_id
         if any(
-            payload.get("remote_id") == previous_selected_remote_id
-            for payload in match_payloads
+            payload.get("remote_id") == previous_selected_remote_id for payload in match_payloads
         )
         else None
     )
@@ -552,9 +550,7 @@ def start_practiscore_sync(
         )
         return controller._practiscore_route_payload()
     except ValueError as exc:
-        message = (
-            str(exc) or "Unable to normalize the downloaded PractiScore artifact."
-        )
+        message = str(exc) or "Unable to normalize the downloaded PractiScore artifact."
         controller._set_status(message)
         controller._set_practiscore_sync_state(
             "error",
@@ -573,8 +569,7 @@ def start_practiscore_sync(
         controller._set_practiscore_session_payload(session_payload)
         category = (
             EXPIRED_AUTHENTICATION_ERROR
-            if controller._practiscore_session_payload.get("state")
-            != "authenticated_ready"
+            if controller._practiscore_session_payload.get("state") != "authenticated_ready"
             else practiscore_error_category_from_exception(exc)
         )
         message = str(exc) or "Unable to import the selected remote PractiScore match."
@@ -591,9 +586,7 @@ def start_practiscore_sync(
 
     imported_stage = controller.project.scoring.imported_stage
     updated_matches = serialize_practiscore_remote_matches(existing_matches)
-    if not any(
-        item.get("remote_id") == artifacts.match.remote_id for item in updated_matches
-    ):
+    if not any(item.get("remote_id") == artifacts.match.remote_id for item in updated_matches):
         updated_matches.append(artifacts.match.to_dict())
     message = f"Imported remote PractiScore match {artifacts.match.label}."
     controller._set_practiscore_sync_state(
@@ -642,7 +635,9 @@ def start_practiscore_sync_from_host_payload(
         return controller._practiscore_route_payload()
 
     controller._set_practiscore_session_payload(
-        session_payload if isinstance(session_payload, dict) else default_practiscore_session_payload()
+        session_payload
+        if isinstance(session_payload, dict)
+        else default_practiscore_session_payload()
     )
     if controller._practiscore_session_payload.get("state") != "authenticated_ready":
         message = str(

@@ -82,9 +82,7 @@ def _scan_recent_workspaces(
     root: str | Path | None = None,
 ) -> list[dict[str, object]]:
     workspace_root = (
-        Path(root).expanduser()
-        if root is not None
-        else Path.home() / ".splitshot" / "workspaces"
+        Path(root).expanduser() if root is not None else Path.home() / ".splitshot" / "workspaces"
     )
     if not workspace_root.is_dir():
         return []
@@ -141,9 +139,7 @@ def landing_recent(controller: ProjectController | None = None) -> dict[str, obj
         pass
 
     try:
-        recent.extend(
-            list_recent_library_activity(limit=8, stage_limit=5, match_limit=3)
-        )
+        recent.extend(list_recent_library_activity(limit=8, stage_limit=5, match_limit=3))
     except Exception:
         pass
 
@@ -196,9 +192,7 @@ def proxy_status(
             "stale": stale,
             "truth_hash": current_hash,
             "proxy_path": str(proxy_path) if proxy_path else None,
-            "last_generated": (
-                record.generated_at.isoformat() if record.generated_at else None
-            ),
+            "last_generated": (record.generated_at.isoformat() if record.generated_at else None),
             "scope_type": scope_type,
             "scope_id": sid,
             "width": record.width,
@@ -375,9 +369,7 @@ def proxy_open_target(
         return {
             "success": proxy_exists,
             "proxy_path": str(proxy_path) if proxy_path else None,
-            "error": None
-            if proxy_exists
-            else "Proxy file not found on disk. Try regenerating.",
+            "error": None if proxy_exists else "Proxy file not found on disk. Try regenerating.",
             "stale": record.generated_from_truth_hash
             != (
                 controller._compute_truth_hash()
@@ -517,9 +509,7 @@ def library_backup_restore(manifest: dict[str, object]) -> dict[str, object]:
             if has_full_stage_payload and stage_data.get("library_record_id"):
                 save_stage_record(
                     LibraryStageRecord(
-                        library_record_id=str(
-                            stage_data.get("library_record_id") or ""
-                        ),
+                        library_record_id=str(stage_data.get("library_record_id") or ""),
                         stage_id=str(stage_data.get("stage_id") or ""),
                         match_id=(
                             None
@@ -531,9 +521,7 @@ def library_backup_restore(manifest: dict[str, object]) -> dict[str, object]:
                         discipline=str(stage_data.get("discipline") or ""),
                         competitor_name=str(stage_data.get("competitor_name") or ""),
                         metric_summary=dict(stage_data.get("metric_summary") or {}),
-                        output_profile_refs=list(
-                            stage_data.get("output_profile_refs") or []
-                        ),
+                        output_profile_refs=list(stage_data.get("output_profile_refs") or []),
                         active_retained_proxy=(
                             None
                             if stage_data.get("active_retained_proxy") in {None, ""}
@@ -582,23 +570,18 @@ def library_backup_restore(manifest: dict[str, object]) -> dict[str, object]:
             if has_full_match_payload and match_data.get("library_record_id"):
                 save_match_record(
                     LibraryMatchRecord(
-                        library_record_id=str(
-                            match_data.get("library_record_id") or ""
-                        ),
+                        library_record_id=str(match_data.get("library_record_id") or ""),
                         match_id=str(match_data.get("match_id") or ""),
                         display_name=str(match_data.get("display_name") or ""),
                         event_date=parse_datetime(match_data.get("event_date")),
                         discipline=str(match_data.get("discipline") or ""),
                         stage_ids=[
-                            str(stage_id)
-                            for stage_id in (match_data.get("stage_ids") or [])
+                            str(stage_id) for stage_id in (match_data.get("stage_ids") or [])
                         ],
                         aggregate_metric_summary=dict(
                             match_data.get("aggregate_metric_summary") or {}
                         ),
-                        output_profile_refs=list(
-                            match_data.get("output_profile_refs") or []
-                        ),
+                        output_profile_refs=list(match_data.get("output_profile_refs") or []),
                         active_retained_proxy=(
                             None
                             if match_data.get("active_retained_proxy") in {None, ""}

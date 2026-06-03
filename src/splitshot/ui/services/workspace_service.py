@@ -142,7 +142,10 @@ def ensure_project_workspace_membership(
             )
             if stage_id is None:
                 relative_project_path = normalized_project_path.relative_to(owner_workspace_path)
-                if len(relative_project_path.parts) >= 2 and relative_project_path.parts[0] == "Stages":
+                if (
+                    len(relative_project_path.parts) >= 2
+                    and relative_project_path.parts[0] == "Stages"
+                ):
                     stage_id = relative_project_path.parts[1]
             break
 
@@ -168,10 +171,14 @@ def ensure_project_workspace_membership(
     if entry.stage_number is None:
         entry.stage_number = owner_workspace.stage_order.index(resolved_stage_id) + 1
 
-    entry.display_name = controller.project.name or entry.display_name or normalized_project_path.name
+    entry.display_name = (
+        controller.project.name or entry.display_name or normalized_project_path.name
+    )
     if owner_workspace_path is not None:
         try:
-            entry.relative_project_path = str(normalized_project_path.relative_to(owner_workspace_path))
+            entry.relative_project_path = str(
+                normalized_project_path.relative_to(owner_workspace_path)
+            )
         except ValueError:
             entry.relative_project_path = str(normalized_project_path)
     else:
@@ -332,7 +339,9 @@ def workspace_open_stage(controller: ProjectController, stage_id: str) -> dict |
     controller.active_stage_id = stage_id
     controller.editor_scope = "multi"
     controller._return_to_workspace_available = True
-    controller._set_status(f"Editing stage: {controller.workspace.stage_entries[stage_id].display_name}")
+    controller._set_status(
+        f"Editing stage: {controller.workspace.stage_entries[stage_id].display_name}"
+    )
     return None
 
 

@@ -456,10 +456,6 @@ export function createShellRuntime({
       scheduleExportSettingsApply();
     });
     $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
       await flushPendingProjectDrafts({ primaryImport: true });
       const result = await callApi("/api/import/primary", { path });
       if (result) setActiveTool("project");

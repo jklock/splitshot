@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Capture additional Automate3 screenshots: PiP, export, returning-user landing."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,18 +23,24 @@ OUTPUT_DIR = REPO_ROOT / "docs" / "screenshots" / "automate3"
 MEDIA_PATH = REPO_ROOT / "docs" / "Clip1.MP4"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+
 class ProofFailure(RuntimeError):
     pass
 
+
 async def call_api(page, endpoint, payload=None):
-    result = await page.evaluate("""
+    result = await page.evaluate(
+        """
         async ([endpoint, payload]) => {
             const data = await callApi(endpoint, payload || {});
             if (data?.error) throw new Error(`${endpoint} failed: ${data.error}`);
             return data;
         }
-    """, [endpoint, payload or {}])
+    """,
+        [endpoint, payload or {}],
+    )
     return result
+
 
 async def setup_loaded_stage(page):
     """Load stage with media for screenshot capture."""
@@ -41,10 +48,13 @@ async def setup_loaded_stage(page):
         raise ProofFailure(f"missing media fixture: {MEDIA_PATH}")
     await call_api(page, "/api/project/new")
     await call_api(page, "/api/import/primary", {"path": str(MEDIA_PATH)})
-    await page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    await page.wait_for_function(
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
+    )
     await page.wait_for_function(
         "() => document.getElementById('processing-bar')?.hidden !== false", timeout=120_000
     )
+
 
 async def switch_view(page, view_name):
     await page.evaluate(
@@ -59,11 +69,14 @@ async def switch_view(page, view_name):
     await page.wait_for_selector(f"#view-{view_name}.active", timeout=10_000)
     await page.wait_for_function(
         "(viewName) => document.getElementById('app-shell')?.dataset.activeView === viewName",
-        arg=view_name, timeout=10_000,
+        arg=view_name,
+        timeout=10_000,
     )
 
+
 async def assert_view(page, view_name, min_text_length=0):
-    result = await page.evaluate("""
+    result = await page.evaluate(
+        """
         (viewName) => {
             const view = document.getElementById(`view-${viewName}`);
             const shell = document.getElementById("app-shell");
@@ -76,7 +89,9 @@ async def assert_view(page, view_name, min_text_length=0):
                 text_length: (view?.innerText || "").length,
             };
         }
-    """, view_name)
+    """,
+        view_name,
+    )
     failures = []
     if result["activeView"] != view_name or not result["viewActive"]:
         failures.append("view is not active")
@@ -88,10 +103,11 @@ async def assert_view(page, view_name, min_text_length=0):
         raise ProofFailure(f"{view_name} assertion failed: {', '.join(failures)}")
     return result
 
+
 async def capture_pip_multi_angle(page):
     """Capture PiP/multi-angle loaded screenshot."""
     await switch_view(page, "stage")
-    # Add merge/PiP media  
+    # Add merge/PiP media
     await call_api(page, "/api/merge/add", {"path": str(MEDIA_PATH), "source_type": "video"})
     await page.wait_for_timeout(2000)
     # Click PiP tool in the rail
@@ -101,8 +117,15 @@ async def capture_pip_multi_angle(page):
     path = OUTPUT_DIR / "pip-multi-angle-loaded.png"
     await page.locator("#view-stage").screenshot(path=path)
     data = path.read_bytes()
-    return {"file": path.name, "path": str(path), "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(), "assertions": assertions, "status": "pass"}
+    return {
+        "file": path.name,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
+
 
 async def capture_export_progress(page):
     """Capture export progress screenshot."""
@@ -112,10 +135,13 @@ async def capture_export_progress(page):
     await page.wait_for_timeout(500)
     # Set export path and trigger export
     export_path = os.path.join(tempfile.mkdtemp(prefix="splitshot-export-"), "test-export.mp4")
-    await page.evaluate("""async (path) => {
+    await page.evaluate(
+        """async (path) => {
         document.getElementById('export-path').value = path;
         document.getElementById('quality').value = 'low';
-    }""", export_path)
+    }""",
+        export_path,
+    )
     # Click export button
     await page.click("#export-video")
     await page.wait_for_timeout(2000)
@@ -124,8 +150,15 @@ async def capture_export_progress(page):
     path = OUTPUT_DIR / "export-progress.png"
     await page.locator("#view-stage").screenshot(path=path)
     data = path.read_bytes()
-    return {"file": path.name, "path": str(path), "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(), "assertions": assertions, "status": "pass"}
+    return {
+        "file": path.name,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
+
 
 async def capture_export_complete(page):
     """Capture post-export completion screenshot."""
@@ -134,8 +167,15 @@ async def capture_export_complete(page):
     path = OUTPUT_DIR / "export-complete.png"
     await page.locator("#view-stage").screenshot(path=path)
     data = path.read_bytes()
-    return {"file": path.name, "path": str(path), "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(), "assertions": assertions, "status": "pass"}
+    return {
+        "file": path.name,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
+
 
 async def capture_returning_user_landing(page):
     """Capture landing page with recent activity."""
@@ -151,7 +191,9 @@ async def capture_returning_user_landing(page):
     await switch_view(page, "landing")
     await page.wait_for_timeout(500)
     # Verify recent items are showing
-    has_recent = await page.evaluate("() => document.querySelectorAll('.landing-recent-item').length > 0")
+    has_recent = await page.evaluate(
+        "() => document.querySelectorAll('.landing-recent-item').length > 0"
+    )
     if not has_recent:
         # Refresh page to reload localStorage
         await page.reload()
@@ -162,8 +204,15 @@ async def capture_returning_user_landing(page):
     path = OUTPUT_DIR / "returning-user-landing.png"
     await page.locator("#view-landing").screenshot(path=path)
     data = path.read_bytes()
-    return {"file": path.name, "path": str(path), "bytes": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(), "assertions": assertions, "status": "pass"}
+    return {
+        "file": path.name,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "assertions": assertions,
+        "status": "pass",
+    }
+
 
 async def run():
     console_errors = []
@@ -174,20 +223,23 @@ async def run():
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)
-            
+
             await setup_loaded_stage(page)
-            
+
             results.append(await capture_pip_multi_angle(page))
             results.append(await capture_export_progress(page))
             results.append(await capture_export_complete(page))
             results.append(await capture_returning_user_landing(page))
-            
+
             await browser.close()
-        
+
         proof = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "kind": "additional",
@@ -201,6 +253,7 @@ async def run():
     finally:
         server.shutdown()
 
+
 def main():
     try:
         asyncio.run(run())
@@ -208,6 +261,7 @@ def main():
         print(f"FAILED: {exc}", file=sys.stderr)
         return 1
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

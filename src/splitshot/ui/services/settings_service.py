@@ -208,9 +208,7 @@ def save_settings_template(
     section: str | None = None,
 ) -> None:
     template_name = (
-        str(template_name or "").strip()
-        or controller.settings.active_template_name
-        or "Default"
+        str(template_name or "").strip() or controller.settings.active_template_name or "Default"
     )
     snapshot = controller._settings_template_snapshot(template_name)
     snapshot = controller._template_snapshot_from_current_project(snapshot, section=section)
@@ -219,9 +217,7 @@ def save_settings_template(
     if section:
         controller._set_status(f"Saved {section} defaults to template {template_name}.")
     else:
-        controller._set_status(
-            f"Saved current project defaults to template {template_name}."
-        )
+        controller._set_status(f"Saved current project defaults to template {template_name}.")
 
 
 def duplicate_settings_template(
@@ -236,9 +232,7 @@ def duplicate_settings_template(
     snapshot = controller._settings_template_snapshot(source_name)
     controller._apply_settings_template_snapshot(duplicate_name, snapshot)
     controller._save_settings_and_emit()
-    controller._set_status(
-        f"Duplicated settings template {source_name} to {duplicate_name}."
-    )
+    controller._set_status(f"Duplicated settings template {source_name} to {duplicate_name}.")
 
 
 def delete_settings_template(controller: ProjectController, template_name: str) -> None:
@@ -419,23 +413,17 @@ def set_settings_defaults(
         if "layout_rail_width" in payload:
             raw_value = payload.get("layout_rail_width")
             target.layout_rail_width = (
-                None
-                if raw_value in {None, ""}
-                else max(84, min(104, int(raw_value)))
+                None if raw_value in {None, ""} else max(84, min(104, int(raw_value)))
             )
         if "layout_inspector_width" in payload:
             raw_value = payload.get("layout_inspector_width")
             target.layout_inspector_width = (
-                None
-                if raw_value in {None, ""}
-                else max(320, min(4096, int(raw_value)))
+                None if raw_value in {None, ""} else max(320, min(4096, int(raw_value)))
             )
         if "layout_waveform_height" in payload:
             raw_value = payload.get("layout_waveform_height")
             target.layout_waveform_height = (
-                None
-                if raw_value in {None, ""}
-                else max(112, min(4096, int(raw_value)))
+                None if raw_value in {None, ""} else max(112, min(4096, int(raw_value)))
             )
     if "detection_threshold" in payload:
         threshold = float(payload["detection_threshold"])

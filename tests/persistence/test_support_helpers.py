@@ -11,7 +11,11 @@ from splitshot.persistence.library import (
     build_library_summary,
     list_recent_library_activity,
 )
-from splitshot.persistence.projects import list_recent_project_activity, list_recent_projects, save_project
+from splitshot.persistence.projects import (
+    list_recent_project_activity,
+    list_recent_projects,
+    save_project,
+)
 
 
 UTC = timezone.utc
@@ -98,9 +102,7 @@ def test_list_recent_project_activity_falls_back_to_bundle_mtime_when_metadata_d
 
     assert len(recent) == 1
     assert recent[0]["name"] == "Timeless"
-    assert recent[0]["last_opened"] == datetime.fromtimestamp(
-        fallback_timestamp, UTC
-    ).isoformat()
+    assert recent[0]["last_opened"] == datetime.fromtimestamp(fallback_timestamp, UTC).isoformat()
 
 
 def test_build_library_summary_prefers_saved_records_and_reports_latest_event(
@@ -239,8 +241,12 @@ def test_build_library_reopen_targets_uses_metrics_fallback_contract(monkeypatch
 
     targets = build_library_reopen_targets(limit=4)
 
-    stage_target = next(target for target in targets if target["library_record_id"] == "fallback-stage")
-    match_target = next(target for target in targets if target["library_record_id"] == "fallback-match")
+    stage_target = next(
+        target for target in targets if target["library_record_id"] == "fallback-stage"
+    )
+    match_target = next(
+        target for target in targets if target["library_record_id"] == "fallback-match"
+    )
 
     assert stage_target["editor_target"] == {
         "project_path": "/tmp/fallback-stage",

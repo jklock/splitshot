@@ -46,7 +46,7 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert "Performance Library" in html
     assert "Match Recap" in html
     assert "Stage Composite" in html
-    assert "Trim Dead Time" in html
+    assert "Trim Settings" in html
     assert "Export Badges" in html
     assert "Aspect Ratio / Framing" in html
     assert "Stage Recipe" not in html
@@ -61,7 +61,7 @@ def test_automation_shell_exposes_three_splitshot_surfaces() -> None:
     assert "Stage Overrides" in html
     assert "function workspaceShell(viewName) {" in source
     assert '[data-shell-family="stage-workspace"][data-shell-view="${viewName}"]' in source
-    assert 'const shell = workspaceShell(viewName);' in source
+    assert "const shell = workspaceShell(viewName);" in source
     assert 'document.querySelector(".match-workspace-shell")' not in source
     assert 'document.querySelector(".library-workspace-shell")' not in source
     assert 'callApi("/api/workspace/defaults"' in source
@@ -100,7 +100,10 @@ def test_match_shell_contract_keeps_preview_tiles_and_pinned_lower_pane() -> Non
     assert 'id="match-stage-detail-panel"' in html
     assert 'id="match-stage-workflow-panel"' in html
     assert '<video class="match-stage-preview-video"' in match_view
-    assert "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export." in match_view
+    assert (
+        "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export."
+        in match_view
+    )
 
 
 def test_ui_routes_are_registered_on_server() -> None:
@@ -117,16 +120,17 @@ def test_ui_routes_are_registered_on_server() -> None:
     known_unregistered: set[str] = set()
     for route in known_unregistered:
         assert route in ui_routes, f"Expected {route} in UI routes but not found"
-        assert route not in server_routes, f"Expected {route} to be unregistered on server, but it is registered"
+        assert route not in server_routes, (
+            f"Expected {route} to be unregistered on server, but it is registered"
+        )
     missing = ui_routes - server_routes
     real_missing = {
-        r for r in missing
+        r
+        for r in missing
         if not r.endswith("/") and "${" not in r and "{" not in r and "+" not in r
     }
     real_missing = real_missing - known_unregistered
-    assert not real_missing, (
-        f"UI calls routes not registered in server.py: {sorted(real_missing)}"
-    )
+    assert not real_missing, f"UI calls routes not registered in server.py: {sorted(real_missing)}"
 
 
 def test_critical_routes_are_registered() -> None:
@@ -187,7 +191,11 @@ def test_stage_composite_routes_are_registered() -> None:
     routes_found: set[str] = set()
     tree = ast.parse(source)
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/api/"):
+        if (
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("/api/")
+        ):
             routes_found.add(node.value)
 
     composite_routes: set[str] = {

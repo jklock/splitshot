@@ -34,6 +34,7 @@ export function createMergePane({
   const mergeSourceTrimDrafts = new Map();
   const mergeSourceTrimStatus = new Map();
   const trimmingMergeSources = new Set();
+  const hydratedSourceIds = new Set();
 
   function currentState() {
     return getState() || {};
@@ -418,15 +419,6 @@ export function createMergePane({
       && currentSourcePlacementPreviewSlot(source, placement) === "overlay";
   }
 
-  function cameraRolePriorityValue(role = "") {
-    return {
-      primary: 0,
-      static: 1,
-      follow: 2,
-      detail: 3,
-    }[normalizedAngleRoleValue(role)] ?? 4;
-  }
-
   function mergeSourceSeedPlacementModeForRole(angleRole, source = null) {
     const normalizedRole = normalizedAngleRoleValue(angleRole, source);
     const projectDefaultMode = currentMergeSourceSeedDefaults().placement_mode;
@@ -463,7 +455,7 @@ export function createMergePane({
       : ["side_by_side", "above_below", "dual_center_hud", "dual_top_hud"].includes(mode)
         ? 1
         : 2;
-    return [modePriority, cameraRolePriorityValue(currentSourceAngleRole(source)), sourceIndex];
+    return [modePriority, sourceIndex];
   }
 
   function preferredMergeSourceBaseTarget(source = null) {
@@ -476,7 +468,7 @@ export function createMergePane({
       .sort((left, right) => {
         const leftKey = mergeSourceBaseTargetSortKey(left);
         const rightKey = mergeSourceBaseTargetSortKey(right);
-        return leftKey[0] - rightKey[0] || leftKey[1] - rightKey[1] || leftKey[2] - rightKey[2];
+        return leftKey[0] - rightKey[0] || leftKey[1] - rightKey[1];
       });
     return mergeSources.find((candidate) => {
       const mode = currentSourcePlacementPreviewMode(candidate);
@@ -981,7 +973,12 @@ export function createMergePane({
       const mergeSources = currentState()?.project?.merge_sources || [];
       const seedDefaults = currentMergeSourceSeedDefaults();
       const hydrationPayloads = mergeSources
-        .map((source, index) => hydrateMergeSourceCompositionTruth(source, String(index), seedDefaults))
+        .map((source, index) => {
+          const sourceId = sourceIdentifier(source, String(index));
+          if (!sourceId || hydratedSourceIds.has(sourceId)) return null;
+          hydratedSourceIds.add(sourceId);
+          return hydrateMergeSourceCompositionTruth(source, String(index), seedDefaults);
+        })
         .filter(Boolean);
       if (persist) hydrationPayloads.forEach((payload) => scheduleMergeSourceCommit(payload));
       return hydrationPayloads;
@@ -1315,6 +1312,7 @@ export function createMergePane({
   function renderMergeMediaList() {
     const list = $("merge-media-list");
     if (!list) return;
+    hydrateMergeSourcesFromDefaults({ persist: true });
     const mergeSources = currentState()?.project?.merge_sources || [];
     const validSourceIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
     clearStaleMergeSourceTrimState(validSourceIds);

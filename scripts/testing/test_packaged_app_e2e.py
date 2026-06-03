@@ -29,8 +29,8 @@ from packaged_support import (  # noqa: E402
     update_support_evidence,
 )
 
-from splitshot.domain.models import Project
-from splitshot.persistence.projects import save_project
+from splitshot.domain.models import Project  # noqa: E402
+from splitshot.persistence.projects import save_project  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"

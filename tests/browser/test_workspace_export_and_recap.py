@@ -75,9 +75,7 @@ class TestWorkspaceExportAndRecap:
         project.export.video_bitrate_mbps = 1
         project.export.ffmpeg_preset = "ultrafast"
 
-    def _make_stage_project(
-        self, video_path: Path, name: str, stage_path: Path
-    ) -> Project:
+    def _make_stage_project(self, video_path: Path, name: str, stage_path: Path) -> Project:
         project = Project(name=name)
         project.primary_video = probe_video(video_path)
         analysis = analyze_video_audio(video_path, threshold=0.35)
@@ -110,9 +108,7 @@ class TestWorkspaceExportAndRecap:
         assert output_path.exists()
         assert output_path.stat().st_size > 0
 
-    def test_multi_stage_batch_export(
-        self, synthetic_video_factory, tmp_path: Path
-    ) -> None:
+    def test_multi_stage_batch_export(self, synthetic_video_factory, tmp_path: Path) -> None:
         controller = ProjectController()
         controller.new_workspace()
         controller.workspace_add_stage("stage_1", "Bay 1", "")

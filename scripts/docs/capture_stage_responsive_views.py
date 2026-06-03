@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
 """Capture responsive Stage screenshots at 1280px and 900px with layout assertions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -38,10 +39,13 @@ class ProofFailure(RuntimeError):
 async def assert_responsive_stage(page: Page, *, width: int, tool: str) -> dict[str, object]:
     await switch_view(page, "stage")
     await page.set_viewport_size({"width": width, "height": 900})
-    await page.evaluate("""(tool) => {
+    await page.evaluate(
+        """(tool) => {
         window.dispatchEvent(new Event('resize'));
         setActiveTool(tool);
-    }""", tool)
+    }""",
+        tool,
+    )
     await page.wait_for_function("(tool) => activeTool === tool", arg=tool, timeout=10_000)
     await page.wait_for_timeout(250)
 
@@ -98,7 +102,9 @@ async def assert_responsive_stage(page: Page, *, width: int, tool: str) -> dict[
     if int(result["inspectorWidth"]) < 320 or int(result["inspectorHeight"]) <= 0:
         failures.append("inspector collapsed")
     if failures:
-        raise ProofFailure(f"responsive stage assertion failed at {width}px/{tool}: {', '.join(failures)}")
+        raise ProofFailure(
+            f"responsive stage assertion failed at {width}px/{tool}: {', '.join(failures)}"
+        )
     return result
 
 
@@ -130,7 +136,10 @@ async def run() -> dict[str, object]:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1280, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)

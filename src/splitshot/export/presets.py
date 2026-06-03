@@ -347,9 +347,7 @@ def export_settings_payload_matches(
 ) -> bool:
     normalized = normalize_export_settings_payload(payload)
     if comparison_fields is None:
-        comparable_keys = {
-            key for key in normalized if key not in {"preset", "output_path"}
-        }
+        comparable_keys = {key for key in normalized if key not in {"preset", "output_path"}}
     else:
         comparable_keys = set(comparison_fields)
 

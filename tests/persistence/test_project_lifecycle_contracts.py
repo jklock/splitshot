@@ -95,7 +95,9 @@ def test_save_project_preserves_details_and_primary_after_project_json_path_roun
 
     assert loaded.name == "Classifier Template"
     assert loaded.description == "Carry these settings forward"
-    assert Path(saved["primary_video"]["path"]).resolve(strict=False) == primary.resolve(strict=False)
+    assert Path(saved["primary_video"]["path"]).resolve(strict=False) == primary.resolve(
+        strict=False
+    )
     assert Path(loaded.primary_video.path).resolve(strict=False) == primary.resolve(strict=False)
 
 

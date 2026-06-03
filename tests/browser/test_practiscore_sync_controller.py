@@ -54,14 +54,10 @@ def _electron_host_headers(
 ) -> dict[str, str]:
     headers = {
         "X-SplitShot-PractiScore-Electron-Host": "1",
-        "X-SplitShot-PractiScore-Session-Payload": _encode_header_payload(
-            session_payload
-        ),
+        "X-SplitShot-PractiScore-Session-Payload": _encode_header_payload(session_payload),
     }
     if matches_payload is not None:
-        headers["X-SplitShot-PractiScore-Matches"] = _encode_header_payload(
-            matches_payload
-        )
+        headers["X-SplitShot-PractiScore-Matches"] = _encode_header_payload(matches_payload)
     return headers
 
 

@@ -254,7 +254,11 @@ def _shot_score_badge_content(
     project: Project, shot: object, base_text: str
 ) -> tuple[str, tuple[tuple[str, str | None], ...] | None]:
     score = getattr(shot, "score", None)
-    if not project.scoring.enabled or score is None or not _metric_caption_show_shot_scores(project):
+    if (
+        not project.scoring.enabled
+        or score is None
+        or not _metric_caption_show_shot_scores(project)
+    ):
         return base_text, None
 
     text_parts: list[tuple[str, str | None]] = [
@@ -464,7 +468,9 @@ def _lead_in_card_text(project: Project, card: dict | None) -> str:
     title = title_override
     if not title:
         preferred_order = (
-            ("shooter", "stage", "match") if style == "competitor" else ("stage", "shooter", "match")
+            ("shooter", "stage", "match")
+            if style == "competitor"
+            else ("stage", "shooter", "match")
         )
         for field_name in preferred_order:
             candidate = field_values.get(field_name, "")
@@ -739,7 +745,11 @@ class OverlayRenderer:
         brand_visible = bool(brand_text or brand_image_path) and (
             brand_duration_ms <= 0 or position_ms < brand_duration_ms
         )
-        if project.overlay.position == OverlayPosition.NONE and not lead_in_visible and not brand_visible:
+        if (
+            project.overlay.position == OverlayPosition.NONE
+            and not lead_in_visible
+            and not brand_visible
+        ):
             return [], [], []
         shots = sort_shots(project.analysis.shots)
         current_index = current_shot_index(project, position_ms)
@@ -904,14 +914,17 @@ class OverlayRenderer:
         self, painter: QPainter, project: Project, position_ms: int, width: int, height: int
     ) -> None:
         lead_in_duration_ms = _hook_duration_ms(project._lead_in_card, 0.0)
-        lead_in_visible = bool(
-            _lead_in_card_text(project, project._lead_in_card)
-            or _lead_in_card_logo_path(project._lead_in_card)
-        ) and lead_in_duration_ms > 0 and position_ms < lead_in_duration_ms
+        lead_in_visible = (
+            bool(
+                _lead_in_card_text(project, project._lead_in_card)
+                or _lead_in_card_logo_path(project._lead_in_card)
+            )
+            and lead_in_duration_ms > 0
+            and position_ms < lead_in_duration_ms
+        )
         brand_duration_ms = _hook_duration_ms(project._brand_mark, 0.0)
         brand_visible = bool(
-            _brand_mark_text(project._brand_mark)
-            or _brand_mark_image_path(project._brand_mark)
+            _brand_mark_text(project._brand_mark) or _brand_mark_image_path(project._brand_mark)
         ) and (brand_duration_ms <= 0 or position_ms < brand_duration_ms)
         has_visible_popup = any(
             popup.enabled
@@ -919,7 +932,12 @@ class OverlayRenderer:
             and popup_bubble_is_visible_at(project, popup, position_ms)
             for popup in project.popups
         )
-        if project.overlay.position == OverlayPosition.NONE and not has_visible_popup and not lead_in_visible and not brand_visible:
+        if (
+            project.overlay.position == OverlayPosition.NONE
+            and not has_visible_popup
+            and not lead_in_visible
+            and not brand_visible
+        ):
             return
 
         painter.save()

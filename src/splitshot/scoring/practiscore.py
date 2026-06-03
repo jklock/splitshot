@@ -762,7 +762,9 @@ def _import_steel_challenge_report(
         if not sr_name or sr_name == imported_stage.competitor_name:
             continue
         sr_row = competitor_row_by_id.get(sr_comp_id)
-        sr_raw_seconds, sr_final_time, _manual, _penalties, _scores = _steel_stage_result_details(sr)
+        sr_raw_seconds, sr_final_time, _manual, _penalties, _scores = _steel_stage_result_details(
+            sr
+        )
         comparison_competitors.append(
             PractiScoreCompetitorOption(
                 name=sr_name,
@@ -894,21 +896,30 @@ def _steel_stage_result_details(
     stage_result: dict[str, str],
 ) -> tuple[float, float, float, dict[str, float], dict[str, float]]:
     raw_time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_RAW_TIME_KEYS))
-    final_time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_FINAL_TIME_KEYS))
+    final_time_candidate = _float_or_none(
+        _first_present_value(stage_result, *_STEEL_FINAL_TIME_KEYS)
+    )
     time_candidate = _float_or_none(_first_present_value(stage_result, *_STEEL_TIME_KEYS))
     if raw_time_candidate is None and time_candidate is None and final_time_candidate is None:
         raise ValueError("Stage Time is missing from the PractiScore export.")
 
-    total_penalty = _float_or_zero(
-        _first_present_value(stage_result, *_STEEL_TOTAL_PENALTY_KEYS)
-    )
+    total_penalty = _float_or_zero(_first_present_value(stage_result, *_STEEL_TOTAL_PENALTY_KEYS))
     raw_seconds = raw_time_candidate
     if raw_seconds is None:
-        if final_time_candidate is not None and time_candidate is not None and total_penalty > 0 and abs(time_candidate - final_time_candidate) < 1e-9:
+        if (
+            final_time_candidate is not None
+            and time_candidate is not None
+            and total_penalty > 0
+            and abs(time_candidate - final_time_candidate) < 1e-9
+        ):
             raw_seconds = max(0.0, final_time_candidate - total_penalty)
         else:
-            raw_seconds = time_candidate if time_candidate is not None else final_time_candidate or 0.0
-    final_time = final_time_candidate if final_time_candidate is not None else raw_seconds + total_penalty
+            raw_seconds = (
+                time_candidate if time_candidate is not None else final_time_candidate or 0.0
+            )
+    final_time = (
+        final_time_candidate if final_time_candidate is not None else raw_seconds + total_penalty
+    )
     if total_penalty <= 0 and final_time > raw_seconds:
         total_penalty = max(0.0, final_time - raw_seconds)
 

@@ -41,9 +41,7 @@ def apply_effective_settings_to_project(
     project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
     project.scoring.match_type = ""
     try:
-        normalized_match_type = controller_module.normalize_match_type(
-            effective.default_match_type
-        )
+        normalized_match_type = controller_module.normalize_match_type(effective.default_match_type)
     except ValueError:
         normalized_match_type = ""
     if normalized_match_type:
@@ -63,15 +61,9 @@ def apply_effective_settings_to_project(
         )
     project.overlay.timer_badge = controller_module.deepcopy(effective.timer_badge)
     project.overlay.shot_badge = controller_module.deepcopy(effective.shot_badge)
-    project.overlay.current_shot_badge = controller_module.deepcopy(
-        effective.current_shot_badge
-    )
-    project.overlay.hit_factor_badge = controller_module.deepcopy(
-        effective.hit_factor_badge
-    )
-    project.overlay.custom_box_background_color = (
-        effective.overlay_custom_box_background_color
-    )
+    project.overlay.current_shot_badge = controller_module.deepcopy(effective.current_shot_badge)
+    project.overlay.hit_factor_badge = controller_module.deepcopy(effective.hit_factor_badge)
+    project.overlay.custom_box_background_color = effective.overlay_custom_box_background_color
     project.overlay.custom_box_text_color = effective.overlay_custom_box_text_color
     project.overlay.custom_box_opacity = effective.overlay_custom_box_opacity
     project.merge.layout = effective.merge_layout
@@ -221,9 +213,7 @@ def restore_media_sources_from_project(
     used_paths: set[Path] = set()
     changed = False
     explicit_secondary_video = (
-        controller.project.secondary_video
-        if secondary_video_is_explicitly_persisted
-        else None
+        controller.project.secondary_video if secondary_video_is_explicitly_persisted else None
     )
     explicit_secondary_source_id = controller_module._merge_source_id_for_asset(
         controller.project,
@@ -394,9 +384,7 @@ def open_project(controller: ProjectController, path: str) -> None:
     recovered_media = controller._restore_media_sources_from_project(
         secondary_video_is_explicitly_persisted=secondary_video_is_explicitly_persisted,
     )
-    recovered_practiscore = controller._restore_practiscore_source_from_project(
-        emit_change=False
-    )
+    recovered_practiscore = controller._restore_practiscore_source_from_project(emit_change=False)
     if recovered_media or recovered_practiscore:
         controller.project.touch()
     controller._saved_snapshot = (

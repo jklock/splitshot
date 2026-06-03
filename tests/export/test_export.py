@@ -492,10 +492,7 @@ def test_overlay_renderer_composes_richer_opening_title_fields() -> None:
     badges, _score_marks = OverlayRenderer().build_badges(project, 500)
     texts = {badge.text for badge in badges}
 
-    assert (
-        "Championship Opener\nFinal squad • USPSA • Alex Shooter • CO • A • 2026-05-24"
-        in texts
-    )
+    assert "Championship Opener\nFinal squad • USPSA • Alex Shooter • CO • A • 2026-05-24" in texts
 
 
 def test_overlay_renderer_uses_text_logo_position_and_opacity_payload() -> None:

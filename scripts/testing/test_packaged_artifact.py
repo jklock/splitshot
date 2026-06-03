@@ -217,8 +217,9 @@ def _install_macos_artifact(artifact: Path) -> InstalledArtifact:
     env["SPLITSHOT_PACKAGED_FFMPEG"] = str(ffmpeg_dir / "ffmpeg")
     env["SPLITSHOT_PACKAGED_FFPROBE"] = str(ffmpeg_dir / "ffprobe")
     return InstalledArtifact(
-        executable=executable, cleanup_paths=[mount_dir, app_copy_root], env=env
-        ,
+        executable=executable,
+        cleanup_paths=[mount_dir, app_copy_root],
+        env=env,
         bundle_root=copied_app / "Contents" / "Resources" / "bundle",
         artifact_kind="dmg",
     )

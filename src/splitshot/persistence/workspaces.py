@@ -80,24 +80,26 @@ def _stage_entry_to_dict(entry: StageEntry) -> dict:
 
 def _output_profile_to_dict(profile: OutputProfile) -> dict:
     """Serialize an OutputProfile to a plain dict."""
-    return _promote_camera_role_key({
-        "output_id": profile.output_id,
-        "scope_type": profile.scope_type,
-        "scope_id": profile.scope_id,
-        "profile_name": profile.profile_name,
-        "profile_kind": profile.profile_kind,
-        "frame_profile": profile.frame_profile,
-        "metric_caption_preset": profile.metric_caption_preset,
-        "lead_in_card": profile.lead_in_card,
-        "brand_mark": profile.brand_mark,
-        "subject_track_crop": profile.subject_track_crop,
-        "visibility_recipe": profile.visibility_recipe,
-        "angle_director_plan": [_serialize(item) for item in profile.angle_director_plan],
-        "retained_proxy_id": profile.retained_proxy_id,
-        "last_rendered_at": profile.last_rendered_at.isoformat()
-        if profile.last_rendered_at
-        else None,
-    })
+    return _promote_camera_role_key(
+        {
+            "output_id": profile.output_id,
+            "scope_type": profile.scope_type,
+            "scope_id": profile.scope_id,
+            "profile_name": profile.profile_name,
+            "profile_kind": profile.profile_kind,
+            "frame_profile": profile.frame_profile,
+            "metric_caption_preset": profile.metric_caption_preset,
+            "lead_in_card": profile.lead_in_card,
+            "brand_mark": profile.brand_mark,
+            "subject_track_crop": profile.subject_track_crop,
+            "visibility_recipe": profile.visibility_recipe,
+            "angle_director_plan": [_serialize(item) for item in profile.angle_director_plan],
+            "retained_proxy_id": profile.retained_proxy_id,
+            "last_rendered_at": profile.last_rendered_at.isoformat()
+            if profile.last_rendered_at
+            else None,
+        }
+    )
 
 
 def _stage_entry_from_dict(data: dict) -> StageEntry:

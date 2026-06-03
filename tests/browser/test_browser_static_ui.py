@@ -88,7 +88,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '"library-section-records": {' in js
     assert '"library-section-detail": {' in js
     assert '[data-shell-family="stage-workspace"][data-shell-view="${viewName}"]' in js
-    assert 'const shell = workspaceShell(viewName);' in js
+    assert "const shell = workspaceShell(viewName);" in js
     assert 'document.querySelector(".match-workspace-shell")' not in js
     assert 'document.querySelector(".library-workspace-shell")' not in js
     assert 'href="/static/styles.css?v=20260501f"' in html
@@ -162,7 +162,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<button id="browse-project-path" type="button">Select Project</button>' in html
     assert 'id="project-path" placeholder="Please create / select project" readonly' in html
     assert 'id="primary-file-path" placeholder="Please select a video" readonly' in html
-    assert 'id="stage-empty-import"' in html
+    assert 'id="stage-empty-import"' not in html
+    assert 'id="stage-empty-open"' not in html
     assert '<button id="new-project" type="button">Create Project</button>' in html
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html
@@ -539,8 +540,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<option value="full_screen_portrait">Full-screen portrait</option>' in html
     assert '<option value="dual_center_hud">Dual center HUD</option>' in html
     assert '<option value="dual_top_hud">Dual top HUD</option>' in html
-    assert 'Multi-Angle Features' not in html
-    assert 'data-feature=' not in html
+    assert "Multi-Angle Features" not in html
+    assert "data-feature=" not in html
     assert 'id="feature-editor"' not in html
     assert 'id="swap-videos"' not in html
     assert review_start < html.index('id="retained-review-source"') < metrics_start
@@ -550,20 +551,32 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert export_start < html.index('id="quality"') < project_start
     assert export_start < html.index('id="export-video"') < project_start
     assert '<pre id="output-profile-detail" class="automation-detail" hidden></pre>' in html
-    assert 'Stage Recipe' not in html
-    assert 'Titles &amp; Branding' not in html
-    assert 'Export Badges' in html
-    assert 'Aspect Ratio / Framing' in html
+    assert "Stage Recipe" not in html
+    assert "Titles &amp; Branding" not in html
+    assert "Export Badges" in html
+    assert "Aspect Ratio / Framing" in html
     assert (
-        'These profile settings use reviewed Stage timing, scoring, and framing truth when exporting a single video or a synced Stage composite.'
+        "These profile settings use reviewed Stage timing, scoring, and framing truth when exporting a single video or a synced Stage composite."
         not in html
     )
-    assert 'These finishing touches layer on top of the export after the Stage recipe is resolved.' not in html
-    assert 'Select or create an output profile.' not in html
-    assert 'Stage recipe and finishing settings attach to an output profile. Create or select a profile first.' not in js
-    assert 'Use Preview to inspect the render plan, or edit the Stage recipe for trim, on-screen data, and video shape before adding titles and branding.' not in js
-    assert 'Create or select an output profile in Export before editing reusable trim, overlay, or finishing settings.' in js
-    assert 'function syncOutputProfileDetailVisibility() {' in js
+    assert (
+        "These finishing touches layer on top of the export after the Stage recipe is resolved."
+        not in html
+    )
+    assert "Select or create an output profile." not in html
+    assert (
+        "Stage recipe and finishing settings attach to an output profile. Create or select a profile first."
+        not in js
+    )
+    assert (
+        "Use Preview to inspect the render plan, or edit the Stage recipe for trim, on-screen data, and video shape before adding titles and branding."
+        not in js
+    )
+    assert (
+        "Create or select an output profile in Export before editing reusable trim, overlay, or finishing settings."
+        in js
+    )
+    assert "function syncOutputProfileDetailVisibility() {" in js
     assert project_start < html.index('id="match-type"')
     assert project_start < html.index('id="match-stage-number"')
     assert project_start < html.index('id="match-competitor-name"')
@@ -722,9 +735,15 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "Composition Defaults" in html
     assert 'id="restore-merge-defaults"' in html
     assert html.count('data-output-hook="run-window"') == 1
-    assert "Use these when adding media. Existing item cards stay the active placement truth." not in html
+    assert (
+        "Use these when adding media. Existing item cards stay the active placement truth."
+        not in html
+    )
     assert "Reusable output-profile trim padding for each item's Trim Video workflow." not in html
-    assert "Trim Video uses the selected output profile's lead-in and tail padding defaults." not in html
+    assert (
+        "Trim Video uses the selected output profile's lead-in and tail padding defaults."
+        not in html
+    )
     assert (
         "Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync."
         not in html
@@ -805,7 +824,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "/api/files/primary" in js
     assert "/api/files/merge" in js
     assert 'async function importMergeMediaWithChooser(targetLabel = "add-merge-media") {' in js
-    assert 'return pickPathForElement("secondary", dialogTarget, targetLabel, async (path) => {' in js
+    assert (
+        'return pickPathForElement("secondary", dialogTarget, targetLabel, async (path) => {' in js
+    )
     assert 'const result = await callApi("/api/import/merge", { path });' in js
     assert 'void importMergeMediaWithChooser(item.id || "add-merge-media");' in js
     assert "/api/files/practiscore" in js
@@ -880,10 +901,10 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "buildExportPayload" in js
     assert "function currentProjectPath(nextState = state) {" in js
     assert 'function dialogPathRequestPayload(kind, currentValue = "", nextState = state) {' in js
-    assert 'const projectHome = currentProjectPath(nextState);' in js
-    assert 'home: projectHome,' in js
-    assert 'const requestPayload = dialogPathRequestPayload(kind, target.value);' in js
-    assert 'body: JSON.stringify(requestPayload),' in js
+    assert "const projectHome = currentProjectPath(nextState);" in js
+    assert "home: projectHome," in js
+    assert "const requestPayload = dialogPathRequestPayload(kind, target.value);" in js
+    assert "body: JSON.stringify(requestPayload)," in js
     assert "syncOverlayPreviewStateFromControls" in js
     assert "syncMergePreviewStateFromControls" in js
     assert "controlIsActive" in js
@@ -893,9 +914,17 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "replaceAll(" not in js
     assert "merge-preview" in js
     assert '$("primary-file-path").addEventListener("keydown", async (event) => {' not in js
-    assert 'const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");' not in js
-    assert '$("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {' in js
-    assert 'document.getElementById("stage-empty-import")?.addEventListener("click", () => {' in js
+    assert (
+        'const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");'
+        not in js
+    )
+    assert (
+        '$("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {'
+        in js
+    )
+    assert (
+        'document.getElementById("stage-empty-import")?.addEventListener("click", () => {' not in js
+    )
     assert 'pickPath("secondary", "secondary-file-path", async (path)' not in js
     assert 'pickPath("project_folder", "project-path", async (selectedPath)' in project_pane
     assert "async function probeProjectFolder(path) {" in js
@@ -1588,7 +1617,9 @@ def test_browser_ui_uses_hard_edged_contiguous_tool_shell() -> None:
         in css
     )
     assert ".review-style-grid .custom-box-style-card h4 {\n  grid-column: 1 / -1;" in css
-    assert ".review-style-grid .custom-box-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
+    assert (
+        ".review-style-grid .custom-box-style-card .opacity-field {\n  grid-column: 1 / -1;" in css
+    )
     assert "#badge-style-grid {\n  grid-template-columns: repeat(4, minmax(0, 1fr));" in css
     assert "#badge-style-grid .badge-style-card .color-swatch-button" in css
     assert "#badge-style-grid .badge-style-card .opacity-percent-input" in css
@@ -2101,19 +2132,17 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "workspace-save",
         "workspace-stage-add",
         "stage-clip-add",
-        "stage-empty-import",
-        "stage-empty-open",
         "library-backup-create",
         "library-backup-restore",
         "library-export-csv",
         "library-export-json",
-            "library-error-retry",
+        "library-error-retry",
         "library-open-stage",
         "library-open-workspace",
         "library-tag-add",
         "library-notes-save",
         "library-refresh",
-            "library-stale-refresh",
+        "library-stale-refresh",
         "landing-new-stage",
         "landing-new-match",
         "landing-open-file",
@@ -2175,12 +2204,15 @@ def test_browser_automation_surface_scopes_profiles_and_saves_hooks() -> None:
     assert 'id="hook-brand-mark-position"' in js
     assert 'id="hook-brand-mark-opacity"' in js
     assert 'metric_caption_preset: $("shared-metric-captions")?.value || "none",' in js
-    assert 'if (metricCaptions) overrides.metric_caption_preset = metricCaptions;' in js
-    assert 'function mountOutputHookEditor(hook) {' in js
+    assert "if (metricCaptions) overrides.metric_caption_preset = metricCaptions;" in js
+    assert "function mountOutputHookEditor(hook) {" in js
     assert '"run-window": "output-hook-host-merge"' in js
     assert '"metric-captions": "output-hook-host-overlay"' in js
     assert '"frame-profiles": "output-hook-host-export-frame"' in js
-    assert 'await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });' in js
+    assert (
+        'await callApi("/api/workspace/apply-from-first/preview", { workspace_id: state?.project?.id });'
+        in js
+    )
 
 
 def test_browser_landing_recent_activity_uses_backend_stage_entries_without_auto_opening() -> None:
@@ -2201,7 +2233,9 @@ def test_browser_landing_recent_activity_uses_backend_stage_entries_without_auto
     assert 'if (surface !== "single" && typeLabel !== "Stage") return null;' in js
     assert "void refreshLandingRecentActivity();" in js
     assert "splitshot.recentActivity" not in render_recent_source
-    assert "No recent stages. Create a new stage or open an existing project." in render_recent_source
+    assert (
+        "No recent stages. Create a new stage or open an existing project." in render_recent_source
+    )
     assert "setActiveSurface(surface);" in recent_click_source
     assert "/api/project/open" not in recent_click_source
     assert "/api/workspace/open" not in recent_click_source
@@ -2228,7 +2262,10 @@ def test_browser_match_workspace_uses_live_preview_tiles_and_pinned_lower_pane_c
         in match_js
     )
     assert "preview_url" in match_js
-    assert "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export." in match_js
+    assert (
+        "The selected stage stays pinned while you move between defaults, overrides, recap, composite, and export."
+        in match_js
+    )
     assert "if (previewVideo) {" in match_js
     assert ".match-stage-preview-video {" in css
     assert ".match-stage-preview.has-preview {" in css
@@ -2391,8 +2428,8 @@ def test_browser_ui_surface_audit_script_exists_for_cross_browser_matrix() -> No
     assert "def audit_overlay_surfaces(page: Page) -> CheckResult:" in script
     assert "def audit_waveform_drag(page: Page) -> CheckResult:" in script
     assert "def audit_layout_resize_persists(page: Page) -> CheckResult:" in script
-    assert 'def audit_merge_file_input_change(' in script
-    assert ') -> CheckResult:' in script
+    assert "def audit_merge_file_input_change(" in script
+    assert ") -> CheckResult:" in script
 
 
 def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> None:
@@ -2402,8 +2439,8 @@ def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> 
     assert '"firefox": BrowserTarget(' in script
     assert '"safari": BrowserTarget(' in script
     assert '"webkit": BrowserTarget(' in script
-    assert 'def import_primary_video(' in script
-    assert ') -> CheckResult:' in script
+    assert "def import_primary_video(" in script
+    assert ") -> CheckResult:" in script
     assert (
         "def drag_waveform_viewport(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:"
         in script
@@ -2424,14 +2461,14 @@ def test_browser_interaction_audit_script_exists_for_real_browser_workflow() -> 
     assert "activity_source: BrowserControlServer | str" in script
     assert "practiscore_path: Path" in script
     assert "def audit_imported_summary_default_anchor(page: Page) -> CheckResult:" in script
-    assert 'def drag_imported_summary_box(' in script
-    assert ') -> CheckResult:' in script
-    assert 'def preserve_review_inspector_scroll(' in script
-    assert ') -> CheckResult:' in script
+    assert "def drag_imported_summary_box(" in script
+    assert ") -> CheckResult:" in script
+    assert "def preserve_review_inspector_scroll(" in script
+    assert ") -> CheckResult:" in script
     assert "def import_merge_media(" in script
     assert "def drag_merge_preview_persists(" in script
-    assert 'def drag_merge_size_slider_commits(' in script
-    assert ') -> CheckResult:' in script
+    assert "def drag_merge_size_slider_commits(" in script
+    assert ") -> CheckResult:" in script
     assert (
         "def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) -> CheckResult:"
         in script

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from functools import lru_cache
-import math
 
 import numpy as np
 
@@ -76,7 +75,9 @@ def extract_window_features(window: np.ndarray, sample_rate: int) -> np.ndarray:
 
 
 @lru_cache(maxsize=None)
-def _spectral_feature_cache(window_size: int, sample_rate: int) -> tuple[np.ndarray, np.ndarray, tuple[tuple[int, int], ...]]:
+def _spectral_feature_cache(
+    window_size: int, sample_rate: int
+) -> tuple[np.ndarray, np.ndarray, tuple[tuple[int, int], ...]]:
     hanning_window = np.hanning(window_size).astype(np.float32)
     freqs = np.fft.rfftfreq(window_size, 1.0 / sample_rate).astype(np.float32)
     band_slices: list[tuple[int, int]] = []

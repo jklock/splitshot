@@ -105,7 +105,9 @@ def headless_server():
 
 def test_headless_server_emits_ready_line_claims_session_and_serves_state(headless_server):
     ready_payload = headless_server["ready_payload"]
-    startup_payload, _ = _json_request(f"{ready_payload['base_url']}{ready_payload['startup_status_path']}")
+    startup_payload, _ = _json_request(
+        f"{ready_payload['base_url']}{ready_payload['startup_status_path']}"
+    )
     claim_payload, auth_headers = _claim_backend_session(ready_payload)
     state_payload, _ = _json_request(f"{ready_payload['base_url']}/api/state", headers=auth_headers)
     health_payload, _ = _json_request(

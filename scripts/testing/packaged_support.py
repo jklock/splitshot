@@ -19,12 +19,7 @@ RISK_REGISTER_ARTIFACT = REPO / "artifacts" / "backend-risk" / "risk-register.js
 
 
 def _utcnow_iso() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z")
-    )
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -168,9 +163,15 @@ def build_support_collection_policy(summary: dict[str, Any]) -> dict[str, Any]:
     collection_roots: dict[str, str] = {}
     collection_order: list[str] = []
 
-    installation = summary.get("installation") if isinstance(summary.get("installation"), dict) else {}
-    packaged_smoke = summary.get("packaged_smoke") if isinstance(summary.get("packaged_smoke"), dict) else {}
-    packaged_e2e = summary.get("packaged_e2e") if isinstance(summary.get("packaged_e2e"), dict) else {}
+    installation = (
+        summary.get("installation") if isinstance(summary.get("installation"), dict) else {}
+    )
+    packaged_smoke = (
+        summary.get("packaged_smoke") if isinstance(summary.get("packaged_smoke"), dict) else {}
+    )
+    packaged_e2e = (
+        summary.get("packaged_e2e") if isinstance(summary.get("packaged_e2e"), dict) else {}
+    )
 
     for label, raw_path in (
         ("artifact_file", installation.get("artifact_path")),
@@ -267,7 +268,8 @@ def _residual_risks() -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 "decision": risk.get("decision"),
                 "disposition": risk.get("disposition"),
                 "blocking_gate": risk.get("blocking_gate"),
-                "evidence_artifacts": risk.get("evidence_artifacts") or risk.get("required_artifacts"),
+                "evidence_artifacts": risk.get("evidence_artifacts")
+                or risk.get("required_artifacts"),
             }
         )
     return (payload.get("program_state") or {}, residual)

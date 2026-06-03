@@ -828,8 +828,8 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 first_card = page.locator(".merge-media-card").first
                 first_body = first_card.locator(".merge-media-card-body")
                 source_id = first_card.get_attribute("data-source-id")
-                second_source_id = page.locator(".merge-media-card").nth(1).get_attribute(
-                    "data-source-id"
+                second_source_id = (
+                    page.locator(".merge-media-card").nth(1).get_attribute("data-source-id")
                 )
                 assert source_id is not None
                 assert second_source_id is not None
@@ -883,7 +883,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     arg=source_id,
                 )
 
-                first_card.locator('[data-merge-source-field="placement_mode"]').select_option("pip")
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option(
+                    "pip"
+                )
                 page.wait_for_function(
                     """(sourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
@@ -897,7 +899,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                 first_card.locator('[data-merge-source-field="target_source_id"]').select_option(
                     second_source_id
                 )
-                first_card.locator('[data-merge-source-field="placement_slot"]').select_option("left")
+                first_card.locator('[data-merge-source-field="placement_slot"]').select_option(
+                    "left"
+                )
                 page.wait_for_function(
                     """(payload) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
@@ -954,7 +958,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         "(sourceId) => document.querySelector('.merge-media-card[data-source-id=\"' + sourceId + '\"] .merge-media-card-body')?.hidden === false",
                         arg=second_source_id,
                     )
-                second_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
+                second_card.locator('[data-merge-source-field="camera_role"]').select_option(
+                    "static"
+                )
                 page.wait_for_function(
                     """(sourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
@@ -966,7 +972,9 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                     arg=second_source_id,
                 )
 
-                first_card.locator('[data-merge-source-field="camera_role"]').select_option("static")
+                first_card.locator('[data-merge-source-field="camera_role"]').select_option(
+                    "static"
+                )
                 page.wait_for_function(
                     """(payload) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === payload.sourceId);
@@ -976,7 +984,11 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                             && source.placement?.slot === "overlay"
                             && source.placement?.target_source_id === payload.secondSourceId;
                     }""",
-                    arg={"sourceId": source_id, "expected": "static", "secondSourceId": second_source_id},
+                    arg={
+                        "sourceId": source_id,
+                        "expected": "static",
+                        "secondSourceId": second_source_id,
+                    },
                 )
 
                 _set_input_value(first_card.locator('[data-merge-source-field="size"]'), "60")
@@ -994,27 +1006,36 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(
                         },
                     )
 
-                analyze_button = second_card.locator('button:has-text("beep sync")').first
+                sync_source_id = page.evaluate(
+                    """() => {
+                        const sources = state?.project?.merge_sources || [];
+                        return sources.find((item) => item.supports_sync_analysis)?.id || null;
+                    }"""
+                )
+                assert sync_source_id is not None, "No merge source supports sync analysis"
+                other_source_id = second_source_id if sync_source_id == source_id else source_id
+                sync_card = first_card if sync_source_id == source_id else second_card
+                analyze_button = sync_card.locator('button:has-text("beep sync")').first
                 analyze_button.wait_for(state="visible")
                 analyze_button.click()
                 page.wait_for_function(
                     """(payload) => {
-                        const firstSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.firstSourceId);
-                        const secondSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.secondSourceId);
-                        return Boolean(firstSource && secondSource)
-                            && firstSource.supports_sync_analysis === false
-                            && firstSource.can_rerun_sync_analysis === false
-                            && firstSource.is_analyzed_sync_source === false
-                            && firstSource.sync_analysis_status === 'idle'
-                            && firstSource.secondary_beep_time_ms === null
-                            && secondSource.supports_sync_analysis === true
-                            && secondSource.can_rerun_sync_analysis === true
-                            && secondSource.is_analyzed_sync_source === true
-                            && secondSource.sync_analysis_status === 'ready'
-                            && secondSource.sync_offset_source === 'auto'
-                            && secondSource.secondary_beep_time_ms !== null;
+                        const syncSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.syncSourceId);
+                        const otherSource = (state?.project?.merge_sources || []).find((item) => item.id === payload.otherSourceId);
+                        return Boolean(syncSource && otherSource)
+                            && otherSource.supports_sync_analysis === false
+                            && otherSource.can_rerun_sync_analysis === false
+                            && otherSource.is_analyzed_sync_source === false
+                            && otherSource.sync_analysis_status === 'idle'
+                            && otherSource.secondary_beep_time_ms === null
+                            && syncSource.supports_sync_analysis === true
+                            && syncSource.can_rerun_sync_analysis === true
+                            && syncSource.is_analyzed_sync_source === true
+                            && syncSource.sync_analysis_status === 'ready'
+                            && syncSource.sync_offset_source === 'auto'
+                            && syncSource.secondary_beep_time_ms !== null;
                     }""",
-                    arg={"firstSourceId": source_id, "secondSourceId": second_source_id},
+                    arg={"syncSourceId": sync_source_id, "otherSourceId": other_source_id},
                 )
 
                 page.wait_for_function(

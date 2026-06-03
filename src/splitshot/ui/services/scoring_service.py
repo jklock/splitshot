@@ -56,9 +56,7 @@ def restore_original_shot_score(controller: ProjectController, shot_id: str) -> 
         if shot.id != shot_id:
             continue
         shot.score = (
-            controller_module.default_score_mark_for_ruleset(
-                controller.project.scoring.ruleset
-            )
+            controller_module.default_score_mark_for_ruleset(controller.project.scoring.ruleset)
             if original.score is None
             else controller_module.deepcopy(original.score)
         )

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Capture Match proof screenshots and output artifacts for the shared-shell contract."""
+
 from __future__ import annotations
 
 import asyncio
@@ -105,7 +106,9 @@ def _build_loaded_controller() -> tuple[ProjectController, dict[str, object], di
         metric_caption_preset={"lead_in_padding_ms": 0, "tail_padding_ms": 0},
     )
 
-    primary_clip = controller.workspace_stage_clip_add("stage_1", str(SECONDARY_MEDIA_PATH), "primary")[0]
+    primary_clip = controller.workspace_stage_clip_add(
+        "stage_1", str(SECONDARY_MEDIA_PATH), "primary"
+    )[0]
     follow_clip = controller.workspace_stage_clip_add("stage_1", str(MEDIA_PATH), "follow")[-1]
     stage_2_primary = controller.workspace_stage_clip_add("stage_2", str(MEDIA_PATH), "primary")[0]
     controller.workspace_stage_clip_add("stage_2", str(SECONDARY_MEDIA_PATH), "follow")
@@ -147,11 +150,15 @@ def _build_loaded_controller() -> tuple[ProjectController, dict[str, object], di
         output_id=stage_2_profile["output_id"],
     )
 
-    return controller, proof_state, {
-        "workspace_path": str(workspace_path),
-        "profile_output_id": profile["output_id"],
-        "primary_clip_id": primary_clip["clip_id"],
-    }
+    return (
+        controller,
+        proof_state,
+        {
+            "workspace_path": str(workspace_path),
+            "profile_output_id": profile["output_id"],
+            "primary_clip_id": primary_clip["clip_id"],
+        },
+    )
 
 
 def _capture_auto_seed_membership_artifacts() -> dict[str, object]:
@@ -183,13 +190,19 @@ def _capture_auto_seed_membership_artifacts() -> dict[str, object]:
             "workspace_path": str(attached.workspace_path) if attached.workspace_path else None,
             "active_stage_id": attached.active_stage_id,
             "return_to_workspace_available": attached._return_to_workspace_available,
-            "stage_entries": sorted(attached.workspace.stage_entries.keys()) if attached.workspace else [],
+            "stage_entries": sorted(attached.workspace.stage_entries.keys())
+            if attached.workspace
+            else [],
         },
         "unsaved_workspace_create": {
             "workspace_path": str(standalone.workspace_path) if standalone.workspace_path else None,
             "active_stage_id": standalone.active_stage_id,
-            "stage_entries": sorted(standalone.workspace.stage_entries.keys()) if standalone.workspace else [],
-            "relative_project_path": standalone.workspace.stage_entries[standalone.project.id].relative_project_path
+            "stage_entries": sorted(standalone.workspace.stage_entries.keys())
+            if standalone.workspace
+            else [],
+            "relative_project_path": standalone.workspace.stage_entries[
+                standalone.project.id
+            ].relative_project_path
             if standalone.workspace and standalone.project.id in standalone.workspace.stage_entries
             else None,
         },
@@ -214,7 +227,9 @@ async def _open_match_section(page: Page, section_id: str) -> None:
     )
 
 
-async def _capture_match_screenshot(page: Page, filename: str, *, min_text_length: int = 0) -> dict[str, object]:
+async def _capture_match_screenshot(
+    page: Page, filename: str, *, min_text_length: int = 0
+) -> dict[str, object]:
     path = SCREENSHOT_DIR / filename
     await page.locator("#view-match").screenshot(path=path)
     assertions = await page.evaluate(
@@ -254,7 +269,10 @@ async def _capture_empty_match() -> dict[str, object]:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)
@@ -263,7 +281,9 @@ async def _capture_empty_match() -> dict[str, object]:
                 "() => (document.getElementById('view-match')?.innerText || '').includes('No Match Open')",
                 timeout=10_000,
             )
-            screenshot = await _capture_match_screenshot(page, "match-empty.png", min_text_length=20)
+            screenshot = await _capture_match_screenshot(
+                page, "match-empty.png", min_text_length=20
+            )
             await browser.close()
         if console_errors:
             raise ProofFailure(f"console errors during empty Match capture: {console_errors}")
@@ -283,7 +303,10 @@ async def _capture_loaded_match() -> dict[str, object]:
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)
@@ -294,7 +317,9 @@ async def _capture_loaded_match() -> dict[str, object]:
             )
 
             await _open_match_section(page, "match-section-stages")
-            await page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').click()
+            await page.locator(
+                '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+            ).click()
             await page.wait_for_function(
                 """() => document.querySelector('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]')?.classList.contains('selected') === true""",
                 timeout=10_000,
@@ -303,7 +328,9 @@ async def _capture_loaded_match() -> dict[str, object]:
                 "() => document.getElementById('match-stage-detail-panel')?.hidden !== true",
                 timeout=10_000,
             )
-            screenshots.append(await _capture_match_screenshot(page, "match-loaded.png", min_text_length=120))
+            screenshots.append(
+                await _capture_match_screenshot(page, "match-loaded.png", min_text_length=120)
+            )
 
             await _open_match_section(page, "match-section-recap")
             await page.wait_for_function(
@@ -318,14 +345,18 @@ async def _capture_loaded_match() -> dict[str, object]:
                 "() => (document.getElementById('recap-status')?.textContent || '').includes('recap.mp4')",
                 timeout=10_000,
             )
-            screenshots.append(await _capture_match_screenshot(page, "match-recap.png", min_text_length=120))
+            screenshots.append(
+                await _capture_match_screenshot(page, "match-recap.png", min_text_length=120)
+            )
 
             await _open_match_section(page, "match-section-composite")
             await page.wait_for_function(
                 "() => document.querySelectorAll('#stage-composite-list .automation-row').length === 2",
                 timeout=10_000,
             )
-            const_row_selector = f'#stage-composite-list .automation-row[data-clip-id="{seeded["primary_clip_id"]}"]'
+            const_row_selector = (
+                f'#stage-composite-list .automation-row[data-clip-id="{seeded["primary_clip_id"]}"]'
+            )
             row = page.locator(const_row_selector)
             await row.locator("label", has_text="Cut slot").locator("input").fill("1")
             await row.locator("label", has_text="Start (ms)").locator("input").fill("250")
@@ -344,7 +375,9 @@ async def _capture_loaded_match() -> dict[str, object]:
                 await page.locator("#output-profile-detail").text_content() or "",
                 encoding="utf-8",
             )
-            screenshots.append(await _capture_match_screenshot(page, "match-composite.png", min_text_length=120))
+            screenshots.append(
+                await _capture_match_screenshot(page, "match-composite.png", min_text_length=120)
+            )
 
             await _open_match_section(page, "match-section-export")
             await page.wait_for_function(
@@ -357,14 +390,18 @@ async def _capture_loaded_match() -> dict[str, object]:
                 "() => (document.getElementById('batch-export-status')?.textContent || '').includes('Exported 2 stage')",
                 timeout=10_000,
             )
-            screenshots.append(await _capture_match_screenshot(page, "match-export.png", min_text_length=120))
+            screenshots.append(
+                await _capture_match_screenshot(page, "match-export.png", min_text_length=120)
+            )
 
             await page.locator("#match-open-settings").click(force=True)
             await page.wait_for_function(
                 "() => document.getElementById('match-section-settings')?.hidden === false",
                 timeout=10_000,
             )
-            screenshots.append(await _capture_match_screenshot(page, "match-settings.png", min_text_length=120))
+            screenshots.append(
+                await _capture_match_screenshot(page, "match-settings.png", min_text_length=120)
+            )
             await browser.close()
 
         if console_errors:
@@ -404,8 +441,13 @@ async def _capture_loaded_match() -> dict[str, object]:
             "recap_output": str(recap_output),
             "single_stage_output_success": single_output_path.is_file(),
             "single_stage_output": str(single_output_path),
-            "auto_seed_saved_workspace": auto_seed["payload"]["saved_workspace_attach"]["return_to_workspace_available"],
-            "auto_seed_unsaved_workspace": auto_seed["payload"]["unsaved_workspace_create"]["workspace_path"] is None,
+            "auto_seed_saved_workspace": auto_seed["payload"]["saved_workspace_attach"][
+                "return_to_workspace_available"
+            ],
+            "auto_seed_unsaved_workspace": auto_seed["payload"]["unsaved_workspace_create"][
+                "workspace_path"
+            ]
+            is None,
         }
         SUMMARY_TXT.write_text(
             "\n".join(

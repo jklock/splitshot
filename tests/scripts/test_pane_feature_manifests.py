@@ -44,7 +44,9 @@ def _defined_test_sources(path: Path) -> dict[str, str]:
     }
 
 
-def test_pane_manifest_foundation_covers_project_match_performance_settings_metrics_and_stage_support_surfaces() -> None:
+def test_pane_manifest_foundation_covers_project_match_performance_settings_metrics_and_stage_support_surfaces() -> (
+    None
+):
     payload = _load_json(PANE_MANIFEST)
 
     assert payload["version"] == 1
@@ -65,9 +67,7 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
     }
 
     panes = {pane["pane_id"]: pane for pane in payload["panes"]}
-    support_surfaces = {
-        surface["surface_id"]: surface for surface in payload["support_surfaces"]
-    }
+    support_surfaces = {surface["surface_id"]: surface for surface in payload["support_surfaces"]}
     assert set(panes) == {
         "pane.project",
         "pane.match",
@@ -263,7 +263,11 @@ def test_pane_manifest_foundation_covers_project_match_performance_settings_metr
             "stage.shotml.",
         ),
     }
-    for surface_id, (support_kind, support_note, feature_prefix) in expected_support_surfaces.items():
+    for surface_id, (
+        support_kind,
+        support_note,
+        feature_prefix,
+    ) in expected_support_surfaces.items():
         surface = support_surfaces[surface_id]
         assert surface["support_kind"] == support_kind
         assert surface["support_only"] is True
@@ -485,7 +489,9 @@ def test_support_surface_owner_targets_resolve_to_real_files_or_tests() -> None:
         for owner_target in surface["owner_targets"]:
             file_target, _, test_target = owner_target.partition("::")
             path = Path(file_target)
-            assert path.is_file(), f"Missing owner target file for {surface['surface_id']}: {owner_target}"
+            assert path.is_file(), (
+                f"Missing owner target file for {surface['surface_id']}: {owner_target}"
+            )
             if not test_target:
                 continue
             test_name = test_target.split("[", 1)[0]
@@ -590,13 +596,19 @@ def test_current_wave_thin_support_controls_have_explicit_owner_targets() -> Non
         for feature in support_surfaces["surface.landing"]["features"]
         if feature["feature_id"] == "landing.entry_cards_and_quick_start"
     )
-    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="single"]'] == [
+    assert landing_quick_start["control_owner_targets"][
+        'button.landing-card[data-surface="single"]'
+    ] == [
         "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
     ]
-    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="multi"]'] == [
+    assert landing_quick_start["control_owner_targets"][
+        'button.landing-card[data-surface="multi"]'
+    ] == [
         "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
     ]
-    assert landing_quick_start["control_owner_targets"]['button.landing-card[data-surface="library"]'] == [
+    assert landing_quick_start["control_owner_targets"][
+        'button.landing-card[data-surface="library"]'
+    ] == [
         "tests/browser/test_browser_interactions.py::test_landing_cards_and_quick_start_buttons_switch_surfaces_without_saved_state"
     ]
     assert landing_quick_start["control_owner_targets"]["landing-new-stage"] == [
@@ -696,19 +708,16 @@ def test_support_surface_control_led_rows_avoid_known_generic_shared_selectors()
             if generic_controls:
                 flagged[feature["feature_id"]] = generic_controls
 
-    assert not flagged, f"Support-surface control rows still use generic shared selectors: {flagged}"
+    assert not flagged, (
+        f"Support-surface control rows still use generic shared selectors: {flagged}"
+    )
 
 
 def test_suite_taxonomy_pane_manifest_refs_match_the_pane_manifest_file() -> None:
-    suites = {
-        suite["name"]: suite for suite in _load_json(SUITE_TAXONOMY)["suites"]
-    }
-    panes = {
-        pane["pane_id"] for pane in _load_json(PANE_MANIFEST)["panes"]
-    }
+    suites = {suite["name"]: suite for suite in _load_json(SUITE_TAXONOMY)["suites"]}
+    panes = {pane["pane_id"] for pane in _load_json(PANE_MANIFEST)["panes"]}
     support_surfaces = {
-        surface["surface_id"]
-        for surface in _load_json(PANE_MANIFEST)["support_surfaces"]
+        surface["surface_id"] for surface in _load_json(PANE_MANIFEST)["support_surfaces"]
     }
 
     expected = {
@@ -742,9 +751,9 @@ def test_suite_taxonomy_pane_manifest_refs_match_the_pane_manifest_file() -> Non
 
 
 def test_pane_project_suite_declares_explicit_landing_support_exceptions() -> None:
-    pane_project = {
-        suite["name"]: suite for suite in _load_json(SUITE_TAXONOMY)["suites"]
-    }["pane-project"]
+    pane_project = {suite["name"]: suite for suite in _load_json(SUITE_TAXONOMY)["suites"]}[
+        "pane-project"
+    ]
 
     exceptions = pane_project["support_target_exceptions"]
     assert {entry["target"] for entry in exceptions} == {
@@ -755,8 +764,7 @@ def test_pane_project_suite_declares_explicit_landing_support_exceptions() -> No
     }
     assert {entry["surface_id"] for entry in exceptions} == {"surface.landing"}
     assert any(
-        entry["related_feature_ids"] == ["project.primary_video_import"]
-        for entry in exceptions
+        entry["related_feature_ids"] == ["project.primary_video_import"] for entry in exceptions
     )
     assert all(entry["reason"] for entry in exceptions)
 
@@ -773,6 +781,4 @@ def test_wave_a_docs_reference_the_manifest_surface() -> None:
         Path("docs/project/browser-control-coverage-plan.md"),
         Path("docs/project/browser-full-e2e-qa-plan.md"),
     ]:
-        assert "scripts/testing/pane_feature_manifests.json" in path.read_text(
-            encoding="utf-8"
-        )
+        assert "scripts/testing/pane_feature_manifests.json" in path.read_text(encoding="utf-8")

@@ -51,21 +51,23 @@ def _build_workspace_context(
     workspace = getattr(controller, "workspace", None)
     context.update(
         {
-        "editor_scope": getattr(controller, "editor_scope", "single"),
-        "active_match_id": workspace.match_id if workspace else None,
-        "active_stage_id": getattr(controller, "active_stage_id", None),
-        "workspace_path": str(getattr(controller, "workspace_path", "") or "") or None,
-        "return_to_match_available": getattr(controller, "_return_to_workspace_available", False),
-        "opened_from_match": (
-            workspace.match_id
-            if workspace
-            and controller
-            and getattr(controller, "_return_to_workspace_available", False)
-            else None
-        ),
-        "returned_stage_id": getattr(controller, "_last_returned_stage_id", None)
-        if controller
-        else None,
+            "editor_scope": getattr(controller, "editor_scope", "single"),
+            "active_match_id": workspace.match_id if workspace else None,
+            "active_stage_id": getattr(controller, "active_stage_id", None),
+            "workspace_path": str(getattr(controller, "workspace_path", "") or "") or None,
+            "return_to_match_available": getattr(
+                controller, "_return_to_workspace_available", False
+            ),
+            "opened_from_match": (
+                workspace.match_id
+                if workspace
+                and controller
+                and getattr(controller, "_return_to_workspace_available", False)
+                else None
+            ),
+            "returned_stage_id": getattr(controller, "_last_returned_stage_id", None)
+            if controller
+            else None,
         }
     )
 
@@ -98,7 +100,9 @@ def _build_workspace_context(
                     except Exception:
                         stage_project_file = None
                 if stage_project_file is not None and Path(stage_project_file).is_file():
-                    cache_suffix = f"?v={quote(str(media_cache_token))}" if media_cache_token else ""
+                    cache_suffix = (
+                        f"?v={quote(str(media_cache_token))}" if media_cache_token else ""
+                    )
                     preview_url = f"/media/workspace-stage/{quote(entry.stage_id)}{cache_suffix}"
                 entries.append(
                     {
@@ -190,6 +194,7 @@ def reset_browser_state_caches() -> None:
     _library_summary_cache_time = 0.0
     _proxy_summary_cache = {}
     _proxy_summary_cache_time = 0.0
+
 
 _MERGE_SOURCE_ROLE_PRIORITY = {
     role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
@@ -478,9 +483,9 @@ def _merge_source_angle_role(item: object) -> str:
     default_role = "detail" if asset_payload.get("is_still_image") else "follow"
     if not isinstance(item, dict):
         return default_role
-    normalized_role = str(
-        item.get("camera_role") or item.get("angle_role") or default_role
-    ).strip().lower()
+    normalized_role = (
+        str(item.get("camera_role") or item.get("angle_role") or default_role).strip().lower()
+    )
     if normalized_role in _MERGE_SOURCE_ROLE_PRIORITY:
         return normalized_role
     return default_role
@@ -501,7 +506,7 @@ def _merge_source_order_index(item: object) -> int | None:
         return None
 
 
-def _merge_source_sync_analysis_sort_key(item: object) -> tuple[int, int, int, str]:
+def _merge_source_sync_analysis_sort_key(item: object, index: int) -> tuple[int, int, int, int]:
     order_index = _merge_source_order_index(item)
     return (
         _MERGE_SOURCE_ROLE_PRIORITY.get(
@@ -510,31 +515,33 @@ def _merge_source_sync_analysis_sort_key(item: object) -> tuple[int, int, int, s
         ),
         0 if order_index is not None else 1,
         0 if order_index is None else order_index,
-        _merge_source_payload_id(item) or "",
+        index,
     )
 
 
 def _merge_source_supports_secondary_analysis(item: object) -> bool:
     asset_payload = _merge_source_asset_payload(item)
-    return bool(str(asset_payload.get("path") or "").strip()) and not bool(
-        asset_payload.get("is_still_image")
-    ) and _merge_source_media_kind(item) != "animated_gif"
+    return (
+        bool(str(asset_payload.get("path") or "").strip())
+        and not bool(asset_payload.get("is_still_image"))
+        and _merge_source_media_kind(item) != "animated_gif"
+    )
 
 
 def _first_sync_analysis_source_id(merge_sources_payload: list[object]) -> str | None:
-    analyzable_sources = [
-        item
-        for item in merge_sources_payload
+    analyzable_indexed: list[tuple[int, object]] = [
+        (index, item)
+        for index, item in enumerate(merge_sources_payload)
         if _merge_source_payload_id(item) is not None
         and _merge_source_supports_secondary_analysis(item)
     ]
-    if not analyzable_sources:
+    if not analyzable_indexed:
         return None
-    selected_item = min(
-        analyzable_sources,
-        key=_merge_source_sync_analysis_sort_key,
+    selected_index, _ = min(
+        analyzable_indexed,
+        key=lambda indexed: _merge_source_sync_analysis_sort_key(indexed[1], indexed[0]),
     )
-    return _merge_source_payload_id(selected_item)
+    return _merge_source_payload_id(merge_sources_payload[selected_index])
 
 
 def _inflate_merge_source_placement_truth(
@@ -592,7 +599,9 @@ def _augment_merge_source_summary(project_payload: dict[str, Any], project: Proj
         if not isinstance(item, dict):
             continue
         if source_index < len(project.merge_sources):
-            _inflate_merge_source_placement_truth(item, project.merge_sources[source_index], source_index)
+            _inflate_merge_source_placement_truth(
+                item, project.merge_sources[source_index], source_index
+            )
         item["media_kind"] = _merge_source_media_kind(item)
         source_id = _merge_source_payload_id(item)
         supports_sync_analysis = bool(source_id and source_id == eligible_source_id)

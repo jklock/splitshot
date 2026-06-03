@@ -8,7 +8,9 @@ from pathlib import Path
 INDEX_HTML = Path("src/splitshot/browser/static/index.html")
 INVENTORY_PLAN = Path("docs/project/browser-control-coverage-plan.md")
 FULL_E2E_PLAN = Path("docs/project/browser-full-e2e-qa-plan.md")
-SEAM_REGISTRY = json.loads(Path("docs/project/browser-proof-seams.json").read_text(encoding="utf-8"))
+SEAM_REGISTRY = json.loads(
+    Path("docs/project/browser-proof-seams.json").read_text(encoding="utf-8")
+)
 
 EXPECTED_STATIC_MUTABLE_CONTROL_IDENTIFIERS = {
     line.strip()
@@ -317,8 +319,6 @@ id:show-timer
 id:stage-clip-add
 id:stage-clip-path
 id:stage-clip-role
-id:stage-empty-import
-id:stage-empty-open
 id:stage-go-home
 id:target-height
 id:target-width
@@ -462,13 +462,22 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "Match-workspace media-backed stage tiles and selected-stage lower-pane truth across lower-pane workflow switches"
         in inventory_plan
     )
-    assert "Performance Library loading, empty, stale, and manual-refresh lifecycle proof" in inventory_plan
-    assert "Settings global template scope, landing pane, reopen-last-tool, and app-vs-folder default-layer truth" in inventory_plan
+    assert (
+        "Performance Library loading, empty, stale, and manual-refresh lifecycle proof"
+        in inventory_plan
+    )
+    assert (
+        "Settings global template scope, landing pane, reopen-last-tool, and app-vs-folder default-layer truth"
+        in inventory_plan
+    )
     assert (
         "Within `settings.layout_defaults`, `settings-use-current-layout` and `settings-release-layout` own the live interaction path; the rendered layout fields remain state assertions."
         in inventory_plan
     )
-    assert "Metrics summary/workbench expansion/collapse plus row propagation from timing and scoring edits" in inventory_plan
+    assert (
+        "Metrics summary/workbench expansion/collapse plus row propagation from timing and scoring edits"
+        in inventory_plan
+    )
     assert "DEV-106.landing_recent" in inventory_plan
     assert "DEV-107.root_shell_compat" in inventory_plan
     assert "project.practiscore_bridge" in inventory_plan
@@ -488,8 +497,14 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "tests/browser/test_scoring_metrics_contracts.py",
     ]:
         assert test_path in inventory_plan
-    assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-106.landing_recent"]["doc_refs"]
-    assert "docs/project/browser-control-coverage-plan.md" in SEAM_REGISTRY["DEV-107.root_shell_compat"]["doc_refs"]
+    assert (
+        "docs/project/browser-control-coverage-plan.md"
+        in SEAM_REGISTRY["DEV-106.landing_recent"]["doc_refs"]
+    )
+    assert (
+        "docs/project/browser-control-coverage-plan.md"
+        in SEAM_REGISTRY["DEV-107.root_shell_compat"]["doc_refs"]
+    )
 
     assert "scripts/testing/pane_feature_manifests.json" in full_e2e_plan
     assert "support_surface_ids" in full_e2e_plan

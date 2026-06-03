@@ -67,9 +67,7 @@ class ResolvedMergeSourcePlacement:
     target_source_id: str | None
 
 
-_CAMERA_ROLE_PRIORITY = {
-    role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
-}
+_CAMERA_ROLE_PRIORITY = {role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)}
 _CAMERA_ROLE_BASE_TARGET_PRIORITY = {
     "primary": 0,
     "static": 1,
@@ -259,13 +257,19 @@ def _resolved_merge_source_slot(project: Project, source: MergeSource, mode: str
     if requested not in _MERGE_SOURCE_PREVIEW_PLACEMENT_SLOTS or requested == "auto":
         return _camera_role_seed_slot(_normalized_merge_source_angle_role(source), mode)
     allowed_slots = _merge_source_preview_slot_values(mode)
-    return requested if requested in allowed_slots else _camera_role_seed_slot(
-        _normalized_merge_source_angle_role(source),
-        mode,
+    return (
+        requested
+        if requested in allowed_slots
+        else _camera_role_seed_slot(
+            _normalized_merge_source_angle_role(source),
+            mode,
+        )
     )
 
 
-def _merge_source_base_target_sort_key(item: ResolvedMergeSourcePlacement) -> tuple[int, int, int, int]:
+def _merge_source_base_target_sort_key(
+    item: ResolvedMergeSourcePlacement,
+) -> tuple[int, int, int, int]:
     if item.mode in {"base", "full_screen_portrait"}:
         mode_priority = 0
     elif item.mode in {
@@ -344,7 +348,9 @@ def _resolved_merge_source_placements_for_export(
     resolved_source_ids = {item.source_id for item in resolved_sources}
     finalized_sources: list[ResolvedMergeSourcePlacement] = []
     for item in resolved_sources:
-        requested_target_source_id = str(item.source.placement.target_source_id or "").strip() or None
+        requested_target_source_id = (
+            str(item.source.placement.target_source_id or "").strip() or None
+        )
         requested_target_kind = str(item.source.placement.target_kind or "").strip().lower()
         target_kind = "primary_video"
         target_source_id = None
@@ -406,11 +412,7 @@ def _merge_source_supports_audio_anchor(source: MergeSource | None) -> bool:
     if source is None:
         return False
     asset = source.asset
-    return (
-        bool(asset.path)
-        and not asset.is_still_image
-        and asset.media_kind != "animated_gif"
-    )
+    return bool(asset.path) and not asset.is_still_image and asset.media_kind != "animated_gif"
 
 
 def _preferred_merge_audio_anchor_source(
@@ -1183,9 +1185,7 @@ def _build_merge_plan(project: Project) -> BaseRenderPlan:
             secondary_source,
             canvas,
             primary_fit_mode=(
-                "cover"
-                if project.merge.layout == MergeLayout.FULL_SCREEN_PORTRAIT
-                else "contain"
+                "cover" if project.merge.layout == MergeLayout.FULL_SCREEN_PORTRAIT else "contain"
             ),
         )
     fps = _output_fps(project)
@@ -1372,14 +1372,8 @@ def _encoder_command(
         []
         if not include_audio
         else [
-            *(
-                ["-ss", f"{audio_input_start_ms / 1000:.3f}"]
-                if audio_input_start_ms > 0
-                else []
-            ),
-            *(
-                ["-itsoffset", f"{audio_delay_ms / 1000:.3f}"] if audio_delay_ms > 0 else []
-            ),
+            *(["-ss", f"{audio_input_start_ms / 1000:.3f}"] if audio_input_start_ms > 0 else []),
+            *(["-itsoffset", f"{audio_delay_ms / 1000:.3f}"] if audio_delay_ms > 0 else []),
             *(
                 ["-t", f"{audio_input_duration_ms / 1000:.3f}"]
                 if audio_input_duration_ms is not None and audio_input_duration_ms > 0
@@ -1824,9 +1818,7 @@ def export_output_profile(
 def _apply_metric_captions_to_project(project: Project, captions: dict) -> None:
     """Apply metric caption settings to project overlay state."""
     enabled_fields = {
-        str(field).strip()
-        for field in captions.get("enabled_fields", [])
-        if str(field).strip()
+        str(field).strip() for field in captions.get("enabled_fields", []) if str(field).strip()
     }
     show_timer = "cumulative_time" in enabled_fields
     show_draw = "first_shot_reaction" in enabled_fields
@@ -1834,11 +1826,15 @@ def _apply_metric_captions_to_project(project: Project, captions: dict) -> None:
     show_score = "hit_factor" in enabled_fields or "penalties" in enabled_fields
     position = str(captions.get("position", "bottom_right") or "bottom_right").strip().lower()
 
-    project._metric_caption_overlay = {
-        "enabled_fields": sorted(enabled_fields),
-        "show_split_times": show_shots,
-        "show_shot_scores": show_shots and show_score,
-    } if enabled_fields else None
+    project._metric_caption_overlay = (
+        {
+            "enabled_fields": sorted(enabled_fields),
+            "show_split_times": show_shots,
+            "show_shot_scores": show_shots and show_score,
+        }
+        if enabled_fields
+        else None
+    )
 
     project.overlay.show_timer = show_timer
     project.overlay.show_draw = show_draw

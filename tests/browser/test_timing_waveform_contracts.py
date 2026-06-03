@@ -202,11 +202,22 @@ def test_waveform_component_renders_secondary_pip_lane_when_available() -> None:
     waveform_js = (static_root / "components/waveform.js").read_text(encoding="utf-8")
 
     assert "function drawWaveformLane(ctx, waveform" in waveform_js
-    assert 'const secondaryWaveform = currentState()?.project?.analysis?.waveform_secondary || [];' in waveform_js
-    assert 'canvas.dataset.secondaryWaveform = hasSecondaryWaveform ? "true" : "false";' in waveform_js
-    assert 'canvas.dataset.waveformLaneLayout = hasSecondaryWaveform ? "stacked" : "single";' in waveform_js
-    assert 'canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform ? String(secondaryWaveform.length) : "0";' in waveform_js
-    assert 'drawWaveformLane(ctx, secondaryWaveform, {' in waveform_js
+    assert (
+        "const secondaryWaveform = currentState()?.project?.analysis?.waveform_secondary || [];"
+        in waveform_js
+    )
+    assert (
+        'canvas.dataset.secondaryWaveform = hasSecondaryWaveform ? "true" : "false";' in waveform_js
+    )
+    assert (
+        'canvas.dataset.waveformLaneLayout = hasSecondaryWaveform ? "stacked" : "single";'
+        in waveform_js
+    )
+    assert (
+        'canvas.dataset.secondaryWaveformSamples = hasSecondaryWaveform ? String(secondaryWaveform.length) : "0";'
+        in waveform_js
+    )
+    assert "drawWaveformLane(ctx, secondaryWaveform, {" in waveform_js
     assert '`Secondary • ${syncOffsetMs > 0 ? "+" : ""}${syncOffsetMs} ms`' in waveform_js
 
 
@@ -434,9 +445,9 @@ def test_timing_workbench_rows_lock_edit_delete_and_restore(synthetic_video_fact
                 )
                 assert restored_time_ms == original_time_ms
 
-                page.locator(
-                    '#timing-workbench-table [data-timing-row-action="delete-shot"]'
-                ).nth(1).click()
+                page.locator('#timing-workbench-table [data-timing-row-action="delete-shot"]').nth(
+                    1
+                ).click()
                 page.wait_for_function(
                     """(shotId) => !(state?.project?.analysis?.shots || []).some((shot) => shot.id === shotId)""",
                     arg=second_shot_id,

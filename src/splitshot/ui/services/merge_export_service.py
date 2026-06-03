@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 import re
 import shutil
@@ -136,7 +135,11 @@ def workspace_export_stage_output_item(
     legacy_default: bool = False,
 ) -> dict[str, object]:
     controller_module = _controller_module()
-    entry = controller.workspace.stage_entries.get(stage_id) if controller.workspace is not None else None
+    entry = (
+        controller.workspace.stage_entries.get(stage_id)
+        if controller.workspace is not None
+        else None
+    )
     if entry is None:
         raise ValueError("Stage entry not found")
 
@@ -275,7 +278,11 @@ def workspace_export_stage_composite_item(
     stage_id: str,
     workspace_path: Path,
 ) -> dict[str, object]:
-    entry = controller.workspace.stage_entries.get(stage_id) if controller.workspace is not None else None
+    entry = (
+        controller.workspace.stage_entries.get(stage_id)
+        if controller.workspace is not None
+        else None
+    )
     if entry is None:
         raise ValueError("Stage entry not found")
 
@@ -360,9 +367,7 @@ def workspace_export_stage_composite_item(
 
         concat_path = temp_dir / "segments.txt"
         concat_path.write_text(
-            "\n".join(
-                f"file '{str(path).replace("'", "'\\''")}'" for path in rendered_segments
-            )
+            "\n".join(f"file '{str(path).replace("'", "'\\''")}'" for path in rendered_segments)
             + "\n",
             encoding="utf-8",
         )
@@ -840,12 +845,8 @@ def render_recap_sequence(
         )
 
     if transition == "cut" or len(sequence_paths) == 1:
-        concat_inputs = "".join(
-            f"[v{index}][a{index}]" for index in range(len(sequence_paths))
-        )
-        filter_parts.append(
-            f"{concat_inputs}concat=n={len(sequence_paths)}:v=1:a=1[vout][aout]"
-        )
+        concat_inputs = "".join(f"[v{index}][a{index}]" for index in range(len(sequence_paths)))
+        filter_parts.append(f"{concat_inputs}concat=n={len(sequence_paths)}:v=1:a=1[vout][aout]")
         video_label = "[vout]"
         audio_label = "[aout]"
     else:
@@ -925,9 +926,7 @@ def workspace_recap_render(controller: ProjectController, **kwargs) -> dict:
     if isinstance(raw_stage_ids, (str, bytes)):
         stage_ids = [str(raw_stage_ids).strip()] if str(raw_stage_ids).strip() else []
     else:
-        stage_ids = [
-            str(stage_id).strip() for stage_id in raw_stage_ids if str(stage_id).strip()
-        ]
+        stage_ids = [str(stage_id).strip() for stage_id in raw_stage_ids if str(stage_id).strip()]
     transition = controller._recap_transition(kwargs.get("transition"))
     result_card_mode = controller._recap_result_card_mode(kwargs.get("result_card"))
     stage_options = controller._recap_stage_options(kwargs.get("stage_options"))
@@ -1025,13 +1024,10 @@ def workspace_recap_render(controller: ProjectController, **kwargs) -> dict:
         if result_card_mode != "none":
             cards_result = controller.resolve_result_cards("recap")
             if not cards_result.get("success"):
-                errors.append(
-                    {"error": cards_result.get("error", "Result cards unavailable")}
-                )
+                errors.append({"error": cards_result.get("error", "Result cards unavailable")})
             else:
                 cards_by_stage = {
-                    str(card.get("stage_id") or ""): card
-                    for card in cards_result.get("cards", [])
+                    str(card.get("stage_id") or ""): card for card in cards_result.get("cards", [])
                 }
                 if result_card_mode == "each":
                     sequence_paths = []
@@ -1499,9 +1495,7 @@ def set_merge_source_position(
                 next_target_source_id = None
             next_slot_input = placement_slot
             if next_slot_input is None:
-                next_slot_input = (
-                    None if placement_mode is not None else source.placement.slot
-                )
+                next_slot_input = None if placement_mode is not None else source.placement.slot
             source.placement.mode = next_mode
             source.placement.slot = controller_module._normalize_merge_source_placement_slot(
                 next_slot_input,
@@ -1545,7 +1539,9 @@ def set_merge_source_sync_offset(
             controller.project.analysis.sync_offset_ms = source.sync_offset_ms
             controller.project.analysis.secondary_sync_source = "manual"
             controller.project.secondary_video = (
-                source.asset if controller_module._source_supports_secondary_analysis(source) else None
+                source.asset
+                if controller_module._source_supports_secondary_analysis(source)
+                else None
             )
         controller._set_status(f"Adjusted merge source sync to {source.sync_offset_ms} ms.")
         controller.project.touch()
@@ -1603,9 +1599,7 @@ def set_sync_offset(controller: ProjectController, offset_ms: int) -> None:
         if controller_module._source_supports_secondary_analysis(source):
             controller.project.secondary_video = source.asset
     controller.project.analysis.secondary_sync_source = "manual"
-    controller._set_status(
-        f"Sync offset set to {controller.project.analysis.sync_offset_ms} ms."
-    )
+    controller._set_status(f"Sync offset set to {controller.project.analysis.sync_offset_ms} ms.")
     controller.project.touch()
     controller.project_changed.emit()
 

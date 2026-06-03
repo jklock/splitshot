@@ -62,15 +62,11 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "mergePane = createMergePane({" in source
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in source
     assert "function previewFrameClientRect(video, container) {" in source
-    assert 'function mergePreviewTargetFrameRect(source = null, stage = $("video-stage")) {' in source
     assert (
-        'const frameRect = mergePreviewTargetFrameRect(source, stage);'
-        in begin_drag_body
+        'function mergePreviewTargetFrameRect(source = null, stage = $("video-stage")) {' in source
     )
-    assert (
-        'const frameRect = mergePreviewTargetFrameRect(source, stage);'
-        in move_drag_body
-    )
+    assert "const frameRect = mergePreviewTargetFrameRect(source, stage);" in begin_drag_body
+    assert "const frameRect = mergePreviewTargetFrameRect(source, stage);" in move_drag_body
     assert (
         "scheduleMergeSourceCommit(mergeSourcePositionPayload(drag.sourceId, source))" in drag_body
     )
@@ -85,7 +81,7 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     )
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
-    assert "hydrateMergeSourcesFromDefaults({ persist: true });" not in merge_pane_source
+    assert "hydrateMergeSourcesFromDefaults({ persist: true });" in merge_pane_source
     assert 'select.dataset.mergeSourceField = "camera_role";' in merge_pane_source
     assert 'text.textContent = "Camera role";' in merge_pane_source
     assert 'trimTitle.textContent = "Trim Video";' in merge_pane_source
@@ -103,11 +99,22 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
         in merge_pane_source
     )
     assert "Use these nudges or drag the preview to match the primary video exactly." not in source
-    assert "These values are saved per item and take effect in PiP layout and export timing." not in source
-    assert "Current item placement lives here. Project defaults only seed new cards." not in merge_pane_source
-    assert "Set clip bounds before later item timing and placement changes." not in merge_pane_source
+    assert (
+        "These values are saved per item and take effect in PiP layout and export timing."
+        not in source
+    )
+    assert (
+        "Current item placement lives here. Project defaults only seed new cards."
+        not in merge_pane_source
+    )
+    assert (
+        "Set clip bounds before later item timing and placement changes." not in merge_pane_source
+    )
     assert "openFeatureEditor" not in source
-    assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
+    assert (
+        "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {"
+        in source
+    )
     assert "function setPreviewSeekBoundary(value) {" in source
     assert "function markPreviewSeekBoundary() {" in source
     assert "let previewSyncedSinceBoundary = false;" in source
@@ -115,16 +122,28 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "if (previewSeekBoundary) previewSyncedSinceBoundary = false;" in set_boundary_body
     assert "setPreviewSeekBoundary(true);" in mark_boundary_body
     assert "markPreviewSeekBoundary," in source
-    assert "const previews = Array.from(document.querySelectorAll(\"#merge-preview-layer video\"));" in merge_sync_body
+    assert (
+        'const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));'
+        in merge_sync_body
+    )
     assert "const boundaryActive = previewSeekBoundary;" in merge_sync_body
     assert "if (boundaryActive) previewSeekBoundaryBatchActive = true;" in merge_sync_body
-    assert 'const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";' in merge_sync_body
-    assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in merge_sync_body
+    assert (
+        'const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";'
+        in merge_sync_body
+    )
+    assert (
+        "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));"
+        in merge_sync_body
+    )
     assert (
         "const syncStatus = syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);"
         in merge_sync_body
     )
-    assert 'if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;' in merge_sync_body
+    assert (
+        'if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;'
+        in merge_sync_body
+    )
     assert "previewSeekBoundaryBatchActive = false;" in merge_sync_body
     assert "previewSeekBoundary = boundaryPending;" in merge_sync_body
     assert "previewSyncedSinceBoundary = !boundaryPending;" in merge_sync_body

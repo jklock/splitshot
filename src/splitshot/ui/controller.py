@@ -9,9 +9,6 @@ from inspect import Parameter, signature
 import json
 from pathlib import Path
 import re
-import shutil
-import subprocess
-from tempfile import TemporaryDirectory
 from uuid import uuid4 as _uuid4
 
 from PySide6.QtCore import QObject, QRectF, Qt, Signal
@@ -19,20 +16,19 @@ from PySide6.QtGui import QColor, QFont, QImage, QPainter
 
 from splitshot.analysis.detection import (
     analyze_video_audio,
-    timing_change_proposals_from_review_suggestions,
     TimingReviewSuggestion,
+    timing_change_proposals_from_review_suggestions,
 )
-from splitshot.analysis.sync import compute_sync_offset
 from splitshot.config import (
     AppSettings,
-    delete_folder_settings,
     load_folder_settings,
     load_settings,
-    save_folder_settings,
     save_settings,
 )
+from splitshot.analysis.sync import compute_sync_offset
 from splitshot.domain.models import (
     AngleDirectorCutDecision,
+    ExportSettings,
     StageClipSource,
     LibraryStageRecord,
     LibraryMatchRecord,
@@ -40,7 +36,6 @@ from splitshot.domain.models import (
     BadgeStyle,
     AspectRatio,
     ExportAudioCodec,
-    ExportColorSpace,
     ExportFrameRate,
     ExportPreset,
     ExportQuality,
@@ -57,6 +52,7 @@ from splitshot.domain.models import (
     MatchWorkspace,
     MergeLayout,
     MERGE_SOURCE_ANGLE_ROLE_VALUES,
+    default_merge_source_angle_role,
     OverlayPosition,
     OutputProfile,
     OverlayTextBox,
@@ -75,18 +71,17 @@ from splitshot.domain.models import (
     TimingEvent,
     TimingChangeProposal,
     VideoAsset,
-    default_merge_source_angle_role,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
     sync_overlay_legacy_custom_box_fields,
 )
+from splitshot.export.pipeline import export_output_profile, export_project
 from splitshot.export.presets import (
     apply_export_preset as apply_export_preset_settings,
     apply_export_settings_payload,
     resolved_export_settings,
 )
-from splitshot.export.pipeline import export_output_profile, export_project
 from splitshot.media.ffmpeg import MediaError, generate_trimmed_derivative
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
@@ -104,11 +99,7 @@ from splitshot.persistence.projects import (
 )
 from splitshot.persistence.workspaces import (
     _output_profile_from_dict,
-    load_workspace,
-    normalize_workspace_path,
     save_workspace,
-    workspace_has_metadata,
-    workspace_stage_project_path,
     workspace_stage_path,
 )
 from splitshot.persistence.library import (
@@ -133,8 +124,8 @@ from splitshot.scoring.practiscore import (
 from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_practiscore_artifact
 from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch
 from splitshot.timeline.model import (
-    normalize_project_timing_events,
     normalized_timing_event_for_shots,
+    normalize_project_timing_events,
     sort_shots,
 )
 from splitshot.ui.services import analysis_service as analysis_service_module
@@ -400,7 +391,9 @@ def _project_media_recovery_score(
         score += 850
     elif expected_stem_normalized and candidate_stem_normalized.endswith(expected_stem_normalized):
         score += 760
-    elif expected_stem_normalized and candidate_stem_normalized.startswith(expected_stem_normalized):
+    elif expected_stem_normalized and candidate_stem_normalized.startswith(
+        expected_stem_normalized
+    ):
         score += 700
     elif expected_stem and (expected_stem in candidate_stem or candidate_stem in expected_stem):
         score += 700
@@ -449,9 +442,7 @@ def _project_media_recovery_score(
 # for both Compose merge sources and stage composite clips. Compose keeps
 # within-role stability via `MergeSource.placement.order_index`; stage composite
 # currently preserves the existing clip list order within the same role tier.
-_CAMERA_ROLE_PRIORITY = {
-    role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)
-}
+_CAMERA_ROLE_PRIORITY = {role: index for index, role in enumerate(MERGE_SOURCE_ANGLE_ROLE_VALUES)}
 
 
 def _camera_role_priority(angle_role: object) -> int:
@@ -1336,9 +1327,7 @@ class ProjectController(QObject):
         self._practiscore_session_payload = (
             practiscore_sync_service.default_practiscore_session_payload()
         )
-        self._practiscore_sync_payload = (
-            practiscore_sync_service.default_practiscore_sync_payload()
-        )
+        self._practiscore_sync_payload = practiscore_sync_service.default_practiscore_sync_payload()
         self.workspace = None
         self.workspace_path = None
         self._output_profiles: dict[str, OutputProfile] = {}  # output_id -> OutputProfile
@@ -1803,11 +1792,13 @@ class ProjectController(QObject):
             sibling_project = self._load_stage_project(entry.stage_id)
             if not sibling_project:
                 skipped += 1
-                conflicts.append({
-                    "stage_id": entry.stage_id,
-                    "setting": "all",
-                    "reason": "Cannot load project",
-                })
+                conflicts.append(
+                    {
+                        "stage_id": entry.stage_id,
+                        "setting": "all",
+                        "reason": "Cannot load project",
+                    }
+                )
                 continue
 
             stage_conflicts = []
@@ -1819,13 +1810,15 @@ class ProjectController(QObject):
                     if current_value != retained_value:
                         self._apply_setting_to_project(sibling_project, key, retained_value)
                         project_changed = True
-                    stage_conflicts.append({
-                        "setting": key,
-                        "current_value": current_value,
-                        "proposed_value": value,
-                        "retained_value": retained_value,
-                        "reason": "Stage has explicit override",
-                    })
+                    stage_conflicts.append(
+                        {
+                            "setting": key,
+                            "current_value": current_value,
+                            "proposed_value": value,
+                            "retained_value": retained_value,
+                            "reason": "Stage has explicit override",
+                        }
+                    )
                     continue
                 if current_value == value:
                     continue
@@ -1922,13 +1915,15 @@ class ProjectController(QObject):
 
             sibling_project = self._load_stage_project(entry.stage_id)
             if not sibling_project:
-                preview.append({
-                    "stage_id": entry.stage_id,
-                    "display_name": entry.display_name or f"Stage {entry.stage_number}",
-                    "status": "unavailable",
-                    "reason": "Cannot load project",
-                    "changes": [],
-                })
+                preview.append(
+                    {
+                        "stage_id": entry.stage_id,
+                        "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                        "status": "unavailable",
+                        "reason": "Cannot load project",
+                        "changes": [],
+                    }
+                )
                 continue
 
             changes = []
@@ -1942,19 +1937,23 @@ class ProjectController(QObject):
                     continue
 
                 if has_override:
-                    conflicts.append({
-                        "setting": key,
-                        "current_value": sibling_value,
-                        "proposed_value": first_value,
-                        "retained_value": entry.override_values[key],
-                        "reason": "Stage has explicit override",
-                    })
+                    conflicts.append(
+                        {
+                            "setting": key,
+                            "current_value": sibling_value,
+                            "proposed_value": first_value,
+                            "retained_value": entry.override_values[key],
+                            "reason": "Stage has explicit override",
+                        }
+                    )
                 else:
-                    changes.append({
-                        "setting": key,
-                        "current_value": sibling_value,
-                        "new_value": first_value,
-                    })
+                    changes.append(
+                        {
+                            "setting": key,
+                            "current_value": sibling_value,
+                            "new_value": first_value,
+                        }
+                    )
 
             profile_update = self._copy_reusable_profiles_to_stage(
                 entry.stage_id,
@@ -1965,13 +1964,15 @@ class ProjectController(QObject):
 
             status = "conflict" if conflicts else ("will_change" if changes else "unchanged")
 
-            preview.append({
-                "stage_id": entry.stage_id,
-                "display_name": entry.display_name or f"Stage {entry.stage_number}",
-                "status": status,
-                "changes": changes,
-                "conflicts": conflicts,
-            })
+            preview.append(
+                {
+                    "stage_id": entry.stage_id,
+                    "display_name": entry.display_name or f"Stage {entry.stage_number}",
+                    "status": status,
+                    "changes": changes,
+                    "conflicts": conflicts,
+                }
+            )
 
         return {
             "preview": preview,
@@ -1979,6 +1980,7 @@ class ProjectController(QObject):
             "reusable_settings": list(reusable.keys())
             + (["output_profiles"] if source_profiles else []),
         }
+
     # ── Stage project load / save ──────────────────────────────────
 
     def _load_stage_project(self, stage_id: str) -> Project | None:
@@ -2046,9 +2048,7 @@ class ProjectController(QObject):
         for profile in profiles:
             self._output_profiles[profile.output_id] = deepcopy(profile)
 
-    def _save_stage_profiles_for_stage(
-        self, stage_id: str, profiles: list[OutputProfile]
-    ) -> bool:
+    def _save_stage_profiles_for_stage(self, stage_id: str, profiles: list[OutputProfile]) -> bool:
         stage_path = self._workspace_stage_bundle_path(stage_id)
         if stage_path is None:
             return False
@@ -2070,9 +2070,7 @@ class ProjectController(QObject):
         except Exception:
             return False
 
-    def _reusable_stage_output_profiles(
-        self, profiles: list[OutputProfile]
-    ) -> list[OutputProfile]:
+    def _reusable_stage_output_profiles(self, profiles: list[OutputProfile]) -> list[OutputProfile]:
         return [
             deepcopy(profile)
             for profile in profiles
@@ -2211,7 +2209,9 @@ class ProjectController(QObject):
         return {
             "export_preset": _enum_value(project.export.preset) if project.export else None,
             "overlay_position": _enum_value(project.overlay.position) if project.overlay else None,
-            "overlay_badge_size": _enum_value(project.overlay.badge_size) if project.overlay else None,
+            "overlay_badge_size": _enum_value(project.overlay.badge_size)
+            if project.overlay
+            else None,
             "overlay_display_options": (
                 {
                     "show_timer": bool(project.overlay.show_timer),
@@ -2290,7 +2290,6 @@ class ProjectController(QObject):
             return None
         return None
 
-
     def _touch_workspace(self) -> None:
         """Update workspace timestamp."""
         if self.workspace:
@@ -2311,12 +2310,16 @@ class ProjectController(QObject):
                 "project_path": str(self.project_path) if self.project_path else "",
                 "workspace_path": str(self.workspace_path) if self.workspace_path else "",
                 "stage_id": self.active_stage_id or self.project.id,
-                "match_id": self.workspace.match_id if self.workspace and self.editor_scope == "multi" else None,
+                "match_id": self.workspace.match_id
+                if self.workspace and self.editor_scope == "multi"
+                else None,
             }
 
             record = LibraryStageRecord(
                 stage_id=self.project.id,
-                match_id=self.workspace.match_id if self.workspace and self.editor_scope == "multi" else None,
+                match_id=self.workspace.match_id
+                if self.workspace and self.editor_scope == "multi"
+                else None,
                 display_name=self.project.name,
                 event_date=self.project.created_at,
                 discipline=self.project.scoring.ruleset or "",
@@ -3059,9 +3062,7 @@ class ProjectController(QObject):
             self._angle_director_cut_to_dict(cut) for cut in profile.angle_director_plan
         ]
         if persisted_plan:
-            plan_by_position = {
-                int(item["position"]): dict(item) for item in generated["cut_plan"]
-            }
+            plan_by_position = {int(item["position"]): dict(item) for item in generated["cut_plan"]}
             for item in persisted_plan:
                 plan_by_position[int(item["position"])] = dict(item)
             cut_plan = [plan_by_position[position] for position in sorted(plan_by_position)]
@@ -3169,7 +3170,9 @@ class ProjectController(QObject):
             "success": True,
             "output_id": profile.output_id,
             "overrides": len(profile.angle_director_plan),
-            "cut_plan": [self._angle_director_cut_to_dict(item) for item in profile.angle_director_plan],
+            "cut_plan": [
+                self._angle_director_cut_to_dict(item) for item in profile.angle_director_plan
+            ],
         }
 
     # ── Audio Mix Lanes ─────────────────────────────────────────────
@@ -3405,16 +3408,14 @@ class ProjectController(QObject):
         error_category: str = "",
         details: dict[str, object] | None = None,
     ) -> None:
-        self._practiscore_sync_payload = (
-            practiscore_sync_service.build_practiscore_sync_payload(
-                self._practiscore_sync_payload,
-                state,
-                message,
-                matches=matches,
-                selected_remote_id=selected_remote_id,
-                error_category=error_category,
-                details=details,
-            )
+        self._practiscore_sync_payload = practiscore_sync_service.build_practiscore_sync_payload(
+            self._practiscore_sync_payload,
+            state,
+            message,
+            matches=matches,
+            selected_remote_id=selected_remote_id,
+            error_category=error_category,
+            details=details,
         )
 
     def _practiscore_route_payload(self) -> dict[str, object]:
@@ -4864,7 +4865,7 @@ class ProjectController(QObject):
 
     def library_backup_create(self) -> dict:
         return shared_backend_service.library_backup_create()
-    
+
     def library_backup_restore(self, manifest: dict) -> dict:
         return shared_backend_service.library_backup_restore(manifest)
 

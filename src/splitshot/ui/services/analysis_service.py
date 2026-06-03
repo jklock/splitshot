@@ -28,7 +28,9 @@ def analyze_primary(controller: ProjectController) -> None:
         controller.project.ui_state.selected_shot_id,
         fallback_mode="time",
     )
-    previous_shots = [controller_module.deepcopy(shot) for shot in controller.project.analysis.shots]
+    previous_shots = [
+        controller_module.deepcopy(shot) for shot in controller.project.analysis.shots
+    ]
     previous_events = [
         controller_module.deepcopy(event) for event in controller.project.analysis.events
     ]
@@ -72,11 +74,7 @@ def analyze_primary(controller: ProjectController) -> None:
     controller.update_hit_factor()
     controller._set_status(
         f"Primary analysis complete. Detected {len(result.shots)} shots"
-        + (
-            ""
-            if result.beep_time_ms is None
-            else f" and beep at {result.beep_time_ms} ms"
-        )
+        + ("" if result.beep_time_ms is None else f" and beep at {result.beep_time_ms} ms")
         + "."
     )
     controller.project.touch()
@@ -165,10 +163,9 @@ def set_shotml_settings(
             changed = True
 
     controller.project.analysis.detection_threshold = settings.detection_threshold
+    controller.project.analysis.shotml_settings = settings
     if update_app_defaults:
-        persisted_defaults = controller_module.ShotMLSettings(
-            **controller_module.asdict(settings)
-        )
+        persisted_defaults = controller_module.ShotMLSettings(**controller_module.asdict(settings))
         persisted_defaults.detection_threshold = (
             controller_module.ShotMLSettings().detection_threshold
         )
@@ -268,11 +265,7 @@ def generate_timing_change_proposals(controller: ProjectController) -> None:
     }
     for shot in controller.project.analysis.shots:
         original = controller._original_shot_state_by_id.get(shot.id)
-        if (
-            original is None
-            or original.time_ms == shot.time_ms
-            or shot.id in existing_restore_ids
-        ):
+        if original is None or original.time_ms == shot.time_ms or shot.id in existing_restore_ids:
             continue
         proposals.append(
             controller_module.TimingChangeProposal(
@@ -299,8 +292,7 @@ def generate_timing_change_proposals(controller: ProjectController) -> None:
         )
     controller.project.analysis.timing_change_proposals = proposals
     controller._set_status(
-        f"Generated {len(proposals)} ShotML timing proposal"
-        f"{'s' if len(proposals) != 1 else ''}."
+        f"Generated {len(proposals)} ShotML timing proposal{'s' if len(proposals) != 1 else ''}."
     )
     controller.project.touch()
     controller.project_changed.emit()
@@ -396,9 +388,7 @@ def move_shot(
                 if shifted_shot.shotml_confidence is None:
                     original = controller._original_shot_state_by_id.get(shifted_shot.id)
                     shifted_shot.shotml_confidence = (
-                        original.confidence
-                        if original is not None
-                        else shifted_shot.confidence
+                        original.confidence if original is not None else shifted_shot.confidence
                     )
                 shifted_shot.time_ms = max(0, shifted_shot.time_ms + delta_ms)
     else:
@@ -487,9 +477,7 @@ def restore_original_shot_timing(
             shot.time_ms = restored_time_ms
         shot.source = original.source
         shot.confidence = (
-            shot.shotml_confidence
-            if shot.shotml_confidence is not None
-            else original.confidence
+            shot.shotml_confidence if shot.shotml_confidence is not None else original.confidence
         )
         controller.project.sort_shots()
         controller.update_hit_factor()

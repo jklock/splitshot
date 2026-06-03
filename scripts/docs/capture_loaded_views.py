@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Capture Automate3 loaded-state screenshots with hard proof gates."""
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +19,12 @@ from playwright.async_api import Page, async_playwright
 
 from splitshot.browser.server import BrowserControlServer
 from splitshot.domain.models import LibraryMatchRecord, LibraryStageRecord
-from splitshot.persistence.library import append_match_metric, append_stage_metric, save_match_record, save_stage_record
+from splitshot.persistence.library import (
+    append_match_metric,
+    append_stage_metric,
+    save_match_record,
+    save_stage_record,
+)
 from splitshot.ui.controller import ProjectController
 
 
@@ -32,7 +38,9 @@ class ProofFailure(RuntimeError):
     pass
 
 
-async def call_api(page: Page, endpoint: str, payload: dict[str, object] | None = None) -> dict[str, object]:
+async def call_api(
+    page: Page, endpoint: str, payload: dict[str, object] | None = None
+) -> dict[str, object]:
     result = await page.evaluate(
         """
         async ([endpoint, payload]) => {
@@ -95,7 +103,9 @@ async def setup_loaded_state(page: Page) -> dict[str, object]:
     await switch_view(page, "stage")
     await call_api(page, "/api/project/new")
     await call_api(page, "/api/import/primary", {"path": str(MEDIA_PATH)})
-    await page.wait_for_function("() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000)
+    await page.wait_for_function(
+        "() => (state?.project?.analysis?.shots?.length || 0) > 0", timeout=120_000
+    )
     await wait_for_idle(page)
     await call_api(page, "/api/project/save", {"path": str(project_path)})
 
@@ -103,14 +113,26 @@ async def setup_loaded_state(page: Page) -> dict[str, object]:
     await call_api(
         page,
         "/api/workspace/stage/add",
-        {"stage_id": "stage-1", "display_name": "Stage 1 - Loaded Proof", "project_path": str(project_path)},
+        {
+            "stage_id": "stage-1",
+            "display_name": "Stage 1 - Loaded Proof",
+            "project_path": str(project_path),
+        },
     )
     await call_api(
         page,
         "/api/workspace/stage/add",
-        {"stage_id": "stage-2", "display_name": "Stage 2 - Loaded Proof", "project_path": str(project_path)},
+        {
+            "stage_id": "stage-2",
+            "display_name": "Stage 2 - Loaded Proof",
+            "project_path": str(project_path),
+        },
     )
-    await call_api(page, "/api/workspace/save", {"path": str(project_dir / "automate3-proof-workspace.ssmatch")})
+    await call_api(
+        page,
+        "/api/workspace/save",
+        {"path": str(project_dir / "automate3-proof-workspace.ssmatch")},
+    )
     await wait_for_idle(page)
     stage_record = LibraryStageRecord(
         stage_id="stage-1",
@@ -132,7 +154,10 @@ async def setup_loaded_state(page: Page) -> dict[str, object]:
         discipline="USPSA",
         stage_ids=["stage-1", "stage-2"],
         aggregate_metric_summary={"stage_count": 2, "stages": ["stage-1", "stage-2"]},
-        editor_target={"type": "multi", "path": str(project_dir / "automate3-proof-workspace.ssmatch")},
+        editor_target={
+            "type": "multi",
+            "path": str(project_dir / "automate3-proof-workspace.ssmatch"),
+        },
         truth_hash="automate3-proof-match",
         tags=["proof"],
     )
@@ -212,7 +237,11 @@ async def assert_loaded_view(page: Page, view_name: str) -> dict[str, object]:
     if view_name == "stage":
         if "No Video Selected" in text:
             failures.append("stage still shows empty media state")
-        if result["shotCount"] <= 0 or not result["primaryAvailable"] or result["waveformSamples"] <= 0:
+        if (
+            result["shotCount"] <= 0
+            or not result["primaryAvailable"]
+            or result["waveformSamples"] <= 0
+        ):
             failures.append("stage lacks media, shots, or waveform")
     if view_name == "match":
         if "No Match Open" in text or result["stageCards"] < 2:
@@ -222,7 +251,9 @@ async def assert_loaded_view(page: Page, view_name: str) -> dict[str, object]:
             failures.append("library lacks persisted records")
     if failures:
         raise ProofFailure(f"{view_name} loaded assertion failed: {', '.join(failures)}")
-    return {key: value for key, value in result.items() if key != "text"} | {"text_length": len(text)}
+    return {key: value for key, value in result.items() if key != "text"} | {
+        "text_length": len(text)
+    }
 
 
 async def capture_loaded_view(page: Page, view_name: str, filename: str) -> dict[str, object]:
@@ -250,14 +281,17 @@ def assert_distinct_from_empty(results: list[dict[str, object]]) -> None:
     by_file = {str(item["file"]): item for item in results}
     for loaded, empty in pairs.items():
         empty_path = OUTPUT_DIR / empty
-        if empty_path.exists() and by_file[loaded]["sha256"] == hashlib.sha256(empty_path.read_bytes()).hexdigest():
+        if (
+            empty_path.exists()
+            and by_file[loaded]["sha256"] == hashlib.sha256(empty_path.read_bytes()).hexdigest()
+        ):
             raise ProofFailure(f"{loaded} is byte-identical to {empty}")
 
 
 async def build_contact_sheet(page: Page, images: list[dict[str, object]]) -> dict[str, object]:
     cards = "\n".join(
         f"<figure><figcaption>{item['file']}</figcaption>"
-        f"<img src=\"data:image/png;base64,{base64.b64encode(Path(str(item['path'])).read_bytes()).decode('ascii')}\" /></figure>"
+        f'<img src="data:image/png;base64,{base64.b64encode(Path(str(item["path"])).read_bytes()).decode("ascii")}" /></figure>'
         for item in images
     )
     await page.set_viewport_size({"width": 1440, "height": 900})
@@ -276,7 +310,12 @@ async def build_contact_sheet(page: Page, images: list[dict[str, object]]) -> di
     path = OUTPUT_DIR / "contact-sheet-final.png"
     await page.screenshot(path=path, full_page=False)
     data = path.read_bytes()
-    return {"file": path.name, "path": str(path), "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+    return {
+        "file": path.name,
+        "path": str(path),
+        "bytes": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+    }
 
 
 async def run() -> dict[str, object]:
@@ -291,7 +330,10 @@ async def run() -> dict[str, object]:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 1440, "height": 900})
-            page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
+            page.on(
+                "console",
+                lambda msg: console_errors.append(msg.text) if msg.type == "error" else None,
+            )
             page.on("pageerror", lambda exc: console_errors.append(str(exc)))
             await page.goto(server.url, wait_until="domcontentloaded")
             await page.wait_for_selector("#app-shell", timeout=15_000)
@@ -313,7 +355,9 @@ async def run() -> dict[str, object]:
             "screenshots": loaded,
             "contact_sheet": contact,
         }
-        (OUTPUT_DIR / "loaded-proof-results.json").write_text(json.dumps(proof, indent=2), encoding="utf-8")
+        (OUTPUT_DIR / "loaded-proof-results.json").write_text(
+            json.dumps(proof, indent=2), encoding="utf-8"
+        )
         return proof
     finally:
         server.shutdown()

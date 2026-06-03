@@ -154,11 +154,7 @@ def generate_trimmed_derivative(
         str(resolved_input),
         "-ss",
         f"{safe_start_ms / 1000.0:.3f}",
-        *(
-            ["-t", f"{output_duration_seconds:.3f}"]
-            if output_duration_seconds is not None
-            else []
-        ),
+        *(["-t", f"{output_duration_seconds:.3f}"] if output_duration_seconds is not None else []),
         "-map",
         "0:v:0",
         "-map",

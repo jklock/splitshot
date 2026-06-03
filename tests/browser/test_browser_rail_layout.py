@@ -209,7 +209,9 @@ def test_browser_rail_footer_buttons_stay_square_and_stacked() -> None:
                 assert collapsed_toggle_box is not None
                 assert collapsed_settings_box["width"] < settings_box["width"]
                 assert collapsed_settings_box["height"] == pytest.approx(settings_box["height"])
-                assert collapsed_toggle_box["width"] == pytest.approx(collapsed_settings_box["width"])
+                assert collapsed_toggle_box["width"] == pytest.approx(
+                    collapsed_settings_box["width"]
+                )
                 assert collapsed_toggle_box["height"] == pytest.approx(toggle_box["height"])
                 assert collapsed_settings_box["width"] < collapsed_rail_box["width"]
                 assert collapsed_settings_box["width"] >= collapsed_settings_box["height"]
@@ -402,7 +404,14 @@ def test_status_bar_hosts_layout_lock_and_processing_bar_fills_top_row() -> None
 @pytest.mark.parametrize(
     ("handle_id", "panel_selector", "storage_key", "css_var", "delta_x", "delta_y"),
     [
-        ("resize-rail", "#view-stage .tool-rail", "splitshot.layout.railWidth", "--rail-width", 12, 0),
+        (
+            "resize-rail",
+            "#view-stage .tool-rail",
+            "splitshot.layout.railWidth",
+            "--rail-width",
+            12,
+            0,
+        ),
         (
             "resize-waveform",
             ".waveform-panel",
@@ -597,7 +606,9 @@ def test_workspace_rail_toggles_follow_shared_shell_markers() -> None:
                 page.wait_for_function(
                     """() => document.querySelector('[data-shell-family="stage-workspace"][data-shell-view="match"]')?.classList.contains('rail-collapsed') === true"""
                 )
-                assert page.evaluate("localStorage.getItem('splitshot.match.railCollapsed')") == "true"
+                assert (
+                    page.evaluate("localStorage.getItem('splitshot.match.railCollapsed')") == "true"
+                )
 
                 page.evaluate("""() => setActiveSurface('library')""")
                 page.wait_for_function("() => activeSurface === 'library'")
@@ -605,7 +616,10 @@ def test_workspace_rail_toggles_follow_shared_shell_markers() -> None:
                 page.wait_for_function(
                     """() => document.querySelector('[data-shell-family="stage-workspace"][data-shell-view="library"]')?.classList.contains('rail-collapsed') === true"""
                 )
-                assert page.evaluate("localStorage.getItem('splitshot.library.railCollapsed')") == "true"
+                assert (
+                    page.evaluate("localStorage.getItem('splitshot.library.railCollapsed')")
+                    == "true"
+                )
             finally:
                 browser.close()
     finally:

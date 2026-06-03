@@ -50,7 +50,9 @@ class RunResult:
 
 def _require_string(value: object, field_name: str) -> str:
     if not isinstance(value, str) or not value:
-        raise ValueError(f"test_suite_taxonomy.json field '{field_name}' must be a non-empty string.")
+        raise ValueError(
+            f"test_suite_taxonomy.json field '{field_name}' must be a non-empty string."
+        )
     return value
 
 
@@ -375,8 +377,7 @@ def format_catalog(format_name: str) -> str:
             lines.append(f"description: {suite['description']}")
             lines.append(f"group: {suite.get('group', '-')}")
             lines.append(
-                "taxonomy_support: "
-                + (", ".join(taxonomy_support) if taxonomy_support else "-")
+                "taxonomy_support: " + (", ".join(taxonomy_support) if taxonomy_support else "-")
             )
             if pane_ids:
                 lines.append(f"pane_ids: {', '.join(pane_ids)}")

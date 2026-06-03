@@ -293,7 +293,12 @@ def _normalize_merge_source_active_path_kind(
         return MergeSourceAssetPathKind.ORIGINAL
     if kind is not None:
         return kind
-    if derivative_path and asset_path and asset_path == derivative_path and derivative_path != original_path:
+    if (
+        derivative_path
+        and asset_path
+        and asset_path == derivative_path
+        and derivative_path != original_path
+    ):
         return MergeSourceAssetPathKind.LOCAL_DERIVATIVE
     return MergeSourceAssetPathKind.ORIGINAL
 
@@ -346,17 +351,9 @@ def _legacy_merge_source_slot(
     primary_is_left_or_top: bool,
 ) -> MergePlacementSlot:
     if mode == MergePlacementMode.SIDE_BY_SIDE:
-        return (
-            MergePlacementSlot.RIGHT
-            if primary_is_left_or_top
-            else MergePlacementSlot.LEFT
-        )
+        return MergePlacementSlot.RIGHT if primary_is_left_or_top else MergePlacementSlot.LEFT
     if mode == MergePlacementMode.ABOVE_BELOW:
-        return (
-            MergePlacementSlot.BOTTOM
-            if primary_is_left_or_top
-            else MergePlacementSlot.TOP
-        )
+        return MergePlacementSlot.BOTTOM if primary_is_left_or_top else MergePlacementSlot.TOP
     return _default_merge_source_placement_slot(mode)
 
 
@@ -1042,7 +1039,9 @@ def project_to_dict(project: Project) -> dict[str, Any]:
         overlay.pop("review_boxes_lock_to_stack", None)
     merge_sources = data.get("merge_sources")
     if isinstance(merge_sources, list):
-        for index, (item, source) in enumerate(zip(merge_sources, project.merge_sources, strict=False)):
+        for index, (item, source) in enumerate(
+            zip(merge_sources, project.merge_sources, strict=False)
+        ):
             if not isinstance(item, dict):
                 continue
             placement = item.get("placement")
@@ -1574,7 +1573,11 @@ def _merge_source_trim_derivative_from_dict(
         source.get("original_asset_path", source.get("source_asset_path", "")),
     )
     original_path = str(original_path_value or "")
-    if not original_path and asset_path and (derivative_path is None or asset_path != derivative_path):
+    if (
+        not original_path
+        and asset_path
+        and (derivative_path is None or asset_path != derivative_path)
+    ):
         original_path = asset_path
     return MergeSourceTrimDerivative(
         original_path=original_path,
@@ -1598,7 +1601,10 @@ def _finalize_merge_source_metadata(merge_sources: list[MergeSource]) -> None:
             placement.order_index = index
         if placement.layer_index is None:
             placement.layer_index = placement.order_index
-        if placement.target_kind == MergePlacementTargetKind.MERGE_SOURCE and not placement.target_source_id:
+        if (
+            placement.target_kind == MergePlacementTargetKind.MERGE_SOURCE
+            and not placement.target_source_id
+        ):
             placement.target_kind = MergePlacementTargetKind.PRIMARY_VIDEO
         if placement.target_kind != MergePlacementTargetKind.MERGE_SOURCE:
             placement.target_source_id = None
@@ -1613,9 +1619,13 @@ def _finalize_merge_source_metadata(merge_sources: list[MergeSource]) -> None:
             and not trim_derivative.derivative_path
         ):
             trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
-        if not trim_derivative.original_path and source.asset.path and (
-            trim_derivative.derivative_path is None
-            or source.asset.path != trim_derivative.derivative_path
+        if (
+            not trim_derivative.original_path
+            and source.asset.path
+            and (
+                trim_derivative.derivative_path is None
+                or source.asset.path != trim_derivative.derivative_path
+            )
         ):
             trim_derivative.original_path = source.asset.path
 
@@ -2139,7 +2149,9 @@ def project_from_dict(data: dict[str, Any]) -> Project:
         ),
         merge=MergeSettings(
             enabled=bool(merge_data.get("enabled", True)),
-            layout=_normalize_merge_layout(merge_data.get("layout", MergeLayout.SIDE_BY_SIDE.value)),
+            layout=_normalize_merge_layout(
+                merge_data.get("layout", MergeLayout.SIDE_BY_SIDE.value)
+            ),
             pip_size=merge_pip_enum,
             pip_size_percent=_normalize_merge_pip_size_percent(
                 merge_data.get("pip_size_percent"),

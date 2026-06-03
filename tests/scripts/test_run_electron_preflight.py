@@ -26,5 +26,5 @@ def test_preflight_uses_packaged_artifact_validator_on_macos(monkeypatch) -> Non
 
     assert MODULE.main() == 0
     assert ["uv", "run", "python", "scripts/testing/test_packaged_artifact.py"] in commands
-    assert not ["uv", "run", "python", "scripts/testing/test_electron_app.py"] in commands
+    assert ["uv", "run", "python", "scripts/testing/test_electron_app.py"] not in commands
     assert summaries[-1]["status"] == "passed"

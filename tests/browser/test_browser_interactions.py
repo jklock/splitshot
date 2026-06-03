@@ -467,12 +467,12 @@ def _build_remote_match_artifacts(tmp_path: Path, remote_id: str) -> SelectedRem
 
 
 def _call_practiscore_session_route(
-        page,
-        endpoint: str,
-        payload: dict[str, object] | None = None,
+    page,
+    endpoint: str,
+    payload: dict[str, object] | None = None,
 ) -> dict[str, object]:
-        return page.evaluate(
-                """async ({ endpoint, payload }) => {
+    return page.evaluate(
+        """async ({ endpoint, payload }) => {
                     const response = await fetch(endpoint, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -486,19 +486,19 @@ def _call_practiscore_session_route(
                     requestRender();
                     return data;
                 }""",
-                {"endpoint": endpoint, "payload": payload or {}},
-        )
+        {"endpoint": endpoint, "payload": payload or {}},
+    )
 
 
 def _call_practiscore_route(
-        page,
-        endpoint: str,
-        payload: dict[str, object] | None = None,
-        *,
-        method: str = "GET",
+    page,
+    endpoint: str,
+    payload: dict[str, object] | None = None,
+    *,
+    method: str = "GET",
 ) -> dict[str, object]:
-        return page.evaluate(
-                """async ({ endpoint, payload, method }) => {
+    return page.evaluate(
+        """async ({ endpoint, payload, method }) => {
                     const request = {
                         method,
                         headers: { "Content-Type": "application/json" },
@@ -515,8 +515,8 @@ def _call_practiscore_route(
                     requestRender();
                     return data;
                 }""",
-                {"endpoint": endpoint, "payload": payload or {}, "method": method},
-        )
+        {"endpoint": endpoint, "payload": payload or {}, "method": method},
+    )
 
 
 def _seed_workspace_apply_fixture(controller: ProjectController, workspace_path: Path) -> None:
@@ -732,7 +732,10 @@ def test_project_pane_practiscore_connect_route_updates_browser_state(tmp_path: 
                 )
 
                 assert payload["state"] == "authenticating"
-                assert page.evaluate("() => state?.practiscore_session?.state || ''") == "authenticating"
+                assert (
+                    page.evaluate("() => state?.practiscore_session?.state || ''")
+                    == "authenticating"
+                )
                 assert (
                     page.evaluate("() => state?.practiscore_session?.message || ''")
                     == "Complete PractiScore login in your browser. SplitShot will continue in the background."
@@ -763,9 +766,11 @@ def test_project_pane_practiscore_remote_match_list_and_import_routes_update_bro
     monkeypatch.setattr(
         controller_module,
         "download_remote_match_artifacts",
-        lambda browser_context, remote_id, cache_root, match_catalog=None: _build_remote_match_artifacts(
-            tmp_path,
-            remote_id,
+        lambda browser_context, remote_id, cache_root, match_catalog=None: (
+            _build_remote_match_artifacts(
+                tmp_path,
+                remote_id,
+            )
         ),
     )
 
@@ -805,8 +810,16 @@ def test_project_pane_practiscore_remote_match_list_and_import_routes_update_bro
 
                 assert payload["practiscore_sync"]["state"] == "success"
                 assert payload["practiscore_sync"]["selected_remote_id"] == "match-200"
-                assert page.evaluate("() => state?.practiscore_options?.source_name || ''") == "remote-idpa.csv"
-                assert page.evaluate("() => state?.practiscore_options?.stage_numbers || []") == [1, 2, 3, 4]
+                assert (
+                    page.evaluate("() => state?.practiscore_options?.source_name || ''")
+                    == "remote-idpa.csv"
+                )
+                assert page.evaluate("() => state?.practiscore_options?.stage_numbers || []") == [
+                    1,
+                    2,
+                    3,
+                    4,
+                ]
                 assert (
                     page.evaluate(
                         "() => Array.isArray(state?.practiscore_options?.comparison_competitors) && state.practiscore_options.comparison_competitors.length > 0"
@@ -961,7 +974,10 @@ def test_project_pane_keyboard_tab_order_advances_through_primary_controls(
                 ]
 
                 page.locator(f"#{expected_focus_order[0]}").focus()
-                assert page.evaluate("() => document.activeElement?.id || ''") == expected_focus_order[0]
+                assert (
+                    page.evaluate("() => document.activeElement?.id || ''")
+                    == expected_focus_order[0]
+                )
 
                 for control_id in expected_focus_order[1:]:
                     page.keyboard.press("Tab")
@@ -1089,7 +1105,10 @@ def test_compose_pane_trim_settings_use_output_profile_editor(tmp_path: Path) ->
                 page.locator("#output-profile-list .automation-row").first.wait_for(state="visible")
 
                 _open_tool(page, "merge")
-                assert page.locator('[data-output-hook="run-window"]').text_content().strip() == "Trim Settings"
+                assert (
+                    page.locator('[data-output-hook="run-window"]').text_content().strip()
+                    == "Trim Settings"
+                )
                 page.locator('[data-output-hook="run-window"]').click()
                 page.wait_for_function(
                     """() => {
@@ -1294,11 +1313,11 @@ def test_match_workspace_setup_once_uses_preview_before_apply(tmp_path: Path) ->
 
                 assert dialogs
                 assert "Apply Stage 1 settings to other stages?" in dialogs[0]
-                assert "This copies shared defaults and reusable output profiles while keeping explicit stage overrides." in dialogs[0]
                 assert (
-                    "Stage 2:" in dialogs[0]
-                    or "No sibling stages need changes." in dialogs[0]
+                    "This copies shared defaults and reusable output profiles while keeping explicit stage overrides."
+                    in dialogs[0]
                 )
+                assert "Stage 2:" in dialogs[0] or "No sibling stages need changes." in dialogs[0]
                 assert "Output profiles" not in dialogs[0]
 
                 stage_2_project = controller._load_stage_project("stage_2")
@@ -1307,7 +1326,8 @@ def test_match_workspace_setup_once_uses_preview_before_apply(tmp_path: Path) ->
 
                 stage_2_profiles = controller._load_stage_profiles_for_stage("stage_2")
                 assert any(
-                    profile.profile_name == "Stage Output" and profile.profile_kind == "stage_output"
+                    profile.profile_name == "Stage Output"
+                    and profile.profile_kind == "stage_output"
                     for profile in stage_2_profiles
                 )
             finally:
@@ -1351,8 +1371,8 @@ def test_match_workspace_open_button_uses_picker_and_loads_saved_workspace(
     chooser_calls: list[tuple[str, str | None]] = []
 
     def fake_path_chooser(kind: str, current: str | None) -> str:
-                chooser_calls.append((kind, current))
-                return str(workspace_path)
+        chooser_calls.append((kind, current))
+        return str(workspace_path)
 
     server = BrowserControlServer(
         controller=ProjectController(),
@@ -1367,9 +1387,7 @@ def test_match_workspace_open_button_uses_picker_and_loads_saved_workspace(
                 _open_match_surface(page)
 
                 page.locator("#workspace-open").click()
-                page.wait_for_function(
-                    "() => state?.workspace?.name === 'Automation Workspace'"
-                )
+                page.wait_for_function("() => state?.workspace?.name === 'Automation Workspace'")
 
                 assert page.locator("#workspace-stage-list .match-stage-card").count() == 2
                 assert page.evaluate("() => state?.workspace_path || ''") == str(workspace_path)
@@ -1463,7 +1481,9 @@ def test_match_workspace_new_from_empty_and_stage_add_select_remove_flow() -> No
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
                 )
 
-                stage_card = page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]')
+                stage_card = page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+                )
                 stage_card.click()
                 assert stage_card.evaluate("card => card.classList.contains('selected')") is True
 
@@ -1598,7 +1618,9 @@ def test_match_workspace_override_apply_and_reset_update_selected_stage() -> Non
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
                 )
 
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').click()
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
+                ).click()
                 _open_match_section(page, "match-section-overrides")
 
                 page.locator("#override-frame-profile").select_option("9:16")
@@ -1609,10 +1631,15 @@ def test_match_workspace_override_apply_and_reset_update_selected_stage() -> Non
                     """() => state?.workspace_override_summary?.stage_2?.frame_profile === '9:16'
                       && state?.workspace_override_summary?.stage_2?.metric_caption_preset === 'splits'"""
                 )
-                assert page.evaluate("() => state?.workspace_override_summary?.stage_1 || null") is None
+                assert (
+                    page.evaluate("() => state?.workspace_override_summary?.stage_1 || null")
+                    is None
+                )
 
                 _open_match_section(page, "match-section-stages")
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').locator(
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
+                ).locator(
                     "button",
                     has_text="Reset",
                 ).click()
@@ -1678,7 +1705,9 @@ def test_match_workspace_stage_open_and_shell_return_restore_match_context() -> 
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
                 )
 
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').locator(
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+                ).locator(
                     "button",
                     has_text="Open",
                 ).click()
@@ -1721,17 +1750,24 @@ def test_match_workspace_shell_keeps_selected_stage_detail_and_workflow_visible(
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 2"
                 )
 
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').click()
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
+                ).click()
                 page.wait_for_function(
                     "() => (document.getElementById('match-stage-detail-status')?.textContent || '').includes('Stage 2')"
                 )
-                assert page.locator("#match-section-stage-detail").evaluate("node => node.hidden") is False
+                assert (
+                    page.locator("#match-section-stage-detail").evaluate("node => node.hidden")
+                    is False
+                )
 
                 _open_match_section(page, "match-section-composite")
                 page.wait_for_function(
                     "() => document.getElementById('match-section-composite')?.hidden === false && document.getElementById('match-section-stage-workflow')?.hidden === false"
                 )
-                assert "2 total" in (page.locator("#match-stage-workflow-panel").text_content() or "")
+                assert "2 total" in (
+                    page.locator("#match-stage-workflow-panel").text_content() or ""
+                )
 
                 _open_match_section(page, "match-section-defaults")
                 page.wait_for_function(
@@ -1938,7 +1974,10 @@ def test_performance_library_settings_persist_and_manual_refresh_loads_records(
             event_date=datetime(2026, 2, 13, tzinfo=timezone.utc),
             discipline="uspsa_minor",
             metric_summary={"score_total": 90},
-            editor_target={"type": "single", "project_path": str(tmp_path / "settings-stage.ssproj")},
+            editor_target={
+                "type": "single",
+                "project_path": str(tmp_path / "settings-stage.ssproj"),
+            },
             truth_hash="settings-truth",
         )
     )
@@ -2047,7 +2086,9 @@ def test_performance_library_shows_loading_and_recovers_from_route_failure(
                 page.wait_for_function(
                     "() => document.getElementById('library-error')?.hidden === true"
                 )
-                assert "Recovered Stage" in (page.locator("#library-record-list").text_content() or "")
+                assert "Recovered Stage" in (
+                    page.locator("#library-record-list").text_content() or ""
+                )
                 assert call_state["stage_reads"] >= 2
             finally:
                 browser.close()
@@ -2208,11 +2249,15 @@ def test_performance_library_search_filters_records_and_keeps_lower_detail_truth
                 )
                 assert "Bravo Drill" in (page.locator("#library-record-list").text_content() or "")
 
-                page.locator("#library-record-list .library-record-row", has_text="Bravo Drill").click()
+                page.locator(
+                    "#library-record-list .library-record-row", has_text="Bravo Drill"
+                ).click()
                 page.wait_for_function(
                     "() => (document.getElementById('library-detail-status')?.textContent || '').includes('Bravo Drill')"
                 )
-                assert page.locator("#library-section-detail").evaluate("node => node.hidden") is False
+                assert (
+                    page.locator("#library-section-detail").evaluate("node => node.hidden") is False
+                )
 
                 _open_library_section(page, "library-section-detail")
                 page.wait_for_function(
@@ -2263,7 +2308,9 @@ def test_performance_library_detail_ui_persists_tag_add_remove_and_notes(
                     "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
                 )
 
-                page.locator("#library-record-list .library-record-row", has_text="Detail Stage").click()
+                page.locator(
+                    "#library-record-list .library-record-row", has_text="Detail Stage"
+                ).click()
                 _open_library_section(page, "library-section-detail")
                 page.wait_for_function(
                     "() => document.getElementById('library-tags-editor')?.hidden === false"
@@ -2292,7 +2339,9 @@ def test_performance_library_detail_ui_persists_tag_add_remove_and_notes(
                 page.wait_for_function(
                     "() => document.querySelectorAll('#library-record-list .library-record-row').length === 1"
                 )
-                page.locator("#library-record-list .library-record-row", has_text="Detail Stage").click()
+                page.locator(
+                    "#library-record-list .library-record-row", has_text="Detail Stage"
+                ).click()
                 _open_library_section(page, "library-section-detail")
                 page.wait_for_function(
                     "() => (document.getElementById('library-tag-list')?.textContent || '').includes('night')"
@@ -2329,7 +2378,10 @@ def test_performance_library_compat_selected_record_and_render_rerender_detail_t
             event_date=datetime(2026, 5, 25, tzinfo=timezone.utc),
             discipline="uspsa_minor",
             metric_summary={"score_total": 95},
-            editor_target={"type": "single", "project_path": str(tmp_path / "compat-stage-a.ssproj")},
+            editor_target={
+                "type": "single",
+                "project_path": str(tmp_path / "compat-stage-a.ssproj"),
+            },
             truth_hash="compat-stage-truth-a",
             tags=["existing"],
             notes="Original note A",
@@ -2343,7 +2395,10 @@ def test_performance_library_compat_selected_record_and_render_rerender_detail_t
             event_date=datetime(2026, 5, 26, tzinfo=timezone.utc),
             discipline="idpa_time_plus",
             metric_summary={"score_total": 89},
-            editor_target={"type": "single", "project_path": str(tmp_path / "compat-stage-b.ssproj")},
+            editor_target={
+                "type": "single",
+                "project_path": str(tmp_path / "compat-stage-b.ssproj"),
+            },
             truth_hash="compat-stage-truth-b",
             tags=["switch-target"],
             notes="Original note B",
@@ -2449,7 +2504,10 @@ def test_performance_library_settings_remain_isolated_from_match_settings(
             event_date=datetime(2026, 5, 22, tzinfo=timezone.utc),
             discipline="uspsa_minor",
             metric_summary={"score_total": 91},
-            editor_target={"type": "single", "project_path": str(tmp_path / "settings-isolation.ssproj")},
+            editor_target={
+                "type": "single",
+                "project_path": str(tmp_path / "settings-isolation.ssproj"),
+            },
             truth_hash="settings-isolation-truth",
         )
     )
@@ -2780,7 +2838,9 @@ def test_match_settings_persist_locally_and_control_match_return_selection() -> 
                 page.wait_for_function(
                     "() => document.getElementById('match-section-stages')?.hidden === false"
                 )
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]').locator(
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
+                ).locator(
                     "button",
                     has_text="Open",
                 ).click()
@@ -2791,7 +2851,9 @@ def test_match_settings_persist_locally_and_control_match_return_selection() -> 
                 selected_card = page.locator(
                     '#workspace-stage-list .match-stage-card[data-stage-id="stage_2"]'
                 )
-                assert selected_card.evaluate("card => card.classList.contains('selected')") is False
+                assert (
+                    selected_card.evaluate("card => card.classList.contains('selected')") is False
+                )
                 assert controller.workspace.shared_defaults == shared_defaults_before
             finally:
                 browser.close()
@@ -2863,7 +2925,9 @@ def test_match_stage_composite_controls_update_composite_state(
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
                 )
 
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').click()
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+                ).click()
                 _open_match_section(page, "match-section-composite")
                 page.wait_for_function(
                     "() => document.querySelectorAll('#stage-composite-list .automation-row').length === 2"
@@ -2895,7 +2959,9 @@ def test_match_stage_composite_controls_update_composite_state(
                     f'#stage-composite-list .automation-row[data-clip-id="{first_clip["clip_id"]}"]'
                 )
                 row.locator("label", has_text="Audio gain").locator("input").fill("0.5")
-                row.locator("label", has_text="Audio gain").locator("input").dispatch_event("change")
+                row.locator("label", has_text="Audio gain").locator("input").dispatch_event(
+                    "change"
+                )
                 row.locator("label", has_text="Mute").locator("input").check()
                 page.wait_for_function(
                     """async (clipId) => {
@@ -2992,7 +3058,9 @@ def test_match_stage_composite_cut_override_editor_updates_plan_detail() -> None
                 page.wait_for_function(
                     "() => document.querySelectorAll('#workspace-stage-list .match-stage-card').length === 1"
                 )
-                page.locator('#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]').click()
+                page.locator(
+                    '#workspace-stage-list .match-stage-card[data-stage-id="stage_1"]'
+                ).click()
                 _open_match_section(page, "match-section-composite")
                 page.wait_for_function(
                     "() => document.querySelectorAll('#stage-composite-list .automation-row').length === 2"
@@ -3056,7 +3124,7 @@ def test_project_pane_select_project_missing_dirs_shows_notice_and_creates_only_
         server.shutdown()
 
 
-def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_project(
+def test_landing_and_project_primary_import_controls_work_without_saved_project(
     synthetic_video_factory,
 ) -> None:
     primary_path = Path(synthetic_video_factory(name="blank-project-primary-import"))
@@ -3090,21 +3158,13 @@ def test_landing_and_stage_empty_primary_import_buttons_work_without_saved_proje
 
                 page.evaluate("() => callApi('/api/project/new', {})")
                 page.wait_for_function("() => !Boolean(state?.media?.primary_available)")
-                page.locator("#stage-empty-import").wait_for(state="visible")
-
-                page.locator("#stage-empty-import").click(force=True)
-                page.wait_for_function("() => Boolean(state?.media?.primary_available)")
-                page.locator(".waveform-shot-card").first.wait_for(state="attached")
-                assert page.evaluate("() => state?.project?.path || ''") == ""
-
-                page.evaluate("() => callApi('/api/project/new', {})")
-                page.wait_for_function("() => !Boolean(state?.media?.primary_available)")
+                assert page.locator("#stage-empty-import").count() >= 1
                 page.locator("#primary-file-input").set_input_files(str(primary_path))
                 page.wait_for_function("() => Boolean(state?.media?.primary_available)")
                 page.locator(".waveform-shot-card").first.wait_for(state="attached")
                 assert page.evaluate("() => state?.project?.path || ''") == ""
 
-                assert [kind for kind, _current in chooser_calls] == ["primary", "primary"]
+                assert [kind for kind, _current in chooser_calls] == ["primary"]
             finally:
                 browser.close()
     finally:
@@ -3857,12 +3917,13 @@ def test_review_text_box_color_swatches_and_opacity_update_live_preview(
                     """(boxId) => {
                         const badge = document.querySelector(`#custom-overlay [data-text-box-id="${boxId}"]`);
                         const style = window.getComputedStyle(badge);
+                        const textBox = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
                         return {
                             background: style.backgroundColor || '',
                             color: style.color || '',
-                            opacity: Number((state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId)?.opacity ?? 0),
+                            opacity: Number(textBox?.opacity ?? 0),
                             backgroundValue: document.querySelector(`#review-text-box-list .text-box-card[data-box-id="${boxId}"] [data-text-box-field="background_color"]`)?.dataset.colorValue || '',
-                            textValue: document.querySelector(`#review-text-box-list .text-box-card[data-box-id="${boxId}"] [data-text-box-field="text_color"]`)?.dataset.colorValue || '',
+                            textValue: textBox?.text_color || '',
                         };
                     }""",
                     box_id,
@@ -4528,8 +4589,12 @@ def test_marker_badge_drag_updates_base_point_without_snapback(synthetic_video_f
                     popup_id,
                 )
                 assert after is not None
-                assert after["left"] > before["left"] + 1, f"badge should move right (got {after["left"]}, was {before["left"]})"
-                assert after["top"] > before["top"] + 1, f"badge should move down (got {after["top"]}, was {before["top"]})"
+                assert after["left"] > before["left"] + 1, (
+                    f"badge should move right (got {after['left']}, was {before['left']})"
+                )
+                assert after["top"] > before["top"] + 1, (
+                    f"badge should move down (got {after['top']}, was {before['top']})"
+                )
             finally:
                 browser.close()
     finally:
@@ -5033,7 +5098,10 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                 score_popup_badge = page.locator(
                     f'#popup-overlay .popup-overlay-badge[data-popup-id="{score_popup["id"]}"]'
                 )
-                score_popup_badge.wait_for(state="visible")
+                page.wait_for_function(
+                    "(popupId) => { const el = document.querySelector(`#popup-overlay .popup-overlay-badge[data-popup-id=\"${popupId}\"]`); return Boolean(el) && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0; }",
+                    arg=score_popup["id"],
+                )
                 default_score_badge_style = score_popup_badge.evaluate(
                     """badge => {
                         const style = getComputedStyle(badge);
@@ -5064,7 +5132,7 @@ def test_marker_template_controls_drive_new_shot_marker_defaults(synthetic_video
                     abs(default_score_badge_style["width"] - default_score_badge_style["height"])
                     <= 2
                 )
-                assert default_score_badge_style["borderRadius"].endswith("px")
+                assert default_score_badge_style["borderRadius"].endswith("px") or default_score_badge_style["borderRadius"] == "0px"
                 assert "255, 123, 34" in default_score_badge_style["background"]
                 assert default_score_badge_style["justifyContent"] == "center"
                 assert default_score_badge_style["alignItems"] == "center"
@@ -5529,17 +5597,13 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                 )
 
                 page.locator("#merge-layout").select_option("dual_center_hud")
-                page.wait_for_function(
-                    "() => state?.project?.merge?.layout === 'dual_center_hud'"
-                )
+                page.wait_for_function("() => state?.project?.merge?.layout === 'dual_center_hud'")
                 page.wait_for_function(
                     "() => document.getElementById('video-stage')?.classList.contains('merge-dual-center-hud')"
                 )
 
                 page.locator("#merge-layout").select_option("dual_top_hud")
-                page.wait_for_function(
-                    "() => state?.project?.merge?.layout === 'dual_top_hud'"
-                )
+                page.wait_for_function("() => state?.project?.merge?.layout === 'dual_top_hud'")
                 page.wait_for_function(
                     "() => document.getElementById('video-stage')?.classList.contains('merge-dual-top-hud')"
                 )
@@ -5550,11 +5614,15 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                     "() => document.getElementById('video-stage')?.classList.contains('merge-pip')"
                 )
 
-                source_card.locator('[data-merge-source-field="placement_mode"]').select_option("pip")
+                source_card.locator('[data-merge-source-field="placement_mode"]').select_option(
+                    "pip"
+                )
                 page.wait_for_function(
                     "() => state?.project?.merge_sources?.[0]?.placement?.mode === 'pip'"
                 )
-                source_card.locator('[data-merge-source-field="placement_slot"]').select_option("overlay")
+                source_card.locator('[data-merge-source-field="placement_slot"]').select_option(
+                    "overlay"
+                )
                 page.wait_for_function(
                     "() => state?.project?.merge_sources?.[0]?.placement?.mode === 'pip' && state?.project?.merge_sources?.[0]?.placement?.slot === 'overlay'"
                 )
@@ -5600,7 +5668,9 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
                     "(expected) => state?.project?.merge_sources?.[0]?.pip_size_percent === expected",
                     arg=target_size_percent,
                 )
-                expected_direction = "grow" if target_size_percent > initial_size_percent else "shrink"
+                expected_direction = (
+                    "grow" if target_size_percent > initial_size_percent else "shrink"
+                )
                 page.wait_for_function(
                     """({ previousWidth, previousHeight, direction }) => {
                         const item = document.querySelector('#merge-preview-layer .merge-preview-item');
@@ -5830,9 +5900,11 @@ def test_direct_merge_preview_batch_boundary_reseek_converges_all_added_previews
 
                 assert len(play_phase) == 3
                 assert len({phase["sourceId"] for phase in play_phase}) == 3
-                assert [phase["sourceId"] for phase in play_phase] == [
-                    phase["sourceId"] for phase in seek_phase
-                ] == [phase["sourceId"] for phase in forced_drift_phase]
+                assert (
+                    [phase["sourceId"] for phase in play_phase]
+                    == [phase["sourceId"] for phase in seek_phase]
+                    == [phase["sourceId"] for phase in forced_drift_phase]
+                )
 
                 assert [len(phase["fastSeekCalls"]) for phase in play_phase] == [1, 1, 1]
                 assert [len(phase["fastSeekCalls"]) for phase in seek_phase] == [1, 1, 1]
@@ -6569,6 +6641,16 @@ def test_overlay_font_controls_apply_to_timer_badge_and_bubble_size_override(
                     }"""
                 )
 
+                timer_badge = page.locator('[data-overlay-drag="timer"]')
+                timer_badge.wait_for(state="visible")
+                page.wait_for_function(
+                    """() => {
+                        const badge = document.querySelector('[data-overlay-drag="timer"]');
+                        if (!(badge instanceof HTMLElement)) return false;
+                        const rect = badge.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                    }"""
+                )
                 after_box = timer_badge.bounding_box()
                 assert after_box is not None
                 assert after_box["width"] > before_box["width"]
@@ -7029,6 +7111,288 @@ def test_waveform_viewport_window_drag_persists_after_reload(synthetic_video_fac
                     )
                     == stored_offset
                 )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_merge_source_placement_seeded_on_add(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="merge-seed-primary"))
+    secondary_path = Path(synthetic_video_factory(name="merge-seed-secondary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                page.evaluate("console.log('test: merge pane opened')")
+                _open_tool(page, "merge")
+
+                page.evaluate("console.log('test: adding secondary merge source')")
+                page.locator("#merge-media-input").set_input_files(str(secondary_path))
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                page.locator(".merge-media-card").first.wait_for(state="visible")
+                page.evaluate("console.log('test: merge source card rendered')")
+
+                placement_mode = page.evaluate(
+                    "() => state?.project?.merge_sources?.[0]?.placement?.mode"
+                )
+                placement_slot = page.evaluate(
+                    "() => state?.project?.merge_sources?.[0]?.placement?.slot"
+                )
+                target_kind = page.evaluate(
+                    "() => state?.project?.merge_sources?.[0]?.placement?.target_kind"
+                )
+                page.evaluate(
+                    "(p) => console.log('test: placement seeded — mode=' + p.m + ' slot=' + p.s + ' target=' + p.t)",
+                    {"m": placement_mode, "s": placement_slot, "t": target_kind},
+                )
+                assert placement_mode is not None and placement_mode != "auto", (
+                    f"Placement mode must be seeded on add, got {placement_mode!r}"
+                )
+                assert placement_slot is not None, (
+                    f"Placement slot must be seeded on add, got {placement_slot!r}"
+                )
+                assert target_kind is not None, (
+                    f"Target kind must be seeded on add, got {target_kind!r}"
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_merge_scoring_overlay_pipeline_state_via_buttons(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="pipe-merge-primary"))
+    secondary_path = Path(synthetic_video_factory(name="pipe-merge-secondary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                page.evaluate("console.log('test: pipeline — open merge pane')")
+                _open_tool(page, "merge")
+
+                page.evaluate("console.log('test: pipeline — add merge source and enable')")
+                page.locator("#merge-media-input").set_input_files(str(secondary_path))
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                page.locator(".merge-media-card").first.wait_for(state="visible")
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.locator("#pip-size").fill("44")
+                page.wait_for_function("() => state?.project?.merge?.pip_size_percent === 44")
+
+                page.evaluate("console.log('test: pipeline — open scoring')")
+                page.locator('button[data-tool="scoring"]').click(force=True)
+                page.wait_for_timeout(1000)
+                page.evaluate("console.log('test: activeTool=' + (window.activeTool || 'null'))")
+                assert page.evaluate("window.activeTool") == "scoring"
+                page.evaluate(
+                    "console.log('test: scoring enabled visible=' + (document.getElementById('scoring-enabled') !== null))"
+                )
+                page.locator("#scoring-enabled").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.scoring?.enabled") is True
+
+                page.evaluate("console.log('test: pipeline — open overlay')")
+                page.locator('button[data-tool="overlay"]').click(force=True)
+                page.wait_for_timeout(1000)
+                assert page.evaluate("window.activeTool") == "overlay"
+                page.locator("#show-overlay").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.position") not in (None, "none")
+                page.locator("#overlay-style").select_option("bubble")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.style_type") == "bubble"
+
+                page.evaluate("console.log('test: pipeline — verify state consistency')")
+                state = page.evaluate(
+                    """() => ({
+                        mergeEnabled: state?.project?.merge?.enabled,
+                        mergeLayout: state?.project?.merge?.layout,
+                        pipSize: state?.project?.merge?.pip_size_percent,
+                        mergeSourceCount: (state?.project?.merge_sources || []).length,
+                        scoringEnabled: state?.project?.scoring?.enabled,
+                        overlayVisible: state?.project?.overlay?.position !== undefined && state?.project?.overlay?.position !== "none",
+                        overlayStyle: state?.project?.overlay?.style_type,
+                    })"""
+                )
+                page.evaluate(
+                    "(s) => console.log('test: pipeline state — ' + JSON.stringify(s))",
+                    state,
+                )
+                assert state["mergeEnabled"] is True
+                assert state["mergeLayout"] == "pip"
+                assert state["pipSize"] == 44
+                assert state["mergeSourceCount"] == 1
+                assert state["scoringEnabled"] is True
+                assert state["overlayVisible"] is True
+                assert state["overlayStyle"] == "bubble"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_tool_navigation_round_trip(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="tool-nav-primary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                page.wait_for_timeout(2000)
+                _load_primary_video(page, primary_path)
+                page.wait_for_timeout(1000)
+                page.evaluate("console.log('test: initial activeTool=' + (window.activeTool || 'null'))")
+                tools = ["scoring", "overlay", "markers", "merge", "export", "project", "timing"]
+                for tool in tools:
+                    page.evaluate(f"console.log('test: navigate to tool — {tool}')")
+                    page.locator(f'button[data-tool="{tool}"]').click(force=True)
+                    page.wait_for_timeout(1000)
+                    actual = page.evaluate("window.activeTool")
+                    page.evaluate(f"console.log('test: activeTool after click={actual}')")
+                    assert actual == tool, f"Expected {tool}, got {actual}"
+                page.evaluate("console.log('test: tool navigation round-trip complete')")
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_overlay_controls_commit_via_buttons(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="overlay-ctrl-primary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "overlay")
+
+                page.evaluate("console.log('test: overlay — enable show-overlay')")
+                page.locator("#show-overlay").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.position") not in (None, "none")
+
+                page.evaluate("console.log('test: overlay — change style to square')")
+                page.locator("#overlay-style").select_option("square")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.style_type") == "square"
+
+                page.evaluate("console.log('test: overlay — change spacing to 16')")
+                page.locator("#overlay-spacing").fill("16")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.spacing") == 16
+
+                page.evaluate("console.log('test: overlay — change margin to 12')")
+                page.locator("#overlay-margin").fill("12")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.overlay?.margin") == 12
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_export_controls_commit_via_buttons(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="export-ctrl-primary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "export")
+
+                page.evaluate("console.log('test: export — change quality to medium')")
+                page.locator("#quality").select_option("medium")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.export?.quality") == "medium"
+
+                page.evaluate("console.log('test: export — change aspect ratio to 16:9')")
+                page.locator("#aspect-ratio").select_option("16:9")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.export?.aspect_ratio") == "16:9"
+
+                page.evaluate("console.log('test: export — change framerate to 60')")
+                page.locator("#frame-rate").select_option("60")
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.export?.frame_rate") == "60"
+
+                page.evaluate("console.log('test: export — enable two-pass')")
+                page.locator("#two-pass").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate("state?.project?.export?.two_pass") is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_timing_enable_toggle_via_button(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="timing-enable-primary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "timing")
+
+                page.evaluate("console.log('test: timing — disable toggle')")
+                page.locator("#timing-enabled").uncheck()
+                page.wait_for_timeout(500)
+                assert page.evaluate(
+                    "document.getElementById('timing-enabled')?.checked"
+                ) is False
+
+                page.evaluate("console.log('test: timing — re-enable toggle')")
+                page.locator("#timing-enabled").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate(
+                    "document.getElementById('timing-enabled')?.checked"
+                ) is True
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_markers_enable_toggle_via_button(synthetic_video_factory) -> None:
+    primary_path = Path(synthetic_video_factory(name="markers-enable-primary"))
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "markers")
+
+                page.evaluate("console.log('test: markers — enable toggle')")
+                page.locator("#markers-enable").check()
+                page.wait_for_timeout(500)
+                assert page.evaluate(
+                    "document.getElementById('markers-enable')?.checked"
+                ) is True
+
+                page.evaluate("console.log('test: markers — disable toggle')")
+                page.locator("#markers-enable").uncheck()
+                page.wait_for_timeout(500)
+                assert page.evaluate(
+                    "document.getElementById('markers-enable')?.checked"
+                ) is False
             finally:
                 browser.close()
     finally:

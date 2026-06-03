@@ -5,8 +5,6 @@ import importlib.util
 import json
 from pathlib import Path
 
-import pytest
-
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_PATH = ROOT / "scripts" / "testing" / "packaged_support.py"
@@ -129,9 +127,7 @@ def test_update_support_evidence_merges_sections_and_builds_collection_policy(
     assert policy["collection_roots"]["backend_log_root"] == "/tmp/support/logs"
 
 
-def test_write_release_gate_summary_uses_current_risk_snapshot(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_write_release_gate_summary_uses_current_risk_snapshot(monkeypatch, tmp_path: Path) -> None:
     risk_register = tmp_path / "risk-register.json"
     risk_register.write_text(
         json.dumps(
@@ -153,7 +149,9 @@ def test_write_release_gate_summary_uses_current_risk_snapshot(
                         "residual_level": "medium",
                         "decision": "hold",
                         "blocking_gate": "Gate 7",
-                        "evidence_artifacts": ["artifacts/backend-certification/release-gate-summary.json"],
+                        "evidence_artifacts": [
+                            "artifacts/backend-certification/release-gate-summary.json"
+                        ],
                     },
                 ],
             }

@@ -89,9 +89,7 @@ def _dict_to_record(cls: type, data: dict) -> object:
     for field_name, field_def in cls.__dataclass_fields__.items():
         value = data.get(field_name, field_def.default)
         field_type = type_hints.get(field_name)
-        if isinstance(value, str) and (
-            field_type is datetime or datetime in get_args(field_type)
-        ):
+        if isinstance(value, str) and (field_type is datetime or datetime in get_args(field_type)):
             value = datetime.fromisoformat(value)
         kwargs[field_name] = value
     return cls(**kwargs)
@@ -253,9 +251,7 @@ def _stage_editor_target(row: dict) -> dict[str, str]:
     editor_target = row.get("editor_target")
     normalized_target = dict(editor_target) if isinstance(editor_target, dict) else {}
     return {
-        "project_path": str(
-            normalized_target.get("project_path") or row.get("project_path") or ""
-        ),
+        "project_path": str(normalized_target.get("project_path") or row.get("project_path") or ""),
         "stage_id": str(normalized_target.get("stage_id") or row.get("stage_id") or ""),
         "type": "single",
         "workspace_path": str(
