@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, fields  # noqa: F401
 from datetime import datetime, timezone
 from inspect import Parameter, signature
 import json
@@ -11,13 +11,13 @@ from pathlib import Path
 import re
 from uuid import uuid4 as _uuid4
 
-from PySide6.QtCore import QObject, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QImage, QPainter
+from PySide6.QtCore import QObject, QRectF, Qt, Signal  # noqa: F401
+from PySide6.QtGui import QColor, QFont, QImage, QPainter  # noqa: F401
 
 from splitshot.analysis.detection import (
     analyze_video_audio,
+    timing_change_proposals_from_review_suggestions,  # noqa: F401
     TimingReviewSuggestion,
-    timing_change_proposals_from_review_suggestions,
 )
 from splitshot.config import (
     AppSettings,
@@ -25,7 +25,7 @@ from splitshot.config import (
     load_settings,
     save_settings,
 )
-from splitshot.analysis.sync import compute_sync_offset
+from splitshot.analysis.sync import compute_sync_offset  # noqa: F401
 from splitshot.domain.models import (
     AngleDirectorCutDecision,
     ExportSettings,
@@ -43,7 +43,7 @@ from splitshot.domain.models import (
     MergePlacementMode,
     MergePlacementSlot,
     MergePlacementTargetKind,
-    _merge_source_from_dict,
+    _merge_source_from_dict,  # noqa: F401
     _normalize_merge_source_angle_role,
     _normalize_merge_source_placement_mode,
     _normalize_merge_source_placement_slot,
@@ -52,7 +52,7 @@ from splitshot.domain.models import (
     MatchWorkspace,
     MergeLayout,
     MERGE_SOURCE_ANGLE_ROLE_VALUES,
-    default_merge_source_angle_role,
+    default_merge_source_angle_role,  # noqa: F401
     OverlayPosition,
     OutputProfile,
     OverlayTextBox,
@@ -76,21 +76,21 @@ from splitshot.domain.models import (
     project_to_dict,
     sync_overlay_legacy_custom_box_fields,
 )
-from splitshot.export.pipeline import export_output_profile, export_project
+from splitshot.export.pipeline import export_output_profile, export_project  # noqa: F401
 from splitshot.export.presets import (
     apply_export_preset as apply_export_preset_settings,
     apply_export_settings_payload,
-    resolved_export_settings,
+    resolved_export_settings,  # noqa: F401
 )
-from splitshot.media.ffmpeg import MediaError, generate_trimmed_derivative
+from splitshot.media.ffmpeg import MediaError, generate_trimmed_derivative  # noqa: F401
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
     POPUP_DIRNAME,
     PRACTISCORE_DIRNAME,
     copy_path_to_project_subdir,
-    default_project_output_path,
-    delete_project,
+    default_project_output_path,  # noqa: F401
+    delete_project,  # noqa: F401
     ensure_project_suffix,
     load_project,
     normalize_project_path,
@@ -110,9 +110,9 @@ from splitshot.persistence.library import (
 )
 from splitshot.scoring.logic import (
     apply_scoring_preset,
-    calculate_hit_factor,
+    calculate_hit_factor,  # noqa: F401
     default_score_mark_for_ruleset,
-    ensure_default_shot_scores,
+    ensure_default_shot_scores,  # noqa: F401
 )
 from splitshot.scoring.practiscore import (
     PractiScoreOptions,
@@ -125,7 +125,7 @@ from splitshot.scoring.practiscore_sync_normalize import normalize_downloaded_pr
 from splitshot.scoring.practiscore_web_extract import RemotePractiScoreMatch
 from splitshot.timeline.model import (
     normalized_timing_event_for_shots,
-    normalize_project_timing_events,
+    normalize_project_timing_events,  # noqa: F401
     sort_shots,
 )
 from splitshot.ui.services import analysis_service as analysis_service_module
