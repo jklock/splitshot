@@ -117,17 +117,10 @@
         <div class="review-grid">
           <section class="review-stack" aria-label="Video and timeline review">
             <div class="video-stage" id="video-stage">
-              <div class="stage-empty-state" id="stage-empty-state">
-                <h2>No Media Loaded</h2>
-                <p>Import a video to begin editing this stage.</p>
-                <div class="stage-empty-actions">
-                  <button id="stage-empty-import" class="match-action-button btn-primary" type="button" data-spy-id="stage-empty-import">Import Video</button>
-                  <button id="stage-empty-open" class="match-action-button" type="button" data-spy-id="stage-empty-open">Open Project</button>
-                </div>
-              </div>
               <video id="primary-video" controls playsinline></video>
               <video id="secondary-video" playsinline></video>
               <img id="secondary-image" alt="Secondary frame" hidden />
+              <canvas id="stage-compositor-canvas" class="stage-compositor-canvas" aria-hidden="true" hidden></canvas>
               <div id="merge-preview-layer" class="merge-preview-layer" aria-hidden="true"></div>
               <div id="live-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>
               <div id="custom-overlay" class="live-overlay overlay-bottom" aria-hidden="true"></div>

@@ -1,6 +1,7 @@
 import { createActivityRuntime } from "./lib/activity.js";
 import { createApiRuntime } from "./lib/api.js";
 import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
+import { createStageCompositorComponent } from "./components/stage-compositor.js";
 import { createExportPane } from "./panes/export-pane.js";
 import { createMergePane } from "./panes/merge-pane.js";
 import { createMetricsPane } from "./panes/metrics-pane.js";
@@ -140,19 +141,8 @@ function updateShellContext() {
 
 // Stage empty state management
 function updateStageEmptyState() {
-  const emptyEl = document.getElementById("stage-empty-state");
-  if (!emptyEl) return;
-  const hasMedia = !!(state?.media?.primary_available || state?.project?.primary_path);
-  emptyEl.style.display = hasMedia ? "none" : "flex";
+  return null;
 }
-
-// Wire empty state buttons
-document.getElementById("stage-empty-import")?.addEventListener("click", () => {
-  void openPrimaryImportPathPicker();
-});
-document.getElementById("stage-empty-open")?.addEventListener("click", () => {
-  document.getElementById("browse-project-path")?.click();
-});
 
 // === GLOBAL ERROR BANNER ===
 function showGlobalError(message, { duration = 8000, action = null, actionLabel = "Retry" } = {}) {
@@ -381,6 +371,7 @@ let statusBarComponent = null;
 let videoPlayerComponent = null;
 let waveformComponent = null;
 let overlayCanvasComponent = null;
+let stageCompositorComponent = null;
 
 let shotmlPane = null;
 let markersPane = null;
@@ -7276,8 +7267,11 @@ function resetLocalProjectView() {
   window.localStorage.removeItem("splitshot.waveform.offsetMs");
   resetMediaElement($("primary-video"));
   resetMediaElement($("secondary-video"));
+  clearStageCompositor();
   const secondaryImage = $("secondary-image");
   if (secondaryImage) secondaryImage.hidden = true;
+  const mergePreviewLayer = $("merge-preview-layer");
+  if (mergePreviewLayer) mergePreviewLayer.innerHTML = "";
   [
     "project-title",
     "rail-project",
@@ -7730,6 +7724,21 @@ function mergeSourcePipRect(...args) {
   return mergePane?.mergeSourcePipRect(...args) ?? null;
 }
 
+function resolvedMergePreviewSource(...args) {
+  return mergePane?.resolvedMergePreviewSource(...args) ?? {
+    mediaKind: "video",
+    effectivePath: "",
+    originalPath: "",
+    derivativePath: "",
+    usesDerivative: false,
+    mediaUrl: "",
+  };
+}
+
+function resolveMergePreviewScene(...args) {
+  return mergePane?.resolveMergePreviewScene(...args) ?? null;
+}
+
 function ensureMergePreviewItem(...args) {
   // media.style.opacity = String(currentSourceOpacity(source));
   return mergePane?.ensureMergePreviewItem(...args) ?? null;
@@ -7739,6 +7748,16 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
   // Legacy merge-preview contract anchor:
   // if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {
   return mergePane?.renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
+}
+
+function clearStageCompositor() {
+  return stageCompositorComponent?.clearCanvas?.();
+}
+
+function renderStageCompositor(video = $("primary-video"), stage = $("video-stage"), pipSizeValue = currentPipSizePercent()) {
+  const primary = $("primary-video");
+  if (!(primary instanceof HTMLVideoElement)) return null;
+  return stageCompositorComponent?.syncAndRender(primary, { video, stage, pipSizeValue }) ?? null;
 }
 
 function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
@@ -7798,39 +7817,17 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
 
 function syncMergePreviewElements(primary) {
   if (mergePreviewDrag) return;
-  const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));
-  if (previews.length === 0) return;
-  const targetPlaybackRate = primary.playbackRate || 1;
   const boundaryActive = previewSeekBoundary;
-  let boundaryPending = false;
   if (boundaryActive) previewSeekBoundaryBatchActive = true;
   try {
-    previews.forEach((preview) => {
-      const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";
-      const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));
-      const syncStatus = syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);
-      if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;
-      if (primary.paused && !preview.paused) {
-        preview.pause();
-        return;
-      }
-      if (!primary.paused && preview.paused) {
-        if (preview.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
-        preview.play().catch((error) => {
-          activity("video.merge_preview.error", {
-            source_id: preview.closest(".merge-preview-item")?.dataset.sourceId || "",
-            name: error?.name || "Error",
-            error: error?.message || String(error || "Unknown error"),
-          });
-        });
-      }
-    });
+    const result = renderStageCompositor(primary, $("video-stage"), currentPipSizePercent());
+    if (!boundaryActive) return;
+    const syncStatuses = Array.isArray(result?.syncStatuses) ? result.syncStatuses : [];
+    const boundaryPending = syncStatuses.some((item) => item?.status === "boundary-pending");
+    previewSeekBoundary = boundaryPending;
+    previewSyncedSinceBoundary = !boundaryPending;
   } finally {
-    if (boundaryActive) {
-      previewSeekBoundaryBatchActive = false;
-      previewSeekBoundary = boundaryPending;
-      previewSyncedSinceBoundary = !boundaryPending;
-    }
+    if (boundaryActive) previewSeekBoundaryBatchActive = false;
   }
 }
 
@@ -12392,7 +12389,10 @@ videoPlayerComponent = createVideoPlayerComponent({
   mergeSourceUsesFreeformPreviewDrag,
   currentSourceOpacity,
   mergeSourcePipRect,
+  resolveMergePreviewScene,
   renderMergePreviewLayer,
+  renderStageCompositor,
+  clearStageCompositor,
   scheduleSecondaryPreviewSync,
 });
 
@@ -12665,6 +12665,7 @@ overlayCanvasComponent = createOverlayCanvasComponent({
   setOverlayFrameMode: (value) => { overlayFrameMode = value; },
   activity,
   scheduleSecondaryPreviewSync,
+  renderStageCompositor,
   renderLiveOverlay,
   renderWaveformPlayhead,
   currentPrimaryVideoPositionMs,
@@ -12731,6 +12732,18 @@ mergePane = createMergePane({
   previewFrameGeometry,
   pipDefaultsSectionId: PIP_DEFAULTS_SECTION_ID,
   sendKeepaliveJson,
+});
+
+stageCompositorComponent = createStageCompositorComponent({
+  $,
+  windowObject: window,
+  activity,
+  getState: () => state,
+  sourceIdentifier,
+  resolvedMergePreviewSource,
+  resolveMergePreviewScene,
+  mergePreviewTargetTime,
+  syncPreviewPlaybackToTarget,
 });
 
 projectPane = createProjectPane({

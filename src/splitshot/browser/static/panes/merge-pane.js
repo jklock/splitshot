@@ -124,22 +124,9 @@ export function createMergePane({
   }
 
   function mergeSourceTrimHint(source = null) {
-    if (source?.asset?.is_still_image) {
-      return "Still images do not support trim derivatives.";
-    }
-    if (!String(currentState()?.project?.path || "").trim()) {
-      return "Save or create a project folder before trimming added media.";
-    }
-    const trimDerivative = source?.trim_derivative || {};
-    const derivativePath = String(trimDerivative.derivative_path || "").trim();
-    const activePathKind = String(trimDerivative.active_path_kind || "").trim().toLowerCase();
-    if (activePathKind === "local_derivative" && derivativePath) {
-      return `Using local trim derivative ${fileName(derivativePath)}. Re-trim overwrites that local copy and leaves the original source untouched.`;
-    }
-    if (derivativePath) {
-      return `Local trim derivative ${fileName(derivativePath)} is available. Re-trim overwrites that local copy and leaves the original source untouched.`;
-    }
-    return "Trim creates a local derivative in the project Input folder and leaves the original source untouched.";
+    if (source?.asset?.is_still_image) return "Still images do not support trim derivatives.";
+    if (!String(currentState()?.project?.path || "").trim()) return "Save or create a project folder before trimming added media.";
+    return "";
   }
 
   function openMergeTrimSettingsEditor() {
@@ -1142,75 +1129,45 @@ export function createMergePane({
     return String(40 + index);
   }
 
-  function ensureMergePreviewItem(layer, source) {
-    const asset = source.asset || source;
-    const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
-    let item = layer.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
-    if (!item) {
-      item = documentObject.createElement("div");
-      item.className = "merge-preview-item";
-      item.dataset.sourceId = sourceId;
-      layer.appendChild(item);
-    }
-    item.dataset.sourceId = sourceId;
-    item.dataset.mediaType = asset.is_still_image ? "image" : "video";
-    let media = item.firstElementChild;
-    const desiredTag = asset.is_still_image ? "IMG" : "VIDEO";
-    if (!(media instanceof HTMLElement) || media.tagName !== desiredTag) {
-      item.innerHTML = "";
-      media = documentObject.createElement(asset.is_still_image ? "img" : "video");
-      if (media instanceof HTMLVideoElement) {
-        media.defaultMuted = false;
-        media.muted = false;
-        media.volume = 1;
-        media.playsInline = true;
-        media.disablePictureInPicture = true;
-        media.preload = "auto";
-        ["loadedmetadata", "loadeddata"].forEach((eventName) => {
-          media.addEventListener(eventName, () => {
-            scheduleSecondaryPreviewSync();
-            renderLiveOverlay();
-          });
-        });
-      }
-      item.appendChild(media);
-    }
-    const mediaPath = buildMediaUrl(`/media/merge/${sourceId}`, asset.path || "");
-    if (media instanceof HTMLImageElement) {
-      if (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath) {
-        media.dataset.sourcePath = asset.path;
-        media.dataset.mediaUrl = mediaPath;
-        media.src = mediaPath;
-      }
-    } else if (media instanceof HTMLVideoElement && (media.dataset.sourcePath !== asset.path || media.dataset.mediaUrl !== mediaPath)) {
-      media.dataset.sourcePath = asset.path;
-      media.dataset.mediaUrl = mediaPath;
-      media.src = mediaPath;
-      media.load();
-    }
-    if (media instanceof HTMLImageElement) {
-      media.style.opacity = String(currentSourceOpacity(source));
-    } else if (media instanceof HTMLVideoElement) {
-      media.style.opacity = String(currentSourceOpacity(source));
-    }
-    return item;
+  function mergeSourceUsesFreeformPreviewDrag(source = null) {
+    return currentSourcePlacementPreviewMode(source) === "pip"
+      && currentSourcePlacementPreviewSlot(source) === "overlay";
   }
 
-  function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
-    const layer = $("merge-preview-layer");
-    if (!layer) return;
+  function resolvedMergePreviewSource(source) {
+    const asset = source?.asset || source || {};
+    const trimDerivative = source?.trim_derivative || {};
+    const derivativePath = String(trimDerivative.derivative_path || "").trim();
+    const originalPath = String(trimDerivative.original_path || asset.path || "").trim();
+    const activePathKind = String(trimDerivative.active_path_kind || "").trim().toLowerCase();
+    const effectivePath = activePathKind === "local_derivative" && derivativePath ? derivativePath : (asset.path || originalPath || derivativePath || "");
+    const usesDerivative = Boolean(effectivePath && derivativePath && effectivePath === derivativePath && effectivePath !== originalPath);
+    return {
+      mediaKind: asset.is_still_image ? "image" : "video",
+      effectivePath,
+      originalPath,
+      derivativePath,
+      usesDerivative,
+      mediaUrl: buildMediaUrl(`/media/merge/${sourceIdentifier(source, fileName(asset.path || ""))}`, effectivePath),
+    };
+  }
+
+  function resolveMergePreviewScene(video, stage, mergeSources, pipSizeValue) {
     if (!($("show-pip")?.checked ?? true)) {
-      layer.hidden = true;
-      layer.innerHTML = "";
-      return;
+      return {
+        stageRect: mergePreviewFrameRect(video, stage),
+        primaryRect: mergePreviewFrameRect(video, stage),
+        items: [],
+      };
     }
     const frameRect = mergePreviewFrameRect(video, stage);
-    if (!frameRect || mergeSources.length === 0) {
-      layer.hidden = true;
-      layer.innerHTML = "";
-      return;
+    if (!frameRect || !Array.isArray(mergeSources) || mergeSources.length === 0) {
+      return {
+        stageRect: frameRect,
+        primaryRect: frameRect,
+        items: [],
+      };
     }
-    layer.hidden = false;
     const previewRects = new Map();
     const resolveSourcePreviewRect = (source, activeStack = new Set()) => {
       const sourceId = sourceIdentifier(source, fileName(source?.asset?.path || ""));
@@ -1236,13 +1193,106 @@ export function createMergePane({
       activeStack.delete(sourceId);
       return rect;
     };
+
+    const items = mergeSources.map((source, index) => ({
+      source,
+      sourceId: sourceIdentifier(source, String(index)),
+      rect: resolveSourcePreviewRect(source),
+      zIndex: Number(mergeSourcePreviewZIndex(source, index)),
+      opacity: currentSourceOpacity(source),
+      dragEnabled: Boolean(mergeSourceUsesFreeformPreviewDrag(source)),
+      placementMode: currentSourcePlacementPreviewMode(source),
+      resolved: resolvedMergePreviewSource(source),
+    }));
+
+    const primaryTarget = items.find((item) => {
+      const placement = currentSourcePlacementValue(item.source);
+      return placement.target_kind === "primary_video" && ["side_by_side", "above_below", "dual_center_hud", "dual_top_hud"].includes(placement.mode);
+    });
+    let primaryRect = frameRect;
+    if (primaryTarget) {
+      const placement = currentSourcePlacementValue(primaryTarget.source);
+      if (placement.mode === "side_by_side") {
+        const leftWidth = Math.max(1, Math.floor(frameRect.width / 2));
+        const rightWidth = Math.max(1, frameRect.width - leftWidth);
+        primaryRect = placement.slot === "left"
+          ? { left: frameRect.left + leftWidth, top: frameRect.top, width: rightWidth, height: frameRect.height }
+          : { left: frameRect.left, top: frameRect.top, width: leftWidth, height: frameRect.height };
+      } else if (placement.mode === "above_below") {
+        const topHeight = Math.max(1, Math.floor(frameRect.height / 2));
+        const bottomHeight = Math.max(1, frameRect.height - topHeight);
+        primaryRect = placement.slot === "top"
+          ? { left: frameRect.left, top: frameRect.top + topHeight, width: frameRect.width, height: bottomHeight }
+          : { left: frameRect.left, top: frameRect.top, width: frameRect.width, height: topHeight };
+      } else if (placement.mode === "dual_center_hud") {
+        const gutterWidth = Math.min(
+          Math.max(24, Math.round(frameRect.height * 0.18)),
+          Math.max(24, frameRect.width - 2),
+        );
+        const leftWidth = Math.max(1, Math.floor((frameRect.width - gutterWidth) / 2));
+        const rightWidth = Math.max(1, frameRect.width - gutterWidth - leftWidth);
+        primaryRect = placement.slot === "left"
+          ? { left: frameRect.left + leftWidth + gutterWidth, top: frameRect.top, width: rightWidth, height: frameRect.height }
+          : { left: frameRect.left, top: frameRect.top, width: leftWidth, height: frameRect.height };
+      } else if (placement.mode === "dual_top_hud") {
+        const hudHeight = Math.min(
+          Math.max(24, Math.round(frameRect.height * 0.18)),
+          Math.max(24, frameRect.height - 2),
+        );
+        const leftWidth = Math.max(1, Math.floor(frameRect.width / 2));
+        const rightWidth = Math.max(1, frameRect.width - leftWidth);
+        primaryRect = placement.slot === "left"
+          ? { left: frameRect.left + leftWidth, top: frameRect.top + hudHeight, width: rightWidth, height: Math.max(1, frameRect.height - hudHeight) }
+          : { left: frameRect.left, top: frameRect.top + hudHeight, width: leftWidth, height: Math.max(1, frameRect.height - hudHeight) };
+      }
+    }
+
+    return {
+      stageRect: frameRect,
+      primaryRect,
+      items,
+    };
+  }
+
+  function ensureMergePreviewItem(layer, source) {
+    const asset = source.asset || source;
+    const sourceId = sourceIdentifier(source, fileName(asset.path || ""));
+    let item = layer.querySelector(`.merge-preview-item[data-source-id="${sourceId}"]`);
+    if (!item) {
+      item = documentObject.createElement("div");
+      item.className = "merge-preview-item";
+      item.dataset.sourceId = sourceId;
+      layer.appendChild(item);
+    }
+    item.dataset.sourceId = sourceId;
+    item.dataset.mediaType = asset.is_still_image ? "image" : "video";
+    return item;
+  }
+
+  function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
+    const layer = $("merge-preview-layer");
+    if (!layer) return;
+    if (!($("show-pip")?.checked ?? true)) {
+      layer.hidden = true;
+      layer.innerHTML = "";
+      return;
+    }
+    const frameRect = mergePreviewFrameRect(video, stage);
+    if (!frameRect || mergeSources.length === 0) {
+      layer.hidden = true;
+      layer.innerHTML = "";
+      return;
+    }
+    layer.hidden = false;
+    const scene = resolveMergePreviewScene(video, stage, mergeSources, pipSizeValue);
     const expectedIds = new Set(mergeSources.map((source, index) => sourceIdentifier(source, String(index))));
     layer.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
       if (!expectedIds.has(item.dataset.sourceId)) item.remove();
     });
-    mergeSources.forEach((source, index) => {
+    scene.items.forEach((itemDescriptor, index) => {
+      const source = itemDescriptor.source;
       const item = ensureMergePreviewItem(layer, source);
-      const rect = resolveSourcePreviewRect(source);
+      const rect = itemDescriptor.rect;
       item.style.left = `${rect.left}px`;
       item.style.top = `${rect.top}px`;
       item.style.width = `${rect.width}px`;
@@ -1251,6 +1301,9 @@ export function createMergePane({
       item.style.maxHeight = `${rect.height}px`;
       item.style.zIndex = mergeSourcePreviewZIndex(source, index);
       item.title = `${index + 1}. ${fileName(source.asset?.path || "")}`;
+      item.dataset.dragEnabled = itemDescriptor.dragEnabled ? "true" : "false";
+      item.dataset.placementMode = itemDescriptor.placementMode;
+      item.classList.toggle("merge-preview-item-handle", itemDescriptor.dragEnabled);
     });
   }
 
@@ -1324,7 +1377,7 @@ export function createMergePane({
       if (mergeSources.length === 0) {
         const empty = documentObject.createElement("div");
         empty.className = "hint";
-          empty.textContent = "No added media yet. Add media to set roles, sync, and placement.";
+        empty.textContent = "No added media.";
         list.appendChild(empty);
         return;
       }
@@ -1519,7 +1572,8 @@ export function createMergePane({
           });
 
           trimActionButtons.append(trimButton, resetTrimRange);
-          trimSection.append(trimRangeGrid, trimCaptureButtons, trimActionButtons, trimStatus);
+          trimSection.append(trimRangeGrid, trimCaptureButtons, trimActionButtons);
+          if (trimStatus.textContent) trimSection.append(trimStatus);
         }
 
         const controls = documentObject.createElement("div");
@@ -1924,6 +1978,8 @@ export function createMergePane({
     mergeSourcePositionPayload,
     syncMergePreviewStateFromControls,
     mergeSourcePipRect,
+    resolvedMergePreviewSource,
+    resolveMergePreviewScene,
     ensureMergePreviewItem,
     renderMergePreviewLayer,
     clearMergeSourceCommitTimers,

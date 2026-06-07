@@ -38,6 +38,7 @@ from splitshot.analysis.detection import prewarm_analysis_runtime
 from splitshot.domain.models import (
     BadgeSize,
     MergeLayout,
+    MergeSourceAssetPathKind,
     OverlayPosition,
     PipSize,
     Project,
@@ -182,6 +183,33 @@ def _browser_preview_command(
 
 def _append_browser_preview_status(message: str, audio_codec: str | None) -> str:
     return message
+
+
+def _effective_merge_source_media_path(source) -> Path | None:
+    derivative = getattr(source, "trim_derivative", None)
+    derivative_path = str(getattr(derivative, "derivative_path", "") or "").strip()
+    active_path_kind = str(
+        getattr(derivative, "active_path_kind", MergeSourceAssetPathKind.ORIGINAL) or ""
+    ).strip().lower()
+    if active_path_kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE.value and derivative_path:
+      derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
+      if derivative_candidate.is_file():
+        return derivative_candidate
+    asset_path = str(getattr(getattr(source, "asset", None), "path", "") or "").strip()
+    if asset_path:
+      asset_candidate = Path(asset_path).expanduser().resolve(strict=False)
+      if asset_candidate.is_file():
+        return asset_candidate
+    if derivative_path:
+      derivative_candidate = Path(derivative_path).expanduser().resolve(strict=False)
+      if derivative_candidate.is_file():
+        return derivative_candidate
+    original_path = str(getattr(derivative, "original_path", "") or "").strip()
+    if original_path:
+      original_candidate = Path(original_path).expanduser().resolve(strict=False)
+      if original_candidate.is_file():
+        return original_candidate
+    return None
 
 
 def _browser_video_timeline_signature(metadata: dict[str, Any]) -> dict[str, str]:
@@ -2769,11 +2797,16 @@ class BrowserControlServer:
                     (item for item in controller.project.merge_sources if item.id == source_id),
                     None,
                 )
-                if source is None or not source.asset.path:
+                if source is None:
                     activity.log("media.missing", source_id=source_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
-                self._send_media(Path(source.asset.path))
+                effective_path = _effective_merge_source_media_path(source)
+                if effective_path is None:
+                    activity.log("media.missing", source_id=source_id)
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self._send_media(effective_path)
 
             def _send_workspace_stage_media(self, stage_id: str) -> None:
                 normalized_stage_id = unquote(str(stage_id or "")).strip()

@@ -21,7 +21,10 @@ export function createVideoPlayerComponent({
   mergeSourceUsesFreeformPreviewDrag = () => false,
   currentSourceOpacity = () => 1,
   mergeSourcePipRect = () => ({ left: 0, top: 0, width: 1, height: 1 }),
+  resolveMergePreviewScene = () => null,
   renderMergePreviewLayer = () => {},
+  renderStageCompositor = () => {},
+  clearStageCompositor = () => {},
   scheduleSecondaryPreviewSync = () => {},
 } = {}) {
   function currentState() {
@@ -140,6 +143,24 @@ export function createVideoPlayerComponent({
     });
 
     if (mergePreview && mergeSources.length > 0) {
+      const previewScene = resolveMergePreviewScene(video, stage, mergeSources, pipSizeValue);
+      const primaryRect = previewScene?.primaryRect || null;
+      if (primaryRect) {
+        video.hidden = false;
+        video.style.position = "absolute";
+        video.style.left = `${primaryRect.left}px`;
+        video.style.top = `${primaryRect.top}px`;
+        video.style.width = `${primaryRect.width}px`;
+        video.style.height = `${primaryRect.height}px`;
+        video.style.maxWidth = "none";
+        video.style.maxHeight = "none";
+        video.style.right = "";
+        video.style.bottom = "";
+        video.style.objectFit = "contain";
+        video.style.objectPosition = "center center";
+        video.style.zIndex = "0";
+      }
+      renderStageCompositor(video, stage, pipSizeValue);
       renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
       mergePreviewLayer?.querySelectorAll(".merge-preview-item[data-source-id]").forEach((item) => {
         const source = mergeSourceMap.get(item.dataset.sourceId || "") || null;
@@ -154,6 +175,7 @@ export function createVideoPlayerComponent({
       secondaryImage.hidden = true;
       secondaryImage.style.display = "none";
     } else {
+      clearStageCompositor();
       const showSecondaryVideo = false;
       const showSecondaryImage = false;
       secondary.hidden = !showSecondaryVideo;

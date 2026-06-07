@@ -198,6 +198,13 @@
   display: none;
 }
 
+.stage-compositor-canvas {
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
 .video-stage.merge-preview {
   display: grid;
 }
@@ -310,7 +317,7 @@
   inset: 0;
   pointer-events: none;
   position: absolute;
-  z-index: 1;
+  z-index: 3;
 }
 
 .merge-preview-layer[hidden] {
@@ -318,29 +325,28 @@
 }
 
 .merge-preview-item {
-  background: #000;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  cursor: default;
+  overflow: hidden;
+  pointer-events: none;
+  position: absolute;
+  touch-action: auto;
+}
+
+.merge-preview-item.merge-preview-item-handle {
   border: 2px solid rgba(255, 255, 255, 0.42);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
   cursor: grab;
-  overflow: hidden;
   pointer-events: auto;
-  position: absolute;
   touch-action: none;
 }
 
-.merge-preview-item.dragging {
+.merge-preview-item.merge-preview-item-handle.dragging {
   border-color: rgba(255, 123, 34, 0.82);
   box-shadow: 0 0 0 1px rgba(255, 123, 34, 0.35), 0 14px 32px rgba(0, 0, 0, 0.52);
   cursor: grabbing;
-}
-
-.merge-preview-item video,
-.merge-preview-item img {
-  background: #000;
-  display: block;
-  height: 100%;
-  object-fit: contain;
-  width: 100%;
 }
 
 .pip-size-control {

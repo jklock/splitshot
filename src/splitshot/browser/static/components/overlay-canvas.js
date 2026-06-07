@@ -9,6 +9,7 @@ export function createOverlayCanvasComponent({
   setOverlayFrameMode = () => {},
   activity = () => {},
   scheduleSecondaryPreviewSync = () => {},
+  renderStageCompositor = () => {},
   renderLiveOverlay = () => {},
   renderWaveformPlayhead = () => {},
   currentPrimaryVideoPositionMs = () => 0,
@@ -55,6 +56,7 @@ export function createOverlayCanvasComponent({
         merge_sources: (currentState()?.project?.merge_sources || []).length,
         selected_shot_id: getSelectedShotId() || "",
       });
+      renderStageCompositor(video);
       scheduleSecondaryPreviewSync();
       renderLiveOverlay(mediaTimeS === null ? null : mediaTimeS * 1000);
       renderWaveformPlayhead(mediaTimeS === null ? currentPrimaryVideoPositionMs() : mediaTimeS * 1000);

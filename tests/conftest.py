@@ -60,6 +60,8 @@ def synthetic_video_factory(tmp_path):
         shot_times_ms: list[int] | None = None,
         resolution: tuple[int, int] = (640, 360),
         audio_stream_offset_ms: int = 0,
+        visual_clock: bool = False,
+        visual_clock_index: int = 0,
     ) -> Path:
         shot_times = shot_times_ms or [800, 1100, 1450]
         sample_rate = 22050
@@ -84,17 +86,68 @@ def synthetic_video_factory(tmp_path):
         video_only_path = tmp_path / f"{name}-video-only.mp4"
         video_path = tmp_path / f"{name}.mp4"
         _write_wav(audio_path, samples, sample_rate)
-        _ffmpeg(
-            "-f",
-            "lavfi",
-            "-i",
-            f"color=c=black:s={resolution[0]}x{resolution[1]}:d={duration_ms / 1000:.3f}",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            str(video_only_path),
-        )
+        duration_s = duration_ms / 1000
+        if visual_clock:
+            palette = [
+                ("0x10243C", "0x7DF9FF", (12, 64, 116)),
+                ("0x3A1414", "0xFFE066", (168, 32, 32)),
+                ("0x173417", "0xA4F9C8", (34, 124, 64)),
+                ("0x301A46", "0xF6A6FF", (96, 36, 156)),
+            ]
+            background_color, stripe_color, accent_rgb = palette[visual_clock_index % len(palette)]
+            stripe_height = max(18, resolution[1] // 14)
+            block_width = max(18, resolution[0] // 18)
+            marker_width = max(8, resolution[0] // 64)
+            accent_r, accent_g, accent_b = accent_rgb
+            clock_step_s = 0.05
+            moving_marker_filters = []
+            for step_index in range(int(duration_s / clock_step_s) + 1):
+                marker_time = step_index * clock_step_s
+                marker_x = int(round((resolution[0] - marker_width) * min(marker_time, duration_s) / duration_s))
+                marker_end = min(duration_s, marker_time + clock_step_s)
+                moving_marker_filters.append(
+                    (
+                        f"drawbox=x={marker_x}:y={stripe_height}:w={marker_width}:h=ih-{stripe_height}:color=white:t=fill:"
+                        f"enable='between(t\\,{marker_time:.3f}\\,{marker_end:.3f})'"
+                    )
+                )
+            filter_graph = ",".join(
+                [
+                    f"drawbox=x=0:y=0:w=iw:h={stripe_height}:color=black@0.92:t=fill",
+                    f"drawbox=x=0:y=0:w={block_width}:h={stripe_height}:color={stripe_color}:t=fill",
+                    f"drawbox=x={block_width + 6}:y=0:w={block_width}:h={stripe_height}:color=white:t=fill",
+                    (
+                        f"drawbox=x={2 * block_width + 12}:y=0:w={block_width}:h={stripe_height}:"
+                        f"color=0x{accent_r:02X}{accent_g:02X}{accent_b:02X}:t=fill"
+                    ),
+                    *moving_marker_filters,
+                ]
+            )
+            _ffmpeg(
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c={background_color}:s={resolution[0]}x{resolution[1]}:d={duration_s:.3f}",
+                "-vf",
+                filter_graph,
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(video_only_path),
+            )
+        else:
+            _ffmpeg(
+                "-f",
+                "lavfi",
+                "-i",
+                f"color=c=black:s={resolution[0]}x{resolution[1]}:d={duration_s:.3f}",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                str(video_only_path),
+            )
 
         if audio_stream_offset_ms == 0:
             _ffmpeg(

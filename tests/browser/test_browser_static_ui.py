@@ -1019,8 +1019,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert '$("delete-project").addEventListener("click", async () => {' in js
     assert "Delete project metadata for:" in js
     assert 'document.addEventListener("fullscreenchange", handleStageFullscreenChange);' in js
-    assert "media.defaultMuted = false;" in merge_pane
-    assert "media.muted = false;" in merge_pane
+    assert "function resolvedMergePreviewSource(source) {" in merge_pane
+    assert "function resolveMergePreviewScene(video, stage, mergeSources, pipSizeValue) {" in merge_pane
+    assert "buildMediaUrl(`/media/merge/${sourceIdentifier(source, fileName(asset.path || \"\"))}`, effectivePath)" in merge_pane
     assert "media.muted = true;" not in js
     assert (
         'await callApi("/api/project/practiscore", readPractiScoreContextPayload());\n    $("practiscore-file-input")?.click();'
@@ -1837,6 +1838,7 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
     js = _read_app_shell_source()
     merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
+    stage_compositor_js = (STATIC_ROOT / "components" / "stage-compositor.js").read_text()
     video_player_js = (STATIC_ROOT / "components" / "video-player.js").read_text()
     waveform_component = (STATIC_ROOT / "components" / "waveform.js").read_text()
 
@@ -1879,7 +1881,10 @@ def test_browser_ui_guards_preview_failures_and_drag_resize() -> None:
         'const secondaryMediaPath = buildMediaUrl(state.media.secondary_url || "/media/secondary", secondaryPath);'
         in video_player_js
     )
-    assert "media.dataset.mediaUrl = mediaPath;" in merge_pane
+    assert "entry.mediaUrl = resolved.mediaUrl;" in stage_compositor_js
+    assert "renderStageCompositor(video, stage, pipSizeValue);" in video_player_js
+    assert "function clearStageCompositor() {" in js
+    assert "function renderStageCompositor(video = $(\"primary-video\"), stage = $(\"video-stage\"), pipSizeValue = currentPipSizePercent()) {" in js
     assert "video.dataset.mediaUrl = primaryMediaPath;" in video_player_js
     assert "const { startClientX, startClientY, startX, startY } = drag;" in overlay_pane
     assert (

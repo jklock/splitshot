@@ -21,6 +21,7 @@ from splitshot.ui.controller import ProjectController
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLES_DIR = REPO_ROOT / "example_data"
+REAL_MEDIA_DIR = REPO_ROOT / "tests" / "fixtures" / "media"
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -179,176 +180,350 @@ def _ensure_overlay_visible(page) -> None:
     page.wait_for_function("() => document.getElementById('show-overlay').checked === true")
 
 
-def _capture_direct_merge_preview_batch_reseek_phase(
+def _sample_stage_compose_visual_times(
     page,
     *,
-    primary_time_s: float,
-    primary_paused: bool,
-    preview_times_s: list[float],
-    preview_paused: bool,
-    playback_rate: float = 1.0,
-) -> list[dict[str, object]]:
+    duration_ms: int,
+) -> dict[str, object]:
     return page.evaluate(
-        """({ primaryTimeS, primaryPaused, previewTimesS, previewPaused, playbackRate }) => {
-            const layer = document.getElementById('merge-preview-layer');
-            if (!(layer instanceof HTMLElement)) {
-                throw new Error('Merge preview layer is unavailable.');
-            }
-            layer.innerHTML = '';
-            render();
-
+        """({ durationMs }) => {
+            const durationS = durationMs / 1000;
             const primary = document.getElementById('primary-video');
-            if (!(primary instanceof HTMLMediaElement)) {
+            const stageCanvas = document.getElementById('stage-compositor-canvas');
+            if (!(primary instanceof HTMLVideoElement)) {
                 throw new Error('Primary video element is unavailable.');
             }
 
-            const previewItems = Array.from(
-                document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]')
-            );
-            const previews = previewItems.map((item) => item.querySelector('video'));
-            if (previews.length !== previewTimesS.length || previews.some((preview) => !(preview instanceof HTMLMediaElement))) {
-                throw new Error(`Expected ${previewTimesS.length} merge preview videos, found ${previews.length}.`);
-            }
-
-            const ensureHarness = (video) => {
-                if (video.__splitshotMergePreviewHarness) return video.__splitshotMergePreviewHarness;
-                const state = {
-                    paused: true,
-                    currentTime: Number(video.currentTime || 0),
-                    playbackRate: Number(video.playbackRate || 1) || 1,
-                    readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
-                    playCount: 0,
-                    pauseCount: 0,
-                    fastSeekCalls: [],
-                };
-
-                Object.defineProperty(video, 'paused', {
-                    configurable: true,
-                    get: () => state.paused,
-                });
-                Object.defineProperty(video, 'currentTime', {
-                    configurable: true,
-                    get: () => state.currentTime,
-                    set: (value) => {
-                        state.currentTime = Number(value) || 0;
-                    },
-                });
-                Object.defineProperty(video, 'playbackRate', {
-                    configurable: true,
-                    get: () => state.playbackRate,
-                    set: (value) => {
-                        state.playbackRate = Number(value) || 1;
-                    },
-                });
-                Object.defineProperty(video, 'defaultPlaybackRate', {
-                    configurable: true,
-                    get: () => state.playbackRate,
-                    set: (value) => {
-                        state.playbackRate = Number(value) || 1;
-                    },
-                });
-                Object.defineProperty(video, 'readyState', {
-                    configurable: true,
-                    get: () => state.readyState,
-                });
-
-                video.play = () => {
-                    state.paused = false;
-                    state.playCount += 1;
-                    return Promise.resolve();
-                };
-                video.pause = () => {
-                    state.paused = true;
-                    state.pauseCount += 1;
-                };
-                video.fastSeek = (value) => {
-                    const numericValue = Number(value) || 0;
-                    state.currentTime = numericValue;
-                    state.fastSeekCalls.push(numericValue);
-                };
-
-                const harness = {
-                    setState(nextState) {
-                        state.paused = Boolean(nextState.paused);
-                        state.currentTime = Number(nextState.currentTime) || 0;
-                        state.playbackRate = Number(nextState.playbackRate) || 1;
-                        state.readyState = Number(nextState.readyState) || HTMLMediaElement.HAVE_CURRENT_DATA;
-                        state.playCount = 0;
-                        state.pauseCount = 0;
-                        state.fastSeekCalls = [];
-                    },
-                    snapshot() {
-                        return {
-                            paused: state.paused,
-                            currentTime: state.currentTime,
-                            playbackRate: state.playbackRate,
-                            playCount: state.playCount,
-                            pauseCount: state.pauseCount,
-                            fastSeekCalls: [...state.fastSeekCalls],
-                        };
-                    },
-                };
-
-                Object.defineProperty(video, '__splitshotMergePreviewHarness', {
-                    configurable: true,
-                    value: harness,
-                });
-                return harness;
+            const decodeMarkerTime = (data, width, height) => {
+                if (!data || width <= 1 || height <= 1) return null;
+                const rowStart = Math.min(height - 1, Math.max(0, Math.floor(height * 0.18)));
+                const rowEnd = Math.max(rowStart + 1, Math.floor(height * 0.95));
+                let bestValue = -1;
+                let columns = [];
+                for (let x = 0; x < width; x += 1) {
+                    let total = 0;
+                    let count = 0;
+                    for (let y = rowStart; y < rowEnd; y += 1) {
+                        const offset = (y * width + x) * 4;
+                        const alpha = data[offset + 3];
+                        if (alpha < 32) continue;
+                        total += data[offset] + data[offset + 1] + data[offset + 2];
+                        count += 1;
+                    }
+                    const average = count > 0 ? total / count : 0;
+                    if (average > bestValue + 1) {
+                        bestValue = average;
+                        columns = [x];
+                    } else if (Math.abs(average - bestValue) <= 1) {
+                        columns.push(x);
+                    }
+                }
+                if (bestValue < 420 || columns.length === 0) return null;
+                const center = columns.reduce((sum, value) => sum + value, 0) / columns.length;
+                return (center / Math.max(1, width - 1)) * durationS;
             };
 
-            ensureHarness(primary).setState({
-                paused: primaryPaused,
-                currentTime: primaryTimeS,
-                playbackRate,
-                readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
-            });
-            previews.forEach((preview, index) => {
-                ensureHarness(preview).setState({
-                    paused: previewPaused,
-                    currentTime: previewTimesS[index],
-                    playbackRate,
-                    readyState: HTMLMediaElement.HAVE_CURRENT_DATA,
-                });
-                preview.dataset.syncCorrectionMode = '';
+            const decodePrimaryTime = () => {
+                if (!primary.videoWidth || !primary.videoHeight) return null;
+                const frameCanvas = document.createElement('canvas');
+                frameCanvas.width = primary.videoWidth;
+                frameCanvas.height = primary.videoHeight;
+                const frameContext = frameCanvas.getContext('2d', { willReadFrequently: true });
+                frameContext.drawImage(primary, 0, 0, frameCanvas.width, frameCanvas.height);
+                const frameData = frameContext.getImageData(0, 0, frameCanvas.width, frameCanvas.height);
+                return decodeMarkerTime(frameData.data, frameCanvas.width, frameCanvas.height);
+            };
+
+            const decodeCanvasItemTime = (itemRect) => {
+                if (!(stageCanvas instanceof HTMLCanvasElement) || stageCanvas.hidden) return null;
+                const canvasRect = stageCanvas.getBoundingClientRect();
+                if (!canvasRect.width || !canvasRect.height) return null;
+                const sx = stageCanvas.width / canvasRect.width;
+                const sy = stageCanvas.height / canvasRect.height;
+                const left = Math.max(0, Math.round((itemRect.left - canvasRect.left) * sx));
+                const top = Math.max(0, Math.round((itemRect.top - canvasRect.top) * sy));
+                const width = Math.max(1, Math.round(itemRect.width * sx));
+                const height = Math.max(1, Math.round(itemRect.height * sy));
+                const boundedWidth = Math.min(width, Math.max(1, stageCanvas.width - left));
+                const boundedHeight = Math.min(height, Math.max(1, stageCanvas.height - top));
+                const context = stageCanvas.getContext('2d', { willReadFrequently: true });
+                const frameData = context.getImageData(left, top, boundedWidth, boundedHeight);
+                return decodeMarkerTime(frameData.data, boundedWidth, boundedHeight);
+            };
+
+            const syncOffsetMs = (sourceId) => {
+                const label = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-sync-label]`);
+                const text = label?.textContent || '';
+                const match = text.match(/Sync\\s+(-?\\d+)\\s*ms/i);
+                return match ? Number(match[1]) : 0;
+            };
+
+            const visibleItems = [...document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]')].filter((item) => {
+                const rect = item.getBoundingClientRect();
+                return rect.width > 2 && rect.height > 2;
             });
 
-            // Directly arm the boundary flag and invoke the batch sync helper.
-            // This harness measures batch reseek convergence only; it does not
-            // claim full event wiring coverage.
-            setPreviewSeekBoundary(true);
-            syncMergePreviewElements(primary);
-
-            return previewItems.map((item, index) => {
-                const preview = previews[index];
-                const snapshot = preview.__splitshotMergePreviewHarness.snapshot();
-                const sourceId = item.dataset.sourceId || '';
-                const source = (state?.project?.merge_sources || []).find((mergeSource, mergeIndex) => {
-                    const candidateId = String(mergeSource?.id || mergeSource?.asset?.id || mergeIndex);
-                    return candidateId === sourceId;
-                }) || null;
-                const target = Math.max(0, primary.currentTime + ((source?.sync_offset_ms || 0) / 1000));
-                return {
-                    sourceId,
-                    target,
-                    currentTime: snapshot.currentTime,
-                    delta: Math.abs(snapshot.currentTime - target),
-                    paused: snapshot.paused,
-                    playCount: snapshot.playCount,
-                    pauseCount: snapshot.pauseCount,
-                    fastSeekCalls: snapshot.fastSeekCalls,
-                    playbackRate: snapshot.playbackRate,
-                    correctionMode: preview.dataset.syncCorrectionMode || '',
-                };
-            });
+            return {
+                primaryCurrentTime: Number(primary.currentTime || 0),
+                primaryDecodedTime: decodePrimaryTime(),
+                primaryPaused: primary.paused,
+                layout: document.getElementById('merge-layout')?.value || null,
+                canvasHidden: !(stageCanvas instanceof HTMLCanvasElement) || stageCanvas.hidden,
+                mergePreviewVideoCount: document.querySelectorAll('#merge-preview-layer video').length,
+                visibleSourceCount: visibleItems.length,
+                items: visibleItems.map((item) => {
+                    const rect = item.getBoundingClientRect();
+                    return {
+                        sourceId: item.dataset.sourceId || '',
+                        syncOffsetMs: syncOffsetMs(item.dataset.sourceId || ''),
+                        width: rect.width,
+                        height: rect.height,
+                        decodedTime: decodeCanvasItemTime(rect),
+                    };
+                }),
+            };
         }""",
-        {
-            "primaryTimeS": primary_time_s,
-            "primaryPaused": primary_paused,
-            "previewTimesS": preview_times_s,
-            "previewPaused": preview_paused,
-            "playbackRate": playback_rate,
-        },
+        {"durationMs": duration_ms},
     )
+
+
+def _set_merge_source_numeric_field(page, source_id: str, field: str, value: str) -> None:
+    locator = page.locator(
+        f'.merge-media-card[data-source-id="{source_id}"] [data-merge-source-field="{field}"]'
+    )
+    locator.evaluate(
+        """(element, nextValue) => {
+            element.value = nextValue;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            element.dispatchEvent(new Event('blur', { bubbles: true }));
+        }""",
+        value,
+    )
+
+
+def _configure_merge_source_preview_position(
+    page,
+    *,
+    source_id: str,
+    size_percent: int,
+    x: float,
+    y: float,
+) -> None:
+    _set_merge_source_numeric_field(page, source_id, "size", str(size_percent))
+    _set_merge_source_numeric_field(page, source_id, "x", f"{x:.2f}")
+    _set_merge_source_numeric_field(page, source_id, "y", f"{y:.2f}")
+
+
+def _assert_visual_alignment(snapshot: dict[str, object], *, tolerance_s: float) -> None:
+    primary_time = float(snapshot["primaryCurrentTime"])
+    assert snapshot["primaryDecodedTime"] == pytest.approx(primary_time, abs=tolerance_s)
+    items = snapshot["items"]
+    assert isinstance(items, list)
+    for item in items:
+        decoded_time = item["decodedTime"]
+        assert decoded_time is not None
+        expected_time = max(0.0, primary_time + (float(item["syncOffsetMs"]) / 1000.0))
+        assert decoded_time == pytest.approx(expected_time, abs=tolerance_s)
+
+
+def _wait_for_visual_sample(page, *, duration_ms: int, timeout_ms: int = 1500) -> dict[str, object]:
+    deadline = time.time() + (timeout_ms / 1000)
+    snapshot = _sample_stage_compose_visual_times(page, duration_ms=duration_ms)
+    while time.time() < deadline:
+        items = snapshot.get("items", [])
+        primary_ok = snapshot.get("primaryDecodedTime") is not None
+        items_ok = bool(items) and all(item.get("decodedTime") is not None for item in items)
+        if primary_ok and items_ok:
+            return snapshot
+        page.evaluate(
+            """() => {
+                const primary = document.getElementById('primary-video');
+                primary?.dispatchEvent(new Event('timeupdate', { bubbles: true }));
+            }"""
+        )
+        page.wait_for_timeout(100)
+        snapshot = _sample_stage_compose_visual_times(page, duration_ms=duration_ms)
+    return snapshot
+
+
+def _sample_real_stage_compose_render_alignment(page) -> dict[str, object]:
+    return page.evaluate(
+        """async () => {
+            const primary = document.getElementById('primary-video');
+            const stageCanvas = document.getElementById('stage-compositor-canvas');
+            if (!(primary instanceof HTMLVideoElement)) {
+                throw new Error('Primary video element is unavailable.');
+            }
+            if (!(stageCanvas instanceof HTMLCanvasElement)) {
+                throw new Error('Stage compositor canvas is unavailable.');
+            }
+            const cache = window.__composeTruthVideoCache || (window.__composeTruthVideoCache = new Map());
+            const tempCanvases = window.__composeTruthCanvasCache || (window.__composeTruthCanvasCache = new Map());
+
+            const ensureVideo = (key, src) => {
+                let video = cache.get(key);
+                if (!(video instanceof HTMLVideoElement)) {
+                    video = document.createElement('video');
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.preload = 'auto';
+                    cache.set(key, video);
+                }
+                if (video.dataset.truthSrc !== src) {
+                    video.pause();
+                    video.src = src;
+                    video.dataset.truthSrc = src;
+                    video.load();
+                }
+                return video;
+            };
+
+            const waitForMediaReady = async (video) => {
+                if (video.readyState >= 2) return;
+                await new Promise((resolve, reject) => {
+                    const onReady = () => {
+                        cleanup();
+                        resolve();
+                    };
+                    const onError = () => {
+                        cleanup();
+                        reject(new Error(`Failed loading ${video.currentSrc || video.src}`));
+                    };
+                    const cleanup = () => {
+                        video.removeEventListener('loadeddata', onReady);
+                        video.removeEventListener('canplay', onReady);
+                        video.removeEventListener('error', onError);
+                    };
+                    video.addEventListener('loadeddata', onReady, { once: true });
+                    video.addEventListener('canplay', onReady, { once: true });
+                    video.addEventListener('error', onError, { once: true });
+                });
+            };
+
+            const seekVideo = async (video, timeS) => {
+                await waitForMediaReady(video);
+                const duration = Number(video.duration || 0);
+                const target = Math.max(0, Number.isFinite(duration) && duration > 0 ? Math.min(duration - 0.001, timeS) : timeS);
+                if (Math.abs(Number(video.currentTime || 0) - target) <= 0.01 && video.readyState >= 2) return;
+                await new Promise((resolve, reject) => {
+                    const onSeeked = () => {
+                        cleanup();
+                        resolve();
+                    };
+                    const onError = () => {
+                        cleanup();
+                        reject(new Error(`Failed seeking ${video.currentSrc || video.src}`));
+                    };
+                    const cleanup = () => {
+                        video.removeEventListener('seeked', onSeeked);
+                        video.removeEventListener('error', onError);
+                    };
+                    video.addEventListener('seeked', onSeeked, { once: true });
+                    video.addEventListener('error', onError, { once: true });
+                    video.currentTime = target;
+                });
+            };
+
+            const visibleItems = [...document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]')].filter((item) => {
+                const rect = item.getBoundingClientRect();
+                return rect.width > 2 && rect.height > 2;
+            });
+
+            const readSyncOffsetMs = (sourceId) => {
+                const label = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-sync-label]`);
+                const text = label?.textContent || '';
+                const match = text.match(/Sync\\s+(-?\\d+)\\s*ms/i);
+                return match ? Number(match[1]) : 0;
+            };
+
+            const stageRect = stageCanvas.getBoundingClientRect();
+            const stageContext = stageCanvas.getContext('2d', { willReadFrequently: true });
+            const scaleX = stageCanvas.width / Math.max(1, stageRect.width);
+            const scaleY = stageCanvas.height / Math.max(1, stageRect.height);
+
+            const meanAbsoluteDifference = (actual, expected) => {
+                const length = Math.min(actual.length, expected.length);
+                let total = 0;
+                let count = 0;
+                for (let i = 0; i < length; i += 16) {
+                    total += Math.abs(actual[i] - expected[i]);
+                    total += Math.abs(actual[i + 1] - expected[i + 1]);
+                    total += Math.abs(actual[i + 2] - expected[i + 2]);
+                    count += 3;
+                }
+                return count > 0 ? total / count : null;
+            };
+
+            const quickHash = (data) => {
+                let total = 17;
+                for (let i = 0; i < data.length; i += 16) {
+                    total = (
+                        (total * 131)
+                        + (data[i] * 3)
+                        + (data[i + 1] * 5)
+                        + (data[i + 2] * 7)
+                        + i
+                    ) % 2147483647;
+                }
+                return total;
+            };
+
+            const items = [];
+            for (const item of visibleItems) {
+                const sourceId = item.dataset.sourceId || '';
+                const syncOffsetMs = readSyncOffsetMs(sourceId);
+                const expectedTimeS = Math.max(0, Number(primary.currentTime || 0) + (syncOffsetMs / 1000));
+                const rect = item.getBoundingClientRect();
+                const left = Math.max(0, Math.round((rect.left - stageRect.left) * scaleX));
+                const top = Math.max(0, Math.round((rect.top - stageRect.top) * scaleY));
+                const width = Math.max(1, Math.min(stageCanvas.width - left, Math.round(rect.width * scaleX)));
+                const height = Math.max(1, Math.min(stageCanvas.height - top, Math.round(rect.height * scaleY)));
+                const actualImage = stageContext.getImageData(left, top, width, height);
+
+                const sourceVideo = ensureVideo(sourceId, `/media/merge/${sourceId}`);
+                await seekVideo(sourceVideo, expectedTimeS);
+                let tempCanvas = tempCanvases.get(sourceId);
+                if (!(tempCanvas instanceof HTMLCanvasElement)) {
+                    tempCanvas = document.createElement('canvas');
+                    tempCanvases.set(sourceId, tempCanvas);
+                }
+                tempCanvas.width = width;
+                tempCanvas.height = height;
+                const tempContext = tempCanvas.getContext('2d', { willReadFrequently: true });
+                tempContext.drawImage(sourceVideo, 0, 0, width, height);
+                const expectedImage = tempContext.getImageData(0, 0, width, height);
+
+                items.push({
+                    sourceId,
+                    syncOffsetMs,
+                    error: meanAbsoluteDifference(actualImage.data, expectedImage.data),
+                    hash: quickHash(actualImage.data),
+                });
+            }
+
+            return {
+                primaryCurrentTime: Number(primary.currentTime || 0),
+                primaryPaused: primary.paused,
+                canvasHidden: stageCanvas.hidden,
+                mergePreviewVideoCount: document.querySelectorAll('#merge-preview-layer video').length,
+                visibleSourceCount: visibleItems.length,
+                items,
+            };
+        }"""
+    )
+
+
+def _wait_for_real_alignment_sample(page, *, timeout_ms: int = 2000) -> dict[str, object]:
+    deadline = time.time() + (timeout_ms / 1000)
+    snapshot = _sample_real_stage_compose_render_alignment(page)
+    while time.time() < deadline:
+        items = snapshot.get("items", [])
+        if bool(items) and all(item.get("error") is not None for item in items):
+            return snapshot
+        page.wait_for_timeout(100)
+        snapshot = _sample_real_stage_compose_render_alignment(page)
+    return snapshot
 
 
 class _BrowserFakeStatus:
@@ -5840,14 +6015,47 @@ def test_merge_default_pip_controls_commit_to_state_and_label(synthetic_video_fa
         server.shutdown()
 
 
-def test_direct_merge_preview_batch_boundary_reseek_converges_all_added_previews_after_play_seek_and_forced_drift(
+def test_compose_sync_behavior_truth_tracks_visible_sources_across_play_pause_seek_nudge_and_layout_switch(
     synthetic_video_factory,
 ) -> None:
-    primary_path = Path(synthetic_video_factory(name="merge-preview-sync-primary-ui"))
+    duration_ms = 9000
+    primary_path = Path(
+        synthetic_video_factory(
+            name="merge-preview-sync-primary-ui",
+            duration_ms=duration_ms,
+            resolution=(640, 360),
+            visual_clock=True,
+            visual_clock_index=0,
+        )
+    )
     merge_paths = [
-        Path(synthetic_video_factory(name="merge-preview-sync-secondary-ui")),
-        Path(synthetic_video_factory(name="merge-preview-sync-tertiary-ui")),
-        Path(synthetic_video_factory(name="merge-preview-sync-quaternary-ui")),
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-sync-secondary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=1,
+            )
+        ),
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-sync-tertiary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=2,
+            )
+        ),
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-sync-quaternary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=3,
+            )
+        ),
     ]
     server = BrowserControlServer(port=0)
     server.start_background(open_browser=False)
@@ -5870,69 +6078,426 @@ def test_direct_merge_preview_batch_boundary_reseek_converges_all_added_previews
                 page.locator("#merge-layout").select_option("pip")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
                 page.wait_for_function(
-                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item video').length === 3"
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]').length === 3"
+                )
+                page.wait_for_function("() => document.getElementById('stage-compositor-canvas')?.hidden === false")
+                source_ids = page.evaluate(
+                    "() => [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => card.dataset.sourceId)"
+                )
+                assert len(source_ids) == 3
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[0], size_percent=24, x=0.18, y=0.20
+                )
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[1], size_percent=24, x=0.78, y=0.20
+                )
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[2], size_percent=24, x=0.18, y=0.78
+                )
+                page.wait_for_timeout(250)
+
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 1.5;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_timeout(250)
+
+                page.evaluate(
+                    """async () => {
+                        const primary = document.getElementById('primary-video');
+                        primary.playbackRate = 1;
+                        primary.defaultPlaybackRate = 1;
+                        await primary.play();
+                    }"""
+                )
+                page.wait_for_timeout(350)
+                play_sample_one = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                page.wait_for_timeout(350)
+                play_sample_two = _wait_for_visual_sample(page, duration_ms=duration_ms)
+
+                assert play_sample_one["canvasHidden"] is False
+                assert play_sample_one["mergePreviewVideoCount"] == 0
+                assert play_sample_one["visibleSourceCount"] == 3
+                _assert_visual_alignment(play_sample_one, tolerance_s=0.12)
+                _assert_visual_alignment(play_sample_two, tolerance_s=0.12)
+                assert float(play_sample_two["primaryCurrentTime"]) > float(play_sample_one["primaryCurrentTime"])
+                sample_one_items = {
+                    item["sourceId"]: float(item["decodedTime"]) for item in play_sample_one["items"]
+                }
+                for item in play_sample_two["items"]:
+                    assert float(item["decodedTime"]) > sample_one_items[item["sourceId"]] + 0.04
+
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.pause();
+                    }"""
+                )
+                page.wait_for_timeout(50)
+                pause_sample_one = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                page.wait_for_timeout(300)
+                pause_sample_two = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                assert pause_sample_one["primaryPaused"] is True
+                assert float(pause_sample_two["primaryCurrentTime"]) == pytest.approx(
+                    float(pause_sample_one["primaryCurrentTime"]), abs=0.04
+                )
+                paused_items_one = {
+                    item["sourceId"]: float(item["decodedTime"]) for item in pause_sample_one["items"]
+                }
+                for item in pause_sample_two["items"]:
+                    assert float(item["decodedTime"]) == pytest.approx(
+                        paused_items_one[item["sourceId"]], abs=0.04
+                    )
+
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 6.2;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_timeout(300)
+                seek_sample = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                _assert_visual_alignment(seek_sample, tolerance_s=0.15)
+
+                target_source_id = source_ids[0]
+                label_text_before = page.evaluate(
+                    """() => Object.fromEntries(
+                        [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => {
+                            const sourceId = card.dataset.sourceId;
+                            const text = card.querySelector('[data-merge-source-sync-label]')?.textContent || '';
+                            return [sourceId, text.trim()];
+                        })
+                    )"""
+                )
+                before_nudge = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                target_card = page.locator(f'.merge-media-card[data-source-id="{target_source_id}"]')
+                sync_label = target_card.locator("[data-merge-source-sync-label]")
+                prior_sync_label = sync_label.text_content().strip()
+                target_card.locator(".merge-source-sync-buttons button").nth(3).click()
+                page.wait_for_function(
+                        """({ sourceId, priorLabel }) => {
+                            const label = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-sync-label]`);
+                            return Boolean(label) && label.textContent.trim() !== priorLabel;
+                        }""",
+                        arg={"sourceId": target_source_id, "priorLabel": prior_sync_label},
+                    )
+                label_text_after = page.evaluate(
+                    """() => Object.fromEntries(
+                        [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => {
+                            const sourceId = card.dataset.sourceId;
+                            const text = card.querySelector('[data-merge-source-sync-label]')?.textContent || '';
+                            return [sourceId, text.trim()];
+                        })
+                    )"""
+                )
+                after_nudge = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                assert label_text_after[target_source_id] != label_text_before[target_source_id]
+                for source_id in source_ids[1:]:
+                    assert label_text_after[source_id] == label_text_before[source_id]
+                _assert_visual_alignment(after_nudge, tolerance_s=0.15)
+
+                page.locator("#merge-layout").select_option("side_by_side")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'side_by_side'")
+                page.wait_for_timeout(300)
+                page.evaluate(
+                    """async () => {
+                        const primary = document.getElementById('primary-video');
+                        await primary.play();
+                    }"""
+                )
+                page.wait_for_timeout(250)
+                side_by_side_play = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 7.1;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                        primary.pause();
+                    }"""
+                )
+                page.wait_for_timeout(300)
+                side_by_side_seek = _wait_for_visual_sample(page, duration_ms=duration_ms)
+                assert side_by_side_play["mergePreviewVideoCount"] == 0
+                assert side_by_side_seek["mergePreviewVideoCount"] == 0
+                _assert_visual_alignment(side_by_side_play, tolerance_s=0.15)
+                _assert_visual_alignment(side_by_side_seek, tolerance_s=0.15)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_compose_lag_truth_preserves_first_click_stage_and_inspector_response(
+    synthetic_video_factory,
+) -> None:
+    duration_ms = 9000
+    primary_path = Path(
+        synthetic_video_factory(
+            name="merge-preview-click-primary-ui",
+            duration_ms=duration_ms,
+            resolution=(640, 360),
+            visual_clock=True,
+            visual_clock_index=0,
+        )
+    )
+    merge_paths = [
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-click-secondary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=1,
+            )
+        ),
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-click-tertiary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=2,
+            )
+        ),
+        Path(
+            synthetic_video_factory(
+                name="merge-preview-click-quaternary-ui",
+                duration_ms=duration_ms,
+                resolution=(640, 360),
+                visual_clock=True,
+                visual_clock_index=3,
+            )
+        ),
+    ]
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "merge")
+                for expected_count, merge_path in enumerate(merge_paths, start=1):
+                    page.locator("#merge-media-input").set_input_files(str(merge_path))
+                    page.wait_for_function(
+                        "(expectedCount) => (state?.project?.merge_sources || []).length === expectedCount",
+                        arg=expected_count,
+                    )
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.evaluate(
+                    """async () => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 2;
+                        await primary.play();
+                    }"""
+                )
+                page.wait_for_timeout(250)
+
+                lock_button = page.locator("#toggle-layout-lock-video")
+                prior_label = lock_button.get_attribute("aria-label")
+                lock_button.click()
+                page.wait_for_function(
+                    "(priorLabel) => document.getElementById('toggle-layout-lock-video')?.getAttribute('aria-label') !== priorLabel",
+                    arg=prior_label,
                 )
 
-                play_phase = _capture_direct_merge_preview_batch_reseek_phase(
-                    page,
-                    primary_time_s=4.25,
-                    primary_paused=False,
-                    preview_times_s=[0.1, 1.4, 2.6],
-                    preview_paused=True,
-                    playback_rate=1.1,
+                prior_layout = page.locator("#merge-layout").input_value()
+                next_layout = "side_by_side" if prior_layout == "pip" else "pip"
+                page.locator("#merge-layout").select_option(next_layout)
+                page.wait_for_function("(expected) => document.getElementById('merge-layout')?.value === expected", arg=next_layout)
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_compose_sync_behavior_truth_with_real_repository_videos(tmp_path: Path) -> None:
+    primary_path = REAL_MEDIA_DIR / "stage.mp4"
+    merge_paths = [
+        REAL_MEDIA_DIR / "stage-merge.mp4",
+        REAL_MEDIA_DIR / "browser-test.ssproj" / "Input" / "stage-merge.mp4",
+        REAL_MEDIA_DIR / "browser-test.ssproj" / "Input" / "stage.mp4",
+    ]
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                project_path = str(tmp_path / "real-compose-truth.ssproj")
+                page.evaluate(f"() => createNewProject({json.dumps(project_path)})")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "merge")
+
+                for expected_count, merge_path in enumerate(merge_paths, start=1):
+                    page.locator("#merge-media-input").set_input_files(str(merge_path))
+                    page.wait_for_function(
+                        "(expectedCount) => (state?.project?.merge_sources || []).length === expectedCount",
+                        arg=expected_count,
+                    )
+
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                page.wait_for_function(
+                    "() => document.querySelectorAll('#merge-preview-layer .merge-preview-item[data-source-id]').length === 3"
                 )
-                seek_phase = _capture_direct_merge_preview_batch_reseek_phase(
-                    page,
-                    primary_time_s=8.75,
-                    primary_paused=True,
-                    preview_times_s=[1.0, 3.8, 5.9],
-                    preview_paused=False,
-                    playback_rate=1.0,
+                page.wait_for_function("() => document.getElementById('stage-compositor-canvas')?.hidden === false")
+
+                source_ids = page.evaluate(
+                    "() => [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => card.dataset.sourceId)"
                 )
-                forced_drift_phase = _capture_direct_merge_preview_batch_reseek_phase(
-                    page,
-                    primary_time_s=11.5,
-                    primary_paused=True,
-                    preview_times_s=[0.35, 4.25, 9.1],
-                    preview_paused=True,
-                    playback_rate=0.95,
+                assert len(source_ids) == 3
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[0], size_percent=24, x=0.18, y=0.20
                 )
-
-                assert len(play_phase) == 3
-                assert len({phase["sourceId"] for phase in play_phase}) == 3
-                assert (
-                    [phase["sourceId"] for phase in play_phase]
-                    == [phase["sourceId"] for phase in seek_phase]
-                    == [phase["sourceId"] for phase in forced_drift_phase]
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[1], size_percent=24, x=0.78, y=0.20
                 )
+                _configure_merge_source_preview_position(
+                    page, source_id=source_ids[2], size_percent=24, x=0.18, y=0.78
+                )
+                page.wait_for_timeout(250)
 
-                assert [len(phase["fastSeekCalls"]) for phase in play_phase] == [1, 1, 1]
-                assert [len(phase["fastSeekCalls"]) for phase in seek_phase] == [1, 1, 1]
-                assert [len(phase["fastSeekCalls"]) for phase in forced_drift_phase] == [1, 1, 1]
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 0.6;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_timeout(200)
+                page.evaluate(
+                    """async () => {
+                        const primary = document.getElementById('primary-video');
+                        primary.playbackRate = 1;
+                        primary.defaultPlaybackRate = 1;
+                        await primary.play();
+                    }"""
+                )
+                page.wait_for_timeout(250)
+                play_sample_one = _wait_for_real_alignment_sample(page)
+                page.wait_for_timeout(250)
+                play_sample_two = _wait_for_real_alignment_sample(page)
+                assert play_sample_one["canvasHidden"] is False
+                assert play_sample_one["mergePreviewVideoCount"] == 0
+                assert play_sample_one["visibleSourceCount"] == 3
+                assert float(play_sample_two["primaryCurrentTime"]) > float(play_sample_one["primaryCurrentTime"])
+                for item in play_sample_one["items"]:
+                    assert item["error"] is not None
+                    assert float(item["error"]) < 35
+                for item in play_sample_two["items"]:
+                    assert item["error"] is not None
+                    assert float(item["error"]) < 35
 
-                for preview in play_phase:
-                    assert preview["correctionMode"] == "reseek"
-                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
-                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
-                    assert preview["paused"] is False
-                    assert preview["playCount"] == 1
-                    assert preview["pauseCount"] == 0
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.pause();
+                    }"""
+                )
+                page.wait_for_timeout(80)
+                pause_sample_one = _wait_for_real_alignment_sample(page)
+                page.wait_for_timeout(300)
+                pause_sample_two = _wait_for_real_alignment_sample(page)
+                assert pause_sample_one["primaryPaused"] is True
+                assert float(pause_sample_two["primaryCurrentTime"]) == pytest.approx(
+                    float(pause_sample_one["primaryCurrentTime"]), abs=0.04
+                )
+                for item in pause_sample_two["items"]:
+                    assert float(item["error"]) < 35
 
-                for preview in seek_phase:
-                    assert preview["correctionMode"] == "reseek"
-                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
-                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
-                    assert preview["paused"] is True
-                    assert preview["playCount"] == 0
-                    assert preview["pauseCount"] == 1
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 1.55;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                    }"""
+                )
+                page.wait_for_timeout(250)
+                seek_sample = _wait_for_real_alignment_sample(page)
+                for item in seek_sample["items"]:
+                    assert float(item["error"]) < 42
 
-                for preview in forced_drift_phase:
-                    assert preview["correctionMode"] == "reseek"
-                    assert preview["currentTime"] == pytest.approx(preview["target"], abs=1e-6)
-                    assert preview["delta"] == pytest.approx(0, abs=1e-6)
-                    assert preview["paused"] is True
-                    assert preview["playCount"] == 0
-                    assert preview["pauseCount"] == 0
+                target_source_id = source_ids[0]
+                target_card = page.locator(f'.merge-media-card[data-source-id="{target_source_id}"]')
+                sync_label = target_card.locator("[data-merge-source-sync-label]")
+                prior_sync_label = sync_label.text_content().strip()
+                label_text_before = page.evaluate(
+                    """() => Object.fromEntries(
+                        [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => {
+                            const sourceId = card.dataset.sourceId;
+                            const text = card.querySelector('[data-merge-source-sync-label]')?.textContent || '';
+                            return [sourceId, text.trim()];
+                        })
+                    )"""
+                )
+                target_card.locator(".merge-source-sync-buttons button").nth(3).click()
+                page.wait_for_function(
+                    """({ sourceId, priorLabel }) => {
+                        const label = document.querySelector(`.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-sync-label]`);
+                        return Boolean(label) && label.textContent.trim() !== priorLabel;
+                    }""",
+                    arg={"sourceId": target_source_id, "priorLabel": prior_sync_label},
+                )
+                label_text_after = page.evaluate(
+                    """() => Object.fromEntries(
+                        [...document.querySelectorAll('.merge-media-card[data-source-id]')].map((card) => {
+                            const sourceId = card.dataset.sourceId;
+                            const text = card.querySelector('[data-merge-source-sync-label]')?.textContent || '';
+                            return [sourceId, text.trim()];
+                        })
+                    )"""
+                )
+                after_nudge = _wait_for_real_alignment_sample(page)
+                assert label_text_after[target_source_id] != label_text_before[target_source_id]
+                for source_id in source_ids[1:]:
+                    assert label_text_after[source_id] == label_text_before[source_id]
+                for item in after_nudge["items"]:
+                    assert float(item["error"]) < 42
+
+                page.locator("#merge-layout").select_option("side_by_side")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'side_by_side'")
+                page.wait_for_timeout(250)
+                page.evaluate(
+                    """async () => {
+                        const primary = document.getElementById('primary-video');
+                        await primary.play();
+                    }"""
+                )
+                page.wait_for_timeout(220)
+                side_play = _wait_for_real_alignment_sample(page)
+                page.evaluate(
+                    """() => {
+                        const primary = document.getElementById('primary-video');
+                        primary.currentTime = 1.9;
+                        primary.dispatchEvent(new Event('seeking', { bubbles: true }));
+                        primary.dispatchEvent(new Event('seeked', { bubbles: true }));
+                        primary.pause();
+                    }"""
+                )
+                page.wait_for_timeout(220)
+                side_seek = _wait_for_real_alignment_sample(page)
+                assert side_play["mergePreviewVideoCount"] == 0
+                assert side_seek["mergePreviewVideoCount"] == 0
+                for item in side_play["items"]:
+                    assert float(item["error"]) < 42
+                for item in side_seek["items"]:
+                    assert float(item["error"]) < 48
             finally:
                 browser.close()
     finally:

@@ -1933,38 +1933,6 @@ small,
   }
 }
 
-.stage-empty-state {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 24px;
-  color: var(--muted);
-  text-align: center;
-  position: absolute;
-  inset: 0;
-  z-index: 5;
-  background: var(--bg);
-}
-
-.stage-empty-state h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text);
-  margin: 0;
-}
-
-.stage-empty-state p {
-  font-size: 14px;
-  max-width: 400px;
-}
-
-.stage-empty-actions {
-  display: flex;
-  gap: 12px;
-}
-
 /* TODO(P2-21): Legacy .automation-card classes used in Match and Library views.
    Migrate to .match-panel / .library-tile in a future polish pass.
    Tests may depend on .automation-card — do not remove before migration. */

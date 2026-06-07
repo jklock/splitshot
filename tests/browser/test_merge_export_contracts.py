@@ -94,10 +94,7 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "Re-run beep sync" in merge_pane_source
     assert "Analyze beep sync" in merge_pane_source
     assert "supports_sync_analysis" in merge_pane_source
-    assert (
-        "Trim creates a local derivative in the project Input folder and leaves the original source untouched."
-        in merge_pane_source
-    )
+    assert 'return "";' in merge_pane_source
     assert "Use these nudges or drag the preview to match the primary video exactly." not in source
     assert (
         "These values are saved per item and take effect in PiP layout and export timing."
@@ -122,28 +119,11 @@ def test_app_merge_preview_commit_and_sync_contracts() -> None:
     assert "if (previewSeekBoundary) previewSyncedSinceBoundary = false;" in set_boundary_body
     assert "setPreviewSeekBoundary(true);" in mark_boundary_body
     assert "markPreviewSeekBoundary," in source
-    assert (
-        'const previews = Array.from(document.querySelectorAll("#merge-preview-layer video"));'
-        in merge_sync_body
-    )
+    assert 'const result = renderStageCompositor(primary, $("video-stage"), currentPipSizePercent());' in merge_sync_body
     assert "const boundaryActive = previewSeekBoundary;" in merge_sync_body
     assert "if (boundaryActive) previewSeekBoundaryBatchActive = true;" in merge_sync_body
-    assert (
-        'const sourceId = preview.closest(".merge-preview-item")?.dataset.sourceId || "";'
-        in merge_sync_body
-    )
-    assert (
-        "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));"
-        in merge_sync_body
-    )
-    assert (
-        "const syncStatus = syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, primary.paused);"
-        in merge_sync_body
-    )
-    assert (
-        'if (boundaryActive && syncStatus === "boundary-pending") boundaryPending = true;'
-        in merge_sync_body
-    )
+    assert 'const syncStatuses = Array.isArray(result?.syncStatuses) ? result.syncStatuses : [];' in merge_sync_body
+    assert 'const boundaryPending = syncStatuses.some((item) => item?.status === "boundary-pending");' in merge_sync_body
     assert "previewSeekBoundaryBatchActive = false;" in merge_sync_body
     assert "previewSeekBoundary = boundaryPending;" in merge_sync_body
     assert "previewSyncedSinceBoundary = !boundaryPending;" in merge_sync_body
