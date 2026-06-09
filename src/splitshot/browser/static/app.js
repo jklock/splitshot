@@ -61,6 +61,7 @@ let activeTool = window.localStorage.getItem("splitshot.activeTool") || "project
 let overlayFrame = null;
 let overlayFrameMode = null;
 let waveformMode = "select";
+let waveformTrackMode = "single";
 let draggingShotId = null;
 let draggingShotPointerId = null;
 let pendingDragTimeMs = null;
@@ -1015,6 +1016,7 @@ function formatMatchType(matchType) {
     uspsa: "USPSA",
     ipsc: "IPSC",
     idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
   }[String(matchType || "").toLowerCase()] || "PractiScore";
 }
 
@@ -8394,6 +8396,13 @@ function setWaveformMode(mode, { persistUiState = true } = {}) {
   if (persistUiState) scheduleProjectUiStateApply();
 }
 
+function setWaveformTrackMode(mode) {
+  waveformTrackMode = mode;
+  window.localStorage.setItem("splitshot.waveformTrackMode", mode);
+  const legend = $("waveform-segment-legend");
+  if (legend) legend.hidden = mode !== "multi";
+}
+
 function syncExpandWaveformButton() {
   const button = $("expand-waveform");
   if (!button) return;
@@ -9306,6 +9315,7 @@ waveformComponent = createWaveformComponent({
   getSelectedShotId: () => selectedShotId,
   setSelectedShotIdValue,
   getWaveformMode: () => waveformMode,
+  getWaveformTrackMode: () => waveformTrackMode,
   getWaveformZoomX: () => waveformZoomX,
   getWaveformOffsetMs: () => waveformOffsetMs,
   getDraggingShotId: () => draggingShotId,
@@ -9930,6 +9940,7 @@ shellRuntime = createShellRuntime({
   stopOverlayLoop,
   renderWaveformPlayhead,
   setWaveformMode,
+  setWaveformTrackMode,
   setWaveformExpanded,
   setWaveformZoom,
   setWaveformAmplitude,

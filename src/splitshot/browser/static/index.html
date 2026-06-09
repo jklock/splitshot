@@ -97,6 +97,20 @@
                 <button class="mode-button active" data-waveform-mode="select" type="button" aria-label="Use waveform select mode">Select</button>
                 <button class="mode-button" data-waveform-mode="add" type="button" aria-label="Use waveform add shot mode">Add Shot</button>
                 <button id="expand-waveform" type="button">Expand</button>
+                <div class="waveform-tracks-controls" id="waveform-tracks-controls" hidden>
+                  <span class="waveform-tracks-label">Tracks:</span>
+                  <div id="waveform-track-list" class="waveform-track-list"></div>
+                </div>
+                <div class="waveform-mode-toggle">
+                  <button id="waveform-mode-single" class="waveform-mode-button active" type="button">Single</button>
+                  <button id="waveform-mode-multi" class="waveform-mode-button" type="button">Multi-Track</button>
+                </div>
+                <div class="waveform-segment-legend" id="waveform-segment-legend" hidden>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-moving"></span>Moving</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-static"></span>Static</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-long-move"></span>Long Move</span>
+                  <span><span class="waveform-segment-dot waveform-segment-dot-auto-cut"></span>Auto-Cut</span>
+                </div>
               </div>
               <div id="waveform-shot-list" class="waveform-shot-list" aria-label="Waveform shot list"></div>
             </section>
@@ -594,14 +608,17 @@
                   <button id="restore-merge-defaults" type="button">Restore</button>
                 </div>
                 <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
-                <label>Layout
+                <label>New item layout
                   <select id="merge-layout">
                     <option value="side_by_side">Side by side</option>
                     <option value="above_below">Above / below</option>
                     <option value="pip">Picture in picture</option>
+                    <option value="full_screen_portrait">Full-screen portrait</option>
+                    <option value="dual_center_hud">Dual center HUD</option>
+                    <option value="dual_top_hud">Dual top HUD</option>
                   </select>
                 </label>
-                <label>Default PiP size
+                <label>New item layer size
                   <div class="pip-size-control">
                     <input id="pip-size" type="range" min="1" max="95" step="1" value="35" />
                     <output id="pip-size-label">35%</output>
@@ -823,6 +840,9 @@
                       <option value="side_by_side">Side by side</option>
                       <option value="above_below">Above / below</option>
                       <option value="pip">PiP</option>
+                      <option value="full_screen_portrait">Full-screen portrait</option>
+                      <option value="dual_center_hud">Dual center HUD</option>
+                      <option value="dual_top_hud">Dual top HUD</option>
                     </select>
                   </label>
                   <label>PiP size
@@ -1156,7 +1176,7 @@
                   <input id="primary-file-path" placeholder="Please select a video" readonly />
                 </label>
                 <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Select Primary Video</button>
+                  <button id="browse-primary-path" class="primary-button" type="button">Import Primary Video</button>
                 </div>
               </div>
             </section>

@@ -288,6 +288,8 @@ id:video-bitrate
 id:video-codec
 id:zoom-waveform-in
 id:zoom-waveform-out
+id:waveform-mode-multi
+id:waveform-mode-single
 """.splitlines()
     if line.strip()
 }

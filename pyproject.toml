@@ -1,6 +1,6 @@
 [project]
 name = "splitshot"
-version = "1.0.5"
+version = "1.0.6"
 description = "Local-first browser app for competition shooting video analysis, scoring, merge review, and export."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

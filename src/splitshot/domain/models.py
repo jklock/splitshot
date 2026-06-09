@@ -62,6 +62,40 @@ class MergeLayout(StrEnum):
     SIDE_BY_SIDE = "side_by_side"
     ABOVE_BELOW = "above_below"
     PIP = "pip"
+    FULL_SCREEN_PORTRAIT = "full_screen_portrait"
+    DUAL_CENTER_HUD = "dual_center_hud"
+    DUAL_TOP_HUD = "dual_top_hud"
+
+
+class MergePlacementMode(StrEnum):
+    AUTO = "auto"
+    BASE = "base"
+    SIDE_BY_SIDE = "side_by_side"
+    ABOVE_BELOW = "above_below"
+    PIP = "pip"
+    FULL_SCREEN_PORTRAIT = "full_screen_portrait"
+    DUAL_CENTER_HUD = "dual_center_hud"
+    DUAL_TOP_HUD = "dual_top_hud"
+
+
+class MergePlacementSlot(StrEnum):
+    AUTO = "auto"
+    LEFT = "left"
+    RIGHT = "right"
+    TOP = "top"
+    BOTTOM = "bottom"
+    CENTER = "center"
+    OVERLAY = "overlay"
+
+
+class MergePlacementTargetKind(StrEnum):
+    PRIMARY_VIDEO = "primary_video"
+    MERGE_SOURCE = "merge_source"
+
+
+class MergeSourceAssetPathKind(StrEnum):
+    ORIGINAL = "original"
+    LOCAL_DERIVATIVE = "local_derivative"
 
 
 class PipSize(StrEnum):
@@ -158,15 +192,173 @@ class VideoAsset:
         return self.width, self.height
 
 
+# Keep the internal model field name `angle_role` for now. Outward browser and
+# persistence payloads emit `camera_role`, while readers accept legacy
+# `angle_role` as a narrow compatibility alias.
+MERGE_SOURCE_ANGLE_ROLE_VALUES = ("primary", "follow", "static", "detail")
+
+_MERGE_SOURCE_ANGLE_ROLES = frozenset(MERGE_SOURCE_ANGLE_ROLE_VALUES)
+
+
+def default_merge_source_angle_role(asset: VideoAsset | None = None) -> str:
+    if asset is not None and asset.is_still_image:
+        return "detail"
+    return "follow"
+
+
+def _normalize_merge_source_angle_role(
+    value: Any,
+    asset: VideoAsset | None = None,
+) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in _MERGE_SOURCE_ANGLE_ROLES:
+        return normalized
+    return default_merge_source_angle_role(asset)
+
+
+def _default_merge_source_placement_slot(mode: MergePlacementMode) -> MergePlacementSlot:
+    if mode == MergePlacementMode.PIP:
+        return MergePlacementSlot.OVERLAY
+    if mode in {
+        MergePlacementMode.BASE,
+        MergePlacementMode.FULL_SCREEN_PORTRAIT,
+        MergePlacementMode.DUAL_CENTER_HUD,
+        MergePlacementMode.DUAL_TOP_HUD,
+    }:
+        return MergePlacementSlot.CENTER
+    return MergePlacementSlot.AUTO
+
+
+def _normalize_merge_source_placement_mode(value: Any) -> MergePlacementMode:
+    try:
+        return MergePlacementMode(str(value or MergePlacementMode.AUTO.value).strip().lower())
+    except ValueError:
+        return MergePlacementMode.AUTO
+
+
+def _normalize_merge_source_placement_slot(
+    value: Any,
+    *,
+    mode: MergePlacementMode,
+) -> MergePlacementSlot:
+    try:
+        return MergePlacementSlot(str(value).strip().lower())
+    except ValueError:
+        return _default_merge_source_placement_slot(mode)
+
+
+def _normalize_merge_source_placement_target_kind(
+    value: Any,
+    *,
+    target_source_id: str | None = None,
+) -> MergePlacementTargetKind:
+    normalized = str(value or "").strip().lower()
+    try:
+        kind: MergePlacementTargetKind | None = MergePlacementTargetKind(normalized)
+    except ValueError:
+        kind = None
+    if kind is not None:
+        if kind == MergePlacementTargetKind.MERGE_SOURCE and not target_source_id:
+            return MergePlacementTargetKind.PRIMARY_VIDEO
+        return kind
+    if target_source_id:
+        return MergePlacementTargetKind.MERGE_SOURCE
+    return MergePlacementTargetKind.PRIMARY_VIDEO
+
+
+def _normalize_merge_source_index(value: Any) -> int | None:
+    if value in {None, ""}:
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_merge_source_active_path_kind(
+    value: Any,
+    *,
+    asset_path: str = "",
+    original_path: str = "",
+    derivative_path: str | None = None,
+) -> MergeSourceAssetPathKind:
+    normalized = str(value or "").strip().lower()
+    try:
+        kind: MergeSourceAssetPathKind | None = MergeSourceAssetPathKind(normalized)
+    except ValueError:
+        kind = None
+    if kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE and not derivative_path:
+        return MergeSourceAssetPathKind.ORIGINAL
+    if kind is not None:
+        return kind
+    if (
+        derivative_path
+        and asset_path
+        and asset_path == derivative_path
+        and derivative_path != original_path
+    ):
+        return MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+    return MergeSourceAssetPathKind.ORIGINAL
+
+
+def _merge_layout_to_placement_mode(layout: MergeLayout) -> MergePlacementMode:
+    return {
+        MergeLayout.SIDE_BY_SIDE: MergePlacementMode.SIDE_BY_SIDE,
+        MergeLayout.ABOVE_BELOW: MergePlacementMode.ABOVE_BELOW,
+        MergeLayout.PIP: MergePlacementMode.PIP,
+        MergeLayout.FULL_SCREEN_PORTRAIT: MergePlacementMode.FULL_SCREEN_PORTRAIT,
+        MergeLayout.DUAL_CENTER_HUD: MergePlacementMode.DUAL_CENTER_HUD,
+        MergeLayout.DUAL_TOP_HUD: MergePlacementMode.DUAL_TOP_HUD,
+    }[layout]
+
+
+def _legacy_merge_source_slot(
+    mode: MergePlacementMode,
+    *,
+    primary_is_left_or_top: bool,
+) -> MergePlacementSlot:
+    if mode == MergePlacementMode.SIDE_BY_SIDE:
+        return MergePlacementSlot.RIGHT if primary_is_left_or_top else MergePlacementSlot.LEFT
+    if mode == MergePlacementMode.ABOVE_BELOW:
+        return MergePlacementSlot.BOTTOM if primary_is_left_or_top else MergePlacementSlot.TOP
+    return _default_merge_source_placement_slot(mode)
+
+
+def _payload_has_value(payload: dict[str, Any] | None, *keys: str) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(payload.get(key) not in {None, ""} for key in keys)
+
+
+@dataclass(slots=True)
+class MergeSourcePlacement:
+    mode: MergePlacementMode = MergePlacementMode.AUTO
+    slot: MergePlacementSlot = MergePlacementSlot.AUTO
+    target_kind: MergePlacementTargetKind = MergePlacementTargetKind.PRIMARY_VIDEO
+    target_source_id: str | None = None
+    order_index: int | None = None
+    layer_index: int | None = None
+
+
+@dataclass(slots=True)
+class MergeSourceTrimDerivative:
+    original_path: str = ""
+    derivative_path: str | None = None
+    active_path_kind: MergeSourceAssetPathKind = MergeSourceAssetPathKind.ORIGINAL
+
+
 @dataclass(slots=True)
 class MergeSource:
     id: str = field(default_factory=lambda: uuid4().hex)
     asset: VideoAsset = field(default_factory=VideoAsset)
+    angle_role: str = "follow"
     pip_size_percent: int | None = None
     pip_x: float = 1.0
     pip_y: float = 1.0
     opacity: float = 1.0
     sync_offset_ms: int = 0
+    placement: MergeSourcePlacement = field(default_factory=MergeSourcePlacement)
+    trim_derivative: MergeSourceTrimDerivative = field(default_factory=MergeSourceTrimDerivative)
 
 
 @dataclass(slots=True)
@@ -623,7 +815,82 @@ def project_to_dict(project: Project) -> dict[str, Any]:
     if isinstance(overlay, dict):
         overlay["scoring_colors"] = _normalize_scoring_color_map(overlay.get("scoring_colors", {}))
         overlay.pop("review_boxes_lock_to_stack", None)
-    return data
+    merge_sources = data.get("merge_sources")
+    if isinstance(merge_sources, list):
+        for index, (item, source) in enumerate(
+            zip(merge_sources, project.merge_sources, strict=False)
+        ):
+            if not isinstance(item, dict):
+                continue
+            placement = item.get("placement")
+            if isinstance(placement, dict):
+                default_slot = _default_merge_source_placement_slot(source.placement.mode)
+                if source.placement.mode == MergePlacementMode.AUTO:
+                    placement.pop("mode", None)
+                if source.placement.slot == default_slot:
+                    placement.pop("slot", None)
+                if source.placement.target_kind == MergePlacementTargetKind.PRIMARY_VIDEO:
+                    placement.pop("target_kind", None)
+                if source.placement.target_source_id in {None, ""}:
+                    placement.pop("target_source_id", None)
+                if source.placement.order_index in {None, index}:
+                    placement.pop("order_index", None)
+                if source.placement.layer_index in {
+                    None,
+                    index,
+                    source.placement.order_index,
+                }:
+                    placement.pop("layer_index", None)
+                if not placement:
+                    item.pop("placement", None)
+            trim_derivative = item.get("trim_derivative")
+            if isinstance(trim_derivative, dict):
+                if source.trim_derivative.derivative_path in {None, ""}:
+                    trim_derivative.pop("derivative_path", None)
+                if source.trim_derivative.active_path_kind == MergeSourceAssetPathKind.ORIGINAL:
+                    trim_derivative.pop("active_path_kind", None)
+                default_original_path = ""
+                if source.asset.path and (
+                    source.trim_derivative.derivative_path is None
+                    or source.asset.path != source.trim_derivative.derivative_path
+                ):
+                    default_original_path = source.asset.path
+                if source.trim_derivative.original_path in {"", default_original_path}:
+                    trim_derivative.pop("original_path", None)
+                if not trim_derivative:
+                    item.pop("trim_derivative", None)
+    return _promote_camera_role_key(data)
+
+
+def _normalize_merge_layout(value: Any) -> MergeLayout:
+    try:
+        return MergeLayout(str(value or MergeLayout.SIDE_BY_SIDE.value).strip().lower())
+    except ValueError:
+        return MergeLayout.SIDE_BY_SIDE
+
+
+def _normalize_pip_size(value: Any) -> PipSize:
+    try:
+        return PipSize(str(value or PipSize.MEDIUM.value).strip())
+    except ValueError:
+        return PipSize.MEDIUM
+
+
+def _default_merge_pip_size_percent(pip_size: PipSize) -> int:
+    return {
+        PipSize.SMALL: 25,
+        PipSize.MEDIUM: 35,
+        PipSize.LARGE: 50,
+    }[pip_size]
+
+
+def _normalize_merge_pip_size_percent(value: Any, *, pip_size: PipSize) -> int:
+    default_percent = _default_merge_pip_size_percent(pip_size)
+    try:
+        normalized = int(value)
+    except (TypeError, ValueError):
+        return default_percent
+    return normalized if normalized > 0 else default_percent
 
 
 def _parse_enum(enum_type: type[StrEnum], value: str | None, default: StrEnum) -> StrEnum:
@@ -1041,12 +1308,288 @@ def _path_looks_like_still_image(path: str) -> bool:
     return Path(path).suffix.lower() in _STILL_IMAGE_SUFFIXES
 
 
+def _camera_role_payload_value(data: dict[str, Any] | None, default: Any = None) -> Any:
+    if not isinstance(data, dict):
+        return default
+    for key in ("camera_role", "angle_role"):
+        value = data.get(key)
+        if value not in {None, ""}:
+            return value
+    return default
+
+
+def _promote_camera_role_key(value: Any) -> Any:
+    if isinstance(value, list):
+        return [_promote_camera_role_key(item) for item in value]
+    if isinstance(value, dict):
+        promoted: dict[str, Any] = {}
+        for key, item in value.items():
+            promoted_key = "camera_role" if str(key) == "angle_role" else str(key)
+            promoted[promoted_key] = _promote_camera_role_key(item)
+        return promoted
+    return value
+
+
+def _merge_source_placement_from_dict(
+    data: dict[str, Any] | None,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> MergeSourcePlacement:
+    placement_data = data if isinstance(data, dict) else {}
+    source = payload or {}
+    target_source_id_value = placement_data.get(
+        "target_source_id",
+        source.get("target_source_id", source.get("base_source_id")),
+    )
+    target_source_id = None if target_source_id_value in {None, ""} else str(target_source_id_value)
+    mode = _normalize_merge_source_placement_mode(
+        placement_data.get(
+            "mode",
+            source.get("placement_mode", source.get("composition_mode")),
+        )
+    )
+    target_kind = _normalize_merge_source_placement_target_kind(
+        placement_data.get("target_kind", source.get("target_kind")),
+        target_source_id=target_source_id,
+    )
+    if target_kind != MergePlacementTargetKind.MERGE_SOURCE:
+        target_source_id = None
+    return MergeSourcePlacement(
+        mode=mode,
+        slot=_normalize_merge_source_placement_slot(
+            placement_data.get("slot", source.get("placement_slot")),
+            mode=mode,
+        ),
+        target_kind=target_kind,
+        target_source_id=target_source_id,
+        order_index=_normalize_merge_source_index(
+            placement_data.get(
+                "order_index",
+                source.get("order_index", source.get("stack_order", source.get("display_order"))),
+            )
+        ),
+        layer_index=_normalize_merge_source_index(
+            placement_data.get(
+                "layer_index",
+                source.get("layer_index", source.get("z_index")),
+            )
+        ),
+    )
+
+
+def _merge_source_trim_derivative_from_dict(
+    data: dict[str, Any] | None,
+    *,
+    payload: dict[str, Any] | None = None,
+    asset: VideoAsset | None = None,
+) -> MergeSourceTrimDerivative:
+    trim_data = data if isinstance(data, dict) else {}
+    source = payload or {}
+    asset_path = asset.path if asset is not None else ""
+    derivative_path_value = trim_data.get(
+        "derivative_path",
+        source.get("trimmed_asset_path", source.get("derivative_asset_path")),
+    )
+    derivative_path = None if derivative_path_value in {None, ""} else str(derivative_path_value)
+    original_path_value = trim_data.get(
+        "original_path",
+        source.get("original_asset_path", source.get("source_asset_path", "")),
+    )
+    original_path = str(original_path_value or "")
+    if (
+        not original_path
+        and asset_path
+        and (derivative_path is None or asset_path != derivative_path)
+    ):
+        original_path = asset_path
+    return MergeSourceTrimDerivative(
+        original_path=original_path,
+        derivative_path=derivative_path,
+        active_path_kind=_normalize_merge_source_active_path_kind(
+            trim_data.get(
+                "active_path_kind",
+                source.get("active_asset_path_kind", source.get("asset_path_kind")),
+            ),
+            asset_path=asset_path,
+            original_path=original_path,
+            derivative_path=derivative_path,
+        ),
+    )
+
+
+def _finalize_merge_source_metadata(merge_sources: list[MergeSource]) -> None:
+    for index, source in enumerate(merge_sources):
+        placement = source.placement
+        if placement.order_index is None:
+            placement.order_index = index
+        if placement.layer_index is None:
+            placement.layer_index = placement.order_index
+        if (
+            placement.target_kind == MergePlacementTargetKind.MERGE_SOURCE
+            and not placement.target_source_id
+        ):
+            placement.target_kind = MergePlacementTargetKind.PRIMARY_VIDEO
+        if placement.target_kind != MergePlacementTargetKind.MERGE_SOURCE:
+            placement.target_source_id = None
+        default_slot = _default_merge_source_placement_slot(placement.mode)
+        if placement.slot == MergePlacementSlot.AUTO and default_slot != MergePlacementSlot.AUTO:
+            placement.slot = default_slot
+        trim_derivative = source.trim_derivative
+        if trim_derivative.derivative_path == "":
+            trim_derivative.derivative_path = None
+        if (
+            trim_derivative.active_path_kind == MergeSourceAssetPathKind.LOCAL_DERIVATIVE
+            and not trim_derivative.derivative_path
+        ):
+            trim_derivative.active_path_kind = MergeSourceAssetPathKind.ORIGINAL
+        if (
+            not trim_derivative.original_path
+            and source.asset.path
+            and (
+                trim_derivative.derivative_path is None
+                or source.asset.path != trim_derivative.derivative_path
+            )
+        ):
+            trim_derivative.original_path = source.asset.path
+
+
+def _canonicalize_secondary_video_reference(project: Project) -> None:
+    secondary_video = project.secondary_video
+    if secondary_video is None:
+        return
+
+    secondary_path = str(secondary_video.path or "").strip()
+    for source in project.merge_sources:
+        if source.asset is secondary_video:
+            project.secondary_video = source.asset
+            return
+        if secondary_path and str(source.asset.path or "").strip() == secondary_path:
+            project.secondary_video = source.asset
+            return
+
+
+def _apply_legacy_merge_defaults_to_source(
+    source: MergeSource,
+    *,
+    raw_source: dict[str, Any] | None,
+    merge_layout: MergeLayout,
+    merge_pip_size_percent: int,
+    merge_pip_x: float,
+    merge_pip_y: float,
+    primary_is_left_or_top: bool,
+) -> None:
+    placement_payload = raw_source.get("placement") if isinstance(raw_source, dict) else None
+    if not isinstance(placement_payload, dict):
+        placement_payload = None
+
+    has_explicit_mode = _payload_has_value(placement_payload, "mode") or _payload_has_value(
+        raw_source,
+        "placement_mode",
+        "composition_mode",
+    )
+    has_explicit_slot = _payload_has_value(placement_payload, "slot") or _payload_has_value(
+        raw_source,
+        "placement_slot",
+    )
+
+    migrated_from_legacy_layout = False
+    if not has_explicit_mode and source.placement.mode == MergePlacementMode.AUTO:
+        source.placement.mode = _merge_layout_to_placement_mode(merge_layout)
+        migrated_from_legacy_layout = True
+
+    if source.pip_size_percent is None and not _payload_has_value(raw_source, "pip_size_percent"):
+        source.pip_size_percent = merge_pip_size_percent
+    if raw_source is not None:
+        if not _payload_has_value(raw_source, "pip_x"):
+            source.pip_x = merge_pip_x
+        if not _payload_has_value(raw_source, "pip_y"):
+            source.pip_y = merge_pip_y
+    elif migrated_from_legacy_layout:
+        source.pip_x = merge_pip_x
+        source.pip_y = merge_pip_y
+
+    if not has_explicit_slot:
+        legacy_slot = _legacy_merge_source_slot(
+            source.placement.mode,
+            primary_is_left_or_top=primary_is_left_or_top,
+        )
+        if source.placement.slot in {
+            MergePlacementSlot.AUTO,
+            _default_merge_source_placement_slot(source.placement.mode),
+        }:
+            source.placement.slot = legacy_slot
+
+
+def ensure_merge_source_composition_truth(
+    project: Project,
+    *,
+    raw_merge_sources: list[dict[str, Any]] | None = None,
+    secondary_video_is_explicitly_set: bool = True,
+) -> None:
+    project.merge.layout = _normalize_merge_layout(project.merge.layout)
+    project.merge.pip_size = _normalize_pip_size(project.merge.pip_size)
+    project.merge.pip_size_percent = _normalize_merge_pip_size_percent(
+        project.merge.pip_size_percent,
+        pip_size=project.merge.pip_size,
+    )
+
+    if not project.merge_sources and project.secondary_video is not None:
+        placement_mode = _merge_layout_to_placement_mode(project.merge.layout)
+        project.merge_sources = [
+            MergeSource(
+                asset=project.secondary_video,
+                angle_role=default_merge_source_angle_role(project.secondary_video),
+                pip_size_percent=project.merge.pip_size_percent,
+                pip_x=float(project.merge.pip_x),
+                pip_y=float(project.merge.pip_y),
+                opacity=1.0,
+                sync_offset_ms=int(project.analysis.sync_offset_ms),
+                placement=MergeSourcePlacement(
+                    mode=placement_mode,
+                    slot=_legacy_merge_source_slot(
+                        placement_mode,
+                        primary_is_left_or_top=bool(project.merge.primary_is_left_or_top),
+                    ),
+                ),
+            )
+        ]
+
+    normalized_raw_sources: list[dict[str, Any] | None] = []
+    for item in raw_merge_sources or []:
+        normalized_raw_sources.append(item if isinstance(item, dict) else None)
+    while len(normalized_raw_sources) < len(project.merge_sources):
+        normalized_raw_sources.append(None)
+
+    for source, raw_source in zip(project.merge_sources, normalized_raw_sources, strict=False):
+        _apply_legacy_merge_defaults_to_source(
+            source,
+            raw_source=raw_source,
+            merge_layout=project.merge.layout,
+            merge_pip_size_percent=project.merge.pip_size_percent,
+            merge_pip_x=float(project.merge.pip_x),
+            merge_pip_y=float(project.merge.pip_y),
+            primary_is_left_or_top=bool(project.merge.primary_is_left_or_top),
+        )
+
+    _finalize_merge_source_metadata(project.merge_sources)
+    if project.merge_sources:
+        if secondary_video_is_explicitly_set:
+            _canonicalize_secondary_video_reference(project)
+        else:
+            project.secondary_video = project.merge_sources[0].asset
+
+
 def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
     payload = data or {}
     asset_data = payload.get("asset", payload)
+    asset = _video_from_dict(asset_data)
     return MergeSource(
         id=str(payload.get("id", uuid4().hex)),
-        asset=_video_from_dict(asset_data),
+        asset=asset,
+        angle_role=_normalize_merge_source_angle_role(
+            _camera_role_payload_value(payload),
+            asset,
+        ),
         pip_size_percent=(
             None
             if payload.get("pip_size_percent") in {None, ""}
@@ -1056,6 +1599,12 @@ def _merge_source_from_dict(data: dict[str, Any]) -> MergeSource:
         pip_y=float(payload.get("pip_y", 1.0)),
         opacity=max(0.0, min(1.0, float(payload.get("opacity", 1.0)))),
         sync_offset_ms=int(payload.get("sync_offset_ms", 0)),
+        placement=_merge_source_placement_from_dict(payload.get("placement"), payload=payload),
+        trim_derivative=_merge_source_trim_derivative_from_dict(
+            payload.get("trim_derivative"),
+            payload=payload,
+            asset=asset,
+        ),
     )
 
 
@@ -1472,6 +2021,15 @@ def project_from_dict(data: dict[str, Any]) -> Project:
             shotml_section_expansion=_ui_state_bool_map(ui_data.get("shotml_section_expansion")),
         ),
         schema_version=int(data.get("schema_version", 1)),
+    )
+    ensure_merge_source_composition_truth(
+        project,
+        raw_merge_sources=[item for item in raw_merge_sources if isinstance(item, dict)],
+        secondary_video_is_explicitly_set=(
+            data.get("secondary_video") is not None
+            and isinstance(data.get("secondary_video"), dict)
+            and bool(data["secondary_video"].get("path"))
+        ),
     )
     project.analysis.detection_threshold = project.analysis.shotml_settings.detection_threshold
     if project.merge_sources:

@@ -2,6 +2,38 @@
 
 This file captures launch-grade release notes for SplitShot. Each release section is written to stand on its own as the source for the corresponding GitHub release body.
 
+## v1.0.6
+
+SplitShot 1.0.6 backports key Stage-visible feature improvements from the development line onto the proven v1.0.5 shell architecture — keeping the editor fast, local, and focused on a single stage at a time.
+
+### What Changed
+
+- **Trim Video.** Non-destructive video trimming that creates a local derivative instead of altering the original media. Trim in/out points, apply, reset, and retrim all preserve the source file and write only to a derivative path under the project.
+- **Per-item PiP controls.** Composition placement, layer size, opacity, X/Y positioning, and sync offset are now owned by each merge source individually instead of shared across the entire stage. Layout modes (Side by side, Above/below, Picture in picture, Full-screen portrait, Dual center HUD, Dual top HUD) apply per source while keeping the PiP rail identity.
+- **Camera role.** Each added angle can carry a `Camera role` (primary, follow, static, detail) that controls seeded placement and ordering behavior within the composition.
+- **Output Profiles.** Stage Output and Stage Composite profiles now support framing presets (source, 16:9, 9:16, 1:1, 4:5), opening titles, logo overlays, and export badge configuration — all persisted per stage and rendered through the export pipeline.
+- **Review source and added-media visibility.** Review pane now offers retained review source selection and explicit added-media visibility controls so the reviewer can toggle between the primary feed and supporting angles.
+- **Overlay Export Badges.** Overlay pane includes an Export Badges hook that snaps badge configuration to the active output profile so overlay style and export intent stay synchronized.
+- **Beep sync and preview resync.** Analyze beep sync improvements and preview-resync repair keep the playback preview in sync across all merge sources after timing adjustments.
+- **PractiScore import refinements.** Clearer project-pane PractiScore setup with synchronized file selectors, match-type visibility, stage-number selection, and readonly primary-video path display.
+
+### Why This Release Exists
+
+The v1.0.5 line is the stable Stage-only foundation. v1.0.6 brings forward the Stage-relevant improvements that accumulated in the development line — per-item composition control, non-destructive trim, output profiles, camera roles, and review/overlay refinements — without changing the shell architecture, adding shared-surface routing, or depending on Match or Library features that live on other branches.
+
+### Release Proof
+
+This release is verified through:
+- Targeted browser, export, and migration proof suites
+- `splitshot --check` runtime validation
+- Packaged Electron build and launch verification
+- v1.0.5 project load/resave with no Stage-visible data loss
+- Canonical test runner passing across all in-scope test families
+
+### Bottom Line
+
+SplitShot 1.0.6 is the Stage editor update that brings per-item composition control, trim, camera roles, output profiles, and review refinements to the v1.0.5 line without changing the shell you already use.
+
 ## v1.0.5
 
 SplitShot 1.0.5 fixes a critical Windows regression where exported video overlays rendered unreadable tofu boxes instead of text.

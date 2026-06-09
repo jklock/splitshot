@@ -95,6 +95,7 @@ export function createShellRuntime({
   stopOverlayLoop = () => {},
   renderWaveformPlayhead = () => {},
   setWaveformMode = () => {},
+  setWaveformTrackMode = () => {},
   setWaveformExpanded = () => {},
   setWaveformZoom = () => {},
   setWaveformAmplitude = () => {},
@@ -603,6 +604,8 @@ export function createShellRuntime({
     $("amp-waveform-out").addEventListener("click", () => setWaveformAmplitude(0.5));
     $("amp-waveform-in").addEventListener("click", () => setWaveformAmplitude(2));
     $("reset-waveform-view").addEventListener("click", resetWaveformView);
+    $("waveform-mode-single")?.addEventListener("click", () => setWaveformTrackMode("single"));
+    $("waveform-mode-multi")?.addEventListener("click", () => setWaveformTrackMode("multi"));
     $("expand-timing").addEventListener("click", () => setTimingExpanded(true));
     $("collapse-timing").addEventListener("click", () => setTimingExpanded(false));
     $("expand-markers")?.addEventListener("click", () => {

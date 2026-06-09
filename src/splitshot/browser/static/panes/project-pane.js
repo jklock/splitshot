@@ -30,6 +30,12 @@ export function createProjectPane({
   fileName = (value) => String(value || ""),
   splitSeconds = (value) => String(value ?? ""),
   formatNumber = (value) => String(value ?? ""),
+  formatMatchType = (matchType) => ({
+    uspsa: "USPSA",
+    ipsc: "IPSC",
+    idpa: "IDPA",
+    steel_challenge: "Steel Challenge",
+  }[String(matchType || "").toLowerCase()] || "PractiScore"),
   formatPractiScoreTime = (value) => String(value ?? ""),
   autoApplyProjectDetails = () => {},
   autoApplyPractiScoreContext = () => {},
@@ -400,7 +406,7 @@ export function createProjectPane({
     const ssStageSeconds = ssStageTimeSeconds(state);
     const psStageSeconds = imported.raw_seconds ?? state.scoring_summary?.official_raw_seconds;
     const videoDurationMs = state.project?.primary_video?.duration_ms;
-    if (status) status.textContent = `${stagedMatchType ? stagedMatchType.toUpperCase() : "PractiScore"} Stage ${imported.stage_number} imported`;
+    if (status) status.textContent = `${formatMatchType(stagedMatchType)} Stage ${imported.stage_number} imported`;
     renderOwnedSummaryList("practiscore-import-summary", [
       ["Stage Start (Beep)", splitSeconds(beepMs)],
       ["Shots in Stage", shots.length > 0 ? String(shots.length) : "0"],

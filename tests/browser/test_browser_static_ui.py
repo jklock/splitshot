@@ -200,7 +200,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="merge-media-list"' in html
     assert 'id="add-merge-media"' in html
     assert '>Add Media</button>' in html
-    assert 'Default PiP size' in html
+    assert 'New item layer size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
     assert "Open PractiScore Dashboard" in html
@@ -210,7 +210,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Clear PractiScore Session" not in html
     assert "Import Selected Match" not in html
     assert "Manual fallback:" not in html
-    assert "Select Primary Video" in html
+    assert "Import Primary Video" in html
     assert html.index("Project folder") < html.index("Project name")
     assert html.index("Project name") < html.index("PractiScore Import")
     assert html.index("PractiScore Import") < html.index("Primary Video")
@@ -1640,6 +1640,8 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "resize-rail",
         "resize-sidebar",
         "resize-waveform",
+        "waveform-mode-single",
+        "waveform-mode-multi",
     }
     behavior_attributes = (
         "data-tool=",

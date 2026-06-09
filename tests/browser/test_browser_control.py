@@ -84,6 +84,7 @@ PROJECT_LIFECYCLE_POST_ROUTES = {
 NON_PROJECT_JSON_POST_ROUTES = {
     "/api/activity",
     "/api/dialog/path",
+    "/api/merge/source/analyze",
     "/api/project/probe",
     "/api/settings",
     "/api/practiscore/dashboard/open",

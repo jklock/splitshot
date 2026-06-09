@@ -51,11 +51,11 @@ export function createMergePane({
   }
 
     function normalizeMergeDraftValue(key, value) {
-      if (!["enabled", "layout", "pip_size_percent", "pip_x", "pip_y"].includes(key)) {
+      if (!["enabled", "layout", "pip_size_percent", "pip_x", "pip_y", "placement_mode"].includes(key)) {
         return undefined;
       }
       if (key === "enabled") return Boolean(value);
-      if (key === "layout") return String(value || "side_by_side");
+      if (key === "layout" || key === "placement_mode") return String(value || "side_by_side");
       if (key === "pip_size_percent") {
         return clampNumber(Number(value) || 35, 1, 95);
       }
@@ -106,6 +106,39 @@ export function createMergePane({
 
     function currentSourceOpacity(source = null) {
       return clampNumber(Number(source?.opacity ?? 1) || 0, 0, 1);
+    }
+
+    function currentSourceAngleRole(source = null) {
+      return String(source?.camera_role || source?.angle_role || "follow");
+    }
+
+    function normalizedAngleRoleValue(value) {
+      const roles = ["primary", "follow", "static", "detail"];
+      const normalized = String(value || "").trim().toLowerCase();
+      return roles.includes(normalized) ? normalized : "follow";
+    }
+
+    function currentSourcePlacementMode(source = null) {
+      return String(source?.placement?.mode || "auto");
+    }
+
+    function normalizedPlacementModeValue(value) {
+      const modes = ["auto", "base", "side_by_side", "above_below", "pip", "full_screen_portrait", "dual_center_hud", "dual_top_hud"];
+      const normalized = String(value || "").trim().toLowerCase();
+      return modes.includes(normalized) ? normalized : currentState()?.project?.merge?.layout || "side_by_side";
+    }
+
+    function placementModeLabel(mode) {
+      return {
+        auto: "Auto (project default)",
+        base: "Base (video stage)",
+        side_by_side: "Side by side",
+        above_below: "Above / below",
+        pip: "Picture in picture",
+        full_screen_portrait: "Full-screen portrait",
+        dual_center_hud: "Dual center HUD",
+        dual_top_hud: "Dual top HUD",
+      }[mode] || mode;
     }
 
     function formatSyncOffsetLabel(offsetMs) {
@@ -172,6 +205,14 @@ export function createMergePane({
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
         syncControlValue(input, opacityValue);
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="camera_role"]`).forEach((input) => {
+        const source = mergeSourceById(sourceId);
+        syncControlValue(input, currentSourceAngleRole(source));
+      });
+      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="placement_mode"]`).forEach((input) => {
+        const source = mergeSourceById(sourceId);
+        syncControlValue(input, currentSourcePlacementMode(source));
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-sync-label]`).forEach((label) => {
         label.textContent = formatSyncOffsetLabel(offsetValue);
@@ -467,18 +508,41 @@ export function createMergePane({
           const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
           const opacityControl = controls.querySelector('[data-merge-source-field="opacity"]');
           const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
-          return {
+          const cameraRoleControl = controls.querySelector('[data-merge-source-field="camera_role"]');
+          const nextAngleRole = cameraRoleControl ? normalizedAngleRoleValue(cameraRoleControl.value) : currentSourceAngleRole(source);
+          const placementModeControl = controls.querySelector('[data-merge-source-field="placement_mode"]');
+          const nextPlacementMode = placementModeControl ? normalizedPlacementModeValue(placementModeControl.value) : currentSourcePlacementMode(source);
+          const payload = {
             source_id: sourceId,
             pip_size_percent: nextSize,
             pip_x: nextX,
             pip_y: nextY,
             opacity: nextOpacity,
+            camera_role: nextAngleRole,
+            placement: { mode: nextPlacementMode },
           };
+          if (nextPlacementMode === "auto") {
+            delete payload.placement;
+          }
+          return payload;
         };
 
         const previewSourceUpdate = () => {
           const payload = readSourcePayload();
           updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
+          if (payload.camera_role) {
+            const src = mergeSourceById(sourceId);
+            if (src) {
+              src.camera_role = payload.camera_role;
+              delete src.angle_role;
+            }
+          }
+          if (payload.placement && payload.placement.mode) {
+            const src = mergeSourceById(sourceId);
+            if (src && src.placement) {
+              src.placement.mode = payload.placement.mode;
+            }
+          }
           scheduleInteractionPreviewRender({ video: true });
           return payload;
         };
@@ -606,6 +670,50 @@ export function createMergePane({
           buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
         );
 
+        const cameraRoleSelect = documentObject.createElement("select");
+        cameraRoleSelect.dataset.mergeSourceField = "camera_role";
+        cameraRoleSelect.dataset.sourceId = sourceId;
+        cameraRoleSelect.title = "Choose how this angle interacts with the composition layout.";
+        ["primary", "follow", "static", "detail"].forEach((role) => {
+          const option = documentObject.createElement("option");
+          option.value = role;
+          option.textContent = role.charAt(0).toUpperCase() + role.slice(1);
+          if (role === currentSourceAngleRole(source)) option.selected = true;
+          cameraRoleSelect.appendChild(option);
+        });
+        cameraRoleSelect.addEventListener("change", () => {
+          previewSourceUpdate();
+          scheduleMergeSourceCommit(readSourcePayload());
+        });
+        const cameraRoleLabel = documentObject.createElement("label");
+        cameraRoleLabel.className = "merge-source-field";
+        cameraRoleLabel.append(documentObject.createElement("span"));
+        cameraRoleLabel.querySelector("span").textContent = "Camera role";
+        cameraRoleLabel.append(cameraRoleSelect);
+        controls.append(cameraRoleLabel);
+
+        const placementModeSelect = documentObject.createElement("select");
+        placementModeSelect.dataset.mergeSourceField = "placement_mode";
+        placementModeSelect.dataset.sourceId = sourceId;
+        placementModeSelect.title = "Control how this item is placed in the output.";
+        ["auto", "side_by_side", "above_below", "pip", "full_screen_portrait", "dual_center_hud", "dual_top_hud"].forEach((mode) => {
+          const option = documentObject.createElement("option");
+          option.value = mode;
+          option.textContent = placementModeLabel(mode);
+          if (mode === currentSourcePlacementMode(source)) option.selected = true;
+          placementModeSelect.appendChild(option);
+        });
+        placementModeSelect.addEventListener("change", () => {
+          previewSourceUpdate();
+          scheduleMergeSourceCommit(readSourcePayload());
+        });
+        const placementModeLabelEl = documentObject.createElement("label");
+        placementModeLabelEl.className = "merge-source-field";
+        placementModeLabelEl.append(documentObject.createElement("span"));
+        placementModeLabelEl.querySelector("span").textContent = "Layout";
+        placementModeLabelEl.append(placementModeSelect);
+        controls.append(placementModeLabelEl);
+
         const syncHint = documentObject.createElement("small");
         syncHint.className = "merge-source-sync-hint";
         syncHint.textContent = currentState().project.merge.layout === "pip"
@@ -656,6 +764,11 @@ export function createMergePane({
     sourceIdentifier,
     currentSourceSyncOffsetMs,
     currentSourceOpacity,
+    currentSourceAngleRole,
+    normalizedAngleRoleValue,
+    currentSourcePlacementMode,
+    normalizedPlacementModeValue,
+    placementModeLabel,
     formatSyncOffsetLabel,
     mergePreviewTargetTime,
     mergeSourceById,

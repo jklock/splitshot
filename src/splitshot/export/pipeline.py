@@ -162,12 +162,21 @@ def _merge_sources(project: Project) -> list[MergeSource]:
             pip_size_percent=project.merge.pip_size_percent,
             pip_x=project.merge.pip_x,
             pip_y=project.merge.pip_y,
+            opacity=1.0,
+            sync_offset_ms=int(project.analysis.sync_offset_ms),
         )
     ]
 
 
 def _source_sync_offset_ms(source: MergeSource) -> int:
     return int(getattr(source, "sync_offset_ms", 0) or 0)
+
+
+def _source_active_path(source: MergeSource) -> str:
+    trim = getattr(source, "trim_derivative", None)
+    if trim is not None and getattr(trim, "derivative_path", None):
+        return str(trim.derivative_path)
+    return source.asset.path
 
 
 def _source_opacity(source: MergeSource) -> float:
@@ -183,16 +192,17 @@ def _source_uses_looped_still_input(source: MergeSource) -> bool:
 
 def _source_input_args(source: MergeSource, fps: float) -> list[str]:
     asset = source.asset
+    active_path = _source_active_path(source)
     offset_ms = _source_sync_offset_ms(source)
     input_args: list[str] = []
     if offset_ms > 0 and not asset.is_still_image and asset.media_kind != "animated_gif":
         input_args.extend(["-ss", f"{offset_ms / 1000:.3f}"])
     if _source_uses_looped_still_input(source):
-        input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", asset.path])
+        input_args.extend(["-loop", "1", "-framerate", f"{fps:.3f}", "-i", active_path])
     elif asset.media_kind == "animated_gif":
-        input_args.extend(["-stream_loop", "-1", "-ignore_loop", "0", "-i", asset.path])
+        input_args.extend(["-stream_loop", "-1", "-ignore_loop", "0", "-i", active_path])
     else:
-        input_args.extend(["-i", asset.path])
+        input_args.extend(["-i", active_path])
     return input_args
 
 
@@ -305,13 +315,27 @@ def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSourc
     for index, source in enumerate(merge_sources, start=1):
         asset = source.asset
         offset_ms = _source_sync_offset_ms(source)
-        rect = calculate_pip_rect(
-            project.primary_video,
-            asset,
-            source.pip_size_percent if source.pip_size_percent is not None else project.merge.pip_size_percent,
-            source.pip_x,
-            source.pip_y,
-        )
+        placement = getattr(source, "placement", None)
+        placement_mode = str(getattr(placement, "mode", "pip") or "pip")
+        pip_size = source.pip_size_percent if source.pip_size_percent is not None else project.merge.pip_size_percent
+        pip_x = source.pip_x if source.pip_x is not None else project.merge.pip_x
+        pip_y = source.pip_y if source.pip_y is not None else project.merge.pip_y
+        if placement_mode == "base":
+            rect = calculate_pip_rect(
+                project.primary_video,
+                asset,
+                100,
+                0.5,
+                0.5,
+            )
+        else:
+            rect = calculate_pip_rect(
+                project.primary_video,
+                asset,
+                pip_size,
+                pip_x,
+                pip_y,
+            )
         asset_chain = f"[{index}:v]setpts=PTS-STARTPTS"
         if offset_ms < 0:
             asset_chain += f",tpad=start_duration={abs(offset_ms) / 1000:.3f}:color=black"

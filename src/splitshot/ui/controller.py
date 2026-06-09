@@ -858,12 +858,12 @@ class ProjectController(QObject):
 
     def ingest_primary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing primary video...")
-        self.load_primary_video(self._stage_project_input_path(path, source_name=source_name))
+        self.load_primary_video(path)
         self.analyze_primary()
 
     def ingest_secondary_video(self, path: str, source_name: str | None = None) -> None:
         self._set_status("Importing secondary video...")
-        self.load_secondary_video(self._stage_project_input_path(path, source_name=source_name))
+        self.load_secondary_video(path)
 
     def set_project_details(self, name: str | None = None, description: str | None = None) -> None:
         changed = False
@@ -1713,7 +1713,6 @@ class ProjectController(QObject):
             self.project_changed.emit()
 
     def add_merge_source(self, path: str, source_name: str | None = None) -> None:
-        path = self._stage_project_input_path(path, source_name=source_name)
         asset = probe_video(path)
         self.project.merge_sources.append(
             MergeSource(
