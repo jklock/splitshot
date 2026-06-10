@@ -23,6 +23,10 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 
 | Control | What it does |
 | --- | --- |
+| Output Profiles selector | Shows saved output profiles for this stage. Create, select, or delete profiles. |
+| `Profile name` | The name of the selected output profile. |
+| `Type` | `Stage Output` for a single-angle render, `Stage Composite` for a composite with added media. |
+| `Frame profile` | Overrides the export aspect ratio (`Source`, `16:9`, `9:16`, `1:1`, or `4:5`) for the selected profile. |
 | `Preset` | Chooses a built-in export profile or `Custom`. |
 | `Quality` | Sets the general quality target. |
 | `Aspect ratio` | Keeps original framing or crops to a target shape such as `16:9`, `9:16`, `1:1`, or `4:5`. |
@@ -42,10 +46,30 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | `Show Export Log` | Opens the live/latest export log. |
 | Export Log modal | Shows recent local FFmpeg output and can export the log text. |
 
+## Output Profiles
+
+Output Profiles let you save framing and composition presets for a stage. Each profile stores a frame-profile override (source, 16:9, 9:16, 1:1, 4:5), a profile type (Stage Output vs. Stage Composite), and a name. Profiles persist as a `profiles.json` file alongside the project.
+
+### Managing Profiles
+
+1. Click `Create` to add a new profile. Give it a name and choose the type.
+2. Select a profile from the dropdown to load its settings.
+3. Edit the name, type, or frame profile — changes auto-save.
+4. Click `Delete` to remove the selected profile.
+
+### Profile Types
+
+- **Stage Output** — renders the primary video with export settings and frame profile.
+- **Stage Composite** — renders the full composition including added media, overlay, and frame profile.
+
+### Frame Profiles
+
+The frame profile overrides the export aspect ratio for the selected profile. Choose from `Source` (original framing), `16:9`, `9:16`, `1:1`, or `4:5`.
+
 ## How To Use It
 
 1. Choose a `Preset`, or use `Custom` for exact settings.
-2. Confirm aspect ratio and dimensions.
+2. Confirm aspect ratio and dimensions. If using an output profile, the frame profile overrides the aspect ratio.
 3. Use H.264 for broad compatibility unless you know the target supports another codec.
 4. Set a sensible bitrate for draft versus final output.
 5. Choose an output filename ending in `.mp4`, `.m4v`, `.mov`, or `.mkv`.

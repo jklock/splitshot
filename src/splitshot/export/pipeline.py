@@ -21,7 +21,10 @@ from splitshot.domain.models import (
     ExportFrameRate,
     ExportQuality,
     ExportVideoCodec,
+    FrameProfile,
     MergeLayout,
+    MergePlacementMode,
+    MergePlacementSlot,
     MergeSource,
     Project,
 )
@@ -223,9 +226,95 @@ def _merged_duration_ms(project: Project, merge_sources: list[MergeSource]) -> i
     return max([primary, *source_ends])
 
 
+_RESOLVED_MERGE_SOURCE_ANGLE_ROLES = frozenset({"primary", "follow", "static", "detail"})
+
+_CAMERA_ROLE_PRIORITY: dict[str, int] = {
+    "primary": 0,
+    "follow": 1,
+    "static": 2,
+    "detail": 3,
+}
+
+
+def _normalized_merge_source_angle_role(source: MergeSource) -> str:
+    raw = str(getattr(source, "angle_role", "") or getattr(source, "camera_role", "") or "").strip().lower()
+    if raw in _RESOLVED_MERGE_SOURCE_ANGLE_ROLES:
+        return raw
+    return "follow"
+
+
+def _camera_role_priority(source: MergeSource) -> int:
+    role = _normalized_merge_source_angle_role(source)
+    return _CAMERA_ROLE_PRIORITY.get(role, 99)
+
+
+def _merge_source_role_sort_key(source: MergeSource) -> tuple:
+    return (_camera_role_priority(source), source.id)
+
+
+def _project_merge_seed_mode(project: Project) -> MergePlacementMode:
+    return {
+        MergeLayout.SIDE_BY_SIDE: MergePlacementMode.SIDE_BY_SIDE,
+        MergeLayout.ABOVE_BELOW: MergePlacementMode.ABOVE_BELOW,
+        MergeLayout.PIP: MergePlacementMode.PIP,
+        MergeLayout.FULL_SCREEN_PORTRAIT: MergePlacementMode.FULL_SCREEN_PORTRAIT,
+        MergeLayout.DUAL_CENTER_HUD: MergePlacementMode.DUAL_CENTER_HUD,
+        MergeLayout.DUAL_TOP_HUD: MergePlacementMode.DUAL_TOP_HUD,
+    }.get(project.merge.layout, MergePlacementMode.PIP)
+
+
+def _resolved_merge_source_mode(source: MergeSource, project: Project) -> MergePlacementMode:
+    placement = getattr(source, "placement", None)
+    if placement is not None and getattr(placement, "mode", None) is not None and str(placement.mode) != "auto":
+        return placement.mode
+    return _project_merge_seed_mode(project)
+
+
+def _resolved_merge_source_slot(source: MergeSource, project: Project) -> MergePlacementSlot:
+    mode = _resolved_merge_source_mode(source, project)
+    placement = getattr(source, "placement", None)
+    if placement is not None and getattr(placement, "slot", None) is not None and str(placement.slot) != "auto":
+        return placement.slot
+    if mode == MergePlacementMode.PIP:
+        return MergePlacementSlot.OVERLAY
+    if mode in {
+        MergePlacementMode.BASE,
+        MergePlacementMode.FULL_SCREEN_PORTRAIT,
+        MergePlacementMode.DUAL_CENTER_HUD,
+        MergePlacementMode.DUAL_TOP_HUD,
+    }:
+        return MergePlacementSlot.CENTER
+    role = _normalized_merge_source_angle_role(source)
+    if role == "primary" or mode in {MergePlacementMode.SIDE_BY_SIDE, MergePlacementMode.ABOVE_BELOW}:
+        return MergePlacementSlot.LEFT if mode == MergePlacementMode.SIDE_BY_SIDE else MergePlacementSlot.TOP
+    return MergePlacementSlot.RIGHT if mode == MergePlacementMode.SIDE_BY_SIDE else MergePlacementSlot.BOTTOM
+
+
+@dataclass(slots=True)
+class ResolvedMergeSourcePlacement:
+    source: MergeSource
+    mode: MergePlacementMode
+    slot: MergePlacementSlot
+    priority: int
+
+
+def _resolved_merge_source_placements(project: Project, merge_sources: list[MergeSource]) -> list[ResolvedMergeSourcePlacement]:
+    sorted_sources = sorted(merge_sources, key=_merge_source_role_sort_key)
+    return [
+        ResolvedMergeSourcePlacement(
+            source=s,
+            mode=_resolved_merge_source_mode(s, project),
+            slot=_resolved_merge_source_slot(s, project),
+            priority=_camera_role_priority(s),
+        )
+        for s in sorted_sources
+    ]
+
+
 def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
     fps = _output_fps(project)
-    merge_assets = [source.asset for source in merge_sources]
+    sorted_sources = sorted(merge_sources, key=_merge_source_role_sort_key)
+    merge_assets = [source.asset for source in sorted_sources]
     sources = [project.primary_video, *merge_assets]
     tile_width = max(2, int(project.primary_video.width or 0))
     tile_height = max(2, int(project.primary_video.height or 0))
@@ -295,16 +384,11 @@ def _build_grid_merge_plan(project: Project, merge_sources: list[MergeSource]) -
 
 def _build_multi_pip_merge_plan(project: Project, merge_sources: list[MergeSource]) -> BaseRenderPlan:
     fps = _output_fps(project)
-
-    input_args = [
-        *ffmpeg_command([
-            "-v",
-            "info",
-        ]),
-        "-i",
-        project.primary_video.path,
-    ]
-    for source in merge_sources:
+    sorted_sources = sorted(merge_sources, key=_merge_source_role_sort_key)
+    sources: list[MergeSource] = sorted_sources
+    input_args: list[str] = []
+    merge_assets = [source.asset for source in sorted_sources]
+    for source in sorted_sources:
         input_args.extend(_source_input_args(source, fps))
     input_args.append("-an")
 
@@ -729,11 +813,22 @@ def _is_expected_decoder_pipe_shutdown(decoder_return: int, encoder_return: int,
     return "Broken pipe" in decoder_log and "Conversion failed!" in decoder_log
 
 
+def _frame_profile_to_aspect_ratio(frame_profile: str) -> AspectRatio:
+    mapping: dict[str, AspectRatio] = {
+        "16:9": AspectRatio.LANDSCAPE,
+        "9:16": AspectRatio.PORTRAIT,
+        "1:1": AspectRatio.SQUARE,
+        "4:5": AspectRatio.PORTRAIT_45,
+    }
+    return mapping.get(frame_profile.strip().lower(), AspectRatio.ORIGINAL)
+
+
 def export_project(
     project: Project,
     output_path: str | Path,
     progress_callback: Callable[[float], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
+    frame_profile: str | None = None,
 ) -> Path:
     project.export.last_log = ""
     project.export.last_error = None
@@ -743,10 +838,11 @@ def export_project(
     _ensure_qt_gui_application()
     project.scoring.hit_factor = calculate_hit_factor(project)
     plan = build_base_render_plan(project)
+    effective_aspect = _frame_profile_to_aspect_ratio(frame_profile) if frame_profile else project.export.aspect_ratio
     crop_left, crop_top, crop_width, crop_height = compute_crop_box(
         plan.width,
         plan.height,
-        project.export.aspect_ratio,
+        effective_aspect,
         project.export.crop_center_x,
         project.export.crop_center_y,
     )

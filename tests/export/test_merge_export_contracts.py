@@ -55,8 +55,8 @@ def test_grid_merge_plan_uses_source_order_and_per_source_offsets() -> None:
     project.merge.enabled = True
     project.merge.layout = MergeLayout.SIDE_BY_SIDE
     project.merge_sources = [
-        MergeSource(asset=_asset("/tmp/first.mp4"), sync_offset_ms=250),
-        MergeSource(asset=_asset("/tmp/second.mp4"), sync_offset_ms=-125),
+        MergeSource(asset=_asset("/tmp/first.mp4"), angle_role="follow", sync_offset_ms=250),
+        MergeSource(asset=_asset("/tmp/second.mp4"), angle_role="detail", sync_offset_ms=-125),
     ]
 
     plan = _build_merge_plan(project)
@@ -78,6 +78,7 @@ def test_multi_pip_merge_plan_uses_per_source_positions_and_offsets() -> None:
     project.merge.layout = MergeLayout.PIP
     first = MergeSource(
         asset=_asset("/tmp/first.mp4", width=320, height=180),
+        angle_role="primary",
         pip_size_percent=25,
         pip_x=0.0,
         pip_y=0.0,
@@ -85,6 +86,7 @@ def test_multi_pip_merge_plan_uses_per_source_positions_and_offsets() -> None:
     )
     second = MergeSource(
         asset=_asset("/tmp/second.mp4", width=320, height=180),
+        angle_role="follow",
         pip_size_percent=50,
         pip_x=1.0,
         pip_y=1.0,

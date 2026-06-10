@@ -714,6 +714,49 @@ export function createMergePane({
         placementModeLabelEl.append(placementModeSelect);
         controls.append(placementModeLabelEl);
 
+        const trimSection = documentObject.createElement("div");
+        trimSection.className = "merge-source-trim-section";
+        const trimHeader = documentObject.createElement("strong");
+        trimHeader.textContent = "Trim Video";
+        const trimRow = documentObject.createElement("div");
+        trimRow.className = "merge-source-trim-row";
+        const trimStartInput = documentObject.createElement("input");
+        trimStartInput.type = "number";
+        trimStartInput.min = "0";
+        trimStartInput.step = "0.001";
+        trimStartInput.placeholder = "Start (s)";
+        trimStartInput.dataset.trimStart = sourceId;
+        const trimEndInput = documentObject.createElement("input");
+        trimEndInput.type = "number";
+        trimEndInput.min = "0";
+        trimEndInput.step = "0.001";
+        trimEndInput.placeholder = "End (s)";
+        trimEndInput.dataset.trimEnd = sourceId;
+        const trimApply = documentObject.createElement("button");
+        trimApply.type = "button";
+        trimApply.textContent = "Apply";
+        trimApply.addEventListener("click", () => {
+          const s = parseFloat(trimStartInput.value) || 0;
+          const e = parseFloat(trimEndInput.value) || 0;
+          callApi("/api/merge/source/trim", { source_id: sourceId, start_s: s > 0 ? s : null, end_s: e > 0 ? e : null });
+        });
+        const trimClear = documentObject.createElement("button");
+        trimClear.type = "button";
+        trimClear.textContent = "Clear";
+        trimClear.addEventListener("click", () => {
+          callApi("/api/merge/source/trim", { source_id: sourceId, clear: true });
+        });
+        const trimStatus = documentObject.createElement("small");
+        trimStatus.className = "merge-source-trim-status";
+        const trimDerivative = source.trim_derivative;
+        if (trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path) {
+          trimStatus.textContent = "Trim active";
+          trimStatus.style.color = "var(--accent)";
+        }
+        trimRow.append(trimStartInput, trimEndInput, trimApply, trimClear);
+        trimSection.append(trimHeader, trimRow, trimStatus);
+        controls.appendChild(trimSection);
+
         const syncHint = documentObject.createElement("small");
         syncHint.className = "merge-source-sync-hint";
         syncHint.textContent = currentState().project.merge.layout === "pip"

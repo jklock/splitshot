@@ -20,6 +20,7 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 | `Layout` | Chooses `Side by side`, `Above / below`, or `Picture in picture`. |
 | `Default PiP size` | Sets the size for newly added PiP items. |
 | `Default PiP X` / `Default PiP Y` | Set default normalized placement for new PiP items. |
+| Media card `Trim Video` | Shows start/end fields, Apply/Clear buttons, and active trim status. |
 | Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
 | Per-item `PiP size` | Sets one item's size. |
@@ -36,6 +37,14 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 5. Expand each media card and adjust item-specific `PiP size`, `PiP opacity`, `PiP X`, and `PiP Y`.
 6. Use the sync nudge buttons until the secondary motion lines up with the primary video.
 7. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
+8. To trim added media, expand the card and enter start/end trim seconds in the `Trim Video` section, then click `Apply`. The derivative is stored locally and the source file is never modified.
+
+## Trim Notes
+
+- Trimming is non-destructive — the original media is never modified.
+- Trimmed derivatives are stored under the project's `Input/` folder.
+- Click `Clear` to restore the original media and remove the derivative reference.
+- Start time of `0` means the beginning of the source. Leave End blank to trim only the start.
 
 ## Layout Notes
 

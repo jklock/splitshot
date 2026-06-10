@@ -140,6 +140,7 @@ def browser_state(
     settings_layers: dict[str, Any] | None = None,
     practiscore_options: dict[str, Any] | None = None,
     media_cache_token: str | None = None,
+    output_profiles: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     rows = compute_split_rows(project)
     shotml_project = deepcopy(project)
@@ -259,6 +260,7 @@ def browser_state(
             "competitors": [],
         },
         "export_presets": export_presets_for_api(),
+        "output_profiles": output_profiles or [],
         "default_project_path": str(Path.home() / "splitshot"),
         "media": {
             "primary_available": primary_available,

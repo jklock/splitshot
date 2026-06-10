@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime, UTC
 from enum import Enum
@@ -144,6 +146,22 @@ class AspectRatio(StrEnum):
     PORTRAIT = "9:16"
     SQUARE = "1:1"
     PORTRAIT_45 = "4:5"
+
+
+class FrameProfile(StrEnum):
+    SOURCE = "source"
+    LANDSCAPE = "16:9"
+    PORTRAIT = "9:16"
+    SQUARE = "1:1"
+    PORTRAIT_45 = "4:5"
+
+
+class OutputProfileKind(StrEnum):
+    STAGE_OUTPUT = "stage_output"
+    STAGE_COMPOSITE = "stage_composite"
+
+
+OUTPUT_PROFILE_FRAME_PROFILE_VALUES = frozenset({"source", "16:9", "9:16", "1:1", "4:5"})
 
 
 _STILL_IMAGE_SUFFIXES = {
@@ -345,6 +363,89 @@ class MergeSourceTrimDerivative:
     original_path: str = ""
     derivative_path: str | None = None
     active_path_kind: MergeSourceAssetPathKind = MergeSourceAssetPathKind.ORIGINAL
+
+
+@dataclass(slots=True)
+class OutputProfile:
+    output_id: str = field(default_factory=lambda: uuid4().hex)
+    scope_type: str = "stage"
+    scope_id: str = ""
+    profile_name: str = ""
+    profile_kind: OutputProfileKind = OutputProfileKind.STAGE_OUTPUT
+    frame_profile: str = "source"
+    metric_caption_preset: str = ""
+    lead_in_card: str = ""
+    brand_mark: str = ""
+    subject_track_crop: str = ""
+    visibility_recipe: str = ""
+    angle_director_plan: str = ""
+    review_source_id: str = ""
+    retained_proxy_id: str = ""
+    archive_id: str = ""
+    last_rendered_at: str = ""
+
+
+def _normalize_frame_profile(value: str) -> str:
+    normalized = str(value or "source").strip().lower()
+    if normalized in OUTPUT_PROFILE_FRAME_PROFILE_VALUES:
+        return normalized
+    return "source"
+
+
+def output_profile_from_dict(data: dict[str, Any]) -> OutputProfile:
+    return OutputProfile(
+        output_id=str(data.get("output_id", uuid4().hex)),
+        scope_type=str(data.get("scope_type", "stage")),
+        scope_id=str(data.get("scope_id", "")),
+        profile_name=str(data.get("profile_name", "")),
+        profile_kind=OutputProfileKind(str(data.get("profile_kind", "stage_output")).strip().lower()),
+        frame_profile=_normalize_frame_profile(data.get("frame_profile", "source")),
+        metric_caption_preset=str(data.get("metric_caption_preset", "")),
+        lead_in_card=str(data.get("lead_in_card", "")),
+        brand_mark=str(data.get("brand_mark", "")),
+        subject_track_crop=str(data.get("subject_track_crop", "")),
+        visibility_recipe=str(data.get("visibility_recipe", "")),
+        angle_director_plan=str(data.get("angle_director_plan", "")),
+        review_source_id=str(data.get("review_source_id", "")),
+        retained_proxy_id=str(data.get("retained_proxy_id", "")),
+        archive_id=str(data.get("archive_id", "")),
+        last_rendered_at=str(data.get("last_rendered_at", "")),
+    )
+
+
+def output_profile_to_dict(profile: OutputProfile) -> dict[str, Any]:
+    return {
+        "output_id": profile.output_id,
+        "scope_type": profile.scope_type,
+        "scope_id": profile.scope_id,
+        "profile_name": profile.profile_name,
+        "profile_kind": str(profile.profile_kind.value),
+        "frame_profile": profile.frame_profile,
+        "metric_caption_preset": profile.metric_caption_preset,
+        "lead_in_card": profile.lead_in_card,
+        "brand_mark": profile.brand_mark,
+        "subject_track_crop": profile.subject_track_crop,
+        "visibility_recipe": profile.visibility_recipe,
+        "angle_director_plan": profile.angle_director_plan,
+        "review_source_id": profile.review_source_id,
+        "retained_proxy_id": profile.retained_proxy_id,
+        "archive_id": profile.archive_id,
+        "last_rendered_at": profile.last_rendered_at,
+    }
+
+
+def _serialize_output_profiles(profiles: list[OutputProfile]) -> str:
+    return json.dumps([output_profile_to_dict(p) for p in profiles], indent=2)
+
+
+def _deserialize_output_profiles(data: str) -> list[OutputProfile]:
+    try:
+        raw = json.loads(data)
+        if isinstance(raw, list):
+            return [output_profile_from_dict(item) for item in raw if isinstance(item, dict)]
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return []
 
 
 @dataclass(slots=True)

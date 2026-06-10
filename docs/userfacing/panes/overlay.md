@@ -38,6 +38,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | `Font`, `Font size`, `Bold`, `Italic` | Control badge typography. `Font size` becomes the exact sizing control when `Badge size` is `Custom`. |
 | Badge style cards | Compact side-by-side cards for timer, shot, current shot, and score badge background, text color, and opacity. |
 | `Score Colors` | Sets colors for score tokens such as `-0`, `-1`, `M`, `NS`, `PE`, and similar values. |
+| `Export Badges` | Saves the current overlay badge state (styles, scoring colors, visibility toggles, locks, typography) as a preset on the active output profile's `metric_caption_preset` field. |
 | Color swatches | Open the shared color picker modal with quick swatches, hue, saturation, lightness, and hex input. |
 
 ## How To Use It
@@ -51,7 +52,8 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 7. Drag a locked timer, draw, or score badge when you want to reposition the whole locked stack directly in preview.
 8. Tune `Stack gap`, `Edge padding`, bubble dimensions, and typography.
 9. Finish with the compact badge style cards and `Score Colors` while watching the preview.
-10. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
+10. Click `Export Badges` to save the current badge configuration to the active output profile. The preset is stored in that profile's `metric_caption_preset` field and reapplied when the profile is loaded.
+11. Click a color swatch when you need the expanded color picker instead of typing a hex value directly.
 
 ## Preview And Export Behavior
 
@@ -70,6 +72,14 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | A badge follows the shot stack when you wanted direct placement. | Turn off that badge's lock checkbox. |
 | The stack covers the target. | Reduce `Shots shown`, change `Quadrant`, or use custom stack coordinates. |
 | Export does not match the intended overlay. | Recheck Overlay, Review, and PiP before clicking `Export Video`. |
+
+## Frame Profile
+
+The frame profile selected in an Output Profile (Export pane) overrides the export aspect ratio. When exporting with a profile that has a frame profile set (such as `16:9`, `9:16`, `1:1`, or `4:5`), the output is cropped to that ratio. Set the frame profile to `Source` to use the export pane's aspect ratio.
+
+## Export Badges
+
+Click `Export Badges` in the Overlay pane to save the current badge configuration — styles, scoring colors, visibility toggles, lock states, and typography — to the active output profile. The preset is stored in the profile's `metric_caption_preset` field and persists with the profile in `profiles.json`. Load a profile to restore its badge preset; changes are saved through `/api/output-profiles/update`.
 
 ## Related Guides
 

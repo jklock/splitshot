@@ -30,9 +30,17 @@ from splitshot.domain.models import (
     ExportPreset,
     ExportQuality,
     ExportVideoCodec,
-    _merge_source_from_dict,
-    _popup_bubble_from_dict,
+    FrameProfile,
     MergeLayout,
+    MergeSourceAssetPathKind,
+    MergeSourceTrimDerivative,
+    OutputProfile,
+    OutputProfileKind,
+    _deserialize_output_profiles,
+    _merge_source_from_dict,
+    _normalize_frame_profile,
+    _popup_bubble_from_dict,
+    _serialize_output_profiles,
     OverlayPosition,
     OverlayTextBox,
     PopupBubble,
@@ -54,7 +62,7 @@ from splitshot.domain.models import (
     sync_overlay_legacy_custom_box_fields,
 )
 from splitshot.export.presets import apply_export_preset as apply_export_preset_settings
-from splitshot.media.ffmpeg import MediaError
+from splitshot.media.ffmpeg import MediaError, trim_video
 from splitshot.media.probe import probe_video
 from splitshot.persistence.projects import (
     INPUT_DIRNAME,
@@ -736,6 +744,8 @@ class ProjectController(QObject):
         self._saved_snapshot = project_to_dict(self.project)
         self._original_shot_state_by_id: dict[str, _OriginalShotState] = {}
         self._autosave_in_progress = False
+        self._output_profiles: list[OutputProfile] = []
+        self._output_profiles_cache_dirty = False
         self._remember_original_shots()
         self.project_changed.connect(self._autosave_project_if_needed)
 
@@ -1761,6 +1771,34 @@ class ProjectController(QObject):
         if analyzed_source is None or analyzed_source.id != source_id:
             raise ValueError("Only the first analyzable PiP video can be reanalyzed")
         self.analyze_secondary()
+
+    def trim_merge_source(self, source_id: str, *, start_s: float | None = None, end_s: float | None = None, clear: bool = False) -> None:
+        source = next((s for s in self.project.merge_sources if s.id == source_id), None)
+        if source is None:
+            raise ValueError(f"Merge source {source_id} not found")
+        if clear:
+            source.trim_derivative = MergeSourceTrimDerivative(original_path=source.asset.path)
+            self._set_status("Cleared trim.")
+            self.project.touch()
+            self.project_changed.emit()
+            return
+        if start_s is None and end_s is None:
+            return
+        source_path = source.asset.path
+        if not source_path:
+            raise ValueError("Merge source has no asset path")
+        if start_s is not None and end_s is not None and start_s >= end_s:
+            raise ValueError("start_s must be less than end_s")
+        derivative_path = self._stage_project_input_path(source_path, source_name=f"{source.id}_trim")
+        trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+        source.trim_derivative = MergeSourceTrimDerivative(
+            original_path=source_path,
+            derivative_path=derivative_path,
+            active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
+        )
+        self._set_status(f"Trimmed {source_path} (start={start_s}, end={end_s}).")
+        self.project.touch()
+        self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
@@ -2947,6 +2985,7 @@ class ProjectController(QObject):
         self.project_path = ensure_project_suffix(path)
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
         self._ensure_project_output_path()
+        self._reload_output_profiles_cache()
         loaded_snapshot = project_to_dict(self.project)
         recovered_media = self._restore_media_sources_from_project()
         recovered_practiscore = self._restore_practiscore_source_from_project(emit_change=False)
@@ -3314,6 +3353,102 @@ class ProjectController(QObject):
 
     def autosave_project_if_needed(self) -> None:
         self._autosave_project_if_needed()
+
+    def _profiles_path(self) -> Path | None:
+        if self.project_path is None:
+            return None
+        return self.project_path / "profiles.json"
+
+    def _load_output_profiles(self) -> list[OutputProfile]:
+        profiles_path = self._profiles_path()
+        if profiles_path is None or not profiles_path.exists():
+            return []
+        try:
+            raw = profiles_path.read_text(encoding="utf-8")
+            return _deserialize_output_profiles(raw)
+        except (OSError, ValueError):
+            return []
+
+    def _sync_output_profiles_to_disk(self) -> None:
+        profiles_path = self._profiles_path()
+        if profiles_path is None:
+            return
+        try:
+            raw = _serialize_output_profiles(self._output_profiles)
+            profiles_path.write_text(raw, encoding="utf-8")
+        except OSError:
+            pass
+
+    def _reload_output_profiles_cache(self) -> None:
+        self._output_profiles = self._load_output_profiles()
+        self._output_profiles_cache_dirty = False
+
+    def list_output_profiles(self) -> list[dict[str, Any]]:
+        from splitshot.domain.models import output_profile_to_dict
+
+        return [output_profile_to_dict(p) for p in self._output_profiles]
+
+    def create_output_profile(self, profile_name: str, profile_kind: str = "stage_output") -> dict[str, Any]:
+        from splitshot.domain.models import OutputProfileKind, output_profile_to_dict
+
+        kind = OutputProfileKind(profile_kind.strip().lower()) if profile_kind.strip().lower() in {"stage_output", "stage_composite"} else OutputProfileKind.STAGE_OUTPUT
+        profile = OutputProfile(
+            scope_type="stage",
+            scope_id=Path(self.project_path or "").name,
+            profile_name=profile_name or "New Profile",
+            profile_kind=kind,
+        )
+        self._output_profiles.append(profile)
+        self._sync_output_profiles_to_disk()
+        return output_profile_to_dict(profile)
+
+    def update_output_profile(self, output_id: str, **updates: Any) -> dict[str, Any] | None:
+        from splitshot.domain.models import FrameProfile, output_profile_to_dict
+
+        profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
+        if profile is None:
+            return None
+        for key, value in updates.items():
+            if value is None:
+                continue
+            if key == "profile_name":
+                profile.profile_name = str(value)
+            elif key == "profile_kind":
+                normalized = str(value).strip().lower()
+                if normalized in {"stage_output", "stage_composite"}:
+                    profile.profile_kind = OutputProfileKind(normalized)
+            elif key == "frame_profile":
+                profile.frame_profile = _normalize_frame_profile(str(value))
+            elif key == "metric_caption_preset":
+                profile.metric_caption_preset = str(value)
+            elif key == "lead_in_card":
+                profile.lead_in_card = str(value)
+            elif key == "brand_mark":
+                profile.brand_mark = str(value)
+            elif key == "visibility_recipe":
+                profile.visibility_recipe = str(value)
+            elif key == "review_source_id":
+                profile.review_source_id = str(value)
+            elif key == "last_rendered_at":
+                profile.last_rendered_at = str(value)
+        self._sync_output_profiles_to_disk()
+        return output_profile_to_dict(profile)
+
+    def delete_output_profile(self, output_id: str) -> bool:
+        profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
+        if profile is None:
+            return False
+        self._output_profiles.remove(profile)
+        self._sync_output_profiles_to_disk()
+        return True
+
+    def render_output_profile(self, output_id: str) -> dict[str, Any]:
+        from splitshot.domain.models import output_profile_to_dict
+
+        profile = next((p for p in self._output_profiles if p.output_id == output_id), None)
+        if profile is None:
+            raise ValueError(f"Output profile {output_id} not found")
+        return {"profile": output_profile_to_dict(profile), "status": "render_planned"}
 
     def _stage_project_input_path(self, path: str, source_name: str | None = None) -> str:
         if self.project_path is None:

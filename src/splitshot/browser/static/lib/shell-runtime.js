@@ -62,6 +62,14 @@ export function createShellRuntime({
   renderSettingsPane = () => {},
   renderMetricsPanel = () => {},
   renderMergeMediaList = () => {},
+  renderOutputProfiles = () => {},
+  renderReviewSourceControls = () => {},
+  createOutputProfile = () => {},
+  deleteOutputProfile = () => {},
+  selectOutputProfile = () => {},
+  setReviewSource = () => {},
+  exportBadges = () => {},
+  scheduleOutputProfileFieldCommit = () => {},
   badgeControls = [],
   badgeDisplayLabels = {},
   scoringColorOptions = () => [],
@@ -396,6 +404,8 @@ export function createShellRuntime({
       renderTimingTables();
       renderControls();
       renderLiveOverlay();
+      renderOutputProfiles();
+      renderReviewSourceControls();
       setActiveTool(getActiveTool(), { collapseExpandedLayout: false, persistUiState: false });
     });
     flushPendingInspectorScrollRestore();
@@ -913,6 +923,9 @@ export function createShellRuntime({
         });
       });
     });
+    $("review-set-source")?.addEventListener("click", setReviewSource);
+    $("review-source-select")?.addEventListener("change", renderReviewSourceControls);
+    $("export-badges")?.addEventListener("click", exportBadges);
     $("badge-style-grid").addEventListener("input", (event) => {
       const target = event.target;
       if (isColorInput(target)) return;
@@ -989,6 +1002,16 @@ export function createShellRuntime({
     });
     ["quality", "aspect-ratio"].forEach((id) => {
       $(id).addEventListener("change", scheduleExportLayoutApply);
+    });
+    $("create-output-profile")?.addEventListener("click", createOutputProfile);
+    $("delete-output-profile")?.addEventListener("click", deleteOutputProfile);
+    $("output-profile-select")?.addEventListener("change", () => {
+      selectOutputProfile();
+      renderReviewSourceControls();
+    });
+    ["output-profile-name", "output-profile-type", "output-profile-frame"].forEach((id) => {
+      $(id)?.addEventListener("change", scheduleOutputProfileFieldCommit);
+      $(id)?.addEventListener("input", scheduleOutputProfileFieldCommit);
     });
     $("export-preset").addEventListener("change", () => {
       resetExportDraft();

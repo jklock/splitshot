@@ -80,3 +80,20 @@ def run_ffmpeg(command: list[str]) -> None:
 
 def ffmpeg_command(command: list[str]) -> list[str]:
     return [resolve_media_binary("ffmpeg"), "-y", *command]
+
+
+def trim_video(source_path: str, output_path: str, start_s: float | None = None, end_s: float | None = None) -> None:
+    if not source_path:
+        raise MediaError("source_path is required for trim")
+    if not output_path:
+        raise MediaError("output_path is required for trim")
+    if start_s is None and end_s is None:
+        raise MediaError("At least one of start_s or end_s is required for trim")
+    cmd: list[str] = []
+    if start_s is not None and start_s > 0:
+        cmd.extend(["-ss", f"{start_s:.3f}"])
+    cmd.extend(["-i", source_path])
+    if end_s is not None:
+        cmd.extend(["-to", f"{end_s:.3f}"])
+    cmd.extend(["-c", "copy", output_path])
+    run_ffmpeg(cmd)

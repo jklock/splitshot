@@ -30,9 +30,8 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/splitshot"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"src/splitshot/browser/static" = "splitshot/browser/static"
-"src/splitshot/resources" = "splitshot/resources"
+# force-include intentionally empty — static/ and resources/ subpackages
+# are already under src/splitshot/ and included via packages directive.
 
 [tool.pytest.ini_options]
 minversion = "8.0"

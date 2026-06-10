@@ -126,6 +126,8 @@ id:color-picker-hue
 id:color-picker-lightness
 id:color-picker-saturation
 id:color-space
+id:create-output-profile
+id:delete-output-profile
 id:delete-project
 id:timing-enabled
 id:draw-lock-to-stack
@@ -135,6 +137,7 @@ id:expand-metrics
 id:expand-scoring
 id:expand-timing
 id:expand-waveform
+id:export-badges
 id:export-export-log
 id:export-path
 id:export-preset
@@ -157,6 +160,10 @@ id:merge-media-input
 id:metrics-export-csv
 id:metrics-export-text
 id:new-project
+id:output-profile-frame
+id:output-profile-name
+id:output-profile-select
+id:output-profile-type
 id:overlay-custom-x
 id:overlay-custom-y
 id:overlay-font-bold
@@ -191,6 +198,8 @@ id:resize-sidebar
 id:resize-waveform
 id:review-add-imported-box
 id:review-add-text-box
+id:review-set-source
+id:review-source-select
 id:score-lock-to-stack
 id:score-x
 id:score-y

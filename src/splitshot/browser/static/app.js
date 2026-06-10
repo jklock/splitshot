@@ -320,6 +320,8 @@ const SECONDARY_PREVIEW_PAUSED_SEEK_THRESHOLD_S = 0.01;
 const SECONDARY_PREVIEW_ACTIVE_SEEK_THRESHOLD_S = 0.16;
 const SECONDARY_PREVIEW_PLAYBACK_RATE_DRIFT_THRESHOLD_S = 0.02;
 const SECONDARY_PREVIEW_MAX_PLAYBACK_RATE_DELTA = 0.08;
+const SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS = 200;
+const secondaryPreviewLastSeekAt = new WeakMap();
 const DEFAULT_POPUP_EDITOR_SECTION_EXPANSION = Object.freeze({
   content: true,
   timing: false,
@@ -5587,8 +5589,18 @@ function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {
   return mergePane?.renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue);
 }
 
+function previewSeekBoundary(preview) {
+  if (mergePreviewDrag) return false;
+  const lastSeek = secondaryPreviewLastSeekAt.get(preview);
+  if (lastSeek !== undefined && Date.now() - lastSeek < SECONDARY_PREVIEW_MIN_SEEK_INTERVAL_MS) {
+    return false;
+  }
+  return true;
+}
+
 function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {
   if (!(preview instanceof HTMLMediaElement) || !Number.isFinite(target)) return;
+  if (mergePreviewDrag) return;
   const currentTime = Number(preview.currentTime || 0);
   const drift = target - currentTime;
   const absoluteDrift = Math.abs(drift);
@@ -5598,6 +5610,9 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
     preview.defaultPlaybackRate = targetPlaybackRate;
   }
   if (absoluteDrift > seekThreshold) {
+    if (!previewSeekBoundary(preview)) return;
+    secondaryPreviewLastSeekAt.set(preview, Date.now());
+    preview.dataset.syncCorrectionMode = "seek";
     try {
       if (typeof preview.fastSeek === "function") preview.fastSeek(target);
       else preview.currentTime = target;
@@ -5615,6 +5630,7 @@ function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused
   if (Math.abs((preview.playbackRate || 1) - nextPlaybackRate) > 0.001) {
     preview.playbackRate = nextPlaybackRate;
     preview.defaultPlaybackRate = nextPlaybackRate;
+    preview.dataset.syncCorrectionMode = "rate";
   }
 }
 
@@ -5645,6 +5661,153 @@ function syncMergePreviewElements(primary) {
 
 function renderVideo() {
   return videoPlayerComponent?.renderVideo();
+}
+
+function renderOutputProfiles() {
+  const select = $("output-profile-select");
+  if (!select) return;
+  const currentValue = select.value;
+  const profiles = state.output_profiles || [];
+  select.innerHTML = '<option value="">-- No profile selected --</option>';
+  profiles.forEach((p) => {
+    const opt = document.createElement("option");
+    opt.value = p.output_id;
+    opt.textContent = p.profile_name || p.output_id;
+    if (p.output_id === currentValue) opt.selected = true;
+    select.appendChild(opt);
+  });
+  const selected = profiles.find((p) => p.output_id === select.value);
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  if (nameInput) nameInput.value = selected?.profile_name || "";
+  if (typeSelect) typeSelect.value = selected?.profile_kind || "stage_output";
+  if (frameSelect) frameSelect.value = selected?.frame_profile || "source";
+  if (nameInput) nameInput.disabled = !selected;
+  if (typeSelect) typeSelect.disabled = !selected;
+  if (frameSelect) frameSelect.disabled = !selected;
+}
+
+function renderReviewSourceControls() {
+  const select = $("review-source-select");
+  if (!select) return;
+  const profiles = state.output_profiles || [];
+  const profileSelect = $("output-profile-select");
+  const activeProfileId = profileSelect?.value || "";
+  const activeProfile = profiles.find((p) => p.output_id === activeProfileId);
+  const sources = state.project?.merge_sources || [];
+  const currentValue = select.value;
+  select.innerHTML = '<option value="">-- No source --</option>';
+  sources.forEach((s) => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = s.asset?.name || s.id;
+    if (s.id === currentValue) opt.selected = true;
+    select.appendChild(opt);
+  });
+  const reviewSourceId = activeProfile?.review_source_id || "";
+  if (reviewSourceId && select.value !== reviewSourceId) select.value = reviewSourceId;
+  const statusEl = $("review-source-status");
+  if (statusEl) {
+    if (reviewSourceId) {
+      const source = sources.find((s) => s.id === reviewSourceId);
+      const name = source?.asset?.name || reviewSourceId;
+      statusEl.textContent = "Retained: " + name;
+    } else {
+      statusEl.textContent = "Live";
+    }
+  }
+  select.disabled = !activeProfile;
+  const setBtn = $("review-set-source");
+  if (setBtn) setBtn.disabled = !activeProfile;
+}
+
+function setReviewSource() {
+  const select = $("review-source-select");
+  const profileSelect = $("output-profile-select");
+  const profileId = profileSelect?.value;
+  if (!profileId) return;
+  const sourceId = select?.value || "";
+  callApi("/api/output-profiles/update", { output_id: profileId, review_source_id: sourceId });
+  callApi("/api/output-profiles/render", { output_id: profileId });
+}
+
+function exportBadges() {
+  const profileSelect = $("output-profile-select");
+  const profileId = profileSelect?.value;
+  if (!profileId) return;
+  const payload = readOverlayPayload();
+  const badgeState = {
+    styles: payload.styles,
+    scoring_colors: payload.scoring_colors,
+    badge_size: payload.badge_size,
+    style_type: payload.style_type,
+    spacing: payload.spacing,
+    margin: payload.margin,
+    max_visible_shots: payload.max_visible_shots,
+    shot_quadrant: payload.shot_quadrant,
+    shot_direction: payload.shot_direction,
+    font_family: payload.font_family,
+    font_size: payload.font_size,
+    font_bold: payload.font_bold,
+    font_italic: payload.font_italic,
+    show_timer: payload.show_timer,
+    show_draw: payload.show_draw,
+    show_shots: payload.show_shots,
+    show_score: payload.show_score,
+    timer_lock_to_stack: payload.timer_lock_to_stack,
+    draw_lock_to_stack: payload.draw_lock_to_stack,
+    score_lock_to_stack: payload.score_lock_to_stack,
+  };
+  callApi("/api/output-profiles/update", {
+    output_id: profileId,
+    metric_caption_preset: JSON.stringify(badgeState),
+  });
+}
+
+function createOutputProfile() {
+  const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
+  callApi("/api/output-profiles/create", { profile_name: baseName, profile_kind: "stage_output" });
+}
+
+function deleteOutputProfile() {
+  const select = $("output-profile-select");
+  const id = select?.value;
+  if (!id) return;
+  callApi("/api/output-profiles/delete", { output_id: id });
+}
+
+function selectOutputProfile() {
+  const select = $("output-profile-select");
+  const id = select?.value;
+  const profiles = state.output_profiles || [];
+  const selected = profiles.find((p) => p.output_id === id);
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  if (nameInput) { nameInput.value = selected?.profile_name || ""; nameInput.disabled = !selected; }
+  if (typeSelect) { typeSelect.value = selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
+  if (frameSelect) { frameSelect.value = selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
+}
+
+let _outputProfileFieldCommitTimer = null;
+
+function scheduleOutputProfileFieldCommit() {
+  if (_outputProfileFieldCommitTimer) clearTimeout(_outputProfileFieldCommitTimer);
+  _outputProfileFieldCommitTimer = setTimeout(() => {
+    _outputProfileFieldCommitTimer = null;
+    const select = $("output-profile-select");
+    const id = select?.value;
+    if (!id) return;
+    const nameInput = $("output-profile-name");
+    const typeSelect = $("output-profile-type");
+    const frameSelect = $("output-profile-frame");
+    const updates = {};
+    if (nameInput) updates.profile_name = nameInput.value;
+    if (typeSelect) updates.profile_kind = typeSelect.value;
+    if (frameSelect) updates.frame_profile = frameSelect.value;
+    callApi("/api/output-profiles/update", { output_id: id, ...updates });
+  }, 400);
 }
 
 function syncSecondaryPreview() {
@@ -9907,6 +10070,11 @@ shellRuntime = createShellRuntime({
   renderSettingsPane,
   renderMetricsPanel,
   renderMergeMediaList,
+  renderOutputProfiles,
+  createOutputProfile,
+  deleteOutputProfile,
+  selectOutputProfile,
+  scheduleOutputProfileFieldCommit,
   badgeControls,
   badgeDisplayLabels,
   scoringColorOptions,

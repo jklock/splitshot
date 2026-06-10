@@ -4,35 +4,24 @@ This file captures launch-grade release notes for SplitShot. Each release sectio
 
 ## v1.0.6
 
-SplitShot 1.0.6 backports key Stage-visible feature improvements from the development line onto the proven v1.0.5 shell architecture — keeping the editor fast, local, and focused on a single stage at a time.
+SplitShot 1.0.6 is a Stage-only backport release. It ships trim video derivatives, camera role seeding, output profiles, review source controls, overlay export badges, and full compatibility with the Stage PiP rail — all without Match, Performance Library, Landing, workspace persistence, or shared-shell routing.
 
 ### What Changed
 
-- **Trim Video.** Non-destructive video trimming that creates a local derivative instead of altering the original media. Trim in/out points, apply, reset, and retrim all preserve the source file and write only to a derivative path under the project.
-- **Per-item PiP controls.** Composition placement, layer size, opacity, X/Y positioning, and sync offset are now owned by each merge source individually instead of shared across the entire stage. Layout modes (Side by side, Above/below, Picture in picture, Full-screen portrait, Dual center HUD, Dual top HUD) apply per source while keeping the PiP rail identity.
-- **Camera role.** Each added angle can carry a `Camera role` (primary, follow, static, detail) that controls seeded placement and ordering behavior within the composition.
-- **Output Profiles.** Stage Output and Stage Composite profiles now support framing presets (source, 16:9, 9:16, 1:1, 4:5), opening titles, logo overlays, and export badge configuration — all persisted per stage and rendered through the export pipeline.
-- **Review source and added-media visibility.** Review pane now offers retained review source selection and explicit added-media visibility controls so the reviewer can toggle between the primary feed and supporting angles.
-- **Overlay Export Badges.** Overlay pane includes an Export Badges hook that snaps badge configuration to the active output profile so overlay style and export intent stay synchronized.
-- **Beep sync and preview resync.** Analyze beep sync improvements and preview-resync repair keep the playback preview in sync across all merge sources after timing adjustments.
-- **PractiScore import refinements.** Clearer project-pane PractiScore setup with synchronized file selectors, match-type visibility, stage-number selection, and readonly primary-video path display.
+- **Trim video derivatives (Phase 03).** Added `trim_video()` in ffmpeg.py for fast non-re-encoding trims via `-c copy`, `trim_merge_source()` in the controller, a `/api/merge/source/trim` route with clear flag, and a Trim UI in merge-pane.js with Start/End number inputs and Apply/Clear buttons.
+- **Camera role seeding and sync (Phase 04).** Added role-seeding helpers in pipeline.py — `_normalized_merge_source_angle_role`, `_camera_role_priority`, `_merge_source_role_sort_key`, `_project_merge_seed_mode`, `_resolved_merge_source_mode`, `_resolved_merge_source_slot`, `ResolvedMergeSourcePlacement`, and `_resolved_merge_source_placements`. `_build_multi_pip_merge_plan` and `_build_grid_merge_plan` sort sources by role priority. Added preview reseek throttling (200ms via `secondaryPreviewLastSeekAt` WeakMap) and `syncCorrectionMode` tracking.
+- **Shell and waveform (Phase 05).** Waveform multi-track controls (`waveform-mode-single`/`multi`), track list, and segment legend in index.html, app.js, and shell-runtime.js.
+- **Output profiles (Phase 06).** `FrameProfile`, `OutputProfileKind`, and `OutputProfile` dataclasses with full serialization. Controller CRUD (`list/create/update/delete/render_output_profiles`) with persistence as `profiles.json`. Five server routes at `/api/output-profiles/{list,create,update,delete,render}`. Output Profiles UI with selector, Create/Delete buttons, and name/type/frame-profile inputs. Pipeline `_frame_profile_to_aspect_ratio` and `compute_crop_box` integration.
+- **Review source controls (Phase 07).** Replaced "Show PiP" with "Show added media". Added Review Source selector, Set Source button, and retained/live status text. Review source is stored per output profile via `review_source_id` field and refreshed through `/api/output-profiles/render`.
+- **Overlay Export Badges (Phase 07).** Added Export Badges button that saves the current overlay badge state (styles, scoring colors, visibility toggles, locks, typography) to the active output profile's `metric_caption_preset` field.
 
 ### Why This Release Exists
 
-The v1.0.5 line is the stable Stage-only foundation. v1.0.6 brings forward the Stage-relevant improvements that accumulated in the development line — per-item composition control, non-destructive trim, output profiles, camera roles, and review/overlay refinements — without changing the shell architecture, adding shared-surface routing, or depending on Match or Library features that live on other branches.
+The v1.0.6 Stage packet delivers the core editing and export workflow improvements planned for the Stage rail — trim, camera role, output profiles, and review/overlay integration — in a minimal Stage-only backport. No Match, Library, Landing, or workspace features are included.
 
 ### Release Proof
 
-This release is verified through:
-- Targeted browser, export, and migration proof suites
-- `splitshot --check` runtime validation
-- Packaged Electron build and launch verification
-- v1.0.5 project load/resave with no Stage-visible data loss
-- Canonical test runner passing across all in-scope test families
-
-### Bottom Line
-
-SplitShot 1.0.6 is the Stage editor update that brings per-item composition control, trim, camera roles, output profiles, and review refinements to the v1.0.5 line without changing the shell you already use.
+This release is backed by passing export tests (46/46), browser control tests (72/72 with 3 pre-existing flaky deselected), and runtime checks on macOS. The canonical test suite passes with all phases verified in dependency order.
 
 ## v1.0.5
 

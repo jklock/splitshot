@@ -240,7 +240,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'id="show-pip"' in html
     assert 'id="markers-enable"' in html
     assert "Show markers" in html
-    assert "Show PiP" in html
+    assert "Show added media" in html
     assert "Enable Markers" in html
     assert 'id="review-text-box-list"' in html
     assert 'data-tool-pane="markers"' in html
@@ -1624,6 +1624,10 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "add-merge-media",
         "review-add-text-box",
         "review-add-imported-box",
+        "review-set-source",
+        "export-badges",
+        "create-output-profile",
+        "delete-output-profile",
         "show-export-log",
         "export-export-log",
         "close-export-log",

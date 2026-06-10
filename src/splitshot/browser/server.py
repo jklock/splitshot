@@ -809,6 +809,12 @@ class BrowserControlServer:
                     "/api/merge/reset-defaults": self._reset_merge_defaults,
                     "/api/merge/source": self._set_merge_source,
                     "/api/merge/source/analyze": self._analyze_merge_source,
+                    "/api/merge/source/trim": self._trim_merge_source,
+                    "/api/output-profiles/list": self._list_output_profiles,
+                    "/api/output-profiles/create": self._create_output_profile,
+                    "/api/output-profiles/update": self._update_output_profile,
+                    "/api/output-profiles/delete": self._delete_output_profile,
+                    "/api/output-profiles/render": self._render_output_profile,
                     "/api/overlay": self._set_overlay,
                     "/api/popups": self._set_popups,
                     "/api/merge": self._set_merge,
@@ -956,6 +962,7 @@ class BrowserControlServer:
                     settings_layers=controller.settings_layers(),
                     practiscore_options=controller.practiscore_browser_state(),
                     media_cache_token=server._media_url_token,
+                    output_profiles=controller.list_output_profiles(),
                 )
                 primary_path = controller.project.primary_video.path
                 secondary_path = (
@@ -1673,6 +1680,50 @@ class BrowserControlServer:
                 if source_id in {None, ""}:
                     raise ValueError("source_id is required")
                 controller.rerun_merge_source_analysis(str(source_id))
+
+            def _trim_merge_source(self, payload: dict[str, Any]) -> None:
+                source_id = payload.get("source_id") or payload.get("id")
+                if source_id in {None, ""}:
+                    raise ValueError("source_id is required")
+                clear = bool(payload.get("clear", False))
+                start_s = payload.get("start_s")
+                end_s = payload.get("end_s")
+                controller.trim_merge_source(
+                    str(source_id),
+                    start_s=float(start_s) if start_s not in {None, ""} else None,
+                    end_s=float(end_s) if end_s not in {None, ""} else None,
+                    clear=clear,
+                )
+
+            def _list_output_profiles(self, payload: dict[str, Any]) -> None:
+                pass
+
+            def _create_output_profile(self, payload: dict[str, Any]) -> None:
+                profile_name = str(payload.get("profile_name", "New Profile"))
+                profile_kind = str(payload.get("profile_kind", "stage_output"))
+                controller.create_output_profile(profile_name, profile_kind)
+
+            def _update_output_profile(self, payload: dict[str, Any]) -> None:
+                output_id = payload.get("output_id")
+                if output_id in {None, ""}:
+                    raise ValueError("output_id is required")
+                updates = {k: v for k, v in payload.items() if k != "output_id"}
+                result = controller.update_output_profile(str(output_id), **updates)
+                if result is None:
+                    raise ValueError(f"Output profile {output_id} not found")
+
+            def _delete_output_profile(self, payload: dict[str, Any]) -> None:
+                output_id = payload.get("output_id")
+                if output_id in {None, ""}:
+                    raise ValueError("output_id is required")
+                if not controller.delete_output_profile(str(output_id)):
+                    raise ValueError(f"Output profile {output_id} not found")
+
+            def _render_output_profile(self, payload: dict[str, Any]) -> None:
+                output_id = payload.get("output_id")
+                if output_id in {None, ""}:
+                    raise ValueError("output_id is required")
+                controller.render_output_profile(str(output_id))
 
             def _reset_merge_defaults(self, payload: dict[str, Any]) -> None:
                 controller.reset_merge_defaults()

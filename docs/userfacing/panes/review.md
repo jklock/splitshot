@@ -1,6 +1,6 @@
 # Review Pane
 
-The Review pane controls preview/export artifact visibility and text boxes. It is where you decide which overlay badges remain visible, add imported summary boxes, add custom note boxes, and tune each box's placement, size, color, and opacity.
+The Review pane controls preview/export artifact visibility, text boxes, and review source selection. It is where you decide which overlay badges remain visible, add imported summary boxes, add custom note boxes, tune each box's placement, size, color, and opacity, and pick which added media source to review.
 
 <img src="../../screenshots/ReviewPane.png" alt="Review pane with badge visibility toggles and an expanded imported summary text box" width="960">
 
@@ -17,6 +17,8 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 
 | Control | What it does |
 | --- | --- |
+| `Show markers` | Shows or hides markers. |
+| `Show added media` | Shows or hides added media (PiP). |
 | `Show timer badge` | Shows or hides the timer badge. |
 | `Show draw badge` | Shows or hides the draw badge. |
 | `Show split badges` | Shows or hides the shot badge stack. |
@@ -36,6 +38,20 @@ The Review pane controls preview/export artifact visibility and text boxes. It i
 | `Box width` / `Box height` | Force text-box dimensions. |
 | `Background`, `Text`, `Opacity` | Style the rendered box. |
 | Color swatches | Open the shared color picker modal shown in [overlay.md](overlay.md). |
+| Review Source dropdown | Lists available merge sources. |
+| `Set Source` | Saves the selected source to the active output profile as the retained review source. |
+| Review Source status | Shows `Live` when no source is retained, or `Retained: source-name` when a profile has a saved source. |
+
+## Review Source
+
+The Review Source section lets you pin a specific merge source for review. This selection is stored per output profile.
+
+1. Select an output profile in the Export pane.
+2. Choose a source from the Review Source dropdown.
+3. Click `Set Source` to save it. The status text shows `Retained: source-name`.
+4. To clear the source, select `-- No source --` in the dropdown and click `Set Source`. The status shows `Live`.
+
+The retained source refreshes the review plan when changed. No Match/Library/workspace persistence.
 
 ## How To Use It
 

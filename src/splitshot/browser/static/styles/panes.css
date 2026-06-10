@@ -2571,3 +2571,69 @@
 .scoring-toggle-row > button {
   justify-self: end;
 }
+
+.merge-source-trim-section {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+
+.merge-source-trim-section > strong {
+  display: block;
+  font-size: 0.85em;
+  margin-bottom: 4px;
+}
+
+.merge-source-trim-row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.merge-source-trim-row input {
+  width: 80px;
+  padding: 2px 4px;
+  font-size: 0.85em;
+}
+
+.merge-source-trim-row button {
+  padding: 2px 8px;
+  font-size: 0.85em;
+}
+
+.merge-source-trim-status {
+  display: block;
+  font-size: 0.8em;
+  margin-top: 2px;
+}
+
+.review-source-manager {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 0.48rem;
+  padding: 0.48rem;
+}
+
+.review-source-controls {
+  align-items: center;
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.review-source-select {
+  flex: 1;
+  min-width: 80px;
+}
+
+.review-source-status {
+  font-size: 0.8em;
+  opacity: 0.8;
+  width: 100%;
+}
+
+.overlay-badge-actions {
+  align-items: center;
+  margin-top: 0.48rem;
+}

@@ -211,7 +211,7 @@
                 </div>
                 <div class="button-grid two-up review-visibility-grid">
                   <label class="check-row review-visibility-option"><input id="show-markers" type="checkbox" /> Show markers</label>
-                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show PiP</label>
+                  <label class="check-row review-visibility-option"><input id="show-pip" type="checkbox" /> Show added media</label>
                   <label class="check-row review-visibility-option"><input id="show-timer" type="checkbox" /> Show timer badge</label>
                   <label class="check-row review-visibility-option"><input id="show-draw" type="checkbox" /> Show draw badge</label>
                   <label class="check-row review-visibility-option"><input id="show-shots" type="checkbox" /> Show split badges</label>
@@ -227,6 +227,16 @@
                   <button id="review-add-imported-box" type="button">Add Summary Box</button>
                 </div>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
+              </section>
+              <section class="review-source-manager">
+                <div class="section-header sub-section-header">
+                  <h3>Review Source</h3>
+                </div>
+                <div class="review-source-controls">
+                  <select id="review-source-select" class="review-source-select" aria-label="Review source"></select>
+                  <button id="review-set-source" type="button">Set Source</button>
+                  <span id="review-source-status" class="review-source-status"></span>
+                </div>
               </section>
             </section>
 
@@ -560,7 +570,10 @@
                 <label class="check-row"><input id="overlay-font-italic" type="checkbox" /> Italic</label>
               </div>
               <div class="style-grid" id="badge-style-grid"></div>
-              <h3>Score Colors</h3>
+              <div class="button-grid two-up overlay-badge-actions">
+                <h3>Score Colors</h3>
+                <button id="export-badges" type="button">Export Badges</button>
+              </div>
               <div class="score-color-grid" id="score-color-grid"></div>
             </section>
 
@@ -641,6 +654,34 @@
                 <h3>Export</h3>
                 <small>Local video</small>
               </div>
+              <div class="section-header sub-section-header">
+                <h3>Output Profiles</h3>
+              </div>
+              <select id="output-profile-select">
+                <option value="">-- No profile selected --</option>
+              </select>
+              <div class="control-grid">
+                <button id="create-output-profile" type="button">Create</button>
+                <button id="delete-output-profile" type="button">Delete</button>
+              </div>
+              <label>Profile name
+                <input id="output-profile-name" type="text" placeholder="Profile name" />
+              </label>
+              <label>Type
+                <select id="output-profile-type">
+                  <option value="stage_output">Stage Output</option>
+                  <option value="stage_composite">Stage Composite</option>
+                </select>
+              </label>
+              <label>Frame profile
+                <select id="output-profile-frame">
+                  <option value="source">Source</option>
+                  <option value="16:9">16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                  <option value="4:5">4:5</option>
+                </select>
+              </label>
               <label>Preset
                 <select id="export-preset"></select>
               </label>
