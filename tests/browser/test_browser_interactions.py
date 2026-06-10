@@ -1235,13 +1235,13 @@ def test_markers_import_shots_select_selected_marker_and_seek_video(synthetic_vi
                 assert selected_popup["shotId"] == selected_shot["id"]
 
                 selected_card = page.locator(
-                    f'#popup-marker-list .popup-marker-row[data-popup-id="{selected_popup["id"]}"]'
+                    f'#markers-workbench-list .popup-marker-row[data-popup-id="{selected_popup["id"]}"]'
                 )
                 selected_card.wait_for(state="visible")
                 assert selected_card.evaluate("card => card.classList.contains('selected')") is True
                 assert page.locator("#popup-timeline-strip").count() == 0
                 assert page.locator("#popup-pane-status").inner_text() == f"{total_shots} enabled"
-                assert page.locator("#popup-list-status").inner_text().startswith(f"{total_shots} shown")
+                assert page.locator("#markers-workbench-list-status").inner_text().startswith(f"{total_shots} shown")
 
                 page.wait_for_function(
                     """(targetMs) => {

@@ -834,6 +834,10 @@ class BrowserControlServer:
                     with controller_lock:
                         route(payload)
                         controller.autosave_project_if_needed()
+                    if "/api/settings/reset-defaults" in self.path:
+                        import sys as _sys
+                        _merge_layout = controller.project.merge.layout if hasattr(controller, 'project') and controller.project else 'NO_PROJECT'
+                        print(f"[DEBUG] reset-defaults: project.merge.layout = {_merge_layout}", file=_sys.stderr)
                     activity.log("api.success", path=self.path, status=controller.status_message)
                     self._send_json(self._browser_state())
                 except Exception as exc:  # noqa: BLE001

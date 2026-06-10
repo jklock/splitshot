@@ -160,8 +160,10 @@ def test_settings_import_current_and_reset_defaults_round_trip_visible_project_d
                 )
                 assert page.locator("#settings-merge-layout").input_value() == "side_by_side"
                 assert page.locator("#settings-export-quality").input_value() == "high"
-                assert page.evaluate("state.project.merge.layout") == "side_by_side"
-                assert page.evaluate("state.project.export.quality") == "high"
+                project_layout = page.evaluate("state.project.merge.layout")
+                project_quality = page.evaluate("state.project.export.quality")
+                assert project_layout == "side_by_side", f"unexpected layout: {project_layout}"
+                assert project_quality == "high", f"unexpected quality: {project_quality}"
             finally:
                 browser.close()
     finally:

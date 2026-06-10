@@ -68,11 +68,16 @@ def _resolve_tool(command: str, *, windows_fallbacks: tuple[str, ...] = ()) -> s
             return str(explicit)
     if sys.platform == "win32":
         for fallback in windows_fallbacks:
-            expanded = Path(os.path.expandvars(fallback))
+            expanded = Path(_expand_windows_vars(fallback))
             if expanded.exists():
                 return str(expanded)
     raise FileNotFoundError(f"Required executable not found: {candidate or '<empty>'}")
 
+
+def _expand_windows_vars(path: str) -> str:
+    def _replacer(m):
+        return os.environ.get(m.group(1), m.group(0))
+    return re.sub(r"%(\w+)%", _replacer, path).replace("\\", os.sep)
 
 def _proof_windows_export_text(export_file: Path, artifact_dir: Path) -> None:
     ffmpeg = _resolve_tool(os.environ.get("SPLITSHOT_PACKAGED_FFMPEG", "ffmpeg"))

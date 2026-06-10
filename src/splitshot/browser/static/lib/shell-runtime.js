@@ -899,6 +899,9 @@ export function createShellRuntime({
       scheduleSettingsDefaultsApply();
     });
     $("settings-reset-defaults")?.addEventListener("click", async () => {
+      resetMergeDraft();
+      resetExportDraft();
+      cancelPendingExportDrafts();
       await callApi("/api/settings/reset-defaults", {});
     });
     $("settings-use-current-layout")?.addEventListener("click", () => applySettingsDefaults({ projectDefaults: true, section: "layout" }));
