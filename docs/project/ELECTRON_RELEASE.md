@@ -109,6 +109,39 @@ Electron packaging and release work is split across dedicated workflows:
 
 The three `build-*` workflows are manual packaging helpers. They package one platform target each and upload artifacts for inspection, but they do not publish GitHub releases. `release.yml` is the only publisher. It runs on semver tags like `v1.0.1`, builds all three platforms, extracts the matching release notes from [../../CHANGELOG.md](../../CHANGELOG.md) through `scripts/release/extract_release_notes.py`, and publishes the GitHub release with all three platform artifacts.
 
+The three `test-*` workflows are the branch-validation path. On pull requests they run the non-Electron Python suites. On `workflow_dispatch` they also run that platform's Electron package and validate jobs, which is the right branch-level GitHub smoke path when you want packaged proof without cutting a semver tag.
+
+## GitHub Pipeline Runbook
+
+Use this decision tree when another agent needs packaged Electron proof from GitHub:
+
+1. Run the local preflight first:
+
+```bash
+uv run python scripts/testing/run_electron_preflight.py
+```
+
+2. For one-platform packaging on the current branch without the broader test workflow, run one of:
+   - `Build macOS`
+   - `Build Windows`
+   - `Build Linux`
+3. For branch-level validation that also exercises packaged artifact validation, run one of:
+   - `Test macOS`
+   - `Test Windows`
+   - `Test Linux`
+4. In the Actions UI, choose `Run workflow`, pick the target branch/ref, and wait for both the package and validate jobs to finish on that platform.
+5. Download artifacts from the successful run:
+   - `splitshot-macos` for `.dmg`
+   - `splitshot-windows` for `.exe`
+   - `splitshot-linux` for `.AppImage`
+   - `e2e-artifacts-*` for packaged validation logs/screenshots
+6. For a coordinated publish, use only `Release`. Either:
+   - push a semver tag such as `v1.0.6`, or
+   - run `Release` manually with `release_ref=<commit-or-branch>` and `release_tag=v1.0.6`
+7. `Release` must be the only workflow that creates or edits the GitHub release body and uploads the three platform artifacts to the release.
+
+Do not use `build-*` runs as release proof by themselves. They package artifacts, but they do not perform the clean-runner packaged validation that the `test-*` workflow-dispatch path and `release.yml` do.
+
 Runner targets:
 
 - macOS packaging: GitHub-hosted `macos-14`
@@ -142,7 +175,8 @@ These rules exist because the release path broke repeatedly when they were not e
 Use the platform-specific build workflows and test workflows for packaging smoke checks.
 
 - Choose the target branch in the Actions UI.
-- Run the matching `build-macos.yml`, `build-windows.yml`, or `build-linux.yml` workflow when you want a packaging artifact for that platform without cutting a release.
+- Run `Build macOS`, `Build Windows`, or `Build Linux` when you want a packaging artifact for one platform without the broader validation ladder.
+- Run `Test macOS`, `Test Windows`, or `Test Linux` from `workflow_dispatch` when you want branch-level packaged validation on a clean runner.
 - Run the local Electron preflight first.
 - Confirm the `Prepare macOS signing certificate` step passes before looking at the builder output.
 - Confirm the `Prepare macOS notarization credentials` step passes and that `Verify notarization` validates the built app.
@@ -171,6 +205,13 @@ git push origin v1.0.1
 ```
 
 6. Let `release.yml` publish the GitHub release with macOS, Linux, and Windows artifacts attached.
+
+If you need to prove the release workflow before pushing the final tag, use the manual `Release` dispatch with:
+
+- `release_ref`: the exact branch or commit to build
+- `release_tag`: the semver tag the workflow should publish or update
+
+Use that only when the branch already matches the intended release contents. Do not point `release_tag` at a moving alias.
 
 ## Troubleshooting
 
