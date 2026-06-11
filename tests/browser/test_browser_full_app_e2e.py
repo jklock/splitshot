@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -8,6 +12,163 @@ from splitshot.browser.server import BrowserControlServer
 
 
 TOOL_IDS = ["project", "merge", "scoring", "timing", "markers", "overlay", "review", "export", "metrics", "shotml", "settings"]
+ROOT = Path(__file__).resolve().parents[2]
+CLIP1_VIDEO = ROOT / "docs" / "Clip1.MP4"
+RELEASE_PROOF_ARTIFACT_ENV = "SPLITSHOT_RELEASE_PROOF_ARTIFACT_ROOT"
+RELEASE_PROOF_THRESHOLDS_MS = {
+    "tool_switch": 500,
+    "profile_create": 750,
+    "profile_edit": 750,
+    "review_source": 750,
+    "export_badges": 750,
+    "source_commit": 750,
+    "trim_apply": 3000,
+    "trim_clear": 2000,
+    "export_ack": 1000,
+}
+
+
+def _release_proof_artifact_root() -> Path | None:
+    raw_value = os.environ.get(RELEASE_PROOF_ARTIFACT_ENV, "").strip()
+    if not raw_value:
+        return None
+    root = Path(raw_value).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _write_release_proof_json(root: Path | None, name: str, payload: object) -> None:
+    if root is None:
+        return
+    (root / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_release_proof_text(root: Path | None, name: str, text: str) -> None:
+    if root is None:
+        return
+    (root / name).write_text(text, encoding="utf-8")
+
+
+def _capture_release_proof_screenshot(page, root: Path | None, name: str) -> None:
+    if root is None:
+        return
+    page.screenshot(path=str(root / f"{name}.png"), full_page=True)
+
+
+def _write_release_proof_contact_sheet(root: Path | None) -> None:
+    if root is None:
+        return
+    screenshots = sorted(root.glob("*.png"))
+    html = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Source Release Proof Contact Sheet</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #111827; color: #f3f4f6; margin: 0; padding: 24px; }
+    h1 { margin: 0 0 16px; font-size: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    figure { margin: 0; padding: 12px; background: #1f2937; border-radius: 12px; }
+    figcaption { margin-top: 8px; font-size: 13px; word-break: break-all; }
+    img { width: 100%; height: auto; border-radius: 8px; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Source Release Proof Contact Sheet</h1>
+  <div class="grid">
+"""
+    html += "\n".join(
+        f'    <figure><img src="{shot.name}" alt="{shot.name}"><figcaption>{shot.name}</figcaption></figure>'
+        for shot in screenshots
+    )
+    html += """
+  </div>
+</body>
+</html>
+"""
+    (root / "contact-sheet.html").write_text(html, encoding="utf-8")
+
+
+def _record_timing(timings: list[dict[str, object]], name: str, started_at: float, threshold_ms: int) -> None:
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+    entry = {
+        "name": name,
+        "elapsed_ms": elapsed_ms,
+        "threshold_ms": threshold_ms,
+        "passed": elapsed_ms <= threshold_ms,
+    }
+    timings.append(entry)
+    assert elapsed_ms <= threshold_ms, f"{name} exceeded threshold: {elapsed_ms}ms > {threshold_ms}ms"
+
+
+def _wait_for_ui_settled(page) -> None:
+    page.wait_for_function(
+        "() => document.getElementById('processing-bar')?.hidden !== false",
+        timeout=15000,
+    )
+    page.wait_for_timeout(150)
+
+
+def _overflow_snapshot(page) -> dict:
+    return page.evaluate(
+        """() => {
+            const inspector = document.querySelector('.inspector');
+            const pane = document.querySelector(`[data-tool-pane="${activeTool}"]`);
+            const paneRect = pane?.getBoundingClientRect?.() || { left: 0, right: 0 };
+            const offenders = [];
+            const elements = pane
+              ? Array.from(pane.querySelectorAll('label, button, input, select, textarea, .review-source-status, .merge-source-trim-status'))
+              : [];
+            for (const element of elements) {
+              const rect = element.getBoundingClientRect();
+              if (rect.width <= 0 || rect.height <= 0) continue;
+              if (rect.right > paneRect.right + 1 || rect.left < paneRect.left - 1) {
+                offenders.push({
+                  text: element.textContent?.trim?.() || element.getAttribute('aria-label') || element.id || element.className || '<unknown>',
+                  left: rect.left,
+                  right: rect.right,
+                  pane_left: paneRect.left,
+                  pane_right: paneRect.right,
+                });
+              }
+            }
+            return {
+              active_tool: activeTool,
+              inspector_client_width: inspector?.clientWidth || 0,
+              inspector_scroll_width: inspector?.scrollWidth || 0,
+              pane_client_width: pane?.clientWidth || 0,
+              pane_scroll_width: pane?.scrollWidth || 0,
+              body_client_width: document.documentElement.clientWidth,
+              body_scroll_width: document.documentElement.scrollWidth,
+              offenders,
+            };
+        }"""
+    )
+
+
+def _assert_no_horizontal_overflow(page, label: str, root: Path | None = None) -> None:
+    snapshot = _overflow_snapshot(page)
+    if (
+        snapshot["inspector_scroll_width"] > snapshot["inspector_client_width"] + 2
+        or snapshot["pane_scroll_width"] > snapshot["pane_client_width"] + 2
+        or snapshot["body_scroll_width"] > snapshot["body_client_width"] + 2
+        or snapshot["offenders"]
+    ):
+        _write_release_proof_json(root, f"overflow-{label}.json", snapshot)
+    assert snapshot["inspector_scroll_width"] <= snapshot["inspector_client_width"] + 2, f"{label}: inspector overflow"
+    assert snapshot["pane_scroll_width"] <= snapshot["pane_client_width"] + 2, f"{label}: pane overflow"
+    assert snapshot["body_scroll_width"] <= snapshot["body_client_width"] + 2, f"{label}: body overflow"
+    assert not snapshot["offenders"], f"{label}: clipped controls detected"
+
+
+def _open_tool_for_release(page, tool_id: str, timings: list[dict[str, object]], root: Path | None, screenshot_name: str | None = None) -> None:
+    started_at = time.perf_counter()
+    _open_tool(page, tool_id)
+    _wait_for_ui_settled(page)
+    _record_timing(timings, f"tool-switch:{tool_id}", started_at, RELEASE_PROOF_THRESHOLDS_MS["tool_switch"])
+    _assert_no_horizontal_overflow(page, tool_id, root)
+    if screenshot_name:
+        _capture_release_proof_screenshot(page, root, screenshot_name)
 
 
 def _open_test_page(playwright, server: BrowserControlServer):
@@ -48,6 +209,115 @@ def _alternate_select_value(locator) -> str:
             """(select) => [...select.options].find((option) => option.value && option.value !== select.value)?.value || select.value"""
         )
     )
+
+
+def _copy_clip1_video(tmp_path: Path, name: str) -> Path:
+    target = tmp_path / name
+    shutil.copyfile(CLIP1_VIDEO, target)
+    return target
+
+
+def _merge_source_state(page, source_id: str) -> dict | None:
+    return page.evaluate(
+        """(targetSourceId) => {
+            const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+            return source ? JSON.parse(JSON.stringify(source)) : null;
+        }""",
+        source_id,
+    )
+
+
+def _current_camera_role(source: dict | None) -> str | None:
+    if not isinstance(source, dict):
+        return None
+    value = source.get("camera_role") or source.get("angle_role")
+    return None if value in {None, ""} else str(value)
+
+
+def _configure_output_profile_review_source_and_badges(page, source_id: str) -> tuple[str, str]:
+    _open_tool(page, "overlay")
+    page.locator("#show-overlay").check()
+    badge_size = _alternate_select_value(page.locator("#badge-size"))
+    page.locator("#badge-size").select_option(badge_size)
+    page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
+
+    _open_tool(page, "export")
+    page.locator("#create-output-profile").click()
+    page.wait_for_function(
+        """() => {
+            const select = document.getElementById('output-profile-select');
+            return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+        }"""
+    )
+    assert page.locator("#output-profile-name").is_disabled() is False
+    assert page.locator("#output-profile-type").is_disabled() is False
+    assert page.locator("#output-profile-frame").is_disabled() is False
+    profile_id = page.locator("#output-profile-select").input_value()
+    assert profile_id
+
+    _set_input_value(page.locator("#output-profile-name"), "Release Proof Profile")
+    frame_profile = _alternate_select_value(page.locator("#output-profile-frame"))
+    profile_kind = _alternate_select_value(page.locator("#output-profile-type"))
+    page.locator("#output-profile-frame").evaluate(
+        """(element, nextValue) => {
+            element.value = nextValue;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        frame_profile,
+    )
+    page.locator("#output-profile-type").evaluate(
+        """(element, nextValue) => {
+            element.value = nextValue;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        profile_kind,
+    )
+    page.wait_for_function(
+        """(payload) => {
+            const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+            return Boolean(profile)
+                && profile.profile_name === 'Release Proof Profile'
+                && profile.profile_kind === payload.profileKind
+                && profile.frame_profile === payload.frameProfile;
+        }""",
+        arg={"profileId": profile_id, "profileKind": profile_kind, "frameProfile": frame_profile},
+    )
+
+    _open_tool(page, "review")
+    page.locator("#review-source-select").evaluate(
+        """(element, nextValue) => {
+            element.value = nextValue;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        source_id,
+    )
+    page.locator("#review-set-source").click()
+    page.wait_for_function(
+        """(payload) => {
+            const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+            return profile?.review_source_id === payload.sourceId;
+        }""",
+        arg={"profileId": profile_id, "sourceId": source_id},
+    )
+    page.wait_for_function(
+        """() => document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true"""
+    )
+
+    _open_tool(page, "overlay")
+    page.locator("#export-badges").click()
+    page.wait_for_function(
+        """(payload) => {
+            const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+            if (!profile?.metric_caption_preset) return false;
+            const parsed = JSON.parse(profile.metric_caption_preset);
+            return parsed.badge_size === payload.badgeSize;
+        }""",
+        arg={"profileId": profile_id, "badgeSize": badge_size},
+    )
+    return profile_id, badge_size
 
 
 def _set_color_picker_value(page, swatch_locator, hex_value: str) -> None:
@@ -440,6 +710,422 @@ def test_browser_full_app_merge_export_sync_truth_gate(synthetic_video_factory, 
                 browser.close()
     finally:
         server.shutdown()
+
+
+def test_browser_full_app_output_profile_review_source_and_badges_truth_gate(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="truth-gate-output-profile-primary"))
+    secondary_path = Path(synthetic_video_factory(name="truth-gate-output-profile-secondary"))
+
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _open_tool(page, "merge")
+                page.locator("#merge-media-input").set_input_files(str(secondary_path))
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
+                assert source_id
+
+                profile_id, badge_size = _configure_output_profile_review_source_and_badges(page, source_id)
+
+                _open_tool(page, "review")
+                _open_tool(page, "overlay")
+                _open_tool(page, "export")
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "export")
+                page.locator("#output-profile-select").select_option(profile_id)
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        if (!profile?.metric_caption_preset) return false;
+                        const parsed = JSON.parse(profile.metric_caption_preset);
+                        return profile.review_source_id === payload.sourceId
+                            && parsed.badge_size === payload.badgeSize
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg={"profileId": profile_id, "sourceId": source_id, "badgeSize": badge_size},
+                )
+                assert page.locator("#output-profile-name").input_value() == "Release Proof Profile"
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
+def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path: Path, monkeypatch) -> None:
+    primary_path = _copy_clip1_video(tmp_path, "clip1-primary.MP4")
+    secondary_path = _copy_clip1_video(tmp_path, "clip1-secondary.MP4")
+    tertiary_path = _copy_clip1_video(tmp_path, "clip1-tertiary.MP4")
+    output_path = tmp_path / "clip1-release-proof-export.mp4"
+    captured_exports: list[dict[str, object]] = []
+    artifact_root = _release_proof_artifact_root()
+    timings: list[dict[str, object]] = []
+
+    def fake_export_project(project, destination, progress_callback=None, log_callback=None):
+        captured_exports.append(
+            {
+                "output_path": str(destination),
+                "merge_sources": len(project.merge_sources),
+                "profiles": len(getattr(project, "merge_sources", [])),
+            }
+        )
+        destination = Path(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"real-media-proof-export")
+        project.export.last_log = "Real media proof export completed."
+        project.export.last_error = None
+        return destination
+
+    monkeypatch.setattr("splitshot.browser.server.export_project", fake_export_project)
+
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _load_primary_video(page, primary_path)
+                _capture_release_proof_screenshot(page, artifact_root, "release-01-primary-imported")
+
+                _open_tool_for_release(page, "merge", timings, artifact_root, "release-02-merge-pane")
+                page.locator("#merge-media-input").set_input_files([str(secondary_path), str(tertiary_path)])
+                page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+                page.locator("#merge-enabled").check()
+                page.wait_for_function("() => state?.project?.merge?.enabled === true")
+                page.locator("#merge-layout").select_option("pip")
+                page.wait_for_function("() => state?.project?.merge?.layout === 'pip'")
+                _capture_release_proof_screenshot(page, artifact_root, "release-03-merge-sources")
+
+                first_card = page.locator(".merge-media-card").first
+                first_body = first_card.locator(".merge-media-card-body")
+                source_id = first_card.get_attribute("data-source-id")
+                assert source_id
+                if first_body.evaluate("body => body.hidden"):
+                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_body.wait_for(state="visible")
+                _capture_release_proof_screenshot(page, artifact_root, "release-04-merge-card-expanded")
+                first_card.locator('button:has-text("beep sync")').first.click(force=True)
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        return Boolean(source)
+                            && source.sync_analysis_status === 'ready'
+                            && source.sync_offset_source === 'auto';
+                    }""",
+                    arg=source_id,
+                    timeout=120000,
+                )
+                _capture_release_proof_screenshot(page, artifact_root, "release-05-sync-ready")
+
+                started_at = time.perf_counter()
+                first_card.locator('[data-merge-source-field="camera_role"]').select_option("detail")
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        return (source?.camera_role || source?.angle_role || '') === 'detail';
+                    }""",
+                    arg=source_id,
+                )
+                _record_timing(timings, "per-source-camera-role", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
+
+                started_at = time.perf_counter()
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option("above_below")
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        return source?.placement?.mode === 'above_below';
+                    }""",
+                    arg=source_id,
+                )
+                _record_timing(timings, "per-source-layout", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-06-role-layout-committed")
+
+                _set_input_value(first_card.locator('input[data-trim-start]'), "0.5")
+                _set_input_value(first_card.locator('input[data-trim-end]'), "1.5")
+                started_at = time.perf_counter()
+                first_card.get_by_role("button", name="Apply", exact=True).click()
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(trim?.derivative_path)
+                            && trim.active_path_kind === 'local_derivative'
+                            && document.querySelector('.merge-media-card[data-source-id="' + targetSourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
+                    }""",
+                    arg=source_id,
+                    timeout=120000,
+                )
+                _record_timing(timings, "trim-apply", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_apply"])
+                derivative_path = page.evaluate(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        return source?.trim_derivative?.derivative_path || null;
+                    }""",
+                    source_id,
+                )
+                assert derivative_path is not None
+                assert Path(derivative_path).exists()
+                _capture_release_proof_screenshot(page, artifact_root, "release-07-trim-active")
+
+                page.locator("#expand-waveform").click()
+                _wait_for_ui_settled(page)
+                _capture_release_proof_screenshot(page, artifact_root, "release-08-waveform-expanded")
+
+                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-09-overlay-before-profile")
+                page.locator("#show-overlay").check()
+                badge_size = _alternate_select_value(page.locator("#badge-size"))
+                page.locator("#badge-size").select_option(badge_size)
+                page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
+
+                _open_tool_for_release(page, "export", timings, artifact_root, "release-10-export-before-profile")
+                started_at = time.perf_counter()
+                page.locator("#create-output-profile").click()
+                page.wait_for_function(
+                    """() => {
+                        const select = document.getElementById('output-profile-select');
+                        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+                    }"""
+                )
+                _wait_for_ui_settled(page)
+                _record_timing(timings, "output-profile-create", started_at, RELEASE_PROOF_THRESHOLDS_MS["profile_create"])
+                assert page.locator("#output-profile-name").is_disabled() is False
+                assert page.locator("#output-profile-type").is_disabled() is False
+                assert page.locator("#output-profile-frame").is_disabled() is False
+                profile_id = page.locator("#output-profile-select").input_value()
+                assert profile_id
+
+                started_at = time.perf_counter()
+                _set_input_value(page.locator("#output-profile-name"), "Release Proof Profile")
+                frame_profile = _alternate_select_value(page.locator("#output-profile-frame"))
+                profile_kind = _alternate_select_value(page.locator("#output-profile-type"))
+                page.locator("#output-profile-frame").evaluate(
+                    """(element, nextValue) => {
+                        element.value = nextValue;
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    frame_profile,
+                )
+                page.locator("#output-profile-type").evaluate(
+                    """(element, nextValue) => {
+                        element.value = nextValue;
+                        element.dispatchEvent(new Event('input', { bubbles: true }));
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                    }""",
+                    profile_kind,
+                )
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        return Boolean(profile)
+                            && profile.profile_name === 'Release Proof Profile'
+                            && profile.profile_kind === payload.profileKind
+                            && profile.frame_profile === payload.frameProfile;
+                    }""",
+                    arg={"profileId": profile_id, "profileKind": profile_kind, "frameProfile": frame_profile},
+                )
+                _record_timing(timings, "output-profile-edit", started_at, RELEASE_PROOF_THRESHOLDS_MS["profile_edit"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-11-output-profile-created")
+
+                _open_tool_for_release(page, "review", timings, artifact_root, "release-12-review-live")
+                assert page.locator("#review-source-status").text_content() == "Live"
+                started_at = time.perf_counter()
+                page.locator("#review-source-select").select_option(source_id)
+                page.locator("#review-set-source").click()
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        return profile?.review_source_id === payload.sourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg={"profileId": profile_id, "sourceId": source_id},
+                )
+                _record_timing(timings, "review-source-retained", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-13-review-retained")
+
+                _open_tool_for_release(page, "overlay", timings, artifact_root)
+                _open_tool_for_release(page, "export", timings, artifact_root)
+                _open_tool_for_release(page, "review", timings, artifact_root)
+                page.wait_for_function(
+                    """(expectedSourceId) => {
+                        const select = document.getElementById('review-source-select');
+                        return select?.value === expectedSourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg=source_id,
+                )
+
+                started_at = time.perf_counter()
+                page.locator("#review-source-select").select_option("")
+                page.locator("#review-set-source").click()
+                page.wait_for_function(
+                    """(profileIdArg) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === profileIdArg);
+                        return (!profile?.review_source_id || profile.review_source_id === '')
+                            && document.getElementById('review-source-status')?.textContent === 'Live';
+                    }""",
+                    arg=profile_id,
+                )
+                _record_timing(timings, "review-source-live", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-14-review-live")
+
+                started_at = time.perf_counter()
+                page.locator("#review-source-select").select_option(source_id)
+                page.locator("#review-set-source").click()
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        return profile?.review_source_id === payload.sourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg={"profileId": profile_id, "sourceId": source_id},
+                )
+                _record_timing(timings, "review-source-retained-second-pass", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
+
+                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-15-overlay-before-export-badges")
+                started_at = time.perf_counter()
+                page.locator("#export-badges").click()
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        if (!profile?.metric_caption_preset) return false;
+                        const parsed = JSON.parse(profile.metric_caption_preset);
+                        return parsed.badge_size === payload.badgeSize;
+                    }""",
+                    arg={"profileId": profile_id, "badgeSize": badge_size},
+                )
+                _record_timing(timings, "export-badges", started_at, RELEASE_PROOF_THRESHOLDS_MS["export_badges"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-16-overlay-badges-exported")
+
+                _open_tool_for_release(page, "timing", timings, artifact_root)
+                page.locator("#expand-timing").click()
+                _wait_for_ui_settled(page)
+                _capture_release_proof_screenshot(page, artifact_root, "release-17-timing-workbench-expanded")
+
+                for tool_id in TOOL_IDS:
+                    _open_tool_for_release(page, tool_id, timings, artifact_root, f"pane-{tool_id}")
+
+                _open_tool_for_release(page, "export", timings, artifact_root, "release-18-export-pane")
+                page.locator("#export-path").fill(str(output_path))
+                started_at = time.perf_counter()
+                page.locator("#export-video").click()
+                page.wait_for_function(
+                    """() => {
+                        const status = String(state?.status || '');
+                        const lastLog = String(state?.project?.export?.last_log || '');
+                        const processingHidden = document.getElementById('processing-bar')?.hidden;
+                        return status.includes('Export') || lastLog.length > 0 || processingHidden === false;
+                    }""",
+                    timeout=10000,
+                )
+                _record_timing(timings, "export-acknowledged", started_at, RELEASE_PROOF_THRESHOLDS_MS["export_ack"])
+                page.wait_for_function("(path) => state?.project?.export?.output_path === path", arg=str(output_path))
+                page.locator("#show-export-log").click()
+                page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
+                page.wait_for_function("() => state?.project?.export?.last_log === 'Real media proof export completed.'")
+                _capture_release_proof_screenshot(page, artifact_root, "release-19-export-log")
+                page.locator("#close-export-log").click()
+                _write_release_proof_text(artifact_root, "export-log.txt", "Real media proof export completed.")
+
+                _open_tool_for_release(page, "merge", timings, artifact_root, "release-20-before-trim-clear")
+                first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
+                first_body = first_card.locator(".merge-media-card-body")
+                if first_body.evaluate("body => body.hidden"):
+                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_body.wait_for(state="visible")
+                started_at = time.perf_counter()
+                first_card.get_by_role("button", name="Clear", exact=True).click()
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(source)
+                            && source.asset?.path
+                            && (!trim?.derivative_path)
+                            && trim?.active_path_kind !== 'local_derivative';
+                    }""",
+                    arg=source_id,
+                )
+                _record_timing(timings, "trim-clear", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_clear"])
+                _capture_release_proof_screenshot(page, artifact_root, "release-21-trim-cleared")
+
+                page.reload(wait_until="domcontentloaded")
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool_for_release(page, "merge", timings, artifact_root, "release-22-reloaded-merge")
+                page.wait_for_function(
+                    """(targetSourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+                        const trim = source?.trim_derivative;
+                        return (source?.camera_role || source?.angle_role || '') === 'detail'
+                            && source?.placement?.mode === 'above_below'
+                            && source?.sync_analysis_status === 'ready'
+                            && (!trim?.derivative_path)
+                            && trim?.active_path_kind !== 'local_derivative';
+                    }""",
+                    arg=source_id,
+                )
+                _open_tool_for_release(page, "export", timings, artifact_root)
+                page.locator("#output-profile-select").select_option(profile_id)
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        return profile?.review_source_id === payload.sourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg={"profileId": profile_id, "sourceId": source_id},
+                )
+                _open_tool_for_release(page, "review", timings, artifact_root, "release-23-reloaded-review")
+                page.wait_for_function(
+                    """(expectedSourceId) => {
+                        const select = document.getElementById('review-source-select');
+                        return select?.value === expectedSourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg=source_id,
+                )
+                _capture_release_proof_screenshot(page, artifact_root, "release-24-final-composite")
+
+                _open_tool_for_release(page, "export", timings, artifact_root)
+                page.locator("#output-profile-select").select_option(profile_id)
+                page.wait_for_function(
+                    """(payload) => {
+                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+                        return profile?.review_source_id === payload.sourceId
+                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                    }""",
+                    arg={"profileId": profile_id, "sourceId": source_id},
+                )
+                _write_release_proof_json(
+                    artifact_root,
+                    "state-summary.json",
+                    page.evaluate(
+                        """() => JSON.parse(JSON.stringify({
+                            activeTool,
+                            project_path: state?.project?.path || '',
+                            shots: state?.project?.analysis?.shots?.length || 0,
+                            merge_sources: state?.project?.merge_sources || [],
+                            output_profiles: state?.output_profiles || [],
+                            export: state?.project?.export || {},
+                            overlay: state?.project?.overlay || {},
+                        }))"""
+                    ),
+                )
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+    assert captured_exports
+    assert output_path.exists()
+    _write_release_proof_json(artifact_root, "timings.json", timings)
+    _write_release_proof_contact_sheet(artifact_root)
 
 
 def test_browser_full_app_settings_defaults_seed_fresh_project_truth_gate(

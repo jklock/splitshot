@@ -135,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path where the JSON report will be written.",
     )
     parser.add_argument(
+        "--artifact-root",
+        type=Path,
+        default=None,
+        help="Optional directory where release-proof pane screenshots and support artifacts will be written.",
+    )
+    parser.add_argument(
         "--base-url",
         type=str,
         default="",
@@ -214,6 +220,224 @@ def wait_for_processing_bar_to_settle(page: Page) -> None:
     )
     page.evaluate("forceHideProcessingBar()")
     page.wait_for_timeout(400)
+
+
+def _write_artifact_json(artifact_root: Path | None, name: str, payload: Any) -> None:
+    if artifact_root is None:
+        return
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    (artifact_root / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _capture_surface_screenshot(page: Page, artifact_root: Path | None, name: str) -> None:
+    if artifact_root is None:
+        return
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(artifact_root / f"{name}.png"), full_page=True)
+
+
+def _set_active_tool(page: Page, tool: str) -> None:
+    page.evaluate(
+        """
+        (targetTool) => {
+          setActiveTool(targetTool, { collapseExpandedLayout: false, persistUiState: false });
+          render();
+          const inspector = document.querySelector('.inspector');
+          if (inspector instanceof HTMLElement) inspector.scrollTop = 0;
+        }
+        """,
+        tool,
+    )
+    page.wait_for_function("(targetTool) => activeTool === targetTool", arg=tool)
+    wait_for_processing_bar_to_settle(page)
+
+
+def capture_release_surface_screenshots(page: Page, artifact_root: Path | None, primary_video: Path) -> None:
+    if artifact_root is None:
+        return
+    tools = ["project", "merge", "scoring", "timing", "markers", "overlay", "review", "export", "metrics", "shotml", "settings"]
+    if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
+        _set_active_tool(page, "merge")
+        page.locator("#merge-media-input").set_input_files(str(primary_video))
+        page.wait_for_function("() => (state?.project?.merge_sources || []).length > 0", timeout=30000)
+        wait_for_processing_bar_to_settle(page)
+
+    for tool in tools:
+        _set_active_tool(page, tool)
+        _capture_surface_screenshot(page, artifact_root, f"pane-{tool}")
+
+    page.locator("#expand-waveform").click()
+    wait_for_processing_bar_to_settle(page)
+    _capture_surface_screenshot(page, artifact_root, "expanded-waveform")
+
+    _set_active_tool(page, "timing")
+    expand_timing = page.locator("#expand-timing")
+    if expand_timing.count() and page.locator("#timing-workbench").is_visible() is False:
+        if expand_timing.is_visible():
+            expand_timing.click()
+        else:
+            page.evaluate(
+                """
+                () => {
+                  const button = document.getElementById('expand-timing');
+                  if (button instanceof HTMLElement) button.click();
+                }
+                """
+            )
+        wait_for_processing_bar_to_settle(page)
+    _capture_surface_screenshot(page, artifact_root, "expanded-timing-workbench")
+
+    _set_active_tool(page, "merge")
+    first_card = page.locator(".merge-media-card").first
+    first_body = first_card.locator(".merge-media-card-body")
+    if first_card.count() and first_body.evaluate("body => body.hidden"):
+        first_card.locator('button[aria-label*="PiP item controls"]').click()
+        first_body.wait_for(state="visible")
+    _capture_surface_screenshot(page, artifact_root, "expanded-merge-card")
+
+    _set_active_tool(page, "export")
+    page.evaluate(
+        """
+        () => {
+          if (state?.project?.export) {
+            state.project.export.last_log = 'Release proof export log';
+          }
+          render();
+        }
+        """
+    )
+    show_export_log = page.locator("#show-export-log")
+    if show_export_log.is_visible():
+        show_export_log.click()
+    else:
+        page.evaluate(
+            """
+            () => {
+              const button = document.getElementById('show-export-log');
+              if (button instanceof HTMLElement) button.click();
+            }
+            """
+        )
+    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
+    _capture_surface_screenshot(page, artifact_root, "export-log-modal")
+    close_export_log = page.locator("#close-export-log")
+    if close_export_log.is_visible():
+        close_export_log.click()
+    else:
+        page.evaluate(
+            """
+            () => {
+              const button = document.getElementById('close-export-log');
+              if (button instanceof HTMLElement) button.click();
+            }
+            """
+        )
+    page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === true")
+
+
+def audit_release_output_profile_review_truth(page: Page, primary_video: Path, artifact_root: Path | None) -> CheckResult:
+    wait_for_processing_bar_to_settle(page)
+    _set_active_tool(page, "merge")
+    if page.evaluate("() => (state?.project?.merge_sources || []).length === 0"):
+        page.locator("#merge-media-input").set_input_files(str(primary_video))
+        page.wait_for_function("() => (state?.project?.merge_sources || []).length > 0", timeout=30000)
+        wait_for_processing_bar_to_settle(page)
+    source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
+    if not source_id:
+        return expect(False, "release_output_profile_review_truth", "Merge source was not available for release-proof review-source checks.")
+
+    _set_active_tool(page, "export")
+    page.evaluate(
+        """
+        () => {
+          const button = document.getElementById('create-output-profile');
+          if (button instanceof HTMLElement) button.click();
+        }
+        """
+    )
+    page.wait_for_function(
+        """() => {
+          const select = document.getElementById('output-profile-select');
+          return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+        }"""
+    )
+    result = {
+        "profile_fields_enabled": {
+            "name": page.locator("#output-profile-name").is_disabled() is False,
+            "type": page.locator("#output-profile-type").is_disabled() is False,
+            "frame": page.locator("#output-profile-frame").is_disabled() is False,
+        },
+        "live_status_before": "",
+        "retained_status_after": "",
+        "retained_status_after_rerender": "",
+        "live_status_after_clear": "",
+    }
+
+    _set_active_tool(page, "review")
+    result["live_status_before"] = page.locator("#review-source-status").text_content() or ""
+    page.locator("#review-source-select").evaluate(
+        """(element, nextValue) => {
+          element.value = nextValue;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        source_id,
+    )
+    page.evaluate(
+        """
+        () => {
+          const button = document.getElementById('review-set-source');
+          if (button instanceof HTMLElement) button.click();
+        }
+        """
+    )
+    page.wait_for_function(
+        """(expectedSourceId) => {
+          const select = document.getElementById('review-source-select');
+          return select?.value === expectedSourceId
+            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+        }""",
+        arg=source_id,
+    )
+    result["retained_status_after"] = page.locator("#review-source-status").text_content() or ""
+    _capture_surface_screenshot(page, artifact_root, "review-retained-audit")
+
+    _set_active_tool(page, "overlay")
+    _set_active_tool(page, "export")
+    _set_active_tool(page, "review")
+    result["retained_status_after_rerender"] = page.locator("#review-source-status").text_content() or ""
+
+    page.locator("#review-source-select").evaluate(
+        """(element, nextValue) => {
+          element.value = nextValue;
+          element.dispatchEvent(new Event('input', { bubbles: true }));
+          element.dispatchEvent(new Event('change', { bubbles: true }));
+        }""",
+        "",
+    )
+    page.evaluate(
+        """
+        () => {
+          const button = document.getElementById('review-set-source');
+          if (button instanceof HTMLElement) button.click();
+        }
+        """
+    )
+    page.wait_for_function("() => document.getElementById('review-source-status')?.textContent === 'Live'")
+    result["live_status_after_clear"] = page.locator("#review-source-status").text_content() or ""
+    _capture_surface_screenshot(page, artifact_root, "review-live-audit")
+
+    _write_artifact_json(artifact_root, "release-output-profile-review-truth.json", result)
+    return expect(
+        all(result["profile_fields_enabled"].values())
+        and result["live_status_before"] == "Live"
+        and result["retained_status_after"].startswith("Retained: ")
+        and result["retained_status_after_rerender"].startswith("Retained: ")
+        and result["live_status_after_clear"] == "Live",
+        "release_output_profile_review_truth",
+        "Output-profile fields should enable immediately and Review Source should persist retained/live truth across rerenders.",
+        result,
+    )
 
 
 def audit_overlay_surfaces(page: Page) -> CheckResult:
@@ -1458,7 +1682,7 @@ def audit_remaining_pane_controls(page: Page) -> CheckResult:
 
 def audit_all_panes_avoid_horizontal_overflow(page: Page) -> CheckResult:
     wait_for_processing_bar_to_settle(page)
-    tools = ["project", "scoring", "timing", "shotml", "merge", "overlay", "popup", "review", "export", "metrics"]
+    tools = ["project", "scoring", "timing", "shotml", "merge", "overlay", "markers", "review", "export", "metrics"]
     result = page.evaluate(
         """
         async (tools) => {
@@ -1508,6 +1732,7 @@ def run_browser_audit(
     target_name: str,
     primary_video: Path,
     headed: bool,
+    artifact_root: Path | None = None,
     base_url: str = "",
 ) -> BrowserAudit:
     target = BROWSER_TARGETS[target_name]
@@ -1535,6 +1760,7 @@ def run_browser_audit(
             )
 
         import_primary_video(page, primary_video, audit_url)
+        capture_release_surface_screenshots(page, artifact_root, primary_video)
         checks = [
             audit_overlay_surfaces(page),
             audit_project_practiscore_context(page),
@@ -1545,6 +1771,7 @@ def run_browser_audit(
             audit_overlay_and_pip_preview_interactions(page, primary_video),
             audit_metrics_and_score_surface(page),
             audit_remaining_pane_controls(page),
+            audit_release_output_profile_review_truth(page, primary_video, artifact_root),
             audit_all_panes_avoid_horizontal_overflow(page),
             audit_merge_file_input_change(page, primary_video, audit_url),
         ]
@@ -1576,7 +1803,7 @@ def main() -> int:
 
     with sync_playwright() as playwright:
         results = [
-            run_browser_audit(playwright, browser_name, primary_video, args.headed, args.base_url)
+            run_browser_audit(playwright, browser_name, primary_video, args.headed, args.artifact_root, args.base_url)
             for browser_name in browsers
         ]
 

@@ -529,20 +529,20 @@ export function createMergePane({
 
         const previewSourceUpdate = () => {
           const payload = readSourcePayload();
-          updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
+          const src = mergeSourceById(sourceId);
           if (payload.camera_role) {
-            const src = mergeSourceById(sourceId);
             if (src) {
               src.camera_role = payload.camera_role;
               delete src.angle_role;
             }
           }
           if (payload.placement && payload.placement.mode) {
-            const src = mergeSourceById(sourceId);
-            if (src && src.placement) {
+            if (src) {
+              if (!src.placement) src.placement = {};
               src.placement.mode = payload.placement.mode;
             }
           }
+          updateLocalMergeSourcePosition(sourceId, payload.pip_x, payload.pip_y, payload.pip_size_percent, payload.opacity);
           scheduleInteractionPreviewRender({ video: true });
           return payload;
         };

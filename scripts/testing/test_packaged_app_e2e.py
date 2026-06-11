@@ -23,6 +23,7 @@ from splitshot.persistence.projects import save_project
 REPO = Path(__file__).resolve().parents[2]
 ARTIFACTS_DIR = REPO / "artifacts"
 DEFAULT_VIDEO_FIXTURE = REPO / "tests" / "fixtures" / "media" / "stage.mp4"
+CLIP1_VIDEO = REPO / "docs" / "Clip1.MP4"
 TIMEOUT = 120
 
 
@@ -37,8 +38,18 @@ def _create_project_bundle(project_path: Path, name: str = "e2e") -> Path:
     return project_path
 
 
-def _prepare_test_video(out_dir: Path) -> Path:
-    source = Path(os.environ.get("SPLITSHOT_E2E_VIDEO", DEFAULT_VIDEO_FIXTURE)).resolve()
+def _default_packaged_artifact_root() -> Path:
+    if sys.platform == "darwin":
+        suffix = "packaged-local-mac"
+    elif sys.platform == "win32":
+        suffix = "packaged-local-windows"
+    else:
+        suffix = "packaged-local-linux"
+    return ARTIFACTS_DIR / "v106-release-proof" / suffix
+
+
+def _prepare_test_video(out_dir: Path, source_override: Path | None = None) -> Path:
+    source = (source_override or Path(os.environ.get("SPLITSHOT_E2E_VIDEO", DEFAULT_VIDEO_FIXTURE))).resolve()
     if not source.exists():
         raise FileNotFoundError(f"Packaged E2E video fixture not found at {source}")
     target = out_dir / source.name
@@ -53,8 +64,26 @@ def _ocr_text_is_readable(text: str) -> bool:
     return any(token in normalized for token in ("shot", "draw", "timer", "split", "factor", "hit"))
 
 
-def _playwright_export_file(artifacts_dir: Path) -> Path:
-    return artifacts_dir / "e2e-exports" / "e2e-export-test.mp4"
+def _playwright_export_file(artifact_root: Path) -> Path:
+    return artifact_root / "exports" / "e2e-export-test.mp4"
+
+
+def _prepare_release_proof_videos(
+    out_dir: Path,
+    primary_source: Path | None,
+    secondary_source: Path | None,
+    tertiary_source: Path | None,
+) -> tuple[Path, Path, Path]:
+    primary_source_path = (primary_source or CLIP1_VIDEO).resolve()
+    secondary_source_path = (secondary_source or primary_source_path).resolve()
+    tertiary_source_path = (tertiary_source or primary_source_path).resolve()
+
+    primary = _prepare_test_video(out_dir, source_override=primary_source_path)
+    secondary = out_dir / f"{secondary_source_path.stem}-secondary{secondary_source_path.suffix}"
+    tertiary = out_dir / f"{tertiary_source_path.stem}-tertiary{tertiary_source_path.suffix}"
+    shutil.copy2(secondary_source_path, secondary)
+    shutil.copy2(tertiary_source_path, tertiary)
+    return primary, secondary, tertiary
 
 
 def _resolve_tool(command: str, *, windows_fallbacks: tuple[str, ...] = ()) -> str:
@@ -168,6 +197,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--video-dir", type=Path, default=ARTIFACTS_DIR)
+    parser.add_argument("--artifact-root", type=Path, default=None)
+    parser.add_argument("--scope", choices=("standard", "export-proof", "release-proof"), default=None)
+    parser.add_argument("--primary-video", type=Path, default=None)
+    parser.add_argument("--secondary-video", type=Path, default=None)
+    parser.add_argument("--tertiary-video", type=Path, default=None)
     args = parser.parse_args()
 
     executable = args.app.resolve()
@@ -180,9 +214,24 @@ def main():
     ready_file = work_dir / "events.jsonl"
     port = _free_port()
     project_path = work_dir / "e2e.ssproj"
+    scope = args.scope or os.environ.get("SPLITSHOT_E2E_SCOPE", "standard")
+    artifact_root = (args.artifact_root or Path(os.environ.get("SPLITSHOT_E2E_ARTIFACT_ROOT", _default_packaged_artifact_root()))).resolve()
+    artifact_root.mkdir(parents=True, exist_ok=True)
 
-    video_path = _prepare_test_video(work_dir)
-    export_file = _playwright_export_file(ARTIFACTS_DIR)
+    if scope == "release-proof":
+        video_path, secondary_video_path, tertiary_video_path = _prepare_release_proof_videos(
+            work_dir,
+            args.primary_video,
+            args.secondary_video,
+            args.tertiary_video,
+        )
+    else:
+        video_path = _prepare_test_video(work_dir, source_override=args.primary_video)
+        secondary_video_path = None
+        tertiary_video_path = None
+
+    export_file = _playwright_export_file(artifact_root)
+    export_file.parent.mkdir(parents=True, exist_ok=True)
     export_file.unlink(missing_ok=True)
 
     print("Creating project bundle...", flush=True)
@@ -218,19 +267,24 @@ def main():
             raise TimeoutError("Backend did not respond")
         print("PASS: backend responding", flush=True)
 
-        video_file = ARTIFACTS_DIR / f"e2e-{sys.platform}.mp4"
-        ARTIFACTS_DIR.mkdir(exist_ok=True)
-
         # Run Playwright Node.js script
         electron_dir = REPO / "electron"
         pw_script = REPO / "scripts" / "testing" / "e2e-playwright.cjs"
-        pw_log_dir = ARTIFACTS_DIR / "e2e-logs"
+        pw_log_dir = artifact_root / "e2e-logs"
         shutil.rmtree(pw_log_dir, ignore_errors=True)
         pw_log_dir.mkdir(parents=True, exist_ok=True)
         pw_env = {**os.environ, "E2E_PORT": str(port),
                    "E2E_LOG_DIR": str(pw_log_dir),
                    "E2E_VIDEO_PATH": str(video_path),
+                   "E2E_PRIMARY_VIDEO_PATH": str(video_path),
+                   "E2E_EXPORT_DIR": str(export_file.parent),
+                   "E2E_ARTIFACT_ROOT": str(artifact_root),
+                   "SPLITSHOT_E2E_SCOPE": scope,
                    "NODE_PATH": str(electron_dir / "node_modules")}
+        if secondary_video_path is not None:
+            pw_env["E2E_SECONDARY_VIDEO_PATH"] = str(secondary_video_path)
+        if tertiary_video_path is not None:
+            pw_env["E2E_TERTIARY_VIDEO_PATH"] = str(tertiary_video_path)
         for bad in ("QT_QPA_PLATFORM", "APPIMAGE_EXTRACT_AND_RUN"):
             pw_env.pop(bad, None)
 
@@ -285,7 +339,7 @@ def main():
             raise RuntimeError("Playwright E2E failed")
 
         if sys.platform == "win32" and os.environ.get("SPLITSHOT_E2E_OCR_PROOF") == "1":
-            _proof_windows_export_text(_playwright_export_file(ARTIFACTS_DIR), ARTIFACTS_DIR)
+            _proof_windows_export_text(_playwright_export_file(artifact_root), artifact_root)
 
         print("PASS: full E2E test completed", flush=True)
         return 0

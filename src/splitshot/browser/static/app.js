@@ -4928,6 +4928,8 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
   if (tool === "scoring" && state?.project?.ui_state?.scoring_expanded) {
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
+  renderOutputProfiles();
+  renderReviewSourceControls();
   renderLiveOverlay();
 }
 
@@ -5664,39 +5666,68 @@ function renderVideo() {
   return videoPlayerComponent?.renderVideo();
 }
 
+let preferredOutputProfileId = "";
+let autoSelectNewestOutputProfile = false;
+let pendingOutputProfileDraft = null;
+
+function activeOutputProfileId() {
+  const select = $("output-profile-select");
+  if (preferredOutputProfileId) return preferredOutputProfileId;
+  return select?.value || "";
+}
+
 function renderOutputProfiles() {
   const select = $("output-profile-select");
   if (!select) return;
-  const currentValue = select.value;
-  const profiles = state.output_profiles || [];
+  const currentValue = preferredOutputProfileId || select.value;
+  const profiles = state?.output_profiles || [];
   select.innerHTML = '<option value="">-- No profile selected --</option>';
   profiles.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.output_id;
     opt.textContent = p.profile_name || p.output_id;
-    if (p.output_id === currentValue) opt.selected = true;
     select.appendChild(opt);
   });
-  const selected = profiles.find((p) => p.output_id === select.value);
+  const selectedId = autoSelectNewestOutputProfile && profiles.length > 0
+    ? profiles[profiles.length - 1].output_id
+    : currentValue;
+  const resolvedSelectedId = profiles.some((p) => p.output_id === selectedId) ? selectedId : "";
+  select.value = resolvedSelectedId;
+  preferredOutputProfileId = resolvedSelectedId;
+  autoSelectNewestOutputProfile = false;
+  const selected = profiles.find((p) => p.output_id === resolvedSelectedId);
+  const draft = pendingOutputProfileDraft?.output_id === resolvedSelectedId ? pendingOutputProfileDraft : null;
   const nameInput = $("output-profile-name");
   const typeSelect = $("output-profile-type");
   const frameSelect = $("output-profile-frame");
-  if (nameInput) nameInput.value = selected?.profile_name || "";
-  if (typeSelect) typeSelect.value = selected?.profile_kind || "stage_output";
-  if (frameSelect) frameSelect.value = selected?.frame_profile || "source";
+  const exportBadgesButton = $("export-badges");
+  if (selected && draft
+    && selected.profile_name === draft.profile_name
+    && selected.profile_kind === draft.profile_kind
+    && selected.frame_profile === draft.frame_profile) {
+    pendingOutputProfileDraft = null;
+  }
+  if (nameInput) nameInput.value = draft?.profile_name || selected?.profile_name || "";
+  if (typeSelect) typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output";
+  if (frameSelect) frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source";
   if (nameInput) nameInput.disabled = !selected;
   if (typeSelect) typeSelect.disabled = !selected;
   if (frameSelect) frameSelect.disabled = !selected;
+  if (exportBadgesButton) {
+    exportBadgesButton.dataset.outputId = resolvedSelectedId;
+    exportBadgesButton.onclick = () => {
+      void exportBadges();
+    };
+  }
 }
 
 function renderReviewSourceControls() {
   const select = $("review-source-select");
   if (!select) return;
-  const profiles = state.output_profiles || [];
-  const profileSelect = $("output-profile-select");
-  const activeProfileId = profileSelect?.value || "";
+  const profiles = state?.output_profiles || [];
+  const activeProfileId = activeOutputProfileId();
   const activeProfile = profiles.find((p) => p.output_id === activeProfileId);
-  const sources = state.project?.merge_sources || [];
+  const sources = state?.project?.merge_sources || [];
   const currentValue = select.value;
   select.innerHTML = '<option value="">-- No source --</option>';
   sources.forEach((s) => {
@@ -5708,6 +5739,7 @@ function renderReviewSourceControls() {
   });
   const reviewSourceId = activeProfile?.review_source_id || "";
   if (reviewSourceId && select.value !== reviewSourceId) select.value = reviewSourceId;
+  select.dataset.outputId = activeProfileId;
   const statusEl = $("review-source-status");
   if (statusEl) {
     if (reviewSourceId) {
@@ -5720,22 +5752,29 @@ function renderReviewSourceControls() {
   }
   select.disabled = !activeProfile;
   const setBtn = $("review-set-source");
-  if (setBtn) setBtn.disabled = !activeProfile;
+  if (setBtn) {
+    setBtn.disabled = !activeProfile;
+    setBtn.dataset.outputId = activeProfileId;
+    setBtn.onclick = () => {
+      void setReviewSource();
+    };
+  }
 }
 
-function setReviewSource() {
+async function setReviewSource() {
   const select = $("review-source-select");
-  const profileSelect = $("output-profile-select");
-  const profileId = profileSelect?.value;
+  const profileId = activeOutputProfileId()
+    || select?.dataset.outputId
+    || $("review-set-source")?.dataset.outputId
+    || "";
   if (!profileId) return;
   const sourceId = select?.value || "";
-  callApi("/api/output-profiles/update", { output_id: profileId, review_source_id: sourceId });
-  callApi("/api/output-profiles/render", { output_id: profileId });
+  await callApi("/api/output-profiles/update", { output_id: profileId, review_source_id: sourceId });
+  await callApi("/api/output-profiles/render", { output_id: profileId });
 }
 
 function exportBadges() {
-  const profileSelect = $("output-profile-select");
-  const profileId = profileSelect?.value;
+  const profileId = activeOutputProfileId() || $("export-badges")?.dataset.outputId || "";
   if (!profileId) return;
   const payload = readOverlayPayload();
   const badgeState = {
@@ -5768,6 +5807,7 @@ function exportBadges() {
 
 function createOutputProfile() {
   const baseName = $("output-profile-name")?.value?.trim() || "New Profile";
+  autoSelectNewestOutputProfile = true;
   callApi("/api/output-profiles/create", { profile_name: baseName, profile_kind: "stage_output" });
 }
 
@@ -5775,38 +5815,54 @@ function deleteOutputProfile() {
   const select = $("output-profile-select");
   const id = select?.value;
   if (!id) return;
+  if (preferredOutputProfileId === id) preferredOutputProfileId = "";
+  if (pendingOutputProfileDraft?.output_id === id) pendingOutputProfileDraft = null;
   callApi("/api/output-profiles/delete", { output_id: id });
 }
 
 function selectOutputProfile() {
   const select = $("output-profile-select");
   const id = select?.value;
+  preferredOutputProfileId = id || "";
+  if (pendingOutputProfileDraft?.output_id && pendingOutputProfileDraft.output_id !== preferredOutputProfileId) {
+    pendingOutputProfileDraft = null;
+  }
   const profiles = state.output_profiles || [];
   const selected = profiles.find((p) => p.output_id === id);
+  const draft = pendingOutputProfileDraft?.output_id === id ? pendingOutputProfileDraft : null;
   const nameInput = $("output-profile-name");
   const typeSelect = $("output-profile-type");
   const frameSelect = $("output-profile-frame");
-  if (nameInput) { nameInput.value = selected?.profile_name || ""; nameInput.disabled = !selected; }
-  if (typeSelect) { typeSelect.value = selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
-  if (frameSelect) { frameSelect.value = selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
+  if (nameInput) { nameInput.value = draft?.profile_name || selected?.profile_name || ""; nameInput.disabled = !selected; }
+  if (typeSelect) { typeSelect.value = draft?.profile_kind || selected?.profile_kind || "stage_output"; typeSelect.disabled = !selected; }
+  if (frameSelect) { frameSelect.value = draft?.frame_profile || selected?.frame_profile || "source"; frameSelect.disabled = !selected; }
 }
 
 let _outputProfileFieldCommitTimer = null;
 
 function scheduleOutputProfileFieldCommit() {
+  const id = activeOutputProfileId();
+  const nameInput = $("output-profile-name");
+  const typeSelect = $("output-profile-type");
+  const frameSelect = $("output-profile-frame");
+  if (id) {
+    pendingOutputProfileDraft = {
+      output_id: id,
+      profile_name: nameInput?.value || "",
+      profile_kind: typeSelect?.value || "stage_output",
+      frame_profile: frameSelect?.value || "source",
+    };
+  }
   if (_outputProfileFieldCommitTimer) clearTimeout(_outputProfileFieldCommitTimer);
   _outputProfileFieldCommitTimer = setTimeout(() => {
     _outputProfileFieldCommitTimer = null;
-    const select = $("output-profile-select");
-    const id = select?.value;
+    const id = activeOutputProfileId();
     if (!id) return;
-    const nameInput = $("output-profile-name");
-    const typeSelect = $("output-profile-type");
-    const frameSelect = $("output-profile-frame");
     const updates = {};
     if (nameInput) updates.profile_name = nameInput.value;
     if (typeSelect) updates.profile_kind = typeSelect.value;
     if (frameSelect) updates.frame_profile = frameSelect.value;
+    pendingOutputProfileDraft = { output_id: id, ...updates };
     callApi("/api/output-profiles/update", { output_id: id, ...updates });
   }, 400);
 }

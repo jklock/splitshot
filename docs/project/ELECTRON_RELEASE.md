@@ -97,6 +97,14 @@ That script is the source-of-truth gate for:
 
 Do not use GitHub Actions as the first place to discover source-level or parity failures.
 
+For `v1.0.6`, preflight alone is not enough. The release gate also requires:
+
+- source proof bundle under `artifacts/v106-release-proof/source/`
+- local packaged macOS release-proof bundle under `artifacts/v106-release-proof/packaged-local-mac/`
+- GitHub packaged validation review bundles under `artifacts/v106-release-proof/github-review/{macos,windows,linux}/`
+
+Launch-only proof, package-only proof, or build-only proof is insufficient.
+
 ## GitHub Actions Workflows
 
 Electron packaging and release work is split across dedicated workflows:
@@ -115,32 +123,106 @@ The three `test-*` workflows are the branch-validation path. On pull requests th
 
 Use this decision tree when another agent needs packaged Electron proof from GitHub:
 
-1. Run the local preflight first:
+1. Run the source proof bundle first:
+
+```bash
+uv run python scripts/testing/run_v106_source_release_proof.py --artifact-root artifacts/v106-release-proof/source
+```
+
+2. Run the broader local gates:
+
+```bash
+uv run pytest tests/browser/
+uv run pytest tests/export/
+uv run splitshot --check
+uv run python scripts/testing/run_test_suite.py --mode all-together --format table
+```
+
+3. Run the local preflight:
 
 ```bash
 uv run python scripts/testing/run_electron_preflight.py
 ```
 
-2. For one-platform packaging on the current branch without the broader test workflow, run one of:
+4. Run the local packaged macOS release-proof lane:
+
+```bash
+uv run python scripts/testing/test_packaged_artifact.py \
+  --artifact electron/build/SplitShot-1.0.6-arm64.dmg \
+  --script scripts/testing/test_packaged_app_e2e.py \
+  --script-arg=--scope \
+  --script-arg=release-proof \
+  --script-arg=--artifact-root \
+  --script-arg=artifacts/v106-release-proof/packaged-local-mac \
+  --script-arg=--primary-video \
+  --script-arg=docs/Clip1.MP4
+```
+
+5. For one-platform packaging on the current branch without the broader test workflow, run one of:
    - `Build macOS`
    - `Build Windows`
    - `Build Linux`
-3. For branch-level validation that also exercises packaged artifact validation, run one of:
+6. For branch-level validation that also exercises packaged artifact validation, run one of:
    - `Test macOS`
    - `Test Windows`
    - `Test Linux`
-4. In the Actions UI, choose `Run workflow`, pick the target branch/ref, and wait for both the package and validate jobs to finish on that platform.
-5. Download artifacts from the successful run:
+7. In the Actions UI, choose `Run workflow`, pick the target branch/ref, and wait for both the package and validate jobs to finish on that platform.
+8. Download artifacts from the successful run:
    - `splitshot-macos` for `.dmg`
    - `splitshot-windows` for `.exe`
    - `splitshot-linux` for `.AppImage`
-   - `e2e-artifacts-*` for packaged validation logs/screenshots
-6. For a coordinated publish, use only `Release`. Either:
+   - `e2e-artifacts-*` for packaged validation logs, screenshots, timings, summaries, and export proof
+9. Review the packaged validation bundles under:
+   - `artifacts/v106-release-proof/github-review/macos/`
+   - `artifacts/v106-release-proof/github-review/windows/`
+   - `artifacts/v106-release-proof/github-review/linux/`
+10. For a coordinated publish, use only `Release`. Either:
    - push a semver tag such as `v1.0.6`, or
    - run `Release` manually with `release_ref=<commit-or-branch>` and `release_tag=v1.0.6`
-7. `Release` must be the only workflow that creates or edits the GitHub release body and uploads the three platform artifacts to the release.
+11. `Release` must be the only workflow that creates or edits the GitHub release body and uploads the three platform artifacts to the release.
 
 Do not use `build-*` runs as release proof by themselves. They package artifacts, but they do not perform the clean-runner packaged validation that the `test-*` workflow-dispatch path and `release.yml` do.
+
+## Agent Checklist
+
+When handing this flow to another agent, require this exact order:
+
+1. Prove the source app locally:
+   - targeted Stage/browser truth tests
+   - `uv run python scripts/testing/run_v106_source_release_proof.py --artifact-root artifacts/v106-release-proof/source`
+   - `uv run pytest tests/browser/`
+   - `uv run pytest tests/export/`
+   - `uv run splitshot --check`
+   - `uv run python scripts/testing/run_test_suite.py --mode all-together --format table`
+2. Run local Electron preflight:
+
+```bash
+uv run python scripts/testing/run_electron_preflight.py
+```
+
+3. Run the local packaged macOS proof bundle:
+
+```bash
+uv run python scripts/testing/test_packaged_artifact.py \
+  --artifact electron/build/SplitShot-1.0.6-arm64.dmg \
+  --script scripts/testing/test_packaged_app_e2e.py \
+  --script-arg=--scope \
+  --script-arg=release-proof \
+  --script-arg=--artifact-root \
+  --script-arg=artifacts/v106-release-proof/packaged-local-mac \
+  --script-arg=--primary-video \
+  --script-arg=docs/Clip1.MP4
+```
+
+4. On the intended release ref, run:
+   - `Test macOS`
+   - `Test Windows`
+   - `Test Linux`
+5. Save both the platform package artifacts and the `e2e-artifacts-*` validation bundles from those runs.
+6. Review the uploaded packaged validation artifacts for screenshots, summary JSON, timings, export proof, and logs.
+7. Only after those three packaged validation lanes are green, use `Release` to publish or to perform the final release dry run with `release_ref` and `release_tag`.
+
+If steps 3 through 6 are not green, the branch is not release-ready regardless of local build success.
 
 Runner targets:
 

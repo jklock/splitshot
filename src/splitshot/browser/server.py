@@ -1252,7 +1252,15 @@ class BrowserControlServer:
                     activity.log("media.missing", source_id=source_id)
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
-                self._send_media(Path(source.asset.path))
+                trim_derivative = getattr(source, "trim_derivative", None)
+                active_path = source.asset.path
+                if (
+                    trim_derivative is not None
+                    and getattr(trim_derivative, "active_path_kind", None) == "local_derivative"
+                    and getattr(trim_derivative, "derivative_path", None)
+                ):
+                    active_path = trim_derivative.derivative_path
+                self._send_media(Path(active_path))
 
             def _send_popup_media(self, popup_id: str) -> None:
                 popup = next((item for item in controller.project.popups if item.id == popup_id), None)
@@ -1675,6 +1683,17 @@ class BrowserControlServer:
                     None if payload.get("pip_x") in {None, ""} else float(payload["pip_x"]),
                     None if payload.get("pip_y") in {None, ""} else float(payload["pip_y"]),
                     None if payload.get("opacity") in {None, ""} else float(payload["opacity"]),
+                    None if payload.get("camera_role") in {None, ""} else str(payload["camera_role"]),
+                    None
+                    if (
+                        payload.get("placement_mode") in {None, ""}
+                        and not isinstance(payload.get("placement"), dict)
+                    )
+                    else str(
+                        payload.get("placement_mode")
+                        or (payload.get("placement") or {}).get("mode")
+                        or ""
+                    ),
                 )
                 if payload.get("sync_offset_ms") not in {None, ""}:
                     controller.set_merge_source_sync_offset(str(source_id), int(payload["sync_offset_ms"]))
@@ -1698,6 +1717,7 @@ class BrowserControlServer:
                     end_s=float(end_s) if end_s not in {None, ""} else None,
                     clear=clear,
                 )
+                server._bump_media_url_token()
 
             def _list_output_profiles(self, payload: dict[str, Any]) -> None:
                 pass

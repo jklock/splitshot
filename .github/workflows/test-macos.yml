@@ -68,6 +68,8 @@ jobs:
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install Python dependencies
         run: uv sync --frozen --extra dev
+      - name: Verify Clip1 proof fixture
+        run: uv run python scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5
       - name: Install Node dependencies
         run: cd electron && npm install
         timeout-minutes: 10
@@ -189,11 +191,17 @@ jobs:
           artifact=$(ls electron/build/*.dmg | head -n 1)
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with DMG package
-        env:
-          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
         run: |
           artifact=$(ls electron/build/*.dmg | head -n 1)
-          uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+          uv run python scripts/testing/test_packaged_artifact.py \
+            --artifact "$artifact" \
+            --script scripts/testing/test_packaged_app_e2e.py \
+            --script-arg=--scope \
+            --script-arg=release-proof \
+            --script-arg=--artifact-root \
+            --script-arg=artifacts/v106-release-proof/github-review/macos \
+            --script-arg=--primary-video \
+            --script-arg=docs/Clip1.MP4
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()

@@ -1789,8 +1789,17 @@ class ProjectController(QObject):
             raise ValueError("Merge source has no asset path")
         if start_s is not None and end_s is not None and start_s >= end_s:
             raise ValueError("start_s must be less than end_s")
-        derivative_path = self._stage_project_input_path(source_path, source_name=f"{source.id}_trim")
-        trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+        source_file = Path(source_path)
+        if self.project_path is not None:
+            derivative_dir = self.project_path / INPUT_DIRNAME / "trimmed"
+            derivative_dir.mkdir(parents=True, exist_ok=True)
+            derivative_path = str(derivative_dir / f"{source.id}_trim{source_file.suffix or '.mp4'}")
+        else:
+            derivative_path = str(source_file.with_name(f"{source_file.stem}_{source.id}_trim{source_file.suffix or '.mp4'}"))
+        try:
+            trim_video(source_path, derivative_path, start_s=start_s, end_s=end_s)
+        except Exception as exc:
+            raise ValueError(f"Trim failed for {source_path} -> {derivative_path}: {exc}") from exc
         source.trim_derivative = MergeSourceTrimDerivative(
             original_path=source_path,
             derivative_path=derivative_path,
@@ -2743,7 +2752,11 @@ class ProjectController(QObject):
         pip_x: float | None = None,
         pip_y: float | None = None,
         opacity: float | None = None,
+        camera_role: str | None = None,
+        placement_mode: str | None = None,
     ) -> None:
+        from splitshot.domain.models import _normalize_merge_source_angle_role, _normalize_merge_source_placement_mode
+
         for source in self.project.merge_sources:
             if source.id != source_id:
                 continue
@@ -2755,6 +2768,10 @@ class ProjectController(QObject):
                 source.pip_y = max(0.0, min(1.0, float(pip_y)))
             if opacity is not None:
                 source.opacity = max(0.0, min(1.0, float(opacity)))
+            if camera_role not in {None, ""}:
+                source.angle_role = _normalize_merge_source_angle_role(camera_role, source.asset)
+            if placement_mode not in {None, ""}:
+                source.placement.mode = _normalize_merge_source_placement_mode(placement_mode)
             self.project.touch()
             self.project_changed.emit()
             return

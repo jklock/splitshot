@@ -49,6 +49,16 @@ def _set_input_value(locator, value: str) -> None:
     )
 
 
+def _source_state(page, source_id: str) -> dict | None:
+    return page.evaluate(
+        """(targetSourceId) => {
+            const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
+            return source ? JSON.parse(JSON.stringify(source)) : null;
+        }""",
+        source_id,
+    )
+
+
 def _set_checkbox(page, selector: str, checked: bool) -> None:
     page.evaluate(
         """({ selector, checked }) => {
@@ -743,6 +753,76 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                             && source.pip_y === 0.2;
                     }""",
                     arg=first_card.get_attribute('data-source-id'),
+                )
+                first_card.locator('[data-merge-source-field="camera_role"]').select_option('detail')
+                first_card.locator('[data-merge-source-field="placement_mode"]').select_option('above_below')
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const role = source?.camera_role || source?.angle_role || '';
+                        return Boolean(source)
+                            && role === 'detail'
+                            && source.placement?.mode === 'above_below';
+                    }""",
+                    arg=source_id,
+                )
+
+                _set_input_value(first_card.locator('input[data-trim-start]'), '0.1')
+                _set_input_value(first_card.locator('input[data-trim-end]'), '0.5')
+                first_card.get_by_role('button', name='Apply', exact=True).click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(trim?.derivative_path)
+                            && trim.active_path_kind === 'local_derivative'
+                            && document.querySelector('.merge-media-card[data-source-id="' + sourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
+                    }""",
+                    arg=source_id,
+                    timeout=120000,
+                )
+                trimmed_source = _source_state(page, source_id)
+                assert trimmed_source is not None
+                assert trimmed_source["asset"]["path"]
+                assert trimmed_source["trim_derivative"]["derivative_path"]
+                assert Path(trimmed_source["trim_derivative"]["derivative_path"]).exists()
+                assert trimmed_source["trim_derivative"].get("original_path", trimmed_source["asset"]["path"]) == trimmed_source["asset"]["path"]
+
+                page.reload(wait_until='domcontentloaded')
+                page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, 'merge')
+                reloaded_first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
+                reloaded_body = reloaded_first_card.locator('.merge-media-card-body')
+                if reloaded_body.evaluate('body => body.hidden'):
+                    reloaded_first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    reloaded_body.wait_for(state='visible')
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const trim = source?.trim_derivative;
+                        const card = document.querySelector('.merge-media-card[data-source-id="' + sourceId + '"]');
+                        const role = source?.camera_role || source?.angle_role || '';
+                        return Boolean(source)
+                            && role === 'detail'
+                            && source.placement?.mode === 'above_below'
+                            && trim?.active_path_kind === 'local_derivative'
+                            && card?.querySelector('[data-merge-source-field="camera_role"]')?.value === 'detail'
+                            && card?.querySelector('[data-merge-source-field="placement_mode"]')?.value === 'above_below';
+                    }""",
+                    arg=source_id,
+                )
+
+                reloaded_first_card.get_by_role('button', name='Clear', exact=True).click()
+                page.wait_for_function(
+                    """(sourceId) => {
+                        const source = (state?.project?.merge_sources || []).find((item) => item.id === sourceId);
+                        const trim = source?.trim_derivative;
+                        return Boolean(source)
+                            && source.asset?.path
+                            && (!trim?.derivative_path)
+                            && trim?.active_path_kind !== 'local_derivative';
+                    }""",
+                    arg=source_id,
                 )
 
                 second_source_id = page.locator('.merge-media-card').nth(1).get_attribute('data-source-id')

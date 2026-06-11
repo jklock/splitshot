@@ -205,6 +205,12 @@ def main() -> int:
         default=DEFAULT_VALIDATION_SCRIPT,
         help="Validation script that accepts --app <installed executable>",
     )
+    parser.add_argument(
+        "--script-arg",
+        action="append",
+        default=[],
+        help="Extra argument forwarded to the validation script. Repeat to pass multiple arguments.",
+    )
     args = parser.parse_args()
 
     artifact = (args.artifact or _default_artifact()).resolve()
@@ -220,7 +226,7 @@ def main() -> int:
     try:
         installed = _install_artifact(artifact)
         env = {**os.environ, **installed.env}
-        command = [sys.executable, str(validation_script), "--app", str(installed.executable)]
+        command = [sys.executable, str(validation_script), "--app", str(installed.executable), *args.script_arg]
         result = subprocess.run(command, cwd=REPO, env=env, check=False)
         return int(result.returncode)
     finally:
