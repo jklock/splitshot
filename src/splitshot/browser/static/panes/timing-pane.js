@@ -168,10 +168,6 @@ export function createTimingPane({
       list.innerHTML = "";
       const events = currentState().project?.analysis?.events || [];
       if (events.length === 0) {
-        const empty = documentObject.createElement("div");
-        empty.className = "hint";
-        empty.textContent = "No timing events yet.";
-        list.appendChild(empty);
         return;
       }
 

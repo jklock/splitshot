@@ -582,10 +582,6 @@ export function createReviewPane({
       withPreservedScrollState([container], () => {
         container.innerHTML = "";
         if (boxes.length === 0) {
-          const empty = documentObject.createElement("div");
-          empty.className = "hint";
-          empty.textContent = "No text boxes yet. Add a custom box or an imported summary box here and it will render in both review and export.";
-          container.appendChild(empty);
           return;
         }
         boxes.forEach((box, index) => {

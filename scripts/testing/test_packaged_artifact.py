@@ -42,23 +42,16 @@ def _prepend_path(env: dict[str, str], *entries: str) -> dict[str, str]:
 
 
 def _media_tool_free_path(preferred_dir: Path) -> str:
-    ffmpeg_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
-    ffprobe_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
-    filtered: list[str] = []
     seen: set[str] = set()
+    entries: list[str] = []
     for raw_entry in os.environ.get("PATH", "").split(os.pathsep):
         entry = raw_entry.strip()
-        if not entry:
-            continue
-        candidate = Path(entry)
-        if candidate.resolve() == preferred_dir.resolve():
-            continue
-        if (candidate / ffmpeg_name).exists() or (candidate / ffprobe_name).exists():
-            continue
-        if entry not in seen:
-            filtered.append(entry)
+        if entry and entry not in seen:
+            entries.append(entry)
             seen.add(entry)
-    return os.pathsep.join([str(preferred_dir), *filtered])
+    if str(preferred_dir) not in seen:
+        entries.insert(0, str(preferred_dir))
+    return os.pathsep.join(entries)
 
 
 def _run(command: list[str], *, env: dict[str, str] | None = None, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:

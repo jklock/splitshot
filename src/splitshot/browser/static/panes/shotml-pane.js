@@ -149,7 +149,7 @@ export function createShotMLPane({
     const lastRun = currentState()?.project?.analysis?.last_shotml_run_summary || {};
     if (summary) {
       summary.textContent = lastRun.shot_count === undefined
-        ? "No ShotML run yet."
+        ? ""
         : `${lastRun.shot_count} shots at threshold ${Number(lastRun.threshold ?? shotmlSettings().detection_threshold ?? 0.5).toFixed(2)}.`;
     }
     renderShotMLProposals();

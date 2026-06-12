@@ -11,6 +11,7 @@ from pathlib import Path
 class MediaError(RuntimeError):
     pass
 
+
 def _binary_name(tool: str) -> str:
     if sys.platform.startswith("win") and not tool.endswith(".exe"):
         return f"{tool}.exe"
@@ -82,18 +83,58 @@ def ffmpeg_command(command: list[str]) -> list[str]:
     return [resolve_media_binary("ffmpeg"), "-y", *command]
 
 
-def trim_video(source_path: str, output_path: str, start_s: float | None = None, end_s: float | None = None) -> None:
+def _probe_audio_codec(source_path: str) -> str | None:
+    try:
+        info = run_ffprobe_json(Path(source_path))
+        for stream in info.get("streams", []):
+            if stream.get("codec_type") == "audio":
+                return stream.get("codec_name") or None
+    except Exception:
+        pass
+    return None
+
+
+def trim_video(
+    source_path: str, output_path: str, start_s: float | None = None, end_s: float | None = None
+) -> None:
     if not source_path:
         raise MediaError("source_path is required for trim")
     if not output_path:
         raise MediaError("output_path is required for trim")
     if start_s is None and end_s is None:
         raise MediaError("At least one of start_s or end_s is required for trim")
-    cmd: list[str] = []
-    if start_s is not None and start_s > 0:
-        cmd.extend(["-ss", f"{start_s:.3f}"])
-    cmd.extend(["-i", source_path])
-    if end_s is not None:
-        cmd.extend(["-to", f"{end_s:.3f}"])
-    cmd.extend(["-c", "copy", output_path])
-    run_ffmpeg(cmd)
+    output_path_obj = Path(output_path)
+    output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+    def _build_cmd(audio_reencode: bool = False) -> list[str]:
+        cmd: list[str] = []
+        if start_s is not None and start_s > 0:
+            cmd.extend(["-ss", f"{start_s:.3f}"])
+        cmd.extend(["-i", source_path])
+        if end_s is not None:
+            cmd.extend(["-to", f"{end_s:.3f}"])
+        if audio_reencode:
+            cmd.extend(["-c:v", "copy", "-c:a", "aac", "-b:a", "128k"])
+        else:
+            cmd.extend(["-c", "copy"])
+        cmd.append(output_path)
+        return cmd
+
+    try:
+        run_ffmpeg(_build_cmd(audio_reencode=False))
+    except MediaError as copy_err:
+        audio_codec = _probe_audio_codec(source_path)
+        if audio_codec is None or audio_codec == "aac":
+            raise MediaError(
+                f"Trim copy failed for {source_path} -> {output_path}: {copy_err}"
+            ) from copy_err
+        try:
+            run_ffmpeg(_build_cmd(audio_reencode=True))
+        except MediaError as reencode_err:
+            raise MediaError(
+                f"Trim failed for {source_path} -> {output_path}: "
+                f"copy and re-encode attempts both failed. "
+                f"Audio codec: {audio_codec}. "
+                f"Copy error: {copy_err}; "
+                f"Re-encode error: {reencode_err}"
+            ) from reencode_err

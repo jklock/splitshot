@@ -67,13 +67,13 @@ export function createExportPane({
     const button = $("show-export-log");
     const exportButton = $("export-export-log");
     if (output) {
-      output.textContent = visibleLines.join("\n") || "No export log yet.";
+      output.textContent = visibleLines.join("\n");
       if (getActiveProcessingPath() === "/api/export") output.scrollTop = output.scrollHeight;
     }
     if (summary) {
       summary.textContent = getActiveProcessingPath() === "/api/export"
         ? `Export in progress • ${Math.round(getProcessingProgressPercent())}%`
-        : (visibleLines.length > 0 ? "Most recent local export output." : "No export activity yet.");
+        : "";
     }
     if (errorBox) {
       errorBox.hidden = !projectExport.last_error;
@@ -84,9 +84,7 @@ export function createExportPane({
         ? `Latest export failed: ${projectExport.last_error}`
         : getActiveProcessingPath() === "/api/export"
           ? `Export log is updating in real time. Current progress: ${Math.round(getProcessingProgressPercent())}%.`
-          : (visibleLines.length > 0
-            ? "The last local export log is available in the modal window."
-            : "The live export log opens in a separate window so the output settings stay readable while rendering runs.");
+          : "";
     }
     if (button) {
       button.textContent = getActiveProcessingPath() === "/api/export"
@@ -114,7 +112,7 @@ export function createExportPane({
   function downloadExportLog() {
     const visibleLines = visibleExportLogLines();
     if (visibleLines.length === 0) {
-      setStatus("No export log available yet.");
+      setStatus("");
       return;
     }
     downloadTextFile(`${metricsFileStem()}-export-log.txt`, `${visibleLines.join("\n")}\n`, "text/plain");

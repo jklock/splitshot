@@ -435,10 +435,6 @@ export function createMergePane({
     withPreservedScrollState([list], () => {
       list.innerHTML = "";
       if (mergeSources.length === 0) {
-        const empty = documentObject.createElement("div");
-        empty.className = "hint";
-        empty.textContent = "No PiP media added yet.";
-        list.appendChild(empty);
         return;
       }
 

@@ -185,10 +185,6 @@ export function createMetricsPane({
       table.appendChild(header);
     });
     if (rows.length === 0) {
-      const empty = documentObject.createElement("div");
-      empty.className = "metrics-table-empty";
-      empty.textContent = "No timing segments yet.";
-      table.appendChild(empty);
       return;
     }
     rows.forEach((entry) => {

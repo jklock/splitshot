@@ -298,11 +298,9 @@ export function createSettingsPane({
       const hasFolderLayer = Object.keys(layers.folder || {}).length > 0;
       scopeStatus.textContent = folderSettingsError
         ? folderSettingsError
-        : !hasProjectPath
-          ? "No project folder is open. App defaults are the global template."
-          : (hasFolderLayer
-            ? "Folder defaults are active for this project and override the global template here."
-            : "No folder defaults file exists yet. App defaults provide the template until a folder file is saved.");
+        : hasProjectPath && hasFolderLayer
+          ? "Folder defaults are active for this project."
+          : "";
     }
 
     const shotmlDefaults = persistedSettings.shotml_defaults || {};

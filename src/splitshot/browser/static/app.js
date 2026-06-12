@@ -4521,10 +4521,6 @@ function renderPopupTimeline(allBubbles = popupBubbles(), visibleBubbles = filte
   playhead.style.left = `${clamp((playheadMs / totalMs) * 100, 0, 100)}%`;
   strip.appendChild(playhead);
   if (sortedBubbles.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "popup-timeline-empty";
-    empty.textContent = allBubbles.length === 0 ? "No popups yet." : "No popups match the current filter.";
-    strip.appendChild(empty);
     return;
   }
   const originalIndexById = new Map(allBubbles.map((bubble, index) => [bubble.id, index]));
@@ -4615,16 +4611,12 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
   if (filter instanceof HTMLSelectElement) syncControlValue(filter, popupFilterMode);
   if (status instanceof HTMLElement) status.textContent = `${visibleBubbles.length} shown`;
   if (listStatus instanceof HTMLElement) {
-    listStatus.textContent = allBubbles.length === 0
-      ? "No markers yet."
-      : visibleBubbles.length === 0
-        ? "No markers match the current filter."
-        : `${visibleBubbles.length} shown`;
+    listStatus.textContent = visibleBubbles.length > 0 ? `${visibleBubbles.length} shown` : "";
   }
   if (editorStatus instanceof HTMLElement) {
     editorStatus.textContent = selected
       ? popupBubbleSummaryText(selected, Math.max(0, allBubbles.findIndex((bubble) => bubble.id === selected.id)))
-      : (hasBubbles ? "No marker selected." : "Nothing to edit yet.");
+      : "";
   }
   ["popup-prev-workbench", "popup-next-workbench"].forEach((id) => {
     const button = $(id);
@@ -4636,15 +4628,7 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
   withPreservedScrollState([list, editor], () => {
     list.innerHTML = "";
     if (!hasBubbles) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-list-empty";
-      empty.textContent = "No markers yet.";
-      list.appendChild(empty);
     } else if (visibleBubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-list-empty";
-      empty.textContent = "No markers match the current filter.";
-      list.appendChild(empty);
     } else {
       visibleBubbles.forEach((bubble, index) => {
         list.appendChild(buildPopupMarkerRow(bubble, originalIndexById.get(bubble.id) ?? index));
@@ -4652,12 +4636,6 @@ function renderMarkersWorkbench(allBubbles, visibleBubbles, selected, originalIn
     }
     editor.innerHTML = "";
     if (!selected) {
-      const empty = document.createElement("div");
-      empty.className = "markers-workbench-editor-empty";
-      empty.textContent = hasBubbles
-        ? "Select a marker from the list to edit it here."
-        : "Add a time marker or import shots to start editing.";
-      editor.appendChild(empty);
       return;
     }
     editor.appendChild(buildPopupBubbleCard(selected, originalIndexById.get(selected.id) ?? 0, { forceExpanded: true }));
@@ -4708,17 +4686,9 @@ function renderPopupEditors() {
   withPreservedScrollState([markerList], () => {
     markerList.innerHTML = "";
     if (bubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No markers yet.";
-      markerList.appendChild(empty);
       return;
     }
     if (visibleBubbles.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "hint";
-      empty.textContent = "No markers match the current filter.";
-      markerList.appendChild(empty);
       return;
     }
     visibleBubbles.forEach((bubble, index) => {
@@ -6558,10 +6528,6 @@ function renderMetricsTrendTable(table) {
     table.appendChild(header);
   });
   if (rows.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "metrics-table-empty";
-    empty.textContent = "No timing segments yet.";
-    table.appendChild(empty);
     return;
   }
   rows.forEach((entry) => {
@@ -8949,7 +8915,7 @@ function sendKeepaliveJson(path, payload) {
       headers: { "Content-Type": "application/json" },
       body,
       keepalive: true,
-    });
+    }).catch(() => {});
     return true;
   } catch {
     return false;
@@ -10388,4 +10354,5 @@ wireElectronProjectOpen();
 wireGlobalActivityLogging();
 wireEvents();
 startActivityPolling();
+autoSelectNewestOutputProfile = true;
 refresh();
