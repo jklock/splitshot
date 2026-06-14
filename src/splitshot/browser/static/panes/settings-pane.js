@@ -364,8 +364,8 @@ export function createSettingsPane({
     if (pipSummary) {
       const sourceCount = Array.isArray(persistedSettings.merge_source_defaults) ? persistedSettings.merge_source_defaults.length : 0;
       pipSummary.textContent = sourceCount > 0
-        ? `${sourceCount} saved PiP source${sourceCount === 1 ? "" : "s"} in defaults.`
-        : "No saved PiP media defaults.";
+        ? `${sourceCount} saved Compose source${sourceCount === 1 ? "" : "s"} in defaults.`
+        : "No saved Compose defaults.";
     }
     renderSettingsSections();
     renderSettingsLayerSummary(persistedSettings, markerTemplate, layers);

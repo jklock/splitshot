@@ -90,6 +90,7 @@ data-tool-pane:scoring
 data-tool-pane:settings
 data-tool-pane:shotml
 data-tool-pane:timing
+data-tool-pane:trim-sync
 data-tool:export
 data-tool:markers
 data-tool:merge
@@ -101,6 +102,7 @@ data-tool:scoring
 data-tool:settings
 data-tool:shotml
 data-tool:timing
+data-tool:trim-sync
 id:add-merge-media
 id:add-timing-event
 id:amp-waveform-in
@@ -198,8 +200,6 @@ id:resize-sidebar
 id:resize-waveform
 id:review-add-imported-box
 id:review-add-text-box
-id:review-set-source
-id:review-source-select
 id:score-lock-to-stack
 id:score-x
 id:score-y
@@ -293,12 +293,11 @@ id:timing-event-position
 id:toggle-layout-lock-video
 id:toggle-rail
 id:two-pass
+id:multi-track
 id:video-bitrate
 id:video-codec
 id:zoom-waveform-in
 id:zoom-waveform-out
-id:waveform-mode-multi
-id:waveform-mode-single
 """.splitlines()
     if line.strip()
 }
@@ -369,7 +368,7 @@ def test_browser_shell_inventory_is_wired_to_the_coverage_docs() -> None:
         "Phase 1: Shared Shell And Drag/Layout Interactions",
         "Phase 2: Splits And Score End-To-End Closeout",
         "Phase 3: Markers, Review, Overlay, And Color Picker",
-        "Phase 4: PiP, Merge, Export Settings, And Export Log",
+        "Phase 4: Compose, Export Settings, And Export Log",
         "Phase 5: Settings And ShotML Full Coverage",
         "Phase 6: Cross-Surface Final Truth Gate",
         "`full-control QA coverage` means zero mutable controls are left at `missing`, `static`, or `smoke`.",

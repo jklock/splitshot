@@ -1,58 +1,54 @@
-# PiP Pane
+# Compose Pane
 
-The PiP pane manages added media. It can place a second angle or image as picture-in-picture, side-by-side, or above/below content, then lets each item keep its own size, opacity, position, and sync offset.
+The Compose pane manages added media. It can place a second angle or image as an inset, side-by-side, or above/below content, then lets each item keep its own size, opacity, position, and layout mode.
 
-<img src="../../screenshots/PiPPane.png" alt="PiP pane with picture-in-picture defaults, an expanded media card, per-item opacity, size, placement, and sync controls" width="960">
+<img src="../../screenshots/PiPPane.png" alt="Compose pane with defaults, an expanded media card, per-item opacity, size, placement controls" width="960">
 
 ## When To Use This Pane
 
 - Add a second camera angle.
 - Add a still image or support graphic.
-- Sync secondary media against the primary run.
 - Decide whether added media appears in the final export.
+- Configure per-item size, opacity, position, and layout.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Add PiP Media` | Adds one or more video or image files. |
+| `Add Media` | Adds one or more video or image files. |
 | `Enable added media export` | Includes added media in the rendered export. |
-| `Layout` | Chooses `Side by side`, `Above / below`, or `Picture in picture`. |
-| `Default PiP size` | Sets the size for newly added PiP items. |
-| `Default PiP X` / `Default PiP Y` | Set default normalized placement for new PiP items. |
-| Media card `Trim Video` | Shows start/end fields, Apply/Clear buttons, and active trim status. |
+| `Layout` | Chooses `Side by side`, `Above / below`, or `Inset`. |
+| `Default size` | Sets the size for newly added items. |
+| `Default Position X` / `Default Position Y` | Set default normalized placement for new items. |
 | Media card `>` / `v` | Expands or collapses per-item controls. |
 | `Remove` | Deletes that added media item. |
-| Per-item `PiP size` | Sets one item's size. |
-| `PiP opacity` | Sets one item's transparency. |
-| Per-item `PiP X` / `PiP Y` | Set one item's normalized placement. |
-| `Sync` and nudge buttons | Move that item's sync offset by milliseconds. |
+| Per-item `Size` | Sets one item's size. |
+| `Opacity` | Sets one item's transparency. |
+| Per-item `Position X` / `Position Y` | Set one item's normalized placement. |
+| Per-item `Layout` | Controls how this item is placed in the output. |
 
 ## How To Use It
 
-1. Click `Add PiP Media`.
+1. Click `Add Media`.
 2. Choose `Layout`.
 3. Turn on `Enable added media export` when the added media should render into the final file.
 4. Set defaults before adding several similar items.
-5. Expand each media card and adjust item-specific `PiP size`, `PiP opacity`, `PiP X`, and `PiP Y`.
-6. Use the sync nudge buttons until the secondary motion lines up with the primary video.
-7. In `Picture in picture` layout, drag the rendered inset in the preview for direct placement. The per-item X/Y fields update to match the drag result.
-8. To trim added media, expand the card and enter start/end trim seconds in the `Trim Video` section, then click `Apply`. The derivative is stored locally and the source file is never modified.
+5. Expand each media card and adjust item-specific `Size`, `Opacity`, `Position X`, and `Position Y`.
+6. In inset layout, drag the rendered added media in the preview for direct placement. The per-item X/Y fields update to match the drag result.
+7. Use the [Trim pane](#) to time-shift media or trim dead time.
 
-## Trim Notes
+## Trim and Sync
 
-- Trimming is non-destructive — the original media is never modified.
-- Trimmed derivatives are stored under the project's `Input/` folder.
-- Click `Clear` to restore the original media and remove the derivative reference.
-- Start time of `0` means the beginning of the source. Leave End blank to trim only the start.
+Trimming and manual sync are managed in the dedicated **Trim** left-rail pane. Open that pane to adjust sync offset per source, nudge timing, run beep-sync analysis, and trim added videos.
 
 ## Layout Notes
 
-- `Picture in picture` uses X/Y placement and size as a floating inset.
-- `Side by side` and `Above / below` are layout-wide compositions, but the same item list and sync controls remain available.
+- Inset layout uses X/Y placement and size as a floating layer.
+- `Side by side` and `Above / below` are layout-wide compositions, but the same item list remains available.
 - Defaults apply to new items. Existing media cards keep their own saved values.
-- Each item keeps its own size, opacity, position, and sync.
+- Each item keeps its own size, opacity, position, and layout mode.
 - Preview dragging is clamped to the live video frame so the inset stays fully visible.
+- Defaults are set in [Settings](settings.md), not per-source.
 
 ## Common Fixes
 
@@ -60,12 +56,10 @@ The PiP pane manages added media. It can place a second angle or image as pictur
 | --- | --- |
 | Added media appears in preview but not export. | Turn on `Enable added media export`. |
 | Changing defaults did not move an existing card. | Edit the expanded media card. |
-| A secondary video is late or early. | Use that card's sync nudge buttons. |
-| The inset is in the wrong place. | Use `Picture in picture`, then adjust X/Y or drag the inset. |
-| A still image shows sync controls. | That is normal; sync matters mainly for video, while placement and opacity still matter for images. |
+| A secondary video is late or early. | Use the Trim pane to adjust its offset. |
+| The inset is in the wrong place. | Use inset layout, then adjust X/Y or drag the layer. |
 
 ## Related Guides
 
 Previous: [score.md](score.md)
 Next: [overlay.md](overlay.md)
-

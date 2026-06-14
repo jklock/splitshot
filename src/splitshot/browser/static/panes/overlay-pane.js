@@ -281,6 +281,7 @@ export function createOverlayPane({
         opacity: box.opacity,
         width: box.width,
         height: box.height,
+        summary_metric_ids: Array.isArray(box.summary_metric_ids) ? box.summary_metric_ids.slice() : [],
       })),
       custom_box_enabled: Boolean(primaryTextBox?.enabled),
       custom_box_mode: primaryTextBox?.source || "manual",

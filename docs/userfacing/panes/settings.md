@@ -1,6 +1,6 @@
 # Settings Pane
 
-The Settings pane controls app-wide and folder-scoped defaults for layout, scoring, PiP, overlay, markers, export, and ShotML.
+The Settings pane controls app-wide and folder-scoped defaults for layout, scoring, compose, overlay, markers, export, and ShotML.
 
 ## When To Use This Pane
 
@@ -40,13 +40,15 @@ The Settings pane controls app-wide and folder-scoped defaults for layout, scori
 | --- | --- |
 | `Default sport` | Sets the starting match type for new projects (USPSA, IPSC, IDPA). An imported file overrides this. |
 
-### PiP
+### Compose
+
+The Compose section is the sole owner of global/folder compose defaults. Per-source controls in the Compose pane do not set defaults — they only affect individual items.
 
 | Control | What it does |
 | --- | --- |
-| `PiP layout` | Default merge layout for new PiP media. |
-| `PiP size` | Default PiP inset size. |
-| `PiP X` / `PiP Y` | Default normalized position for new PiP items. |
+| `Layout` | Default layout for new added media. |
+| `Size` | Default item size. |
+| `X` / `Y` | Default normalized position for new items. |
 
 ### Overlay
 

@@ -2389,13 +2389,13 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
 
                 page.locator("#merge-media-input").set_input_files(str(secondary_path))
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
-                page.locator(".merge-media-card").first.wait_for(state="visible")
+                page.locator('[data-tool-pane="merge"] .merge-media-card').first.wait_for(state="visible")
 
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
 
                 stage = page.locator("#video-stage")
-                source_card = page.locator(".merge-media-card").first
+                source_card = page.locator('[data-tool-pane="merge"] .merge-media-card').first
 
                 page.locator("#merge-layout").select_option("side_by_side")
                 page.wait_for_function("() => state?.project?.merge?.layout === 'side_by_side'")

@@ -354,7 +354,7 @@ def test_timing_event_controls_add_and_remove_rows(synthetic_video_factory) -> N
                 page.wait_for_function("() => (state?.project?.analysis?.events || []).length === 0")
                 manual_note_cell.wait_for(state="detached")
 
-                assert page.locator("#timing-event-list").get_by_text("No timing events yet.").count() == 1
+                assert page.locator("#timing-event-list .timing-event-row").count() == 0
                 assert page.locator("#timing-workbench-table").get_by_text("Manual note").count() == 0
             finally:
                 browser.close()

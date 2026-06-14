@@ -29,7 +29,7 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 | `Stage #` | Selects the stage from the imported match file. |
 | `Competitor name` | Selects the competitor record from the staged data. |
 | `Place` | Selects the matching place entry when duplicate competitor rows exist. `Competitor name` and `Place` stay synchronized. |
-| Imported summary rows | Show source file, match type, official raw time, SplitShot raw time, raw delta, final value, and official final value. |
+| Imported result rows | Show source file, match type, official raw time, SplitShot raw time, raw delta, final value, and official final value. |
 | `Primary Video` | Shows the current primary path and accepts a pasted local path. Press Enter after pasting. Disabled until a project is active. |
 | `Import Primary Video` | Opens the file picker for the primary video. Disabled until a project is active. |
 
@@ -49,8 +49,8 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 
 - Primary video import creates the waveform, detected shots, beep marker, and timing rows.
 - Imported video paths stay at their original external locations. SplitShot does not copy imported media into the project bundle.
-- PractiScore context from the imported local CSV/TXT file feeds Score, Review summary boxes, Overlay final results, Export, and Metrics.
-- Replacing the primary video resets media-bound state such as timing, PiP media, and export logs.
+- PractiScore context from the imported local CSV/TXT file feeds Score, Review Summary boxes, Overlay final results, Export, and Metrics.
+- Replacing the primary video resets media-bound state such as timing, added media, and export logs.
 - The project folder is the persistent home for the current bundle.
 
 ## Common Fixes
@@ -69,4 +69,3 @@ The Project pane is the setup surface for a SplitShot run. It chooses the projec
 
 Previous: [../USER_GUIDE.md](../USER_GUIDE.md)
 Next: [shotml.md](shotml.md)
-

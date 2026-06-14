@@ -12,6 +12,7 @@ import { createScoringPane } from "./panes/scoring-pane.js";
 import { createSettingsPane } from "./panes/settings-pane.js";
 import { createShotMLPane } from "./panes/shotml-pane.js";
 import { createTimingPane } from "./panes/timing-pane.js";
+import { createTrimSyncPane } from "./panes/trim-sync-pane.js";
 import { createStatusBarComponent } from "./components/status-bar.js";
 import { createVideoPlayerComponent } from "./components/video-player.js";
 import { createWaveformComponent } from "./components/waveform.js";
@@ -155,8 +156,8 @@ let overlayAutoBubbleCache = { width: 0, height: 0 };
 let customOverlayRenderKey = "";
 let textBoxRenderedPositionById = new Map();
 let metricsSectionExpansion = new Map([
-  ["trend-snapshot", true],
-  ["scoring-context", true],
+  ["trend-snapshot", false],
+  ["scoring-context", false],
 ]);
 let pendingInspectorScrollTop = null;
 let lastInspectorUserScrollTop = 0;
@@ -196,6 +197,7 @@ let reviewPane = null;
 let timingPane = null;
 let scoringPane = null;
 let metricsPane = null;
+let trimSyncPane = null;
 
 const OVERLAY_COLOR_COMMIT_DELAY_MS = 900;
 const PROCESSING_BAR_SHOW_DELAY_MS = 180;
@@ -338,7 +340,7 @@ function normalizeToolId(tool) {
 
 activeTool = normalizeToolId(activeTool);
 
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "settings", "shotml", "merge", "overlay", "review", "markers", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -816,6 +818,7 @@ function normalizeExportDraftValue(key, value) {
     "audio_bitrate_kbps",
     "color_space",
     "two_pass",
+    "multi_track",
     "ffmpeg_preset",
   ].includes(key)) {
     return undefined;
@@ -833,7 +836,7 @@ function normalizeExportDraftValue(key, value) {
   if (key === "audio_bitrate_kbps") {
     return Math.max(32, Number(value));
   }
-  if (key === "two_pass") {
+  if (key === "two_pass" || key === "multi_track") {
     return Boolean(value);
   }
   return String(value ?? "");
@@ -1311,6 +1314,13 @@ function resetInspectorHorizontalScroll() {
   });
 }
 
+function applyInspectorScrollTop(targetScrollTop) {
+  const inspector = document.querySelector(".inspector");
+  if (!(inspector instanceof HTMLElement)) return;
+  if (Number.isFinite(targetScrollTop)) inspector.scrollTop = Math.max(inspector.scrollTop, targetScrollTop);
+  resetInspectorHorizontalScroll();
+}
+
 function rememberInspectorScrollPosition() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
@@ -1322,6 +1332,10 @@ function queueInspectorScrollRestore() {
   const inspector = document.querySelector(".inspector");
   if (!(inspector instanceof HTMLElement)) return;
   const currentScrollTop = inspector.scrollTop;
+  if (currentScrollTop > 0) {
+    lastInspectorUserScrollTop = Math.max(lastInspectorUserScrollTop, currentScrollTop);
+    lastInspectorUserScrollTs = Date.now();
+  }
   const hasRecentScroll = (Date.now() - lastInspectorUserScrollTs) <= 2000;
   if (hasRecentScroll && lastInspectorUserScrollTop > currentScrollTop + 24) {
     pendingInspectorScrollTop = lastInspectorUserScrollTop;
@@ -1331,12 +1345,14 @@ function queueInspectorScrollRestore() {
 }
 
 function flushPendingInspectorScrollRestore() {
-  if (pendingInspectorScrollTop === null) return;
-  const inspector = document.querySelector(".inspector");
-  if (inspector instanceof HTMLElement) {
-    inspector.scrollTop = pendingInspectorScrollTop;
-    resetInspectorHorizontalScroll();
-  }
+  const hasRecentScroll = (Date.now() - lastInspectorUserScrollTs) <= 2000;
+  const targetScrollTop = pendingInspectorScrollTop ?? (hasRecentScroll && lastInspectorUserScrollTop > 0 ? lastInspectorUserScrollTop : null);
+  if (targetScrollTop === null) return;
+  applyInspectorScrollTop(targetScrollTop);
+  window.requestAnimationFrame(() => {
+    applyInspectorScrollTop(targetScrollTop);
+    window.requestAnimationFrame(() => applyInspectorScrollTop(targetScrollTop));
+  });
   pendingInspectorScrollTop = null;
 }
 
@@ -4899,7 +4915,6 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     setScoringWorkbenchExpanded(true, { persistUiState: false });
   }
   renderOutputProfiles();
-  renderReviewSourceControls();
   renderLiveOverlay();
 }
 
@@ -5479,8 +5494,8 @@ const SETTINGS_LAYER_FIELDS = [
   { label: "Reopen last pane", path: ["reopen_last_tool"] },
   { label: "Overlay position", path: ["overlay_position"] },
   { label: "Badge size", path: ["badge_size"] },
-  { label: "PiP layout", path: ["merge_layout"] },
-  { label: "PiP size", path: ["pip_size"] },
+  { label: "Compose layout", path: ["merge_layout"] },
+  { label: "Compose size", path: ["pip_size"] },
   { label: "Export quality", path: ["export_quality"] },
   { label: "ShotML threshold", path: ["shotml_defaults", "detection_threshold"] },
   {
@@ -5689,58 +5704,6 @@ function renderOutputProfiles() {
       void exportBadges();
     };
   }
-}
-
-function renderReviewSourceControls() {
-  const select = $("review-source-select");
-  if (!select) return;
-  const profiles = state?.output_profiles || [];
-  const activeProfileId = activeOutputProfileId();
-  const activeProfile = profiles.find((p) => p.output_id === activeProfileId);
-  const sources = state?.project?.merge_sources || [];
-  const currentValue = select.value;
-  select.innerHTML = '<option value="">-- No source --</option>';
-  sources.forEach((s) => {
-    const opt = document.createElement("option");
-    opt.value = s.id;
-    opt.textContent = s.asset?.name || s.id;
-    if (s.id === currentValue) opt.selected = true;
-    select.appendChild(opt);
-  });
-  const reviewSourceId = activeProfile?.review_source_id || "";
-  if (reviewSourceId && select.value !== reviewSourceId) select.value = reviewSourceId;
-  select.dataset.outputId = activeProfileId;
-  const statusEl = $("review-source-status");
-  if (statusEl) {
-    if (reviewSourceId) {
-      const source = sources.find((s) => s.id === reviewSourceId);
-      const name = source?.asset?.name || reviewSourceId;
-      statusEl.textContent = "Retained: " + name;
-    } else {
-      statusEl.textContent = "Live";
-    }
-  }
-  select.disabled = !activeProfile;
-  const setBtn = $("review-set-source");
-  if (setBtn) {
-    setBtn.disabled = !activeProfile;
-    setBtn.dataset.outputId = activeProfileId;
-    setBtn.onclick = () => {
-      void setReviewSource();
-    };
-  }
-}
-
-async function setReviewSource() {
-  const select = $("review-source-select");
-  const profileId = activeOutputProfileId()
-    || select?.dataset.outputId
-    || $("review-set-source")?.dataset.outputId
-    || "";
-  if (!profileId) return;
-  const sourceId = select?.value || "";
-  await callApi("/api/output-profiles/update", { output_id: profileId, review_source_id: sourceId });
-  await callApi("/api/output-profiles/render", { output_id: profileId });
 }
 
 function exportBadges() {
@@ -6813,7 +6776,7 @@ function buildMetricsGraphSeries(rows = buildMetricsRows()) {
       id: "shot_interval_timeline",
       type: "timeline",
       title: "Shot / Interval Timeline",
-      subtitle: "Start signal to last shot, with dead time made obvious",
+      subtitle: "Split time per shot",
       unit: "s",
       points: graphPoints.map((point) => ({
         ...point,
@@ -7719,8 +7682,21 @@ async function flushPendingMergeSourceCommits(options = {}) {
 
 function renderMergeMediaList() {
   // input.dataset.mergeSourceField = "opacity";
-  // These values are saved per item and take effect in PiP layout and export timing.
+  // These values are saved per item and take effect in compose layout and export timing.
   return mergePane?.renderMergeMediaList();
+}
+
+function renderTrimSyncList() {
+  const addedCount = Math.max(0, (state?.project?.merge_sources?.length || 0) - 1);
+  const trimButton = document.querySelector('[data-tool="trim-sync"] b');
+  if (trimButton) {
+    trimButton.textContent = addedCount > 0 ? `Trim (${addedCount})` : "Trim";
+  }
+  return trimSyncPane?.renderTrimSyncList();
+}
+
+function renderReviewImportedMetrics() {
+  return reviewPane?.renderReviewImportedMetrics();
 }
 
 function visibleTimingEventsByShot(currentIndex) {
@@ -10029,6 +10005,20 @@ metricsPane = createMetricsPane({
   metricsTableColumns: METRICS_TABLE_COLUMNS,
 });
 
+trimSyncPane = createTrimSyncPane({
+  $,
+  documentObject: document,
+  getState: () => state,
+  withPreservedScrollState,
+  activity,
+  callApi,
+  scheduleInteractionPreviewRender,
+  renderVideo,
+  fileName,
+  sourceIdentifier: (source, fallback) => mergePane?.sourceIdentifier(source, fallback) ?? fallback,
+  currentSourceSyncOffsetMs: (source) => mergePane?.currentSourceSyncOffsetMs(source) ?? 0,
+});
+
 shellRuntime = createShellRuntime({
   $,
   documentObject: document,
@@ -10093,6 +10083,8 @@ shellRuntime = createShellRuntime({
   renderSettingsPane,
   renderMetricsPanel,
   renderMergeMediaList,
+  renderTrimSyncList,
+  renderReviewImportedMetrics,
   renderOutputProfiles,
   createOutputProfile,
   deleteOutputProfile,

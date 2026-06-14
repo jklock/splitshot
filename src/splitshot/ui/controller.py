@@ -1779,8 +1779,12 @@ class ProjectController(QObject):
         if clear:
             source.trim_derivative = MergeSourceTrimDerivative(original_path=source.asset.path)
             self._set_status("Cleared trim.")
-            self.project.touch()
-            self.project_changed.emit()
+            analyzed_source = _first_analyzable_merge_source(self.project)
+            if analyzed_source is not None and analyzed_source.id == source_id:
+                self.analyze_secondary()
+            else:
+                self.project.touch()
+                self.project_changed.emit()
             return
         if start_s is None and end_s is None:
             return
@@ -1806,8 +1810,12 @@ class ProjectController(QObject):
             active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
         )
         self._set_status(f"Trimmed {source_path} (start={start_s}, end={end_s}).")
-        self.project.touch()
-        self.project_changed.emit()
+        analyzed_source = _first_analyzable_merge_source(self.project)
+        if analyzed_source is not None and analyzed_source.id == source_id:
+            self.analyze_secondary()
+        else:
+            self.project.touch()
+            self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
@@ -2618,6 +2626,11 @@ class ProjectController(QObject):
                     opacity=max(0.0, min(1.0, float(item.get("opacity", overlay.custom_box_opacity)))),
                     width=max(0, int(item.get("width", 0))),
                     height=max(0, int(item.get("height", 0))),
+                    summary_metric_ids=[
+                        str(value).strip()
+                        for value in item.get("summary_metric_ids", [])
+                        if str(value).strip()
+                    ],
                     style_type=str(item.get("style_type", overlay.style_type) or overlay.style_type),
                     font_family=str(item.get("font_family", overlay.font_family) or overlay.font_family)[:80],
                     font_size=max(8, min(72, int(item.get("font_size", overlay.font_size) or overlay.font_size))),

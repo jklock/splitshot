@@ -908,7 +908,7 @@ def test_browser_control_api_imports_practiscore_results() -> None:
         )
         assert state["project"]["overlay"]["custom_box_enabled"] is True
         assert state["project"]["overlay"]["custom_box_mode"] == "imported_summary"
-        assert state["scoring_summary"]["imported_overlay_text"] == "Imported\nRaw 23.24\nPoints 101\nHF 4.3460"
+        assert state["scoring_summary"]["imported_overlay_text"] == "Summary\nRaw 23.24\nPoints 101\nHF 4.3460"
         assert state["scoring_summary"]["hit_factor"] == pytest.approx(101.0 / 23.24)
         assert state["scoring_summary"]["display_value"] == "4.35"
     finally:

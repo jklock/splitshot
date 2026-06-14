@@ -354,8 +354,8 @@ export function createWaveformComponent({
 
     if (hasSecondaryWaveform) {
       const separatorY = Math.max(0, secondaryLaneTop - Math.max(4, Math.round(laneGap / 2)));
-      ctx.strokeStyle = "rgba(226, 232, 240, 0.16)";
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(226, 232, 240, 0.38)";
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(0, separatorY);
       ctx.lineTo(width, separatorY);

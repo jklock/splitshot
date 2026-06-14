@@ -71,7 +71,7 @@ The Overlay pane controls the badges drawn over the video: timer, draw, shot sta
 | X/Y fields are disabled. | Choose `Custom` placement or turn off the matching lock. |
 | A badge follows the shot stack when you wanted direct placement. | Turn off that badge's lock checkbox. |
 | The stack covers the target. | Reduce `Shots shown`, change `Quadrant`, or use custom stack coordinates. |
-| Export does not match the intended overlay. | Recheck Overlay, Review, and PiP before clicking `Export Video`. |
+| Export does not match the intended overlay. | Recheck Overlay, Review, and Compose before clicking `Export Video`. |
 
 ## Frame Profile
 
@@ -85,4 +85,3 @@ Click `Export Badges` in the Overlay pane to save the current badge configuratio
 
 Previous: [pip.md](pip.md)
 Next: [popup.md](popup.md)
-

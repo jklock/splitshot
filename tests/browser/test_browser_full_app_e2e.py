@@ -117,7 +117,7 @@ def _overflow_snapshot(page) -> dict:
             const paneRect = pane?.getBoundingClientRect?.() || { left: 0, right: 0 };
             const offenders = [];
             const elements = pane
-              ? Array.from(pane.querySelectorAll('label, button, input, select, textarea, .review-source-status, .merge-source-trim-status'))
+              ? Array.from(pane.querySelectorAll('label, button, input, select, textarea, .merge-source-trim-status'))
               : [];
             for (const element of elements) {
               const rect = element.getBoundingClientRect();
@@ -234,7 +234,7 @@ def _current_camera_role(source: dict | None) -> str | None:
     return None if value in {None, ""} else str(value)
 
 
-def _configure_output_profile_review_source_and_badges(page, source_id: str) -> tuple[str, str]:
+def _configure_output_profile_badges(page) -> tuple[str, str]:
     _open_tool(page, "overlay")
     page.locator("#show-overlay").check()
     badge_size = _alternate_select_value(page.locator("#badge-size"))
@@ -283,27 +283,6 @@ def _configure_output_profile_review_source_and_badges(page, source_id: str) -> 
                 && profile.frame_profile === payload.frameProfile;
         }""",
         arg={"profileId": profile_id, "profileKind": profile_kind, "frameProfile": frame_profile},
-    )
-
-    _open_tool(page, "review")
-    page.locator("#review-source-select").evaluate(
-        """(element, nextValue) => {
-            element.value = nextValue;
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-        }""",
-        source_id,
-    )
-    page.locator("#review-set-source").click()
-    page.wait_for_function(
-        """(payload) => {
-            const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-            return profile?.review_source_id === payload.sourceId;
-        }""",
-        arg={"profileId": profile_id, "sourceId": source_id},
-    )
-    page.wait_for_function(
-        """() => document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true"""
     )
 
     _open_tool(page, "overlay")
@@ -498,7 +477,8 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     _set_input_value(page.locator("#pip-x"), "0.25")
     _set_input_value(page.locator("#pip-y"), "0.75")
 
-    first_card = page.locator(".merge-media-card").first
+    merge_pane_cards = page.locator('[data-tool-pane="merge"] .merge-media-card')
+    first_card = merge_pane_cards.first
     source_id = first_card.get_attribute("data-source-id")
     page.evaluate(
         """(sourceId) => {
@@ -507,15 +487,26 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
         }""",
         source_id,
     )
-    page.wait_for_selector(".merge-media-card-body:not([hidden])")
-    first_card.locator('.merge-source-sync-buttons button:nth-child(3)').click()
+    page.wait_for_function(
+        """(sourceId) => {
+            return document.querySelector('[data-tool-pane="merge"] .merge-media-card[data-source-id="' + sourceId + '"] .merge-media-card-body')?.hidden === false;
+        }""",
+        arg=source_id,
+    )
     first_card.locator('.pip-size-control input').first.evaluate(
         "input => Number(input.value)"
     )
-    first_card.get_by_role("button", name="+1", exact=True).click()
 
-    second_card = page.locator(".merge-media-card").nth(1)
-    second_card.locator('button[aria-label*="PiP item controls"]').click()
+    _open_tool(page, "trim-sync")
+    trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+    trim_sync_card.wait_for(state="visible")
+    trim_sync_card.get_by_role("button", name="+1", exact=True).click()
+
+    _open_tool(page, "merge")
+    merge_pane_cards = page.locator('[data-tool-pane="merge"] .merge-media-card')
+    second_card = merge_pane_cards.nth(1)
+
+    second_card.locator('button[aria-label*="added media controls"]').click()
     second_card.locator('[data-merge-source-field="size"]').evaluate(
         """(input) => {
             input.value = '55';
@@ -668,6 +659,56 @@ def test_browser_full_app_practiscore_timing_scoring_save_reload_persistence_tru
         server.shutdown()
 
 
+def test_browser_review_summary_imported_metrics_truth_gate(
+    synthetic_video_factory,
+    tmp_path: Path,
+) -> None:
+    primary_path = Path(synthetic_video_factory(name="truth-gate-review-summary-primary"))
+    project_path = tmp_path / "truth-gate-review-summary"
+    practiscore_path = Path(__file__).resolve().parents[2] / "example_data" / "IDPA" / "IDPA.csv"
+
+    server = BrowserControlServer(port=0)
+    server.start_background(open_browser=False)
+    try:
+        with sync_playwright() as playwright:
+            browser, page = _open_test_page(playwright, server)
+            try:
+                _set_project_path(page, project_path)
+                page.evaluate("(path) => createNewProject(path)", str(project_path))
+                page.wait_for_function("(path) => state?.project?.path === path", arg=str(project_path))
+                _load_primary_video(page, primary_path)
+
+                page.locator("#practiscore-file-input").set_input_files(str(practiscore_path))
+                page.wait_for_function("() => state?.project?.scoring?.stage_number !== null")
+
+                _open_tool(page, "review")
+                page.locator("#review-add-imported-box").click()
+                page.wait_for_function(
+                    """() => {
+                        const card = document.querySelector('#review-text-box-list .text-box-card');
+                        const preview = card?.querySelector('[data-text-box-preview]')?.value || '';
+                        const checkboxes = card?.querySelectorAll('input[data-summary-metric]') || [];
+                        return checkboxes.length > 0
+                            && preview.includes('Score / Time')
+                            && preview.includes('Points Down')
+                            && preview.includes('Overall Placement');
+                    }"""
+                )
+                review_card = page.locator("#review-text-box-list .text-box-card").last
+                review_card.locator('[data-text-box-action="toggle"]').click()
+                preview_text = review_card.locator("[data-text-box-preview]").input_value()
+                assert "Score / Time" in preview_text
+                assert "Points Down" in preview_text
+                assert "Overall Placement #1" in preview_text
+                assert "Division Placement #1" in preview_text
+                assert "Class Placement #1" in preview_text
+                assert "Division + Class Placement #1" in preview_text
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+
+
 def test_browser_full_app_markers_review_overlay_export_preview_parity_truth_gate(
     synthetic_video_factory,
     tmp_path: Path,
@@ -732,7 +773,7 @@ def test_browser_full_app_output_profile_review_source_and_badges_truth_gate(
                 source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
                 assert source_id
 
-                profile_id, badge_size = _configure_output_profile_review_source_and_badges(page, source_id)
+                profile_id, badge_size = _configure_output_profile_badges(page)
 
                 _open_tool(page, "review")
                 _open_tool(page, "overlay")
@@ -746,11 +787,9 @@ def test_browser_full_app_output_profile_review_source_and_badges_truth_gate(
                         const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
                         if (!profile?.metric_caption_preset) return false;
                         const parsed = JSON.parse(profile.metric_caption_preset);
-                        return profile.review_source_id === payload.sourceId
-                            && parsed.badge_size === payload.badgeSize
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                        return parsed.badge_size === payload.badgeSize;
                     }""",
-                    arg={"profileId": profile_id, "sourceId": source_id, "badgeSize": badge_size},
+                    arg={"profileId": profile_id, "badgeSize": badge_size},
                 )
                 assert page.locator("#output-profile-name").input_value() == "Release Proof Profile"
             finally:
@@ -808,10 +847,14 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 source_id = first_card.get_attribute("data-source-id")
                 assert source_id
                 if first_body.evaluate("body => body.hidden"):
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
+                    first_card.locator('button[aria-label*="added media controls"]').click()
                     first_body.wait_for(state="visible")
                 _capture_release_proof_screenshot(page, artifact_root, "release-04-merge-card-expanded")
-                first_card.locator('button:has-text("beep sync")').first.click(force=True)
+
+                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-05-trim-sync-pane")
+                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card.wait_for(state='visible')
+                trim_sync_card.locator('button:has-text("beep sync")').first.click(force=True)
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
@@ -822,20 +865,11 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     arg=source_id,
                     timeout=120000,
                 )
-                _capture_release_proof_screenshot(page, artifact_root, "release-05-sync-ready")
+                _capture_release_proof_screenshot(page, artifact_root, "release-06-sync-ready")
 
                 started_at = time.perf_counter()
-                first_card.locator('[data-merge-source-field="camera_role"]').select_option("detail")
-                page.wait_for_function(
-                    """(targetSourceId) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
-                        return (source?.camera_role || source?.angle_role || '') === 'detail';
-                    }""",
-                    arg=source_id,
-                )
-                _record_timing(timings, "per-source-camera-role", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
-
-                started_at = time.perf_counter()
+                _open_tool_for_release(page, "merge", timings, artifact_root, "release-07-merge-returned")
+                first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
                 first_card.locator('[data-merge-source-field="placement_mode"]').select_option("above_below")
                 page.wait_for_function(
                     """(targetSourceId) => {
@@ -845,19 +879,22 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     arg=source_id,
                 )
                 _record_timing(timings, "per-source-layout", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-06-role-layout-committed")
+                _capture_release_proof_screenshot(page, artifact_root, "release-08-layout-committed")
 
-                _set_input_value(first_card.locator('input[data-trim-start]'), "0.5")
-                _set_input_value(first_card.locator('input[data-trim-end]'), "1.5")
+                _open_tool_for_release(page, "trim-sync", timings, artifact_root)
+                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card.wait_for(state='visible')
+                _set_input_value(trim_sync_card.locator('input[data-trim-start]'), "0.5")
+                _set_input_value(trim_sync_card.locator('input[data-trim-end]'), "1.5")
                 started_at = time.perf_counter()
-                first_card.get_by_role("button", name="Apply", exact=True).click()
+                trim_sync_card.get_by_role("button", name="Apply", exact=True).click()
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
                         const trim = source?.trim_derivative;
                         return Boolean(trim?.derivative_path)
                             && trim.active_path_kind === 'local_derivative'
-                            && document.querySelector('.merge-media-card[data-source-id="' + targetSourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
+                            && document.querySelector('.trim-sync-card[data-source-id="' + targetSourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
                     }""",
                     arg=source_id,
                     timeout=120000,
@@ -872,19 +909,19 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 )
                 assert derivative_path is not None
                 assert Path(derivative_path).exists()
-                _capture_release_proof_screenshot(page, artifact_root, "release-07-trim-active")
+                _capture_release_proof_screenshot(page, artifact_root, "release-09-trim-active")
 
                 page.locator("#expand-waveform").click()
                 _wait_for_ui_settled(page)
-                _capture_release_proof_screenshot(page, artifact_root, "release-08-waveform-expanded")
+                _capture_release_proof_screenshot(page, artifact_root, "release-10-waveform-expanded")
 
-                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-09-overlay-before-profile")
+                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-11-overlay-before-profile")
                 page.locator("#show-overlay").check()
                 badge_size = _alternate_select_value(page.locator("#badge-size"))
                 page.locator("#badge-size").select_option(badge_size)
                 page.wait_for_function("(value) => state?.project?.overlay?.badge_size === value", arg=badge_size)
 
-                _open_tool_for_release(page, "export", timings, artifact_root, "release-10-export-before-profile")
+                _open_tool_for_release(page, "export", timings, artifact_root, "release-12-export-before-profile")
                 started_at = time.perf_counter()
                 page.locator("#create-output-profile").click()
                 page.wait_for_function(
@@ -932,64 +969,12 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     arg={"profileId": profile_id, "profileKind": profile_kind, "frameProfile": frame_profile},
                 )
                 _record_timing(timings, "output-profile-edit", started_at, RELEASE_PROOF_THRESHOLDS_MS["profile_edit"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-11-output-profile-created")
+                _capture_release_proof_screenshot(page, artifact_root, "release-13-output-profile-created")
 
-                _open_tool_for_release(page, "review", timings, artifact_root, "release-12-review-live")
-                assert page.locator("#review-source-status").text_content() == "Live"
-                started_at = time.perf_counter()
-                page.locator("#review-source-select").select_option(source_id)
-                page.locator("#review-set-source").click()
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return profile?.review_source_id === payload.sourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-                    }""",
-                    arg={"profileId": profile_id, "sourceId": source_id},
-                )
-                _record_timing(timings, "review-source-retained", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-13-review-retained")
+                _open_tool_for_release(page, "review", timings, artifact_root, "release-14-review")
+                _capture_release_proof_screenshot(page, artifact_root, "release-15-review-metrics")
 
-                _open_tool_for_release(page, "overlay", timings, artifact_root)
-                _open_tool_for_release(page, "export", timings, artifact_root)
-                _open_tool_for_release(page, "review", timings, artifact_root)
-                page.wait_for_function(
-                    """(expectedSourceId) => {
-                        const select = document.getElementById('review-source-select');
-                        return select?.value === expectedSourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-                    }""",
-                    arg=source_id,
-                )
-
-                started_at = time.perf_counter()
-                page.locator("#review-source-select").select_option("")
-                page.locator("#review-set-source").click()
-                page.wait_for_function(
-                    """(profileIdArg) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === profileIdArg);
-                        return (!profile?.review_source_id || profile.review_source_id === '')
-                            && document.getElementById('review-source-status')?.textContent === 'Live';
-                    }""",
-                    arg=profile_id,
-                )
-                _record_timing(timings, "review-source-live", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-14-review-live")
-
-                started_at = time.perf_counter()
-                page.locator("#review-source-select").select_option(source_id)
-                page.locator("#review-set-source").click()
-                page.wait_for_function(
-                    """(payload) => {
-                        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return profile?.review_source_id === payload.sourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-                    }""",
-                    arg={"profileId": profile_id, "sourceId": source_id},
-                )
-                _record_timing(timings, "review-source-retained-second-pass", started_at, RELEASE_PROOF_THRESHOLDS_MS["review_source"])
-
-                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-15-overlay-before-export-badges")
+                _open_tool_for_release(page, "overlay", timings, artifact_root, "release-16-overlay-before-export-badges")
                 started_at = time.perf_counter()
                 page.locator("#export-badges").click()
                 page.wait_for_function(
@@ -1002,17 +987,17 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     arg={"profileId": profile_id, "badgeSize": badge_size},
                 )
                 _record_timing(timings, "export-badges", started_at, RELEASE_PROOF_THRESHOLDS_MS["export_badges"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-16-overlay-badges-exported")
+                _capture_release_proof_screenshot(page, artifact_root, "release-17-overlay-badges-exported")
 
                 _open_tool_for_release(page, "timing", timings, artifact_root)
                 page.locator("#expand-timing").click()
                 _wait_for_ui_settled(page)
-                _capture_release_proof_screenshot(page, artifact_root, "release-17-timing-workbench-expanded")
+                _capture_release_proof_screenshot(page, artifact_root, "release-18-timing-workbench-expanded")
 
                 for tool_id in TOOL_IDS:
                     _open_tool_for_release(page, tool_id, timings, artifact_root, f"pane-{tool_id}")
 
-                _open_tool_for_release(page, "export", timings, artifact_root, "release-18-export-pane")
+                _open_tool_for_release(page, "export", timings, artifact_root, "release-19-export-pane")
                 page.locator("#export-path").fill(str(output_path))
                 started_at = time.perf_counter()
                 page.locator("#export-video").click()
@@ -1030,18 +1015,15 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 page.locator("#show-export-log").click()
                 page.wait_for_function("() => document.getElementById('export-log-modal')?.hidden === false")
                 page.wait_for_function("() => state?.project?.export?.last_log === 'Real media proof export completed.'")
-                _capture_release_proof_screenshot(page, artifact_root, "release-19-export-log")
+                _capture_release_proof_screenshot(page, artifact_root, "release-21-export-log")
                 page.locator("#close-export-log").click()
                 _write_release_proof_text(artifact_root, "export-log.txt", "Real media proof export completed.")
 
-                _open_tool_for_release(page, "merge", timings, artifact_root, "release-20-before-trim-clear")
-                first_card = page.locator(f'.merge-media-card[data-source-id="{source_id}"]')
-                first_body = first_card.locator(".merge-media-card-body")
-                if first_body.evaluate("body => body.hidden"):
-                    first_card.locator('button[aria-label*="PiP item controls"]').click()
-                    first_body.wait_for(state="visible")
+                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-22-before-trim-clear")
+                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
+                trim_sync_card.wait_for(state="visible")
                 started_at = time.perf_counter()
-                first_card.get_by_role("button", name="Clear", exact=True).click()
+                trim_sync_card.get_by_role("button", name="Clear", exact=True).click()
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
@@ -1054,17 +1036,16 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                     arg=source_id,
                 )
                 _record_timing(timings, "trim-clear", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_clear"])
-                _capture_release_proof_screenshot(page, artifact_root, "release-21-trim-cleared")
+                _capture_release_proof_screenshot(page, artifact_root, "release-23-trim-cleared")
 
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("() => Boolean(state?.project?.path)")
-                _open_tool_for_release(page, "merge", timings, artifact_root, "release-22-reloaded-merge")
+                _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-24-reloaded-trim-sync")
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
                         const trim = source?.trim_derivative;
-                        return (source?.camera_role || source?.angle_role || '') === 'detail'
-                            && source?.placement?.mode === 'above_below'
+                        return source?.placement?.mode === 'above_below'
                             && source?.sync_analysis_status === 'ready'
                             && (!trim?.derivative_path)
                             && trim?.active_path_kind !== 'local_derivative';
@@ -1076,31 +1057,25 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 page.wait_for_function(
                     """(payload) => {
                         const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return profile?.review_source_id === payload.sourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                        return Boolean(profile)
+                            && profile.profile_name === 'Release Proof Profile'
+                            && profile.metric_caption_preset;
                     }""",
-                    arg={"profileId": profile_id, "sourceId": source_id},
+                    arg={"profileId": profile_id},
                 )
-                _open_tool_for_release(page, "review", timings, artifact_root, "release-23-reloaded-review")
-                page.wait_for_function(
-                    """(expectedSourceId) => {
-                        const select = document.getElementById('review-source-select');
-                        return select?.value === expectedSourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-                    }""",
-                    arg=source_id,
-                )
-                _capture_release_proof_screenshot(page, artifact_root, "release-24-final-composite")
+                _open_tool_for_release(page, "review", timings, artifact_root, "release-25-reloaded-review")
+                _capture_release_proof_screenshot(page, artifact_root, "release-26-final-composite")
 
                 _open_tool_for_release(page, "export", timings, artifact_root)
                 page.locator("#output-profile-select").select_option(profile_id)
                 page.wait_for_function(
                     """(payload) => {
                         const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-                        return profile?.review_source_id === payload.sourceId
-                            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+                        return Boolean(profile)
+                            && profile.profile_name === 'Release Proof Profile'
+                            && profile.metric_caption_preset;
                     }""",
-                    arg={"profileId": profile_id, "sourceId": source_id},
+                    arg={"profileId": profile_id},
                 )
                 _write_release_proof_json(
                     artifact_root,

@@ -104,7 +104,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert 'data-tool="layout"' not in html
     assert 'data-tool="export"' in html
     assert '<img class="rail-logo" src="/static/logo.png" alt="SplitShot" />' in html
-    assert '<b>PiP</b>' in html
+    assert '<b>Compose</b>' in html
     assert '<b>Metrics</b>' in html
     assert "<b>Review</b>" in html
     assert "<b>Splits</b>" in html
@@ -112,7 +112,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "<b>Score</b>" in html
     assert "<b>Markers</b>" in html
     assert "⚙" in html
-    for short in ["Pro", "PiP", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
+    for short in ["Pro", "Com", "Sco", "Spl", "Mar", "Ovr", "Rev", "Exp", "Met", "SML", "Set"]:
         assert f'data-short="{short}"' in html
     assert "🍎" not in html
     assert 'class="topbar"' not in html
@@ -499,6 +499,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     layout_js = (STATIC_ROOT / "lib" / "layout.js").read_text()
     export_pane = (STATIC_ROOT / "panes" / "export-pane.js").read_text()
     merge_pane = (STATIC_ROOT / "panes" / "merge-pane.js").read_text()
+    trim_sync_pane = (STATIC_ROOT / "panes" / "trim-sync-pane.js").read_text()
     overlay_canvas_js = (STATIC_ROOT / "components" / "overlay-canvas.js").read_text()
     overlay_pane = (STATIC_ROOT / "panes" / "overlay-pane.js").read_text()
     processing_js = (STATIC_ROOT / "lib" / "processing.js").read_text()
@@ -615,7 +616,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="add-merge-media"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
-    assert 'PiP Default Settings' in html
+    assert 'Compose Defaults' in html
     assert 'id="restore-merge-defaults"' in html
     assert 'Set the defaults here, then fine-tune each PiP item in its own card so preview and export stay in sync.' not in html
     assert 'PiP X and Y use normalized positions: 0 pins the item to the left or top edge, and 1 pins it to the right or bottom edge.' not in html
@@ -637,6 +638,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'Review Text Boxes' in html
     assert 'data-text-box-field="lock_to_stack"' in review_pane
     assert 'Lock to shot stack' in review_pane
+    assert 'Imported summary' not in review_pane
+    assert 'Content source' not in review_pane
+    assert 'PractiScore stage summary' not in review_pane
     assert '<span class="style-card-label">Background</span>' in review_pane
     assert '<span class="style-card-label">Opacity</span>' in review_pane
     assert 'type="range" data-field="opacity"' not in js
@@ -719,9 +723,9 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'toggle.textContent = expanded ? "v" : ">";' in js
     assert 'const INSPECTOR_COMPACT_WIDTH = 700;' in js
     assert 'shell.classList.toggle("inspector-compact", runtime.layoutSizes.inspectorWidth < INSPECTOR_COMPACT_WIDTH);' in layout_js
-    assert 'buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in merge_pane
-    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in merge_pane
-    assert 'text.textContent = "PiP opacity";' in merge_pane
+    assert 'buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right.")' in merge_pane
+    assert 'button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;' in trim_sync_pane
+    assert 'text.textContent = "Opacity";' in merge_pane
     assert 'pip_size_percent: nextSize,' in merge_pane
     assert 'let exportPathDraft = "";' in js
     assert 'let projectDetailsDraft = { name: null, description: null };' in js
@@ -969,7 +973,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'group.style.left = "0px";' in js
     assert 'group.style.top = "0px";' in js
     assert 'Switch to Custom placement to edit X and Y directly.' in js
-    assert 'Keeps the imported summary centered above the final score badge once it appears.' in js
+    assert 'Keeps this box centered above the final score badge once it appears.' in js
     assert 'syncOverlayFontSizePreset();' in js
     assert 'const seededCoordinates = resolveRenderedOverlayBadgeCoordinates("shots") || { x: 0.5, y: 0.5 };' in js
     assert 'if (!$("overlay-custom-y").value) syncControlValue($("overlay-custom-y"), seededCoordinates.y);' in js

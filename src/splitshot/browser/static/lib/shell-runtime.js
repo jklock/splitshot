@@ -62,8 +62,10 @@ export function createShellRuntime({
   renderSettingsPane = () => {},
   renderMetricsPanel = () => {},
   renderMergeMediaList = () => {},
+  renderTrimSyncList = () => {},
   renderOutputProfiles = () => {},
   renderReviewSourceControls = () => {},
+  renderReviewImportedMetrics = () => {},
   createOutputProfile = () => {},
   deleteOutputProfile = () => {},
   selectOutputProfile = () => {},
@@ -390,6 +392,8 @@ export function createShellRuntime({
     renderMetricsPanel();
     renderStyleControls();
     renderMergeMediaList();
+    renderTrimSyncList();
+    renderReviewImportedMetrics();
   }
 
   function render() {

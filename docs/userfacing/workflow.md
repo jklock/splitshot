@@ -7,7 +7,7 @@ This is the recommended path from raw stage video to finished local export.
 - Launch SplitShot from the root [README.md](../../README.md).
 - Keep the primary video on a local drive.
 - Keep your PractiScore login available if official match context is needed. A local CSV/TXT export still works as the fallback path.
-- Keep secondary angles or graphics ready if you plan to use PiP.
+- Keep secondary angles or graphics ready if you plan to use Compose.
 
 ## End-To-End Flow
 
@@ -38,10 +38,10 @@ This is the recommended path from raw stage video to finished local export.
 - Keep a manual PractiScore CSV/TXT export around when remote sync is unavailable or when the staged source should change again.
 - Finish timing before scoring because score rows follow the shot list.
 - Score before Markers when shot-linked markers should show score and penalties.
-- Configure PiP before final overlay placement when added media changes where badges should sit.
+- Configure Compose before final overlay placement when added media changes where badges should sit.
 - Configure Overlay before Review when text boxes need to align with the final badge stack.
 - Check Metrics before Export when you need confidence, raw delta, or CSV confirmation.
-- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and PiP.
+- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and Compose.
 
 ## Bundle Guidance
 
@@ -56,4 +56,3 @@ This is the recommended path from raw stage video to finished local export.
 - [panes/splits.md](panes/splits.md) for manual timing.
 - [panes/export.md](panes/export.md) for final render settings.
 - [troubleshooting.md](troubleshooting.md) for common issues.
-

@@ -1,6 +1,6 @@
 # Export Pane
 
-The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, marker, review-box, and enabled PiP state at the moment you start the render.
+The Export pane renders the finished video locally through FFmpeg. It uses the current timing, score, overlay, marker, review-box, and enabled added-media state at the moment you start the render.
 
 <!-- markdownlint-disable MD033 -->
 
@@ -14,7 +14,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 
 ## When To Use This Pane
 
-- After timing, scoring, overlays, markers, review boxes, and PiP are final.
+- After timing, scoring, overlays, markers, review boxes, and Compose are final.
 - When you need a draft or final render.
 - When the output needs a specific aspect ratio, frame rate, codec, bitrate, or container.
 - When you want to inspect the live FFmpeg log.
@@ -40,6 +40,7 @@ The Export pane renders the finished video locally through FFmpeg. It uses the c
 | `Color` | Sets the color pipeline, currently Rec.709 SDR in the visible UI. |
 | `FFmpeg preset` | Trades render speed against compression efficiency. |
 | `2-pass` | Enables two-pass bitrate allocation at the cost of extra render time. |
+| `Multi-Track` | Renders all loaded media tracks in the output when enabled. |
 | `Output path` | Sets the destination file. The extension selects the container. |
 | `Browse` | Opens a save dialog for the output path. |
 | `Export Video` | Starts the local render. |
@@ -84,7 +85,7 @@ The frame profile overrides the export aspect ratio for the selected profile. Ch
 - Score summary and score-token colors.
 - Enabled markers.
 - Enabled review text boxes.
-- Enabled PiP media.
+- Enabled added media.
 
 ## Common Fixes
 
@@ -92,7 +93,7 @@ The frame profile overrides the export aspect ratio for the selected profile. Ch
 | --- | --- |
 | Export fails immediately. | Check output path, extension, and folder permissions. |
 | FFmpeg is missing. | Install `ffmpeg` and `ffprobe`, then relaunch SplitShot. |
-| PiP is missing from the output. | Turn on `Enable added media export` in [pip.md](pip.md). |
+| Added media is missing from the output. | Turn on `Enable added media export` in [pip.md](pip.md). |
 | Review boxes are missing. | Enable the box in [review.md](review.md). |
 | Output is larger than expected. | Lower bitrate, use a slower FFmpeg preset, or choose a more appropriate preset. |
 
@@ -100,4 +101,3 @@ The frame profile overrides the export aspect ratio for the selected profile. Ch
 
 Previous: [review.md](review.md)
 Next: [settings.md](settings.md)
-

@@ -394,31 +394,21 @@ def test_metrics_graphs_show_timeline_intervals_reference_and_segment_story(synt
 
                 _open_metrics_pane(page)
                 graph_titles = page.locator("#metrics-workbench-graphs .metrics-graph-header strong").all_inner_texts()
-                assert graph_titles == [
-                    "Shot / Interval Timeline",
-                    "Split / Interval Bar Chart",
-                    "Run Comparison Overlay",
-                    "Stage Segment Breakdown",
-                ]
+                assert "Split Timeline" in graph_titles
+                assert "Split Distribution" in graph_titles
+                assert "Shooting vs Non-Shooting Time" in graph_titles
 
                 graph_snapshot = _metrics_graph_snapshot(page)
-                assert [graph["id"] for graph in graph_snapshot] == [
-                    "shot_interval_timeline",
-                    "split_interval_bars",
-                    "run_comparison_overlay",
-                    "stage_segment_breakdown",
-                ]
+                graph_ids = [graph["id"] for graph in graph_snapshot]
+                assert "split_timeline" in graph_ids
+                assert "split_distribution" in graph_ids
+                assert "shooting_vs_non_shooting" in graph_ids
 
-                timeline_graph = next(graph for graph in graph_snapshot if graph["id"] == "shot_interval_timeline")
-                assert timeline_graph["pointCount"] == int(page.evaluate("state.metrics.total_shots"))
+                timeline_graph = next(graph for graph in graph_snapshot if graph["id"] == "split_timeline")
+                assert timeline_graph["type"] == "lines"
 
-                comparison_graph = next(graph for graph in graph_snapshot if graph["id"] == "run_comparison_overlay")
-                assert comparison_graph["lineLabels"] == ["Current", "ShotML Reference"]
-                assert any(item["label"] == "Final delta" for item in comparison_graph["summary"])
-
-                segment_graph = next(graph for graph in graph_snapshot if graph["id"] == "stage_segment_breakdown")
-                assert segment_graph["barCount"] >= 2
-                assert any(bar["category"] == "Reload / manipulation" for bar in segment_graph["bars"])
+                shooting_graph = next(graph for graph in graph_snapshot if graph["id"] == "shooting_vs_non_shooting")
+                assert shooting_graph["barCount"] >= 2
             finally:
                 browser.close()
     finally:
@@ -462,13 +452,9 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert csv_download.suggested_filename.endswith("-metrics.csv")
                 assert "# per_shot_metrics" in csv_text
-                assert "# graph_shot_interval_timeline" in csv_text
-                assert "# graph_split_interval_bars" in csv_text
-                assert "# graph_run_comparison_overlay" in csv_text
-                assert "# graph_stage_segment_breakdown" in csv_text
-                assert "segment_label" in csv_text
-                assert "actions" in csv_text
-                assert "pair_label" in csv_text
+                assert "# graph_split_timeline" in csv_text
+                assert "# graph_split_distribution" in csv_text
+                assert "# graph_shooting_vs_non_shooting" in csv_text
                 assert "category_id" in csv_text
                 assert "Manual note" in csv_text
 
@@ -481,8 +467,6 @@ def test_metrics_export_buttons_download_current_metrics_context(
 
                 assert text_download.suggested_filename.endswith("-metrics.txt")
                 assert "Split Timeline" in text_output
-                assert "Stage Segments" in text_output
-                assert "Run Comparison Overlay" in text_output
                 assert "Manual note" in text_output
                 assert "Absolute" in text_output
             finally:

@@ -146,21 +146,6 @@ export function createMergePane({
       return `Sync ${numeric > 0 ? "+" : ""}${numeric} ms`;
     }
 
-    function sourceSyncStatusLabel(source = null) {
-      if (!source?.supports_sync_analysis) return "";
-      const status = String(source.sync_analysis_status || "idle");
-      if (status === "running") return "Analyzing beep sync...";
-      if (status === "ready") {
-        const beepMs = Number(source.secondary_beep_time_ms);
-        const sourceLabel = String(source.sync_offset_source || "manual");
-        return Number.isFinite(beepMs)
-          ? `Beep ${Math.round(beepMs)} ms • ${sourceLabel === "auto" ? "ShotML sync applied" : "manual sync active"}`
-          : "Beep detected.";
-      }
-      if (status === "no_beep") return "No beep detected. Manual sync is still available.";
-      return String(source.sync_analysis_message || "");
-    }
-
     function mergePreviewTargetTime(primaryTime, source = null) {
       return Math.max(0, primaryTime + (currentSourceSyncOffsetMs(source) / 1000));
     }
@@ -205,10 +190,6 @@ export function createMergePane({
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="opacity"]`).forEach((input) => {
         syncControlValue(input, opacityValue);
-      });
-      documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="camera_role"]`).forEach((input) => {
-        const source = mergeSourceById(sourceId);
-        syncControlValue(input, currentSourceAngleRole(source));
       });
       documentObject.querySelectorAll(`[data-source-id="${sourceId}"][data-merge-source-field="placement_mode"]`).forEach((input) => {
         const source = mergeSourceById(sourceId);
@@ -457,8 +438,8 @@ export function createMergePane({
         toggle.type = "button";
         toggle.className = "scoring-shot-toggle";
         toggle.textContent = expanded ? "v" : ">";
-        toggle.title = expanded ? "Hide PiP item controls" : "Show PiP item controls";
-        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} PiP item controls`);
+        toggle.title = expanded ? "Hide added media controls" : "Show added media controls";
+        toggle.setAttribute("aria-label", `${expanded ? "Hide" : "Show"} added media controls`);
         toggle.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -495,8 +476,6 @@ export function createMergePane({
 
         const controls = documentObject.createElement("div");
         controls.className = "merge-source-controls";
-        const syncRow = documentObject.createElement("div");
-        syncRow.className = "merge-source-sync-row";
 
         const readSourcePayload = () => {
           const nextSize = clampNumber(Number(controls.querySelector('[data-merge-source-field="size"]')?.value) || 35, 1, 95);
@@ -504,8 +483,6 @@ export function createMergePane({
           const nextY = normalizedCoordinateValue(controls.querySelector('[data-merge-source-field="y"]')?.value) ?? 1;
           const opacityControl = controls.querySelector('[data-merge-source-field="opacity"]');
           const nextOpacity = opacityControl ? opacityValueFromPercent(opacityControl.value) : currentSourceOpacity(source);
-          const cameraRoleControl = controls.querySelector('[data-merge-source-field="camera_role"]');
-          const nextAngleRole = cameraRoleControl ? normalizedAngleRoleValue(cameraRoleControl.value) : currentSourceAngleRole(source);
           const placementModeControl = controls.querySelector('[data-merge-source-field="placement_mode"]');
           const nextPlacementMode = placementModeControl ? normalizedPlacementModeValue(placementModeControl.value) : currentSourcePlacementMode(source);
           const payload = {
@@ -514,24 +491,14 @@ export function createMergePane({
             pip_x: nextX,
             pip_y: nextY,
             opacity: nextOpacity,
-            camera_role: nextAngleRole,
             placement: { mode: nextPlacementMode },
           };
-          if (nextPlacementMode === "auto") {
-            delete payload.placement;
-          }
           return payload;
         };
 
         const previewSourceUpdate = () => {
           const payload = readSourcePayload();
           const src = mergeSourceById(sourceId);
-          if (payload.camera_role) {
-            if (src) {
-              src.camera_role = payload.camera_role;
-              delete src.angle_role;
-            }
-          }
           if (payload.placement && payload.placement.mode) {
             if (src) {
               if (!src.placement) src.placement = {};
@@ -567,7 +534,7 @@ export function createMergePane({
         const sizeField = documentObject.createElement("label");
         sizeField.className = "merge-source-field merge-source-size-field";
         const sizeText = documentObject.createElement("span");
-        sizeText.textContent = "PiP size";
+        sizeText.textContent = "Size";
         const sizeControl = documentObject.createElement("span");
         sizeControl.className = "pip-size-control";
         const sizeInput = documentObject.createElement("input");
@@ -597,7 +564,7 @@ export function createMergePane({
           const label = documentObject.createElement("label");
           label.className = "merge-source-field merge-source-opacity-field";
           const text = documentObject.createElement("span");
-          text.textContent = "PiP opacity";
+          text.textContent = "Opacity";
           const percentField = documentObject.createElement("span");
           percentField.className = "opacity-percent-field";
           const input = documentObject.createElement("input");
@@ -627,66 +594,12 @@ export function createMergePane({
         syncLabel.dataset.sourceId = sourceId;
         syncLabel.textContent = formatSyncOffsetLabel(currentSourceSyncOffsetMs(source));
 
-        const syncStatus = documentObject.createElement("small");
-        syncStatus.className = "merge-source-sync-hint";
-        syncStatus.textContent = sourceSyncStatusLabel(source);
-
-        const syncButtons = documentObject.createElement("div");
-        syncButtons.className = "button-grid compact merge-source-sync-buttons";
-        [-10, -1, 1, 10].forEach((deltaMs) => {
-          const button = documentObject.createElement("button");
-          button.type = "button";
-          button.textContent = `${deltaMs > 0 ? "+" : ""}${deltaMs}`;
-          button.title = `Nudge this PiP item ${deltaMs > 0 ? "later" : "earlier"} by ${Math.abs(deltaMs)} ms.`;
-          button.addEventListener("click", () => {
-            const nextOffset = currentSourceSyncOffsetMs(mergeSourceById(sourceId)) + deltaMs;
-            updateLocalMergeSourceSyncOffset(sourceId, nextOffset);
-            renderVideo();
-            callApi("/api/merge/source", { source_id: sourceId, sync_delta_ms: deltaMs });
-          });
-          syncButtons.appendChild(button);
-        });
-
-        if (source.supports_sync_analysis) {
-          const analyzeButton = documentObject.createElement("button");
-          analyzeButton.type = "button";
-          analyzeButton.textContent = source.sync_analysis_status === "ready" ? "Re-run beep sync" : "Analyze beep sync";
-          analyzeButton.disabled = source.sync_analysis_status === "running";
-          analyzeButton.title = "Use ShotML to find this PiP video's start beep and set sync automatically.";
-          analyzeButton.addEventListener("click", () => {
-            callApi("/api/merge/source/analyze", { source_id: sourceId });
-          });
-          syncButtons.appendChild(analyzeButton);
-        }
-
         controls.append(
           sizeField,
           buildSourceOpacityInput(),
-          buildSourceNumberInput("PiP X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
-          buildSourceNumberInput("PiP Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
+          buildSourceNumberInput("Position X", "x", normalizedCoordinateValue(source.pip_x) ?? 1, 0, 1, 0.01, "0 is left, 1 is right."),
+          buildSourceNumberInput("Position Y", "y", normalizedCoordinateValue(source.pip_y) ?? 1, 0, 1, 0.01, "0 is top, 1 is bottom."),
         );
-
-        const cameraRoleSelect = documentObject.createElement("select");
-        cameraRoleSelect.dataset.mergeSourceField = "camera_role";
-        cameraRoleSelect.dataset.sourceId = sourceId;
-        cameraRoleSelect.title = "Choose how this angle interacts with the composition layout.";
-        ["primary", "follow", "static", "detail"].forEach((role) => {
-          const option = documentObject.createElement("option");
-          option.value = role;
-          option.textContent = role.charAt(0).toUpperCase() + role.slice(1);
-          if (role === currentSourceAngleRole(source)) option.selected = true;
-          cameraRoleSelect.appendChild(option);
-        });
-        cameraRoleSelect.addEventListener("change", () => {
-          previewSourceUpdate();
-          scheduleMergeSourceCommit(readSourcePayload());
-        });
-        const cameraRoleLabel = documentObject.createElement("label");
-        cameraRoleLabel.className = "merge-source-field";
-        cameraRoleLabel.append(documentObject.createElement("span"));
-        cameraRoleLabel.querySelector("span").textContent = "Camera role";
-        cameraRoleLabel.append(cameraRoleSelect);
-        controls.append(cameraRoleLabel);
 
         const placementModeSelect = documentObject.createElement("select");
         placementModeSelect.dataset.mergeSourceField = "placement_mode";
@@ -710,60 +623,10 @@ export function createMergePane({
         placementModeLabelEl.append(placementModeSelect);
         controls.append(placementModeLabelEl);
 
-        const trimSection = documentObject.createElement("div");
-        trimSection.className = "merge-source-trim-section";
-        const trimHeader = documentObject.createElement("strong");
-        trimHeader.textContent = "Trim Video";
-        const trimRow = documentObject.createElement("div");
-        trimRow.className = "merge-source-trim-row";
-        const trimStartInput = documentObject.createElement("input");
-        trimStartInput.type = "number";
-        trimStartInput.min = "0";
-        trimStartInput.step = "0.001";
-        trimStartInput.placeholder = "Start (s)";
-        trimStartInput.dataset.trimStart = sourceId;
-        const trimEndInput = documentObject.createElement("input");
-        trimEndInput.type = "number";
-        trimEndInput.min = "0";
-        trimEndInput.step = "0.001";
-        trimEndInput.placeholder = "End (s)";
-        trimEndInput.dataset.trimEnd = sourceId;
-        const trimApply = documentObject.createElement("button");
-        trimApply.type = "button";
-        trimApply.textContent = "Apply";
-        trimApply.addEventListener("click", () => {
-          const s = parseFloat(trimStartInput.value) || 0;
-          const e = parseFloat(trimEndInput.value) || 0;
-          callApi("/api/merge/source/trim", { source_id: sourceId, start_s: s > 0 ? s : null, end_s: e > 0 ? e : null });
-        });
-        const trimClear = documentObject.createElement("button");
-        trimClear.type = "button";
-        trimClear.textContent = "Clear";
-        trimClear.addEventListener("click", () => {
-          callApi("/api/merge/source/trim", { source_id: sourceId, clear: true });
-        });
-        const trimStatus = documentObject.createElement("small");
-        trimStatus.className = "merge-source-trim-status";
-        const trimDerivative = source.trim_derivative;
-        if (trimDerivative && trimDerivative.active_path_kind === "local_derivative" && trimDerivative.derivative_path) {
-          trimStatus.textContent = "Trim active";
-          trimStatus.style.color = "var(--accent)";
-        }
-        trimRow.append(trimStartInput, trimEndInput, trimApply, trimClear);
-        trimSection.append(trimHeader, trimRow, trimStatus);
-        controls.appendChild(trimSection);
-
-        const syncHint = documentObject.createElement("small");
-        syncHint.className = "merge-source-sync-hint";
-        syncHint.textContent = currentState().project.merge.layout === "pip"
-          ? "Use these nudges or drag the preview to match the primary video exactly."
-          : "These values are saved per item and take effect in PiP layout and export timing.";
-        syncRow.append(syncLabel, syncButtons, syncStatus, syncHint);
-
         const body = documentObject.createElement("div");
         body.className = "merge-media-card-body";
         body.hidden = !expanded;
-        body.append(meta, controls, syncRow);
+        body.append(meta, controls, syncLabel);
         card.append(header, body);
         syncMergeSourceControls(
           sourceId,

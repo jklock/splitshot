@@ -454,7 +454,7 @@ def format_imported_stage_overlay_text(
         )
     )
 
-    lines = ["Imported"]
+    lines = ["Summary"]
     if display_raw_seconds is not None:
         lines.append(f"Raw {display_raw_seconds:.2f}")
 

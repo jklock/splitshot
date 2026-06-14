@@ -15,7 +15,8 @@
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool"><b>Project</b></button>
-          <button class="tool-item" data-tool="merge" data-short="PiP" type="button" aria-label="Show picture-in-picture tool"><b>PiP</b></button>
+          <button class="tool-item" data-tool="merge" data-short="Com" type="button" aria-label="Show compose tool"><b>Compose</b></button>
+          <button class="tool-item" data-tool="trim-sync" data-short="Trim" type="button" aria-label="Show trim tool"><b>Trim</b></button>
           <button class="tool-item" data-tool="scoring" data-short="Sco" type="button" aria-label="Show scoring tool"><b>Score</b></button>
           <button class="tool-item active" data-tool="timing" data-short="Spl" type="button" aria-label="Show splits tool"><b>Splits</b></button>
           <button class="tool-item" data-tool="markers" data-short="Mar" type="button" aria-label="Show markers tool"><b>Markers</b></button>
@@ -101,10 +102,6 @@
                   <span class="waveform-tracks-label">Tracks:</span>
                   <div id="waveform-track-list" class="waveform-track-list"></div>
                 </div>
-                <div class="waveform-mode-toggle">
-                  <button id="waveform-mode-single" class="waveform-mode-button active" type="button">Single</button>
-                  <button id="waveform-mode-multi" class="waveform-mode-button" type="button">Multi-Track</button>
-                </div>
                 <div class="waveform-segment-legend" id="waveform-segment-legend" hidden>
                   <span><span class="waveform-segment-dot waveform-segment-dot-moving"></span>Moving</span>
                   <span><span class="waveform-segment-dot waveform-segment-dot-static"></span>Static</span>
@@ -145,7 +142,6 @@
                 <h2>Metrics</h2>
                 <button id="collapse-metrics" type="button">Collapse</button>
               </div>
-              <p class="hint">Post-stage graphs highlight dead time, interval outliers, reference deltas, and grouped stage segments beside the expanded table.</p>
               <div id="metrics-workbench-graphs" class="metrics-graph-list metrics-graph-list-workbench" aria-label="Expanded metrics graphs"></div>
               <div id="metrics-workbench-table" class="data-table metrics-workbench-table"></div>
             </section>
@@ -228,16 +224,21 @@
                 </div>
                 <div id="review-text-box-list" class="text-box-list" aria-label="Review text boxes"></div>
               </section>
-              <section class="review-source-manager">
+              <section class="review-imported-metrics" id="review-imported-metrics" hidden>
                 <div class="section-header sub-section-header">
-                  <h3>Review Source</h3>
+                  <h3>Summary</h3>
                 </div>
-                <div class="review-source-controls">
-                  <select id="review-source-select" class="review-source-select" aria-label="Review source"></select>
-                  <button id="review-set-source" type="button">Set Source</button>
-                  <span id="review-source-status" class="review-source-status"></span>
-                </div>
+                <div id="review-metrics-checklist" class="review-metrics-checklist"></div>
+                <dl id="review-metrics-list" class="details review-metrics-details"></dl>
               </section>
+
+            </section>
+
+            <section class="tool-pane" data-tool-pane="trim-sync">
+              <div class="section-header">
+                <h3>Trim</h3>
+              </div>
+              <div id="trim-sync-list" class="merge-media-list" aria-label="Trim controls"></div>
             </section>
 
             <section class="tool-pane" data-tool-pane="metrics">
@@ -248,8 +249,7 @@
               <div id="metrics-summary-grid" class="metrics-summary-grid"></div>
               <section class="settings-section metrics-section" data-metrics-section="trend-snapshot">
                 <div class="section-header sub-section-header">
-                  <h3>Stage Story</h3>
-                  <span>Timeline, intervals, comparison, and segment grouping</span>
+                  <h3>Shot Breakdown</h3>
                 </div>
                 <div id="metrics-graph-list" class="metrics-graph-list" aria-label="Metrics graphs"></div>
                 <div id="metrics-trend-list" class="data-table metrics-trend-table" aria-label="Metrics trend table"></div>
@@ -611,13 +611,13 @@
 
             <section class="tool-pane" data-tool-pane="merge">
               <div class="section-header">
-                <h3>PiP</h3>
+                <h3>Compose</h3>
                 <strong id="sync-offset">Defaults only</strong>
               </div>
               <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                 <div class="section-header sub-section-header">
-                  <h3>PiP Default Settings</h3>
+                  <h3>Compose Defaults</h3>
                   <button id="restore-merge-defaults" type="button">Restore</button>
                 </div>
                 <label class="check-row"><input id="merge-enabled" type="checkbox" /> Enable added media export</label>
@@ -638,10 +638,10 @@
                   </div>
                 </label>
                 <div class="control-grid pip-position-grid">
-                  <label>Default PiP X (0 left, 1 right)
+                  <label>Default Position X (0 left, 1 right)
                     <input id="pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
-                  <label>Default PiP Y (0 top, 1 bottom)
+                  <label>Default Position Y (0 top, 1 bottom)
                     <input id="pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
@@ -763,6 +763,7 @@
                   </select>
                 </label>
                 <label class="check-row"><input id="two-pass" type="checkbox" /> 2-pass</label>
+                <label class="check-row"><input id="multi-track" type="checkbox" /> Multi-Track</label>
               </div>
               <label>Output path
                 <div class="path-row">
@@ -799,7 +800,7 @@
                   <label>Landing pane
                     <select id="settings-default-tool">
                       <option value="project">Project</option>
-                      <option value="merge">PiP</option>
+                      <option value="merge">Compose</option>
                       <option value="scoring">Score</option>
                       <option value="timing">Splits</option>
                       <option value="markers">Markers</option>
@@ -871,32 +872,32 @@
               <section class="settings-section collapsed" data-settings-section="pip">
                 <div class="section-header sub-section-header">
                   <div>
-                    <h3>PiP</h3>
-                    <span>Merge layout, size, and position defaults</span>
+                <h3>Compose</h3>
+                    <span>Layout, size, and position defaults</span>
                   </div>
                 </div>
                 <div class="control-grid">
-                  <label>PiP layout
+                  <label>Layout
                     <select id="settings-merge-layout">
                       <option value="side_by_side">Side by side</option>
                       <option value="above_below">Above / below</option>
-                      <option value="pip">PiP</option>
+                      <option value="pip">Picture in picture</option>
                       <option value="full_screen_portrait">Full-screen portrait</option>
                       <option value="dual_center_hud">Dual center HUD</option>
                       <option value="dual_top_hud">Dual top HUD</option>
                     </select>
                   </label>
-                  <label>PiP size
+                  <label>Size
                     <select id="settings-pip-size">
                       <option value="25%">25%</option>
                       <option value="35%">35%</option>
                       <option value="50%">50%</option>
                     </select>
                   </label>
-                  <label>PiP X (0 left, 1 right)
+                  <label>X (0 left, 1 right)
                     <input id="settings-merge-pip-x" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
-                  <label>PiP Y (0 top, 1 bottom)
+                  <label>Y (0 top, 1 bottom)
                     <input id="settings-merge-pip-y" type="number" min="0" max="1" step="0.01" value="1" />
                   </label>
                 </div>
@@ -904,7 +905,7 @@
                   <button id="settings-save-current-pip" data-settings-save-section="pip" type="button">Save Current Settings</button>
                   <button id="settings-reset-section-pip" data-settings-reset-section="pip" type="button">Reset to Default</button>
                 </div>
-                <p id="settings-pip-summary" class="hint">No saved PiP media defaults.</p>
+                <p id="settings-pip-summary" class="hint">No saved Compose defaults.</p>
               </section>
 
               <section class="settings-section collapsed" data-settings-section="overlay">

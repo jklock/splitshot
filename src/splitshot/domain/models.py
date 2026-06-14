@@ -745,6 +745,7 @@ class OverlayTextBox:
     opacity: float = 0.9
     width: int = 0
     height: int = 0
+    summary_metric_ids: list[str] = field(default_factory=list)
     style_type: str = "square"
     font_family: str = field(default_factory=default_overlay_font_family)
     font_size: int = 14
@@ -1210,6 +1211,7 @@ def _overlay_text_box_from_dict(data: dict[str, Any], legacy_lock_to_stack: bool
         opacity=float(data.get("opacity", 0.9)),
         width=int(data.get("width", 0)),
         height=int(data.get("height", 0)),
+        summary_metric_ids=_ui_state_string_list(data.get("summary_metric_ids")),
         style_type=str(data.get("style_type", "square") or "square"),
         font_family=str(data.get("font_family", default_overlay_font_family()) or default_overlay_font_family())[:80],
         font_size=max(8, min(72, int(data.get("font_size", 14) or 14))),

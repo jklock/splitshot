@@ -418,115 +418,165 @@ export function createMetricsPane({
         .filter((point) => point[key] !== null && point[key] !== undefined)
         .map((point) => ({ shotNumber: point.shotNumber, label: point.label, value: point[key] })),
     });
-    const largestGapPoint = graphPoints.reduce((largest, point) => {
-      if (!largest) return point;
-      return Number(point.finalSplitS || 0) > Number(largest.finalSplitS || 0) ? point : largest;
-    }, null);
-    const intervalBars = graphPoints
-      .filter((point) => point.shotNumber > 1 && point.finalSplitS !== null && point.finalSplitS !== undefined)
-      .map((point) => ({
-        key: point.pairLabel,
-        label: point.pairLabel,
-        shortLabel: point.pairLabel,
-        value: point.finalSplitS,
-        category: point.category,
-        detail: point.intervalLabel || point.category.label,
-        highlight: largestGapPoint?.shotNumber === point.shotNumber,
-      }));
-    const intervalMedian = metricsMedian(intervalBars.map((bar) => bar.value));
-    const stageSegments = buildMetricsStageSegments(graphPoints).map((segment, index) => ({
-      key: segment.key || `segment_${index + 1}`,
-      label: segment.label,
-      shortLabel: segment.shortLabel,
-      value: segment.value,
-      category: segment.category,
-      highlight: false,
-    }));
-    const largestStageSegment = stageSegments.reduce((largest, segment) => {
-      if (!largest) return segment;
-      return Number(segment.value || 0) > Number(largest.value || 0) ? segment : largest;
-    }, null);
-    stageSegments.forEach((segment) => {
-      if (!largestStageSegment) return;
-      segment.highlight = segment.key === largestStageSegment.key;
-    });
-    const finalPoint = graphPoints[graphPoints.length - 1] || null;
-    const largestDeltaPoint = graphPoints
-      .filter((point) => point.referenceDeltaS !== null && point.referenceDeltaS !== undefined)
-      .reduce((largest, point) => {
-        if (!largest) return point;
-        return Math.abs(Number(point.referenceDeltaS || 0)) > Math.abs(Number(largest.referenceDeltaS || 0)) ? point : largest;
-      }, null);
-    const shootingTotalS = stageSegments
-      .filter((segment) => segment.category.id === "shooting_interval")
-      .reduce((total, segment) => total + Number(segment.value || 0), 0);
-    const nonShootingTotalS = stageSegments
-      .filter((segment) => segment.category.id !== "shooting_interval")
-      .reduce((total, segment) => total + Number(segment.value || 0), 0);
+    const splitValues = graphPoints.map((p) => Number(p.finalSplitS)).filter((v) => Number.isFinite(v) && v > 0);
+    const avgSplit = splitValues.length > 0 ? Number((splitValues.reduce((a, b) => a + b, 0) / splitValues.length).toFixed(3)) : null;
 
-    const graphs = [
-      {
-        id: "shot_interval_timeline",
-        type: "timeline",
-        title: "Shot / Interval Timeline",
-        subtitle: "Start signal to last shot, with dead time made obvious",
-        unit: "s",
-        points: graphPoints.map((point) => ({
-          ...point,
-          value: point.runTotalS,
-          highlight: largestGapPoint?.shotNumber === point.shotNumber,
-        })),
-        summary: [
-          { label: "Start→1", value: metricsGraphValueLabel(graphPoints[0]?.runTotalS ?? null, "s"), color: graphPoints[0]?.category?.color },
-          { label: `Largest ${largestGapPoint?.pairLabel || "gap"}`, value: metricsGraphValueLabel(largestGapPoint?.finalSplitS ?? null, "s"), color: largestGapPoint?.category?.color },
-          { label: "Last shot", value: metricsGraphValueLabel(finalPoint?.runTotalS ?? null, "s"), color: finalPoint?.category?.color },
-        ],
-        forceZeroMin: true,
-      },
-      {
-        id: "split_interval_bars",
-        type: "bars",
-        title: "Split / Interval Bar Chart",
-        subtitle: "Each shot pair shows where time was lost",
-        unit: "s",
-        bars: intervalBars,
-        summary: [
-          { label: "Median", value: metricsGraphValueLabel(intervalMedian, "s"), color: "#39d06f" },
-          { label: `Largest ${largestGapPoint?.pairLabel || "gap"}`, value: metricsGraphValueLabel(largestGapPoint?.finalSplitS ?? null, "s"), color: largestGapPoint?.category?.color },
-          { label: "Cadence ref", value: metricsGraphValueLabel(metricsSecondsValue(cadenceBaselineMs), "s"), color: "#4ea7ff" },
-        ],
-      },
-      {
-        id: "run_comparison_overlay",
+    const stageSegments = buildMetricsStageSegments(graphPoints);
+    const shootingTimeS = Number((stageSegments
+      .filter((s) => s.category.id === "shooting_interval")
+      .reduce((t, s) => t + Number(s.value || 0), 0)).toFixed(3));
+    const nonShootingTimeS = Number((stageSegments
+      .filter((s) => s.category.id !== "shooting_interval")
+      .reduce((t, s) => t + Number(s.value || 0), 0)).toFixed(3));
+
+    const state = currentState();
+    const importedStage = state?.scoring_summary?.imported_stage || {};
+    const compData = Array.isArray(state?.practiscore_options?.comparison_competitors)
+      ? state.practiscore_options.comparison_competitors : [];
+    const myName = importedStage.competitor_name || "";
+    const myDivision = importedStage.division || "";
+    const myClass = importedStage.classification || "";
+
+    const allCompetitors = [
+      { name: myName, division: myDivision, classification: myClass, raw_seconds: importedStage.raw_seconds },
+      ...compData.map((c) => ({ name: c.name, division: c.division || "", classification: c.classification || "", raw_seconds: c.raw_seconds })),
+    ].filter((c) => c.name && c.raw_seconds !== null && c.raw_seconds !== undefined)
+     .sort((a, b) => Number(a.raw_seconds) - Number(b.raw_seconds));
+
+    const myRank = allCompetitors.findIndex((c) => c.name === myName) + 1;
+    const totalCount = allCompetitors.length;
+
+    const sameDivision = allCompetitors.filter((c) => c.division && c.division === myDivision);
+    const divRank = sameDivision.findIndex((c) => c.name === myName) + 1;
+
+    const sameClass = allCompetitors.filter((c) => c.classification && c.classification === myClass);
+    const classRank = sameClass.findIndex((c) => c.name === myName) + 1;
+
+    const graphs = [];
+
+    if (graphPoints.length > 0) {
+      graphs.push({
+        id: "split_timeline",
         type: "lines",
-        title: "Run Comparison Overlay",
-        subtitle: "Current cumulative time vs the ShotML reference baseline",
+        title: "Split Timeline",
+        subtitle: "Split time per shot with average reference",
         unit: "s",
         lines: [
-          buildLine("runTotalS", "Current", "#ff7b22"),
-          buildLine("referenceRunS", "ShotML Reference", "#4ea7ff"),
+          buildLine("finalSplitS", "Split", "#ff7b22"),
+          ...(avgSplit !== null ? [{ key: "avg_split", label: `Avg ${avgSplit.toFixed(2)}s`, color: "rgba(78, 167, 255, 0.6)", points: graphPoints.map((p, i) => ({ shotNumber: p.shotNumber, label: p.label, value: avgSplit })) }] : []),
         ],
         summary: [
-          { label: "Current", value: metricsGraphValueLabel(finalPoint?.runTotalS ?? null, "s"), color: "#ff7b22" },
-          { label: "Reference", value: metricsGraphValueLabel(finalPoint?.referenceRunS ?? null, "s"), color: "#4ea7ff" },
-          { label: "Final delta", value: metricsSignedValueLabel(finalPoint?.referenceDeltaS ?? null, "s"), color: largestDeltaPoint?.referenceDeltaS !== null && largestDeltaPoint?.referenceDeltaS !== undefined ? (largestDeltaPoint.referenceDeltaS > 0 ? "#ef4444" : "#39d06f") : "#a855f7" },
+          { label: "Avg split", value: metricsGraphValueLabel(avgSplit, "s"), color: "#4ea7ff" },
+          { label: "Shots", value: String(graphPoints.length), color: "#ff7b22" },
         ],
-        forceZeroMin: true,
-      },
-      {
-        id: "stage_segment_breakdown",
+      });
+    }
+
+    if (splitValues.length > 0) {
+      const minSplit = Math.min(...splitValues);
+      const maxSplit = Math.max(...splitValues);
+      const bucketCount = Math.min(10, Math.max(4, Math.ceil(splitValues.length / 2)));
+      const bucketWidth = Math.max(0.05, (maxSplit - minSplit) / bucketCount);
+      const buckets = [];
+      for (let i = 0; i < bucketCount; i++) {
+        const low = Number((minSplit + i * bucketWidth).toFixed(2));
+        const high = Number((low + bucketWidth).toFixed(2));
+        const count = splitValues.filter((v) => v >= low && v < (i === bucketCount - 1 ? high + 0.001 : high)).length;
+        if (count > 0 || buckets.length > 0) {
+          buckets.push({ label: `${low.toFixed(1)}-${high.toFixed(1)}`, shortLabel: `${low.toFixed(1)}`, value: count, category: { color: "#ff7b22" }, highlight: false });
+        }
+      }
+      if (buckets.length > 0) {
+        graphs.push({
+          id: "split_distribution",
+          type: "bars",
+          title: "Split Distribution",
+          subtitle: "Histogram of split durations",
+          unit: "count",
+          bars: buckets,
+          summary: [
+            { label: "Avg split", value: metricsGraphValueLabel(avgSplit, "s"), color: "#4ea7ff" },
+            { label: "Range", value: `${minSplit.toFixed(1)}–${maxSplit.toFixed(1)}s`, color: "#ff7b22" },
+          ],
+        });
+      }
+    }
+
+    if (stageSegments.length > 0) {
+      graphs.push({
+        id: "shooting_vs_non_shooting",
         type: "bars",
-        title: "Stage Segment Breakdown",
-        subtitle: "Grouped into first shot, shooting, movement, reload, and dead time",
+        title: "Shooting vs Non-Shooting Time",
+        subtitle: "Stacked breakdown of the stage run",
         unit: "s",
-        bars: stageSegments,
+        bars: [
+          { label: "Shooting", shortLabel: "Shoot", value: shootingTimeS, category: { color: "#39d06f" }, highlight: true },
+          { label: "Non-Shooting", shortLabel: "Move+", value: nonShootingTimeS, category: { color: "#4ea7ff" }, highlight: false },
+        ].filter((b) => b.value > 0),
         summary: [
-          { label: `Largest ${largestStageSegment?.shortLabel || "segment"}`, value: metricsGraphValueLabel(largestStageSegment?.value ?? null, "s"), color: largestStageSegment?.category?.color },
-          { label: "Shooting", value: metricsGraphValueLabel(Number(shootingTotalS.toFixed(3)), "s"), color: metricsCategoryDefinition("shooting_interval").color },
-          { label: "Non-shooting", value: metricsGraphValueLabel(Number(nonShootingTotalS.toFixed(3)), "s"), color: metricsCategoryDefinition("transition").color },
+          { label: "Shooting", value: metricsGraphValueLabel(shootingTimeS, "s"), color: "#39d06f" },
+          { label: "Non-Shooting", value: metricsGraphValueLabel(nonShootingTimeS, "s"), color: "#4ea7ff" },
         ],
-      },
-    ];
+      });
+    }
+
+    if (myName && totalCount > 0) {
+      graphs.push({
+        id: "overall_placement",
+        type: "bars",
+        title: "Overall Placement",
+        subtitle: myRank > 0 ? `You are #${myRank} of ${totalCount}` : `${totalCount} competitors`,
+        unit: "s",
+        bars: allCompetitors.map((c) => ({
+          key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
+          value: Number(c.raw_seconds), category: { color: c.name === myName ? "#ff7b22" : "#4ea7ff" },
+          highlight: c.name === myName,
+        })),
+        summary: [
+          { label: "You", value: `#${myRank}`, color: "#ff7b22" },
+          { label: "Fastest", value: metricsGraphValueLabel(allCompetitors[0]?.raw_seconds, "s"), color: "#39d06f" },
+        ],
+      });
+    }
+
+    if (myDivision && sameDivision.length >= 2) {
+      graphs.push({
+        id: "division_placement",
+        type: "bars",
+        title: `${myDivision} Division Placement`,
+        subtitle: divRank > 0 ? `You are #${divRank} of ${sameDivision.length} in ${myDivision}` : `${sameDivision.length} in division`,
+        unit: "s",
+        bars: sameDivision.map((c) => ({
+          key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
+          value: Number(c.raw_seconds), category: { color: c.name === myName ? "#ff7b22" : "#4ea7ff" },
+          highlight: c.name === myName,
+        })),
+        summary: [
+          { label: "You", value: `#${divRank}`, color: "#ff7b22" },
+          { label: "Total", value: String(sameDivision.length), color: "#4ea7ff" },
+        ],
+      });
+    }
+
+    if (myClass && sameClass.length >= 2) {
+      graphs.push({
+        id: "class_placement",
+        type: "bars",
+        title: `${myClass} Class Placement`,
+        subtitle: classRank > 0 ? `You are #${classRank} of ${sameClass.length} in ${myClass}` : `${sameClass.length} in class`,
+        unit: "s",
+        bars: sameClass.map((c) => ({
+          key: c.name, label: c.name, shortLabel: c.name.split(" ").pop() || c.name,
+          value: Number(c.raw_seconds), category: { color: c.name === myName ? "#ff7b22" : "#4ea7ff" },
+          highlight: c.name === myName,
+        })),
+        summary: [
+          { label: "You", value: `#${classRank}`, color: "#ff7b22" },
+          { label: "Total", value: String(sameClass.length), color: "#4ea7ff" },
+        ],
+      });
+    }
+
     return graphs
       .map((graph) => ({
         ...graph,
@@ -1131,7 +1181,6 @@ export function createMetricsPane({
     const scoringSummary = state.metrics?.scoring_summary || state.scoring_summary || {};
     const rows = buildMetricsRows();
     const graphs = buildMetricsGraphSeries(rows);
-    const compGraphs = buildCompetitorComparisonGraphs();
 
     const summaryCards = [
       ["Draw", splitSeconds(state.metrics?.draw_ms), "First-shot timing"],
@@ -1171,9 +1220,8 @@ export function createMetricsPane({
       : "Scoring disabled.";
     const details = metricsScoringDetailRows(summary);
     renderDetailsList("metrics-score-summary", details);
-    const allGraphs = [...compGraphs, ...graphs];
-    renderMetricsGraphs($("metrics-graph-list"), allGraphs, { compact: true });
-    renderMetricsGraphs($("metrics-workbench-graphs"), allGraphs, { compact: false });
+    renderMetricsGraphs($("metrics-graph-list"), graphs, { compact: true });
+    renderMetricsGraphs($("metrics-workbench-graphs"), graphs, { compact: false });
     renderMetricsSections();
     renderMetricsTable($("metrics-workbench-table"));
   }

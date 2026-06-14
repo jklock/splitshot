@@ -78,16 +78,16 @@ def test_app_merge_export_commit_and_log_freshness_contracts() -> None:
     assert 'if (mergePreview && merge.layout === "pip" && mergeSources.length > 0) {' in source
     assert 'media.style.opacity = String(currentSourceOpacity(source));' in source
     assert 'input.dataset.mergeSourceField = "opacity";' in source
-    assert "These values are saved per item and take effect in PiP layout and export timing." in source
+    assert "These values are saved per item and take effect in compose layout and export timing." in source
 
     assert "export function createMergePane({" in merge_pane_source
     assert "function renderMergePreviewLayer(video, stage, mergeSources, pipSizeValue) {" in merge_pane_source
     assert "function renderMergeMediaList() {" in merge_pane_source
     assert "function readMergePayload() {" in merge_pane_source
-    assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' in merge_pane_source
-    assert "Re-run beep sync" in merge_pane_source
-    assert "Analyze beep sync" in merge_pane_source
-    assert "supports_sync_analysis" in merge_pane_source
+    assert 'callApi("/api/merge/source/analyze", { source_id: sourceId });' not in merge_pane_source
+    assert "Re-run beep sync" not in merge_pane_source
+    assert "Analyze beep sync" not in merge_pane_source
+    assert "supports_sync_analysis" not in merge_pane_source
     assert "function syncPreviewPlaybackToTarget(preview, target, targetPlaybackRate, paused) {" in source
     assert "const target = mergePreviewTargetTime(primary.currentTime, mergeSourceById(sourceId));" in source
     assert "const target = mergePreviewTargetTime(primary.currentTime, activeSource);" in source

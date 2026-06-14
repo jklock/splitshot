@@ -13,9 +13,9 @@ SplitShot is a local-first browser app for turning stage footage into a reviewed
 
 Every session uses the same workspace:
 
-- The left rail switches between `Project`, `PiP`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, and `ShotML`.
+- The left rail switches between `Project`, `Compose`, `Trim`, `Score`, `Splits`, `Markers`, `Overlay`, `Review`, `Export`, `Settings`, `Metrics`, and `ShotML`.
 - The top status line reports the active file, analysis state, and sync offset.
-- The center stage shows the primary video, optional PiP media, overlay badges, markers, review boxes, and the waveform.
+- The center stage shows the primary video, optional added media, overlay badges, markers, review boxes, and the waveform.
 - The right inspector changes to match the selected rail tool.
 - The right inspector can be resized; pane cards, tables, badge controls, and action buttons reflow to the available width without horizontal scrolling.
 - Inspector card chevrons use `>` when collapsed and `v` when expanded.
@@ -32,17 +32,17 @@ Most edits auto-apply. Export is the main exception: the final video is created 
 | [panes/score.md](panes/score.md) | Ruleset selection, per-shot score cards, penalty fields, restore/delete actions, and imported score context |
 | [panes/splits.md](panes/splits.md) | Shot timing, waveform review, marker nudges, manual shots, expanded timing edits, and timing events |
 | [panes/shotml.md](panes/shotml.md) | Detector threshold, beep tuning, shot candidate settings, refinement, suppression, proposals, and runtime controls |
-| [panes/pip.md](panes/pip.md) | Added media, picture-in-picture layout, per-item size/position/opacity, sync nudges, and export inclusion |
+| [panes/pip.md](panes/pip.md) | Added media, layout, per-item size/position/opacity, and export inclusion |
 | [panes/overlay.md](panes/overlay.md) | Badge visibility, stack placement, timer/draw/final badge locks, fonts, colors, and score text colors |
 | [panes/popup.md](panes/popup.md) | Shot-linked and time-based markers, text/image markers, guided Start/Finish motion authoring, the expanded markers workbench, and bundled marker images |
-| [panes/review.md](panes/review.md) | Preview artifact toggles, imported summary boxes, custom text boxes, placement, size, and style |
+| [panes/review.md](panes/review.md) | Preview artifact toggles, Summary boxes, custom text boxes, placement, size, and style |
 | [panes/export.md](panes/export.md) | Render presets, frame settings, codecs, bitrate, output path, FFmpeg logs, and final export |
 | [panes/settings.md](panes/settings.md) | App defaults, folder defaults in `splitshot.conf`, settings source attribution, and marker template defaults |
 | [panes/metrics.md](panes/metrics.md) | Read-only post-stage graphs, expanded timing table, scoring context, CSV export, and text export |
 
 ## Screenshot Coverage
 
-The screenshot set covers every pane plus expanded timing, waveform, metrics, ShotML sections, score cards, PiP media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the export log modal.
+The screenshot set covers every pane plus expanded timing, waveform, metrics, ShotML sections, score cards, added media cards, marker cards, Settings pane layers, Review text boxes, the shared color picker, and the export log modal.
 
 ## Common Workflows
 
@@ -52,4 +52,3 @@ The screenshot set covers every pane plus expanded timing, waveform, metrics, Sh
 ## Repository Details
 
 Architecture, development, and technical notes live in [../README.md](../README.md).
-

@@ -19,8 +19,8 @@ This page covers the most common user-facing problems and where to fix them.
 | --- | --- |
 | Large file (over 8 GiB) rejected by browser picker | Paste the direct local path into the `Primary Video` input and press Enter. |
 | Video imported but nothing plays | Check the format is supported by your browser (MP4/H.264 is safest). Run `uv run splitshot --check` to validate FFmpeg. |
-| Secondary media sync is wrong | Use the sync nudge buttons in the PiP pane for that media item. |
-| Still image not appearing in PiP | Confirm the file is a common image format (PNG, JPG). Still images are detected by `QImage` probe. |
+| Secondary media sync is wrong | Open the Trim pane and adjust the added media offset for that item. |
+| Still image not appearing in Compose | Confirm the file is a common image format (PNG, JPG). Still images are detected by `QImage` probe. |
 
 ## Analysis And Detection
 
@@ -48,7 +48,7 @@ This page covers the most common user-facing problems and where to fix them.
 | --- | --- |
 | No badges appear in preview | Turn on `Show overlay` in the Overlay pane and confirm Review visibility toggles are on. |
 | A badge is hidden but Overlay is configured | Recheck the Review pane badge visibility toggles. |
-| PiP missing from export | Turn on `Enable added media export` in the PiP pane. |
+| Added media missing from export | Turn on `Enable added media export` in the Compose pane. |
 | Review boxes missing from export | Confirm the box enable checkbox is on in the Review pane. |
 | Export fails immediately | Check output path, extension, and folder permissions. Run `uv run splitshot --check`. |
 | Export log shows FFmpeg errors | Open the Export Log modal in the Export pane. Common fixes: lower bitrate, change codec, or verify source file. |
