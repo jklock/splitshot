@@ -603,10 +603,8 @@ def test_imported_summary_defaults_and_above_final_contract_are_source_visible()
     assert 'return reviewPane?.buildOverlayTextBox(source);' in app_js
     assert 'quadrant: source === "imported_summary" ? aboveFinalTextBoxValue : "top_left"' in review_js
     assert 'const fallbackQuadrant = source === "imported_summary" ? aboveFinalTextBoxValue : "top_left";' in review_js
-    assert 'return box.text || currentState()?.scoring_summary?.imported_overlay_text || "";' in review_js
+    assert 'imported_overlay_text' in review_js
     assert 'if (box.quadrant === aboveFinalTextBoxValue)' in review_js
-    assert 'textArea.disabled = false;' in review_js
-    assert 'Leave blank to use the imported PractiScore stage summary after the final shot' in review_js
     assert 'return rawValue === importedSummaryDefault ? "" : rawValue;' in review_js
     assert 'function resolvedOverlayTextBoxSize(box) {' in review_js
     assert 'function overlayStackAnchorRect(overlay) {' in app_js

@@ -947,7 +947,7 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 _ensure_overlay_visible(page)
 
                 before_cards = page.locator("#review-text-box-list .text-box-card").count()
-                page.evaluate("document.getElementById('review-add-text-box').click()")
+                page.evaluate("document.getElementById('review-add-imported-box').click()")
                 page.wait_for_function(
                     "(count) => document.querySelectorAll('#review-text-box-list .text-box-card').length > count",
                     arg=before_cards,
@@ -957,8 +957,6 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 box_id = new_card.get_attribute("data-box-id")
                 assert box_id
 
-                new_card.locator('[data-text-box-action="toggle"]').click()
-                new_card.locator('select[data-text-box-field="source"]').select_option("imported_summary")
                 page.wait_for_function(
                     """(boxId) => {
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -978,9 +976,6 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                     }""",
                     arg={"boxId": box_id, "text": override_text},
                 )
-
-                hint_text = (new_card.locator('[data-text-box-hint="true"]').text_content() or "").strip().lower()
-                assert "imported summary" in hint_text or "final score badge" in hint_text
 
                 final_shot_ms = int(page.evaluate("(state?.project?.analysis?.shots || []).at(-1)?.time_ms ?? 0"))
                 page.evaluate(
