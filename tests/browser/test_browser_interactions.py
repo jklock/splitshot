@@ -957,6 +957,8 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 box_id = new_card.get_attribute("data-box-id")
                 assert box_id
 
+                new_card.locator('[data-text-box-action="toggle"]').click()
+
                 page.wait_for_function(
                     """(boxId) => {
                       const box = (state?.project?.overlay?.text_boxes || []).find((item) => item.id === boxId);
@@ -966,6 +968,7 @@ def test_review_text_box_source_switches_to_imported_summary_and_renders_after_f
                 )
 
                 override_text = "Stage summary override"
+                page.wait_for_selector('textarea[data-text-box-field="text"]', state='visible')
                 text_area = new_card.locator('textarea[data-text-box-field="text"]')
                 text_area.fill(override_text)
                 text_area.dispatch_event("change")

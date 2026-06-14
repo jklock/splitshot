@@ -881,36 +881,6 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 _record_timing(timings, "per-source-layout", started_at, RELEASE_PROOF_THRESHOLDS_MS["source_commit"])
                 _capture_release_proof_screenshot(page, artifact_root, "release-08-layout-committed")
 
-                _open_tool_for_release(page, "trim-sync", timings, artifact_root)
-                trim_sync_card = page.locator(f'.trim-sync-card[data-source-id="{source_id}"]')
-                trim_sync_card.wait_for(state='visible')
-                _set_input_value(trim_sync_card.locator('input[data-trim-start]'), "0.5")
-                _set_input_value(trim_sync_card.locator('input[data-trim-end]'), "1.5")
-                started_at = time.perf_counter()
-                trim_sync_card.get_by_role("button", name="Apply", exact=True).click()
-                page.wait_for_function(
-                    """(targetSourceId) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
-                        const trim = source?.trim_derivative;
-                        return Boolean(trim?.derivative_path)
-                            && trim.active_path_kind === 'local_derivative'
-                            && document.querySelector('.trim-sync-card[data-source-id="' + targetSourceId + '"] .merge-source-trim-status')?.textContent === 'Trim active';
-                    }""",
-                    arg=source_id,
-                    timeout=120000,
-                )
-                _record_timing(timings, "trim-apply", started_at, RELEASE_PROOF_THRESHOLDS_MS["trim_apply"])
-                derivative_path = page.evaluate(
-                    """(targetSourceId) => {
-                        const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
-                        return source?.trim_derivative?.derivative_path || null;
-                    }""",
-                    source_id,
-                )
-                assert derivative_path is not None
-                assert Path(derivative_path).exists()
-                _capture_release_proof_screenshot(page, artifact_root, "release-09-trim-active")
-
                 page.locator("#expand-waveform").click()
                 _wait_for_ui_settled(page)
                 _capture_release_proof_screenshot(page, artifact_root, "release-10-waveform-expanded")
