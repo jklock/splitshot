@@ -199,7 +199,7 @@ jobs:
             --script-arg=--scope \
             --script-arg=release-proof \
             --script-arg=--artifact-root \
-            --script-arg=artifacts/v106-release-proof/github-review/macos \
+            --script-arg=artifacts/v106-phase-12-proof/github-review/macos \
             --script-arg=--primary-video \
             --script-arg=docs/Clip1.MP4
         timeout-minutes: 30

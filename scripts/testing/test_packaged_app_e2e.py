@@ -45,7 +45,7 @@ def _default_packaged_artifact_root() -> Path:
         suffix = "packaged-local-windows"
     else:
         suffix = "packaged-local-linux"
-    return ARTIFACTS_DIR / "v106-release-proof" / suffix
+    return ARTIFACTS_DIR / "v106-phase-12-proof" / suffix
 
 
 def _prepare_test_video(out_dir: Path, source_override: Path | None = None) -> Path:
