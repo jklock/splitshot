@@ -140,6 +140,20 @@ class ExportColorSpace(StrEnum):
     BT709_SDR = "bt709_sdr"
 
 
+class QueueStatus(StrEnum):
+    NOT_QUEUED = "not_queued"
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETE = "complete"
+    FAILED = "failed"
+    STALE = "stale"
+
+
+class CombinedExportMode(StrEnum):
+    PLAIN_STITCH = "plain_stitch"
+    SEPARATOR = "separator"
+
+
 class AspectRatio(StrEnum):
     ORIGINAL = "original"
     LANDSCAPE = "16:9"
@@ -869,6 +883,49 @@ class UIState:
 
 
 @dataclass(slots=True)
+class CombinedExportSettings:
+    mode: CombinedExportMode = CombinedExportMode.PLAIN_STITCH
+    separator_enabled: bool = False
+    separator_duration_s: float = 0.5
+    separator_text: str = ""
+    separator_image_path: str = ""
+
+
+@dataclass(slots=True)
+class ProjectStage:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    label: str = ""
+    order_index: int = 1
+    imported_stage_number: int | None = None
+    imported_stage_name: str = ""
+    primary_media: VideoAsset = field(default_factory=VideoAsset)
+    added_media: list[MergeSource] = field(default_factory=list)
+    analysis: AnalysisState = field(default_factory=AnalysisState)
+    scoring: ScoringState = field(default_factory=ScoringState)
+    overlay: OverlaySettings = field(default_factory=OverlaySettings)
+    popups: list[PopupBubble] = field(default_factory=list)
+    popup_template: PopupTemplate = field(default_factory=PopupTemplate)
+    merge: MergeSettings = field(default_factory=MergeSettings)
+    export: ExportSettings = field(default_factory=ExportSettings)
+    queue_status: QueueStatus = QueueStatus.NOT_QUEUED
+    queue_snapshot: dict[str, Any] = field(default_factory=dict)
+    last_processed_at: str = ""
+    last_output_path: str = ""
+
+
+@dataclass(slots=True)
+class QueueEntry:
+    id: str = field(default_factory=lambda: uuid4().hex)
+    stage_id: str = ""
+    status: QueueStatus = QueueStatus.NOT_QUEUED
+    snapshot: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    processed_at: str = ""
+    output_path: str = ""
+    error_message: str = ""
+
+
+@dataclass(slots=True)
 class Project:
     id: str = field(default_factory=lambda: uuid4().hex)
     name: str = "Untitled Project"
@@ -887,6 +944,48 @@ class Project:
     export: ExportSettings = field(default_factory=ExportSettings)
     ui_state: UIState = field(default_factory=UIState)
     schema_version: int = 1
+    stages: list[ProjectStage] = field(default_factory=list)
+    active_stage_id: str = ""
+    queue: list[QueueEntry] = field(default_factory=list)
+    combined_export_settings: CombinedExportSettings = field(default_factory=CombinedExportSettings)
+    practiscore_source_file: str = ""
+
+    @property
+    def active_stage(self) -> ProjectStage | None:
+        if not self.stages or not self.active_stage_id:
+            return self.stages[0] if self.stages else None
+        for stage in self.stages:
+            if stage.id == self.active_stage_id:
+                return stage
+        return self.stages[0] if self.stages else None
+
+    def _active_analysis(self) -> AnalysisState:
+        stage = self.active_stage
+        return stage.analysis if stage else self.analysis
+
+    def _active_scoring(self) -> ScoringState:
+        stage = self.active_stage
+        return stage.scoring if stage else self.scoring
+
+    def _active_overlay(self) -> OverlaySettings:
+        stage = self.active_stage
+        return stage.overlay if stage else self.overlay
+
+    def _active_popups(self) -> list[PopupBubble]:
+        stage = self.active_stage
+        return stage.popups if stage else self.popups
+
+    def _active_popup_template(self) -> PopupTemplate:
+        stage = self.active_stage
+        return stage.popup_template if stage else self.popup_template
+
+    def _active_merge(self) -> MergeSettings:
+        stage = self.active_stage
+        return stage.merge if stage else self.merge
+
+    def _active_export(self) -> ExportSettings:
+        stage = self.active_stage
+        return stage.export if stage else self.export
 
     def sort_shots(self) -> None:
         self.analysis.shots.sort(key=lambda shot: shot.time_ms)
@@ -909,6 +1008,177 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _serialize(item) for key, item in value.items()}
     return value
+
+
+def stage_to_dict(stage: ProjectStage) -> dict[str, Any]:
+    return {
+        "id": stage.id,
+        "label": stage.label,
+        "order_index": stage.order_index,
+        "imported_stage_number": stage.imported_stage_number,
+        "imported_stage_name": stage.imported_stage_name,
+        "primary_media": _serialize(stage.primary_media),
+        "added_media": _serialize(stage.added_media),
+        "analysis": _serialize(stage.analysis),
+        "scoring": _serialize(stage.scoring),
+        "overlay": _serialize(stage.overlay),
+        "popups": _serialize(stage.popups),
+        "popup_template": _serialize(stage.popup_template),
+        "merge": _serialize(stage.merge),
+        "export": _serialize(stage.export),
+        "queue_status": str(stage.queue_status),
+        "queue_snapshot": stage.queue_snapshot,
+        "last_processed_at": stage.last_processed_at,
+        "last_output_path": stage.last_output_path,
+    }
+
+
+def _stage_from_dict(data: dict[str, Any]) -> ProjectStage:
+    primary_media_data = data.get("primary_media")
+    primary_media = _video_from_dict(primary_media_data) if isinstance(primary_media_data, dict) else VideoAsset()
+    added_media_data = data.get("added_media", [])
+    added_media = [_merge_source_from_dict(item) for item in added_media_data] if isinstance(added_media_data, list) else []
+    return ProjectStage(
+        id=str(data.get("id", uuid4().hex)),
+        label=str(data.get("label", "")),
+        order_index=int(data.get("order_index", 1)),
+        imported_stage_number=None if data.get("imported_stage_number") in {None, ""} else int(data["imported_stage_number"]),
+        imported_stage_name=str(data.get("imported_stage_name", "")),
+        primary_media=primary_media,
+        added_media=added_media,
+        analysis=AnalysisState(
+            beep_time_ms_primary=data.get("analysis", {}).get("beep_time_ms_primary") if isinstance(data.get("analysis"), dict) else None,
+            sync_offset_ms=int((data.get("analysis") or {}).get("sync_offset_ms", 0)) if isinstance(data.get("analysis"), dict) else 0,
+        ),
+        scoring=_scoring_from_dict(data.get("scoring")) if isinstance(data.get("scoring"), dict) else ScoringState(),
+        overlay=_overlay_from_dict(data.get("overlay")) if isinstance(data.get("overlay"), dict) else OverlaySettings(),
+        popups=[],
+        popup_template=_popup_template_from_dict(data.get("popup_template")),
+        merge=_merge_from_dict(data.get("merge")) if isinstance(data.get("merge"), dict) else MergeSettings(),
+        export=_export_from_dict(data.get("export")) if isinstance(data.get("export"), dict) else ExportSettings(),
+        queue_status=QueueStatus(str(data.get("queue_status", "not_queued")).strip().lower()),
+        queue_snapshot=data.get("queue_snapshot", {}) if isinstance(data.get("queue_snapshot"), dict) else {},
+        last_processed_at=str(data.get("last_processed_at", "") or ""),
+        last_output_path=str(data.get("last_output_path", "") or ""),
+    )
+
+
+def _scoring_from_dict(data: dict[str, Any]) -> ScoringState:
+    return ScoringState(
+        enabled=bool(data.get("enabled", True)),
+        ruleset=str(data.get("ruleset", "uspsa_minor")),
+        match_type=str(data.get("match_type", "")),
+        stage_number=None if data.get("stage_number") in {None, ""} else int(data["stage_number"]),
+        competitor_name=str(data.get("competitor_name", "")),
+        competitor_place=None if data.get("competitor_place") in {None, ""} else int(data["competitor_place"]),
+        practiscore_source_path=str(data.get("practiscore_source_path", "")),
+        practiscore_source_name=str(data.get("practiscore_source_name", "")),
+        penalties=float(data.get("penalties", 0)),
+        point_map={str(key): float(value) for key, value in data.get("point_map", {}).items()},
+        penalty_counts={str(key): float(value) for key, value in data.get("penalty_counts", {}).items()},
+        hit_factor=None if data.get("hit_factor") is None else float(data["hit_factor"]),
+        imported_stage=_imported_stage_from_dict(data.get("imported_stage")),
+    )
+
+
+def _overlay_from_dict(data: dict[str, Any]) -> OverlaySettings:
+    return OverlaySettings(
+        position=OverlayPosition(data.get("position", OverlayPosition.BOTTOM.value)),
+        badge_size=BadgeSize(data.get("badge_size", BadgeSize.M.value)),
+        style_type=str(data.get("style_type", "square")),
+        spacing=int(data.get("spacing", 8)),
+        margin=int(data.get("margin", 8)),
+        max_visible_shots=int(data.get("max_visible_shots", 4)),
+        shot_quadrant=str(data.get("shot_quadrant", "bottom_left")),
+        shot_direction=str(data.get("shot_direction", "right")),
+        font_family=str(data.get("font_family", default_overlay_font_family())),
+        font_size=int(data.get("font_size", 14)),
+        font_bold=bool(data.get("font_bold", True)),
+        font_italic=bool(data.get("font_italic", False)),
+        show_timer=bool(data.get("show_timer", True)),
+        show_draw=bool(data.get("show_draw", True)),
+        show_shots=bool(data.get("show_shots", True)),
+        show_score=bool(data.get("show_score", True)),
+    )
+
+
+def _merge_from_dict(data: dict[str, Any]) -> MergeSettings:
+    return MergeSettings(
+        enabled=bool(data.get("enabled", True)),
+        layout=MergeLayout(data.get("layout", MergeLayout.SIDE_BY_SIDE.value)),
+        pip_size=PipSize(data.get("pip_size", PipSize.MEDIUM.value)),
+        pip_size_percent=int(data.get("pip_size_percent", 35)),
+        pip_x=float(data.get("pip_x", 1.0)),
+        pip_y=float(data.get("pip_y", 1.0)),
+        primary_is_left_or_top=bool(data.get("primary_is_left_or_top", True)),
+    )
+
+
+def _export_from_dict(data: dict[str, Any]) -> ExportSettings:
+    return ExportSettings(
+        quality=ExportQuality(data.get("quality", ExportQuality.HIGH.value)),
+        aspect_ratio=AspectRatio(data.get("aspect_ratio", AspectRatio.ORIGINAL.value)),
+        crop_center_x=float(data.get("crop_center_x", 0.5)),
+        crop_center_y=float(data.get("crop_center_y", 0.5)),
+        output_path=data.get("output_path"),
+        preset=ExportPreset(data.get("preset", ExportPreset.SOURCE.value)),
+        target_width=None if data.get("target_width") in {None, ""} else int(data["target_width"]),
+        target_height=None if data.get("target_height") in {None, ""} else int(data["target_height"]),
+        frame_rate=ExportFrameRate(data.get("frame_rate", ExportFrameRate.SOURCE.value)),
+        video_codec=ExportVideoCodec(data.get("video_codec", ExportVideoCodec.H264.value)),
+        video_bitrate_mbps=float(data.get("video_bitrate_mbps", 15.0)),
+        audio_codec=ExportAudioCodec(data.get("audio_codec", ExportAudioCodec.AAC.value)),
+        audio_sample_rate=int(data.get("audio_sample_rate", 48000)),
+        audio_bitrate_kbps=int(data.get("audio_bitrate_kbps", 320)),
+        color_space=ExportColorSpace(data.get("color_space", ExportColorSpace.BT709_SDR.value)),
+        two_pass=bool(data.get("two_pass", False)),
+        ffmpeg_preset=str(data.get("ffmpeg_preset", "medium")),
+        last_log=str(data.get("last_log", "")),
+        last_error=None if data.get("last_error") in {None, ""} else str(data["last_error"]),
+    )
+
+
+def queue_entry_to_dict(entry: QueueEntry) -> dict[str, Any]:
+    return {
+        "id": entry.id,
+        "stage_id": entry.stage_id,
+        "status": str(entry.status),
+        "snapshot": entry.snapshot,
+        "created_at": entry.created_at.isoformat(),
+        "processed_at": entry.processed_at,
+        "output_path": entry.output_path,
+        "error_message": entry.error_message,
+    }
+
+
+def _queue_entry_from_dict(data: dict[str, Any]) -> QueueEntry:
+    created_at = datetime.now(UTC)
+    if data.get("created_at"):
+        try:
+            created_at = datetime.fromisoformat(str(data["created_at"]))
+        except (ValueError, TypeError):
+            pass
+    return QueueEntry(
+        id=str(data.get("id", uuid4().hex)),
+        stage_id=str(data.get("stage_id", "")),
+        status=QueueStatus(str(data.get("status", "not_queued")).strip().lower()),
+        snapshot=data.get("snapshot", {}) if isinstance(data.get("snapshot"), dict) else {},
+        created_at=created_at,
+        processed_at=str(data.get("processed_at", "") or ""),
+        output_path=str(data.get("output_path", "") or ""),
+        error_message=str(data.get("error_message", "") or ""),
+    )
+
+
+def _combined_export_settings_from_dict(data: dict[str, Any]) -> CombinedExportSettings:
+    payload = data if isinstance(data, dict) else {}
+    return CombinedExportSettings(
+        mode=CombinedExportMode(str(payload.get("mode", "plain_stitch")).strip().lower()),
+        separator_enabled=bool(payload.get("separator_enabled", False)),
+        separator_duration_s=float(payload.get("separator_duration_s", 0.5)),
+        separator_text=str(payload.get("separator_text", "") or ""),
+        separator_image_path=str(payload.get("separator_image_path", "") or ""),
+    )
 
 
 def project_to_dict(project: Project) -> dict[str, Any]:
@@ -961,6 +1231,14 @@ def project_to_dict(project: Project) -> dict[str, Any]:
                     trim_derivative.pop("original_path", None)
                 if not trim_derivative:
                     item.pop("trim_derivative", None)
+    data["schema_version"] = 2
+    data["stages"] = [stage_to_dict(stage) for stage in project.stages]
+    data["active_stage_id"] = project.active_stage_id
+    data["queue"] = [queue_entry_to_dict(entry) for entry in project.queue]
+    data["combined_export_settings"] = _serialize(project.combined_export_settings)
+    data["practiscore_source_file"] = project.practiscore_source_file
+    data.pop("_stages", None)
+    data.pop("_queue", None)
     return _promote_camera_role_key(data)
 
 
@@ -1053,6 +1331,7 @@ _POPUP_MOTION_EASINGS = {"linear", "hold", "ease_in", "ease_out", "ease_in_out"}
 
 _UI_STATE_ACTIVE_TOOLS = {
     "project",
+    "media",
     "scoring",
     "shotml",
     "timing",
@@ -1064,6 +1343,7 @@ _UI_STATE_ACTIVE_TOOLS = {
     "settings",
     "export",
     "metrics",
+    "queue",
 }
 
 _UI_STATE_WAVEFORM_MODES = {"select", "add"}
@@ -2154,4 +2434,45 @@ def project_from_dict(data: dict[str, Any]) -> Project:
     ensure_default_shot_scores(project)
     sync_overlay_legacy_custom_box_fields(project.overlay)
     project.sort_shots()
+
+    schema_version = int(data.get("schema_version", 1))
+    if schema_version >= 2 or "stages" in data:
+        raw_stages = data.get("stages", [])
+        if isinstance(raw_stages, list):
+            project.stages = [_stage_from_dict(item) for item in raw_stages if isinstance(item, dict)]
+        project.active_stage_id = str(data.get("active_stage_id", ""))
+        raw_queue = data.get("queue", [])
+        if isinstance(raw_queue, list):
+            project.queue = [_queue_entry_from_dict(item) for item in raw_queue if isinstance(item, dict)]
+        project.combined_export_settings = _combined_export_settings_from_dict(data.get("combined_export_settings"))
+        project.practiscore_source_file = str(data.get("practiscore_source_file", ""))
+    else:
+        from copy import deepcopy
+        imported_stage_number = project.scoring.stage_number
+        imported_stage_name = ""
+        if project.scoring.imported_stage:
+            imported_stage_number = project.scoring.imported_stage.stage_number
+            imported_stage_name = project.scoring.imported_stage.stage_name
+        legacy_stage = ProjectStage(
+            label=imported_stage_name if imported_stage_name else "Stage 1",
+            order_index=project.scoring.stage_number if project.scoring.stage_number else 1,
+            primary_media=project.primary_video,
+            added_media=list(project.merge_sources),
+            analysis=deepcopy(project.analysis),
+            scoring=deepcopy(project.scoring),
+            overlay=deepcopy(project.overlay),
+            popups=list(project.popups),
+            popup_template=deepcopy(project.popup_template),
+            merge=deepcopy(project.merge),
+            export=deepcopy(project.export),
+            imported_stage_number=imported_stage_number,
+            imported_stage_name=imported_stage_name,
+        )
+        project.stages = [legacy_stage]
+        project.active_stage_id = legacy_stage.id
+        project.schema_version = 2
+
+    if not project.active_stage_id and project.stages:
+        project.active_stage_id = project.stages[0].id
+
     return project

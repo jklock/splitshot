@@ -1,58 +1,35 @@
 # SplitShot Workflow
 
-This is the recommended path from raw stage video to finished local export.
-
-## Before You Start
-
-- Launch SplitShot from the root [README.md](../../README.md).
-- Keep the primary video on a local drive.
-- Keep your PractiScore login available if official match context is needed. A local CSV/TXT export still works as the fallback path.
-- Keep secondary angles or graphics ready if you plan to use Compose.
+This is the recommended multi-stage workflow.
 
 ## End-To-End Flow
 
 1. Open [panes/project.md](panes/project.md).
-2. Click `Create Project` or `Select Project`.
-3. Name the project, add a description, and import the primary video.
-4. Wait for analysis to finish.
-5. If needed, open [panes/shotml.md](panes/shotml.md), tune detector settings, and click `Re-run ShotML`.
-6. Use `Generate Proposals` only when ShotML suggestions should become explicit reviewable changes.
-7. Open [panes/splits.md](panes/splits.md) and confirm the shot count, beep, first shot, and waveform markers.
-8. Nudge, drag, add, or delete shots until the timeline matches the video.
-9. If official match context is needed, open [panes/project.md](panes/project.md) and click `Open PractiScore Dashboard`.
-10. Download the relevant PractiScore CSV/TXT result in your browser, then return to SplitShot and click `Select PractiScore File`.
-11. Continue in the existing local `Match type`, `Stage #`, `Competitor name`, and `Place` controls.
-12. Open [panes/score.md](panes/score.md), enable scoring, choose the preset, and score each shot.
-13. Open [panes/pip.md](panes/pip.md) if added media is needed; sync and place each item.
-14. Open [panes/score.md](panes/score.md) for final score and penalty edits if timing changed.
-15. Open [panes/popup.md](panes/popup.md) for shot-linked or time-based markers, including text/image callouts.
-16. Open [panes/overlay.md](panes/overlay.md) and configure badge layout, locks, fonts, colors, and score-token colors.
-17. Open [panes/review.md](panes/review.md) to set badge visibility and add summary/custom text boxes.
-18. Open [panes/metrics.md](panes/metrics.md) to inspect the dashboard, expanded table, or CSV/text exports.
-19. Finish in [panes/export.md](panes/export.md), choose render settings, set output path, and click `Export Video`.
-20. Keep the project folder if you will revise or rerender later.
+2. Create or open the project bundle.
+3. Import the PractiScore CSV/TXT source if stage records are needed.
+4. Open [panes/media.md](panes/media.md).
+5. Pair one primary video and any added media for each stage.
+6. Select the stage you want to edit first.
+7. Open [panes/pip.md](panes/pip.md) and configure the active stage composition.
+8. Open Trim, Score, Splits, Markers, Overlay, Review, and Metrics as needed for the active stage.
+9. Open [panes/export.md](panes/export.md), configure the active stage output, and click `Add To Queue`.
+10. Open [panes/queue.md](panes/queue.md).
+11. Use `Apply Settings To All` if the other stages should inherit the active stage template.
+12. Re-enter any stage that still needs changes.
+13. Click `Process` for one file per stage, or `Process Into 1 File` for a stitched output.
 
 ## Practical Order
 
-- Tune ShotML before manual timing because reruns replace the automatic draft.
-- Keep a manual PractiScore CSV/TXT export around when remote sync is unavailable or when the staged source should change again.
-- Finish timing before scoring because score rows follow the shot list.
-- Score before Markers when shot-linked markers should show score and penalties.
-- Configure Compose before final overlay placement when added media changes where badges should sit.
-- Configure Overlay before Review when text boxes need to align with the final badge stack.
-- Check Metrics before Export when you need confidence, raw delta, or CSV confirmation.
-- Export only after scrubbing near the final shot and confirming overlays, markers, review boxes, and Compose.
+- Import PractiScore before Media when stage records should drive the project.
+- Pair media before Compose.
+- Finish timing before final overlay and review layout.
+- Queue only after the active stage looks correct in preview.
+- Use Queue as the batch export surface rather than exporting each stage manually.
 
-## Bundle Guidance
+## Related Guides
 
-- Choose the project folder early when you want a reusable bundle.
-- Keep using the same folder through revisions.
-- Reopen the bundle from Project when you need another export version.
-
-## Next Stops
-
-- [panes/project.md](panes/project.md) for setup.
-- [panes/shotml.md](panes/shotml.md) for detector tuning.
-- [panes/splits.md](panes/splits.md) for manual timing.
-- [panes/export.md](panes/export.md) for final render settings.
-- [troubleshooting.md](troubleshooting.md) for common issues.
+- [panes/project.md](panes/project.md)
+- [panes/media.md](panes/media.md)
+- [panes/export.md](panes/export.md)
+- [panes/queue.md](panes/queue.md)
+- [troubleshooting.md](troubleshooting.md)

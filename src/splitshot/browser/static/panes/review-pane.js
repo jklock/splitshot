@@ -543,6 +543,9 @@ export function createReviewPane({
               `)
               .join("")}
           </div>
+          <label>Override text (leave blank for auto)
+            <textarea data-text-box-field="text" rows="3" placeholder="Custom override for auto-generated summary"></textarea>
+          </label>
           <label>Preview
             <textarea data-text-box-preview rows="6" readonly></textarea>
           </label>

@@ -298,6 +298,11 @@ id:video-bitrate
 id:video-codec
 id:zoom-waveform-in
 id:zoom-waveform-out
+data-tool:media
+data-tool:queue
+data-tool-pane:media
+data-tool-pane:queue
+id:add-to-queue
 """.splitlines()
     if line.strip()
 }

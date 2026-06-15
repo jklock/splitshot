@@ -1,65 +1,45 @@
 # Compose Pane
 
-The Compose pane manages added media. It can place a second angle or image as an inset, side-by-side, or above/below content, then lets each item keep its own size, opacity, position, and layout mode.
+The Compose pane controls the active stage composition. It uses the media already paired in the Media pane.
 
-<img src="../../screenshots/PiPPane.png" alt="Compose pane with defaults, an expanded media card, per-item opacity, size, placement controls" width="960">
+## Use This Pane For
 
-## When To Use This Pane
-
-- Add a second camera angle.
-- Add a still image or support graphic.
-- Decide whether added media appears in the final export.
-- Configure per-item size, opacity, position, and layout.
+- Choosing how the active stage's added media is composed.
+- Setting per-source layout, size, opacity, and position.
+- Enabling or disabling added media in the render for the active stage.
 
 ## Key Controls
 
 | Control | What it does |
 | --- | --- |
-| `Add Media` | Adds one or more video or image files. |
-| `Enable added media export` | Includes added media in the rendered export. |
-| `Layout` | Chooses `Side by side`, `Above / below`, or `Inset`. |
-| `Default size` | Sets the size for newly added items. |
-| `Default Position X` / `Default Position Y` | Set default normalized placement for new items. |
-| Media card `>` / `v` | Expands or collapses per-item controls. |
-| `Remove` | Deletes that added media item. |
-| Per-item `Size` | Sets one item's size. |
-| `Opacity` | Sets one item's transparency. |
-| Per-item `Position X` / `Position Y` | Set one item's normalized placement. |
-| Per-item `Layout` | Controls how this item is placed in the output. |
+| `Add Media` | Adds more media to the active stage. |
+| `Enable added media export` | Includes added media in the rendered output. |
+| `Layout` | Sets the overall layout for the active stage. |
+| `Default size` | Sets the default inset size for newly added media. |
+| `Default Position X` / `Default Position Y` | Set default inset placement for newly added media. |
+| Media card toggle | Expands or collapses a source row. |
+| `Remove` | Removes that added-media item from the active stage. |
+| Per-item `Layout` | Sets the layout mode for that specific source. |
+| Per-item `Size` | Sets the per-source inset size. |
+| Per-item `Opacity` | Sets per-source transparency. |
+| Per-item `Position X` / `Position Y` | Sets per-source normalized placement. |
 
-## How To Use It
+## Workflow
 
-1. Click `Add Media`.
-2. Choose `Layout`.
-3. Turn on `Enable added media export` when the added media should render into the final file.
-4. Set defaults before adding several similar items.
-5. Expand each media card and adjust item-specific `Size`, `Opacity`, `Position X`, and `Position Y`.
-6. In inset layout, drag the rendered added media in the preview for direct placement. The per-item X/Y fields update to match the drag result.
-7. Use the [Trim pane](#) to time-shift media or trim dead time.
+1. Pair media in [media.md](media.md) first.
+2. Open Compose on the stage you want to edit.
+3. Enable added-media export if the extra media should render.
+4. Choose the overall layout.
+5. Expand each source card and tune its per-source layout, size, opacity, and position.
+6. Open Trim when the active stage still needs sync or trim changes.
 
-## Trim and Sync
+## Notes
 
-Trimming and manual sync are managed in the dedicated **Trim** left-rail pane. Open that pane to adjust sync offset per source, nudge timing, run beep-sync analysis, and trim added videos.
-
-## Layout Notes
-
-- Inset layout uses X/Y placement and size as a floating layer.
-- `Side by side` and `Above / below` are layout-wide compositions, but the same item list remains available.
-- Defaults apply to new items. Existing media cards keep their own saved values.
-- Each item keeps its own size, opacity, position, and layout mode.
-- Preview dragging is clamped to the live video frame so the inset stays fully visible.
-- Defaults are set in [Settings](settings.md), not per-source.
-
-## Common Fixes
-
-| Problem | Fix |
-| --- | --- |
-| Added media appears in preview but not export. | Turn on `Enable added media export`. |
-| Changing defaults did not move an existing card. | Edit the expanded media card. |
-| A secondary video is late or early. | Use the Trim pane to adjust its offset. |
-| The inset is in the wrong place. | Use inset layout, then adjust X/Y or drag the layer. |
+- Compose edits are stage-local.
+- Switching stages changes the entire composition context.
+- Default positioning lives here for the active stage composition. Global defaults remain in Settings.
 
 ## Related Guides
 
-Previous: [score.md](score.md)
+Previous: [media.md](media.md)
 Next: [overlay.md](overlay.md)

@@ -2,11 +2,13 @@ import { createActivityRuntime } from "./lib/activity.js";
 import { createApiRuntime } from "./lib/api.js";
 import { createOverlayCanvasComponent } from "./components/overlay-canvas.js";
 import { createExportPane } from "./panes/export-pane.js";
+import { createMediaPane } from "./panes/media-pane.js";
 import { createMergePane } from "./panes/merge-pane.js";
 import { createMetricsPane } from "./panes/metrics-pane.js";
 import { createMarkersPane } from "./panes/markers-pane.js";
 import { createOverlayPane } from "./panes/overlay-pane.js";
 import { createProjectPane } from "./panes/project-pane.js";
+import { createQueuePane } from "./panes/queue-pane.js";
 import { createReviewPane } from "./panes/review-pane.js";
 import { createScoringPane } from "./panes/scoring-pane.js";
 import { createSettingsPane } from "./panes/settings-pane.js";
@@ -188,11 +190,13 @@ let overlayCanvasComponent = null;
 
 let shotmlPane = null;
 let markersPane = null;
+let mediaPane = null;
 let overlayPane = null;
 let exportPane = null;
 let settingsPane = null;
 let mergePane = null;
 let projectPane = null;
+let queuePane = null;
 let reviewPane = null;
 let timingPane = null;
 let scoringPane = null;
@@ -340,7 +344,7 @@ function normalizeToolId(tool) {
 
 activeTool = normalizeToolId(activeTool);
 
-const VALID_TOOL_IDS = new Set(["project", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
+const VALID_TOOL_IDS = new Set(["project", "media", "queue", "scoring", "timing", "settings", "shotml", "merge", "trim-sync", "overlay", "review", "markers", "export", "metrics"]);
 const VALID_WAVEFORM_MODES = new Set(["select", "add"]);
 const HEX_COLOR_PATTERN = /^#?(?:[\da-f]{3}|[\da-f]{6})$/i;
 const CUSTOM_COLOR_SWATCHES = [
@@ -5033,6 +5037,8 @@ async function refresh() {
     if (!response.ok || data.error) throw new Error(data.error || response.statusText);
     applyRemoteState(data);
     requestRender();
+    if (mediaPane) mediaPane.render();
+    if (queuePane) queuePane.render();
   } catch (error) {
     setStatus(error.message);
     runtimeBackbone?.bus?.emit?.("api.error", { path: "/api/state", error: error.message });
@@ -9833,6 +9839,43 @@ projectPane = createProjectPane({
   renderHeader,
   setStatus,
   activity,
+});
+
+mediaPane = createMediaPane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  setActiveStageId: (stageId) => {
+    if (state?.project) state.project.active_stage_id = stageId;
+  },
+  activity,
+  callApi,
+  pickPath,
+  fileName,
+  splitSeconds,
+  formatNumber,
+  renderHeader,
+  setStatus,
+  sendKeepaliveJson,
+});
+
+queuePane = createQueuePane({
+  $,
+  documentObject: document,
+  windowObject: window,
+  getState: () => state,
+  setActiveTool,
+  setActiveStageId: (stageId) => {
+    if (state?.project) state.project.active_stage_id = stageId;
+  },
+  activity,
+  callApi,
+  fileName,
+  formatNumber,
+  renderHeader,
+  setStatus,
+  sendKeepaliveJson,
 });
 
 reviewPane = createReviewPane({

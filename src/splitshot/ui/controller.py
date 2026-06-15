@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import asdict, dataclass, fields
+from datetime import datetime, UTC
 from inspect import Parameter, signature
 from pathlib import Path
 import re
@@ -24,6 +25,7 @@ from splitshot.domain.models import (
     BadgeSize,
     BadgeStyle,
     AspectRatio,
+    CombinedExportSettings,
     ExportAudioCodec,
     ExportColorSpace,
     ExportFrameRate,
@@ -36,6 +38,9 @@ from splitshot.domain.models import (
     MergeSourceTrimDerivative,
     OutputProfile,
     OutputProfileKind,
+    ProjectStage,
+    QueueEntry,
+    QueueStatus,
     _deserialize_output_profiles,
     _merge_source_from_dict,
     _normalize_frame_profile,
@@ -55,7 +60,9 @@ from splitshot.domain.models import (
     ShotSource,
     TimingEvent,
     TimingChangeProposal,
+    UIState,
     VideoAsset,
+    stage_to_dict,
     legacy_custom_box_as_text_box,
     overlay_text_boxes_for_render,
     project_to_dict,
@@ -947,7 +954,98 @@ class ProjectController(QObject):
     def import_practiscore_file(self, path: str, source_name: str | None = None) -> None:
         path = self._stage_practiscore_source_path(path, source_name=source_name)
         self._set_practiscore_source(path, source_name)
+        self._rebuild_stages_from_practiscore_source(path, source_name)
         self._import_practiscore_source(path, source_name)
+        self._sync_project_to_active_stage()
+
+    def _rebuild_stages_from_practiscore_source(self, path: str, source_name: str | None = None) -> None:
+        options = describe_practiscore_file(path, source_name=source_name)
+        stage_numbers = list(options.stage_numbers or [])
+        if not stage_numbers:
+            return
+
+        current_match_type = self.project.scoring.match_type
+        current_stage_number = self.project.scoring.stage_number
+        current_competitor_name = self.project.scoring.competitor_name
+        current_competitor_place = self.project.scoring.competitor_place
+        current_source_path = self.project.scoring.practiscore_source_path
+        current_source_name = self.project.scoring.practiscore_source_name
+        seed_project_state = not bool(self.project.stages)
+        seeded_primary = deepcopy(self.project.primary_video)
+        seeded_merge_sources = list(self.project.merge_sources)
+        seeded_analysis = deepcopy(self.project.analysis)
+        seeded_scoring = deepcopy(self.project.scoring)
+        seeded_overlay = deepcopy(self.project.overlay)
+        seeded_popups = list(self.project.popups)
+        seeded_popup_template = deepcopy(self.project.popup_template)
+        seeded_merge = deepcopy(self.project.merge)
+        seeded_export = deepcopy(self.project.export)
+        self._sync_project_to_active_stage()
+
+        existing_by_number = {
+            stage.imported_stage_number: stage
+            for stage in self.project.stages
+            if stage.imported_stage_number is not None
+        }
+        new_stages: list[ProjectStage] = []
+        for order_index, stage_number in enumerate(stage_numbers, start=1):
+            stage_name = f"Stage {stage_number}"
+            stage = existing_by_number.get(stage_number)
+            if stage is None:
+                stage = ProjectStage(
+                    label=stage_name,
+                    order_index=order_index,
+                    imported_stage_number=stage_number,
+                    imported_stage_name=stage_name,
+                )
+            else:
+                stage.order_index = order_index
+                stage.imported_stage_number = stage_number
+                if not stage.imported_stage_name:
+                    stage.imported_stage_name = stage_name
+                if not stage.label or re.fullmatch(r"Stage\s+\d+", stage.label):
+                    stage.label = stage.imported_stage_name or stage_name
+            new_stages.append(stage)
+
+        stage_ids = {stage.id for stage in new_stages}
+        self.project.stages = new_stages
+        self.project.queue = [entry for entry in self.project.queue if entry.stage_id in stage_ids]
+        self.project.practiscore_source_file = path
+
+        target_stage_number = self.project.scoring.stage_number
+        active_stage = next(
+            (
+                stage for stage in self.project.stages
+                if stage.imported_stage_number == target_stage_number
+            ),
+            None,
+        )
+        if active_stage is None:
+            active_stage = self.project.stages[0]
+        self.project.active_stage_id = active_stage.id
+        if seed_project_state:
+            active_stage.primary_media = seeded_primary
+            active_stage.added_media = seeded_merge_sources
+            active_stage.analysis = seeded_analysis
+            active_stage.scoring = seeded_scoring
+            active_stage.overlay = seeded_overlay
+            active_stage.popups = seeded_popups
+            active_stage.popup_template = seeded_popup_template
+            active_stage.merge = seeded_merge
+            active_stage.export = seeded_export
+        self._sync_active_stage_to_project()
+        if current_match_type:
+            self.project.scoring.match_type = current_match_type
+        if current_stage_number is not None:
+            self.project.scoring.stage_number = current_stage_number
+        if current_competitor_name:
+            self.project.scoring.competitor_name = current_competitor_name
+        if current_competitor_place is not None:
+            self.project.scoring.competitor_place = current_competitor_place
+        if current_source_path:
+            self.project.scoring.practiscore_source_path = current_source_path
+        if current_source_name:
+            self.project.scoring.practiscore_source_name = current_source_name
 
     def _practiscore_options_browser_payload(self) -> dict[str, object]:
         options = self._practiscore_options
@@ -1685,6 +1783,12 @@ class ProjectController(QObject):
         self.project.scoring.competitor_place = imported.imported_stage.competitor_place
         self.project.scoring.match_type = imported.imported_stage.match_type
         self.project.scoring.stage_number = imported.imported_stage.stage_number
+        active_stage = self.project.active_stage
+        if active_stage is not None:
+            active_stage.imported_stage_number = imported.imported_stage.stage_number
+            active_stage.imported_stage_name = imported.imported_stage.stage_name or f"Stage {imported.imported_stage.stage_number}"
+            if not active_stage.label or re.fullmatch(r"Stage\s+\d+", active_stage.label):
+                active_stage.label = active_stage.imported_stage_name
         imported_box = next(
             (box for box in self.project.overlay.text_boxes if box.source == "imported_summary"),
             None,
@@ -1762,6 +1866,351 @@ class ProjectController(QObject):
         self._set_status("Removed merge media.")
         self.project.touch()
         self.project_changed.emit()
+
+    # --- Stage management ---
+
+    def select_stage(self, stage_id: str) -> None:
+        if not any(s.id == stage_id for s in self.project.stages):
+            raise ValueError(f"Stage {stage_id} not found")
+        if self.project.active_stage_id and self.project.active_stage_id != stage_id:
+            self._sync_project_to_active_stage()
+        self.project.active_stage_id = stage_id
+        self._sync_active_stage_to_project()
+        self._set_status(f"Selected stage {self._active_stage_label()}.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def _sync_active_stage_to_project(self) -> None:
+        stage = self.project.active_stage
+        if stage is None:
+            return
+        self.project.primary_video = stage.primary_media
+        self.project.merge_sources = list(stage.added_media)
+        self.project.analysis = deepcopy(stage.analysis)
+        self.project.scoring = deepcopy(stage.scoring)
+        self.project.overlay = deepcopy(stage.overlay)
+        self.project.popups = list(stage.popups)
+        self.project.popup_template = deepcopy(stage.popup_template)
+        self.project.merge = deepcopy(stage.merge)
+        self.project.export = deepcopy(stage.export)
+        self.project.analysis.shotml_settings = deepcopy(stage.analysis.shotml_settings)
+        self.project.ui_state = UIState()
+        _sync_secondary_video_from_merge_sources(self.project)
+
+    def _sync_project_to_active_stage(self) -> None:
+        stage = self.project.active_stage
+        if stage is None:
+            return
+        stage.primary_media = self.project.primary_video
+        stage.added_media = list(self.project.merge_sources)
+        stage.analysis = deepcopy(self.project.analysis)
+        stage.scoring = deepcopy(self.project.scoring)
+        stage.overlay = deepcopy(self.project.overlay)
+        stage.popups = list(self.project.popups)
+        stage.popup_template = deepcopy(self.project.popup_template)
+        stage.merge = deepcopy(self.project.merge)
+        stage.export = deepcopy(self.project.export)
+
+    def _active_stage_label(self) -> str:
+        stage = self.project.active_stage
+        return stage.label if stage else "?"
+
+    def import_stage_primary(self, stage_id: str, path: str) -> None:
+        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        self._set_status(f"Importing primary media for stage {stage.label}...")
+        self.project.primary_video = VideoAsset(path=str(path))
+        self.load_primary_video(str(path))
+        stage.primary_media = self.project.primary_video
+        stage.label = stage.label or f"Stage {stage.order_index}"
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Imported primary media for stage {stage.label}.")
+
+    def import_stage_added(self, stage_id: str, path: str) -> None:
+        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        self._set_status(f"Importing added media for stage {stage.label}...")
+        source = MergeSource(asset=VideoAsset(path=str(path)))
+        stage.added_media.append(source)
+        self.project.touch()
+        self.project_changed.emit()
+        self._set_status(f"Imported added media for stage {stage.label}.")
+
+    # --- Queue management ---
+
+    def add_stage_to_queue(self, stage_id: str) -> None:
+        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        if not stage.primary_media.path:
+            raise ValueError("Stage must have primary media before queuing.")
+        stage.queue_status = QueueStatus.QUEUED
+        existing = next((e for e in self.project.queue if e.stage_id == stage_id), None)
+        if existing:
+            existing.status = QueueStatus.QUEUED
+            existing.snapshot = deepcopy(stage_to_dict(stage))
+            existing.created_at = datetime.now(UTC)
+        else:
+            self.project.queue.append(QueueEntry(
+                stage_id=stage_id,
+                status=QueueStatus.QUEUED,
+                snapshot=deepcopy(stage_to_dict(stage)),
+            ))
+        self._set_status(f"Added stage {stage.label} to queue.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def remove_stage_from_queue(self, stage_id: str) -> None:
+        before = len(self.project.queue)
+        self.project.queue = [e for e in self.project.queue if e.stage_id != stage_id]
+        if len(self.project.queue) < before:
+            stage = next((s for s in self.project.stages if s.id == stage_id), None)
+            if stage:
+                stage.queue_status = QueueStatus.NOT_QUEUED
+            self._set_status("Removed stage from queue.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def apply_settings_to_all_stages(self) -> None:
+        active = self.project.active_stage
+        if active is None or len(self.project.stages) <= 1:
+            self._set_status("No other stages to apply settings to.")
+            return
+        for stage in self.project.stages:
+            if stage.id == active.id:
+                continue
+            stage.analysis = deepcopy(active.analysis)
+            stage.scoring = deepcopy(active.scoring)
+            stage.overlay = deepcopy(active.overlay)
+            stage.popups = list(active.popups)
+            stage.popup_template = deepcopy(active.popup_template)
+            stage.merge = deepcopy(active.merge)
+            stage.export = deepcopy(active.export)
+            if stage.queue_status == QueueStatus.QUEUED:
+                stage.queue_status = QueueStatus.STALE
+                entry = next((e for e in self.project.queue if e.stage_id == stage.id), None)
+                if entry:
+                    entry.status = QueueStatus.STALE
+        self._set_status("Applied settings to all stages (markers excluded).")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def process_queue(self, mode: str = "individual") -> None:
+        if mode not in ("individual", "combined"):
+            raise ValueError("Mode must be 'individual' or 'combined'")
+        queued = [e for e in self.project.queue if e.status in (QueueStatus.QUEUED, QueueStatus.STALE)]
+        if not queued:
+            self._set_status("No queued stages to process.")
+            return
+        self._set_status(f"Processing {len(queued)} queued stage(s)...")
+        self._sync_project_to_active_stage()
+        original_active_stage_id = self.project.active_stage_id
+        output_dir = self._ensure_output_dir()
+        results: list[Path] = []
+
+        try:
+            for idx, entry in enumerate(sorted(queued, key=lambda e: self._stage_order(e.stage_id))):
+                entry.status = QueueStatus.PROCESSING
+                stage = next((s for s in self.project.stages if s.id == entry.stage_id), None)
+                if stage is None:
+                    entry.status = QueueStatus.FAILED
+                    entry.error_message = "Stage not found"
+                    continue
+                if not stage.primary_media.path:
+                    entry.status = QueueStatus.FAILED
+                    entry.error_message = "No primary media"
+                    continue
+                stage.queue_status = QueueStatus.PROCESSING
+                self._set_status(
+                    f"Rendering stage {idx + 1}/{len(queued)}: {stage.label}..."
+                )
+                self.project.active_stage_id = stage.id
+                self._sync_active_stage_to_project()
+                slug = self._stage_slug(stage)
+                output_path = output_dir / f"{stage.order_index}-{slug}.mp4"
+                self.project.export.output_path = str(output_path)
+                try:
+                    from splitshot.export.pipeline import export_project
+                    export_project(
+                        self.project,
+                        str(output_path),
+                        progress_callback=None,
+                        log_callback=None,
+                    )
+                    entry.status = QueueStatus.COMPLETE
+                    entry.output_path = str(output_path)
+                    entry.processed_at = datetime.now(UTC).isoformat()
+                    stage.queue_status = QueueStatus.COMPLETE
+                    stage.last_output_path = str(output_path)
+                    stage.last_processed_at = entry.processed_at
+                    results.append(output_path)
+                    self._set_status(
+                        f"Completed stage {idx + 1}/{len(queued)}: {stage.label}"
+                    )
+                except Exception as exc:
+                    entry.status = QueueStatus.FAILED
+                    entry.error_message = str(exc)
+                    stage.queue_status = QueueStatus.FAILED
+                    self._set_status(
+                        f"Failed stage {idx + 1}/{len(queued)}: {stage.label} — {exc}"
+                    )
+
+            if mode == "combined" and len(results) >= 1:
+                combined_path = self._concat_outputs(results, output_dir)
+                self._set_status(f"Combined export complete: {combined_path}")
+            else:
+                self._set_status(f"Processed {len(results)} stage(s).")
+        finally:
+            self.project.active_stage_id = original_active_stage_id
+            if self.project.active_stage:
+                self._sync_active_stage_to_project()
+            self.project.touch()
+            self.project_changed.emit()
+
+    def _stage_order(self, stage_id: str) -> int:
+        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        return stage.order_index if stage else 999
+
+    def _stage_slug(self, stage: ProjectStage) -> str:
+        import re
+        label = stage.label or f"stage-{stage.order_index}"
+        slug = re.sub(r"[^a-zA-Z0-9]+", "-", label).strip("-").lower()
+        return slug or f"stage-{stage.order_index}"
+
+    def _ensure_output_dir(self) -> Path:
+        if self.project_path is None:
+            raise ValueError("Project path required for export")
+        output_dir = self.project_path / "Output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        return output_dir
+
+    def _concat_outputs(self, results: list[Path], output_dir: Path) -> Path:
+        combined_path = output_dir / f"{self.project.name}-combined.mp4"
+        ces = self.project.combined_export_settings
+
+        if not ces.separator_enabled:
+            return self._plain_concat(results, output_dir, combined_path)
+
+        return self._separator_concat(results, output_dir, combined_path, ces)
+
+    def _plain_concat(self, results: list[Path], output_dir: Path, combined_path: Path) -> Path:
+        import subprocess
+        list_path = output_dir / "concat-list.txt"
+        with open(list_path, "w") as f:
+            for result in results:
+                f.write(f"file '{result.resolve()}'\n")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+                 "-c", "copy", str(combined_path)],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Concat failed: {e.stderr}") from e
+        finally:
+            if list_path.exists():
+                list_path.unlink()
+        return combined_path
+
+    def _separator_concat(
+        self, results: list[Path], output_dir: Path, combined_path: Path,
+        ces: CombinedExportSettings,
+    ) -> Path:
+        import subprocess
+
+        duration = max(0.5, min(1.0, ces.separator_duration_s))
+        separator_paths: list[Path] = []
+
+        # Generate separator clips
+        for i in range(len(results)):
+            sep_path = output_dir / f"separator-{i:04d}.mp4"
+            separator_paths.append(sep_path)
+            if i >= len(results) - 1:
+                # No separator needed after last stage; create a dummy for indexing
+                continue
+            self._render_separator(sep_path, duration, ces)
+
+        # Build concat with separators between stages
+        list_path = output_dir / "concat-list.txt"
+        with open(list_path, "w") as f:
+            for i, result in enumerate(results):
+                f.write(f"file '{result}'\n")
+                if i < len(results) - 1:
+                    f.write(f"file '{separator_paths[i]}'\n")
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+                 "-c", "copy", str(combined_path)],
+                capture_output=True, text=True, check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"Separator concat failed: {e.stderr}") from e
+        finally:
+            if list_path.exists():
+                list_path.unlink()
+            for sp in separator_paths:
+                if sp.exists():
+                    sp.unlink()
+        return combined_path
+
+    def _render_separator(
+        self, output_path: Path, duration_s: float, ces: CombinedExportSettings,
+    ) -> None:
+        import subprocess
+
+        filter_parts: list[str] = []
+        has_text = bool(ces.separator_text.strip())
+        has_image = bool(ces.separator_image_path.strip()) and Path(ces.separator_image_path).exists()
+
+        if has_text:
+            escaped_text = ces.separator_text.replace("'", "'\\''")
+            filter_parts.append(
+                f"drawtext=text='{escaped_text}':fontsize=48:fontcolor=white:"
+                f"x=(w-text_w)/2:y=(h-text_h)/2"
+            )
+
+        if has_image:
+            filter_parts.append(
+                f"movie='{ces.separator_image_path}'[img];"
+                f"[img]scale=iw*min(1\\,min(w/iw\\,h/ih)):-1[scaled];"
+            )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "lavfi",
+            "-i", f"color=c=black:s=1920x1080:d={duration_s}:r=30",
+        ]
+
+        if filter_parts:
+            filter_str = ";".join(filter_parts)
+            if has_image and has_text:
+                filter_str = (
+                    f"movie='{ces.separator_image_path}'[img];"
+                    f"[0][img]overlay=(W-w)/2:(H-h)/2:shortest=1,"
+                    f"drawtext=text='{escaped_text}':fontsize=48:fontcolor=white:"
+                    f"x=(w-text_w)/2:y=(h-text_h)/2-60"
+                )
+            elif has_image:
+                filter_str = (
+                    f"movie='{ces.separator_image_path}'[img];"
+                    f"[0][img]overlay=(W-w)/2:(H-h)/2:shortest=1"
+                )
+            cmd.extend(["-filter_complex", filter_str])
+
+        cmd.extend([
+            "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-pix_fmt", "yuv420p",
+            "-an",
+            str(output_path),
+        ])
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Separator render failed: {result.stderr}")
 
     def rerun_merge_source_analysis(self, source_id: str) -> None:
         source = next((item for item in self.project.merge_sources if item.id == source_id), None)
@@ -2997,6 +3446,7 @@ class ProjectController(QObject):
         target_path = Path(path) if path else self.project_path
         if target_path is None:
             raise ValueError("Project path is required")
+        self._sync_project_to_active_stage()
         self.project.touch()
         self.project_path = ensure_project_suffix(target_path)
         self.folder_settings = self._load_folder_settings_safe(self.project_path)
@@ -3366,6 +3816,7 @@ class ProjectController(QObject):
     def _autosave_project_if_needed(self) -> None:
         if self._autosave_in_progress or self.project_path is None:
             return
+        self._sync_project_to_active_stage()
         current_snapshot = project_to_dict(self.project)
         if current_snapshot == self._saved_snapshot:
             return

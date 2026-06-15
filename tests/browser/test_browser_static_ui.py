@@ -1648,8 +1648,9 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
             "resize-rail",
         "resize-sidebar",
         "resize-waveform",
-        "waveform-mode-single",
+            "waveform-mode-single",
         "waveform-mode-multi",
+        "add-to-queue",
     }
     behavior_attributes = (
         "data-tool=",

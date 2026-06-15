@@ -15,6 +15,7 @@
         </div>
         <nav class="tool-nav">
           <button class="tool-item" data-tool="project" data-short="Pro" type="button" aria-label="Show project tool"><b>Project</b></button>
+          <button class="tool-item" data-tool="media" data-short="Med" type="button" aria-label="Show media tool"><b>Media</b></button>
           <button class="tool-item" data-tool="merge" data-short="Com" type="button" aria-label="Show compose tool"><b>Compose</b></button>
           <button class="tool-item" data-tool="trim-sync" data-short="Trim" type="button" aria-label="Show trim tool"><b>Trim</b></button>
           <button class="tool-item" data-tool="scoring" data-short="Sco" type="button" aria-label="Show scoring tool"><b>Score</b></button>
@@ -23,6 +24,7 @@
           <button class="tool-item" data-tool="overlay" data-short="Ovr" type="button" aria-label="Show overlay tool"><b>Overlay</b></button>
           <button class="tool-item" data-tool="review" data-short="Rev" type="button" aria-label="Show review tool"><b>Review</b></button>
           <button class="tool-item" data-tool="export" data-short="Exp" type="button" aria-label="Show export tool"><b>Export</b></button>
+          <button class="tool-item" data-tool="queue" data-short="Que" type="button" aria-label="Show queue tool"><b>Queue</b></button>
           <button class="tool-item" data-tool="metrics" data-short="Met" type="button" aria-label="Show metrics tool"><b>Metrics</b></button>
           <button class="tool-item" data-tool="shotml" data-short="SML" type="button" aria-label="Show ShotML tool"><b>ShotML</b></button>
         </nav>
@@ -773,6 +775,9 @@
               </label>
               <div class="button-grid two-up">
                 <button id="export-video" class="primary-button" type="button">Export Video</button>
+                <button id="add-to-queue" class="primary-button" type="button">Add To Queue</button>
+              </div>
+              <div class="button-grid two-up">
                 <button id="show-export-log" type="button">Show Export Log</button>
               </div>
               <p id="export-log-status" class="hint"></p>
@@ -1221,6 +1226,14 @@
                   <button id="browse-primary-path" class="primary-button" type="button">Import Primary Video</button>
                 </div>
               </div>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="media">
+              <div id="media-pane"></div>
+            </section>
+
+            <section class="tool-pane" data-tool-pane="queue">
+              <div id="queue-pane"></div>
             </section>
           </aside>
         </div>

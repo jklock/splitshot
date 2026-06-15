@@ -823,6 +823,13 @@ class BrowserControlServer:
                     "/api/export/settings": self._set_export_settings,
                     "/api/export/preset": self._set_export_preset,
                     "/api/export": self._export_project,
+                    "/api/project/select-stage": self._select_stage,
+                    "/api/project/stage/import-primary": self._import_stage_primary,
+                    "/api/project/stage/import-added": self._import_stage_added,
+                    "/api/project/queue/add": self._add_to_queue,
+                    "/api/project/queue/remove": self._remove_from_queue,
+                    "/api/project/queue/apply-all": self._apply_settings_to_all,
+                    "/api/project/queue/process": self._process_queue,
                 }
                 route = routes.get(self.path)
                 if route is None:
@@ -1840,5 +1847,50 @@ class BrowserControlServer:
                 )
                 controller.project.touch()
                 controller.status_message = f"Exported video to {exported_path}."
+
+            def _select_stage(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or payload.get("active_stage_id") or "")
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.select_stage(stage_id)
+
+            def _import_stage_primary(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                paths = payload.get("paths", [])
+                path = str(paths[0]) if isinstance(paths, list) and paths else str(payload.get("path") or "")
+                if not stage_id or not path:
+                    raise ValueError("stage_id and path are required")
+                server._bump_media_url_token()
+                controller.import_stage_primary(stage_id, path)
+
+            def _import_stage_added(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                paths = payload.get("paths", [])
+                path = str(paths[0]) if isinstance(paths, list) and paths else str(payload.get("path") or "")
+                if not stage_id or not path:
+                    raise ValueError("stage_id and path are required")
+                server._bump_media_url_token()
+                controller.import_stage_added(stage_id, path)
+
+            def _add_to_queue(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                if not stage_id:
+                    stage_id = controller.project.active_stage_id
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.add_stage_to_queue(stage_id)
+
+            def _remove_from_queue(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                controller.remove_stage_from_queue(stage_id)
+
+            def _apply_settings_to_all(self, _payload: dict[str, Any]) -> None:
+                controller.apply_settings_to_all_stages()
+
+            def _process_queue(self, payload: dict[str, Any]) -> None:
+                mode = str(payload.get("mode", "individual")).strip().lower()
+                controller.process_queue(mode)
 
         return Handler

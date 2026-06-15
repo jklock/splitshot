@@ -1011,12 +1011,15 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 page.reload(wait_until="domcontentloaded")
                 page.wait_for_function("() => Boolean(state?.project?.path)")
                 _open_tool_for_release(page, "trim-sync", timings, artifact_root, "release-24-reloaded-trim-sync")
+                # Reload persistence should assert saved merge-source truth only.
+                # The sync analysis status is exercised earlier in this flow and is
+                # synthesized from runtime analysis state rather than owned by the
+                # merge source itself.
                 page.wait_for_function(
                     """(targetSourceId) => {
                         const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
                         const trim = source?.trim_derivative;
                         return source?.placement?.mode === 'above_below'
-                            && source?.sync_analysis_status === 'ready'
                             && (!trim?.derivative_path)
                             && trim?.active_path_kind !== 'local_derivative';
                     }""",

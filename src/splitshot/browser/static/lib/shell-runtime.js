@@ -1053,6 +1053,11 @@ export function createShellRuntime({
       await flushPendingMergeSourceCommits();
       await callApi("/api/export", payload);
     });
+    $("add-to-queue")?.addEventListener("click", async () => {
+      cancelPendingExportDrafts();
+      await flushPendingMergeSourceCommits();
+      await callApi("/api/project/queue/add", {});
+    });
     $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);
     $("close-export-log")?.addEventListener("click", closeExportLogModal);
