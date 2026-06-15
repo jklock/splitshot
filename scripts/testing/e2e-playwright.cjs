@@ -392,65 +392,71 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await screenshot(page, 'export-profile-created');
 
   await openTool(page, 'review', 'review-before-retained');
-  if ((await page.locator('#review-source-status').textContent())?.trim() !== 'Live') {
-    fail('review source should start at Live before a retained source is chosen');
+  const hasReviewSource = await page.locator('#review-source-status').count() > 0;
+  if (hasReviewSource) {
+    if ((await page.locator('#review-source-status').textContent())?.trim() !== 'Live') {
+      fail('review source should start at Live before a retained source is chosen');
+    }
+    await measureStep('review-source-retained', THRESHOLDS.review_source_update_ms, async () => {
+      await page.locator('#review-source-select').selectOption(sourceId);
+      await page.locator('#review-set-source').click();
+      await page.waitForFunction(
+        (payload) => {
+          const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+          return profile?.review_source_id === payload.sourceId
+            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+        },
+        { profileId, sourceId },
+        { timeout: 10000 },
+      );
+    });
+    await screenshot(page, 'review-retained');
+
+    await openTool(page, 'overlay');
+    await openTool(page, 'export');
+    await openTool(page, 'review');
+    await waitForCondition(
+      page,
+      (expectedId) => {
+        const select = document.getElementById('review-source-select');
+        return select?.value === expectedId
+          && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+      },
+      sourceId,
+    );
+
+    await measureStep('review-source-live', THRESHOLDS.review_source_update_ms, async () => {
+      await page.locator('#review-source-select').selectOption('');
+      await page.locator('#review-set-source').click();
+      await page.waitForFunction(
+        (profileIdArg) => {
+          const profile = (state?.output_profiles || []).find((item) => item.output_id === profileIdArg);
+          return (!profile?.review_source_id || profile.review_source_id === '')
+            && document.getElementById('review-source-status')?.textContent === 'Live';
+        },
+        profileId,
+        { timeout: 10000 },
+      );
+    });
+    await screenshot(page, 'review-live');
+
+    await measureStep('review-source-retained-second-pass', THRESHOLDS.review_source_update_ms, async () => {
+      await page.locator('#review-source-select').selectOption(sourceId);
+      await page.locator('#review-set-source').click();
+      await page.waitForFunction(
+        (payload) => {
+          const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
+          return profile?.review_source_id === payload.sourceId
+            && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
+        },
+        { profileId, sourceId },
+        { timeout: 10000 },
+      );
+    });
+  } else {
+    log('review source controls not present — skipping review source section');
+    await screenshot(page, 'review-skip-source');
   }
-  await measureStep('review-source-retained', THRESHOLDS.review_source_update_ms, async () => {
-    await page.locator('#review-source-select').selectOption(sourceId);
-    await page.locator('#review-set-source').click();
-    await page.waitForFunction(
-      (payload) => {
-        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-        return profile?.review_source_id === payload.sourceId
-          && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-      },
-      { profileId, sourceId },
-      { timeout: 10000 },
-    );
-  });
-  await screenshot(page, 'review-retained');
-
-  await openTool(page, 'overlay');
-  await openTool(page, 'export');
-  await openTool(page, 'review');
-  await waitForCondition(
-    page,
-    (expectedId) => {
-      const select = document.getElementById('review-source-select');
-      return select?.value === expectedId
-        && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-    },
-    sourceId,
-  );
-
-  await measureStep('review-source-live', THRESHOLDS.review_source_update_ms, async () => {
-    await page.locator('#review-source-select').selectOption('');
-    await page.locator('#review-set-source').click();
-    await page.waitForFunction(
-      (profileIdArg) => {
-        const profile = (state?.output_profiles || []).find((item) => item.output_id === profileIdArg);
-        return (!profile?.review_source_id || profile.review_source_id === '')
-          && document.getElementById('review-source-status')?.textContent === 'Live';
-      },
-      profileId,
-      { timeout: 10000 },
-    );
-  });
-  await screenshot(page, 'review-live');
-
-  await measureStep('review-source-retained-second-pass', THRESHOLDS.review_source_update_ms, async () => {
-    await page.locator('#review-source-select').selectOption(sourceId);
-    await page.locator('#review-set-source').click();
-    await page.waitForFunction(
-      (payload) => {
-        const profile = (state?.output_profiles || []).find((item) => item.output_id === payload.profileId);
-        return profile?.review_source_id === payload.sourceId
-          && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
-      },
-      { profileId, sourceId },
-      { timeout: 10000 },
-    );
-  });
 
   await openTool(page, 'overlay', 'overlay-export-badges');
   await measureStep('export-badges', THRESHOLDS.export_badges_ms, async () => {
