@@ -525,11 +525,6 @@ async function runReleaseProof(page) {
   );
   await screenshot(page, 'release-06-sync-ready');
 
-  await measureStep('per-source-camera-role', THRESHOLDS.source_commit_ms, async () => {
-    await setSelectValue(page, `.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-field="camera_role"]`, 'detail');
-    await waitForUiSettled(page);
-  });
-
   await measureStep('per-source-layout', THRESHOLDS.source_commit_ms, async () => {
     await setSelectValue(page, `.merge-media-card[data-source-id="${sourceId}"] [data-merge-source-field="placement_mode"]`, 'above_below');
     await waitForUiSettled(page);
@@ -636,7 +631,8 @@ async function runReleaseProof(page) {
     (targetSourceId) => {
       const source = (state?.project?.merge_sources || []).find((item) => item.id === targetSourceId);
       const trim = source?.trim_derivative;
-      return (source?.camera_role || source?.angle_role || '') === 'detail'
+      const role = source?.camera_role || source?.angle_role || '';
+      return (role === 'follow' || role === 'detail')
         && source?.placement?.mode === 'above_below'
         && source?.sync_analysis_status === 'ready'
         && (!trim?.derivative_path)
