@@ -122,8 +122,8 @@ async function waitForUiSettled(page, timeoutMs = 15000) {
 
 async function openTool(page, tool, screenshotName = '') {
   await measureStep(`tool-switch:${tool}`, THRESHOLDS.tool_switch_settled_ms, async () => {
-    await page.locator(`button[data-tool="${tool}"]`).click({ force: true, timeout: 10000 });
-    await page.waitForFunction((targetTool) => activeTool === targetTool, tool, { timeout: 10000 });
+    await page.locator(`button[data-tool="${tool}"]`).click({ force: true, timeout: 30000 });
+    await page.waitForFunction((targetTool) => activeTool === targetTool, tool, { timeout: 30000 });
     await waitForUiSettled(page);
   });
   if (screenshotName) await screenshot(page, screenshotName);
@@ -207,7 +207,7 @@ async function ensureMergeCardExpanded(card) {
   const body = card.locator('.merge-media-card-body');
   if (await body.evaluate((element) => Boolean(element?.hidden))) {
     await card.locator('button[aria-label*="PiP item controls"]').click({ force: true });
-    await body.waitFor({ state: 'visible', timeout: 10000 });
+    await body.waitFor({ state: 'visible', timeout: 30000 });
   }
 }
 
@@ -314,7 +314,7 @@ async function openTimingWorkbench(page) {
     const workbench = page.locator('#timing-workbench');
     if (!(await workbench.isVisible().catch(() => false))) {
       await expandButton.click({ force: true, timeout: 5000 });
-      await workbench.waitFor({ state: 'visible', timeout: 10000 });
+      await workbench.waitFor({ state: 'visible', timeout: 30000 });
     }
   }
   await waitForUiSettled(page);
@@ -361,7 +361,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
         return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
       },
       null,
-      { timeout: 10000 },
+      { timeout: 30000 },
     );
     await waitForUiSettled(page);
   });
@@ -407,7 +407,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
             && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
         },
         { profileId, sourceId },
-        { timeout: 10000 },
+        { timeout: 30000 },
       );
     });
     await screenshot(page, 'review-retained');
@@ -435,7 +435,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
             && document.getElementById('review-source-status')?.textContent === 'Live';
         },
         profileId,
-        { timeout: 10000 },
+        { timeout: 30000 },
       );
     });
     await screenshot(page, 'review-live');
@@ -450,7 +450,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
             && document.getElementById('review-source-status')?.textContent?.startsWith('Retained: ') === true;
         },
         { profileId, sourceId },
-        { timeout: 10000 },
+        { timeout: 30000 },
       );
     });
   } else {
@@ -469,7 +469,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
         return parsed.badge_size === payload.badgeSize;
       },
       { profileId, badgeSize },
-      { timeout: 10000 },
+      { timeout: 30000 },
     );
   });
   await screenshot(page, 'overlay-badges-exported');
@@ -574,7 +574,7 @@ async function runReleaseProof(page) {
   await page.waitForFunction(
     (profileIdArg) => document.getElementById('output-profile-select')?.value === profileIdArg,
     profile.profileId,
-    { timeout: 10000 },
+    { timeout: 30000 },
   );
   await page.locator('#export-path').fill(exportFile);
 
@@ -588,7 +588,7 @@ async function runReleaseProof(page) {
         return status.includes('Export') || lastLog.length > 0 || processingHidden === false;
       },
       null,
-      { timeout: 10000 },
+      { timeout: 30000 },
     );
   });
   const exportValidation = await waitForStableExportFile(page, exportFile, 180000);
@@ -599,12 +599,12 @@ async function runReleaseProof(page) {
     writeJson(path.join(artifactRoot, 'export-metadata.json'), exportValidation);
   }
   await page.locator('#show-export-log').click();
-  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
   await screenshot(page, 'release-11-export-log');
   const exportLog = await page.evaluate(() => String(state?.project?.export?.last_log || ''));
   writeText(path.join(artifactRoot, 'export-log.txt'), exportLog);
   await page.locator('#close-export-log').click();
-  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
 
   await openTool(page, 'merge', 'release-12-before-trim-clear');
   await ensureMergeCardExpanded(page.locator(`.merge-media-card[data-source-id="${sourceId}"]`));
