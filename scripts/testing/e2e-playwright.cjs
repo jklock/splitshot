@@ -354,18 +354,25 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    await page.evaluate(async () => {
-      await callApi('/api/output-profiles/create', { profile_name: 'Release Proof Profile', profile_kind: 'stage_output' });
-    });
+    await page.locator('#create-output-profile').click();
+    // Manual polling loop instead of waitForFunction (more reliable in CI)
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      const ok = await page.evaluate(() => {
+        const select = document.getElementById('output-profile-select');
+        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+      });
+      if (ok) break;
+      await page.waitForTimeout(500);
+    }
+    // Final verification
     await page.waitForFunction(
-      () => (state?.output_profiles || []).length > 0,
+      () => {
+        const select = document.getElementById('output-profile-select');
+        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+      },
       null,
-      { timeout: 10000 },
-    );
-    await page.waitForFunction(
-      () => Boolean(document.getElementById('output-profile-select')?.value),
-      null,
-      { timeout: 10000 },
+      { timeout: 5000 },
     );
     await waitForUiSettled(page);
   });
