@@ -354,26 +354,18 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
+    // Click and poll with page.evaluate (bypasses waitForFunction polling issues)
     await page.locator('#create-output-profile').click();
-    // Manual polling loop instead of waitForFunction (more reliable in CI)
-    const deadline = Date.now() + 30000;
-    while (Date.now() < deadline) {
+    for (let i = 0; i < 60; i++) {
+      await page.waitForTimeout(500);
       const ok = await page.evaluate(() => {
         const select = document.getElementById('output-profile-select');
         return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
       });
       if (ok) break;
-      await page.waitForTimeout(500);
     }
-    // Final verification
-    await page.waitForFunction(
-      () => {
-        const select = document.getElementById('output-profile-select');
-        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
-      },
-      null,
-      { timeout: 5000 },
-    );
+    const profiles = await page.evaluate(() => (state?.output_profiles || []).length);
+    if (profiles === 0) fail(`output profile was not created after 30s (profiles=${profiles})`);
     await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
