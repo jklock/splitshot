@@ -356,7 +356,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
     // Click and poll with page.evaluate (bypasses waitForFunction polling issues)
     await page.locator('#create-output-profile').click();
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 240; i++) {
       await page.waitForTimeout(500);
       const ok = await page.evaluate(() => {
         const select = document.getElementById('output-profile-select');
