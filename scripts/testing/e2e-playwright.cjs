@@ -355,14 +355,25 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
     await page.locator('#create-output-profile').click();
-    await page.waitForFunction(
-      () => {
-        const select = document.getElementById('output-profile-select');
-        return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
-      },
-      null,
-      { timeout: 30000 },
-    );
+    try {
+      await page.waitForFunction(
+        () => {
+          const select = document.getElementById('output-profile-select');
+          return Boolean(select?.value) && (state?.output_profiles || []).length > 0;
+        },
+        null,
+        { timeout: 30000 },
+      );
+    } catch (e) {
+      const debug = await page.evaluate(() => ({
+        error: state?.status || 'no status',
+        profiles: (state?.output_profiles || []).length,
+        selectExists: Boolean(document.getElementById('output-profile-select')),
+        projectPath: state?.project?.path || '',
+      }));
+      log(`output-profile-create debug: ${JSON.stringify(debug)}`);
+      throw e;
+    }
     await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
