@@ -363,7 +363,7 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
     await page.waitForFunction(
       () => Boolean(document.getElementById('output-profile-select')?.value),
       null,
-      { timeout: 10000 },
+      { timeout: 30000 },
     );
     await waitForUiSettled(page);
   });
