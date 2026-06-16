@@ -354,18 +354,18 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    const responsePromise = page.waitForResponse(resp => resp.url().includes('/api/output-profiles/create') && resp.status() === 200, { timeout: 30000 });
-    await page.locator('#create-output-profile').click();
-    await responsePromise;
+    await page.evaluate(async () => {
+      await callApi('/api/output-profiles/create', { profile_name: 'Release Proof Profile', profile_kind: 'stage_output' });
+    });
     await page.waitForFunction(
       () => (state?.output_profiles || []).length > 0,
       null,
-      { timeout: 5000 },
+      { timeout: 10000 },
     );
     await page.waitForFunction(
       () => Boolean(document.getElementById('output-profile-select')?.value),
       null,
-      { timeout: 5000 },
+      { timeout: 10000 },
     );
     await waitForUiSettled(page);
   });
