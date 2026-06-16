@@ -21,7 +21,7 @@ const isReleaseProof = e2eScope === 'release-proof';
 
 const THRESHOLDS = {
   tool_switch_settled_ms: 2000,
-  profile_create_ms: 120000,
+  profile_create_ms: 2000,
   profile_edit_ms: 2000,
   review_source_update_ms: 2000,
   export_badges_ms: 2000,
@@ -354,30 +354,17 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    // Direct fetch via page.evaluate, handle state update manually
-    await page.evaluate(async () => {
-      const resp = await fetch('/api/output-profiles/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profile_name: 'Release Proof Profile', profile_kind: 'stage_output' }),
-      });
-      const data = await resp.json();
-      // Force state refresh by calling the refresh endpoint
-      await fetch('/api/state').then(r => r.json()).then(s => {
-        // applyRemoteState equivalent - directly update accessible state
-        if (s.output_profiles) {
-          Object.assign(state, s);
-        }
-      });
-    });
-    // Now poll for profiles
-    for (let i = 0; i < 60; i++) {
-      await page.waitForTimeout(500);
-      const ok = await page.evaluate(() => (window.state?.output_profiles || []).length > 0);
-      if (ok) break;
-    }
-    const profiles = await page.evaluate(() => (state?.output_profiles || []).length);
-    if (profiles === 0) fail(`output profile was not created after 30s (profiles=${profiles})`);
+    await page.locator('#create-output-profile').click();
+    await page.waitForFunction(
+      () => (state?.output_profiles || []).length > 0,
+      null,
+      { timeout: 30000 },
+    );
+    await page.waitForFunction(
+      () => Boolean(document.getElementById('output-profile-select')?.value),
+      null,
+      { timeout: 30000 },
+    );
     await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
