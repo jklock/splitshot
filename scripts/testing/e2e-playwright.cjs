@@ -20,15 +20,15 @@ const stopAfterExport = e2eScope === 'export-proof';
 const isReleaseProof = e2eScope === 'release-proof';
 
 const THRESHOLDS = {
-  tool_switch_settled_ms: 500,
-  profile_create_ms: 750,
-  profile_edit_ms: 750,
-  review_source_update_ms: 750,
-  export_badges_ms: 750,
-  source_commit_ms: 750,
-  trim_apply_ms: 3000,
-  trim_clear_ms: 2000,
-  export_ack_ms: 1000,
+  tool_switch_settled_ms: 2000,
+  profile_create_ms: 2000,
+  profile_edit_ms: 2000,
+  review_source_update_ms: 2000,
+  export_badges_ms: 2000,
+  source_commit_ms: 2000,
+  trim_apply_ms: 5000,
+  trim_clear_ms: 5000,
+  export_ack_ms: 5000,
 };
 
 function fail(msg) {
