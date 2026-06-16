@@ -354,16 +354,20 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    await page.locator('#create-output-profile').click();
+    const [response] = await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/output-profiles/create') && resp.status() === 200, { timeout: 30000 }),
+      page.locator('#create-output-profile').click(),
+    ]);
+    await response.finished();
     await page.waitForFunction(
       () => (state?.output_profiles || []).length > 0,
       null,
-      { timeout: 30000 },
+      { timeout: 5000 },
     );
     await page.waitForFunction(
       () => Boolean(document.getElementById('output-profile-select')?.value),
       null,
-      { timeout: 30000 },
+      { timeout: 5000 },
     );
     await waitForUiSettled(page);
   });
