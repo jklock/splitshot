@@ -127,12 +127,18 @@ jobs:
           artifact=$(ls electron/build/*.AppImage | head -n 1)
           xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with AppImage package
-        env:
-          SPLITSHOT_E2E_VIDEO: docs/Clip1.MP4
         run: |
           export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
           artifact=$(ls electron/build/*.AppImage | head -n 1)
-          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact" --script scripts/testing/test_packaged_app_e2e.py
+          xvfb-run -a uv run python scripts/testing/test_packaged_artifact.py \
+            --artifact "$artifact" \
+            --script scripts/testing/test_packaged_app_e2e.py \
+            --script-arg=--scope \
+            --script-arg=release-proof \
+            --script-arg=--artifact-root \
+            --script-arg=artifacts/v106-phase-12-proof/github-review/linux \
+            --script-arg=--primary-video \
+            --script-arg=docs/Clip1.MP4
         timeout-minutes: 30
       - name: Upload E2E artifacts
         if: always()
