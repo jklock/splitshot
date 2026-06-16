@@ -3816,7 +3816,6 @@ class ProjectController(QObject):
     def _autosave_project_if_needed(self) -> None:
         if self._autosave_in_progress or self.project_path is None:
             return
-        self._sync_project_to_active_stage()
         current_snapshot = project_to_dict(self.project)
         if current_snapshot == self._saved_snapshot:
             return
