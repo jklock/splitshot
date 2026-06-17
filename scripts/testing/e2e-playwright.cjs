@@ -177,7 +177,7 @@ async function waitForStableExportFile(page, exportFile, timeoutMs = 120000) {
 }
 
 async function setInputValue(page, selector, value) {
-  await page.locator(selector).evaluate(
+  await page.locator(selector).first().evaluate(
     (element, nextValue) => {
       element.value = String(nextValue);
       element.dispatchEvent(new Event('input', { bubbles: true }));
@@ -188,7 +188,7 @@ async function setInputValue(page, selector, value) {
 }
 
 async function setSelectValue(page, selector, value) {
-  await page.locator(selector).evaluate(
+  await page.locator(selector).first().evaluate(
     (element, nextValue) => {
       element.value = String(nextValue);
       element.dispatchEvent(new Event('change', { bubbles: true }));
