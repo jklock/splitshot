@@ -204,7 +204,7 @@ async function alternateSelectValue(page, selector) {
 }
 
 async function ensureMergeCardExpanded(card) {
-  const body = card.locator('.merge-media-card-body');
+  const body = card.locator('.merge-media-card-body').first();
   if (await body.evaluate((element) => Boolean(element?.hidden))) {
     await card.locator('button[aria-label*="PiP item controls"]').click({ force: true });
     await body.waitFor({ state: 'visible', timeout: 30000 });
