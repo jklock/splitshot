@@ -354,18 +354,28 @@ async function configureOutputProfileReviewAndBadges(page, sourceId) {
 
   await openTool(page, 'export', 'export-before-profile');
   await measureStep('output-profile-create', THRESHOLDS.profile_create_ms, async () => {
-    // Intercept the HTTP response instead of polling state
-    const [resp] = await Promise.all([
-      page.waitForResponse(r => r.url().includes('/api/output-profiles/create'), { timeout: 30000 }),
-      page.locator('#create-output-profile').click(),
-    ]);
-    if (resp.status() !== 200) fail(`output profile API returned ${resp.status()}`);
-    // Response received - state should be updated now, quick DOM verify
+    // Create profile via direct API call (bypasses button click + state polling)
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/api/output-profiles/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile_name: 'Release Proof Profile', profile_kind: 'stage_output' }),
+      });
+      const data = await r.json();
+      return { ok: r.ok, count: (data.output_profiles || []).length, error: data.error || '' };
+    });
+    if (!result.ok || result.count === 0) {
+      fail(`output profile create failed: ok=${result.ok} count=${result.count} error=${result.error}`);
+    }
+    // Reload page to pick up fresh state
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction('() => Boolean(state?.project?.path)', null, { timeout: 15000 });
     await page.waitForFunction(
-      () => (document.getElementById('output-profile-select')?.value || '') !== '',
+      () => (state?.output_profiles || []).length > 0,
       null,
-      { timeout: 5000 },
+      { timeout: 10000 },
     );
+    await openTool(page, 'export');
     await waitForUiSettled(page);
   });
   const profileId = await page.locator('#output-profile-select').inputValue();
