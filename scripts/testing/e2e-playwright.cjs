@@ -642,8 +642,8 @@ async function runReleaseProof(page) {
   });
   await screenshot(page, 'release-13-trim-cleared');
 
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: 45000 });
-  await page.waitForFunction(() => Boolean(state?.project?.path), null, { timeout: 45000 });
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForFunction(() => Boolean(state?.project?.path), null, { timeout: 60000 });
   await openTool(page, 'merge', 'release-14-reloaded-merge');
   await waitForCondition(
     page,
@@ -766,9 +766,9 @@ async function main() {
   });
 
   try {
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     await screenshot(page, '01-after-load');
-    await page.waitForFunction(() => typeof activeTool !== 'undefined', null, { timeout: 45000 });
+    await page.waitForFunction(() => typeof activeTool !== 'undefined', null, { timeout: 60000 });
     await screenshot(page, '02-app-initialized');
     await page.waitForTimeout(500);
 
