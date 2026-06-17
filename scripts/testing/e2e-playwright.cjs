@@ -198,7 +198,7 @@ async function setSelectValue(page, selector, value) {
 }
 
 async function alternateSelectValue(page, selector) {
-  return page.locator(selector).evaluate(
+  return page.locator(selector).first().evaluate(
     (select) => [...select.options].find((option) => option.value && option.value !== select.value)?.value || select.value,
   );
 }
@@ -620,9 +620,9 @@ async function runReleaseProof(page) {
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === true, null, { timeout: 30000 });
 
   await openTool(page, 'merge', 'release-12-before-trim-clear');
-  await ensureMergeCardExpanded(page.locator(`.merge-media-card[data-source-id="${sourceId}"]`));
+  await ensureMergeCardExpanded(page.locator(`.merge-media-card[data-source-id="${sourceId}"]`).first());
   await measureStep('trim-clear', THRESHOLDS.trim_clear_ms, async () => {
-    await page.locator(`.merge-media-card[data-source-id="${sourceId}"]`).evaluate((card) => {
+    await page.locator(`.merge-media-card[data-source-id="${sourceId}"]`).first().evaluate((card) => {
       const button = Array.from(card.querySelectorAll('button')).find((candidate) => (candidate.textContent || '').trim() === 'Clear');
       if (!(button instanceof HTMLButtonElement)) throw new Error('trim Clear button not found');
       button.click();
