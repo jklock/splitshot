@@ -109,6 +109,8 @@ jobs:
           node-version: '22'
       - name: Install FFmpeg
         run: choco install ffmpeg -y
+      - name: Install Tesseract
+        run: choco install tesseract -y
       - name: Verify Electron CI inputs
         run: python scripts/testing/verify_electron_ci_inputs.py
       - name: Install Python dependencies
