@@ -22,6 +22,24 @@ const TEST_READY_FILE = process.env.SPLITSHOT_ELECTRON_READY_FILE || '';
 const TEST_EXIT_AFTER_READY = process.env.SPLITSHOT_ELECTRON_EXIT_AFTER_READY === '1';
 let appReadyRecorded = false;
 
+// In packaged apps launched from Finder (not a terminal), stdout/stderr may be
+// pipes that throw EPIPE when written to. Wrap console calls that run inside
+// child-process event handlers so an uncaught exception does not crash the app.
+function safeLog(...args) {
+  try {
+    console.log(...args);
+  } catch {
+    /* ignore EPIPE / broken stdout */
+  }
+}
+function safeError(...args) {
+  try {
+    console.error(...args);
+  } catch {
+    /* ignore EPIPE / broken stderr */
+  }
+}
+
 // On Windows, requestSingleInstanceLock() silently fails when elevated (admin/SYSTEM).
 // GitHub Actions runners run elevated, causing app.quit() immediately.
 // See https://github.com/electron/electron/issues/35681
@@ -145,16 +163,16 @@ function startPythonBackend(initialProjectPath = null) {
   }
 
   pythonProcess.stdout.on('data', (data) => {
-    console.log(`[python] ${data}`);
+    safeLog(`[python] ${data}`);
   });
 
   pythonProcess.stderr.on('data', (data) => {
-    console.error(`[python] ${data}`);
+    safeError(`[python] ${data}`);
   });
 
   pythonProcess.on('exit', (code) => {
     appendTestEvent('backend-exit', { code });
-    console.log(`Python backend exited with code ${code}`);
+    safeLog(`Python backend exited with code ${code}`);
     if (!app.isQuitting) {
       app.quit();
     }
@@ -162,7 +180,7 @@ function startPythonBackend(initialProjectPath = null) {
 
   pythonProcess.on('error', (error) => {
     appendTestEvent('backend-spawn-error', { error: String(error) });
-    console.error(`Python backend spawn failed: ${error}`);
+    safeError(`Python backend spawn failed: ${error}`);
   });
 }
 
@@ -433,14 +451,14 @@ app.on('ready', async () => {
   startPythonBackend(initialLaunchIntent ? initialLaunchIntent.projectPath : null);
   try {
     await waitForServer();
-    console.log('Python backend is ready');
+    safeLog('Python backend is ready');
     launchIntentRouter.setBackendReady(true);
     appendTestEvent('backend-ready', { url: PYTHON_URL });
     maybeRecordAppReady();
     createWindow();
   } catch (err) {
     appendTestEvent('startup-error', { error: String(err) });
-    console.error(err);
+    safeError(err);
     dialog.showErrorBox('Startup Error', 'Failed to start the SplitShot backend. Please try reinstalling the application.');
     app.quit();
   }
