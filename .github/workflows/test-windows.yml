@@ -136,6 +136,7 @@ jobs:
           uv run python scripts/testing/test_packaged_artifact.py --artifact "$artifact"
       - name: Full E2E test with installed package
         env:
+          SPLITSHOT_E2E_OCR_PROOF: "1"
           SPLITSHOT_PACKAGED_TESSERACT: tesseract
         run: |
           artifact=$(find electron/build -type f -name '*.exe' | head -n 1)

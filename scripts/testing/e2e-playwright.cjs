@@ -348,7 +348,8 @@ async function apiUpload(url, filePath, fileName, mimeType) {
 async function configureOutputProfileReviewAndBadges(page, sourceId) {
   await openTool(page, 'overlay', 'overlay-before-profile');
   await page.locator('#show-overlay').check();
-  const badgeSize = await alternateSelectValue(page, '#badge-size');
+  // Use XL badge size for reliable OCR in Windows CI
+  const badgeSize = 'XL';
   await page.locator('#badge-size').selectOption(badgeSize);
   await waitForCondition(page, (value) => state?.project?.overlay?.badge_size === value, badgeSize);
 

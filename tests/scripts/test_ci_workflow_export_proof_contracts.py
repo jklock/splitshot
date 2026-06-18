@@ -43,6 +43,7 @@ def test_ci_test_workflows_use_clip1_for_packaged_e2e_validation() -> None:
             assert "scripts/testing/verify_clip1_fixture.py docs/Clip1.MP4 --min-shots 1 --min-duration 5" in source, workflow.name
             assert "find electron/build -type f -name '*.exe' | head -n 1" in source, workflow.name
             assert source.count("Install Tesseract") >= 2, workflow.name
+            assert "SPLITSHOT_E2E_OCR_PROOF: \"1\"" in source, workflow.name
         assert "scripts/testing/test_packaged_app_e2e.py" in source, workflow.name
 
 
