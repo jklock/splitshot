@@ -526,6 +526,7 @@ class BrowserControlServer:
         self._browser_media_lock = threading.Lock()
         self._media_url_token = uuid4().hex
         self.practiscore_session = PractiScoreSessionManager()
+        prepare_export_runtime()
         self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
     @property
