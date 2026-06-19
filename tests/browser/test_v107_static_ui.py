@@ -23,21 +23,15 @@ def test_media_and_queue_pane_containers_in_html():
     assert 'data-tool-pane="queue"' in html
 
 
-def test_add_to_queue_button_in_html():
-    html = (STATIC_ROOT / "index.html").read_text()
-    assert 'id="add-to-queue"' in html
-    assert "Add To Queue" in html
-
-
 def test_media_pane_js_exists():
     media_js = STATIC_ROOT / "panes" / "media-pane.js"
     assert media_js.exists()
     source = media_js.read_text()
     assert "createMediaPane" in source
     assert "selectStage" in source
-    assert "importPrimaryMedia" in source
-    assert "importAddedMedia" in source
-    assert "renderStageRow" in source
+    assert "openPrimaryFileInput" in source
+    assert "openMergeMediaInput" in source
+    assert "renderStageRows" in source
 
 
 def test_queue_pane_js_exists():
@@ -78,7 +72,6 @@ def test_app_js_renders_panes_on_refresh():
     assert "queuePane.render()" in app_source
 
 
-def test_shell_runtime_wires_add_to_queue():
-    shell_source = (STATIC_ROOT / "lib" / "shell-runtime.js").read_text()
-    assert '"add-to-queue"' in shell_source
-    assert "/api/project/queue/add" in shell_source
+def test_queue_pane_wires_add_to_queue():
+    queue_source = (STATIC_ROOT / "panes" / "queue-pane.js").read_text()
+    assert "/api/project/queue/add" in queue_source

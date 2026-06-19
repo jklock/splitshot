@@ -78,6 +78,8 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     assert "let projectFolderProbeRequestId = 0;" in js
     assert "LEGACY_WIRE_EVENTS_SOURCE_ANCHORS" not in js
     assert '$("primary-file-input").addEventListener("change", async (event) => {' not in js
+    assert '$("browse-primary-path").addEventListener("click"' not in js
+    assert '$("primary-file-path").addEventListener("keydown"' not in js
 
     assert "export function createProjectPane({" in project_pane_js
     assert "function renderPractiScoreSelect(selectId, values, emptyLabel, selectedValue = \"\") {" in project_pane_js
@@ -108,11 +110,14 @@ def test_project_client_flushes_drafts_before_lifecycle_and_primary_import_paths
     )
 
     assert '$("primary-file-input").addEventListener("change", async (event) => {' in shell_runtime_js
+    assert '$("browse-primary-path").addEventListener("click"' not in shell_runtime_js
+    assert '$("primary-file-path").addEventListener("keydown"' not in shell_runtime_js
     assert 'if (!hasActiveProject()) {' in shell_runtime_js
     assert 'setStatus(gatedProjectActionMessage());' in shell_runtime_js
     assert 'const selectedFile = event.target.files?.[0] || null;' in shell_runtime_js
     assert 'await flushPendingProjectDrafts({ primaryImport: true });' in shell_runtime_js
     assert 'const result = await postFile("/api/files/primary", selectedFile);' in shell_runtime_js
+    assert 'if (result) setActiveTool("media");' in shell_runtime_js
 
 
 def test_practiscore_dashboard_open_route_uses_system_browser(monkeypatch) -> None:

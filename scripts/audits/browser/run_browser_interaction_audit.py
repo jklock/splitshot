@@ -241,7 +241,7 @@ def has_browser_event(entries: list[dict[str, Any]], event_name: str) -> bool:
 
 def show_project_tool(page: Page) -> None:
     page.locator("[data-tool='project']").click()
-    page.wait_for_selector("#primary-file-path", state="visible")
+    page.wait_for_selector("#project-path", state="visible")
 
 
 def _audit_project_path(primary_video: Path) -> str:
@@ -786,7 +786,7 @@ def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer 
             timeout=3_000,
         )
     except PlaywrightTimeoutError:
-        page.evaluate(
+        imported_box_id = page.evaluate(
             """
             () => {
               const imported = (state?.project?.overlay?.text_boxes || []).find((box) => box.source === 'imported_summary');
@@ -801,9 +801,18 @@ def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer 
             }
             """
         )
+        if imported_box_id is None:
+            return expect(
+                False,
+                "review_summary_drag_persists",
+                "Imported summary text box could not be located after drag fallback.",
+                {"drag_target": drag_target},
+            )
         page.wait_for_timeout(150)
-        page.locator('#review-text-box-list .text-box-card').filter(has=page.locator('select[data-text-box-field="source"]')).first.locator('select[data-text-box-field="quadrant"]').select_option("custom")
-        page.locator('#review-text-box-list .text-box-card').filter(has=page.locator('select[data-text-box-field="source"]')).first.locator('input[data-text-box-field="x"]').evaluate(
+        imported_card = page.locator(f'#review-text-box-list .text-box-card[data-box-id="{imported_box_id}"]')
+        imported_card.wait_for(state="visible", timeout=5_000)
+        imported_card.locator('select[data-text-box-field="quadrant"]').select_option("custom")
+        imported_card.locator('input[data-text-box-field="x"]').evaluate(
             """(input, value) => {
               input.value = String(value);
               input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -811,7 +820,7 @@ def drag_imported_summary_box(page: Page, activity_source: BrowserControlServer 
             }""",
             str(drag_target["target_x"]),
         )
-        page.locator('#review-text-box-list .text-box-card').filter(has=page.locator('select[data-text-box-field="source"]')).first.locator('input[data-text-box-field="y"]').evaluate(
+        imported_card.locator('input[data-text-box-field="y"]').evaluate(
             """(input, value) => {
               input.value = String(value);
               input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -972,6 +981,7 @@ def import_merge_media(
         "() => (state?.project?.merge_sources?.length || 0) > 0 && document.querySelectorAll('#merge-media-list .merge-media-card').length > 0",
         timeout=120_000,
     )
+    page.locator("[data-tool='merge']").click()
     entries = wait_for_activity(
         activity_source,
         after_cursor,
@@ -1011,6 +1021,7 @@ def drag_merge_preview_persists(
             "() => (state?.project?.merge_sources || []).length >= 2",
             timeout=120_000,
         )
+        page.locator("[data-tool='merge']").click()
         wait_for_activity(
             activity_source,
             import_cursor,
@@ -1258,6 +1269,26 @@ def sync_nudge_commits(page: Page, activity_source: BrowserControlServer | str) 
         lambda items: has_api_success(items, "/api/merge/source"),
         timeout_s=5,
     )
+    expected_offset = before["sync_offset_ms"] + 10
+    try:
+        page.wait_for_function(
+            """
+            (expected) => Number(state?.project?.merge_sources?.[0]?.sync_offset_ms || 0) === expected
+            """,
+            arg=expected_offset,
+            timeout=5_000,
+        )
+        page.wait_for_function(
+            """
+            () => {
+              const label = document.querySelector('.trim-sync-card .merge-source-sync-hint')?.textContent?.trim() || '';
+              return label.length > 0 && (label.toLowerCase().includes('manual sync') || label.toLowerCase().includes('beep'));
+            }
+            """,
+            timeout=5_000,
+        )
+    except PlaywrightTimeoutError:
+        pass
     after = page.evaluate(
         """
         () => ({

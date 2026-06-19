@@ -4880,9 +4880,7 @@ function setActiveTool(tool, { collapseExpandedLayout = true, persistUiState = t
     const markersWorkbench = $("markers-workbench");
     if (markersWorkbench instanceof HTMLElement) markersWorkbench.hidden = true;
   }
-  if (tool === "merge") {
-    $("add-merge-media")?.focus();
-  } else if (tool === "markers" && changed) {
+  if (tool === "markers" && changed) {
     if (selectedPopupBubbleId) {
       window.requestAnimationFrame(() => revealPopupBubbleCard(selectedPopupBubbleId, { focus: false }));
     }
@@ -5160,7 +5158,6 @@ function resetLocalProjectView() {
     }
   });
   [
-    "primary-file-path",
     "project-path",
     "export-path",
     "match-type",
@@ -7693,7 +7690,7 @@ function renderMergeMediaList() {
 }
 
 function renderTrimSyncList() {
-  const addedCount = Math.max(0, (state?.project?.merge_sources?.length || 0) - 1);
+  const addedCount = Math.max(0, state?.project?.merge_sources?.length || 0);
   const trimButton = document.querySelector('[data-tool="trim-sync"] b');
   if (trimButton) {
     trimButton.textContent = addedCount > 0 ? `Trim (${addedCount})` : "Trim";
@@ -9851,7 +9848,8 @@ mediaPane = createMediaPane({
   },
   activity,
   callApi,
-  pickPath,
+  openPrimaryFileInput: () => $("primary-file-input")?.click(),
+  openMergeMediaInput: () => $("merge-media-input")?.click(),
   fileName,
   splitSeconds,
   formatNumber,

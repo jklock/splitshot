@@ -300,7 +300,7 @@ def test_project_pane_practiscore_dashboard_button_opens_system_browser(monkeypa
         server.shutdown()
 
 
-def test_project_pane_practiscore_and_primary_controls_enable_after_project_create(tmp_path: Path) -> None:
+def test_project_controls_enable_and_media_stays_stage_gated_after_project_create(tmp_path: Path) -> None:
     notices: list[str] = []
     server = BrowserControlServer(controller=ProjectController(), port=0)
     server.start_background(open_browser=False)
@@ -315,14 +315,19 @@ def test_project_pane_practiscore_and_primary_controls_enable_after_project_crea
                 assert page.locator("#project-path").get_attribute("placeholder") == "Please create / select project"
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is True
                 assert page.locator("#import-practiscore").is_disabled() is True
-                assert page.locator("#browse-primary-path").is_disabled() is True
+                _open_tool(page, "media")
+                assert page.locator("#media-import-primary-btn").is_disabled() is True
+                assert page.locator("#media-add-added-btn").is_disabled() is True
 
                 page.evaluate(f"() => createNewProject({json.dumps(str(tmp_path / 'created-project.ssproj'))})")
                 page.wait_for_function("() => Boolean(state?.project?.path)")
+                _open_tool(page, "project")
                 assert page.locator("#open-practiscore-dashboard").is_disabled() is False
                 assert page.locator("#import-practiscore").is_disabled() is False
-                assert page.locator("#browse-primary-path").is_disabled() is False
                 assert page.locator("#project-path").input_value() == "created-project.ssproj"
+                _open_tool(page, "media")
+                assert page.locator("#media-import-primary-btn").is_disabled() is True
+                assert page.locator("#media-add-added-btn").is_disabled() is True
                 notices.extend(dialogs)
                 assert any("missing Input, CSV, Output" in message for message in notices)
             finally:
@@ -2387,6 +2392,7 @@ def test_merge_controls_update_live_preview_layout_and_position(synthetic_video_
 
                 page.locator("#merge-media-input").set_input_files(str(secondary_path))
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                _open_tool(page, "merge")
                 page.locator('[data-tool-pane="merge"] .merge-media-card').first.wait_for(state="visible")
 
                 page.locator("#merge-enabled").check()

@@ -674,6 +674,7 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
 
                 page.locator('#merge-media-input').set_input_files([str(secondary_path), str(tertiary_path)])
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+                _open_tool(page, 'merge')
 
                 page.locator('#merge-enabled').check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
@@ -769,6 +770,14 @@ def test_merge_remaining_controls_commit_default_and_per_source_state(synthetic_
                 assert trimmed_source["trim_derivative"]["derivative_path"]
                 assert Path(trimmed_source["trim_derivative"]["derivative_path"]).exists()
                 assert trimmed_source["trim_derivative"].get("original_path", trimmed_source["asset"]["path"]) == trimmed_source["asset"]["path"]
+
+                _set_input_value(page.locator('#trim-sync-bulk-start'), '0.1')
+                _set_input_value(page.locator('#trim-sync-bulk-end'), '0.6')
+                page.locator('#trim-sync-apply-all').click()
+                page.wait_for_function(
+                    "() => (state?.project?.merge_sources || []).every((item) => item?.trim_derivative?.active_path_kind === 'local_derivative')",
+                    timeout=120000,
+                )
 
                 page.reload(wait_until='domcontentloaded')
                 page.wait_for_function("() => Boolean(state?.project?.path)")

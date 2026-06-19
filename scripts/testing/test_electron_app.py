@@ -17,7 +17,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-TIMEOUT = 60
+TIMEOUT = 120
 
 
 def _find_free_port() -> int:

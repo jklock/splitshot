@@ -80,11 +80,13 @@ data-shotml-setting:weak_onset_support_threshold
 data-shotml-setting:weak_support_penalty
 data-shotml-setting:window_size
 data-tool-pane:export
+data-tool-pane:media
 data-tool-pane:markers
 data-tool-pane:merge
 data-tool-pane:metrics
 data-tool-pane:overlay
 data-tool-pane:project
+data-tool-pane:queue
 data-tool-pane:review
 data-tool-pane:scoring
 data-tool-pane:settings
@@ -92,18 +94,19 @@ data-tool-pane:shotml
 data-tool-pane:timing
 data-tool-pane:trim-sync
 data-tool:export
+data-tool:media
 data-tool:markers
 data-tool:merge
 data-tool:metrics
 data-tool:overlay
 data-tool:project
+data-tool:queue
 data-tool:review
 data-tool:scoring
 data-tool:settings
 data-tool:shotml
 data-tool:timing
 data-tool:trim-sync
-id:add-merge-media
 id:add-timing-event
 id:amp-waveform-in
 id:amp-waveform-out
@@ -114,7 +117,6 @@ id:audio-codec
 id:audio-sample-rate
 id:badge-size
 id:browse-export-path
-id:browse-primary-path
 id:browse-project-path
 id:bubble-height
 id:bubble-width
@@ -187,7 +189,6 @@ id:popup-prev-workbench
 id:popup-add-selected-shot-workbench
 id:practiscore-file-input
 id:primary-file-input
-id:primary-file-path
 id:project-description
 id:project-name
 id:project-path
@@ -195,6 +196,10 @@ id:quality
 id:reset-shotml-defaults
 id:restore-merge-defaults
 id:reset-waveform-view
+id:trim-sync-apply-all
+id:trim-sync-bulk-end
+id:trim-sync-bulk-start
+id:trim-sync-clear-all
 id:resize-rail
 id:resize-sidebar
 id:resize-waveform
@@ -302,7 +307,6 @@ data-tool:media
 data-tool:queue
 data-tool-pane:media
 data-tool-pane:queue
-id:add-to-queue
 """.splitlines()
     if line.strip()
 }

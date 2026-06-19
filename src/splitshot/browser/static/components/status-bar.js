@@ -56,8 +56,6 @@ export function createStatusBarComponent({
     const statusCopy = $("status-copy");
     if (statusCopy) statusCopy.textContent = state.status;
     const mergeCount = (state?.project?.merge_sources || []).length;
-    if ($("primary-file-path")) $("primary-file-path").placeholder = "Please select a video";
-    syncControlValue($("primary-file-path"), state?.project?.primary_video?.path ? fileName(state.project.primary_video.path) : "");
     if ($("project-path")) $("project-path").placeholder = "Please create / select project";
     syncControlValue($("project-path"), projectFolderLabel);
     if ($("media-badge")) {

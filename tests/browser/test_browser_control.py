@@ -23,7 +23,7 @@ from splitshot.browser.server import (
     is_expected_disconnect_error,
 )
 from splitshot.browser.state import browser_state
-from splitshot.domain.models import OverlayPosition, Project, ShotEvent, ShotSource, VideoAsset
+from splitshot.domain.models import OverlayPosition, Project, ProjectStage, QueueStatus, ShotEvent, ShotSource, VideoAsset
 from splitshot.ui.controller import ProjectController
 
 
@@ -86,6 +86,7 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/dialog/path",
     "/api/merge/source/analyze",
     "/api/merge/source/trim",
+    "/api/merge/source/trim-all",
     "/api/output-profiles/list",
     "/api/output-profiles/create",
     "/api/output-profiles/update",
@@ -95,6 +96,8 @@ NON_PROJECT_JSON_POST_ROUTES = {
     "/api/project/select-stage",
     "/api/project/stage/import-primary",
     "/api/project/stage/import-added",
+    "/api/project/stage/clear-primary",
+    "/api/project/stage/remove-added",
     "/api/project/queue/add",
     "/api/project/queue/remove",
     "/api/project/queue/apply-all",
@@ -241,6 +244,34 @@ def test_browser_foreground_server_reports_bind_failure(monkeypatch, capsys) -> 
     output = capsys.readouterr().out
     assert "SplitShot could not bind to" in output
     assert "Use --port to select a different port" in output
+
+
+def test_active_stage_media_edits_mark_queued_stage_stale(synthetic_video_factory, tmp_path: Path) -> None:
+    primary_path = Path(synthetic_video_factory(name="phase13-queue-primary"))
+    secondary_path = Path(synthetic_video_factory(name="phase13-queue-secondary"))
+
+    controller = ProjectController()
+    stage = ProjectStage(label="Stage 1", order_index=1)
+    controller.project.stages = [stage]
+    controller.project.active_stage_id = stage.id
+    controller.project_path = tmp_path / "phase13-queue.ssproj"
+    controller.project_path.mkdir(parents=True, exist_ok=True)
+    controller._sync_active_stage_to_project()
+
+    controller.import_stage_primary(stage.id, str(primary_path))
+    controller.add_stage_to_queue(stage.id)
+
+    assert controller.project.queue[0].status == QueueStatus.QUEUED
+    assert controller.project.active_stage is not None
+    assert controller.project.active_stage.queue_status == QueueStatus.QUEUED
+
+    controller.import_stage_added(stage.id, str(secondary_path))
+
+    assert controller.project.queue[0].status == QueueStatus.STALE
+    assert controller.project.active_stage is not None
+    assert controller.project.active_stage.queue_status == QueueStatus.STALE
+    assert len(controller.project.merge_sources) == 1
+    assert len(controller.project.active_stage.added_media) == 1
 
 
 def test_browser_http_server_suppresses_expected_disconnect_errors(monkeypatch) -> None:

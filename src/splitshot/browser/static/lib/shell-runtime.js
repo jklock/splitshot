@@ -437,16 +437,6 @@ export function createShellRuntime({
     $("new-project").addEventListener("click", async () => {
       await createNewProject();
     });
-    $("primary-file-path").addEventListener("keydown", async (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      const result = await importTypedPath("primary-file-path", "/api/import/primary", "Primary");
-      if (result) setActiveTool("project");
-    });
     $("browse-project-path").addEventListener("click", browseProjectPath);
     $("browse-export-path").addEventListener("click", () => pickPath("export", "export-path", async () => {
       scheduleExportSettingsApply();
@@ -455,30 +445,11 @@ export function createShellRuntime({
       setExportPathDraft($("export-path").value);
       scheduleExportSettingsApply();
     });
-    $("browse-primary-path").addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-      if (!hasActiveProject()) {
-        setStatus(gatedProjectActionMessage());
-        return;
-      }
-      await flushPendingProjectDrafts({ primaryImport: true });
-      const result = await callApi("/api/import/primary", { path });
-      if (result) setActiveTool("project");
-    }));
     $("toggle-rail")?.addEventListener("click", () => {
       const nextRailCollapsed = !getRailCollapsed();
       setRailCollapsed(nextRailCollapsed);
       windowObject.localStorage.setItem("splitshot.railCollapsed", String(nextRailCollapsed));
       requestRender();
-    });
-    documentObject.querySelectorAll("[data-open-primary]").forEach((item) => {
-      item.addEventListener("click", () => pickPath("primary", "primary-file-path", async (path) => {
-        await flushPendingProjectDrafts({ primaryImport: true });
-        const result = await callApi("/api/import/primary", { path });
-        if (result) setActiveTool("project");
-      }));
-    });
-    documentObject.querySelectorAll("[data-open-merge-media]").forEach((item) => {
-      item.addEventListener("click", () => openHiddenFileInput("merge-media-input"));
     });
     $("primary-file-input").addEventListener("change", async (event) => {
       if (!hasActiveProject()) {
@@ -493,13 +464,13 @@ export function createShellRuntime({
       }
       await flushPendingProjectDrafts({ primaryImport: true });
       const result = await postFile("/api/files/primary", selectedFile);
-      if (result) setActiveTool("project");
+      if (result) setActiveTool("media");
       event.target.value = "";
     });
     $("merge-media-input").addEventListener("change", async (event) => {
       const files = Array.from(event.target.files || []);
       const result = await postFiles("/api/files/merge", files);
-      if (result) setActiveTool("merge");
+      if (result) setActiveTool("media");
       event.target.value = "";
     });
     $("import-practiscore").addEventListener("click", () => {
@@ -1052,11 +1023,6 @@ export function createShellRuntime({
       cancelPendingExportDrafts();
       await flushPendingMergeSourceCommits();
       await callApi("/api/export", payload);
-    });
-    $("add-to-queue")?.addEventListener("click", async () => {
-      cancelPendingExportDrafts();
-      await flushPendingMergeSourceCommits();
-      await callApi("/api/project/queue/add", {});
     });
     $("show-export-log")?.addEventListener("click", openExportLogModal);
     $("export-export-log")?.addEventListener("click", downloadExportLog);

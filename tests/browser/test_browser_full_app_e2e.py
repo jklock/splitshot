@@ -461,12 +461,14 @@ def _exercise_merge_and_export(page, secondary_path: Path, tmp_path: Path, monke
     _open_tool(page, "merge")
     page.locator("#merge-media-input").set_input_files(str(secondary_path))
     page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+    _open_tool(page, "merge")
 
     tertiary_path = secondary_path.parent / f"{secondary_path.stem}-extra{secondary_path.suffix}"
     if not tertiary_path.exists():
         tertiary_path.write_bytes(secondary_path.read_bytes())
     page.locator("#merge-media-input").set_input_files(str(tertiary_path))
     page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+    _open_tool(page, "merge")
 
     page.locator("#merge-enabled").check()
     page.wait_for_function("() => state?.project?.merge?.enabled === true")
@@ -770,6 +772,7 @@ def test_browser_full_app_output_profile_review_source_and_badges_truth_gate(
                 _open_tool(page, "merge")
                 page.locator("#merge-media-input").set_input_files(str(secondary_path))
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 1")
+                _open_tool(page, "merge")
                 source_id = page.locator(".merge-media-card").first.get_attribute("data-source-id")
                 assert source_id
 
@@ -836,6 +839,7 @@ def test_browser_full_app_real_media_stage_release_workflow_truth_gate(tmp_path:
                 _open_tool_for_release(page, "merge", timings, artifact_root, "release-02-merge-pane")
                 page.locator("#merge-media-input").set_input_files([str(secondary_path), str(tertiary_path)])
                 page.wait_for_function("() => (state?.project?.merge_sources || []).length === 2")
+                _open_tool(page, "merge")
                 page.locator("#merge-enabled").check()
                 page.wait_for_function("() => state?.project?.merge?.enabled === true")
                 page.locator("#merge-layout").select_option("pip")

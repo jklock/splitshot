@@ -427,7 +427,7 @@ export function createProjectPane({
 
   function setProjectActionAvailability() {
     const enabled = hasActiveProject();
-    ["open-practiscore-dashboard", "import-practiscore", "browse-primary-path", "primary-file-path"].forEach((id) => {
+    ["open-practiscore-dashboard", "import-practiscore"].forEach((id) => {
       const control = $(id);
       if (control && "disabled" in control) control.disabled = !enabled;
     });

@@ -239,6 +239,19 @@
             <section class="tool-pane" data-tool-pane="trim-sync">
               <div class="section-header">
                 <h3>Trim</h3>
+                <strong id="trim-sync-stage-label">Trim</strong>
+              </div>
+              <div class="control-grid">
+                <label>Start (s)
+                  <input id="trim-sync-bulk-start" type="number" min="0" step="0.001" placeholder="Start" />
+                </label>
+                <label>End (s)
+                  <input id="trim-sync-bulk-end" type="number" min="0" step="0.001" placeholder="End" />
+                </label>
+              </div>
+              <div class="queue-toolbar">
+                <button id="trim-sync-apply-all" class="btn btn-primary" type="button">Apply To All</button>
+                <button id="trim-sync-clear-all" class="btn btn-secondary" type="button">Clear All</button>
               </div>
               <div id="trim-sync-list" class="merge-media-list" aria-label="Trim controls"></div>
             </section>
@@ -616,7 +629,6 @@
                 <h3>Compose</h3>
                 <strong id="sync-offset">Defaults only</strong>
               </div>
-              <button id="add-merge-media" class="primary-button" data-open-merge-media type="button">Add Media</button>
               <section class="pip-defaults-section" data-inspector-section="pip-defaults">
                 <div class="section-header sub-section-header">
                   <h3>Compose Defaults</h3>
@@ -775,7 +787,6 @@
               </label>
               <div class="button-grid two-up">
                 <button id="export-video" class="primary-button" type="button">Export Video</button>
-                <button id="add-to-queue" class="primary-button" type="button">Add To Queue</button>
               </div>
               <div class="button-grid two-up">
                 <button id="show-export-log" type="button">Show Export Log</button>
@@ -1218,14 +1229,6 @@
                 </label>
               </div>
               <dl id="practiscore-import-summary" class="details"></dl>
-              <div class="project-path-row">
-                <label>Primary Video
-                  <input id="primary-file-path" placeholder="Please select a video" readonly />
-                </label>
-                <div class="path-actions">
-                  <button id="browse-primary-path" class="primary-button" type="button">Import Primary Video</button>
-                </div>
-              </div>
             </section>
 
             <section class="tool-pane" data-tool-pane="media">

@@ -15,8 +15,27 @@ export function createTrimSyncPane({
     return getState() || {};
   }
 
+  function activeStageLabel() {
+    const activeStageId = currentState()?.project?.active_stage_id || "";
+    const stages = Array.isArray(currentState()?.project?.stages) ? currentState().project.stages : [];
+    const stage = stages.find((item) => item.id === activeStageId) || null;
+    return stage?.label || (stage ? `Stage ${stage.order_index}` : "Trim");
+  }
+
   function mergeSources() {
     return currentState()?.project?.merge_sources || [];
+  }
+
+  async function trimAll(clear = false) {
+    const startInput = $("trim-sync-bulk-start");
+    const endInput = $("trim-sync-bulk-end");
+    const startValue = parseFloat(startInput?.value || "");
+    const endValue = parseFloat(endInput?.value || "");
+    await callApi("/api/merge/source/trim-all", {
+      clear,
+      start_s: clear || !Number.isFinite(startValue) || startValue <= 0 ? null : startValue,
+      end_s: clear || !Number.isFinite(endValue) || endValue <= 0 ? null : endValue,
+    });
   }
 
   function sourceSyncStatusLabel(source = null) {
@@ -43,12 +62,18 @@ export function createTrimSyncPane({
     const list = $("trim-sync-list");
     if (!list) return;
     const sources = mergeSources();
+    const stageLabel = $("trim-sync-stage-label");
+    if (stageLabel) stageLabel.textContent = activeStageLabel();
+    const applyAllButton = $("trim-sync-apply-all");
+    if (applyAllButton) applyAllButton.onclick = () => trimAll(false);
+    const clearAllButton = $("trim-sync-clear-all");
+    if (clearAllButton) clearAllButton.onclick = () => trimAll(true);
     withPreservedScrollState([list], () => {
       list.innerHTML = "";
       if (sources.length === 0) {
-        const empty = documentObject.createElement("p");
-        empty.className = "hint";
-        empty.textContent = "Add media in Compose first, then trim and sync timing here.";
+        const empty = documentObject.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "No added media.";
         list.appendChild(empty);
         return;
       }
@@ -209,5 +234,7 @@ export function createTrimSyncPane({
 
   return Object.freeze({
     renderTrimSyncList,
+    trimAll,
+    activeStageLabel,
   });
 }

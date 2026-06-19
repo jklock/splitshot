@@ -1,17 +1,11 @@
-import { createPaneBase } from "./pane-base.js";
-
 export function createQueuePane({
   $ = (id) => document.getElementById(id),
-  documentObject = document,
-  windowObject = window,
   getState = () => null,
   setActiveTool = () => {},
   setActiveStageId = () => {},
   activity = () => {},
   callApi = async () => null,
   fileName = (value) => String(value || ""),
-  formatNumber = (value) => String(value ?? ""),
-  renderHeader = () => {},
   setStatus = () => {},
   sendKeepaliveJson = () => false,
 } = {}) {
@@ -33,6 +27,10 @@ export function createQueuePane({
 
   function activeStageId() {
     return project().active_stage_id || "";
+  }
+
+  function stageAddedCount(stage) {
+    return Array.isArray(stage?.added_media) ? stage.added_media.length : 0;
   }
 
   function findQueueEntry(stageId) {
@@ -109,7 +107,7 @@ export function createQueuePane({
   function editStage(stageId) {
     if (!stageId) return;
     selectStageFromQueue(stageId);
-    setActiveTool("merge");
+    setActiveTool("media");
   }
 
   function selectStageFromQueue(stageId) {
@@ -136,6 +134,7 @@ export function createQueuePane({
           <span>${stage.label || `Stage ${stage.order_index}`}</span>
         </td>
         <td class="queue-media">${primaryName}</td>
+        <td class="queue-media">${stageAddedCount(stage)}</td>
         <td class="queue-status">${queueStatusBadge(status)}</td>
         <td class="queue-actions">
           <button class="btn-sm btn-ghost queue-edit-btn" type="button">Edit Stage</button>
@@ -199,12 +198,16 @@ export function createQueuePane({
     const stageList = stages();
     const stageRows = stageList.length
       ? stageList.map((s) => renderQueueRow(s)).join("")
-      : '<tr><td colspan="4" class="empty-state">No stages. Import PractiScore data from Project, then pair media in Media.</td></tr>';
+      : '<tr><td colspan="5" class="empty-state">No stages.</td></tr>';
+
+    const queuedCount = queueEntries().filter((entry) => entry.status === "queued" || entry.status === "stale").length;
 
     pane.innerHTML = `
       <div class="pane-section">
-        <h3 class="section-title">Queue</h3>
-        <p class="section-desc">Review queued stages and process exports.</p>
+        <div class="section-header">
+          <h3>Queue</h3>
+          <strong>${queuedCount} queued</strong>
+        </div>
         <div class="queue-toolbar">
           <button id="queue-add-btn" class="btn btn-primary" type="button">Add To Queue</button>
           <button id="queue-apply-all-btn" class="btn btn-secondary" type="button">Apply Settings To All</button>
@@ -214,6 +217,7 @@ export function createQueuePane({
             <tr>
               <th>Stage</th>
               <th>Primary Media</th>
+              <th>Added</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>

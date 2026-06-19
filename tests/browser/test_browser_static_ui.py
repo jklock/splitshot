@@ -131,7 +131,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '<select id="match-competitor-place">' in html
     assert '<button id="browse-project-path" type="button">Select Project</button>' in html
     assert 'id="project-path" placeholder="Please create / select project" readonly' in html
-    assert 'id="primary-file-path" placeholder="Please select a video" readonly' in html
+    assert 'id="primary-file-path"' not in html
     assert '<button id="new-project" type="button">Create Project</button>' in html
     assert 'id="open-wizard"' not in html
     assert 'id="use-project-folder"' not in html
@@ -179,7 +179,7 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "cloud upload" not in html.lower()
     assert "Add Second Angle" not in html
     assert "Add Second Video" not in html
-    assert "Add Media" in html
+    assert "Add Media" not in html
     assert 'id="merge-media-input"' in html
     assert 'tool-item[data-tool="metrics"]:not(.active)' in css
     assert 'tool-item[data-tool="settings"]:not(.active)' not in css
@@ -198,8 +198,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert '#toggle-rail {' in rail_footer_css
     assert 'id="practiscore-file-input"' in html
     assert 'id="merge-media-list"' in html
-    assert 'id="add-merge-media"' in html
-    assert '>Add Media</button>' in html
     assert 'New item layer size' in html
     assert "Swap Primary and First Added Item" not in html
     assert "Select PractiScore File" in html
@@ -210,10 +208,8 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     assert "Clear PractiScore Session" not in html
     assert "Import Selected Match" not in html
     assert "Manual fallback:" not in html
-    assert "Import Primary Video" in html
     assert html.index("Project folder") < html.index("Project name")
     assert html.index("Project name") < html.index("PractiScore Import")
-    assert html.index("PractiScore Import") < html.index("Primary Video")
     assert "John Klockenkemper" not in html
     assert 'id="match-stage-number-options"' not in html
     assert 'id="match-competitor-name-options"' not in html
@@ -465,7 +461,6 @@ def test_browser_ui_is_waterfall_cockpit_workflow() -> None:
     merge_start = html.index('data-tool-pane="merge"')
     export_start = html.index('data-tool-pane="export"')
     project_start = html.index('data-tool-pane="project"')
-    assert merge_start < html.index('id="add-merge-media"') < export_start
     assert merge_start < html.index('id="merge-layout"') < export_start
     assert merge_start < html.index('id="pip-size"') < export_start
     assert 'id="pip-size" type="range" min="1" max="95" step="1" value="35"' in html
@@ -613,7 +608,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="project-description"' in html
     assert 'id="merge-media-input"' in html
     assert 'id="merge-media-list"' in html
-    assert 'id="add-merge-media"' in html
+    assert 'id="media-pane"' in html
     assert 'id="pip-x"' in html
     assert 'id="pip-y"' in html
     assert 'Compose Defaults' in html
@@ -667,7 +662,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert 'id="score-y"' in html
     assert 'id="browse-project-path"' in html
     assert 'id="browse-export-path"' in html
-    assert 'id="browse-primary-path"' in html
+    assert 'id="browse-primary-path"' not in html
     assert 'id="browse-secondary-path"' not in html
     assert 'id="export-preset"' in html
     assert 'id="crop-center-x"' not in html
@@ -758,7 +753,7 @@ def test_browser_ui_keeps_video_timeline_waveform_and_inspector_together() -> No
     assert "syncSecondaryPreview" in js
     assert "replaceAll(" not in js
     assert "merge-preview" in js
-    assert 'pickPath("primary", "primary-file-path", async (path)' in js
+    assert 'pickPath("primary", "primary-file-path", async (path)' not in js
     assert 'pickPath("secondary", "secondary-file-path", async (path)' not in js
     assert 'pickPath("project_folder", "project-path", async (selectedPath)' in project_pane
     assert 'async function probeProjectFolder(path) {' in js
@@ -1617,7 +1612,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "expand-timing",
         "export-video",
         "browse-export-path",
-        "browse-primary-path",
         "new-project",
         "browse-project-path",
         "open-practiscore-dashboard",
@@ -1625,7 +1619,6 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "save-project",
         "open-project",
         "delete-project",
-        "add-merge-media",
         "review-add-text-box",
         "review-add-imported-box",
         "review-set-source",
@@ -1635,12 +1628,14 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "show-export-log",
         "export-export-log",
         "close-export-log",
-        "close-color-picker",
-        "metrics-export-csv",
-        "metrics-export-text",
-            "generate-shotml-proposals",
-            "reset-shotml-defaults",
-            "restore-merge-defaults",
+            "close-color-picker",
+            "metrics-export-csv",
+            "metrics-export-text",
+            "trim-sync-apply-all",
+            "trim-sync-clear-all",
+                "generate-shotml-proposals",
+                "reset-shotml-defaults",
+                "restore-merge-defaults",
             "settings-use-current-layout",
             "settings-release-layout",
             "toggle-layout-lock-video",
@@ -1650,13 +1645,11 @@ def test_browser_buttons_are_logged_and_wired_to_actions() -> None:
         "resize-waveform",
             "waveform-mode-single",
         "waveform-mode-multi",
-        "add-to-queue",
     }
     behavior_attributes = (
         "data-tool=",
         "data-waveform-mode=",
         "data-sync=",
-        "data-open-merge-media",
         "data-layout-lock-toggle",
         "data-motion-mode-value=",
         "data-popup-action=",

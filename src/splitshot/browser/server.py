@@ -36,7 +36,6 @@ from splitshot.domain.models import (
     _shot_from_dict,
     _timing_event_from_dict,
 )
-from splitshot.export.pipeline import export_project, prepare_export_runtime
 from splitshot.media.ffmpeg import resolve_media_binary, run_ffmpeg, run_ffprobe_json
 from splitshot.persistence.projects import (
     missing_required_project_dirs,
@@ -515,7 +514,6 @@ class BrowserControlServer:
         self._browser_media_lock = threading.Lock()
         self._media_url_token = uuid4().hex
         self.practiscore_session = PractiScoreSessionManager()
-        prepare_export_runtime()
         self.activity.log("server.initialized", host=host, port=port, log_path=str(self.activity.path))
 
     @property
@@ -810,6 +808,7 @@ class BrowserControlServer:
                     "/api/merge/source": self._set_merge_source,
                     "/api/merge/source/analyze": self._analyze_merge_source,
                     "/api/merge/source/trim": self._trim_merge_source,
+                    "/api/merge/source/trim-all": self._trim_all_merge_sources,
                     "/api/output-profiles/list": self._list_output_profiles,
                     "/api/output-profiles/create": self._create_output_profile,
                     "/api/output-profiles/update": self._update_output_profile,
@@ -826,6 +825,8 @@ class BrowserControlServer:
                     "/api/project/select-stage": self._select_stage,
                     "/api/project/stage/import-primary": self._import_stage_primary,
                     "/api/project/stage/import-added": self._import_stage_added,
+                    "/api/project/stage/clear-primary": self._clear_stage_primary,
+                    "/api/project/stage/remove-added": self._remove_stage_added,
                     "/api/project/queue/add": self._add_to_queue,
                     "/api/project/queue/remove": self._remove_from_queue,
                     "/api/project/queue/apply-all": self._apply_settings_to_all,
@@ -966,6 +967,7 @@ class BrowserControlServer:
                 self._send_json(activity.snapshot(after_seq=after_seq, limit=limit))
 
             def _browser_state(self) -> dict[str, Any]:
+                controller._sync_project_to_active_stage()
                 payload = browser_state(
                     controller.project,
                     controller.status_message,
@@ -1726,6 +1728,17 @@ class BrowserControlServer:
                 )
                 server._bump_media_url_token()
 
+            def _trim_all_merge_sources(self, payload: dict[str, Any]) -> None:
+                clear = bool(payload.get("clear", False))
+                start_s = payload.get("start_s")
+                end_s = payload.get("end_s")
+                controller.trim_all_merge_sources(
+                    start_s=float(start_s) if start_s not in {None, ""} else None,
+                    end_s=float(end_s) if end_s not in {None, ""} else None,
+                    clear=clear,
+                )
+                server._bump_media_url_token()
+
             def _list_output_profiles(self, payload: dict[str, Any]) -> None:
                 pass
 
@@ -1790,6 +1803,8 @@ class BrowserControlServer:
                 controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
+                from splitshot.export.pipeline import export_project, prepare_export_runtime
+
                 scoring_payload = payload.get("scoring")
                 if isinstance(scoring_payload, dict):
                     if "ruleset" in scoring_payload:
@@ -1831,6 +1846,7 @@ class BrowserControlServer:
                 _sync_export_payload(controller, payload)
                 output_path = Path(str(payload["path"]))
                 activity.log("api.export.start", path=str(output_path))
+                prepare_export_runtime()
                 exported_path = export_project(
                     controller.project,
                     output_path,
@@ -1871,6 +1887,21 @@ class BrowserControlServer:
                     raise ValueError("stage_id and path are required")
                 server._bump_media_url_token()
                 controller.import_stage_added(stage_id, path)
+
+            def _clear_stage_primary(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                if not stage_id:
+                    raise ValueError("stage_id is required")
+                server._bump_media_url_token()
+                controller.clear_stage_primary(stage_id)
+
+            def _remove_stage_added(self, payload: dict[str, Any]) -> None:
+                stage_id = str(payload.get("stage_id") or "")
+                source_id = str(payload.get("source_id") or payload.get("id") or "")
+                if not stage_id or not source_id:
+                    raise ValueError("stage_id and source_id are required")
+                server._bump_media_url_token()
+                controller.remove_stage_added_media(stage_id, source_id)
 
             def _add_to_queue(self, payload: dict[str, Any]) -> None:
                 stage_id = str(payload.get("stage_id") or "")

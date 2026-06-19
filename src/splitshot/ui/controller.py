@@ -1839,11 +1839,18 @@ class ProjectController(QObject):
         )
         self.project.merge.enabled = True
         _sync_secondary_video_from_merge_sources(self.project)
+        active_stage_id = self.project.active_stage_id
         if _first_analyzable_merge_source(self.project) is not None:
             self._set_status("Imported merge media.")
             self.analyze_secondary()
+            self._sync_project_to_active_stage()
+            self._mark_stage_queue_stale(active_stage_id)
+            self.project.touch()
+            self.project_changed.emit()
             return
         self._set_status("Imported merge media.")
+        self._sync_project_to_active_stage()
+        self._mark_stage_queue_stale(active_stage_id)
         self.project.touch()
         self.project_changed.emit()
 
@@ -1857,13 +1864,20 @@ class ProjectController(QObject):
             self.project.merge.enabled = False
         removed_analyzed = self.project.analysis.analyzed_secondary_source_id == source_id
         _sync_secondary_video_from_merge_sources(self.project)
+        active_stage_id = self.project.active_stage_id
         if removed_analyzed:
             _clear_secondary_analysis_state(self.project, preserve_sync_offset=bool(self.project.merge_sources))
             if _first_analyzable_merge_source(self.project) is not None:
                 self.analyze_secondary()
+                self._sync_project_to_active_stage()
+                self._mark_stage_queue_stale(active_stage_id)
+                self.project.touch()
+                self.project_changed.emit()
                 return
             self.project.analysis.sync_offset_ms = 0
         self._set_status("Removed merge media.")
+        self._sync_project_to_active_stage()
+        self._mark_stage_queue_stale(active_stage_id)
         self.project.touch()
         self.project_changed.emit()
 
@@ -1915,36 +1929,107 @@ class ProjectController(QObject):
         stage = self.project.active_stage
         return stage.label if stage else "?"
 
+    def _stage_by_id(self, stage_id: str) -> ProjectStage | None:
+        return next((stage for stage in self.project.stages if stage.id == stage_id), None)
+
+    def _mark_stage_queue_stale(self, stage_id: str | None) -> None:
+        if not stage_id:
+            return
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            return
+        entry = next((item for item in self.project.queue if item.stage_id == stage_id), None)
+        if entry is None:
+            stage.queue_status = QueueStatus.NOT_QUEUED
+            return
+        if entry.status == QueueStatus.PROCESSING:
+            return
+        entry.status = QueueStatus.STALE
+        stage.queue_status = QueueStatus.STALE
+
     def import_stage_primary(self, stage_id: str, path: str) -> None:
-        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
         self._set_status(f"Importing primary media for stage {stage.label}...")
-        self.project.primary_video = VideoAsset(path=str(path))
-        self.load_primary_video(str(path))
-        stage.primary_media = self.project.primary_video
+        if stage_id == self.project.active_stage_id:
+            self.ingest_primary_video(str(path))
+            self._sync_project_to_active_stage()
+        else:
+            stage.primary_media = probe_video(str(path))
         stage.label = stage.label or f"Stage {stage.order_index}"
+        self._mark_stage_queue_stale(stage_id)
         self.project.touch()
         self.project_changed.emit()
         self._set_status(f"Imported primary media for stage {stage.label}.")
 
     def import_stage_added(self, stage_id: str, path: str) -> None:
-        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
         self._set_status(f"Importing added media for stage {stage.label}...")
-        source = MergeSource(asset=VideoAsset(path=str(path)))
-        stage.added_media.append(source)
+        if stage_id == self.project.active_stage_id:
+            self.add_merge_source(str(path))
+            self._sync_project_to_active_stage()
+        else:
+            stage.added_media.append(
+                MergeSource(
+                    asset=probe_video(str(path)),
+                    pip_size_percent=stage.merge.pip_size_percent,
+                    pip_x=stage.merge.pip_x,
+                    pip_y=stage.merge.pip_y,
+                    sync_offset_ms=0,
+                )
+            )
+            stage.merge.enabled = True
+        self._mark_stage_queue_stale(stage_id)
         self.project.touch()
         self.project_changed.emit()
         self._set_status(f"Imported added media for stage {stage.label}.")
 
+    def clear_stage_primary(self, stage_id: str) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        if stage_id == self.project.active_stage_id:
+            _reset_media_dependent_state_for_primary_video(self.project)
+            self.project.primary_video = VideoAsset()
+            self._remember_original_shots()
+            self._sync_project_to_active_stage()
+        else:
+            stage.primary_media = VideoAsset()
+        self._mark_stage_queue_stale(stage_id)
+        self._set_status(f"Cleared primary media for stage {stage.label}.")
+        self.project.touch()
+        self.project_changed.emit()
+
+    def remove_stage_added_media(self, stage_id: str, source_id: str) -> None:
+        stage = self._stage_by_id(stage_id)
+        if stage is None:
+            raise ValueError(f"Stage {stage_id} not found")
+        if stage_id == self.project.active_stage_id:
+            self.remove_merge_source(source_id)
+            self._sync_project_to_active_stage()
+        else:
+            before = len(stage.added_media)
+            stage.added_media = [source for source in stage.added_media if source.id != source_id]
+            if len(stage.added_media) == before:
+                raise ValueError(f"Merge source {source_id} not found")
+            if not stage.added_media:
+                stage.merge.enabled = False
+        self._mark_stage_queue_stale(stage_id)
+        self._set_status(f"Removed added media from stage {stage.label}.")
+        self.project.touch()
+        self.project_changed.emit()
+
     # --- Queue management ---
 
     def add_stage_to_queue(self, stage_id: str) -> None:
-        stage = next((s for s in self.project.stages if s.id == stage_id), None)
+        stage = self._stage_by_id(stage_id)
         if stage is None:
             raise ValueError(f"Stage {stage_id} not found")
+        if stage_id == self.project.active_stage_id:
+            self._sync_project_to_active_stage()
         if not stage.primary_media.path:
             raise ValueError("Stage must have primary media before queuing.")
         stage.queue_status = QueueStatus.QUEUED
@@ -2221,19 +2306,16 @@ class ProjectController(QObject):
             raise ValueError("Only the first analyzable PiP video can be reanalyzed")
         self.analyze_secondary()
 
-    def trim_merge_source(self, source_id: str, *, start_s: float | None = None, end_s: float | None = None, clear: bool = False) -> None:
-        source = next((s for s in self.project.merge_sources if s.id == source_id), None)
-        if source is None:
-            raise ValueError(f"Merge source {source_id} not found")
+    def _apply_merge_source_trim(
+        self,
+        source: MergeSource,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
         if clear:
             source.trim_derivative = MergeSourceTrimDerivative(original_path=source.asset.path)
-            self._set_status("Cleared trim.")
-            analyzed_source = _first_analyzable_merge_source(self.project)
-            if analyzed_source is not None and analyzed_source.id == source_id:
-                self.analyze_secondary()
-            else:
-                self.project.touch()
-                self.project_changed.emit()
             return
         if start_s is None and end_s is None:
             return
@@ -2258,13 +2340,46 @@ class ProjectController(QObject):
             derivative_path=derivative_path,
             active_path_kind=MergeSourceAssetPathKind.LOCAL_DERIVATIVE,
         )
-        self._set_status(f"Trimmed {source_path} (start={start_s}, end={end_s}).")
+
+    def trim_merge_source(self, source_id: str, *, start_s: float | None = None, end_s: float | None = None, clear: bool = False) -> None:
+        source = next((s for s in self.project.merge_sources if s.id == source_id), None)
+        if source is None:
+            raise ValueError(f"Merge source {source_id} not found")
+        self._apply_merge_source_trim(source, start_s=start_s, end_s=end_s, clear=clear)
+        active_stage_id = self.project.active_stage_id
+        self._mark_stage_queue_stale(active_stage_id)
+        self._set_status("Cleared trim." if clear else f"Trimmed {source.asset.path} (start={start_s}, end={end_s}).")
         analyzed_source = _first_analyzable_merge_source(self.project)
         if analyzed_source is not None and analyzed_source.id == source_id:
             self.analyze_secondary()
-        else:
+            self._sync_project_to_active_stage()
             self.project.touch()
             self.project_changed.emit()
+        else:
+            self._sync_project_to_active_stage()
+            self.project.touch()
+            self.project_changed.emit()
+
+    def trim_all_merge_sources(
+        self,
+        *,
+        start_s: float | None = None,
+        end_s: float | None = None,
+        clear: bool = False,
+    ) -> None:
+        if not self.project.merge_sources:
+            return
+        for source in self.project.merge_sources:
+            self._apply_merge_source_trim(source, start_s=start_s, end_s=end_s, clear=clear)
+        active_stage_id = self.project.active_stage_id
+        self._mark_stage_queue_stale(active_stage_id)
+        analyzed_source = _first_analyzable_merge_source(self.project)
+        if analyzed_source is not None:
+            self.analyze_secondary()
+        self._sync_project_to_active_stage()
+        self._set_status("Cleared trim for all added media." if clear else "Applied trim to all added media.")
+        self.project.touch()
+        self.project_changed.emit()
 
     def set_detection_threshold(self, value: float) -> None:
         self.set_shotml_settings({"detection_threshold": value}, rerun=True)
