@@ -605,11 +605,6 @@ async function runReleaseProof(page) {
       { timeout: 30000 },
     );
   });
-  await page.waitForFunction(
-    (expectedPath) => state?.project?.export?.output_path === expectedPath,
-    exportFile,
-    { timeout: 30000 },
-  );
   const exportValidation = await waitForStableExportFile(page, exportFile, 180000);
   if (!exportValidation) {
     fail('export file did not stabilize as a valid MP4');
@@ -617,6 +612,15 @@ async function runReleaseProof(page) {
     artifacts.push(exportFile);
     writeJson(path.join(artifactRoot, 'export-metadata.json'), exportValidation);
   }
+  await page.waitForFunction(
+    (expectedPath) => {
+      const status = String(state?.status || '');
+      return state?.project?.export?.output_path === expectedPath
+        && status.includes(`Exported video to ${expectedPath}.`);
+    },
+    exportFile,
+    { timeout: 60000 },
+  );
   await page.locator('#show-export-log').click();
   await page.waitForFunction(() => document.getElementById('export-log-modal')?.hidden === false, null, { timeout: 30000 });
   await screenshot(page, 'release-11-export-log');
