@@ -72,6 +72,18 @@ _BROWSER_CONTENT_SECURITY_POLICY = "; ".join(
 )
 
 
+def prepare_export_runtime() -> None:
+    from splitshot.export.pipeline import prepare_export_runtime as _prepare_export_runtime
+
+    _prepare_export_runtime()
+
+
+def export_project(*args: Any, **kwargs: Any) -> Any:
+    from splitshot.export.pipeline import export_project as _export_project
+
+    return _export_project(*args, **kwargs)
+
+
 @dataclass(slots=True)
 class BrowserMediaCacheEntry:
     signature: tuple[int, int]
@@ -1803,8 +1815,6 @@ class BrowserControlServer:
                 controller.apply_export_preset(str(payload["preset"]))
 
             def _export_project(self, payload: dict[str, Any]) -> None:
-                from splitshot.export.pipeline import export_project, prepare_export_runtime
-
                 scoring_payload = payload.get("scoring")
                 if isinstance(scoring_payload, dict):
                     if "ruleset" in scoring_payload:

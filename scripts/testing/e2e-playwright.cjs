@@ -511,6 +511,7 @@ async function runReleaseProof(page) {
   await openTool(page, 'merge', 'release-02-merge-pane');
   await page.locator('#merge-media-input').setInputFiles([secondaryVideoPath, tertiaryVideoPath]);
   await waitForCondition(page, () => (state?.project?.merge_sources || []).length === 2, null, 30000);
+  await openTool(page, 'merge');
   await page.locator('#merge-enabled').check();
   await waitForCondition(page, () => state?.project?.merge?.enabled === true, null);
   await page.locator('#merge-layout').selectOption('pip');
