@@ -585,7 +585,6 @@ async function runReleaseProof(page) {
   }
 
   await openTool(page, 'export', 'release-10-export-pane');
-  await page.locator('#output-profile-select').selectOption(profile.profileId);
   await page.waitForFunction(
     (profileIdArg) => document.getElementById('output-profile-select')?.value === profileIdArg,
     profile.profileId,
@@ -606,6 +605,11 @@ async function runReleaseProof(page) {
       { timeout: 30000 },
     );
   });
+  await page.waitForFunction(
+    (expectedPath) => state?.project?.export?.output_path === expectedPath,
+    exportFile,
+    { timeout: 30000 },
+  );
   const exportValidation = await waitForStableExportFile(page, exportFile, 180000);
   if (!exportValidation) {
     fail('export file did not stabilize as a valid MP4');
